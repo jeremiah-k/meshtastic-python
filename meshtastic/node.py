@@ -66,7 +66,7 @@ MAX_CANNED_MESSAGE_LENGTH = 200
 MAX_CHANNELS = 8
 # Protobuf factory-reset fields are integer-typed; use the explicit sentinel
 # value instead of boolean assignment to avoid firmware-side coercion issues.
-FACTORY_RESET_REQUEST_VALUE = 1
+FACTORY_RESET_REQUEST_VALUE: int = 1
 # Extra wait used only when getMetadata() runs under redirected stdout for
 # historical callers that parse printed metadata lines.
 METADATA_STDOUT_COMPAT_WAIT_SECONDS = 1.0

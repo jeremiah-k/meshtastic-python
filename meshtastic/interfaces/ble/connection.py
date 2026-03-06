@@ -4,8 +4,9 @@ import logging
 import math
 import numbers
 import sys
+from collections.abc import Callable
 from threading import Event, RLock
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError

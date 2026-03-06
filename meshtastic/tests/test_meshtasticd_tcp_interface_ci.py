@@ -12,7 +12,6 @@ import pytest
 from meshtastic.tcp_interface import DEFAULT_TCP_PORT, TCPInterface
 
 MESHTASTICD_HOST_ENV_VAR = "MESHTASTICD_HOST"
-HOST = os.environ.get(MESHTASTICD_HOST_ENV_VAR)
 CONNECT_TIMEOUT_SECONDS = 5.0
 WAIT_CONNECTED_TIMEOUT_SECONDS = 10.0
 RECONNECT_RECOVERY_TIMEOUT_SECONDS = 25.0
@@ -21,11 +20,12 @@ RECONNECT_RETRY_INTERVAL_SECONDS = 0.5
 
 def _require_meshtasticd_host() -> str:
     """Return the configured meshtasticd host or skip when unset."""
-    if not HOST:
+    host = os.environ.get(MESHTASTICD_HOST_ENV_VAR)
+    if not host:
         pytest.skip(
             f"Set {MESHTASTICD_HOST_ENV_VAR} to run meshtasticd integration tests."
         )
-    return HOST
+    return host
 
 
 def _extract_port_component(host: str) -> str | None:

@@ -1183,6 +1183,7 @@ def test_ble_interface_trust_does_not_hold_interface_locks_during_subprocess(
     close_done = threading.Event()
     close_started = threading.Event()
     trust_errors: list[BaseException] = []
+    close_errors: list[BaseException] = []
 
     def _blocking_run(*_args: object, **_kwargs: object) -> SimpleNamespace:
         run_started.set()
@@ -1201,6 +1202,8 @@ def test_ble_interface_trust_does_not_hold_interface_locks_during_subprocess(
         try:
             close_started.set()
             iface.close()
+        except BaseException as exc:  # pragma: no cover - failure captured below
+            close_errors.append(exc)
         finally:
             close_done.set()
 
@@ -1223,6 +1226,7 @@ def test_ble_interface_trust_does_not_hold_interface_locks_during_subprocess(
     assert not close_thread.is_alive()
     assert close_done.is_set() is True
     assert trust_errors == []
+    assert close_errors == []
     with iface._state_lock:
         assert iface._closed is True
 
@@ -1234,11 +1238,14 @@ def test_ble_interface_close_serializes_with_management_lock(
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     close_done = threading.Event()
     close_started = threading.Event()
+    close_errors: list[BaseException] = []
 
     def _close_iface() -> None:
         try:
             close_started.set()
             iface.close()
+        except BaseException as exc:  # pragma: no cover - failure captured below
+            close_errors.append(exc)
         finally:
             close_done.set()
 
@@ -1251,6 +1258,7 @@ def test_ble_interface_close_serializes_with_management_lock(
         assert close_done.is_set() is False
 
     close_thread.join(timeout=2.0)
+    assert close_errors == []
     assert close_done.is_set() is True
 
 
@@ -1260,10 +1268,13 @@ def test_ble_interface_close_does_not_wait_for_connect_lock(
     """close() should still start shutdown while the connect lock is held."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     close_done = threading.Event()
+    close_errors: list[BaseException] = []
 
     def _close_iface() -> None:
         try:
             iface.close()
+        except BaseException as exc:  # pragma: no cover - failure captured below
+            close_errors.append(exc)
         finally:
             close_done.set()
 
@@ -1275,6 +1286,7 @@ def test_ble_interface_close_does_not_wait_for_connect_lock(
             assert iface._closed is True
 
     close_thread.join(timeout=2.0)
+    assert close_errors == []
     assert close_done.is_set() is True
 
 

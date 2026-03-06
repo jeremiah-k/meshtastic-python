@@ -166,10 +166,10 @@ def _wait_for_info_ready(
 def _wait_for_mutation_to_settle(
     *, settle_timeout: int | float = PAUSE_AFTER_COMMAND
 ) -> str:
-    """Wait until the device responds to `--info` after a mutating command."""
-    ready_code, ready_output = _wait_for_info_ready(
-        timeout=settle_timeout + INFO_READY_TIMEOUT_SECONDS
-    )
+    """Wait for a post-mutation settle window before probing `--info`."""
+    if settle_timeout > 0:
+        time.sleep(settle_timeout)
+    ready_code, ready_output = _wait_for_info_ready(timeout=INFO_READY_TIMEOUT_SECONDS)
     assert ready_code == 0, ready_output
     _assert_connected(ready_output)
     return ready_output
