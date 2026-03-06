@@ -137,7 +137,7 @@ def test_client_manager_initialization() -> None:
 def test_client_manager_create_client_forwards_pair_flag(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """_create_client should forward pair_on_connect into the BLEClient constructor."""
+    """_create_client should forward pair_on_connect and timeout into BLEClient."""
     manager = ClientManager(
         state_manager=BLEStateManager(),
         state_lock=RLock(),
@@ -150,10 +150,12 @@ def test_client_manager_create_client_forwards_pair_flag(
         address: str,
         *,
         disconnected_callback: object,
+        timeout: float,
         pair: bool,
     ) -> SimpleNamespace:
         captured["address"] = address
         captured["disconnected_callback"] = disconnected_callback
+        captured["timeout"] = timeout
         captured["pair"] = pair
         return SimpleNamespace(address=address)
 
@@ -169,12 +171,14 @@ def test_client_manager_create_client_forwards_pair_flag(
         "AA:BB:CC:DD:EE:FF",
         disconnect_callback,
         pair_on_connect=True,
+        connect_timeout=17.5,
     )
 
     assert client.address == "AA:BB:CC:DD:EE:FF"
     assert captured == {
         "address": "AA:BB:CC:DD:EE:FF",
         "disconnected_callback": disconnect_callback,
+        "timeout": 17.5,
         "pair": True,
     }
 
@@ -620,6 +624,10 @@ def test_connection_orchestrator_forwards_pair_on_connect_to_client_creation() -
 
     client_manager._create_client.assert_called_once()
     assert client_manager._create_client.call_args.kwargs["pair_on_connect"] is True
+    assert (
+        client_manager._create_client.call_args.kwargs["connect_timeout"]
+        == BLEConfig.CONNECTION_TIMEOUT
+    )
     client_manager._connect_client.assert_called_once_with(
         direct_client,
         timeout=BLEConfig.CONNECTION_TIMEOUT,
@@ -673,6 +681,10 @@ def test_connection_orchestrator_preserves_pair_on_connect_across_direct_retry()
         call.kwargs["pair_on_connect"]
         for call in client_manager._create_client.call_args_list
     ] == [True, True]
+    assert [
+        call.kwargs["connect_timeout"]
+        for call in client_manager._create_client.call_args_list
+    ] == [BLEConfig.CONNECTION_TIMEOUT, BLEConfig.CONNECTION_TIMEOUT]
     assert [
         call.kwargs["timeout"] for call in client_manager._connect_client.call_args_list
     ] == [BLEConfig.CONNECTION_TIMEOUT, BLEConfig.CONNECTION_TIMEOUT]
@@ -733,10 +745,22 @@ def test_connection_orchestrator_preserves_pair_on_connect_across_scan_fallback(
         for call in client_manager._create_client.call_args_list
     ] == [True, True, True]
     assert [
+        call.kwargs["connect_timeout"]
+        for call in client_manager._create_client.call_args_list
+    ] == [
+        BLEConfig.CONNECTION_TIMEOUT,
+        BLEConfig.CONNECTION_TIMEOUT,
+        BLEConfig.CONNECTION_TIMEOUT,
+    ]
+    assert [
         client_manager._connect_client.call_args_list[0].kwargs["timeout"],
         client_manager._connect_client.call_args_list[1].kwargs["timeout"],
-    ] == [BLEConfig.CONNECTION_TIMEOUT, BLEConfig.CONNECTION_TIMEOUT]
-    assert "timeout" not in client_manager._connect_client.call_args_list[2].kwargs
+        client_manager._connect_client.call_args_list[2].kwargs["timeout"],
+    ] == [
+        BLEConfig.CONNECTION_TIMEOUT,
+        BLEConfig.CONNECTION_TIMEOUT,
+        BLEConfig.CONNECTION_TIMEOUT,
+    ]
 
 
 @pytest.mark.unit
@@ -918,9 +942,10 @@ def test_connection_orchestrator_falls_back_to_scan_when_direct_retry_still_devi
         client_manager._connect_client.call_args_list[1].kwargs["timeout"]
         == expected_timeout
     )
-    # After two explicit-address failures, the discovery-scan retry path calls
-    # _connect_client(client) without a timeout kwarg to use default behavior.
-    assert "timeout" not in client_manager._connect_client.call_args_list[2].kwargs
+    assert (
+        client_manager._connect_client.call_args_list[2].kwargs["timeout"]
+        == expected_timeout
+    )
     assert client_manager._safe_close_client.call_count == 2
     orchestrator._finalize_connection.assert_called_once_with(
         discovered_client,

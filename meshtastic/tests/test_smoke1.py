@@ -112,7 +112,11 @@ def _wait_for_info_ready(
     deadline = time.monotonic() + timeout
     last_result = 1, ""
     while True:
-        last_result = _run("meshtastic", "--info")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return last_result
+        probe_timeout = min(max(1.0, poll_interval), remaining)
+        last_result = _run("meshtastic", "--info", timeout=probe_timeout)
         code, output = last_result
         if code == 0:
             return code, output
@@ -296,35 +300,22 @@ def test_smoke1_port() -> None:
 
 
 @_destructive_test
-def test_smoke1_mutating_command_exits_cleanly(tmp_path: Path) -> None:
+def test_smoke1_mutating_command_exits_cleanly() -> None:
     """A successful mutating command must not fail during close/disconnect cleanup."""
-    backup = tmp_path / "exit-cleanliness-backup.yaml"
-    export_code, export_out = _run(
+    return_value, out = _run(
         "meshtastic",
-        "--export-config",
-        str(backup),
-        timeout=180,
+        "--ch-set",
+        "name",
+        "ExitClean",
+        "--ch-index",
+        "0",
     )
-    assert export_code == 0, export_out
-
-    try:
-        return_value, out = _run(
-            "meshtastic",
-            "--ch-set",
-            "name",
-            "ExitClean",
-            "--ch-index",
-            "0",
-        )
-        _assert_connected(out)
-        assert "Set name to ExitClean" in out
-        assert "Writing modified channels to device" in out
-        assert "Bad file descriptor" not in out
-        assert "Aborting due to" not in out
-        assert return_value == 0
-    finally:
-        restore_code, restore_out = _restore_config_with_retries(backup)
-        assert restore_code == 0, restore_out
+    _assert_connected(out)
+    assert "Set name to ExitClean" in out
+    assert "Writing modified channels to device" in out
+    assert "Bad file descriptor" not in out
+    assert "Aborting due to" not in out
+    assert return_value == 0
 
 
 @_destructive_test

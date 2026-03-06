@@ -340,7 +340,7 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
 def mock_bleak_exc(
     monkeypatch: pytest.MonkeyPatch, mock_bleak: types.ModuleType
 ) -> types.ModuleType:  # pylint: disable=redefined-outer-name
-    """Create and register a minimal `bleak.exc` submodule exposing `BleakError` and `BleakDBusError`.
+    """Create and register a minimal `bleak.exc` submodule exposing BLE error types.
 
     The created module is attached to the provided `mock_bleak` as its `exc` attribute and inserted into `sys.modules` under the name `"bleak.exc"`.
 
@@ -356,9 +356,13 @@ def mock_bleak_exc(
     class _StubBleakDBusError(_StubBleakError):
         """Stub BleakDBusError type for tests."""
 
+    class _StubBleakDeviceNotFoundError(_StubBleakError):
+        """Stub BleakDeviceNotFoundError type for tests."""
+
     bleak_exc_module_any = cast(Any, bleak_exc_module)
     bleak_exc_module_any.BleakError = _StubBleakError
     bleak_exc_module_any.BleakDBusError = _StubBleakDBusError
+    bleak_exc_module_any.BleakDeviceNotFoundError = _StubBleakDeviceNotFoundError
 
     # Attach to parent module
     cast(Any, mock_bleak).exc = bleak_exc_module

@@ -594,6 +594,23 @@ def test_ble_interface_management_rejects_blank_explicit_target(
     iface.close()
 
 
+def test_ble_interface_trust_rejects_blank_explicit_target_before_environment_checks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """trust() should reject blank targets before platform or tool validation."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "darwin")
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.shutil.which",
+        lambda _name: None,
+    )
+
+    with pytest.raises(BLEInterface.BLEError, match=ERROR_MANAGEMENT_ADDRESS_EMPTY):
+        iface.trust("   ")
+
+    iface.close()
+
+
 @pytest.mark.parametrize("method_name", ["pair", "unpair", "trust"])
 def test_ble_interface_management_requires_target_when_disconnected(
     monkeypatch: pytest.MonkeyPatch,
@@ -943,9 +960,11 @@ def test_ble_interface_close_serializes_with_management_lock(
     """close() should not mark the interface closed while a management op holds the lock."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     close_done = threading.Event()
+    close_started = threading.Event()
 
     def _close_iface() -> None:
         try:
+            close_started.set()
             iface.close()
         finally:
             close_done.set()
@@ -953,13 +972,97 @@ def test_ble_interface_close_serializes_with_management_lock(
     with iface._management_lock:
         close_thread = threading.Thread(target=_close_iface, daemon=True)
         close_thread.start()
-        time.sleep(0.1)
+        assert close_started.wait(timeout=1.0)
         with iface._state_lock:
             assert iface._closed is False
         assert close_done.is_set() is False
 
     close_thread.join(timeout=2.0)
     assert close_done.is_set() is True
+
+
+def test_ble_interface_close_does_not_wait_for_connect_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """close() should still start shutdown while the connect lock is held."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    close_done = threading.Event()
+
+    def _close_iface() -> None:
+        try:
+            iface.close()
+        finally:
+            close_done.set()
+
+    with iface._connect_lock:
+        close_thread = threading.Thread(target=_close_iface, daemon=True)
+        close_thread.start()
+        assert close_done.wait(timeout=1.0)
+        with iface._state_lock:
+            assert iface._closed is True
+
+    close_thread.join(timeout=2.0)
+    assert close_done.is_set() is True
+
+
+def test_ble_interface_pair_waits_for_connect_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """pair() should serialize behind the interface connect lock."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    with iface._state_lock:
+        iface.client = None
+        iface._state_manager._reset_to_disconnected()
+    monkeypatch.setattr(
+        iface,
+        "findDevice",
+        lambda _address: _create_ble_device("AA:BB:CC:DD:EE:FF", "Meshtastic"),
+    )
+
+    pair_calls: list[dict[str, object]] = []
+    close_calls: list[object] = []
+    pair_finished = threading.Event()
+    pair_thread_started = threading.Event()
+
+    def _pair(**kwargs: object) -> None:
+        pair_calls.append(dict(kwargs))
+        pair_finished.set()
+
+    temp_client = SimpleNamespace(
+        pair=_pair,
+        bleak_client=SimpleNamespace(address="AA:BB:CC:DD:EE:FF"),
+    )
+
+    def _temp_client_factory(_address: str, **_kwargs: object) -> SimpleNamespace:
+        return temp_client
+
+    def _run_pair() -> None:
+        pair_thread_started.set()
+        iface.pair("mesh-node", confirm=True)
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.BLEClient",
+        _temp_client_factory,
+    )
+    monkeypatch.setattr(
+        iface._client_manager,
+        "_safe_close_client",
+        lambda client: close_calls.append(client),
+    )
+
+    with iface._connect_lock:
+        pair_thread = threading.Thread(target=_run_pair, daemon=True)
+        pair_thread.start()
+        assert pair_thread_started.wait(timeout=1.0)
+        time.sleep(0.1)
+        assert pair_calls == []
+        assert pair_finished.is_set() is False
+
+    pair_thread.join(timeout=2.0)
+    assert pair_calls == [{"confirm": True}]
+    assert close_calls == [temp_client]
+    assert pair_finished.is_set() is True
+    iface.close()
 
 
 def test_ble_interface_close_logs_when_shutdown_already_in_progress(

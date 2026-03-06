@@ -166,6 +166,7 @@ class ClientManager:
         disconnect_callback: Callable[["BleakRootClient"], None],
         *,
         pair_on_connect: bool = False,
+        connect_timeout: float | None = None,
     ) -> BLEClient:
         """Create a BLEClient bound to the given device address and register a disconnect callback.
 
@@ -178,6 +179,9 @@ class ClientManager:
         pair_on_connect : bool
             If True, initialize the underlying Bleak client with pairing enabled so
             connect attempts request pairing as part of connection setup. (Default value = False)
+        connect_timeout : float | None
+            Timeout in seconds forwarded to the underlying Bleak client
+            constructor. If None, BLEConfig.CONNECTION_TIMEOUT is used.
 
         Returns
         -------
@@ -187,6 +191,11 @@ class ClientManager:
         return BLEClient(
             device_address,
             disconnected_callback=disconnect_callback,
+            timeout=(
+                connect_timeout
+                if connect_timeout is not None
+                else BLEConfig.CONNECTION_TIMEOUT
+            ),
             pair=pair_on_connect,
         )
 
@@ -535,14 +544,15 @@ class ConnectionOrchestrator:
             # Only attempt direct connect if we have a target address
             # Discovery mode (target_address=None) skips directly to find_device
             if target_address:
+                direct_timeout = self._get_connect_timeout(pair_on_connect)
                 self._raise_if_interface_closing()
                 client = self.client_manager._create_client(
                     target_address,
                     on_disconnect_func,
                     pair_on_connect=pair_on_connect,
+                    connect_timeout=direct_timeout,
                 )
                 try:
-                    direct_timeout = self._get_connect_timeout(pair_on_connect)
                     self._raise_if_interface_closing()
                     self.client_manager._connect_client(client, timeout=direct_timeout)
                 except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
@@ -594,6 +604,11 @@ class ConnectionOrchestrator:
                 resolved_address,
                 on_disconnect_func,
                 pair_on_connect=pair_on_connect,
+                connect_timeout=(
+                    fallback_timeout
+                    if fallback_timeout is not None
+                    else self._get_connect_timeout(pair_on_connect)
+                ),
             )
             try:
                 self.client_manager._connect_client(client, timeout=fallback_timeout)
@@ -624,8 +639,11 @@ class ConnectionOrchestrator:
                     resolved_address,
                     on_disconnect_func,
                     pair_on_connect=pair_on_connect,
+                    connect_timeout=self._get_connect_timeout(pair_on_connect),
                 )
-                self.client_manager._connect_client(client)
+                self.client_manager._connect_client(
+                    client, timeout=self._get_connect_timeout(pair_on_connect)
+                )
 
             self._raise_if_interface_closing()
             self._finalize_connection(

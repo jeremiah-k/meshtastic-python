@@ -1381,7 +1381,10 @@ class BLEInterface(MeshInterface):
         T
             Command return value.
         """
-        with self._management_lock:
+        # Serialize management operations with connect()/reconnect on this
+        # interface so pairing/unpairing cannot race client establishment or
+        # replacement after the initial precondition check.
+        with self._connect_lock, self._management_lock:
             if address is not None and not address.strip():
                 raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
 
@@ -1460,7 +1463,9 @@ class BLEInterface(MeshInterface):
         - This helper is Linux-only and requires `bluetoothctl` on PATH.
         - Pairing PIN/passkey handling remains OS-agent managed.
         """
-        with self._management_lock:
+        with self._connect_lock, self._management_lock:
+            if address is not None and not address.strip():
+                raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
             self._validate_management_preconditions()
             if timeout <= 0:
                 raise self.BLEError(ERROR_TRUST_INVALID_TIMEOUT)
@@ -2273,6 +2278,10 @@ class BLEInterface(MeshInterface):
 
         This method performs an idempotent, orderly shutdown: it stops background threads and reconnection activity, disconnects and closes any active BLE client, unsubscribes and cleans up notification and discovery managers, unregisters the atexit handler, publishes a final disconnected indication, and waits briefly for pending disconnect-related notifications to flush.
         """
+        # Deliberately do not take _connect_lock here. close() must be able to
+        # mark shutdown immediately so any in-flight connect/pair timeout path
+        # can observe _closed/_is_closing and abort, rather than forcing close()
+        # to wait behind a long BLE connect attempt.
         with self._management_lock:
             # Use unified state lock
             with self._state_lock:
