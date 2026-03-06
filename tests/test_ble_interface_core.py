@@ -1023,11 +1023,12 @@ def test_ble_interface_trust_rejects_closing_interface(
 def test_ble_interface_trust_does_not_hold_interface_locks_during_subprocess(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """trust() should allow close() to proceed while bluetoothctl is running."""
+    """trust() should let close() mark shutdown before bluetoothctl returns."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     run_started = threading.Event()
     allow_run_return = threading.Event()
     close_done = threading.Event()
+    close_started = threading.Event()
     trust_errors: list[BaseException] = []
 
     def _blocking_run(*_args: object, **_kwargs: object) -> SimpleNamespace:
@@ -1045,6 +1046,7 @@ def test_ble_interface_trust_does_not_hold_interface_locks_during_subprocess(
 
     def _close_iface() -> None:
         try:
+            close_started.set()
             iface.close()
         finally:
             close_done.set()
@@ -1055,7 +1057,10 @@ def test_ble_interface_trust_does_not_hold_interface_locks_during_subprocess(
 
     close_thread = threading.Thread(target=_close_iface, daemon=True)
     close_thread.start()
-    assert close_done.wait(timeout=1.0)
+    assert close_started.wait(timeout=1.0)
+    with iface._state_lock:
+        assert iface._closed is True
+    assert close_done.is_set() is False
 
     allow_run_return.set()
     trust_thread.join(timeout=2.0)

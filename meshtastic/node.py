@@ -64,6 +64,9 @@ MAX_RINGTONE_LENGTH = 230
 MAX_CANNED_MESSAGE_LENGTH = 200
 # Maximum number of channels a node can hold.
 MAX_CHANNELS = 8
+# Protobuf factory-reset fields are integer-typed; use the explicit sentinel
+# value instead of boolean assignment to avoid firmware-side coercion issues.
+FACTORY_RESET_REQUEST_VALUE = 1
 # Extra wait used only when getMetadata() runs under redirected stdout for
 # historical callers that parse printed metadata lines.
 METADATA_STDOUT_COMPAT_WAIT_SECONDS = 1.0
@@ -1752,14 +1755,10 @@ class Node:
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
         if full:
-            # These protobuf fields are integer-typed; explicit integer values
-            # avoid firmware-side coercion issues seen with boolean assignment.
-            p.factory_reset_device = 1
+            p.factory_reset_device = FACTORY_RESET_REQUEST_VALUE
             logger.info("Telling node to factory reset (full device reset)")
         else:
-            # These protobuf fields are integer-typed; explicit integer values
-            # avoid firmware-side coercion issues seen with boolean assignment.
-            p.factory_reset_config = 1
+            p.factory_reset_config = FACTORY_RESET_REQUEST_VALUE
             logger.info("Telling node to factory reset (config reset)")
 
         # If sending to a remote node, wait for ACK/NAK

@@ -1409,6 +1409,37 @@ class BLEInterface(MeshInterface):
         normalized_request = sanitize_address(requested_identifier)
         return self._get_existing_client_if_valid(normalized_request)
 
+    def _get_management_client_for_target(
+        self,
+        target_address: str,
+        *,
+        prefer_current_client: bool,
+    ) -> BLEClient | None:
+        """Return a reusable management client only when it matches the target address.
+
+        Parameters
+        ----------
+        target_address : str
+            Concrete BLE target address chosen for the management operation.
+        prefer_current_client : bool
+            When True, consider the interface's current connected client before
+            checking the process-wide client registry.
+
+        Returns
+        -------
+        BLEClient | None
+            Matching active or reusable client for `target_address`, or None if
+            a temporary client should be created instead.
+        """
+        normalized_target = sanitize_address(target_address)
+        with self._state_lock:
+            current_client = self.client if prefer_current_client else None
+        if current_client is not None and current_client.isConnected():
+            current_address = self._extract_client_address(current_client)
+            if sanitize_address(current_address) == normalized_target:
+                return current_client
+        return self._get_existing_client_if_valid(normalized_target)
+
     def _execute_management_command(
         self,
         address: str | None,
@@ -1437,20 +1468,33 @@ class BLEInterface(MeshInterface):
 
             existing_client = self._get_management_client_if_available(address)
             if existing_client is not None:
-                return command(existing_client)
-
-            target_address = self._resolve_target_address_for_management(address)
+                target_address = self._extract_client_address(existing_client)
+                if target_address is None:
+                    target_address = self._resolve_target_address_for_management(
+                        address
+                    )
+            else:
+                target_address = self._resolve_target_address_for_management(address)
         with self._management_target_gate(target_address):
             with self._connect_lock, self._management_lock:
                 self._validate_management_preconditions()
-                existing_client = self._get_management_client_if_available(address)
+                existing_client = self._get_management_client_for_target(
+                    target_address,
+                    prefer_current_client=address is None,
+                )
                 if existing_client is not None:
-                    return command(existing_client)
+                    client_to_use = existing_client
+                    temporary_client = None
+                else:
+                    temporary_client = BLEClient(
+                        target_address, log_if_no_address=False
+                    )
+                    client_to_use = temporary_client
 
-                temporary_client = BLEClient(target_address, log_if_no_address=False)
-                try:
-                    return command(temporary_client)
-                finally:
+            try:
+                return command(client_to_use)
+            finally:
+                if temporary_client is not None:
                     self._client_manager._safe_close_client(temporary_client)
 
     def pair(
@@ -2443,13 +2487,20 @@ class BLEInterface(MeshInterface):
                 # Only close if it's still the current client
                 if client is not None:
                     self.client = None
+            client_address = self._extract_client_address(client)
             # Only close the client if we were the one who replaced it
             # If it was replaced by a reconnection, the new connection path will clean it up
             if client is not None:
-                self._notification_manager._unsubscribe_all(
-                    client, timeout=NOTIFICATION_START_TIMEOUT
+                gate_context = (
+                    self._management_target_gate(client_address)
+                    if client_address is not None
+                    else contextlib.nullcontext()
                 )
-                self._disconnect_and_close_client(client)
+                with gate_context:
+                    self._notification_manager._unsubscribe_all(
+                        client, timeout=NOTIFICATION_START_TIMEOUT
+                    )
+                    self._disconnect_and_close_client(client)
             self._notification_manager._cleanup_all()
 
             # Use unified state lock

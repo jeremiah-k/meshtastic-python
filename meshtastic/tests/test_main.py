@@ -2016,6 +2016,41 @@ def test_main_configure_applies_mixed_case_and_security_encodings(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_applies_power_snake_case_keys(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test --configure applies canonical snake_case power keys directly."""
+    config_path = tmp_path / "power-snake-case.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "config": {
+                    "power": {
+                        "ls_secs": 222,
+                        "wait_bluetooth_secs": 77,
+                        "min_wake_secs": 11,
+                        "sds_secs": 555,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    target_local = localonly_pb2.LocalConfig()
+    iface, _ = _build_configure_interface(
+        target_local, localonly_pb2.LocalModuleConfig()
+    )
+    _run_main_configure_file(config_path, iface, monkeypatch)
+
+    assert target_local.power.ls_secs == 222
+    assert target_local.power.wait_bluetooth_secs == 77
+    assert target_local.power.min_wake_secs == 11
+    assert target_local.power.sds_secs == 555
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 @pytest.mark.parametrize(
     "alias_key",
     ["use_12_hour", "use12Hour", "use12hClock", "use12HClock"],

@@ -15,6 +15,7 @@ from uuid import UUID
 
 from bleak import BleakClient as BleakRootClient
 from bleak import BleakScanner
+from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
 
 from meshtastic.interfaces.ble.constants import (
@@ -126,7 +127,7 @@ class BLEClient:
 
     def __init__(
         self,
-        address: str | None = None,
+        address: BLEDevice | str | None = None,
         *,
         log_if_no_address: bool = True,
         **kwargs: Any,
@@ -135,8 +136,10 @@ class BLEClient:
 
         Parameters
         ----------
-        address : str | None
-            BLE device address to attach a Bleak client to. If None, the instance is created in discovery-only mode and no Bleak client is instantiated. (Default value = None)
+        address : BLEDevice | str | None
+            BLE device object or address to attach a Bleak client to. If None,
+            the instance is created in discovery-only mode and no Bleak client
+            is instantiated. (Default value = None)
         log_if_no_address : bool
             If True and `address` is None, emit a debug message indicating discovery-only mode. (Default value = True)
         **kwargs : Any
@@ -146,7 +149,7 @@ class BLEClient:
         self.error_handler = BLEErrorHandler()
 
         self.bleak_client: BleakRootClient | None = None
-        self.address = address
+        self.address = address.address if isinstance(address, BLEDevice) else address
         self._closed = False
         self._pending_futures: weakref.WeakSet[Future[Any]] = weakref.WeakSet()
         self._pending_futures_lock = RLock()

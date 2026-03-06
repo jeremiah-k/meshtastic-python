@@ -184,6 +184,55 @@ def test_client_manager_create_client_forwards_pair_flag(
 
 
 @pytest.mark.unit
+def test_client_manager_create_client_preserves_discovered_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_create_client should forward discovered BLEDevice objects unchanged."""
+    manager = ClientManager(
+        state_manager=BLEStateManager(),
+        state_lock=RLock(),
+        thread_coordinator=MagicMock(),
+        error_handler=MagicMock(),
+    )
+    discovered_device = SimpleNamespace(address="AA:BB:CC:DD:EE:FF", name="Mesh")
+    captured: dict[str, object] = {}
+
+    def _fake_ble_client(
+        address: object,
+        *,
+        disconnected_callback: object,
+        timeout: float,
+        pair: bool,
+    ) -> SimpleNamespace:
+        captured["address"] = address
+        captured["disconnected_callback"] = disconnected_callback
+        captured["timeout"] = timeout
+        captured["pair"] = pair
+        return SimpleNamespace(address=getattr(address, "address", address))
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.connection.BLEClient",
+        _fake_ble_client,
+    )
+
+    def disconnect_callback(_client: object) -> None:
+        return None
+
+    client = manager._create_client(
+        discovered_device,
+        disconnect_callback,
+        pair_on_connect=False,
+        connect_timeout=12.0,
+    )
+
+    assert client.address == "AA:BB:CC:DD:EE:FF"
+    assert captured["address"] is discovered_device
+    assert captured["disconnected_callback"] is disconnect_callback
+    assert captured["timeout"] == 12.0
+    assert captured["pair"] is False
+
+
+@pytest.mark.unit
 def test_direct_connect_timeout_is_reasonable() -> None:
     """DIRECT_CONNECT_TIMEOUT_SECONDS should be shorter than CONNECTION_TIMEOUT."""
     assert DIRECT_CONNECT_TIMEOUT_SECONDS < BLEConfig.CONNECTION_TIMEOUT
@@ -380,7 +429,8 @@ def test_connection_orchestrator_aborts_fallback_when_interface_closing() -> Non
     interface = MagicMock()
     interface.BLEError = MockBLEError
     interface._closed = False
-    interface.findDevice.return_value = SimpleNamespace(address="AA:BB:CC:DD:EE:FF")
+    discovered_device = SimpleNamespace(address="AA:BB:CC:DD:EE:FF")
+    interface.findDevice.return_value = discovered_device
 
     connect_attempts = 0
 
@@ -716,7 +766,8 @@ def test_connection_orchestrator_preserves_pair_on_connect_across_scan_fallback(
     interface = MagicMock()
     interface.BLEError = MockBLEError
     interface._closed = False
-    interface.findDevice.return_value = SimpleNamespace(address="AA:BB:CC:DD:EE:FF")
+    discovered_device = SimpleNamespace(address="AA:BB:CC:DD:EE:FF")
+    interface.findDevice.return_value = discovered_device
 
     orchestrator = ConnectionOrchestrator(
         interface=interface,
@@ -752,6 +803,7 @@ def test_connection_orchestrator_preserves_pair_on_connect_across_scan_fallback(
         BLEConfig.CONNECTION_TIMEOUT,
         BLEConfig.CONNECTION_TIMEOUT,
     ]
+    assert client_manager._create_client.call_args_list[2].args[0] is discovered_device
     assert [
         call.kwargs["timeout"] for call in client_manager._connect_client.call_args_list
     ] == [
@@ -776,7 +828,8 @@ def test_connection_orchestrator_uses_shorter_timeout_for_non_pairing_fallback()
     interface = MagicMock()
     interface.BLEError = MockBLEError
     interface._closed = False
-    interface.findDevice.return_value = SimpleNamespace(address="AA:BB:CC:DD:EE:FF")
+    discovered_device = SimpleNamespace(address="AA:BB:CC:DD:EE:FF")
+    interface.findDevice.return_value = discovered_device
 
     orchestrator = ConnectionOrchestrator(
         interface=interface,
@@ -803,6 +856,7 @@ def test_connection_orchestrator_uses_shorter_timeout_for_non_pairing_fallback()
         DIRECT_CONNECT_TIMEOUT_SECONDS,
         BLEConfig.CONNECTION_TIMEOUT,
     )
+    assert client_manager._create_client.call_args.args[0] is discovered_device
     assert client_manager._create_client.call_args.kwargs["connect_timeout"] == (
         expected_timeout
     )
@@ -892,7 +946,8 @@ def test_connection_orchestrator_uses_discovery_for_non_address_identifier_after
     interface = MagicMock()
     interface.BLEError = MockBLEError
     interface._closed = False
-    interface.findDevice.return_value = SimpleNamespace(address="11:22:33:44:55:66")
+    discovered_device = SimpleNamespace(address="11:22:33:44:55:66")
+    interface.findDevice.return_value = discovered_device
 
     orchestrator = ConnectionOrchestrator(
         interface=interface,
@@ -925,6 +980,7 @@ def test_connection_orchestrator_uses_discovery_for_non_address_identifier_after
         client_manager._connect_client.call_args_list[1].kwargs["timeout"]
         == expected_timeout
     )
+    assert client_manager._create_client.call_args_list[1].args[0] is discovered_device
     orchestrator._finalize_connection.assert_called_once_with(
         discovered_client,
         "11:22:33:44:55:66",
@@ -959,7 +1015,8 @@ def test_connection_orchestrator_falls_back_to_scan_when_direct_retry_still_devi
     interface = MagicMock()
     interface.BLEError = MockBLEError
     interface._closed = False
-    interface.findDevice.return_value = SimpleNamespace(address="AA:BB:CC:DD:EE:FF")
+    discovered_device = SimpleNamespace(address="AA:BB:CC:DD:EE:FF")
+    interface.findDevice.return_value = discovered_device
 
     orchestrator = ConnectionOrchestrator(
         interface=interface,
@@ -996,6 +1053,7 @@ def test_connection_orchestrator_falls_back_to_scan_when_direct_retry_still_devi
         client_manager._connect_client.call_args_list[2].kwargs["timeout"]
         == expected_timeout
     )
+    assert client_manager._create_client.call_args_list[2].args[0] is discovered_device
     assert client_manager._safe_close_client.call_count == 2
     orchestrator._finalize_connection.assert_called_once_with(
         discovered_client,

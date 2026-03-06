@@ -187,7 +187,7 @@ def restore_smoke1_module_config() -> Iterator[None]:
         _assert_connected(ready_output)
         restore_succeeded = True
     finally:
-        if not export_succeeded or restore_succeeded:
+        if not (export_succeeded and not restore_succeeded):
             with contextlib.suppress(FileNotFoundError):
                 backup_path.unlink()
 

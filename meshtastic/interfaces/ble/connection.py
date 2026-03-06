@@ -5,6 +5,7 @@ import sys
 from threading import Event, RLock
 from typing import TYPE_CHECKING, Callable
 
+from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
 from meshtastic.interfaces.ble.client import BLEClient
@@ -162,18 +163,18 @@ class ClientManager:
 
     def _create_client(
         self,
-        device_address: str,
+        device: BLEDevice | str,
         disconnect_callback: Callable[["BleakRootClient"], None],
         *,
         pair_on_connect: bool = False,
         connect_timeout: float | None = None,
     ) -> BLEClient:
-        """Create a BLEClient bound to the given device address and register a disconnect callback.
+        """Create a BLEClient bound to the given device target and register a disconnect callback.
 
         Parameters
         ----------
-        device_address : str
-            Target BLE device address to bind the client to.
+        device : BLEDevice | str
+            Target BLE device object or address to bind the client to.
         disconnect_callback : 'Callable'
             Callable invoked when the client disconnects.
         pair_on_connect : bool
@@ -186,10 +187,10 @@ class ClientManager:
         Returns
         -------
         'BLEClient'
-            A BLEClient instance bound to device_address with the disconnect callback configured.
+            A BLEClient instance bound to `device` with the disconnect callback configured.
         """
         return BLEClient(
-            device_address,
+            device,
             disconnected_callback=disconnect_callback,
             timeout=(
                 connect_timeout
@@ -595,6 +596,7 @@ class ConnectionOrchestrator:
             fallback_timeout: float | None = None
             if skip_discovery_scan and target_address is not None:
                 resolved_address = target_address
+                connection_target: BLEDevice | str = target_address
                 fallback_timeout = self._get_connect_timeout(
                     pair_on_connect=pair_on_connect
                 )
@@ -602,6 +604,7 @@ class ConnectionOrchestrator:
                 self._raise_if_interface_closing()
                 device = self.interface.findDevice(target_address)
                 resolved_address = device.address
+                connection_target = device
 
             self._raise_if_interface_closing()
             connect_timeout = (
@@ -610,7 +613,7 @@ class ConnectionOrchestrator:
                 else self._get_connect_timeout(pair_on_connect=pair_on_connect)
             )
             client = self.client_manager._create_client(
-                resolved_address,
+                connection_target,
                 on_disconnect_func,
                 pair_on_connect=pair_on_connect,
                 connect_timeout=connect_timeout,
@@ -644,7 +647,7 @@ class ConnectionOrchestrator:
                     pair_on_connect=pair_on_connect
                 )
                 client = self.client_manager._create_client(
-                    resolved_address,
+                    device,
                     on_disconnect_func,
                     pair_on_connect=pair_on_connect,
                     connect_timeout=discovery_timeout,

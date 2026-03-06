@@ -56,13 +56,17 @@ recommended patterns for code that embeds `meshtastic-python`.
 When code paths must hold multiple BLE locks, always acquire in this order to
 prevent deadlocks:
 
-1. Global registry lock (`_REGISTRY_LOCK` in
+1. Per-address lock (`_addr_lock_context` in
    [`meshtastic/interfaces/ble/gating.py`](meshtastic/interfaces/ble/gating.py))
-2. Per-address lock (`_addr_lock_context` in the same module)
+2. Global registry lock (`_REGISTRY_LOCK` in the same module) only for short,
+   non-blocking registry updates
 3. Interface connect lock (`_connect_lock`)
 4. Interface management lock (`_management_lock`)
 5. Interface state lock (`_state_lock`)
 6. Interface disconnect lock (`_disconnect_lock`)
+
+Do not hold `_REGISTRY_LOCK` while blocking on `_addr_lock_context(...)`; the
+gating utilities are written to avoid that inversion.
 
 **Exception:** `_handle_disconnect()` acquires `_disconnect_lock` _first_ in
 non-blocking mode. If another disconnect handler is already active, the method
