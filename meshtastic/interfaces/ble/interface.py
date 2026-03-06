@@ -1341,8 +1341,6 @@ class BLEInterface(MeshInterface):
         existing_client_address = self._extract_client_address(existing_client)
         if existing_client_address:
             return existing_client_address
-        if requested_identifier is None:
-            raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_REQUIRED)
         if requested_identifier and _looks_like_ble_address(requested_identifier):
             return requested_identifier
         return self.findDevice(requested_identifier).address
@@ -1377,6 +1375,9 @@ class BLEInterface(MeshInterface):
         T
             Command return value.
         """
+        if address is not None and not address.strip():
+            raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
+
         if address is None:
             with self._state_lock:
                 current_client = self.client

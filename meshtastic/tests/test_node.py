@@ -364,6 +364,7 @@ def test_factoryReset_config_reset_uses_int_field_and_local_no_callback(
     sent_msg = cast(admin_pb2.AdminMessage, captured["msg"])
     assert sent_msg.factory_reset_config == 1
     assert sent_msg.factory_reset_device == 0
+    assert captured["wantResponse"] is False
     assert captured["onResponse"] is None
 
 
@@ -389,6 +390,7 @@ def test_factoryReset_full_device_uses_int_field_and_remote_ack_callback(
     sent_msg = cast(admin_pb2.AdminMessage, captured["msg"])
     assert sent_msg.factory_reset_device == 1
     assert sent_msg.factory_reset_config == 0
+    assert captured["wantResponse"] is False
     response_handler = cast(Callable[[dict[str, Any]], Any], captured["onResponse"])
     assert getattr(response_handler, "__self__", None) is anode
     assert getattr(response_handler, "__func__", None) is Node.onAckNak

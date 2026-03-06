@@ -979,14 +979,21 @@ def test_connect_finalizes_gates_after_address_lock_scope(
     monkeypatch.setattr(
         iface, "_get_existing_client_if_valid", lambda _request: None, raising=True
     )
+
+    def _establish_stub(
+        _address: str | None,
+        _normalized_request: str | None,
+        _address_key: str | None,
+        *,
+        pair_on_connect: bool = False,
+    ) -> tuple[DummyClient, str | None, str | None]:
+        _ = pair_on_connect
+        return connected_client, "device-key", None
+
     monkeypatch.setattr(
         iface,
         "_establish_and_update_client",
-        lambda _address, _normalized_request, _address_key, **_kwargs: (
-            connected_client,
-            "device-key",
-            None,
-        ),
+        _establish_stub,
         raising=True,
     )
     monkeypatch.setattr(

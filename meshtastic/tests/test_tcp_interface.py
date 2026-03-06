@@ -282,6 +282,7 @@ def test_TCPInterface_read_error_triggers_reconnect_cleanup(
 
             assert data == b""
             reconnect_mock.assert_called_once_with()
+            mock_socket.close.assert_called_once()
             assert iface.socket is None
         finally:
             iface.close()

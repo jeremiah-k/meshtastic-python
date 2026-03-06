@@ -392,13 +392,21 @@ def test_close_waits_for_inflight_heartbeat_send(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@pytest.mark.parametrize(
+    "disconnect_error",
+    [
+        OSError("bad fd"),
+        MeshInterface.MeshInterfaceError("ble write failed"),
+    ],
+)
 def test_close_suppresses_disconnect_send_failures(
     caplog: pytest.LogCaptureFixture,
+    disconnect_error: BaseException,
 ) -> None:
     """close() should continue cleanup if sending disconnect fails."""
     with MeshInterface(noProto=True) as iface:
         with (
-            patch.object(iface, "_send_disconnect", side_effect=OSError("bad fd")),
+            patch.object(iface, "_send_disconnect", side_effect=disconnect_error),
             caplog.at_level(logging.DEBUG),
         ):
             iface.close()

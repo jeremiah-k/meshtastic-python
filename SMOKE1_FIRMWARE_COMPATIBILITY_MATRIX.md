@@ -8,7 +8,7 @@ triage against firmware changes.
 
 ## Baseline
 
-- Python CLI: current `develop` branch
+- Python CLI: `maint-35-1` (validated commit `68c95c9`)
 - Firmware family: `2.7.x` (validated during this refactor cycle on `2.7.15`)
 - Transport: single-node USB serial (`/dev/ttyACM*`)
 

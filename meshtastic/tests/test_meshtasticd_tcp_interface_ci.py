@@ -119,6 +119,7 @@ def test_parse_host_and_port_rejects_zero_port() -> None:
         _parse_host_and_port("localhost:0")
 
 
+@pytest.mark.unit
 def test_parse_host_and_port_accepts_bracketed_ipv6_with_port() -> None:
     """_parse_host_and_port should accept bracketed IPv6 addresses with ports."""
     assert _parse_host_and_port("[::1]:4401") == ("::1", 4401)
