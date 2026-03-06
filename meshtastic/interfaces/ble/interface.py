@@ -26,6 +26,8 @@ Threading model summary
 
 import atexit
 import contextlib
+import math
+import numbers
 import shutil
 import struct
 import subprocess
@@ -65,6 +67,7 @@ from meshtastic.interfaces.ble.constants import (
     ERROR_INTERFACE_CLOSING,
     ERROR_MANAGEMENT_ADDRESS_EMPTY,
     ERROR_MANAGEMENT_ADDRESS_REQUIRED,
+    ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID,
     ERROR_MANAGEMENT_CONNECTING,
     ERROR_MANAGEMENT_TARGET_CHANGED,
     ERROR_MULTIPLE_DEVICES,
@@ -1540,6 +1543,18 @@ class BLEInterface(MeshInterface):
                     if temporary_client is not None:
                         self._client_manager._safe_close_client(temporary_client)
 
+    def _validate_management_await_timeout(self, await_timeout: float | None) -> float:
+        """Return a validated bounded await timeout for interface management ops."""
+        if (
+            await_timeout is None
+            or isinstance(await_timeout, bool)
+            or not isinstance(await_timeout, numbers.Real)
+            or not math.isfinite(await_timeout)
+            or await_timeout <= 0
+        ):
+            raise self.BLEError(ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID)
+        return float(await_timeout)
+
     def pair(
         self,
         address: str | None = None,
@@ -1557,9 +1572,10 @@ class BLEInterface(MeshInterface):
             interface's bound target. Raises if no active or bound target is
             available.
         await_timeout : float | None
-            Maximum seconds to wait for the pairing coroutine to complete;
-            `None` means wait indefinitely. Defaults to
-            `BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT`.
+            Maximum seconds to wait for the pairing coroutine to complete.
+            `BLEInterface` requires a finite positive timeout here so shutdown
+            cannot block indefinitely behind a management operation. Defaults
+            to `BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT`.
         **kwargs : object
             Backend-specific pairing options forwarded to `BLEClient.pair()`.
 
@@ -1568,9 +1584,10 @@ class BLEInterface(MeshInterface):
         None
             Pairing is performed for side effects and does not return a value.
         """
+        validated_timeout = self._validate_management_await_timeout(await_timeout)
         self._execute_management_command(
             address,
-            lambda client: client.pair(await_timeout=await_timeout, **kwargs),
+            lambda client: client.pair(await_timeout=validated_timeout, **kwargs),
         )
         return None
 
@@ -1590,18 +1607,20 @@ class BLEInterface(MeshInterface):
             interface's bound target. Raises if no active or bound target is
             available.
         await_timeout : float | None
-            Maximum seconds to wait for the unpair coroutine to complete;
-            `None` means wait indefinitely. Defaults to
-            `BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT`.
+            Maximum seconds to wait for the unpair coroutine to complete.
+            `BLEInterface` requires a finite positive timeout here so shutdown
+            cannot block indefinitely behind a management operation. Defaults
+            to `BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT`.
 
         Returns
         -------
         None
             Unpairing is performed for side effects and does not return a value.
         """
+        validated_timeout = self._validate_management_await_timeout(await_timeout)
         self._execute_management_command(
             address,
-            lambda client: client.unpair(await_timeout=await_timeout),
+            lambda client: client.unpair(await_timeout=validated_timeout),
         )
         return None
 
@@ -1886,7 +1905,10 @@ class BLEInterface(MeshInterface):
             address,
             self.address,
             self._register_notifications,
-            self._connected,
+            # Defer _connected() publication until this interface has committed
+            # ownership of the new client and the post-connect stale/closing
+            # checks have passed.
+            lambda: None,
             self._on_ble_disconnect,
             pair_on_connect=pair_on_connect,
             connect_timeout=connect_timeout,
@@ -2134,6 +2156,7 @@ class BLEInterface(MeshInterface):
             if is_closing:
                 raise self.BLEError(ERROR_INTERFACE_CLOSING)
             raise self.BLEError(CONNECTION_ERROR_LOST_OWNERSHIP)
+        self._connected()
         return connected_client
 
     def _handle_read_loop_disconnect(

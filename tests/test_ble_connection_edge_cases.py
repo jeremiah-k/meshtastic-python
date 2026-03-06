@@ -729,10 +729,10 @@ def test_connection_orchestrator_uses_explicit_connect_timeout_override() -> Non
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "invalid_timeout",
-    [0.0, -1.0, float("nan"), float("inf"), float("-inf")],
+    [0.0, -1.0, float("nan"), float("inf"), float("-inf"), True, "23.5"],
 )
 def test_connection_orchestrator_rejects_invalid_connect_timeout_override(
-    invalid_timeout: float,
+    invalid_timeout: object,
 ) -> None:
     """Explicit connect_timeout overrides should be finite positive values."""
     state_manager = BLEStateManager()
@@ -1031,7 +1031,7 @@ def test_connection_orchestrator_uses_discovery_for_non_address_identifier_after
     interface = MagicMock()
     interface.BLEError = MockBLEError
     interface._closed = False
-    discovered_device = SimpleNamespace(address="11:22:33:44:55:66")
+    discovered_device = BLEDevice("11:22:33:44:55:66", "Mesh", details=None)
     interface.findDevice.return_value = discovered_device
 
     orchestrator = ConnectionOrchestrator(

@@ -14,7 +14,11 @@ import threading
 import time
 from typing import IO, Any, Callable
 
-from meshtastic.stream_interface import WRITE_PROGRESS_TIMEOUT_SECONDS, StreamInterface
+from meshtastic.stream_interface import (
+    STREAM_IO_EXCEPTIONS,
+    WRITE_PROGRESS_TIMEOUT_SECONDS,
+    StreamInterface,
+)
 
 DEFAULT_TCP_PORT = 4403
 logger = logging.getLogger(__name__)
@@ -377,7 +381,7 @@ class TCPInterface(StreamInterface):
                     raise OSError(self.WRITE_NO_PROGRESS_ERROR)
                 total_sent += sent
                 write_deadline = time.monotonic() + WRITE_PROGRESS_TIMEOUT_SECONDS
-        except (OSError, ValueError, TypeError) as ex:
+        except STREAM_IO_EXCEPTIONS as ex:
             logger.warning(
                 "TCP write failed (%d bytes), resetting socket: %s", len(b), ex
             )

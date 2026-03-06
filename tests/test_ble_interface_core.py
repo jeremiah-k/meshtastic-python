@@ -7,6 +7,7 @@ import re
 import subprocess
 import threading
 import time
+from collections.abc import Iterator
 from queue import Queue
 from types import SimpleNamespace, TracebackType
 from typing import (
@@ -38,6 +39,7 @@ from meshtastic.interfaces.ble.constants import (
     CONNECTION_ERROR_LOST_OWNERSHIP,
     ERROR_INTERFACE_CLOSING,
     ERROR_MANAGEMENT_ADDRESS_EMPTY,
+    ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID,
     ERROR_MANAGEMENT_CONNECTING,
     ERROR_MANAGEMENT_TARGET_CHANGED,
     ERROR_TRUST_ADDRESS_NOT_RESOLVED,
@@ -687,7 +689,7 @@ def test_ble_interface_management_revalidates_implicit_target_after_gate_handoff
     replacement_client.unpair = _record_unpair
 
     @contextlib.contextmanager
-    def _swap_target_gate(_target_address: str):
+    def _swap_target_gate(_target_address: str) -> Iterator[None]:
         with iface._state_lock:
             iface.client = replacement_client
             iface.address = replacement_address
@@ -719,6 +721,31 @@ def test_ble_interface_management_rejects_blank_explicit_target(
     with pytest.raises(BLEInterface.BLEError, match=ERROR_MANAGEMENT_ADDRESS_EMPTY):
         getattr(iface, method_name)("   ")
 
+    iface.close()
+
+
+@pytest.mark.parametrize("method_name", ["pair", "unpair"])
+@pytest.mark.parametrize(
+    "invalid_timeout",
+    [None, 0.0, -1.0, float("nan"), float("inf"), cast(Any, True)],
+)
+def test_ble_interface_management_rejects_unbounded_or_invalid_await_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    method_name: str,
+    invalid_timeout: object,
+) -> None:
+    """pair()/unpair() should require a finite positive await_timeout."""
+    client = DummyClient()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+
+    with pytest.raises(
+        BLEInterface.BLEError,
+        match=re.escape(ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID),
+    ):
+        getattr(iface, method_name)(await_timeout=invalid_timeout)
+
+    assert client.pair_calls == 0
+    assert client.unpair_calls == 0
     iface.close()
 
 
@@ -755,7 +782,7 @@ def test_ble_interface_trust_revalidates_implicit_target_after_gate_handoff(
     replacement_client.bleak_client = SimpleNamespace(address=replacement_address)
 
     @contextlib.contextmanager
-    def _swap_target_gate(_target_address: str):
+    def _swap_target_gate(_target_address: str) -> Iterator[None]:
         with iface._state_lock:
             iface.client = replacement_client
             iface.address = replacement_address
@@ -1350,7 +1377,9 @@ def test_ble_interface_pair_waits_for_address_gate(
     observed_address_lock = _ObservedAddressLock()
 
     @contextlib.contextmanager
-    def _observed_addr_lock_context(_addr: str | None):
+    def _observed_addr_lock_context(
+        _addr: str | None,
+    ) -> Iterator[_ObservedAddressLock]:
         with observed_address_lock:
             yield observed_address_lock
 
@@ -1448,6 +1477,8 @@ def test_ble_interface_connect_uses_pair_override_for_orchestrator(
     monkeypatch.setattr(iface, "_get_existing_client_if_valid", lambda _req: None)
     monkeypatch.setattr(iface, "_raise_if_duplicate_connect", lambda _key: None)
     monkeypatch.setattr(iface, "_finalize_connection_gates", lambda *_args: None)
+    connected_callbacks: list[bool] = []
+    monkeypatch.setattr(iface, "_connected", lambda: connected_callbacks.append(True))
 
     captured_pair_flags: list[bool] = []
     captured_timeouts: list[float | None] = []
@@ -1481,6 +1512,7 @@ def test_ble_interface_connect_uses_pair_override_for_orchestrator(
 
     assert captured_pair_flags == [True, False, True]
     assert captured_timeouts == [4.5, None, None]
+    assert connected_callbacks == [True, True, True]
 
 
 def test_ble_interface_establish_and_update_client_discards_late_connection_result(
@@ -1820,8 +1852,9 @@ def test_connect_finalizes_gates_after_address_lock_scope(
             return False
 
     @contextlib.contextmanager
-    def _fake_addr_lock_context(_addr: str | None):
-        yield _FakeAddressLock()
+    def _fake_addr_lock_context(_addr: str | None) -> Iterator[_FakeAddressLock]:
+        with _FakeAddressLock() as lock:
+            yield lock
 
     connected_client = DummyClient()
     connected_client.address = target_address
@@ -1898,11 +1931,13 @@ def test_connect_raises_when_client_becomes_stale_after_gate_finalization(
     iface._connection_alias_key = None
     iface._ever_connected = False
     iface._read_retry_count = 0
+    connected_callbacks: list[bool] = []
     connected_client = DummyClient()
     connected_client.address = target_address
     connected_client.bleak_client = SimpleNamespace(address=target_address)
     finalized_clients: list[BLEClient] = []
 
+    monkeypatch.setattr(iface, "_connected", lambda: connected_callbacks.append(True))
     monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
     monkeypatch.setattr(
         iface, "_raise_if_duplicate_connect", lambda _connection_key: None, raising=True
@@ -1957,6 +1992,7 @@ def test_connect_raises_when_client_becomes_stale_after_gate_finalization(
         iface.connect(target_address)
 
     assert finalized_clients == [connected_client]
+    assert connected_callbacks == []
 
 
 def test_connect_raises_when_shutdown_wins_after_gate_finalization(
@@ -1978,11 +2014,13 @@ def test_connect_raises_when_shutdown_wins_after_gate_finalization(
     iface._connection_alias_key = None
     iface._ever_connected = False
     iface._read_retry_count = 0
+    connected_callbacks: list[bool] = []
     connected_client = DummyClient()
     connected_client.address = target_address
     connected_client.bleak_client = SimpleNamespace(address=target_address)
     finalized_clients: list[BLEClient] = []
 
+    monkeypatch.setattr(iface, "_connected", lambda: connected_callbacks.append(True))
     monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
     monkeypatch.setattr(
         iface, "_raise_if_duplicate_connect", lambda _connection_key: None, raising=True
@@ -2030,6 +2068,7 @@ def test_connect_raises_when_shutdown_wins_after_gate_finalization(
         iface.connect(target_address)
 
     assert finalized_clients == [connected_client]
+    assert connected_callbacks == []
 
 
 def test_transient_read_retry_uses_zero_based_delay(monkeypatch):

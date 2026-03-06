@@ -32,6 +32,15 @@ INFO_READY_POLL_INTERVAL_SECONDS = 2
 RESTORE_ATTEMPTS = 8
 RESTORE_RETRY_DELAY_SECONDS = 10
 DEFAULT_URL_FRAGMENT = "CgUYAyIBAQ"
+CHANNEL_PRESET_INFO_PATTERNS: dict[str, str] = {
+    "--ch-vlongslow": "VeryLongSlow",
+    "--ch-longslow": "LongSlow",
+    "--ch-longfast": "LongFast",
+    "--ch-medslow": "MedSlow",
+    "--ch-medfast": "MedFast",
+    "--ch-shortslow": "ShortSlow",
+    "--ch-shortfast": "ShortFast",
+}
 
 
 def _run(*argv: str, timeout: int | float = 120) -> tuple[int, str]:
@@ -50,7 +59,7 @@ def _destructive_test(func: Callable[..., object]) -> Callable[..., object]:
     return cast(
         Callable[..., object],
         pytest.mark.usefixtures("restore_smoke1_module_config")(
-            pytest.mark.smoke1_destructive(func)
+            pytest.mark.smoke1(pytest.mark.smoke1_destructive(func))
         ),
     )
 
@@ -436,24 +445,20 @@ def test_smoke1_ch_set_modem_config_reports_unsupported() -> None:
 
 @_destructive_test
 @pytest.mark.parametrize(
-    "preset_cmd",
-    [
-        "--ch-vlongslow",
-        "--ch-longslow",
-        "--ch-longfast",
-        "--ch-medslow",
-        "--ch-medfast",
-        "--ch-shortslow",
-        "--ch-shortfast",
-    ],
+    ("preset_cmd", "expected_preset"),
+    list(CHANNEL_PRESET_INFO_PATTERNS.items()),
 )
-def test_smoke1_ch_values(preset_cmd: str) -> None:
-    """Channel preset switches should apply without crashing."""
+def test_smoke1_ch_values(preset_cmd: str, expected_preset: str) -> None:
+    """Channel preset switches should apply and be reflected in `--info`."""
     return_value, out = _run("meshtastic", preset_cmd)
     _assert_connected(out)
     assert "Writing modified channels to device" in out
     assert return_value == 0
-    time.sleep(PAUSE_AFTER_REBOOT)
+
+    info_code, info_out = _wait_for_info_ready()
+    _assert_connected(info_out)
+    assert re.search(expected_preset, info_out, re.MULTILINE)
+    assert info_code == 0
 
 
 @_destructive_test
@@ -479,7 +484,7 @@ def test_smoke1_ch_set_name() -> None:
 
 @_destructive_test
 def test_smoke1_ch_set_downlink_and_uplink() -> None:
-    """`--ch-set downlink_enabled/uplink_enabled` should toggle without errors."""
+    """`--ch-set downlink_enabled/uplink_enabled` should toggle and persist."""
     return_value, out = _run(
         "meshtastic",
         "--ch-set",
@@ -495,7 +500,14 @@ def test_smoke1_ch_set_downlink_and_uplink() -> None:
     assert "Set downlink_enabled to false" in out
     assert "Set uplink_enabled to false" in out
     assert return_value == 0
-    time.sleep(PAUSE_AFTER_COMMAND)
+
+    info_code, info_out = _wait_for_info_ready(
+        timeout=PAUSE_AFTER_COMMAND + INFO_READY_TIMEOUT_SECONDS
+    )
+    _assert_connected(info_out)
+    assert not re.search(r"uplinkEnabled", info_out, re.MULTILINE)
+    assert not re.search(r"downlinkEnabled", info_out, re.MULTILINE)
+    assert info_code == 0
 
     return_value, out = _run(
         "meshtastic",
@@ -512,6 +524,14 @@ def test_smoke1_ch_set_downlink_and_uplink() -> None:
     assert "Set downlink_enabled to true" in out
     assert "Set uplink_enabled to true" in out
     assert return_value == 0
+
+    info_code, info_out = _wait_for_info_ready(
+        timeout=PAUSE_AFTER_COMMAND + INFO_READY_TIMEOUT_SECONDS
+    )
+    _assert_connected(info_out)
+    assert re.search(r"uplinkEnabled", info_out, re.MULTILINE)
+    assert re.search(r"downlinkEnabled", info_out, re.MULTILINE)
+    assert info_code == 0
 
 
 @_destructive_test

@@ -194,8 +194,10 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
 
             Parameters
             ----------
-            address : str | None
-                BLE device address associated with this client, or None. (Default value = None)
+            address : object | None
+                BLE device address or BLEDevice-like object associated with
+                this client, or None. If the value exposes an `address`
+                attribute, that address string is used. (Default value = None)
                 Additional keyword arguments are accepted and ignored.
 
             Attributes

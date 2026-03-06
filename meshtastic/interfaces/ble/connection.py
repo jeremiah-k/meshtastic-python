@@ -2,6 +2,7 @@
 
 import logging
 import math
+import numbers
 import sys
 from threading import Event, RLock
 from typing import TYPE_CHECKING, Callable
@@ -390,11 +391,17 @@ class ConnectionOrchestrator:
             If `connect_timeout` is non-finite or not strictly positive.
         """
         if connect_timeout is not None:
+            if isinstance(connect_timeout, bool) or not isinstance(
+                connect_timeout, numbers.Real
+            ):
+                raise ValueError(
+                    "connect_timeout must be a finite positive number of seconds."
+                )
             if not math.isfinite(connect_timeout) or connect_timeout <= 0:
                 raise ValueError(
                     "connect_timeout must be a finite positive number of seconds."
                 )
-            return connect_timeout
+            return float(connect_timeout)
         return cls._get_connect_timeout(pair_on_connect=pair_on_connect)
 
     def _finalize_connection(

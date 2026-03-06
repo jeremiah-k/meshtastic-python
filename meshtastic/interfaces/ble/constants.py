@@ -129,6 +129,7 @@ ERROR_MANAGEMENT_ADDRESS_EMPTY = "Management operations require a non-empty addr
 ERROR_MANAGEMENT_ADDRESS_REQUIRED = (
     "Management operations require an explicit address when no device is connected."
 )
+ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID = "pair()/unpair() require a finite positive await_timeout to avoid blocking shutdown."
 ERROR_MANAGEMENT_TARGET_CHANGED = "Management target changed while the operation was pending; retry with an explicit address."
 ERROR_MANAGEMENT_CONNECTING = (
     "Management operations are unavailable while a connection is in progress."

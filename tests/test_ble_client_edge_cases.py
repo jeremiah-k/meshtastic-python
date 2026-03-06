@@ -160,9 +160,15 @@ def test_bleclient_has_characteristic_returns_false_without_client(
 def test_bleclient_stop_notify_alias(ble_client: BLEClient) -> None:
     """stop_notify should be an alias for stopNotify."""
     # Both should raise the same error
-    with pytest.raises(BLEClient.BLEError, match="Cannot stop notify"):
+    with pytest.raises(
+        BLEClient.BLEError,
+        match=BLECLIENT_ERROR_CANNOT_STOP_NOTIFY_NOT_INITIALIZED,
+    ):
         ble_client.stopNotify("uuid")
-    with pytest.raises(BLEClient.BLEError, match="Cannot stop notify"):
+    with pytest.raises(
+        BLEClient.BLEError,
+        match=BLECLIENT_ERROR_CANNOT_STOP_NOTIFY_NOT_INITIALIZED,
+    ):
         ble_client.stop_notify("uuid")
 
 
