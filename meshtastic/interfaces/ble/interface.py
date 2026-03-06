@@ -1364,7 +1364,19 @@ class BLEInterface(MeshInterface):
 
     @staticmethod
     def _management_target_gate(target_address: str) -> contextlib.ExitStack:
-        """Return a context manager that serializes temporary management work by address."""
+        """Return a context manager that serializes temporary management work by address.
+
+        Parameters
+        ----------
+        target_address : str
+            BLE address to serialize temporary management operations for.
+
+        Returns
+        -------
+        contextlib.ExitStack
+            Active context stack holding the process-wide per-address gate when
+            one applies to `target_address`.
+        """
         stack = contextlib.ExitStack()
         target_key = _addr_key(target_address)
         if target_key is not None:
@@ -1375,7 +1387,20 @@ class BLEInterface(MeshInterface):
     def _get_management_client_if_available(
         self, address: str | None
     ) -> BLEClient | None:
-        """Return an active or reusable client for a management operation, if one exists."""
+        """Return an active or reusable client for a management operation, if one exists.
+
+        Parameters
+        ----------
+        address : str | None
+            Target address or identifier. If None, prefer the interface's
+            current connected client when available.
+
+        Returns
+        -------
+        BLEClient | None
+            Connected or reusable client for the requested target, or None when
+            management work requires a temporary client.
+        """
         requested_identifier = address if address is not None else self.address
         with self._state_lock:
             current_client = self.client if address is None else None

@@ -752,6 +752,13 @@ def test_connection_orchestrator_preserves_pair_on_connect_across_scan_fallback(
         BLEConfig.CONNECTION_TIMEOUT,
         BLEConfig.CONNECTION_TIMEOUT,
     ]
+    assert [
+        call.kwargs["timeout"] for call in client_manager._connect_client.call_args_list
+    ] == [
+        BLEConfig.CONNECTION_TIMEOUT,
+        BLEConfig.CONNECTION_TIMEOUT,
+        BLEConfig.CONNECTION_TIMEOUT,
+    ]
 
 
 @pytest.mark.unit

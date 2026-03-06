@@ -208,7 +208,7 @@ class BLEClient:
         self,
         *,
         await_timeout: float | None = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
-        **kwargs: object,
+        **kwargs: Any,
     ) -> None:
         """Pair the BLE client with the remote device.
 
@@ -218,7 +218,7 @@ class BLEClient:
             Maximum seconds to wait for the pairing coroutine to complete;
             `None` means wait indefinitely. Defaults to
             `BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT`.
-        **kwargs : object
+        **kwargs : Any
             Backend-specific pairing options forwarded to the underlying BLE client.
 
         Returns

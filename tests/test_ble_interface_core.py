@@ -516,7 +516,8 @@ def test_ble_interface_pair_prefers_active_client(
 
     iface.pair(confirm=True, await_timeout=12.5)
     assert client.pair_calls == 1
-    assert client.pair_kwargs == [{"confirm": True, "await_timeout": 12.5}]
+    assert client.pair_kwargs == [{"confirm": True}]
+    assert client.pair_await_timeouts == [12.5]
     iface.close()
 
 
@@ -555,7 +556,8 @@ def test_ble_interface_pair_uses_existing_client_when_request_matches(
     iface.pair("mesh-node", confirm=True, await_timeout=7.0)
 
     assert existing_client.pair_calls == 1
-    assert existing_client.pair_kwargs == [{"confirm": True, "await_timeout": 7.0}]
+    assert existing_client.pair_kwargs == [{"confirm": True}]
+    assert existing_client.pair_await_timeouts == [7.0]
     iface.close()
 
 
@@ -573,10 +575,12 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
         lambda _address: _create_ble_device("AA:BB:CC:DD:EE:FF", "Meshtastic"),
     )
 
-    pair_calls: list[dict[str, object]] = []
+    pair_kwargs: list[dict[str, object]] = []
+    pair_await_timeouts: list[float | None] = []
 
-    def _pair(**kwargs: object) -> None:
-        pair_calls.append(dict(kwargs))
+    def _pair(*, await_timeout: float | None = None, **kwargs: object) -> None:
+        pair_await_timeouts.append(await_timeout)
+        pair_kwargs.append(dict(kwargs))
 
     temp_client = SimpleNamespace(
         pair=_pair,
@@ -598,7 +602,8 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
     )
 
     iface.pair("mesh-node", confirm=True, await_timeout=7.0)
-    assert pair_calls == [{"confirm": True, "await_timeout": 7.0}]
+    assert pair_kwargs == [{"confirm": True}]
+    assert pair_await_timeouts == [7.0]
     assert cleanup_calls == [temp_client]
     iface.close()
 
@@ -1035,13 +1040,16 @@ def test_ble_interface_pair_waits_for_connect_lock(
         lambda _address: _create_ble_device("AA:BB:CC:DD:EE:FF", "Meshtastic"),
     )
 
-    pair_calls: list[dict[str, object]] = []
+    pair_kwargs: list[dict[str, object]] = []
+    pair_await_timeouts: list[float | None] = []
     close_calls: list[object] = []
     pair_finished = threading.Event()
     pair_thread_started = threading.Event()
+    temp_client_created = threading.Event()
 
-    def _pair(**kwargs: object) -> None:
-        pair_calls.append(dict(kwargs))
+    def _pair(*, await_timeout: float | None = None, **kwargs: object) -> None:
+        pair_kwargs.append(dict(kwargs))
+        pair_await_timeouts.append(await_timeout)
         pair_finished.set()
 
     temp_client = SimpleNamespace(
@@ -1050,6 +1058,7 @@ def test_ble_interface_pair_waits_for_connect_lock(
     )
 
     def _temp_client_factory(_address: str, **_kwargs: object) -> SimpleNamespace:
+        temp_client_created.set()
         return temp_client
 
     def _run_pair() -> None:
@@ -1070,12 +1079,14 @@ def test_ble_interface_pair_waits_for_connect_lock(
         pair_thread = threading.Thread(target=_run_pair, daemon=True)
         pair_thread.start()
         assert pair_thread_started.wait(timeout=1.0)
-        time.sleep(0.1)
-        assert pair_calls == []
+        assert temp_client_created.wait(timeout=0.2) is False
+        assert pair_kwargs == []
         assert pair_finished.is_set() is False
 
     pair_thread.join(timeout=2.0)
-    assert pair_calls == [{"confirm": True, "await_timeout": 7.0}]
+    assert temp_client_created.is_set() is True
+    assert pair_kwargs == [{"confirm": True}]
+    assert pair_await_timeouts == [7.0]
     assert close_calls == [temp_client]
     assert pair_finished.is_set() is True
     iface.close()
@@ -1095,13 +1106,16 @@ def test_ble_interface_pair_waits_for_address_gate(
         lambda _address: _create_ble_device("AA:BB:CC:DD:EE:FF", "Meshtastic"),
     )
 
-    pair_calls: list[dict[str, object]] = []
+    pair_kwargs: list[dict[str, object]] = []
+    pair_await_timeouts: list[float | None] = []
     close_calls: list[object] = []
     pair_finished = threading.Event()
     pair_thread_started = threading.Event()
+    temp_client_created = threading.Event()
 
-    def _pair(**kwargs: object) -> None:
-        pair_calls.append(dict(kwargs))
+    def _pair(*, await_timeout: float | None = None, **kwargs: object) -> None:
+        pair_kwargs.append(dict(kwargs))
+        pair_await_timeouts.append(await_timeout)
         pair_finished.set()
 
     temp_client = SimpleNamespace(
@@ -1110,6 +1124,7 @@ def test_ble_interface_pair_waits_for_address_gate(
     )
 
     def _temp_client_factory(_address: str, **_kwargs: object) -> SimpleNamespace:
+        temp_client_created.set()
         return temp_client
 
     def _run_pair() -> None:
@@ -1131,12 +1146,14 @@ def test_ble_interface_pair_waits_for_address_gate(
             pair_thread = threading.Thread(target=_run_pair, daemon=True)
             pair_thread.start()
             assert pair_thread_started.wait(timeout=1.0)
-            time.sleep(0.1)
-            assert pair_calls == []
+            assert temp_client_created.wait(timeout=0.2) is False
+            assert pair_kwargs == []
             assert pair_finished.is_set() is False
 
     pair_thread.join(timeout=2.0)
-    assert pair_calls == [{"confirm": True, "await_timeout": 7.0}]
+    assert temp_client_created.is_set() is True
+    assert pair_kwargs == [{"confirm": True}]
+    assert pair_await_timeouts == [7.0]
     assert close_calls == [temp_client]
     assert pair_finished.is_set() is True
     iface.close()

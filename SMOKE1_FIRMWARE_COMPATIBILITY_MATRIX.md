@@ -37,6 +37,9 @@ triage against firmware changes.
 
 - `--configure` has historically varied across firmware builds; smoke assertions
   should validate user-visible behavior, not internal ordering/noise text.
+- Invalid field-name handling currently prints an error but exits `0`; treat
+  that as documented current CLI behavior for automation until exit-code
+  semantics are changed upstream.
 - Some firmware exports can omit full channel arrays; integration tests should
   prefer strong identity signals (`channel_url`) with resilient fallbacks.
 - Factory reset admin fields are integer-typed in protobuf; Python code must

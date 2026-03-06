@@ -341,7 +341,7 @@ class ConnectionOrchestrator:
         self.thread_coordinator = thread_coordinator
 
     @staticmethod
-    def _get_connect_timeout(pair_on_connect: bool) -> float:
+    def _get_connect_timeout(*, pair_on_connect: bool) -> float:
         """Return the appropriate connect timeout for the requested pairing mode.
 
         Parameters
@@ -544,7 +544,9 @@ class ConnectionOrchestrator:
             # Only attempt direct connect if we have a target address
             # Discovery mode (target_address=None) skips directly to find_device
             if target_address:
-                direct_timeout = self._get_connect_timeout(pair_on_connect)
+                direct_timeout = self._get_connect_timeout(
+                    pair_on_connect=pair_on_connect
+                )
                 self._raise_if_interface_closing()
                 client = self.client_manager._create_client(
                     target_address,
@@ -593,7 +595,9 @@ class ConnectionOrchestrator:
             fallback_timeout: float | None = None
             if skip_discovery_scan and target_address is not None:
                 resolved_address = target_address
-                fallback_timeout = self._get_connect_timeout(pair_on_connect)
+                fallback_timeout = self._get_connect_timeout(
+                    pair_on_connect=pair_on_connect
+                )
             else:
                 self._raise_if_interface_closing()
                 device = self.interface.findDevice(target_address)
@@ -603,7 +607,7 @@ class ConnectionOrchestrator:
             connect_timeout = (
                 fallback_timeout
                 if fallback_timeout is not None
-                else self._get_connect_timeout(pair_on_connect)
+                else self._get_connect_timeout(pair_on_connect=pair_on_connect)
             )
             client = self.client_manager._create_client(
                 resolved_address,
@@ -640,10 +644,13 @@ class ConnectionOrchestrator:
                     resolved_address,
                     on_disconnect_func,
                     pair_on_connect=pair_on_connect,
-                    connect_timeout=self._get_connect_timeout(pair_on_connect),
+                    connect_timeout=self._get_connect_timeout(
+                        pair_on_connect=pair_on_connect
+                    ),
                 )
                 self.client_manager._connect_client(
-                    client, timeout=self._get_connect_timeout(pair_on_connect)
+                    client,
+                    timeout=self._get_connect_timeout(pair_on_connect=pair_on_connect),
                 )
 
             self._raise_if_interface_closing()

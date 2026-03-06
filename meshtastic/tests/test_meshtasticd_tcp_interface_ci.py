@@ -4,7 +4,7 @@ import ipaddress
 import os
 import time
 from typing import cast
-from urllib.parse import urlparse
+from urllib.parse import ParseResult, urlparse
 
 import pytest
 
@@ -25,6 +25,20 @@ def _extract_port_component(host: str) -> str | None:
     if host.count(":") == 1:
         return host.rsplit(":", 1)[1]
     return None
+
+
+def _has_extra_url_components(parsed: ParseResult) -> bool:
+    """Return True when a parsed HOST value includes unsupported URL components."""
+    return any(
+        (
+            parsed.path,
+            parsed.params,
+            parsed.query,
+            parsed.fragment,
+            parsed.username is not None,
+            parsed.password is not None,
+        )
+    )
 
 
 def _parse_host_and_port(host: str) -> tuple[str, int]:
@@ -50,8 +64,12 @@ def _parse_host_and_port(host: str) -> tuple[str, int]:
             "''. Expected HOST[:PORT] with numeric PORT."
         )
 
+    parsed = urlparse(f"//{host}")
+    if _has_extra_url_components(parsed):
+        raise ValueError(
+            f"Invalid {MESHTASTICD_HOST_ENV_VAR}={host!r}: expected HOST[:PORT] only."
+        )
     try:
-        parsed = urlparse(f"//{host}")
         host_name = parsed.hostname
         port = parsed.port
     except ValueError as exc:
@@ -129,6 +147,19 @@ def test_parse_host_and_port_accepts_bracketed_ipv6_with_port() -> None:
 def test_parse_host_and_port_accepts_raw_ipv6_without_port() -> None:
     """_parse_host_and_port should treat raw IPv6 literals as host-only values."""
     assert _parse_host_and_port("::1") == ("::1", DEFAULT_TCP_PORT)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "host", ["user@localhost:4401", "localhost/path", "localhost?x=1"]
+)
+def test_parse_host_and_port_rejects_extra_url_components(host: str) -> None:
+    """_parse_host_and_port should reject usernames, paths, and query strings."""
+    with pytest.raises(
+        ValueError,
+        match=r"expected HOST\[:PORT\] only",
+    ):
+        _parse_host_and_port(host)
 
 
 @pytest.mark.int

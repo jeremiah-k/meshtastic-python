@@ -99,6 +99,8 @@ def test_find_channel_index_by_name_handles_multiline_channel_blocks() -> None:
       }
     """
     assert _find_channel_index_by_name(info_output, "demo") == 2
+    assert _find_channel_index_by_name(info_output, "alpha") == 0
+    assert _find_channel_index_by_name(info_output, "nonexistent") is None
 
 
 def _restore_config_with_retries(config_path: Path) -> tuple[int, str]:
@@ -768,9 +770,8 @@ def test_smoke1_set_ham() -> None:
     return_value, out = _run("meshtastic", "--set-ham", "KI1234")
     assert "Setting Ham ID" in out
     assert return_value == 0
-    time.sleep(PAUSE_AFTER_REBOOT)
-
-    return_value, out = _run("meshtastic", "--info")
+    return_value, out = _wait_for_info_ready()
+    _assert_connected(out)
     assert re.search(r"Owner: KI1234", out, re.MULTILINE)
     assert return_value == 0
 
