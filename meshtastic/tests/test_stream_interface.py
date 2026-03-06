@@ -137,6 +137,24 @@ def test_read_bytes_wraps_type_error_as_stream_closed() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_write_bytes_wraps_type_error_as_stream_closed() -> None:
+    """_write_bytes should normalize backend TypeError to StreamClosedError."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        stream = MagicMock()
+        stream.is_open = True
+        stream.write.side_effect = TypeError("fd is None")
+        iface.stream = stream
+
+        with pytest.raises(StreamInterface.StreamClosedError) as exc_info:
+            iface._write_bytes(b"xxx")
+        assert isinstance(exc_info.value.__cause__, TypeError)
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_read_bytes_raises_stream_closed_when_backend_returns_none() -> None:
     """_read_bytes should treat None from backend read as closed stream."""
     iface = StreamInterface(noProto=True, connectNow=False)

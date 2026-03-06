@@ -369,6 +369,30 @@ def test_bleclient_unpair_delegates_to_backend(
 
 
 @pytest.mark.unit
+def test_bleclient_unpair_translates_not_implemented_error(
+    monkeypatch: pytest.MonkeyPatch,
+    ble_client: BLEClient,
+) -> None:
+    """unpair() should wrap backend NotImplementedError as unsupported."""
+
+    class _Backend:
+        async def unpair(self) -> None:
+            raise NotImplementedError
+
+    ble_client.bleak_client = cast(Any, _Backend())
+    monkeypatch.setattr(
+        ble_client, "_async_await", lambda awaitable: asyncio.run(awaitable)
+    )
+
+    with pytest.raises(
+        BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED
+    ) as exc_info:
+        ble_client.unpair()
+
+    assert isinstance(exc_info.value.__cause__, NotImplementedError)
+
+
+@pytest.mark.unit
 def test_bleclient_pair_delegates_to_backend(
     monkeypatch: pytest.MonkeyPatch,
     ble_client: BLEClient,

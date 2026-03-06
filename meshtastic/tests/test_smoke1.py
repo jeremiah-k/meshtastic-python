@@ -27,7 +27,8 @@ from .cli_test_utils import (
 
 PAUSE_AFTER_COMMAND = 2
 PAUSE_AFTER_REBOOT = 7
-PAUSE_AFTER_REBOOT_COMMAND = 18
+INFO_READY_TIMEOUT_SECONDS = 60
+INFO_READY_POLL_INTERVAL_SECONDS = 2
 RESTORE_ATTEMPTS = 8
 RESTORE_RETRY_DELAY_SECONDS = 10
 DEFAULT_URL_FRAGMENT = "CgUYAyIBAQ"
@@ -102,9 +103,30 @@ def _restore_config_with_retries(config_path: Path) -> tuple[int, str]:
     return result, output
 
 
+def _wait_for_info_ready(
+    *,
+    timeout: int | float = INFO_READY_TIMEOUT_SECONDS,
+    poll_interval: int | float = INFO_READY_POLL_INTERVAL_SECONDS,
+) -> tuple[int, str]:
+    """Poll `meshtastic --info` until the device responds or the timeout expires."""
+    deadline = time.monotonic() + timeout
+    last_result = 1, ""
+    while True:
+        last_result = _run("meshtastic", "--info")
+        code, output = last_result
+        if code == 0:
+            return code, output
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return last_result
+        time.sleep(min(poll_interval, remaining))
+
+
 @pytest.fixture(scope="module")
 def restore_smoke1_module_config() -> Iterator[None]:
     """Export baseline config before smoke1 and restore it after module completion."""
+    export_succeeded = False
+    restore_succeeded = False
     with tempfile.NamedTemporaryFile(
         prefix="meshtastic-smoke1-module-backup-",
         suffix=".yaml",
@@ -120,6 +142,7 @@ def restore_smoke1_module_config() -> Iterator[None]:
         )
         if return_value != 0:
             pytest.skip(f"Unable to export baseline smoke1 config:\n{out}")
+        export_succeeded = True
 
         yield
 
@@ -129,9 +152,11 @@ def restore_smoke1_module_config() -> Iterator[None]:
             f"{restore_output}\n"
             f"backup={backup_path}"
         )
+        restore_succeeded = True
     finally:
-        with contextlib.suppress(FileNotFoundError):
-            backup_path.unlink()
+        if not export_succeeded or restore_succeeded:
+            with contextlib.suppress(FileNotFoundError):
+                backup_path.unlink()
 
 
 @pytest.mark.smoke1
@@ -303,8 +328,7 @@ def test_smoke1_reboot() -> None:
     """`--reboot` should return success and the node should come back."""
     return_value, _ = _run("meshtastic", "--reboot")
     assert return_value == 0
-    time.sleep(PAUSE_AFTER_REBOOT_COMMAND)
-    info_code, info_out = _run("meshtastic", "--info")
+    info_code, info_out = _wait_for_info_ready()
     _assert_connected(info_out)
     assert info_code == 0
 
@@ -777,8 +801,6 @@ def test_smoke1_factory_reset() -> None:
     _assert_connected(out)
     assert "Aborting due to" not in out
     assert return_value == 0
-    time.sleep(PAUSE_AFTER_REBOOT_COMMAND)
-
-    info_code, info_out = _run("meshtastic", "--info")
+    info_code, info_out = _wait_for_info_ready()
     _assert_connected(info_out)
     assert info_code == 0

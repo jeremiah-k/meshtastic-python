@@ -612,6 +612,71 @@ def test_ble_interface_trust_rejects_non_linux(
     iface.close()
 
 
+def test_ble_interface_trust_rejects_closing_interface(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """trust() should fail before resolution or subprocess work once shutdown starts."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    with iface._state_lock:
+        iface.client = None
+        iface._closed = True
+
+    find_device_called = False
+    subprocess_called = False
+
+    def _unexpected_find_device(_address: str | None) -> BLEDevice:
+        nonlocal find_device_called
+        find_device_called = True
+        return _create_ble_device("AA:BB:CC:DD:EE:FF", "Meshtastic")
+
+    def _unexpected_run(*_args: object, **_kwargs: object) -> SimpleNamespace:
+        nonlocal subprocess_called
+        subprocess_called = True
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(iface, "findDevice", _unexpected_find_device)
+    monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "linux")
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.shutil.which",
+        lambda _name: "/usr/bin/bluetoothctl",
+    )
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.subprocess.run",
+        _unexpected_run,
+    )
+
+    with pytest.raises(BLEInterface.BLEError, match="closing"):
+        iface.trust("mesh-node")
+
+    assert find_device_called is False
+    assert subprocess_called is False
+
+
+def test_ble_interface_close_serializes_with_management_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """close() should not mark the interface closed while a management op holds the lock."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    close_done = threading.Event()
+
+    def _close_iface() -> None:
+        try:
+            iface.close()
+        finally:
+            close_done.set()
+
+    with iface._management_lock:
+        close_thread = threading.Thread(target=_close_iface, daemon=True)
+        close_thread.start()
+        time.sleep(0.1)
+        with iface._state_lock:
+            assert iface._closed is False
+        assert close_done.is_set() is False
+
+    close_thread.join(timeout=2.0)
+    assert close_done.is_set() is True
+
+
 def test_ble_interface_connect_uses_pair_override_for_orchestrator(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

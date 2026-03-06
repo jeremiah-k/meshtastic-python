@@ -224,12 +224,13 @@ iface = BLEInterface(
 # Trust remains explicit and Linux-only:
 iface.trust("AA:BB:CC:DD:EE:FF")
 
-# One-shot override on a later manual reconnect you drive yourself:
+# One-time pairing on a specific manual reconnect (with auto_reconnect=False):
 iface_manual = BLEInterface(
     address="AA:BB:CC:DD:EE:FF",
     auto_reconnect=False,
 )
-# ... later, after the link drops and you decide to reconnect:
+# Constructor connects immediately (without pairing).
+# Later, after the link drops and you want to reconnect with pairing:
 iface_manual.connect(pair=True)   # request pairing for this call
 iface_manual.trust("AA:BB:CC:DD:EE:FF")
 ```

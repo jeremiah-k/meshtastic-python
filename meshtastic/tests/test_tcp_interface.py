@@ -192,8 +192,11 @@ def test_TCPInterface_write_reraises_socket_errors() -> None:
 
 
 @pytest.mark.unit
-def test_TCPInterface_write_normalizes_select_value_error_to_oserror() -> None:
-    """_write_bytes should normalize select ValueError into OSError after cleanup."""
+@pytest.mark.parametrize("select_error", [ValueError, TypeError])
+def test_TCPInterface_write_normalizes_select_error_to_oserror(
+    select_error: type[Exception],
+) -> None:
+    """_write_bytes should normalize select readiness errors into OSError after cleanup."""
     with patch("socket.socket"):
         iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
         try:
@@ -203,12 +206,13 @@ def test_TCPInterface_write_normalizes_select_value_error_to_oserror() -> None:
             with (
                 patch(
                     "meshtastic.tcp_interface.select.select",
-                    side_effect=ValueError("bad file descriptor"),
+                    side_effect=select_error("bad file descriptor"),
                 ),
                 pytest.raises(OSError, match="bad file descriptor"),
             ):
                 iface._write_bytes(b"abc")
 
+            mock_socket.close.assert_called_once()
             assert iface.socket is None
         finally:
             iface.close()

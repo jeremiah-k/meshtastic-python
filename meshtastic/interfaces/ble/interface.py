@@ -9,8 +9,9 @@ invariants.
 When multiple locks are required, acquire in this order:
 1. per-address locks from gating (`_addr_lock_context`)
 2. `_connect_lock`
-3. `_state_lock`
-4. `_disconnect_lock`
+3. `_management_lock`
+4. `_state_lock`
+5. `_disconnect_lock`
 
 `_REGISTRY_LOCK` is only held for short registry updates and must never be held
 while waiting to acquire a per-address lock.
@@ -202,8 +203,9 @@ class BLEInterface(MeshInterface):
         #     - For interface-level coordination, acquire in this order:
         #       1. Per-address locks (_ADDR_LOCKS in gating.py, via _addr_lock_context)
         #       2. Interface connect lock (_connect_lock)
-        #       3. Interface state lock (_state_lock)
-        #       4. Interface disconnect lock (_disconnect_lock)
+        #       3. Interface management lock (_management_lock)
+        #       4. Interface state lock (_state_lock)
+        #       5. Interface disconnect lock (_disconnect_lock)
         #
         # EXCEPTION: In _handle_disconnect, _disconnect_lock is acquired FIRST
         # (non-blocking) before _state_lock. This intentional inversion enables
@@ -225,6 +227,9 @@ class BLEInterface(MeshInterface):
             self._state_manager.lock
         )  # `lock` returns the shared RLock instance
         self._connect_lock = threading.RLock()  # Serializes connection attempts
+        self._management_lock = (
+            threading.RLock()
+        )  # Serializes pair/unpair/trust vs. close()
         self._disconnect_lock = threading.Lock()  # Serializes disconnect handling
         self._closed: bool = (
             False  # Tracks completion of shutdown for idempotent close()
@@ -1375,30 +1380,31 @@ class BLEInterface(MeshInterface):
         T
             Command return value.
         """
-        if address is not None and not address.strip():
-            raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
+        with self._management_lock:
+            if address is not None and not address.strip():
+                raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
 
-        self._validate_connection_preconditions()
+            self._validate_connection_preconditions()
 
-        with self._state_lock:
-            current_client = self.client if address is None else None
-            requested_identifier = address if address is not None else self.address
+            with self._state_lock:
+                current_client = self.client if address is None else None
+                requested_identifier = address if address is not None else self.address
 
-        if current_client is not None and current_client.isConnected():
-            return command(current_client)
+            if current_client is not None and current_client.isConnected():
+                return command(current_client)
 
-        normalized_request = sanitize_address(requested_identifier)
-        existing_client = self._get_existing_client_if_valid(normalized_request)
-        if existing_client is not None:
-            return command(existing_client)
+            normalized_request = sanitize_address(requested_identifier)
+            existing_client = self._get_existing_client_if_valid(normalized_request)
+            if existing_client is not None:
+                return command(existing_client)
 
-        target_address = self._resolve_target_address_for_management(address)
-        self._validate_connection_preconditions()
-        temporary_client = BLEClient(target_address, log_if_no_address=False)
-        try:
-            return command(temporary_client)
-        finally:
-            self._client_manager._safe_close_client(temporary_client)
+            target_address = self._resolve_target_address_for_management(address)
+            self._validate_connection_preconditions()
+            temporary_client = BLEClient(target_address, log_if_no_address=False)
+            try:
+                return command(temporary_client)
+            finally:
+                self._client_manager._safe_close_client(temporary_client)
 
     def pair(self, address: str | None = None, **kwargs: object) -> None:
         """Pair with a BLE device either through the active client or a temporary client.
@@ -1453,40 +1459,45 @@ class BLEInterface(MeshInterface):
         - This helper is Linux-only and requires `bluetoothctl` on PATH.
         - Pairing PIN/passkey handling remains OS-agent managed.
         """
-        if timeout <= 0:
-            raise self.BLEError(ERROR_TRUST_INVALID_TIMEOUT)
-        if not sys.platform.startswith("linux"):
-            raise self.BLEError(ERROR_TRUST_LINUX_ONLY)
-        bluetoothctl_path = shutil.which("bluetoothctl")
-        if bluetoothctl_path is None:
-            raise self.BLEError(ERROR_TRUST_BLUETOOTHCTL_MISSING)
+        with self._management_lock:
+            self._validate_connection_preconditions()
+            if timeout <= 0:
+                raise self.BLEError(ERROR_TRUST_INVALID_TIMEOUT)
+            if not sys.platform.startswith("linux"):
+                raise self.BLEError(ERROR_TRUST_LINUX_ONLY)
+            bluetoothctl_path = shutil.which("bluetoothctl")
+            if bluetoothctl_path is None:
+                raise self.BLEError(ERROR_TRUST_BLUETOOTHCTL_MISSING)
 
-        target_address = self._resolve_target_address_for_management(address)
-        canonical_address = self._format_bluetoothctl_address(target_address)
-        try:
-            result = subprocess.run(  # noqa: S603
-                [bluetoothctl_path, "trust", canonical_address],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=timeout,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise self.BLEError(
-                ERROR_TRUST_COMMAND_TIMEOUT.format(
-                    timeout=timeout, address=canonical_address
+            target_address = self._resolve_target_address_for_management(address)
+            canonical_address = self._format_bluetoothctl_address(target_address)
+            self._validate_connection_preconditions()
+            try:
+                result = subprocess.run(  # noqa: S603
+                    [bluetoothctl_path, "trust", canonical_address],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=timeout,
                 )
-            ) from exc
-        if result.returncode != 0:
-            stderr_output = result.stderr.strip() if result.stderr else ""
-            stdout_output = result.stdout.strip() if result.stdout else ""
-            detail = stderr_output or stdout_output or f"exit code {result.returncode}"
-            raise self.BLEError(
-                ERROR_TRUST_COMMAND_FAILED.format(
-                    address=canonical_address, detail=detail
+            except subprocess.TimeoutExpired as exc:
+                raise self.BLEError(
+                    ERROR_TRUST_COMMAND_TIMEOUT.format(
+                        timeout=timeout, address=canonical_address
+                    )
+                ) from exc
+            if result.returncode != 0:
+                stderr_output = result.stderr.strip() if result.stderr else ""
+                stdout_output = result.stdout.strip() if result.stdout else ""
+                detail = (
+                    stderr_output or stdout_output or f"exit code {result.returncode}"
                 )
-            )
-        logger.info("Trusted BLE device via bluetoothctl: %s", canonical_address)
+                raise self.BLEError(
+                    ERROR_TRUST_COMMAND_FAILED.format(
+                        address=canonical_address, detail=detail
+                    )
+                )
+            logger.info("Trusted BLE device via bluetoothctl: %s", canonical_address)
 
     def _sanitize_address(self, address: str | None) -> str | None:
         """Provide a backward-compatible wrapper that returns a sanitized BLE address or None.
@@ -2242,26 +2253,27 @@ class BLEInterface(MeshInterface):
 
         This method performs an idempotent, orderly shutdown: it stops background threads and reconnection activity, disconnects and closes any active BLE client, unsubscribes and cleans up notification and discovery managers, unregisters the atexit handler, publishes a final disconnected indication, and waits briefly for pending disconnect-related notifications to flush.
         """
-        # Use unified state lock
-        with self._state_lock:
-            if self._closed:
-                logger.debug(
-                    "BLEInterface.close called on already closed interface; ignoring"
-                )
-                return
-            was_closing = self._state_manager._is_closing
-            # Mark closed immediately to prevent overlapping cleanup in concurrent calls
-            self._closed = True
-            if was_closing:
-                logger.debug(
-                    "BLEInterface.close called while another shutdown is in progress; continuing with cleanup"
-                )
-            # Transition to DISCONNECTING only if we're not already fully disconnected or mid-disconnect
-            if self._state_manager._current_state not in (
-                ConnectionState.DISCONNECTED,
-                ConnectionState.DISCONNECTING,
-            ):
-                self._state_manager._transition_to(ConnectionState.DISCONNECTING)
+        with self._management_lock:
+            # Use unified state lock
+            with self._state_lock:
+                if self._closed:
+                    logger.debug(
+                        "BLEInterface.close called on already closed interface; ignoring"
+                    )
+                    return
+                was_closing = self._state_manager._is_closing
+                # Mark closed immediately to prevent overlapping cleanup in concurrent calls
+                self._closed = True
+                if was_closing:
+                    logger.debug(
+                        "BLEInterface.close called while another shutdown is in progress; continuing with cleanup"
+                    )
+                # Transition to DISCONNECTING only if we're not already fully disconnected or mid-disconnect
+                if self._state_manager._current_state not in (
+                    ConnectionState.DISCONNECTED,
+                    ConnectionState.DISCONNECTING,
+                ):
+                    self._state_manager._transition_to(ConnectionState.DISCONNECTING)
 
         try:
             # Release lock before calling MeshInterface.close() to avoid deadlock

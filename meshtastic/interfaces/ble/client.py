@@ -245,7 +245,10 @@ class BLEClient:
         unpair_fn = getattr(bleak_client, "unpair", None)
         if not callable(unpair_fn):
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED)
-        self._async_await(unpair_fn())
+        try:
+            self._async_await(unpair_fn())
+        except NotImplementedError as exc:
+            raise self.BLEError(BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED) from exc
         return None
 
     def connect(self, *, await_timeout: float | None = None, **kwargs: Any) -> Any:

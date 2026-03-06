@@ -333,7 +333,20 @@ class ConnectionOrchestrator:
 
     @staticmethod
     def _get_connect_timeout(pair_on_connect: bool) -> float:
-        """Return the appropriate connect timeout for the requested pairing mode."""
+        """Return the appropriate connect timeout for the requested pairing mode.
+
+        Parameters
+        ----------
+        pair_on_connect : bool
+            When True, use the full BLE connection timeout to allow time for
+            OS-mediated pairing prompts. When False, use the shorter direct
+            connect timeout capped by the full connection timeout.
+
+        Returns
+        -------
+        float
+            Timeout in seconds for the current connect attempt.
+        """
         if pair_on_connect:
             return BLEConfig.CONNECTION_TIMEOUT
         return min(DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT)
