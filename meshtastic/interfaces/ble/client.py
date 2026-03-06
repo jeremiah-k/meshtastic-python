@@ -227,7 +227,8 @@ class BLEClient:
         Returns
         -------
         None
-            Pairing is performed for side effects and does not return a value.
+            Pairing is performed for side effects. Bleak 1.0+ signals success
+            by lack of exception and does not return a boolean result.
 
         Raises
         ------

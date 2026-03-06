@@ -9,10 +9,12 @@ from pathlib import Path
 
 import pytest
 import serial.tools.list_ports  # type: ignore[import-untyped]
+import yaml
 
 HELLO_WORLD_SERIAL_PATH = (
     Path(__file__).resolve().parents[2] / "examples" / "hello_world_serial.py"
 )
+EXAMPLE_CONFIG_PATH = Path(__file__).resolve().parents[2] / "example_config.yaml"
 
 
 def _run_hello_world_serial(monkeypatch: pytest.MonkeyPatch, *args: str) -> None:
@@ -52,3 +54,15 @@ def test_examples_hello_world_serial_with_arg(
         _run_hello_world_serial(monkeypatch, "hello")
 
     assert "No serial Meshtastic device detected" in caplog.text
+
+
+@pytest.mark.examples
+def test_examples_example_config_yaml_is_valid() -> None:
+    """example_config.yaml should remain parseable and use canonical power keys."""
+    config = yaml.safe_load(EXAMPLE_CONFIG_PATH.read_text(encoding="utf-8"))
+
+    assert config["owner"] == "Bob TBeam"
+    assert config["config"]["power"]["wait_bluetooth_secs"] == 60
+    assert config["config"]["power"]["ls_secs"] == 300
+    assert config["config"]["power"]["min_wake_secs"] == 10
+    assert config["config"]["power"]["sds_secs"] == 4294967295

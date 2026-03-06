@@ -1544,7 +1544,24 @@ class BLEInterface(MeshInterface):
                         self._client_manager._safe_close_client(temporary_client)
 
     def _validate_management_await_timeout(self, await_timeout: float | None) -> float:
-        """Return a validated bounded await timeout for interface management ops."""
+        """Validate and return a bounded await timeout for management operations.
+
+        Parameters
+        ----------
+        await_timeout : float | None
+            Timeout value to validate; must be a finite positive real number.
+
+        Returns
+        -------
+        float
+            The validated timeout as a float.
+
+        Raises
+        ------
+        BLEInterface.BLEError
+            If `await_timeout` is None, a boolean, non-numeric, non-finite,
+            zero, or negative.
+        """
         if (
             await_timeout is None
             or isinstance(await_timeout, bool)
@@ -1554,6 +1571,34 @@ class BLEInterface(MeshInterface):
         ):
             raise self.BLEError(ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID)
         return float(await_timeout)
+
+    def _validate_trust_timeout(self, timeout: object) -> float:
+        """Validate and return a bounded timeout for `trust()`.
+
+        Parameters
+        ----------
+        timeout : object
+            Timeout value to validate; must be a finite positive real number.
+
+        Returns
+        -------
+        float
+            The validated timeout as a float.
+
+        Raises
+        ------
+        BLEInterface.BLEError
+            If `timeout` is a boolean, non-numeric, non-finite, zero, or
+            negative.
+        """
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, numbers.Real)
+            or not math.isfinite(timeout)
+            or timeout <= 0
+        ):
+            raise self.BLEError(ERROR_TRUST_INVALID_TIMEOUT)
+        return float(timeout)
 
     def pair(
         self,
@@ -1643,8 +1688,7 @@ class BLEInterface(MeshInterface):
         with self._connect_lock, self._management_lock:
             self._validate_management_preconditions()
 
-        if timeout <= 0:
-            raise self.BLEError(ERROR_TRUST_INVALID_TIMEOUT)
+        timeout = self._validate_trust_timeout(timeout)
         if not sys.platform.startswith("linux"):
             raise self.BLEError(ERROR_TRUST_LINUX_ONLY)
         bluetoothctl_path = shutil.which("bluetoothctl")

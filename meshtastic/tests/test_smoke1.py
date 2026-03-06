@@ -772,7 +772,6 @@ def test_smoke1_seturl_invalid_url() -> None:
     assert return_value == 1
 
 
-@pytest.mark.examples
 @_destructive_test
 def test_smoke1_configure() -> None:
     """`--configure example_config.yaml` should apply canonical snake_case config."""

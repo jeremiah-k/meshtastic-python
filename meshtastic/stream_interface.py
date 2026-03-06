@@ -231,7 +231,12 @@ class StreamInterface(MeshInterface):
         """Best-effort close and clear of the underlying stream handle."""
         s = self.stream
         if s is not None:
-            with contextlib.suppress(OSError, ValueError, serial.SerialException):
+            with contextlib.suppress(
+                OSError,
+                ValueError,
+                TypeError,
+                serial.SerialException,
+            ):
                 s.close()
             self.stream = None
 

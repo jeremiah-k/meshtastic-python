@@ -187,6 +187,21 @@ def test_close_closes_stream_even_without_reader_thread() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_close_stream_safely_suppresses_type_error() -> None:
+    """_close_stream_safely() should swallow backend TypeError during close."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    stream = MagicMock()
+    stream.close.side_effect = TypeError("fd is None")
+    iface.stream = stream
+
+    iface._close_stream_safely()
+
+    stream.close.assert_called_once()
+    assert iface.stream is None
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_shared_close_runs_super_before_stream_close() -> None:
     """_shared_close should keep stream available during super().close() then close it."""
     iface = StreamInterface(noProto=True, connectNow=False)

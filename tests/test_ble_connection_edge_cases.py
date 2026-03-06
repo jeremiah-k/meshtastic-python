@@ -899,10 +899,8 @@ def test_connection_orchestrator_preserves_pair_on_connect_across_scan_fallback(
 
 
 @pytest.mark.unit
-def test_connection_orchestrator_uses_shorter_timeout_for_non_pairing_fallback() -> (
-    None
-):
-    """Discovery fallback should use the computed non-pairing timeout consistently."""
+def test_connection_orchestrator_uses_full_timeout_for_non_pairing_fallback() -> None:
+    """Discovery fallback should use the full timeout after device resolution."""
     state_manager = BLEStateManager()
     state_lock = RLock()
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
@@ -937,10 +935,7 @@ def test_connection_orchestrator_uses_shorter_timeout_for_non_pairing_fallback()
     )
 
     assert result is fallback_client
-    expected_timeout = min(
-        DIRECT_CONNECT_TIMEOUT_SECONDS,
-        BLEConfig.CONNECTION_TIMEOUT,
-    )
+    expected_timeout = BLEConfig.CONNECTION_TIMEOUT
     assert client_manager._create_client.call_args.args[0] is discovered_device
     assert client_manager._create_client.call_args.kwargs["connect_timeout"] == (
         expected_timeout
@@ -994,15 +989,19 @@ def test_connection_orchestrator_skips_scan_after_direct_device_not_found_for_ex
     assert result is retry_client
     interface.findDevice.assert_not_called()
     assert client_manager._connect_client.call_count == 2
-    expected_timeout = min(DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT)
+    direct_timeout = min(DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT)
     assert (
         client_manager._connect_client.call_args_list[0].kwargs["timeout"]
-        == expected_timeout
+        == direct_timeout
     )
     assert (
         client_manager._connect_client.call_args_list[1].kwargs["timeout"]
-        == expected_timeout
+        == direct_timeout
     )
+    assert [
+        call.kwargs["connect_timeout"]
+        for call in client_manager._create_client.call_args_list
+    ] == [direct_timeout, direct_timeout]
     orchestrator._finalize_connection.assert_called_once_with(
         retry_client,
         "AA:BB:CC:DD:EE:FF",
@@ -1056,15 +1055,20 @@ def test_connection_orchestrator_uses_discovery_for_non_address_identifier_after
     assert result is discovered_client
     interface.findDevice.assert_called_once_with("mesh-node")
     assert client_manager._connect_client.call_count == 2
-    expected_timeout = min(DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT)
+    direct_timeout = min(DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT)
+    discovery_timeout = BLEConfig.CONNECTION_TIMEOUT
     assert (
         client_manager._connect_client.call_args_list[0].kwargs["timeout"]
-        == expected_timeout
+        == direct_timeout
     )
     assert (
         client_manager._connect_client.call_args_list[1].kwargs["timeout"]
-        == expected_timeout
+        == discovery_timeout
     )
+    assert [
+        call.kwargs["connect_timeout"]
+        for call in client_manager._create_client.call_args_list
+    ] == [direct_timeout, discovery_timeout]
     assert client_manager._create_client.call_args_list[1].args[0] is discovered_device
     orchestrator._finalize_connection.assert_called_once_with(
         discovered_client,
@@ -1125,19 +1129,24 @@ def test_connection_orchestrator_falls_back_to_scan_when_direct_retry_still_devi
     assert result is discovered_client
     interface.findDevice.assert_called_once_with("AA:BB:CC:DD:EE:FF")
     assert client_manager._connect_client.call_count == 3
-    expected_timeout = min(DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT)
+    direct_timeout = min(DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT)
+    discovery_timeout = BLEConfig.CONNECTION_TIMEOUT
     assert (
         client_manager._connect_client.call_args_list[0].kwargs["timeout"]
-        == expected_timeout
+        == direct_timeout
     )
     assert (
         client_manager._connect_client.call_args_list[1].kwargs["timeout"]
-        == expected_timeout
+        == direct_timeout
     )
     assert (
         client_manager._connect_client.call_args_list[2].kwargs["timeout"]
-        == expected_timeout
+        == discovery_timeout
     )
+    assert [
+        call.kwargs["connect_timeout"]
+        for call in client_manager._create_client.call_args_list
+    ] == [direct_timeout, direct_timeout, discovery_timeout]
     assert client_manager._create_client.call_args_list[2].args[0] is discovered_device
     assert client_manager._safe_close_client.call_count == 2
     orchestrator._finalize_connection.assert_called_once_with(

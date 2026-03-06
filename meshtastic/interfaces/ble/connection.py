@@ -582,9 +582,18 @@ class ConnectionOrchestrator:
         else:
             logger.info("Attempting discovery-mode connection (no address specified)")
 
-        effective_connect_timeout = self._resolve_connect_timeout(
+        direct_connect_timeout = self._resolve_connect_timeout(
             pair_on_connect=pair_on_connect,
             connect_timeout=connect_timeout,
+        )
+        # Preserve the historical connection cadence: use the shorter timeout
+        # for direct address attempts, but allow full connection time once a
+        # device has been resolved via discovery unless the caller explicitly
+        # overrode the timeout.
+        discovery_connect_timeout = (
+            direct_connect_timeout
+            if connect_timeout is not None or pair_on_connect
+            else BLEConfig.CONNECTION_TIMEOUT
         )
 
         with self.state_lock:
@@ -602,12 +611,12 @@ class ConnectionOrchestrator:
                     target_address,
                     on_disconnect_func,
                     pair_on_connect=pair_on_connect,
-                    connect_timeout=effective_connect_timeout,
+                    connect_timeout=direct_connect_timeout,
                 )
                 try:
                     self._raise_if_interface_closing()
                     self.client_manager._connect_client(
-                        client, timeout=effective_connect_timeout
+                        client, timeout=direct_connect_timeout
                     )
                 except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
                     raise
@@ -647,22 +656,24 @@ class ConnectionOrchestrator:
             if skip_discovery_scan and target_address is not None:
                 resolved_address = target_address
                 connection_target: BLEDevice | str = target_address
+                retry_connect_timeout = direct_connect_timeout
             else:
                 self._raise_if_interface_closing()
                 device = self.interface.findDevice(target_address)
                 resolved_address = device.address
                 connection_target = device
+                retry_connect_timeout = discovery_connect_timeout
 
             self._raise_if_interface_closing()
             client = self.client_manager._create_client(
                 connection_target,
                 on_disconnect_func,
                 pair_on_connect=pair_on_connect,
-                connect_timeout=effective_connect_timeout,
+                connect_timeout=retry_connect_timeout,
             )
             try:
                 self.client_manager._connect_client(
-                    client, timeout=effective_connect_timeout
+                    client, timeout=retry_connect_timeout
                 )
             except (
                 BleakError,
@@ -691,11 +702,11 @@ class ConnectionOrchestrator:
                     device,
                     on_disconnect_func,
                     pair_on_connect=pair_on_connect,
-                    connect_timeout=effective_connect_timeout,
+                    connect_timeout=discovery_connect_timeout,
                 )
                 self.client_manager._connect_client(
                     client,
-                    timeout=effective_connect_timeout,
+                    timeout=discovery_connect_timeout,
                 )
 
             self._raise_if_interface_closing()

@@ -535,6 +535,9 @@ def test_ble_interface_unpair_prefers_active_client(
     iface.unpair(await_timeout=8.0)
     assert client.unpair_calls == 1
     assert client.unpair_await_timeouts == [8.0]
+    # Do not assert a synchronous disconnected state here. Backend unpair
+    # semantics are observed through the disconnect callback path rather than a
+    # guaranteed immediate state transition at unpair() return.
     iface.close()
 
 
@@ -1036,15 +1039,20 @@ def test_ble_interface_trust_rejects_non_linux(
     iface.close()
 
 
-def test_ble_interface_trust_rejects_non_positive_timeout(
+@pytest.mark.parametrize(
+    "invalid_timeout",
+    [0, -1.0, float("nan"), float("inf"), float("-inf"), cast(Any, True), "7.0"],
+)
+def test_ble_interface_trust_rejects_invalid_timeout(
     monkeypatch: pytest.MonkeyPatch,
+    invalid_timeout: object,
 ) -> None:
-    """trust() should fail fast on non-positive timeouts."""
+    """trust() should require a finite positive numeric timeout."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     _pin_trust_environment(monkeypatch)
 
     with pytest.raises(BLEInterface.BLEError, match=ERROR_TRUST_INVALID_TIMEOUT):
-        iface.trust("AA:BB:CC:DD:EE:FF", timeout=0)
+        iface.trust("AA:BB:CC:DD:EE:FF", timeout=invalid_timeout)
 
     iface.close()
 

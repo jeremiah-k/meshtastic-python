@@ -442,7 +442,8 @@ def test_bleclient_pair_delegates_to_backend(
         _make_run_awaitable(captured_timeout),
     )
 
-    ble_client.pair(confirm=True, await_timeout=9.0)
+    result = ble_client.pair(confirm=True, await_timeout=9.0)
+    assert result is None
     assert backend_calls == [{"confirm": True}]
     assert captured_timeout == [9.0]
 
