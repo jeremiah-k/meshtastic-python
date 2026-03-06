@@ -1144,6 +1144,12 @@ def test_ble_interface_trust_does_not_hold_interface_locks_during_subprocess(
 ) -> None:
     """trust() should let close() mark shutdown before bluetoothctl returns."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    trust_target = "AA:BB:CC:DD:EE:FF"
+    with iface._state_lock:
+        assert iface.client is not None
+        iface.client.address = trust_target
+        iface.client.bleak_client.address = trust_target
+        iface.address = trust_target
     run_started = threading.Event()
     allow_run_return = threading.Event()
     close_done = threading.Event()
@@ -1159,7 +1165,7 @@ def test_ble_interface_trust_does_not_hold_interface_locks_during_subprocess(
 
     def _run_trust() -> None:
         try:
-            iface.trust("AA:BB:CC:DD:EE:FF", timeout=7.0)
+            iface.trust(trust_target, timeout=7.0)
         except BaseException as exc:  # pragma: no cover - failure captured below
             trust_errors.append(exc)
 
