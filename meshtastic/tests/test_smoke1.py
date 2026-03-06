@@ -46,7 +46,7 @@ def _run_shell(command: str, timeout: int | float = 120) -> tuple[int, str]:
 
 
 def _destructive_test(func: Callable[..., object]) -> Callable[..., object]:
-    """Mark a smoke1 test as destructive and opt it into config restore."""
+    """Mark a smoke1 test as destructive and restore baseline config after it."""
     return cast(
         Callable[..., object],
         pytest.mark.usefixtures("restore_smoke1_module_config")(
@@ -122,9 +122,13 @@ def _wait_for_info_ready(
         time.sleep(min(poll_interval, remaining))
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def restore_smoke1_module_config() -> Iterator[None]:
-    """Export baseline config before smoke1 and restore it after module completion."""
+    """Export baseline config before a destructive test and restore it afterward.
+
+    Destructive hardware tests must not leak config mutations into later tests,
+    so each opted-in test gets its own export/restore cycle.
+    """
     export_succeeded = False
     restore_succeeded = False
     with tempfile.NamedTemporaryFile(

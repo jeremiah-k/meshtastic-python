@@ -129,6 +129,9 @@ ERROR_MANAGEMENT_ADDRESS_EMPTY = "Management operations require a non-empty addr
 ERROR_MANAGEMENT_ADDRESS_REQUIRED = (
     "Management operations require an explicit address when no device is connected."
 )
+ERROR_MANAGEMENT_CONNECTING = (
+    "Management operations are unavailable while a connection is in progress."
+)
 ERROR_TRUST_ADDRESS_NOT_RESOLVED = (
     "Cannot trust device: {address!r} did not resolve to a BLE address."
 )

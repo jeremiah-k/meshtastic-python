@@ -63,6 +63,7 @@ from meshtastic.interfaces.ble.constants import (
     ERROR_INTERFACE_CLOSING,
     ERROR_MANAGEMENT_ADDRESS_EMPTY,
     ERROR_MANAGEMENT_ADDRESS_REQUIRED,
+    ERROR_MANAGEMENT_CONNECTING,
     ERROR_MULTIPLE_DEVICES,
     ERROR_MULTIPLE_DEVICES_DISCOVERY,
     ERROR_NO_CLIENT_ESTABLISHED,
@@ -1384,7 +1385,7 @@ class BLEInterface(MeshInterface):
             if address is not None and not address.strip():
                 raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
 
-            self._validate_connection_preconditions()
+            self._validate_management_preconditions()
 
             with self._state_lock:
                 current_client = self.client if address is None else None
@@ -1399,7 +1400,7 @@ class BLEInterface(MeshInterface):
                 return command(existing_client)
 
             target_address = self._resolve_target_address_for_management(address)
-            self._validate_connection_preconditions()
+            self._validate_management_preconditions()
             temporary_client = BLEClient(target_address, log_if_no_address=False)
             try:
                 return command(temporary_client)
@@ -1460,7 +1461,7 @@ class BLEInterface(MeshInterface):
         - Pairing PIN/passkey handling remains OS-agent managed.
         """
         with self._management_lock:
-            self._validate_connection_preconditions()
+            self._validate_management_preconditions()
             if timeout <= 0:
                 raise self.BLEError(ERROR_TRUST_INVALID_TIMEOUT)
             if not sys.platform.startswith("linux"):
@@ -1471,7 +1472,7 @@ class BLEInterface(MeshInterface):
 
             target_address = self._resolve_target_address_for_management(address)
             canonical_address = self._format_bluetoothctl_address(target_address)
-            self._validate_connection_preconditions()
+            self._validate_management_preconditions()
             try:
                 result = subprocess.run(  # noqa: S603
                     [bluetoothctl_path, "trust", canonical_address],
@@ -1578,6 +1579,25 @@ class BLEInterface(MeshInterface):
         """
         if self._is_connection_closing:
             raise self.BLEError(ERROR_INTERFACE_CLOSING)
+
+    def _validate_management_preconditions(self) -> None:
+        """Raise BLEError if the interface is closing or actively connecting.
+
+        Management operations are side-effecting and should not race a
+        connection attempt that is still establishing or replacing the active
+        client. We reject them while CONNECTING rather than trying to interleave
+        them with connect/reconnect state transitions.
+
+        Raises
+        ------
+        BLEError
+            With ERROR_INTERFACE_CLOSING when shutdown has begun, or
+            ERROR_MANAGEMENT_CONNECTING when a connection attempt is in progress.
+        """
+        self._validate_connection_preconditions()
+        with self._state_lock:
+            if self._state_manager._current_state == ConnectionState.CONNECTING:
+                raise self.BLEError(ERROR_MANAGEMENT_CONNECTING)
 
     def _should_suppress_duplicate_connect(self, connection_key: str | None) -> bool:
         """Return whether a connect attempt for the given connection key should be suppressed because an active connection for that key exists on a different interface.

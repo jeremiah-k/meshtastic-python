@@ -359,6 +359,8 @@ class TCPInterface(StreamInterface):
         sock = self.socket
         if sock is None:
             raise ConnectionError(self.SOCKET_NOT_CONNECTED_ERROR)
+        # Validate payload shape before entering socket-recovery handling so
+        # caller contract errors do not reset an otherwise healthy socket.
         payload = memoryview(b)
         try:
             total_sent = 0

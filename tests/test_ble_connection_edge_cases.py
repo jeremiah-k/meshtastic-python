@@ -134,6 +134,52 @@ def test_client_manager_initialization() -> None:
 
 
 @pytest.mark.unit
+def test_client_manager_create_client_forwards_pair_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_create_client should forward pair_on_connect into the BLEClient constructor."""
+    manager = ClientManager(
+        state_manager=BLEStateManager(),
+        state_lock=RLock(),
+        thread_coordinator=MagicMock(),
+        error_handler=MagicMock(),
+    )
+    captured: dict[str, object] = {}
+
+    def _fake_ble_client(
+        address: str,
+        *,
+        disconnected_callback: object,
+        pair: bool,
+    ) -> SimpleNamespace:
+        captured["address"] = address
+        captured["disconnected_callback"] = disconnected_callback
+        captured["pair"] = pair
+        return SimpleNamespace(address=address)
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.connection.BLEClient",
+        _fake_ble_client,
+    )
+
+    def disconnect_callback(_client: object) -> None:
+        return None
+
+    client = manager._create_client(
+        "AA:BB:CC:DD:EE:FF",
+        disconnect_callback,
+        pair_on_connect=True,
+    )
+
+    assert client.address == "AA:BB:CC:DD:EE:FF"
+    assert captured == {
+        "address": "AA:BB:CC:DD:EE:FF",
+        "disconnected_callback": disconnect_callback,
+        "pair": True,
+    }
+
+
+@pytest.mark.unit
 def test_direct_connect_timeout_is_reasonable() -> None:
     """DIRECT_CONNECT_TIMEOUT_SECONDS should be shorter than CONNECTION_TIMEOUT."""
     assert DIRECT_CONNECT_TIMEOUT_SECONDS < BLEConfig.CONNECTION_TIMEOUT

@@ -23,6 +23,7 @@ try:
         BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED,
         BLECLIENT_ERROR_CANNOT_READ_NOT_INITIALIZED,
         BLECLIENT_ERROR_CANNOT_START_NOTIFY_NOT_INITIALIZED,
+        BLECLIENT_ERROR_CANNOT_STOP_NOTIFY_NOT_INITIALIZED,
         BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED,
         BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED,
         BLECLIENT_ERROR_CANNOT_WRITE_NOT_INITIALIZED,
@@ -123,7 +124,8 @@ def test_bleclient_operations_require_initialized_client(ble_client: BLEClient) 
         ble_client.start_notify("uuid", lambda *_args: None)
 
     with pytest.raises(
-        BLEClient.BLEError, match="Cannot stop notify: BLE client not initialized"
+        BLEClient.BLEError,
+        match=BLECLIENT_ERROR_CANNOT_STOP_NOTIFY_NOT_INITIALIZED,
     ):
         ble_client.stopNotify("uuid")
 
