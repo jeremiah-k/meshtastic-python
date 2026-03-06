@@ -187,7 +187,7 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
         is_connected()
         """
 
-        def __init__(self, address: str | None = None, **_kwargs: object) -> None:
+        def __init__(self, address: object | None = None, **_kwargs: object) -> None:
             """Initialize a minimal test BLE client with an associated address and a lightweight services shim.
 
             Parameters
@@ -201,7 +201,7 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
             services : types.SimpleNamespace
                 Exposes get_characteristic(specifier) which always returns None.
             """
-            self.address = address
+            self.address = cast(str | None, getattr(address, "address", address))
             self.services = SimpleNamespace(get_characteristic=lambda _specifier: None)
 
         async def connect(self, **_kwargs: object) -> None:

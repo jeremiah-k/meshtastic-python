@@ -11,11 +11,20 @@ import pytest
 from meshtastic.tcp_interface import DEFAULT_TCP_PORT, TCPInterface
 
 MESHTASTICD_HOST_ENV_VAR = "MESHTASTICD_HOST"
-HOST = os.environ.get(MESHTASTICD_HOST_ENV_VAR, "localhost:4401")
+HOST = os.environ.get(MESHTASTICD_HOST_ENV_VAR)
 CONNECT_TIMEOUT_SECONDS = 5.0
 WAIT_CONNECTED_TIMEOUT_SECONDS = 10.0
 RECONNECT_RECOVERY_TIMEOUT_SECONDS = 25.0
 RECONNECT_RETRY_INTERVAL_SECONDS = 0.5
+
+
+def _require_meshtasticd_host() -> str:
+    """Return the configured meshtasticd host or skip when unset."""
+    if not HOST:
+        pytest.skip(
+            f"Set {MESHTASTICD_HOST_ENV_VAR} to run meshtasticd integration tests."
+        )
+    return HOST
 
 
 def _extract_port_component(host: str) -> str | None:
@@ -178,7 +187,8 @@ def test_parse_host_and_port_rejects_extra_url_components(host: str) -> None:
 @pytest.mark.smokevirt
 def test_tcp_interface_meshtasticd_connect_and_sendtext() -> None:
     """TCPInterface should connect to meshtasticd and send a text packet."""
-    host_name, port = _parse_host_and_port(HOST)
+    host = _require_meshtasticd_host()
+    host_name, port = _parse_host_and_port(host)
 
     with TCPInterface(
         hostname=host_name,
@@ -197,7 +207,8 @@ def test_tcp_interface_meshtasticd_connect_and_sendtext() -> None:
 @pytest.mark.smokevirt
 def test_tcp_interface_meshtasticd_recovers_after_socket_drop() -> None:
     """TCPInterface should recover after a forced local socket close."""
-    host_name, port = _parse_host_and_port(HOST)
+    host = _require_meshtasticd_host()
+    host_name, port = _parse_host_and_port(host)
 
     with TCPInterface(
         hostname=host_name,
@@ -228,7 +239,7 @@ def test_tcp_interface_meshtasticd_recovers_after_socket_drop() -> None:
 
         assert recovered, (
             "TCPInterface did not recover after forced socket close.\n"
-            f"host={HOST}\n"
+            f"host={host}\n"
             f"last_error={last_error!r}\n"
             f"socket_present={iface.socket is not None}\n"
             f"fatal_disconnect={getattr(iface, '_fatal_disconnect', None)}"

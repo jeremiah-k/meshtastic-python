@@ -35,6 +35,7 @@ from meshtastic.interfaces.ble import (
 )
 from meshtastic.interfaces.ble.connection import ConnectionValidator
 from meshtastic.interfaces.ble.constants import (
+    ERROR_INTERFACE_CLOSING,
     ERROR_MANAGEMENT_ADDRESS_EMPTY,
     ERROR_MANAGEMENT_CONNECTING,
     ERROR_TRUST_ADDRESS_NOT_RESOLVED,
@@ -50,7 +51,6 @@ from meshtastic.interfaces.ble.discovery import (
     _looks_like_ble_address,
     _parse_scan_response,
 )
-from meshtastic.interfaces.ble.gating import _addr_lock_context
 from meshtastic.interfaces.ble.reconnection import ReconnectScheduler, ReconnectWorker
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 
@@ -1127,6 +1127,7 @@ def test_ble_interface_pair_waits_for_connect_lock(
 ) -> None:
     """pair() should serialize behind the interface connect lock."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    real_connect_lock = iface._connect_lock
     with iface._state_lock:
         iface.client = None
         iface._state_manager._reset_to_disconnected()
@@ -1142,6 +1143,24 @@ def test_ble_interface_pair_waits_for_connect_lock(
     pair_finished = threading.Event()
     pair_thread_started = threading.Event()
     temp_client_created = threading.Event()
+    allow_temp_client_creation = threading.Event()
+    connect_lock_attempted = threading.Event()
+
+    class _ObservedConnectLock:
+        def __enter__(self) -> "_ObservedConnectLock":
+            connect_lock_attempted.set()
+            real_connect_lock.acquire()
+            return self
+
+        def __exit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: TracebackType | None,
+        ) -> Literal[False]:
+            _ = (exc_type, exc, tb)
+            real_connect_lock.release()
+            return False
 
     def _pair(*, await_timeout: float | None = None, **kwargs: object) -> None:
         pair_kwargs.append(dict(kwargs))
@@ -1154,6 +1173,7 @@ def test_ble_interface_pair_waits_for_connect_lock(
     )
 
     def _temp_client_factory(_address: str, **_kwargs: object) -> SimpleNamespace:
+        assert allow_temp_client_creation.wait(timeout=1.0)
         temp_client_created.set()
         return temp_client
 
@@ -1170,14 +1190,16 @@ def test_ble_interface_pair_waits_for_connect_lock(
         "_safe_close_client",
         lambda client: close_calls.append(client),
     )
+    monkeypatch.setattr(iface, "_connect_lock", _ObservedConnectLock())
 
-    with iface._connect_lock:
+    with real_connect_lock:
         pair_thread = threading.Thread(target=_run_pair, daemon=True)
         pair_thread.start()
         assert pair_thread_started.wait(timeout=1.0)
-        assert temp_client_created.wait(timeout=0.2) is False
+        assert connect_lock_attempted.wait(timeout=1.0)
         assert pair_kwargs == []
         assert pair_finished.is_set() is False
+        allow_temp_client_creation.set()
 
     pair_thread.join(timeout=2.0)
     assert temp_client_created.is_set() is True
@@ -1208,6 +1230,33 @@ def test_ble_interface_pair_waits_for_address_gate(
     pair_finished = threading.Event()
     pair_thread_started = threading.Event()
     temp_client_created = threading.Event()
+    allow_temp_client_creation = threading.Event()
+    addr_gate_attempted = threading.Event()
+
+    class _ObservedAddressLock:
+        def __init__(self) -> None:
+            self._lock = threading.RLock()
+
+        def __enter__(self) -> "_ObservedAddressLock":
+            addr_gate_attempted.set()
+            self._lock.acquire()
+            return self
+
+        def __exit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: TracebackType | None,
+        ) -> Literal[False]:
+            _ = (exc_type, exc, tb)
+            self._lock.release()
+            return False
+
+    observed_address_lock = _ObservedAddressLock()
+
+    @contextlib.contextmanager
+    def _observed_addr_lock_context(_addr: str | None):
+        yield observed_address_lock
 
     def _pair(*, await_timeout: float | None = None, **kwargs: object) -> None:
         pair_kwargs.append(dict(kwargs))
@@ -1220,6 +1269,7 @@ def test_ble_interface_pair_waits_for_address_gate(
     )
 
     def _temp_client_factory(_address: str, **_kwargs: object) -> SimpleNamespace:
+        assert allow_temp_client_creation.wait(timeout=1.0)
         temp_client_created.set()
         return temp_client
 
@@ -1236,15 +1286,19 @@ def test_ble_interface_pair_waits_for_address_gate(
         "_safe_close_client",
         lambda client: close_calls.append(client),
     )
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface._addr_lock_context",
+        _observed_addr_lock_context,
+    )
 
-    with _addr_lock_context("AA:BB:CC:DD:EE:FF") as addr_lock:
-        with addr_lock:
-            pair_thread = threading.Thread(target=_run_pair, daemon=True)
-            pair_thread.start()
-            assert pair_thread_started.wait(timeout=1.0)
-            assert temp_client_created.wait(timeout=0.2) is False
-            assert pair_kwargs == []
-            assert pair_finished.is_set() is False
+    with observed_address_lock:
+        pair_thread = threading.Thread(target=_run_pair, daemon=True)
+        pair_thread.start()
+        assert pair_thread_started.wait(timeout=1.0)
+        assert addr_gate_attempted.wait(timeout=1.0)
+        assert pair_kwargs == []
+        assert pair_finished.is_set() is False
+        allow_temp_client_creation.set()
 
     pair_thread.join(timeout=2.0)
     assert temp_client_created.is_set() is True
@@ -1278,7 +1332,7 @@ def test_ble_interface_close_logs_when_shutdown_already_in_progress(
 def test_ble_interface_connect_uses_pair_override_for_orchestrator(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """connect(pair=...) should forward the effective pairing flag to connection orchestration."""
+    """connect() should forward pair and timeout overrides to connection orchestration."""
     iface = object.__new__(BLEInterface)
     iface._state_manager = BLEStateManager()
     iface._state_lock = threading.RLock()
@@ -1298,8 +1352,10 @@ def test_ble_interface_connect_uses_pair_override_for_orchestrator(
     monkeypatch.setattr(iface, "_get_existing_client_if_valid", lambda _req: None)
     monkeypatch.setattr(iface, "_raise_if_duplicate_connect", lambda _key: None)
     monkeypatch.setattr(iface, "_finalize_connection_gates", lambda *_args: None)
+    monkeypatch.setattr(iface, "_is_owned_connected_client", lambda _client: True)
 
     captured_pair_flags: list[bool] = []
+    captured_timeouts: list[float | None] = []
 
     def _establish_stub(
         address: str | None,
@@ -1307,19 +1363,22 @@ def test_ble_interface_connect_uses_pair_override_for_orchestrator(
         address_key: str | None,
         *,
         pair_on_connect: bool = False,
+        connect_timeout: float | None = None,
     ) -> tuple[DummyClient, str | None, str | None]:
         _ = (address, normalized_request, address_key)
         captured_pair_flags.append(pair_on_connect)
+        captured_timeouts.append(connect_timeout)
         return DummyClient(), None, None
 
     monkeypatch.setattr(iface, "_establish_and_update_client", _establish_stub)
 
-    iface.connect(pair=True)
+    iface.connect(pair=True, connect_timeout=4.5)
     iface.connect(pair=False)
     iface.pair_on_connect = True
     iface.connect()
 
     assert captured_pair_flags == [True, False, True]
+    assert captured_timeouts == [4.5, None, None]
 
 
 def test_ble_interface_establish_and_update_client_discards_late_connection_result(
@@ -1454,7 +1513,8 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(
             iface.client = initial_client  # type: ignore[assignment]
             iface._disconnect_notified = False
             iface._state_manager._reset_to_disconnected()
-            iface._state_manager._transition_to(ConnectionState.CONNECTED)
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
         return initial_client
 
     monkeypatch.setattr(BLEInterface, "connect", _init_connect_stub, raising=True)
@@ -1616,7 +1676,8 @@ def test_connect_finalizes_gates_after_address_lock_scope(
             iface.client = initial_client  # type: ignore[assignment]
             iface._disconnect_notified = False
             iface._state_manager._reset_to_disconnected()
-            iface._state_manager._transition_to(ConnectionState.CONNECTED)
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
         return initial_client
 
     monkeypatch.setattr(BLEInterface, "connect", _init_connect_stub, raising=True)
@@ -1680,6 +1741,7 @@ def test_connect_finalizes_gates_after_address_lock_scope(
     monkeypatch.setattr(
         iface, "_get_existing_client_if_valid", lambda _request: None, raising=True
     )
+    monkeypatch.setattr(iface, "_is_owned_connected_client", lambda _client: True)
 
     def _establish_stub(
         _address: str | None,
@@ -1687,8 +1749,9 @@ def test_connect_finalizes_gates_after_address_lock_scope(
         _address_key: str | None,
         *,
         pair_on_connect: bool = False,
+        connect_timeout: float | None = None,
     ) -> tuple[DummyClient, str | None, str | None]:
-        _ = pair_on_connect
+        _ = (pair_on_connect, connect_timeout)
         return connected_client, "device-key", None
 
     monkeypatch.setattr(
@@ -1706,6 +1769,83 @@ def test_connect_finalizes_gates_after_address_lock_scope(
     assert result is connected_client
     assert finalized_lock_states == [False]
     iface.close()
+
+
+def test_connect_raises_when_client_becomes_stale_after_gate_finalization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """connect() should not return a client that shutdown invalidated after finalization."""
+    target_address = "AA:BB:CC:DD:EE:03"
+    iface = object.__new__(BLEInterface)
+    iface._state_manager = BLEStateManager()
+    iface._state_lock = threading.RLock()
+    iface._connect_lock = threading.RLock()
+    iface._disconnect_lock = threading.Lock()
+    iface._closed = False
+    iface.address = None
+    iface.client = None
+    iface._disconnect_notified = False
+    iface._last_connection_request = None
+    iface.pair_on_connect = False
+    iface._connection_alias_key = None
+    iface._ever_connected = False
+    iface._read_retry_count = 0
+    connected_client = DummyClient()
+    connected_client.address = target_address
+    connected_client.bleak_client = SimpleNamespace(address=target_address)
+    finalized_clients: list[BLEClient] = []
+
+    monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
+    monkeypatch.setattr(
+        iface, "_raise_if_duplicate_connect", lambda _connection_key: None, raising=True
+    )
+    monkeypatch.setattr(
+        iface, "_get_existing_client_if_valid", lambda _request: None, raising=True
+    )
+    monkeypatch.setattr(
+        BLEInterface,
+        "_is_owned_connected_client",
+        lambda _self, _client: False,
+        raising=True,
+    )
+
+    def _establish_stub(
+        _address: str | None,
+        _normalized_request: str | None,
+        _address_key: str | None,
+        *,
+        pair_on_connect: bool = False,
+        connect_timeout: float | None = None,
+    ) -> tuple[DummyClient, str | None, str | None]:
+        _ = (pair_on_connect, connect_timeout)
+        with iface._state_lock:
+            iface.client = connected_client
+            iface.address = target_address
+            iface._state_manager._reset_to_disconnected()
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
+        return connected_client, "device-key", None
+
+    def _finalize_stub(
+        _self: BLEInterface,
+        _client: BLEClient,
+        _device_key: str | None,
+        _alias_key: str | None,
+    ) -> None:
+        finalized_clients.append(_client)
+
+    monkeypatch.setattr(
+        iface,
+        "_establish_and_update_client",
+        _establish_stub,
+        raising=True,
+    )
+    monkeypatch.setattr(BLEInterface, "_finalize_connection_gates", _finalize_stub)
+
+    with pytest.raises(BLEInterface.BLEError, match=ERROR_INTERFACE_CLOSING):
+        iface.connect(target_address)
+
+    assert finalized_clients == [connected_client]
 
 
 def test_transient_read_retry_uses_zero_based_delay(monkeypatch):
