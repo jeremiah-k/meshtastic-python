@@ -179,7 +179,7 @@ def test_tcp_interface_meshtasticd_recovers_after_socket_drop() -> None:
                     if iface.socket is not original_socket:
                         recovered = True
                         break
-            except (ConnectionError, OSError, TimeoutError) as ex:
+            except (OSError, TimeoutError) as ex:
                 last_error = ex
             time.sleep(RECONNECT_RETRY_INTERVAL_SECONDS)
 

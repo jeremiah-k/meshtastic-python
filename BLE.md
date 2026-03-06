@@ -60,8 +60,9 @@ prevent deadlocks:
    [`meshtastic/interfaces/ble/gating.py`](meshtastic/interfaces/ble/gating.py))
 2. Per-address lock (`_addr_lock_context` in the same module)
 3. Interface connect lock (`_connect_lock`)
-4. Interface state lock (`_state_lock`)
-5. Interface disconnect lock (`_disconnect_lock`)
+4. Interface management lock (`_management_lock`)
+5. Interface state lock (`_state_lock`)
+6. Interface disconnect lock (`_disconnect_lock`)
 
 **Exception:** `_handle_disconnect()` acquires `_disconnect_lock` _first_ in
 non-blocking mode. If another disconnect handler is already active, the method
@@ -223,7 +224,10 @@ iface = BLEInterface(
 
 # Trust remains explicit and Linux-only:
 iface.trust("AA:BB:CC:DD:EE:FF")
+iface.close()
+```
 
+```python
 # One-time pairing on a specific manual reconnect (with auto_reconnect=False):
 iface_manual = BLEInterface(
     address="AA:BB:CC:DD:EE:FF",

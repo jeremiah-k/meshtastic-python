@@ -26,6 +26,7 @@ from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_DISCOVERED,
     BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_INITIALIZED,
     BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED,
+    BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED,
     BLECLIENT_ERROR_CANNOT_READ_NOT_INITIALIZED,
     BLECLIENT_ERROR_CANNOT_SCHEDULE_CLOSED,
     BLECLIENT_ERROR_CANNOT_START_NOTIFY_NOT_INITIALIZED,
@@ -223,7 +224,10 @@ class BLEClient:
         bleak_client = self.bleak_client
         if bleak_client is None:
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED)
-        self._async_await(bleak_client.pair(**kwargs))
+        try:
+            self._async_await(bleak_client.pair(**kwargs))
+        except NotImplementedError as exc:
+            raise self.BLEError(BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED) from exc
         return None
 
     def unpair(self) -> None:

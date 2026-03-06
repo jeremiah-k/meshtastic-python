@@ -2,7 +2,7 @@
 
 import re
 import threading
-from typing import cast
+from typing import Any, cast
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -219,6 +219,26 @@ def test_TCPInterface_write_normalizes_select_error_to_oserror(
 
 
 @pytest.mark.unit
+def test_TCPInterface_write_propagates_invalid_payload_type() -> None:
+    """_write_bytes should not treat caller payload type errors as socket failures."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            mock_socket = MagicMock()
+            iface.socket = mock_socket
+
+            with patch("meshtastic.tcp_interface.select.select") as select_mock:
+                with pytest.raises(TypeError, match="a bytes-like object is required"):
+                    iface._write_bytes(cast(Any, "abc"))
+
+            select_mock.assert_not_called()
+            mock_socket.close.assert_not_called()
+            assert iface.socket is mock_socket
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
 def test_TCPInterface_write_times_out_when_socket_not_writable() -> None:
     """_write_bytes should timeout when the socket never becomes writable."""
     with patch("socket.socket"):
@@ -269,9 +289,9 @@ def test_TCPInterface_read_empty_does_not_reconnect_when_closing() -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("recv_error", [ValueError, TypeError])
+@pytest.mark.parametrize("recv_error", [OSError, ConnectionResetError])
 def test_TCPInterface_read_error_triggers_reconnect_cleanup(
-    recv_error: type[Exception],
+    recv_error: type[OSError],
 ) -> None:
     """_read_bytes should treat recv errors as a dead socket and attempt reconnect."""
     with patch("socket.socket"):
@@ -288,6 +308,27 @@ def test_TCPInterface_read_error_triggers_reconnect_cleanup(
             reconnect_mock.assert_called_once_with()
             mock_socket.close.assert_called_once()
             assert iface.socket is None
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+def test_TCPInterface_read_propagates_invalid_length_type() -> None:
+    """_read_bytes should not treat caller type errors as dead sockets."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            mock_socket = MagicMock()
+            mock_socket.recv.side_effect = TypeError("an integer is required")
+            iface.socket = mock_socket
+
+            with patch.object(iface, "_attempt_reconnect") as reconnect_mock:
+                with pytest.raises(TypeError, match="an integer is required"):
+                    iface._read_bytes(cast(Any, "1"))
+
+            reconnect_mock.assert_not_called()
+            mock_socket.close.assert_not_called()
+            assert iface.socket is mock_socket
         finally:
             iface.close()
 

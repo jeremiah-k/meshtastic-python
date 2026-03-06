@@ -20,6 +20,7 @@ try:
         BLECLIENT_ERROR_CANNOT_DISCONNECT_NOT_INITIALIZED,
         BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_INITIALIZED,
         BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED,
+        BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED,
         BLECLIENT_ERROR_CANNOT_READ_NOT_INITIALIZED,
         BLECLIENT_ERROR_CANNOT_START_NOTIFY_NOT_INITIALIZED,
         BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED,
@@ -412,3 +413,27 @@ def test_bleclient_pair_delegates_to_backend(
 
     ble_client.pair(confirm=True)
     assert backend_calls == [{"confirm": True}]
+
+
+@pytest.mark.unit
+def test_bleclient_pair_translates_not_implemented_error(
+    monkeypatch: pytest.MonkeyPatch,
+    ble_client: BLEClient,
+) -> None:
+    """pair() should wrap backend NotImplementedError as unsupported."""
+
+    class _Backend:
+        async def pair(self, **_kwargs: object) -> None:
+            raise NotImplementedError
+
+    ble_client.bleak_client = cast(Any, _Backend())
+    monkeypatch.setattr(
+        ble_client, "_async_await", lambda awaitable: asyncio.run(awaitable)
+    )
+
+    with pytest.raises(
+        BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED
+    ) as exc_info:
+        ble_client.pair(confirm=True)
+
+    assert isinstance(exc_info.value.__cause__, NotImplementedError)

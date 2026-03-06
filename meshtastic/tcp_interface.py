@@ -359,8 +359,8 @@ class TCPInterface(StreamInterface):
         sock = self.socket
         if sock is None:
             raise ConnectionError(self.SOCKET_NOT_CONNECTED_ERROR)
+        payload = memoryview(b)
         try:
-            payload = memoryview(b)
             total_sent = 0
             write_deadline = time.monotonic() + WRITE_PROGRESS_TIMEOUT_SECONDS
             while total_sent < len(payload):
@@ -587,7 +587,7 @@ class TCPInterface(StreamInterface):
         if sock is not None:
             try:
                 data = sock.recv(length)
-            except (OSError, ValueError, TypeError) as ex:
+            except OSError as ex:
                 logger.debug("Socket read error, treating as dead socket: %s", ex)
                 data = b""
             # empty byte indicates a disconnected socket,

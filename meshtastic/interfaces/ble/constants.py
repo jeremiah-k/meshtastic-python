@@ -159,6 +159,9 @@ BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT = BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIME
 BLECLIENT_ERROR_ASYNC_TIMEOUT = "Async operation timed out"
 BLECLIENT_ERROR_CANCELLED = "Async operation was cancelled"
 BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED = "Cannot pair: BLE client not initialized"
+BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED = (
+    "Cannot pair: BLE backend does not support pairing on this platform"
+)
 BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED = (
     "Cannot unpair: BLE client not initialized"
 )
