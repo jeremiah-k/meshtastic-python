@@ -1752,9 +1752,13 @@ class Node:
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
         if full:
+            # These protobuf fields are integer-typed; explicit integer values
+            # avoid firmware-side coercion issues seen with boolean assignment.
             p.factory_reset_device = 1
             logger.info("Telling node to factory reset (full device reset)")
         else:
+            # These protobuf fields are integer-typed; explicit integer values
+            # avoid firmware-side coercion issues seen with boolean assignment.
             p.factory_reset_config = 1
             logger.info("Telling node to factory reset (config reset)")
 

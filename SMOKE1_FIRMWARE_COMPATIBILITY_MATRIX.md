@@ -42,8 +42,9 @@ triage against firmware changes.
   semantics are changed upstream.
 - Some firmware exports can omit full channel arrays; integration tests should
   prefer strong identity signals (`channel_url`) with resilient fallbacks.
-- Factory reset admin fields are integer-typed in protobuf; Python code must
-  send integer values (`1`) rather than booleans.
+- Factory reset smoke checks should validate successful reset/reconnect and
+  default-state behavior after the restart window, not protobuf encoding
+  details.
 
 ## Update Procedure
 
@@ -51,6 +52,8 @@ When firmware behavior changes:
 
 1. Capture hardware command output for changed behavior.
 2. Update smoke assertions to match intentional behavior.
-3. Update this matrix in the same PR with concrete notes.
-4. Keep stable-lane checks non-destructive and move risky checks to
+3. Verify and update `COMPATIBILITY.md` when the behavior change affects
+   maintained compatibility names, warning policy, or status.
+4. Update this matrix in the same PR with concrete notes.
+5. Keep stable-lane checks non-destructive and move risky checks to
    `smoke1_destructive`.

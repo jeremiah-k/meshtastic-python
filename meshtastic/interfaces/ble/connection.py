@@ -640,17 +640,18 @@ class ConnectionOrchestrator:
                 device = self.interface.findDevice(target_address)
                 self._raise_if_interface_closing()
                 resolved_address = device.address
+                discovery_timeout = self._get_connect_timeout(
+                    pair_on_connect=pair_on_connect
+                )
                 client = self.client_manager._create_client(
                     resolved_address,
                     on_disconnect_func,
                     pair_on_connect=pair_on_connect,
-                    connect_timeout=self._get_connect_timeout(
-                        pair_on_connect=pair_on_connect
-                    ),
+                    connect_timeout=discovery_timeout,
                 )
                 self.client_manager._connect_client(
                     client,
-                    timeout=self._get_connect_timeout(pair_on_connect=pair_on_connect),
+                    timeout=discovery_timeout,
                 )
 
             self._raise_if_interface_closing()

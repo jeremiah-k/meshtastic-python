@@ -608,6 +608,51 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
     iface.close()
 
 
+def test_ble_interface_unpair_uses_temporary_client_when_disconnected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """unpair() should create and clean up a temporary BLEClient when disconnected."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    with iface._state_lock:
+        iface.client = None
+        iface._state_manager._reset_to_disconnected()
+    monkeypatch.setattr(
+        iface,
+        "findDevice",
+        lambda _address: _create_ble_device("AA:BB:CC:DD:EE:FF", "Meshtastic"),
+    )
+
+    unpair_await_timeouts: list[float | None] = []
+
+    def _unpair(*, await_timeout: float | None = None) -> None:
+        unpair_await_timeouts.append(await_timeout)
+
+    temp_client = SimpleNamespace(
+        unpair=_unpair,
+        bleak_client=SimpleNamespace(address="AA:BB:CC:DD:EE:FF"),
+    )
+    cleanup_calls: list[Any] = []
+
+    def _temp_client_factory(_address: str, **_kwargs: object) -> SimpleNamespace:
+        return temp_client
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.BLEClient",
+        _temp_client_factory,
+    )
+    monkeypatch.setattr(
+        iface._client_manager,
+        "_safe_close_client",
+        lambda client: cleanup_calls.append(client),
+    )
+
+    iface.unpair("mesh-node", await_timeout=7.0)
+
+    assert unpair_await_timeouts == [7.0]
+    assert cleanup_calls == [temp_client]
+    iface.close()
+
+
 @pytest.mark.parametrize("method_name", ["pair", "unpair"])
 def test_ble_interface_management_rejects_blank_explicit_target(
     monkeypatch: pytest.MonkeyPatch,
@@ -973,6 +1018,52 @@ def test_ble_interface_trust_rejects_closing_interface(
 
     assert find_device_called is False
     assert subprocess_called is False
+
+
+def test_ble_interface_trust_does_not_hold_interface_locks_during_subprocess(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """trust() should allow close() to proceed while bluetoothctl is running."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    run_started = threading.Event()
+    allow_run_return = threading.Event()
+    close_done = threading.Event()
+    trust_errors: list[BaseException] = []
+
+    def _blocking_run(*_args: object, **_kwargs: object) -> SimpleNamespace:
+        run_started.set()
+        assert allow_run_return.wait(timeout=1.0)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    _pin_trust_environment(monkeypatch, run=_blocking_run)
+
+    def _run_trust() -> None:
+        try:
+            iface.trust("AA:BB:CC:DD:EE:FF", timeout=7.0)
+        except BaseException as exc:  # pragma: no cover - failure captured below
+            trust_errors.append(exc)
+
+    def _close_iface() -> None:
+        try:
+            iface.close()
+        finally:
+            close_done.set()
+
+    trust_thread = threading.Thread(target=_run_trust, daemon=True)
+    trust_thread.start()
+    assert run_started.wait(timeout=1.0)
+
+    close_thread = threading.Thread(target=_close_iface, daemon=True)
+    close_thread.start()
+    assert close_done.wait(timeout=1.0)
+
+    allow_run_return.set()
+    trust_thread.join(timeout=2.0)
+    close_thread.join(timeout=2.0)
+
+    assert trust_errors == []
+    with iface._state_lock:
+        assert iface._closed is True
 
 
 def test_ble_interface_close_serializes_with_management_lock(

@@ -47,6 +47,10 @@ def _parse_host_and_port(host: str) -> tuple[str, int]:
         raise ValueError(
             f"Invalid {MESHTASTICD_HOST_ENV_VAR}={host!r}: host component is empty."
         )
+    if any(separator in host for separator in ("@", "/", "?", "#", ";")):
+        raise ValueError(
+            f"Invalid {MESHTASTICD_HOST_ENV_VAR}={host!r}: expected HOST[:PORT] only."
+        )
     if host.count(":") >= 2 and not host.startswith("["):
         try:
             ipaddress.IPv6Address(host)
@@ -151,7 +155,15 @@ def test_parse_host_and_port_accepts_raw_ipv6_without_port() -> None:
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
-    "host", ["user@localhost:4401", "localhost/path", "localhost?x=1"]
+    "host",
+    [
+        "user@localhost:4401",
+        "user:pass@localhost:4401",
+        "localhost/path",
+        "localhost?x=1",
+        "localhost#fragment",
+        "localhost;params",
+    ],
 )
 def test_parse_host_and_port_rejects_extra_url_components(host: str) -> None:
     """_parse_host_and_port should reject usernames, paths, and query strings."""

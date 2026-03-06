@@ -178,6 +178,13 @@ def restore_smoke1_module_config() -> Iterator[None]:
             f"{restore_output}\n"
             f"backup={backup_path}"
         )
+        ready_code, ready_output = _wait_for_info_ready()
+        assert ready_code == 0, (
+            "Smoke1 device did not become ready after baseline restore:\n"
+            f"{ready_output}\n"
+            f"backup={backup_path}"
+        )
+        _assert_connected(ready_output)
         restore_succeeded = True
     finally:
         if not export_succeeded or restore_succeeded:
