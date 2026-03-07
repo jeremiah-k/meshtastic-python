@@ -478,6 +478,7 @@ def test_rapid_connect_disconnect_stress_test(
         def __init__(
             self,
             address: str = "00:11:22:33:44:55",
+            *,
             is_connected_result: bool = True,
         ) -> None:
             """Initialize the shared BLE test stub state."""
@@ -846,7 +847,7 @@ def test_ble_client_async_timeout_maps_to_ble_error(
 
     async def _test_coro() -> None:
         """Run a no-op coroutine used for tests."""
-        return None
+        pass
 
     # BLEClient._async_await raises BLEClient.BLEError for timeouts
     with pytest.raises(BLEClient.BLEError) as excinfo:
@@ -871,7 +872,7 @@ def test_ble_client_async_runtime_error_maps_to_ble_error(
 
     async def _test_coro() -> None:
         """Run a no-op coroutine used for tests."""
-        return None
+        pass
 
     # BLEClient._async_await raises BLEClient.BLEError for runtime errors
     with pytest.raises(BLEClient.BLEError) as excinfo:

@@ -1967,7 +1967,7 @@ def test_main_configure_applies_mixed_case_and_security_encodings(
                         "lsSecs": 222,
                         "waitBluetoothSecs": 77,
                         "minWakeSecs": 11,
-                        "sdsSecs": 555,
+                        "sdsSecs": 4294967295,
                     },
                     "security": {
                         "privateKey": f"base64:{base64.b64encode(private_key).decode()}",
@@ -2002,7 +2002,7 @@ def test_main_configure_applies_mixed_case_and_security_encodings(
     assert target_local.power.ls_secs == 222
     assert target_local.power.wait_bluetooth_secs == 77
     assert target_local.power.min_wake_secs == 11
-    assert target_local.power.sds_secs == 555
+    assert target_local.power.sds_secs == 4294967295
     assert target_local.security.private_key == private_key
     assert target_local.security.public_key == public_key
     assert list(target_local.security.admin_key) == [admin_key_1, admin_key_2]
@@ -4495,7 +4495,10 @@ def test_main_ota_update_retries_then_exits(
     assert "OTA update failed: boom" in err
     assert excinfo.value.code == 1
     assert ota.update.call_count == 5
-    assert any(call.args == (2,) for call in sleep_mock.call_args_list)
+    assert any(
+        call.args == (main_module.OTA_COMPLETION_WAIT_SECONDS,)
+        for call in sleep_mock.call_args_list
+    )
 
 
 @pytest.mark.unit
@@ -4544,7 +4547,10 @@ def test_main_ota_update_succeeds_and_prints_completion(
     assert err == ""
     assert ota.update.call_count == 1
     node.startOTA.assert_called_once()
-    assert any(call.args == (5,) for call in sleep_mock.call_args_list)
+    assert any(
+        call.args == (main_module.OTA_REBOOT_WAIT_SECONDS,)
+        for call in sleep_mock.call_args_list
+    )
 
 
 @pytest.mark.unit

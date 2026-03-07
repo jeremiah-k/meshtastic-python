@@ -1716,7 +1716,7 @@ class BLEInterface(MeshInterface):
         with self._connect_lock, self._management_lock:
             self._validate_management_preconditions()
 
-        timeout = self._validate_trust_timeout(timeout)
+        validated_timeout = self._validate_trust_timeout(timeout)
         if not sys.platform.startswith("linux"):
             raise self.BLEError(ERROR_TRUST_LINUX_ONLY)
         bluetoothctl_path = shutil.which("bluetoothctl")
@@ -1741,12 +1741,12 @@ class BLEInterface(MeshInterface):
                     capture_output=True,
                     text=True,
                     check=False,
-                    timeout=timeout,
+                    timeout=validated_timeout,
                 )
             except subprocess.TimeoutExpired as exc:
                 raise self.BLEError(
                     ERROR_TRUST_COMMAND_TIMEOUT.format(
-                        timeout=timeout, address=canonical_address
+                        timeout=validated_timeout, address=canonical_address
                     )
                 ) from exc
             if result.returncode != 0:
@@ -2072,6 +2072,10 @@ class BLEInterface(MeshInterface):
             if self.client is client:
                 is_closing = self._state_manager._is_closing or self._closed
                 self.client = None
+                # The disconnect callback remains registered on `client` until
+                # best-effort close completes, so mark this interface as already
+                # notified before close() can trigger a stale callback.
+                self._disconnect_notified = True
                 self._last_connection_request = None
                 if not is_closing:
                     self.address = None
@@ -2267,11 +2271,10 @@ class BLEInterface(MeshInterface):
             connection_alias_key,
         )
         if not still_owned or lost_gate_ownership:
-            if not lost_gate_ownership:
-                self._mark_address_keys_disconnected(
-                    connected_device_key,
-                    connection_alias_key,
-                )
+            self._mark_address_keys_disconnected(
+                connected_device_key,
+                connection_alias_key,
+            )
             self._discard_invalidated_connected_client(connected_client)
             if is_closing:
                 raise self.BLEError(ERROR_INTERFACE_CLOSING)

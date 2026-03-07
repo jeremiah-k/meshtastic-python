@@ -18,7 +18,7 @@ from typing import Any, NoReturn
 
 import yaml
 from google.protobuf.json_format import MessageToDict
-from pubsub import pub  # type: ignore[import-untyped,unused-ignore]
+from pubsub import pub  # type: ignore[import-untyped]
 
 import meshtastic.ota
 import meshtastic.serial_interface
@@ -102,6 +102,10 @@ GPIO_READ_MAX_POLLS = 10
 
 # Time to wait for device boot after power-on
 POWER_ON_BOOT_DELAY_SECONDS = 5.0
+
+# OTA CLI timing
+OTA_REBOOT_WAIT_SECONDS = 5
+OTA_COMPLETION_WAIT_SECONDS = 2
 
 # Keep-alive sleep interval for main loop (effectively infinite wait)
 MAIN_LOOP_IDLE_SLEEP_SECONDS = 1000
@@ -817,7 +821,7 @@ def onConnected(interface: MeshInterface) -> None:
             )
 
             print("Waiting for device to reboot into OTA mode...")
-            time.sleep(5)
+            time.sleep(OTA_REBOOT_WAIT_SECONDS)
 
             retries = 5
             while retries > 0:
@@ -830,7 +834,7 @@ def onConnected(interface: MeshInterface) -> None:
                     if retries == 0:
                         _cli_exit(f"OTA update failed: {e}")
 
-                    time.sleep(2)
+                    time.sleep(OTA_COMPLETION_WAIT_SECONDS)
 
             print("\nOTA update completed successfully!")
 

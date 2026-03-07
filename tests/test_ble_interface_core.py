@@ -752,10 +752,15 @@ def test_ble_interface_management_rejects_temp_client_when_target_owned_elsewher
         ),
     )
 
-    with pytest.raises(BLEInterface.BLEError, match=ERROR_CONNECTION_SUPPRESSED):
-        if method_name == "pair":
+    if method_name == "pair":
+        with pytest.raises(
+            BLEInterface.BLEError, match=ERROR_CONNECTION_SUPPRESSED
+        ):
             iface.pair("mesh-node", confirm=True, await_timeout=7.0)
-        else:
+    else:
+        with pytest.raises(
+            BLEInterface.BLEError, match=ERROR_CONNECTION_SUPPRESSED
+        ):
             iface.unpair("mesh-node", await_timeout=7.0)
 
     iface.close()
@@ -804,10 +809,15 @@ def test_ble_interface_management_revalidates_implicit_target_after_gate_handoff
 
     monkeypatch.setattr(iface, "_management_target_gate", _swap_target_gate)
 
-    with pytest.raises(BLEInterface.BLEError, match=ERROR_MANAGEMENT_TARGET_CHANGED):
-        if method_name == "pair":
+    if method_name == "pair":
+        with pytest.raises(
+            BLEInterface.BLEError, match=ERROR_MANAGEMENT_TARGET_CHANGED
+        ):
             iface.pair(confirm=True, await_timeout=7.0)
-        else:
+    else:
+        with pytest.raises(
+            BLEInterface.BLEError, match=ERROR_MANAGEMENT_TARGET_CHANGED
+        ):
             iface.unpair(await_timeout=7.0)
 
     assert command_calls == []
@@ -831,7 +841,7 @@ def test_ble_interface_management_rejects_blank_explicit_target(
 @pytest.mark.parametrize("method_name", ["pair", "unpair"])
 @pytest.mark.parametrize(
     "invalid_timeout",
-    [None, 0.0, -1.0, float("nan"), float("inf"), cast(Any, True)],
+    [None, 0.0, -1.0, float("nan"), float("inf"), True],
 )
 def test_ble_interface_management_rejects_unbounded_or_invalid_await_timeout(
     monkeypatch: pytest.MonkeyPatch,
@@ -1154,7 +1164,7 @@ def test_ble_interface_trust_rejects_non_linux(
 
 @pytest.mark.parametrize(
     "invalid_timeout",
-    [0, -1.0, float("nan"), float("inf"), float("-inf"), cast(Any, True), "7.0"],
+    [0, -1.0, float("nan"), float("inf"), float("-inf"), True, "7.0"],
 )
 def test_ble_interface_trust_rejects_invalid_timeout(
     monkeypatch: pytest.MonkeyPatch,
@@ -1285,8 +1295,8 @@ def test_ble_interface_trust_does_not_hold_interface_locks_during_subprocess(
     allow_run_return = threading.Event()
     close_done = threading.Event()
     close_started = threading.Event()
-    trust_errors: list[BaseException] = []
-    close_errors: list[BaseException] = []
+    trust_errors: list[Exception] = []
+    close_errors: list[Exception] = []
 
     def _blocking_run(*_args: object, **_kwargs: object) -> SimpleNamespace:
         run_started.set()
@@ -1298,14 +1308,14 @@ def test_ble_interface_trust_does_not_hold_interface_locks_during_subprocess(
     def _run_trust() -> None:
         try:
             iface.trust(trust_target, timeout=7.0)
-        except BaseException as exc:  # pragma: no cover - failure captured below
+        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             trust_errors.append(exc)
 
     def _close_iface() -> None:
         try:
             close_started.set()
             iface.close()
-        except BaseException as exc:  # pragma: no cover - failure captured below
+        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             close_errors.append(exc)
         finally:
             close_done.set()
@@ -1341,13 +1351,13 @@ def test_ble_interface_close_serializes_with_management_lock(
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     close_done = threading.Event()
     close_started = threading.Event()
-    close_errors: list[BaseException] = []
+    close_errors: list[Exception] = []
 
     def _close_iface() -> None:
         try:
             close_started.set()
             iface.close()
-        except BaseException as exc:  # pragma: no cover - failure captured below
+        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             close_errors.append(exc)
         finally:
             close_done.set()
@@ -1371,12 +1381,12 @@ def test_ble_interface_close_does_not_wait_for_connect_lock(
     """close() should still start shutdown while the connect lock is held."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     close_done = threading.Event()
-    close_errors: list[BaseException] = []
+    close_errors: list[Exception] = []
 
     def _close_iface() -> None:
         try:
             iface.close()
-        except BaseException as exc:  # pragma: no cover - failure captured below
+        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             close_errors.append(exc)
         finally:
             close_done.set()
@@ -1670,7 +1680,9 @@ def test_connect_wraps_invalid_connect_timeout_as_ble_error(
 
     with pytest.raises(
         BLEInterface.BLEError,
-        match="invalid connect_timeout: connect_timeout must be a finite positive number of seconds.",
+        match=re.escape(
+            "invalid connect_timeout: connect_timeout must be a finite positive number of seconds."
+        ),
     ):
         iface.connect("AA:BB:CC:DD:EE:10", connect_timeout=cast(Any, 0.0))
 
@@ -1755,6 +1767,62 @@ def test_handle_disconnect_ignores_stale_callbacks(
     assert iface._disconnect_notified is False
     assert reconnect_calls == []
     assert disconnected_calls == []
+
+    iface.close()
+
+
+def test_discard_invalidated_connected_client_marks_stale_callbacks_notified(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Discarded clients should not trigger a second disconnect via their stale callback."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    discarded_client = DummyClient()
+    discarded_client.address = "AA:BB:CC:DD:EE:FF"
+    discarded_client.bleak_client = SimpleNamespace(address=discarded_client.address)
+    disconnected_calls: list[bool] = []
+    reconnect_calls: list[bool] = []
+    callback_results: list[bool] = []
+
+    monkeypatch.setattr(
+        iface, "_disconnected", lambda: disconnected_calls.append(True), raising=True
+    )
+    monkeypatch.setattr(
+        iface,
+        "_schedule_auto_reconnect",
+        lambda: reconnect_calls.append(True),
+        raising=True,
+    )
+
+    def _safe_close_client(client: BLEClient) -> None:
+        callback_results.append(
+            iface._handle_disconnect("discarded-client", client=client)
+        )
+
+    monkeypatch.setattr(
+        iface._client_manager,
+        "_safe_close_client",
+        _safe_close_client,
+        raising=True,
+    )
+
+    with iface._state_lock:
+        cast(Any, iface).client = discarded_client
+        iface.address = discarded_client.address
+        iface._disconnect_notified = False
+        iface._state_manager._reset_to_disconnected()
+        assert iface._state_manager._transition_to(ConnectionState.CONNECTING) is True
+        assert iface._state_manager._transition_to(ConnectionState.CONNECTED) is True
+
+    iface._discard_invalidated_connected_client(cast(BLEClient, discarded_client))
+
+    assert callback_results == [True]
+    assert disconnected_calls == []
+    assert reconnect_calls == []
+    with iface._state_lock:
+        assert iface.client is None
+        assert iface.address is None
+        assert iface._disconnect_notified is True
+        assert iface._state_manager._current_state == ConnectionState.DISCONNECTED
 
     iface.close()
 
@@ -2288,7 +2356,7 @@ def test_connect_raises_when_registry_ownership_is_lost_after_gate_finalization(
 
     assert finalized_clients == [cast(BLEClient, connected_client)]
     assert closed_clients == [cast(BLEClient, connected_client)]
-    assert released_claims == []
+    assert released_claims == [("device-key", None)]
     assert connected_callbacks == []
     assert iface.client is None
     assert iface.address is None
@@ -3031,6 +3099,28 @@ def test_discovery_manager_destructor_does_not_close_client() -> None:
     manager.__del__()
 
     assert client.close_calls == 0
+    assert manager._client is None
+
+
+def test_discovery_manager_close_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """close() should clear and clean up the persistent discovery client only once."""
+    manager = DiscoveryManager()
+    client = object()
+    close_calls: list[int] = []
+    manager._client = cast(BLEClient, client)
+
+    monkeypatch.setattr(
+        discovery_mod,
+        "_close_discovery_client_best_effort",
+        lambda stale_client: close_calls.append(id(stale_client)),
+    )
+
+    manager.close()
+    manager.close()
+
+    assert close_calls == [id(client)]
     assert manager._client is None
 
 

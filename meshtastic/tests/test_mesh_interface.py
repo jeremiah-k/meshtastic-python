@@ -1718,59 +1718,61 @@ def test_send_position_waits_when_response_requested(
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_on_response_position_success_and_routing_error(
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """onResponsePosition() should print parsed position and raise on NO_RESPONSE routing errors."""
+    """onResponsePosition() should log parsed position and raise on NO_RESPONSE routing errors."""
     with MeshInterface(noProto=True) as iface:
         position = mesh_pb2.Position()
         position.latitude_i = 471234567
         position.longitude_i = -971234567
         position.altitude = 250
         position.precision_bits = 32
-        iface.onResponsePosition(
-            {
-                "decoded": {
-                    "portnum": portnums_pb2.PortNum.Name(
-                        portnums_pb2.PortNum.POSITION_APP
-                    ),
-                    "payload": position.SerializeToString(),
+        with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
+            iface.onResponsePosition(
+                {
+                    "decoded": {
+                        "portnum": portnums_pb2.PortNum.Name(
+                            portnums_pb2.PortNum.POSITION_APP
+                        ),
+                        "payload": position.SerializeToString(),
+                    }
                 }
-            }
-        )
-        out, _ = capsys.readouterr()
-        assert "Position received:" in out
-        assert "full precision" in out
+            )
+        assert "Position received:" in caplog.text
+        assert "full precision" in caplog.text
 
         unknown_position = mesh_pb2.Position()
         unknown_position.precision_bits = 5
-        iface.onResponsePosition(
-            {
-                "decoded": {
-                    "portnum": portnums_pb2.PortNum.Name(
-                        portnums_pb2.PortNum.POSITION_APP
-                    ),
-                    "payload": unknown_position.SerializeToString(),
+        caplog.clear()
+        with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
+            iface.onResponsePosition(
+                {
+                    "decoded": {
+                        "portnum": portnums_pb2.PortNum.Name(
+                            portnums_pb2.PortNum.POSITION_APP
+                        ),
+                        "payload": unknown_position.SerializeToString(),
+                    }
                 }
-            }
-        )
-        out_unknown, _ = capsys.readouterr()
-        assert "(unknown)" in out_unknown
-        assert "precision:5" in out_unknown
+            )
+        assert "(unknown)" in caplog.text
+        assert "precision:5" in caplog.text
 
         disabled_position = mesh_pb2.Position()
         disabled_position.precision_bits = 0
-        iface.onResponsePosition(
-            {
-                "decoded": {
-                    "portnum": portnums_pb2.PortNum.Name(
-                        portnums_pb2.PortNum.POSITION_APP
-                    ),
-                    "payload": disabled_position.SerializeToString(),
+        caplog.clear()
+        with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
+            iface.onResponsePosition(
+                {
+                    "decoded": {
+                        "portnum": portnums_pb2.PortNum.Name(
+                            portnums_pb2.PortNum.POSITION_APP
+                        ),
+                        "payload": disabled_position.SerializeToString(),
+                    }
                 }
-            }
-        )
-        out_disabled, _ = capsys.readouterr()
-        assert "position disabled" in out_disabled
+            )
+        assert "position disabled" in caplog.text
 
         with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
             iface.onResponsePosition(
@@ -1789,9 +1791,9 @@ def test_on_response_position_success_and_routing_error(
 @pytest.mark.usefixtures("reset_mt_config")
 def test_send_traceroute_and_response_rendering(
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Trace-route send/wait logic and response formatting should execute end-to-end."""
+    """Trace-route send/wait logic and response logging should execute end-to-end."""
     with MeshInterface(noProto=True) as iface:
         iface.nodes = {
             "!1": {"num": 1},
@@ -1810,18 +1812,18 @@ def test_send_traceroute_and_response_rendering(
         route.snr_towards.extend([8, 12])
         route.route_back.extend([12])
         route.snr_back.extend([16, 20])
-        iface.onResponseTraceRoute(
-            {
-                "decoded": {"payload": route.SerializeToString()},
-                "to": 20,
-                "from": 21,
-                "hopStart": 1,
-            }
-        )
-        out, _ = capsys.readouterr()
+        with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
+            iface.onResponseTraceRoute(
+                {
+                    "decoded": {"payload": route.SerializeToString()},
+                    "to": 20,
+                    "from": 21,
+                    "hopStart": 1,
+                }
+            )
 
-    assert "Route traced towards destination:" in out
-    assert "Route traced back to us:" in out
+    assert "Route traced towards destination:" in caplog.text
+    assert "Route traced back to us:" in caplog.text
     assert iface._acknowledgment.receivedTraceRoute is True
 
 
@@ -1878,41 +1880,42 @@ def test_send_telemetry_supported_and_fallback_paths(
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_on_response_telemetry_paths(
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """onResponseTelemetry() should handle device metrics, non-device metrics, and routing errors."""
     with MeshInterface(noProto=True) as iface:
         device_t = telemetry_pb2.Telemetry()
         device_t.device_metrics.battery_level = 95
         device_t.device_metrics.voltage = 4.23
-        iface.onResponseTelemetry(
-            {
-                "decoded": {
-                    "portnum": portnums_pb2.PortNum.Name(
-                        portnums_pb2.PortNum.TELEMETRY_APP
-                    ),
-                    "payload": device_t.SerializeToString(),
+        with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
+            iface.onResponseTelemetry(
+                {
+                    "decoded": {
+                        "portnum": portnums_pb2.PortNum.Name(
+                            portnums_pb2.PortNum.TELEMETRY_APP
+                        ),
+                        "payload": device_t.SerializeToString(),
+                    }
                 }
-            }
-        )
-        out1, _ = capsys.readouterr()
-        assert "Telemetry received:" in out1
-        assert "Battery level:" in out1
+            )
+        assert "Telemetry received:" in caplog.text
+        assert "Battery level:" in caplog.text
 
         env_t = telemetry_pb2.Telemetry()
         env_t.environment_metrics.temperature = 21.5
-        iface.onResponseTelemetry(
-            {
-                "decoded": {
-                    "portnum": portnums_pb2.PortNum.Name(
-                        portnums_pb2.PortNum.TELEMETRY_APP
-                    ),
-                    "payload": env_t.SerializeToString(),
+        caplog.clear()
+        with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
+            iface.onResponseTelemetry(
+                {
+                    "decoded": {
+                        "portnum": portnums_pb2.PortNum.Name(
+                            portnums_pb2.PortNum.TELEMETRY_APP
+                        ),
+                        "payload": env_t.SerializeToString(),
+                    }
                 }
-            }
-        )
-        out2, _ = capsys.readouterr()
-        assert "environmentMetrics:" in out2
+            )
+        assert "environmentMetrics:" in caplog.text
 
         with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
             iface.onResponseTelemetry(
@@ -1929,22 +1932,22 @@ def test_on_response_telemetry_paths(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_on_response_waypoint_paths(capsys: pytest.CaptureFixture[str]) -> None:
-    """onResponseWaypoint() should parse waypoint payloads and raise on routing NO_RESPONSE."""
+def test_on_response_waypoint_paths(caplog: pytest.LogCaptureFixture) -> None:
+    """onResponseWaypoint() should log waypoint payloads and raise on routing NO_RESPONSE."""
     with MeshInterface(noProto=True) as iface:
         waypoint = mesh_pb2.Waypoint(name="WPT", id=5)
-        iface.onResponseWaypoint(
-            {
-                "decoded": {
-                    "portnum": portnums_pb2.PortNum.Name(
-                        portnums_pb2.PortNum.WAYPOINT_APP
-                    ),
-                    "payload": waypoint.SerializeToString(),
+        with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
+            iface.onResponseWaypoint(
+                {
+                    "decoded": {
+                        "portnum": portnums_pb2.PortNum.Name(
+                            portnums_pb2.PortNum.WAYPOINT_APP
+                        ),
+                        "payload": waypoint.SerializeToString(),
+                    }
                 }
-            }
-        )
-        out, _ = capsys.readouterr()
-        assert "Waypoint received:" in out
+            )
+        assert "Waypoint received:" in caplog.text
         assert iface._acknowledgment.receivedWaypoint is True
 
         with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):

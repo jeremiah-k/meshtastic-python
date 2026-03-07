@@ -232,6 +232,38 @@ def test_esp32_wifi_ota_update_success(mock_socket_class: MagicMock) -> None:
 
 @pytest.mark.unit
 @patch("meshtastic.ota.socket.socket")
+def test_esp32_wifi_ota_update_logs_progress_without_callback(
+    mock_socket_class: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test update() logs coarse progress when no progress callback is provided."""
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
+        test_data = b"A" * 1024
+        f.write(test_data)
+        temp_file = f.name
+
+    try:
+        mock_socket = MagicMock()
+        mock_socket_class.return_value = mock_socket
+
+        ota = ESP32WiFiOTA(temp_file, "192.168.1.1")
+
+        with patch.object(ota, "_read_line") as mock_read_line:
+            mock_read_line.side_effect = [
+                "OK",
+                "OK",
+            ]
+
+            with caplog.at_level(logging.INFO):
+                ota.update()
+
+        assert "OTA progress:" in caplog.text
+    finally:
+        os.unlink(temp_file)
+
+
+@pytest.mark.unit
+@patch("meshtastic.ota.socket.socket")
 def test_esp32_wifi_ota_update_with_progress_callback(
     mock_socket_class: MagicMock,
 ) -> None:

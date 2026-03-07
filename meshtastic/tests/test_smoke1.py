@@ -936,6 +936,18 @@ def test_smoke1_configure() -> None:
     """`--configure example_config.yaml` should apply canonical snake_case config."""
     config_path = Path(__file__).resolve().parents[2] / "example_config.yaml"
     assert config_path.exists(), f"Config file not found: {config_path}"
+    preconfigure_owner = f"precfg-{uuid.uuid4().hex[:6]}"
+    preconfigure_code, preconfigure_out = _run(
+        "meshtastic", "--set-owner", preconfigure_owner
+    )
+    _assert_connected(preconfigure_out)
+    assert preconfigure_code == 0
+    _wait_for_mutation_to_settle(
+        predicate=lambda output: re.search(
+            rf"^Owner: {re.escape(preconfigure_owner)}\b", output, re.MULTILINE
+        )
+        is not None
+    )
     return_value, out = _run("meshtastic", "--configure", str(config_path))
     _assert_connected(out)
     assert re.search(r"^Setting device owner to Bob TBeam", out, re.MULTILINE)
@@ -980,17 +992,20 @@ def test_smoke1_set_ham() -> None:
 @_destructive_test
 def test_smoke1_set_wifi_settings() -> None:
     """`network.wifi_ssid`/`network.wifi_psk` should set and report expected values."""
+    ssid_marker = f"ssid-{uuid.uuid4().hex[:6]}"
     return_value, out = _run(
         "meshtastic",
         "--set",
         "network.wifi_ssid",
-        "some_ssid",
+        ssid_marker,
         "--set",
         "network.wifi_psk",
         "temp1234",
     )
     _assert_connected(out)
-    assert re.search(r"^Set network\.wifi_ssid to some_ssid", out, re.MULTILINE)
+    assert re.search(
+        rf"^Set network\.wifi_ssid to {re.escape(ssid_marker)}", out, re.MULTILINE
+    )
     assert re.search(r"^Set network\.wifi_psk to temp1234", out, re.MULTILINE)
     assert return_value == 0
     deadline = time.monotonic() + INFO_READY_TIMEOUT_SECONDS
@@ -1004,7 +1019,11 @@ def test_smoke1_set_wifi_settings() -> None:
         )
         if (
             return_value == 0
-            and re.search(r"network\.wifi_ssid:\s+some_ssid", out, re.MULTILINE)
+            and re.search(
+                rf"network\.wifi_ssid:\s+{re.escape(ssid_marker)}",
+                out,
+                re.MULTILINE,
+            )
             and re.search(r"network\.wifi_psk:\s+sekrit", out, re.MULTILINE)
         ):
             break
@@ -1012,7 +1031,9 @@ def test_smoke1_set_wifi_settings() -> None:
             pytest.fail(f"Wi-Fi settings never reached expected readback:\n{out}")
         time.sleep(INFO_READY_POLL_INTERVAL_SECONDS)
 
-    assert re.search(r"network\.wifi_ssid:\s+some_ssid", out, re.MULTILINE)
+    assert re.search(
+        rf"network\.wifi_ssid:\s+{re.escape(ssid_marker)}", out, re.MULTILINE
+    )
     # PSK is intentionally masked on readback for security.
     assert re.search(r"network\.wifi_psk:\s+sekrit", out, re.MULTILINE)
     assert return_value == 0
