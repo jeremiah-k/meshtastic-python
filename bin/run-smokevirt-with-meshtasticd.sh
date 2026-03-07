@@ -83,7 +83,7 @@ fi
 
 require_regex "${MESHTASTICD_CONTAINER}" '^[A-Za-z0-9][A-Za-z0-9_.-]*$' "MESHTASTICD_CONTAINER"
 require_regex "${MESHTASTICD_IMAGE}" '^[^[:space:]]+$' "MESHTASTICD_IMAGE"
-require_regex "${MESHTASTICD_HOST}" '^[A-Za-z0-9._:\[\]-]+$' "MESHTASTICD_HOST"
+require_regex "${MESHTASTICD_HOST}" '^[][A-Za-z0-9._:-]+$' "MESHTASTICD_HOST"
 require_regex "${MESHTASTICD_PORT}" '^[0-9]+$' "MESHTASTICD_PORT"
 require_regex "${MESHTASTICD_READY_TIMEOUT_SECONDS}" '^[0-9]+$' "MESHTASTICD_READY_TIMEOUT_SECONDS"
 MESHTASTICD_PORT_DEC=$((10#${MESHTASTICD_PORT}))
