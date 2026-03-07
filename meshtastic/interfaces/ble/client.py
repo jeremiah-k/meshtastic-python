@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import math
 import sys
 import time
 import types
@@ -15,6 +16,7 @@ from uuid import UUID
 
 from bleak import BleakClient as BleakRootClient
 from bleak import BleakScanner
+from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
 
 from meshtastic.interfaces.ble.constants import (
@@ -26,14 +28,19 @@ from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_DISCOVERED,
     BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_INITIALIZED,
     BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED,
+    BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED,
     BLECLIENT_ERROR_CANNOT_READ_NOT_INITIALIZED,
     BLECLIENT_ERROR_CANNOT_SCHEDULE_CLOSED,
     BLECLIENT_ERROR_CANNOT_START_NOTIFY_NOT_INITIALIZED,
     BLECLIENT_ERROR_CANNOT_STOP_NOTIFY_NOT_INITIALIZED,
+    BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED,
+    BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED,
     BLECLIENT_ERROR_CANNOT_WRITE_NOT_INITIALIZED,
     BLECLIENT_ERROR_FAILED_TO_SCHEDULE,
     BLECLIENT_ERROR_RUNNER_THREAD_WAIT,
+    BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
     DISCONNECT_TIMEOUT_SECONDS,
+    ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID,
     ERROR_TIMEOUT,
     SERVICE_CHARACTERISTIC_RETRY_COUNT,
     SERVICE_CHARACTERISTIC_RETRY_DELAY,
@@ -122,7 +129,7 @@ class BLEClient:
 
     def __init__(
         self,
-        address: str | None = None,
+        address: BLEDevice | str | None = None,
         *,
         log_if_no_address: bool = True,
         **kwargs: Any,
@@ -131,8 +138,10 @@ class BLEClient:
 
         Parameters
         ----------
-        address : str | None
-            BLE device address to attach a Bleak client to. If None, the instance is created in discovery-only mode and no Bleak client is instantiated. (Default value = None)
+        address : BLEDevice | str | None
+            BLE device object or address to attach a Bleak client to. If None,
+            the instance is created in discovery-only mode and no Bleak client
+            is instantiated. (Default value = None)
         log_if_no_address : bool
             If True and `address` is None, emit a debug message indicating discovery-only mode. (Default value = True)
         **kwargs : Any
@@ -142,7 +151,7 @@ class BLEClient:
         self.error_handler = BLEErrorHandler()
 
         self.bleak_client: BleakRootClient | None = None
-        self.address = address
+        self.address = address.address if isinstance(address, BLEDevice) else address
         self._closed = False
         self._pending_futures: weakref.WeakSet[Future[Any]] = weakref.WeakSet()
         self._pending_futures_lock = RLock()
@@ -200,18 +209,85 @@ class BLEClient:
         """Promoted camelCase alias for find_device()."""
         return self.find_device(**kwargs)
 
-    def pair(self, **kwargs: Any) -> Any:
+    def _run_management_call(
+        self,
+        operation: Callable[[], Coroutine[Any, Any, object]] | None,
+        *,
+        await_timeout: float,
+        not_initialized_error: str,
+        unsupported_error: str,
+    ) -> None:
+        """Run a backend management coroutine with common initialization checks.
+
+        Parameters
+        ----------
+        operation : Callable[[], Coroutine[Any, Any, object]] | None
+            Zero-argument callable that creates the backend coroutine to await.
+            When `None`, the backend is treated as unsupported.
+        await_timeout : float
+            Maximum seconds to wait for the backend coroutine to complete.
+        not_initialized_error : str
+            Error message to raise when the underlying Bleak client has not
+            been initialized.
+        unsupported_error : str
+            Error message to raise when the backend does not support the
+            requested management operation.
+
+        Returns
+        -------
+        None
+            Management operations are performed for side effects only.
+
+        Raises
+        ------
+        BLEError
+            If `await_timeout` is not a finite positive number, if the Bleak
+            client is not initialized, or if the backend does not support the
+            requested operation.
+        """
+        if (
+            isinstance(await_timeout, bool)
+            or not isinstance(await_timeout, (int, float))
+            or not math.isfinite(await_timeout)
+            or await_timeout <= 0
+        ):
+            raise self.BLEError(ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID)
+        if self.bleak_client is None:
+            raise self.BLEError(not_initialized_error)
+        if operation is None:
+            raise self.BLEError(unsupported_error)
+        try:
+            self._async_await(operation(), timeout=await_timeout)
+        except self.BLEError as exc:
+            if isinstance(exc.__cause__, NotImplementedError):
+                raise self.BLEError(unsupported_error) from exc.__cause__
+            raise
+        except NotImplementedError as exc:
+            raise self.BLEError(unsupported_error) from exc
+        return None
+
+    def pair(
+        self,
+        *,
+        await_timeout: float = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+        **kwargs: Any,
+    ) -> None:
         """Pair the BLE client with the remote device.
 
         Parameters
         ----------
+        await_timeout : float
+            Maximum seconds to wait for the pairing coroutine to complete.
+            Must be a finite positive timeout. Defaults to
+            `BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT`.
         **kwargs : Any
             Backend-specific pairing options forwarded to the underlying BLE client.
 
         Returns
         -------
-        Any
-            The backend pairing result (often `None`).
+        None
+            Pairing is performed for side effects. Bleak 1.0+ signals success
+            by lack of exception and does not return a boolean result.
 
         Raises
         ------
@@ -219,9 +295,49 @@ class BLEClient:
             If the BLE client is not initialized or the pairing operation fails.
         """
         bleak_client = self.bleak_client
-        if bleak_client is None:
-            raise self.BLEError(BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED)
-        return self._async_await(bleak_client.pair(**kwargs))
+        self._run_management_call(
+            None if bleak_client is None else lambda: bleak_client.pair(**kwargs),
+            await_timeout=await_timeout,
+            not_initialized_error=BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED,
+            unsupported_error=BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED,
+        )
+        return None
+
+    def unpair(
+        self, *, await_timeout: float = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT
+    ) -> None:
+        """Unpair the BLE client from the remote device when supported by the backend.
+
+        Parameters
+        ----------
+        await_timeout : float
+            Maximum seconds to wait for the unpair coroutine to complete.
+            Must be a finite positive timeout. Defaults to
+            `BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT`.
+
+        Returns
+        -------
+        None
+            Unpairing is performed for side effects and does not return a value.
+
+        Raises
+        ------
+        BLEError
+            If the BLE client is not initialized or if the backend does not expose `unpair`.
+        """
+        bleak_client = self.bleak_client
+        self._run_management_call(
+            (
+                None
+                if bleak_client is None
+                or not callable(getattr(bleak_client, "unpair", None))
+                else lambda: bleak_client.unpair()
+            ),
+            await_timeout=await_timeout,
+            not_initialized_error=BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED,
+            unsupported_error=BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED,
+        )
+        return None
 
     def connect(self, *, await_timeout: float | None = None, **kwargs: Any) -> Any:
         """Connect to the remote BLE device.

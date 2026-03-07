@@ -11,6 +11,7 @@ import pytest
 
 from meshtastic.ota import (
     ESP32WiFiOTA,
+    OTA_CHUNK_SIZE_BYTES,
     OTAError,
     _file_sha256,
 )
@@ -226,6 +227,47 @@ def test_esp32_wifi_ota_update_success(mock_socket_class: MagicMock) -> None:
             # Verify socket was closed
             mock_socket.close.assert_called_once()
 
+    finally:
+        os.unlink(temp_file)
+
+
+@pytest.mark.unit
+@patch("meshtastic.ota.socket.socket")
+def test_esp32_wifi_ota_update_logs_progress_without_callback(
+    mock_socket_class: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test update() logs coarse progress when no progress callback is provided."""
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
+        test_data = b"A" * (OTA_CHUNK_SIZE_BYTES * 3)
+        f.write(test_data)
+        temp_file = f.name
+
+    try:
+        mock_socket = MagicMock()
+        mock_socket_class.return_value = mock_socket
+
+        ota = ESP32WiFiOTA(temp_file, "192.168.1.1")
+
+        with patch.object(ota, "_read_line") as mock_read_line:
+            mock_read_line.side_effect = [
+                "OK",  # Device ready
+                "OK",  # Device finished
+            ]
+
+            with caplog.at_level(logging.INFO):
+                ota.update()
+                progress_messages = [
+                    record.message
+                    for record in caplog.records
+                    if "OTA progress:" in record.message
+                ]
+                intermediate_progress_messages = [
+                    message for message in progress_messages if "100.0%" not in message
+                ]
+                assert len(progress_messages) >= 2
+                assert intermediate_progress_messages
+                assert any("100.0%" in message for message in progress_messages)
     finally:
         os.unlink(temp_file)
 

@@ -49,6 +49,8 @@ from ..tcp_interface import TCPInterface
 # from ..remote_hardware import onGPIOreceive
 # from ..config_pb2 import Config
 
+SDS_DISABLED_SENTINEL = 4_294_967_295
+
 
 def _mock_sendText_helper(
     text: str,
@@ -1963,7 +1965,12 @@ def test_main_configure_applies_mixed_case_and_security_encodings(
                         "use12HClock": True,
                         "screenOnSecs": 66,
                     },
-                    "power": {"lsSecs": 222},
+                    "power": {
+                        "lsSecs": 222,
+                        "waitBluetoothSecs": 77,
+                        "minWakeSecs": 11,
+                        "sdsSecs": SDS_DISABLED_SENTINEL,
+                    },
                     "security": {
                         "privateKey": f"base64:{base64.b64encode(private_key).decode()}",
                         "public_key": "0x" + public_key.hex(),
@@ -1995,6 +2002,9 @@ def test_main_configure_applies_mixed_case_and_security_encodings(
     assert target_local.display.use_12h_clock is True
     assert target_local.display.screen_on_secs == 66
     assert target_local.power.ls_secs == 222
+    assert target_local.power.wait_bluetooth_secs == 77
+    assert target_local.power.min_wake_secs == 11
+    assert target_local.power.sds_secs == SDS_DISABLED_SENTINEL
     assert target_local.security.private_key == private_key
     assert target_local.security.public_key == public_key
     assert list(target_local.security.admin_key) == [admin_key_1, admin_key_2]
@@ -2004,6 +2014,43 @@ def test_main_configure_applies_mixed_case_and_security_encodings(
     write_sections = [call.args[0] for call in target_node.writeConfig.call_args_list]
     for required in ("bluetooth", "display", "power", "security", "telemetry"):
         assert required in write_sections
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_applies_power_snake_case_keys(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test --configure applies canonical snake_case power keys directly."""
+    config_path = tmp_path / "power-snake-case.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "config": {
+                    "power": {
+                        "ls_secs": 222,
+                        "wait_bluetooth_secs": 77,
+                        "min_wake_secs": 11,
+                        "sds_secs": SDS_DISABLED_SENTINEL,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    target_local = localonly_pb2.LocalConfig()
+    iface, target_node = _build_configure_interface(
+        target_local, localonly_pb2.LocalModuleConfig()
+    )
+    _run_main_configure_file(config_path, iface, monkeypatch)
+
+    assert target_local.power.ls_secs == 222
+    assert target_local.power.wait_bluetooth_secs == 77
+    assert target_local.power.min_wake_secs == 11
+    assert target_local.power.sds_secs == SDS_DISABLED_SENTINEL
+    target_node.writeConfig.assert_called_once_with("power")
+    target_node.commitSettingsTransaction.assert_called_once_with()
 
 
 @pytest.mark.unit
@@ -4450,7 +4497,10 @@ def test_main_ota_update_retries_then_exits(
     assert "OTA update failed: boom" in err
     assert excinfo.value.code == 1
     assert ota.update.call_count == 5
-    assert any(call.args == (2,) for call in sleep_mock.call_args_list)
+    assert any(
+        call.args == (main_module.OTA_RETRY_DELAY_SECONDS,)
+        for call in sleep_mock.call_args_list
+    )
 
 
 @pytest.mark.unit
@@ -4499,7 +4549,10 @@ def test_main_ota_update_succeeds_and_prints_completion(
     assert err == ""
     assert ota.update.call_count == 1
     node.startOTA.assert_called_once()
-    assert any(call.args == (5,) for call in sleep_mock.call_args_list)
+    assert any(
+        call.args == (main_module.OTA_REBOOT_WAIT_SECONDS,)
+        for call in sleep_mock.call_args_list
+    )
 
 
 @pytest.mark.unit

@@ -5,9 +5,15 @@ import sys
 import types
 from collections.abc import Callable, Generator
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
+
+from meshtastic.interfaces.ble.constants import (
+    BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED,
+    BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED,
+    BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - import only for typing
     from meshtastic.interfaces.ble.interface import BLEInterface
@@ -44,18 +50,18 @@ def mock_serial(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     types.ModuleType
         The mocked `serial` module object that was inserted into sys.modules.
     """
-    serial_module: Any = types.ModuleType("serial")
+    serial_module = types.ModuleType("serial")
 
     # Create tools submodule
-    tools_module: Any = types.ModuleType("serial.tools")
-    list_ports_module: Any = types.ModuleType("serial.tools.list_ports")
-    list_ports_module.comports = lambda *_args, **_kwargs: []
-    tools_module.list_ports = list_ports_module
-    serial_module.tools = tools_module
+    tools_module = types.ModuleType("serial.tools")
+    list_ports_module = types.ModuleType("serial.tools.list_ports")
+    cast(Any, list_ports_module).comports = lambda *_args, **_kwargs: []
+    cast(Any, tools_module).list_ports = list_ports_module
+    cast(Any, serial_module).tools = tools_module
 
     # Add exception classes
-    serial_module.SerialException = Exception
-    serial_module.SerialTimeoutException = Exception
+    cast(Any, serial_module).SerialException = Exception
+    cast(Any, serial_module).SerialTimeoutException = Exception
 
     # Mock the modules
     monkeypatch.setitem(sys.modules, "serial", serial_module)
@@ -82,8 +88,8 @@ def mock_pubsub(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     types.ModuleType
         The injected `pubsub` module.
     """
-    pubsub_module: Any = types.ModuleType("pubsub")
-    pubsub_module.pub = SimpleNamespace(
+    pubsub_module = types.ModuleType("pubsub")
+    cast(Any, pubsub_module).pub = SimpleNamespace(
         subscribe=lambda *_args, **_kwargs: None,
         sendMessage=lambda *_args, **_kwargs: None,
         AUTO_TOPIC=None,
@@ -109,7 +115,7 @@ def mock_publishing_thread(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     types.ModuleType
         The mocked publishingThread module inserted into sys.modules.
     """
-    publishing_thread_module: Any = types.ModuleType("publishingThread")
+    publishing_thread_module = types.ModuleType("publishingThread")
 
     def queueWork(callback: Callable[[], Any] | None) -> None:
         """Execute the provided callback immediately.
@@ -122,7 +128,7 @@ def mock_publishing_thread(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
         if callback:
             callback()
 
-    publishing_thread_module.queueWork = queueWork
+    cast(Any, publishing_thread_module).queueWork = queueWork
 
     monkeypatch.setitem(sys.modules, "publishingThread", publishing_thread_module)
     monkeypatch.setitem(
@@ -149,8 +155,8 @@ def mock_tabulate(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     types.ModuleType
         The fake `tabulate` module inserted into `sys.modules`.
     """
-    tabulate_module: Any = types.ModuleType("tabulate")
-    tabulate_module.tabulate = lambda *_args, **_kwargs: ""
+    tabulate_module = types.ModuleType("tabulate")
+    cast(Any, tabulate_module).tabulate = lambda *_args, **_kwargs: ""
 
     monkeypatch.setitem(sys.modules, "tabulate", tabulate_module)
     return tabulate_module
@@ -171,8 +177,8 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     types.ModuleType
         The fake `bleak` module object inserted into `sys.modules`.
     """
-    bleak_module: Any = types.ModuleType("bleak")
-    bleak_module.__version__ = "2.1.1"
+    bleak_module = types.ModuleType("bleak")
+    cast(Any, bleak_module).__version__ = "2.1.1"
 
     class _StubBleakClient:
         """Minimal BleakClient test double.
@@ -187,13 +193,15 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
         is_connected()
         """
 
-        def __init__(self, address: str | None = None, **_kwargs: Any) -> None:
+        def __init__(self, address: object | None = None, **_kwargs: object) -> None:
             """Initialize a minimal test BLE client with an associated address and a lightweight services shim.
 
             Parameters
             ----------
-            address : str | None
-                BLE device address associated with this client, or None. (Default value = None)
+            address : object | None
+                BLE device address or BLEDevice-like object associated with
+                this client, or None. If the value exposes an `address`
+                attribute, that address string is used. (Default value = None)
                 Additional keyword arguments are accepted and ignored.
 
             Attributes
@@ -201,10 +209,10 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
             services : types.SimpleNamespace
                 Exposes get_characteristic(specifier) which always returns None.
             """
-            self.address = address
+            self.address = cast(str | None, getattr(address, "address", address))
             self.services = SimpleNamespace(get_characteristic=lambda _specifier: None)
 
-        async def connect(self, **_kwargs: Any) -> None:
+        async def connect(self, **_kwargs: object) -> None:
             """Stub connect used in tests that ignores any keyword arguments.
 
             This no-op implementation accepts arbitrary keyword arguments and performs no action.
@@ -221,18 +229,18 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
             """
             return None
 
-        async def disconnect(self, **_kwargs: Any) -> None:
+        async def disconnect(self, **_kwargs: object) -> None:
             """No-op disconnect that ignores any provided keyword arguments."""
             return None
 
-        async def start_notify(self, *_args: Any, **_kwargs: Any) -> None:
+        async def start_notify(self, *_args: object, **_kwargs: object) -> None:
             """Compatibility shim for the bleak start_notify API.
 
             Accepts and ignores positional and keyword arguments typically passed to `start_notify` (char_specifier, callback, *args, **kwargs) and performs no action.
             """
             return None
 
-        async def read_gatt_char(self, *_args: Any, **_kwargs: Any) -> bytes:
+        async def read_gatt_char(self, *_args: object, **_kwargs: object) -> bytes:
             """Provide an empty value for any GATT characteristic read.
 
             Returns
@@ -242,8 +250,16 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
             """
             return b""
 
-        async def write_gatt_char(self, *_args: Any, **_kwargs: Any) -> None:
+        async def write_gatt_char(self, *_args: object, **_kwargs: object) -> None:
             """Accept any positional and keyword arguments and perform no action."""
+            return None
+
+        async def pair(self, **_kwargs: object) -> None:
+            """No-op pairing hook for compatibility with BLEClient.pair()."""
+            return None
+
+        async def unpair(self, **_kwargs: object) -> None:
+            """No-op unpair hook for compatibility with BLEClient.unpair()."""
             return None
 
         def is_connected(self) -> bool:
@@ -258,7 +274,7 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
             """
             return False
 
-    async def _stub_discover(**_kwargs: Any) -> list[Any]:
+    async def _stub_discover(**_kwargs: object) -> list[Any]:
         """Simulate BLE device discovery for tests when no devices are present.
 
         Parameters
@@ -296,7 +312,7 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
             """Initialize a BleakScanner stub that reports no BLE devices."""
 
         @staticmethod
-        async def discover(**_kwargs: Any) -> list[Any]:
+        async def discover(**_kwargs: object) -> list[Any]:
             """Simulate BLE device discovery.
 
             Returns
@@ -306,19 +322,19 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
             """
             return await _stub_discover(**_kwargs)
 
-    bleak_module.BleakClient = _StubBleakClient
-    bleak_module.BleakScanner = _StubBleakScanner
-    bleak_module.BLEDevice = _StubBLEDevice
+    cast(Any, bleak_module).BleakClient = _StubBleakClient
+    cast(Any, bleak_module).BleakScanner = _StubBleakScanner
+    cast(Any, bleak_module).BLEDevice = _StubBLEDevice
     # Mark as package so submodules work
-    bleak_module.__path__ = []
+    cast(Any, bleak_module).__path__ = []
 
     # Provide bleak.backends.device.BLEDevice for production imports
-    bleak_backends_module: Any = types.ModuleType("bleak.backends")
-    bleak_backends_module.__path__ = []
-    bleak_backends_device_module: Any = types.ModuleType("bleak.backends.device")
-    bleak_backends_device_module.BLEDevice = _StubBLEDevice
-    bleak_backends_module.device = bleak_backends_device_module
-    bleak_module.backends = bleak_backends_module
+    bleak_backends_module = types.ModuleType("bleak.backends")
+    cast(Any, bleak_backends_module).__path__ = []
+    bleak_backends_device_module = types.ModuleType("bleak.backends.device")
+    cast(Any, bleak_backends_device_module).BLEDevice = _StubBLEDevice
+    cast(Any, bleak_backends_module).device = bleak_backends_device_module
+    cast(Any, bleak_module).backends = bleak_backends_module
 
     monkeypatch.setitem(sys.modules, "bleak", bleak_module)
     monkeypatch.setitem(sys.modules, "bleak.backends", bleak_backends_module)
@@ -332,7 +348,7 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
 def mock_bleak_exc(
     monkeypatch: pytest.MonkeyPatch, mock_bleak: types.ModuleType
 ) -> types.ModuleType:  # pylint: disable=redefined-outer-name
-    """Create and register a minimal `bleak.exc` submodule exposing `BleakError` and `BleakDBusError`.
+    """Create and register a minimal `bleak.exc` submodule exposing BLE error types.
 
     The created module is attached to the provided `mock_bleak` as its `exc` attribute and inserted into `sys.modules` under the name `"bleak.exc"`.
 
@@ -348,11 +364,16 @@ def mock_bleak_exc(
     class _StubBleakDBusError(_StubBleakError):
         """Stub BleakDBusError type for tests."""
 
-    bleak_exc_module.BleakError = _StubBleakError
-    bleak_exc_module.BleakDBusError = _StubBleakDBusError
+    class _StubBleakDeviceNotFoundError(_StubBleakError):
+        """Stub BleakDeviceNotFoundError type for tests."""
+
+    bleak_exc_module_any = cast(Any, bleak_exc_module)
+    bleak_exc_module_any.BleakError = _StubBleakError
+    bleak_exc_module_any.BleakDBusError = _StubBleakDBusError
+    bleak_exc_module_any.BleakDeviceNotFoundError = _StubBleakDeviceNotFoundError
 
     # Attach to parent module
-    mock_bleak.exc = bleak_exc_module
+    cast(Any, mock_bleak).exc = bleak_exc_module
 
     monkeypatch.setitem(sys.modules, "bleak.exc", bleak_exc_module)
     return bleak_exc_module
@@ -361,13 +382,22 @@ def mock_bleak_exc(
 class DummyClient:
     """Dummy client for testing BLE interface functionality."""
 
-    def __init__(self, disconnect_exception: Exception | None = None) -> None:
+    def __init__(
+        self,
+        disconnect_exception: Exception | None = None,
+        *,
+        on_unpair: Callable[[], None] | None = None,
+    ) -> None:
         """Create a test-double BLE client used by unit tests.
 
         Parameters
         ----------
         disconnect_exception : Exception | None
             Exception to raise when disconnect() is called; pass None to disable raising.
+        on_unpair : Callable[[], None] | None
+            Optional hook invoked after recording an unpair() call. Tests can
+            use this to simulate disconnect cleanup triggered by backend
+            unpair semantics.
 
         Attributes
         ----------
@@ -375,10 +405,24 @@ class DummyClient:
             Number of times disconnect() has been invoked.
         close_calls : int
             Number of times close() has been invoked.
+        pair_calls : int
+            Number of times pair() has been invoked.
+        unpair_calls : int
+            Number of times unpair() has been invoked.
+        pair_kwargs : list[dict[str, object]]
+            Backend keyword arguments captured for each pair() invocation.
+        pair_await_timeouts : list[float | None]
+            Timeout arguments captured for each pair() invocation.
+        unpair_await_timeouts : list[float | None]
+            Timeout arguments captured for each unpair() invocation.
+        unpair_kwargs : list[dict[str, object]]
+            Backend keyword arguments captured for each unpair() invocation.
         address : str
             Client address identifier, set to "dummy".
         disconnect_exception : Exception | None
             Stored exception raised by disconnect(), if any. (Default value = None)
+        on_unpair : Callable[[], None] | None
+            Optional callback invoked after unpair() records its call.
         services : types.SimpleNamespace
             Provides get_characteristic(specifier) -> None for characteristic lookups.
         bleak_client : types.SimpleNamespace
@@ -386,9 +430,16 @@ class DummyClient:
         """
         self.disconnect_calls = 0
         self.close_calls = 0
+        self.pair_calls = 0
+        self.unpair_calls = 0
+        self.pair_kwargs: list[dict[str, object]] = []
+        self.unpair_kwargs: list[dict[str, object]] = []
+        self.pair_await_timeouts: list[float | None] = []
+        self.unpair_await_timeouts: list[float | None] = []
         self.stop_notify_calls: list[Any] = []
         self.address = "dummy"
         self.disconnect_exception = disconnect_exception
+        self.on_unpair = on_unpair
         self.services = SimpleNamespace(get_characteristic=lambda _specifier: None)
         # The bleak_client should be a separate object to correctly test identity checks
         self.bleak_client = SimpleNamespace(address=self.address)
@@ -408,14 +459,14 @@ class DummyClient:
         """
         return False
 
-    def start_notify(self, *_args: Any, **_kwargs: Any) -> None:
+    def start_notify(self, *_args: object, **_kwargs: object) -> None:
         """Simulate subscribing to a BLE characteristic notification for tests.
 
         Accepts any arguments and performs no action.
         """
         return None
 
-    def stopNotify(self, *args: Any, **_kwargs: Any) -> None:
+    def stopNotify(self, *args: object, **_kwargs: object) -> None:
         """Simulate unsubscribing from BLE notifications during tests.
 
         When a positional characteristic argument is provided, appends the first positional argument to the instance's stop_notify_calls list for later inspection.
@@ -424,11 +475,11 @@ class DummyClient:
             self.stop_notify_calls.append(args[0])
         return None
 
-    def stop_notify(self, *args: Any, **kwargs: Any) -> None:
+    def stop_notify(self, *args: object, **kwargs: object) -> None:
         """Backward-compatible snake_case alias for stopNotify."""
         return self.stopNotify(*args, **kwargs)
 
-    def read_gatt_char(self, *_args: Any, **_kwargs: Any) -> bytes:
+    def read_gatt_char(self, *_args: object, **_kwargs: object) -> bytes:
         """Provide a fixed empty-bytes response for any GATT characteristic read.
 
         Returns
@@ -458,7 +509,7 @@ class DummyClient:
         """
         return self.isConnected()
 
-    def disconnect(self, *_args: Any, **_kwargs: Any) -> None:
+    def disconnect(self, *_args: object, **_kwargs: object) -> None:
         """Record a disconnect invocation and optionally raise a configured exception.
 
         Increments the instance's `disconnect_calls` counter. If `disconnect_exception` is set, that exception is raised instead of returning normally.
@@ -471,6 +522,38 @@ class DummyClient:
         self.disconnect_calls += 1
         if self.disconnect_exception:
             raise self.disconnect_exception
+
+    def pair(
+        self,
+        *,
+        await_timeout: float = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+        **_kwargs: object,
+    ) -> None:
+        """Record a pair invocation."""
+        if self.bleak_client is None:
+            raise _get_ble_module().BLEClient.BLEError(
+                BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED
+            )
+        self.pair_calls += 1
+        self.pair_await_timeouts.append(await_timeout)
+        self.pair_kwargs.append(dict(_kwargs))
+
+    def unpair(
+        self,
+        *,
+        await_timeout: float = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+        **_kwargs: object,
+    ) -> None:
+        """Record an unpair invocation."""
+        if self.bleak_client is None:
+            raise _get_ble_module().BLEClient.BLEError(
+                BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED
+            )
+        self.unpair_calls += 1
+        self.unpair_await_timeouts.append(await_timeout)
+        self.unpair_kwargs.append(dict(_kwargs))
+        if self.on_unpair is not None:
+            self.on_unpair()
 
     def close(self) -> None:
         """Record that the client was closed.
@@ -505,7 +588,7 @@ def stub_atexit(
     mock_serial, mock_pubsub, mock_tabulate, mock_bleak, mock_bleak_exc, mock_publishing_thread : types.ModuleType
         Ordering-only fixture dependencies; values are intentionally unused.
     """
-    registered = []
+    registered: list[Callable[[], object]] = []
     # Consume fixture arguments to document ordering intent and silence Ruff (ARG001).
     _ = (
         mock_serial,
@@ -516,7 +599,7 @@ def stub_atexit(
         mock_publishing_thread,
     )
 
-    def fake_register(func: Any) -> Any:
+    def fake_register(func: Callable[[], object]) -> Callable[[], object]:
         """Register a callable to be invoked later during teardown.
 
         Parameters
@@ -532,7 +615,7 @@ def stub_atexit(
         registered.append(func)
         return func
 
-    def fake_unregister(func: Any) -> None:
+    def fake_unregister(func: Callable[[], object]) -> None:
         """Unregisters all callbacks identical to the given function from the module-level registration list.
 
         Removes every entry whose identity matches `func` (comparison is by `is`, not by equality).
@@ -586,11 +669,14 @@ def _build_interface(
         A BLEInterface instance configured for tests. The instance has `connect` replaced to attach and return `client`, `_start_config` replaced with a no-op, and a `_connect_stub_calls` list recording addresses passed to the stubbed `connect`.
     """
     ble_mod = _get_ble_module()
-    BleInterfaceClass = ble_mod.BLEInterface
+    BleInterfaceClass = cast(type["BLEInterface"], ble_mod.BLEInterface)
     connect_calls: list[str | None] = []
 
     def _stub_connect(
-        _self: Any, _address: str | None = None, *args, **kwargs
+        _self: Any,
+        _address: str | None = None,
+        *args: object,
+        **kwargs: object,
     ) -> "DummyClient":
         """Attach the prepared test client to a BLEInterface-like instance and record the connection attempt.
 
@@ -653,7 +739,7 @@ def _build_interface(
             BleInterfaceClass, "_start_receive_thread", _stub_start_receive_thread
         )
     iface = BleInterfaceClass(address="dummy", noProto=True)
-    iface._connect_stub_calls = connect_calls
+    cast(Any, iface)._connect_stub_calls = connect_calls
     return iface
 
 
