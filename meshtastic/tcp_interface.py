@@ -20,7 +20,7 @@ from meshtastic.stream_interface import (
 )
 
 DEFAULT_TCP_PORT = 4403
-TCP_WRITE_EXCEPTIONS: tuple[type[BaseException], ...] = (
+TCP_IO_EXCEPTIONS: tuple[type[BaseException], ...] = (
     OSError,
     ValueError,
     TypeError,
@@ -385,7 +385,7 @@ class TCPInterface(StreamInterface):
                     raise OSError(self.WRITE_NO_PROGRESS_ERROR)
                 total_sent += sent
                 write_deadline = time.monotonic() + WRITE_PROGRESS_TIMEOUT_SECONDS
-        except TCP_WRITE_EXCEPTIONS as ex:
+        except TCP_IO_EXCEPTIONS as ex:
             logger.warning(
                 "TCP write failed (%d bytes), resetting socket: %s", len(b), ex
             )
@@ -605,7 +605,7 @@ class TCPInterface(StreamInterface):
                 raise ValueError(f"length must be a positive int, got {length!r}")
             try:
                 data = sock.recv(length)
-            except TCP_WRITE_EXCEPTIONS as ex:
+            except TCP_IO_EXCEPTIONS as ex:
                 logger.debug("Socket read error, treating as dead socket: %s", ex)
                 data = b""
             # empty byte indicates a disconnected socket,

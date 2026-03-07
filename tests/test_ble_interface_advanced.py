@@ -586,6 +586,10 @@ def test_rapid_connect_disconnect_stress_test(
             """Delegate connection-state queries to the shared bleak client stub."""
             return cast(bool, self._delegate_to_bleak("is_connected"))
 
+        def isConnected(self) -> bool:
+            """Compatibility wrapper for the promoted camelCase BLE API."""
+            return self.is_connected()
+
         def disconnect(self, *_args: object, **_kwargs: object) -> None:
             """Delegate disconnect behavior to the shared bleak client stub."""
             self._delegate_to_bleak("disconnect", *_args, **_kwargs)
@@ -667,11 +671,12 @@ def test_rapid_connect_disconnect_stress_test(
                 {"pair": pair, "connect_timeout": connect_timeout}
             )
             new_client.connect()
-            cast(Any, self).client = new_client
-            created_clients.append(new_client)
-            self._disconnect_notified = False
-            if hasattr(self, "_reconnected_event"):
-                self._reconnected_event.set()
+            with self._state_lock:
+                cast(Any, self).client = new_client
+                created_clients.append(new_client)
+                self._disconnect_notified = False
+                if hasattr(self, "_reconnected_event"):
+                    self._reconnected_event.set()
             return new_client
 
         stack.enter_context(patch.object(BLEInterface, "connect", _patched_connect))
@@ -800,6 +805,7 @@ def test_rapid_connect_disconnect_stress_test(
     with create_interface_with_auto_reconnect() as (iface3, _client3):
         cast(Any, iface3)._stress_test_should_fail_connect = True
         failure_errors: list[Exception] = []
+        baseline_connect_calls = len(_get_connect_stub_calls(iface3))
 
         for _ in range(5):
             try:
@@ -816,7 +822,7 @@ def test_rapid_connect_disconnect_stress_test(
 
         assert failure_errors == []
         assert (
-            len(_get_connect_stub_calls(iface3)) >= 1
+            len(_get_connect_stub_calls(iface3)) >= baseline_connect_calls + 1
         ), "Failure path should still schedule reconnect attempts"
 
     # Verify no critical errors in logs

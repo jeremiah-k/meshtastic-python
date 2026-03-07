@@ -418,6 +418,8 @@ class ConnectionOrchestrator:
         device_address: str,
         register_notifications_func: Callable[[BLEClient], None],
         on_connected_func: Callable[[], None],
+        *,
+        emit_connected_side_effects: bool = True,
     ) -> None:
         """Finalize a successful BLE connection by registering notification handlers, validating the client and orchestrator state, transitioning to CONNECTED, and invoking post-connection callbacks.
 
@@ -431,6 +433,10 @@ class ConnectionOrchestrator:
             Callable that registers notification handlers on `client`.
         on_connected_func : Callable
             Callback invoked after the connection state transitions to CONNECTED.
+        emit_connected_side_effects : bool
+            When True, emit reconnect wake signaling and success logging during
+            finalization. Callers that defer "connected" publication can set this
+            to False and emit those side effects later.
 
         Raises
         ------
@@ -483,13 +489,14 @@ class ConnectionOrchestrator:
                 )
 
         on_connected_func()
-        if getattr(self.interface, "_ever_connected", False):
-            self.thread_coordinator._set_event("reconnected_event")
-        normalized_device_address = sanitize_address(device_address)
-        logger.info(
-            "Connection successful to %s",
-            normalized_device_address or "unknown",
-        )
+        if emit_connected_side_effects:
+            if getattr(self.interface, "_ever_connected", False):
+                self.thread_coordinator._set_event("reconnected_event")
+            normalized_device_address = sanitize_address(device_address)
+            logger.info(
+                "Connection successful to %s",
+                normalized_device_address or "unknown",
+            )
 
     def _transition_failure_to_disconnected(self, error_context: str) -> None:
         """Perform a best-effort state correction after a connection failure.
@@ -536,6 +543,7 @@ class ConnectionOrchestrator:
         *,
         pair_on_connect: bool = False,
         connect_timeout: float | None = None,
+        emit_connected_side_effects: bool = True,
     ) -> BLEClient:
         """Establish a BLE connection to a device, attempting a direct connect when an explicit address is provided and falling back to discovery when needed, then finalize notification registration and lifecycle callbacks.
 
@@ -557,6 +565,10 @@ class ConnectionOrchestrator:
         connect_timeout : float | None
             Optional timeout override for BLE client construction and connect
             attempts. When `None`, the pairing-aware default is used.
+        emit_connected_side_effects : bool
+            When True, emit reconnect wake signaling and success logging during
+            finalization. Set False when connected publication is deferred until
+            a later ownership verification step.
 
         Returns
         -------
@@ -576,9 +588,11 @@ class ConnectionOrchestrator:
         self._raise_if_interface_closing()
 
         target_address = address if address is not None else current_address
+        if target_address is not None:
+            target_address = target_address.strip()
         # Allow None target_address for discovery mode - findDevice() handles this
         # Only reject empty/whitespace-only strings that are explicitly provided
-        if target_address is not None and not target_address.strip():
+        if target_address is not None and not target_address:
             raise self.interface.BLEError(CONNECTION_ERROR_EMPTY_ADDRESS)
 
         normalized_target = sanitize_address(target_address)
@@ -660,12 +674,21 @@ class ConnectionOrchestrator:
                     client = None
                 else:
                     self._raise_if_interface_closing()
-                    self._finalize_connection(
-                        client,
-                        target_address,
-                        register_notifications_func,
-                        on_connected_func,
-                    )
+                    if emit_connected_side_effects:
+                        self._finalize_connection(
+                            client,
+                            target_address,
+                            register_notifications_func,
+                            on_connected_func,
+                        )
+                    else:
+                        self._finalize_connection(
+                            client,
+                            target_address,
+                            register_notifications_func,
+                            on_connected_func,
+                            emit_connected_side_effects=False,
+                        )
                     return client
 
             if skip_discovery_scan and target_address is not None:
@@ -727,9 +750,21 @@ class ConnectionOrchestrator:
                 )
 
             self._raise_if_interface_closing()
-            self._finalize_connection(
-                client, resolved_address, register_notifications_func, on_connected_func
-            )
+            if emit_connected_side_effects:
+                self._finalize_connection(
+                    client,
+                    resolved_address,
+                    register_notifications_func,
+                    on_connected_func,
+                )
+            else:
+                self._finalize_connection(
+                    client,
+                    resolved_address,
+                    register_notifications_func,
+                    on_connected_func,
+                    emit_connected_side_effects=False,
+                )
             return client
         except BleakDBusError:
             if client:

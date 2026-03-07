@@ -1579,6 +1579,10 @@ class BLEInterface(MeshInterface):
                             raise self.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
                 return command(refreshed_existing_client)
 
+            # `_connect_lock` and `_management_lock` are intentionally released
+            # before `_management_target_gate(...)` so lock ordering remains
+            # address-gate first, then interface locks. The interface locks are
+            # re-acquired inside the gate before revalidation/client selection.
             assert target_address is not None
             with self._management_target_gate(target_address):
                 with self._connect_lock:
@@ -2130,6 +2134,7 @@ class BLEInterface(MeshInterface):
             self._on_ble_disconnect,
             pair_on_connect=pair_on_connect,
             connect_timeout=connect_timeout,
+            emit_connected_side_effects=False,
         )
 
         device_address = getattr(
@@ -2156,6 +2161,7 @@ class BLEInterface(MeshInterface):
                 "Discarding late BLE connection result during shutdown: %s",
                 sanitize_address(device_address or "") or "unknown",
             )
+            # Shutdown is already committed, so target restoration is not needed.
             self._client_manager._safe_close_client(client)
             raise self.BLEError(ERROR_INTERFACE_CLOSING)
 
@@ -2255,9 +2261,10 @@ class BLEInterface(MeshInterface):
                 connected_device_key,
                 connection_alias_key,
             )
-            if still_owned and not lost_gate_ownership:
-                self._connected()
-                return
+        if still_owned and not lost_gate_ownership:
+            self._connected()
+            self._emit_verified_connection_side_effects(connected_client)
+            return
 
         self._raise_for_invalidated_connect_result(
             connected_client,
@@ -2267,6 +2274,18 @@ class BLEInterface(MeshInterface):
             lost_gate_ownership=lost_gate_ownership,
             restore_address=restore_address,
             restore_last_connection_request=restore_last_connection_request,
+        )
+
+    def _emit_verified_connection_side_effects(self, connected_client: BLEClient) -> None:
+        """Emit reconnect signaling/logging only after verified connect publish."""
+        if self._ever_connected:
+            self.thread_coordinator._set_event("reconnected_event")
+        normalized_device_address = sanitize_address(
+            self._extract_client_address(connected_client)
+        )
+        logger.info(
+            "Connection successful to %s",
+            normalized_device_address or "unknown",
         )
 
     def _discard_invalidated_connected_client(

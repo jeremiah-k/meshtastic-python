@@ -111,7 +111,8 @@ def test_examples_example_config_yaml_is_valid() -> None:
 
     lora_cfg = _require_mapping(config_section.get("lora"), label="config.lora")
     region = lora_cfg.get("region")
-    assert isinstance(region, str) and region
+    assert isinstance(region, str), "region should be a string"
+    assert region, "region should not be empty"
     assert isinstance(lora_cfg.get("hop_limit"), int)
     assert isinstance(lora_cfg.get("tx_enabled"), bool)
     assert isinstance(lora_cfg.get("tx_power"), int)

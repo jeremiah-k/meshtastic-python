@@ -2105,6 +2105,63 @@ def test_on_response_waypoint_paths(caplog: pytest.LogCaptureFixture) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@pytest.mark.parametrize(
+    ("handler_name", "waiter_name", "ack_attr", "port_name", "error_prefix"),
+    [
+        pytest.param(
+            "onResponsePosition",
+            "waitForPosition",
+            "receivedPosition",
+            "POSITION_APP",
+            "Failed to parse position response payload",
+            id="position",
+        ),
+        pytest.param(
+            "onResponseTelemetry",
+            "waitForTelemetry",
+            "receivedTelemetry",
+            "TELEMETRY_APP",
+            "Failed to parse telemetry response payload",
+            id="telemetry",
+        ),
+        pytest.param(
+            "onResponseWaypoint",
+            "waitForWaypoint",
+            "receivedWaypoint",
+            "WAYPOINT_APP",
+            "Failed to parse waypoint response payload",
+            id="waypoint",
+        ),
+    ],
+)
+def test_on_response_parse_failures_set_wait_errors(
+    handler_name: str,
+    waiter_name: str,
+    ack_attr: str,
+    port_name: str,
+    error_prefix: str,
+) -> None:
+    """Malformed response payloads should fail via wait-state errors, not false success."""
+    with MeshInterface(noProto=True) as iface:
+        handler = cast(Any, getattr(iface, handler_name))
+        waiter = cast(Any, getattr(iface, waiter_name))
+        handler(
+            {
+                "decoded": {
+                    "portnum": portnums_pb2.PortNum.Name(
+                        getattr(portnums_pb2.PortNum, port_name)
+                    ),
+                    "payload": b"\x80",
+                }
+            }
+        )
+        assert getattr(iface._acknowledgment, ack_attr) is True
+        with pytest.raises(MeshInterface.MeshInterfaceError, match=error_prefix):
+            waiter()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_send_and_delete_waypoint_response_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -146,7 +146,7 @@ def _get_addr_lock_by_key(key: str | None) -> RLock:
 
 
 def _maybe_remove_addr_lock_entry(key: str) -> None:
-    """Remove per-address lock bookkeeping when no holders remain and key is disconnected.
+    """Remove per-address lock bookkeeping when no holders/claims remain.
 
     Must be called while holding `_REGISTRY_LOCK`.
 
@@ -155,7 +155,11 @@ def _maybe_remove_addr_lock_entry(key: str) -> None:
     key : str
         Normalized address key to evaluate.
     """
-    if _LOCK_HOLDERS.get(key, 0) <= 0 and key not in _CONNECTED_ADDRS:
+    if (
+        _LOCK_HOLDERS.get(key, 0) <= 0
+        and key not in _CONNECTED_ADDRS
+        and key not in _CONNECTING_ADDRS
+    ):
         _ADDR_LOCKS.pop(key, None)
         _LOCK_HOLDERS.pop(key, None)
         logger.debug("Cleaned up address lock for %s", key)
@@ -194,7 +198,7 @@ def _release_addr_lock_by_key(key: str | None) -> None:
 
 
 def _cleanup_addr_lock(key: str | None) -> None:
-    """Remove a per-address lock from the registry when there are no remaining holders.
+    """Remove a per-address lock when there are no holders or ownership claims.
 
     If `key` is None this function does nothing. When `key` is provided, the registry entries for that address (the lock and its holder count) are removed only if the tracked holder count is less than or equal to zero; otherwise the entries are left intact.
 
@@ -207,7 +211,11 @@ def _cleanup_addr_lock(key: str | None) -> None:
         return
     with _REGISTRY_LOCK:
         holder_count = _LOCK_HOLDERS.get(key, 0)
-        if holder_count > 0 or key in _CONNECTED_ADDRS:
+        if (
+            holder_count > 0
+            or key in _CONNECTED_ADDRS
+            or key in _CONNECTING_ADDRS
+        ):
             logger.debug(
                 "Skipping cleanup of address lock for %s (holders: %d)",
                 key,
@@ -371,6 +379,9 @@ def _mark_connecting(addr: str | None, owner: Any | None = None) -> None:
     if key is None:
         return
     with _REGISTRY_LOCK:
+        # Keep a concrete per-address lock entry while a provisional claim is
+        # active so cleanup cannot drop/recreate the lock mid-connect.
+        _ADDR_LOCKS.setdefault(key, RLock())
         _CONNECTING_ADDRS.add(key)
         _CONNECTING_OWNERS[key] = _owner_ref(owner)
         _CONNECTING_OWNER_IDS[key] = id(owner) if owner is not None else None

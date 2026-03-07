@@ -556,6 +556,42 @@ def test_finalize_connection_sets_reconnected_event_and_logs_normalized_address(
 
 
 @pytest.mark.unit
+def test_finalize_connection_can_defer_connected_side_effects() -> None:
+    """_finalize_connection should allow callers to defer reconnect signaling/logging."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    assert state_manager._transition_to(ConnectionState.CONNECTING)
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._ever_connected = True
+    thread_coordinator = MagicMock()
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=MagicMock(),
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=thread_coordinator,
+    )
+    client = MagicMock()
+    client.isConnected.return_value = True
+    on_connected = MagicMock()
+
+    orchestrator._finalize_connection(
+        client=client,
+        device_address="AA-BB-CC-DD-EE-FF",
+        register_notifications_func=lambda _client: None,
+        on_connected_func=on_connected,
+        emit_connected_side_effects=False,
+    )
+
+    on_connected.assert_called_once_with()
+    thread_coordinator._set_event.assert_not_called()
+
+
+@pytest.mark.unit
 def test_establish_connection_rejects_whitespace_target_address() -> None:
     """_establish_connection should fail fast for empty/whitespace target addresses."""
     state_manager = BLEStateManager()

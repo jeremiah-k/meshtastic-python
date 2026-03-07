@@ -169,6 +169,18 @@ class TestMarkConnected:
         assert key in _CONNECTED_ADDRS
         assert key not in _CONNECTING_ADDRS
 
+    def test_mark_connecting_keeps_address_lock_until_claim_clears(self) -> None:
+        """Provisional claims should keep per-address lock entries alive."""
+        key = _addr_key("aabbccddeeff")
+        assert key is not None
+
+        _mark_connecting("aabbccddeeff")
+        _cleanup_addr_lock(key)
+        assert key in _ADDR_LOCKS
+
+        _mark_disconnected("aabbccddeeff")
+        assert key not in _ADDR_LOCKS
+
 
 class TestMarkDisconnected:
     """Test cases for _mark_disconnected function."""

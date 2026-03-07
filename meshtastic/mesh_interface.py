@@ -19,6 +19,7 @@ from types import TracebackType
 from typing import IO, Any, Callable, Literal, TypeAlias, cast
 
 import google.protobuf.json_format
+from google.protobuf import message as protobuf_message
 
 try:
     import print_color  # type: ignore[import-untyped]
@@ -1177,9 +1178,16 @@ class MeshInterface:  # pylint: disable=R0902
         if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.POSITION_APP
         ):
-            self._acknowledgment.receivedPosition = True
             position = mesh_pb2.Position()
-            position.ParseFromString(p["decoded"]["payload"])
+            try:
+                position.ParseFromString(p["decoded"]["payload"])
+            except (KeyError, TypeError, protobuf_message.DecodeError) as exc:
+                self._set_wait_error(
+                    "receivedPosition",
+                    f"Failed to parse position response payload: {exc}",
+                )
+                return
+            self._acknowledgment.receivedPosition = True
 
             ret = "Position received: "
             if position.latitude_i != 0 and position.longitude_i != 0:
@@ -1479,9 +1487,16 @@ class MeshInterface:  # pylint: disable=R0902
         if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.TELEMETRY_APP
         ):
-            self._acknowledgment.receivedTelemetry = True
             telemetry = telemetry_pb2.Telemetry()
-            telemetry.ParseFromString(p["decoded"]["payload"])
+            try:
+                telemetry.ParseFromString(p["decoded"]["payload"])
+            except (KeyError, TypeError, protobuf_message.DecodeError) as exc:
+                self._set_wait_error(
+                    "receivedTelemetry",
+                    f"Failed to parse telemetry response payload: {exc}",
+                )
+                return
+            self._acknowledgment.receivedTelemetry = True
             _emit_response_summary("Telemetry received:")
             # Check if the telemetry message has the device_metrics field
             # This is the original code that was the default for --request-telemetry and is kept for compatibility
@@ -1548,9 +1563,16 @@ class MeshInterface:  # pylint: disable=R0902
         if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.WAYPOINT_APP
         ):
-            self._acknowledgment.receivedWaypoint = True
             w = mesh_pb2.Waypoint()
-            w.ParseFromString(p["decoded"]["payload"])
+            try:
+                w.ParseFromString(p["decoded"]["payload"])
+            except (KeyError, TypeError, protobuf_message.DecodeError) as exc:
+                self._set_wait_error(
+                    "receivedWaypoint",
+                    f"Failed to parse waypoint response payload: {exc}",
+                )
+                return
+            self._acknowledgment.receivedWaypoint = True
             _emit_response_summary(f"Waypoint received: {w}")
         elif p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.ROUTING_APP

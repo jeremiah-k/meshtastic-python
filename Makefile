@@ -52,7 +52,7 @@ smoke1:
 
 # run destructive smoke1 hardware checks (reboot/reset/config mutation)
 smoke1-destructive:
-	$(POETRY_RUN) pytest -m "smoke1 and smoke1_destructive" -s -vv
+	$(POETRY_RUN) pytest -m smoke1_destructive -s -vv
 
 # local install
 install:

@@ -2051,6 +2051,9 @@ def test_main_configure_applies_power_snake_case_keys(
     assert target_local.power.sds_secs == SDS_DISABLED_SENTINEL
     target_node.writeConfig.assert_called_once_with("power")
     target_node.commitSettingsTransaction.assert_called_once_with()
+    assert target_node.method_calls.index(call.writeConfig("power")) < (
+        target_node.method_calls.index(call.commitSettingsTransaction())
+    )
 
 
 @pytest.mark.unit
