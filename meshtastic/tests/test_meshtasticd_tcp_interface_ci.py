@@ -82,17 +82,18 @@ def _parse_host_and_port(host: str) -> tuple[str, int]:
         )
     if host.count(":") >= 2 and not host.startswith("["):
         host_part, separator, possible_port = host.rpartition(":")
-        if (
-            host_part == "::1"
-            and separator
-            and possible_port.isdigit()
-        ):
-            raise ValueError(
-                INVALID_IPV6_BRACKETED_PORT.format(
-                    env_var=MESHTASTICD_HOST_ENV_VAR,
-                    host=host,
+        if host.startswith("::") and separator and possible_port.isdigit():
+            try:
+                ipaddress.IPv6Address(host_part)
+            except ipaddress.AddressValueError:
+                pass
+            else:
+                raise ValueError(
+                    INVALID_IPV6_BRACKETED_PORT.format(
+                        env_var=MESHTASTICD_HOST_ENV_VAR,
+                        host=host,
+                    )
                 )
-            )
         try:
             ipaddress.IPv6Address(host)
         except ipaddress.AddressValueError as exc:
@@ -113,7 +114,7 @@ def _parse_host_and_port(host: str) -> tuple[str, int]:
                     env_var=MESHTASTICD_HOST_ENV_VAR,
                     host=host,
                 )
-            ) from exc
+            )
         return host, DEFAULT_TCP_PORT
 
     raw_port = _extract_port_component(host)
@@ -221,14 +222,22 @@ def test_parse_host_and_port_accepts_compressed_ipv6_with_numeric_tail() -> None
 
 
 @pytest.mark.unit
-def test_parse_host_and_port_rejects_ambiguous_unbracketed_ipv6_port() -> None:
+@pytest.mark.parametrize(
+    "host",
+    [
+        "::1:4401",
+        "::2:4401",
+        "::a:1234",
+        "2001:db8:0:1:2:3:4:5:4401",
+    ],
+)
+def test_parse_host_and_port_rejects_ambiguous_unbracketed_ipv6_port(host: str) -> None:
     """_parse_host_and_port should reject IPv6 HOST:PORT values without brackets."""
-    for host in ("::1:4401", "2001:db8:0:1:2:3:4:5:4401"):
-        with pytest.raises(
-            ValueError,
-            match=r"raw IPv6 literals with explicit ports must use bracket form",
-        ):
-            _parse_host_and_port(host)
+    with pytest.raises(
+        ValueError,
+        match=r"raw IPv6 literals with explicit ports must use bracket form",
+    ):
+        _parse_host_and_port(host)
 
 
 @pytest.mark.unit

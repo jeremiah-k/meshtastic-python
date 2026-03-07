@@ -151,7 +151,9 @@ class BLEClient:
         self.error_handler = BLEErrorHandler()
 
         self.bleak_client: BleakRootClient | None = None
-        self.address = address.address if isinstance(address, BLEDevice) else address
+        self.address: str | None = (
+            address.address if isinstance(address, BLEDevice) else address
+        )
         self._closed = False
         self._pending_futures: weakref.WeakSet[Future[Any]] = weakref.WeakSet()
         self._pending_futures_lock = RLock()
@@ -296,7 +298,12 @@ class BLEClient:
         """
         bleak_client = self.bleak_client
         self._run_management_call(
-            None if bleak_client is None else lambda: bleak_client.pair(**kwargs),
+            (
+                None
+                if bleak_client is None
+                or not callable(getattr(bleak_client, "pair", None))
+                else lambda: bleak_client.pair(**kwargs)
+            ),
             await_timeout=await_timeout,
             not_initialized_error=BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED,
             unsupported_error=BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED,

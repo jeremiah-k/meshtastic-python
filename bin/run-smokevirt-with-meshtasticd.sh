@@ -14,9 +14,10 @@ SMOKEVIRT_PYTEST_ARGS="${SMOKEVIRT_PYTEST_ARGS-}"
 MESHTASTICD_DEFAULT_PYTEST_TARGETS="meshtastic/tests/test_meshtasticd_ci.py meshtastic/tests/test_meshtasticd_tcp_interface_ci.py"
 MESHTASTICD_PYTEST_TARGETS="${MESHTASTICD_PYTEST_TARGETS:-${MESHTASTICD_DEFAULT_PYTEST_TARGETS}}"
 MESHTASTICD_PYTEST_MARK_EXPR="${MESHTASTICD_PYTEST_MARK_EXPR-}"
-MESHTASTICD_CI_TARGET_REGEX='test_meshtasticd(_tcp_interface)?_ci\.py'
 EXTRA_PYTEST_ARGS=()
 PYTEST_TARGETS=()
+DEFAULT_PYTEST_TARGETS=()
+MESHTASTICD_CI_TARGETS=()
 LOGS_PRINTED=false
 READY_LOG_FILE_IS_TEMP=false
 
@@ -164,21 +165,35 @@ if [[ -n ${SMOKEVIRT_PYTEST_ARGS} ]]; then
 fi
 
 read -r -a PYTEST_TARGETS <<<"${MESHTASTICD_PYTEST_TARGETS}"
+read -r -a DEFAULT_PYTEST_TARGETS <<<"${MESHTASTICD_DEFAULT_PYTEST_TARGETS}"
 
 if [[ ${#PYTEST_TARGETS[@]} -eq 0 ]]; then
 	echo "MESHTASTICD_PYTEST_TARGETS must not be empty." >&2
 	exit 1
 fi
 
+HAS_SMOKEVIRT_TARGET=false
+for target in "${PYTEST_TARGETS[@]}"; do
+	if [[ ${target} == *test_smokevirt.py ]]; then
+		HAS_SMOKEVIRT_TARGET=true
+	fi
+	for default_target in "${DEFAULT_PYTEST_TARGETS[@]}"; do
+		if [[ ${target} == "${default_target}" ]]; then
+			MESHTASTICD_CI_TARGETS+=("${target}")
+			break
+		fi
+	done
+done
+
 if [[ -z ${MESHTASTICD_PYTEST_MARK_EXPR} ]]; then
-	if [[ ${MESHTASTICD_PYTEST_TARGETS} =~ test_smokevirt\.py ]] && [[ ${MESHTASTICD_PYTEST_TARGETS} =~ ${MESHTASTICD_CI_TARGET_REGEX} ]]; then
+	if [[ ${HAS_SMOKEVIRT_TARGET} == true ]] && [[ ${#MESHTASTICD_CI_TARGETS[@]} -gt 0 ]]; then
 		echo "MESHTASTICD_PYTEST_TARGETS includes both smokevirt and meshtasticd-ci targets; set MESHTASTICD_PYTEST_MARK_EXPR explicitly." >&2
 		exit 1
-	elif [[ ${MESHTASTICD_PYTEST_TARGETS} =~ test_smokevirt\.py ]]; then
+	elif [[ ${HAS_SMOKEVIRT_TARGET} == true ]]; then
 		MESHTASTICD_PYTEST_MARK_EXPR="smokevirt and not smoke1_destructive"
-	# Exact match only: auto-apply "int" for the unmodified default target set.
-	# Partial target lists should provide MESHTASTICD_PYTEST_MARK_EXPR explicitly.
-	elif [[ ${MESHTASTICD_PYTEST_TARGETS} == "${MESHTASTICD_DEFAULT_PYTEST_TARGETS}" ]]; then
+	# Auto-apply "int" when every selected target is one of the dedicated
+	# meshtasticd CI files, including subsets of the default target list.
+	elif [[ ${#MESHTASTICD_CI_TARGETS[@]} -eq ${#PYTEST_TARGETS[@]} ]]; then
 		MESHTASTICD_PYTEST_MARK_EXPR="int"
 	fi
 fi

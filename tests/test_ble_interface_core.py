@@ -508,6 +508,22 @@ def test_ble_interface_repr_includes_non_default_flags(
     iface.close()
 
 
+def test_build_interface_connect_stub_records_kwargs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The shared test connect stub should retain keyword arguments for assertions."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+
+    iface.connect("AA:BB:CC:DD:EE:FF", pair=True, connect_timeout=4.5)
+
+    assert cast(Any, iface)._connect_stub_calls[-1] == "AA:BB:CC:DD:EE:FF"
+    assert cast(Any, iface)._connect_stub_kwargs[-1] == {
+        "pair": True,
+        "connect_timeout": 4.5,
+    }
+    iface.close()
+
+
 def test_ble_interface_extract_client_address_prefers_bleak_and_falls_back() -> None:
     """_extract_client_address should prefer bleak_client.address and then client.address."""
     assert (
@@ -682,6 +698,85 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
     assert pair_await_timeouts == [7.0]
     assert cleanup_calls == [temp_client]
     iface.close()
+
+
+def test_ble_interface_close_waits_for_temporary_pair_operation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """close() should wait for temporary-client pair() work to finish."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    with iface._state_lock:
+        iface.client = None
+        iface.address = None
+        iface._state_manager._reset_to_disconnected()
+    monkeypatch.setattr(
+        iface,
+        "findDevice",
+        lambda _address: _create_ble_device("AA:BB:CC:DD:EE:FF", "Meshtastic"),
+    )
+
+    pair_started = threading.Event()
+    allow_pair_return = threading.Event()
+    pair_errors: list[Exception] = []
+    close_errors: list[Exception] = []
+    cleanup_calls: list[Any] = []
+
+    def _blocking_pair(*, await_timeout: float | None = None, **kwargs: object) -> None:
+        _ = (await_timeout, kwargs)
+        pair_started.set()
+        assert allow_pair_return.wait(timeout=1.0)
+
+    temp_client = SimpleNamespace(
+        pair=_blocking_pair,
+        bleak_client=SimpleNamespace(address="AA:BB:CC:DD:EE:FF"),
+    )
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.BLEClient",
+        lambda _address, **_kwargs: temp_client,
+    )
+    monkeypatch.setattr(
+        iface._client_manager,
+        "_safe_close_client",
+        lambda client: cleanup_calls.append(client),
+    )
+
+    def _run_pair() -> None:
+        try:
+            iface.pair("mesh-node", confirm=True, await_timeout=7.0)
+        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+            pair_errors.append(exc)
+
+    close_done = threading.Event()
+
+    def _run_close() -> None:
+        try:
+            iface.close()
+        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+            close_errors.append(exc)
+        finally:
+            close_done.set()
+
+    pair_thread = threading.Thread(target=_run_pair, daemon=True)
+    pair_thread.start()
+    assert pair_started.wait(timeout=1.0)
+
+    close_thread = threading.Thread(target=_run_close, daemon=True)
+    close_thread.start()
+    time.sleep(0.05)
+    with iface._state_lock:
+        assert iface._closed is True
+    assert close_done.is_set() is False
+
+    allow_pair_return.set()
+    pair_thread.join(timeout=2.0)
+    close_thread.join(timeout=2.0)
+
+    assert not pair_thread.is_alive()
+    assert not close_thread.is_alive()
+    assert pair_errors == []
+    assert close_errors == []
+    assert cleanup_calls == [temp_client]
 
 
 def test_ble_interface_unpair_uses_temporary_client_when_disconnected(
@@ -1413,6 +1508,65 @@ def test_ble_interface_trust_does_not_hold_interface_locks_during_subprocess(
         assert iface._closed is True
 
 
+def test_ble_interface_close_waits_for_explicit_trust_without_active_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """close() should wait for explicit trust() even when no client is active."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    with iface._state_lock:
+        iface.client = None
+        iface.address = None
+        iface._state_manager._reset_to_disconnected()
+
+    run_started = threading.Event()
+    allow_run_return = threading.Event()
+    trust_errors: list[Exception] = []
+    close_errors: list[Exception] = []
+    close_done = threading.Event()
+
+    def _blocking_run(*_args: object, **_kwargs: object) -> SimpleNamespace:
+        run_started.set()
+        assert allow_run_return.wait(timeout=1.0)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    _pin_trust_environment(monkeypatch, run=_blocking_run)
+
+    def _run_trust() -> None:
+        try:
+            iface.trust("AA:BB:CC:DD:EE:FF", timeout=7.0)
+        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+            trust_errors.append(exc)
+
+    def _run_close() -> None:
+        try:
+            iface.close()
+        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+            close_errors.append(exc)
+        finally:
+            close_done.set()
+
+    trust_thread = threading.Thread(target=_run_trust, daemon=True)
+    trust_thread.start()
+    assert run_started.wait(timeout=1.0)
+
+    close_thread = threading.Thread(target=_run_close, daemon=True)
+    close_thread.start()
+    time.sleep(0.05)
+    with iface._state_lock:
+        assert iface._closed is True
+    assert close_done.is_set() is False
+
+    allow_run_return.set()
+    trust_thread.join(timeout=2.0)
+    close_thread.join(timeout=2.0)
+
+    assert not trust_thread.is_alive()
+    assert not close_thread.is_alive()
+    assert trust_errors == []
+    assert close_errors == []
+    assert close_done.is_set() is True
+
+
 def test_ble_interface_implicit_trust_holds_connect_lock_during_subprocess(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1791,8 +1945,8 @@ def test_connect_wraps_invalid_connect_timeout_as_ble_error(
     """connect() should wrap invalid timeout overrides as BLEError."""
     iface = _build_minimal_connect_test_interface()
     cast(Any, iface)._connection_orchestrator = SimpleNamespace(
-        _establish_connection=lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            ValueError("connect_timeout must be a finite positive number of seconds.")
+        _establish_connection=lambda *_args, **_kwargs: pytest.fail(
+            "_establish_connection should not be called for invalid connect_timeout"
         )
     )
 
@@ -1807,6 +1961,25 @@ def test_connect_wraps_invalid_connect_timeout_as_ble_error(
         ),
     ):
         iface.connect("AA:BB:CC:DD:EE:10", connect_timeout=cast(Any, 0.0))
+
+
+def test_connect_does_not_relabel_unrelated_establish_connection_value_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """connect() should preserve unrelated ValueError failures from orchestration."""
+    iface = _build_minimal_connect_test_interface()
+    cast(Any, iface)._connection_orchestrator = SimpleNamespace(
+        _establish_connection=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            ValueError("boom")
+        )
+    )
+
+    monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
+    monkeypatch.setattr(iface, "_get_existing_client_if_valid", lambda _req: None)
+    monkeypatch.setattr(iface, "_raise_if_duplicate_connect", lambda _key: None)
+
+    with pytest.raises(ValueError, match="boom"):
+        iface.connect("AA:BB:CC:DD:EE:10", connect_timeout=4.5)
 
 
 def test_ble_interface_establish_and_update_client_discards_late_connection_result(

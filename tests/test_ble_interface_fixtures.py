@@ -292,8 +292,14 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     class _StubBLEDevice:
         """Minimal BLEDevice test double."""
 
-        def __init__(self, address: str | None = None, name: str | None = None) -> None:
-            """Create a minimal BLE device representation with an optional address and name.
+        def __init__(
+            self,
+            address: str | None = None,
+            name: str | None = None,
+            details: object | None = None,
+            **_kwargs: object,
+        ) -> None:
+            """Create a minimal BLE device representation with optional metadata.
 
             Parameters
             ----------
@@ -301,9 +307,14 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
                 The device's BLE address, or None if unknown. (Default value = None)
             name : str | None
                 The device's human-readable name, or None if unknown. (Default value = None)
+            details : object | None
+                Optional backend-specific details payload. (Default value = None)
+            **_kwargs : object
+                Additional constructor arguments accepted for API compatibility.
             """
             self.address = address
             self.name = name
+            self.details = details
 
     class _StubBleakScanner:
         """Minimal BleakScanner test double."""
@@ -666,11 +677,15 @@ def _build_interface(
     Returns
     -------
     'BLEInterface'
-        A BLEInterface instance configured for tests. The instance has `connect` replaced to attach and return `client`, `_start_config` replaced with a no-op, and a `_connect_stub_calls` list recording addresses passed to the stubbed `connect`.
+        A BLEInterface instance configured for tests. The instance has `connect`
+        replaced to attach and return `client`, `_start_config` replaced with a
+        no-op, `_connect_stub_calls` recording addresses passed to the stubbed
+        `connect`, and `_connect_stub_kwargs` recording keyword arguments.
     """
     ble_mod = _get_ble_module()
     BleInterfaceClass = cast(type["BLEInterface"], ble_mod.BLEInterface)
     connect_calls: list[str | None] = []
+    connect_call_kwargs: list[dict[str, object]] = []
 
     def _stub_connect(
         _self: Any,
@@ -696,8 +711,9 @@ def _build_interface(
         'DummyClient'
             The preconfigured test client instance attached to the interface.
         """
-        _ = (args, kwargs)
+        _ = args
         connect_calls.append(_address)
+        connect_call_kwargs.append(dict(kwargs))
         _self.client = client
         _self._disconnect_notified = False
         if hasattr(_self, "_reconnected_event"):
@@ -740,6 +756,7 @@ def _build_interface(
         )
     iface = BleInterfaceClass(address="dummy", noProto=True)
     cast(Any, iface)._connect_stub_calls = connect_calls
+    cast(Any, iface)._connect_stub_kwargs = connect_call_kwargs
     return iface
 
 

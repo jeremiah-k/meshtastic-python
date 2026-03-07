@@ -42,8 +42,7 @@ logger = logging.getLogger("meshtastic.ble")
 _DEVICE_NOT_FOUND_MESSAGE_RE = re.compile(
     r"(?:"
     r"\bcould not find (?:the )?(?:device|peripheral|adapter)\b|"
-    r"\b(?:device|peripheral|adapter)\b.{0,40}\bnot found\b|"
-    r"\bnot found\b.{0,40}\b(?:device|peripheral|adapter)\b"
+    r"\b(?:device|peripheral|adapter)\b.{0,40}\bnot found\b"
     r")"
 )
 _CONNECT_TIMEOUT_INVALID_MSG = (
@@ -634,6 +633,8 @@ class ConnectionOrchestrator:
                     )
                 except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
                     raise
+                except BleakDBusError:
+                    raise
                 except (
                     BleakError,
                     BLEClient.BLEError,
@@ -689,6 +690,8 @@ class ConnectionOrchestrator:
                 self.client_manager._connect_client(
                     client, timeout=retry_connect_timeout
                 )
+            except BleakDBusError:
+                raise
             except (
                 BleakError,
                 BLEClient.BLEError,

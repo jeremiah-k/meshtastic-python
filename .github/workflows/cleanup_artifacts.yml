@@ -9,7 +9,6 @@ on:
 
 permissions:
   actions: write
-  contents: read
 
 jobs:
   remove-old-artifacts:

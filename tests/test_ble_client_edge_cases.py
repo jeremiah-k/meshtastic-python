@@ -54,6 +54,21 @@ def _make_run_awaitable(
     return _run_awaitable
 
 
+def _raise_wrapped_not_implemented(
+    awaitable: Awaitable[object],
+    timeout: float | None = None,
+) -> object:
+    """Simulate `_async_await` wrapping NotImplementedError in BLEError."""
+    _ = timeout
+    close_awaitable = getattr(awaitable, "close", None)
+    if callable(close_awaitable):
+        close_awaitable()
+    try:
+        raise NotImplementedError("backend unsupported")
+    except NotImplementedError as exc:
+        raise BLEClient.BLEError(f"Async operation failed: {exc}") from exc
+
+
 @pytest.mark.unit
 def test_bleclient_discovery_mode_without_address(ble_client: BLEClient) -> None:
     """BLEClient should support discovery-only mode when initialized without an address."""
@@ -432,19 +447,6 @@ def test_bleclient_unpair_translates_wrapped_not_implemented_error(
         async def unpair(self) -> None:
             raise NotImplementedError("backend unsupported")
 
-    def _raise_wrapped_not_implemented(
-        awaitable: Awaitable[object],
-        timeout: float | None = None,
-    ) -> object:
-        _ = timeout
-        close_awaitable = getattr(awaitable, "close", None)
-        if callable(close_awaitable):
-            close_awaitable()
-        try:
-            raise NotImplementedError("backend unsupported")
-        except NotImplementedError as exc:
-            raise BLEClient.BLEError(f"Async operation failed: {exc}") from exc
-
     ble_client.bleak_client = cast(Any, _Backend())
     monkeypatch.setattr(ble_client, "_async_await", _raise_wrapped_not_implemented)
 
@@ -454,6 +456,20 @@ def test_bleclient_unpair_translates_wrapped_not_implemented_error(
         ble_client.unpair()
 
     assert isinstance(exc_info.value.__cause__, NotImplementedError)
+
+
+@pytest.mark.unit
+def test_bleclient_pair_rejects_backends_without_pair_support(
+    ble_client: BLEClient,
+) -> None:
+    """pair() should report unsupported backends that do not expose pair()."""
+    ble_client.bleak_client = cast(Any, object())
+
+    with pytest.raises(
+        BLEClient.BLEError,
+        match=BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED,
+    ):
+        ble_client.pair(confirm=True)
 
 
 @pytest.mark.unit
@@ -536,19 +552,6 @@ def test_bleclient_pair_translates_wrapped_not_implemented_error(
     class _Backend:
         async def pair(self, **_kwargs: Any) -> None:
             raise NotImplementedError("backend unsupported")
-
-    def _raise_wrapped_not_implemented(
-        awaitable: Awaitable[object],
-        timeout: float | None = None,
-    ) -> object:
-        _ = timeout
-        close_awaitable = getattr(awaitable, "close", None)
-        if callable(close_awaitable):
-            close_awaitable()
-        try:
-            raise NotImplementedError("backend unsupported")
-        except NotImplementedError as exc:
-            raise BLEClient.BLEError(f"Async operation failed: {exc}") from exc
 
     ble_client.bleak_client = cast(Any, _Backend())
     monkeypatch.setattr(ble_client, "_async_await", _raise_wrapped_not_implemented)

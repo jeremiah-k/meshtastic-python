@@ -238,6 +238,8 @@ class BLEInterface(MeshInterface):
         self._management_lock = (
             threading.RLock()
         )  # Serializes pair/unpair/trust vs. close()
+        self._management_idle_condition = threading.Condition(self._management_lock)
+        self._management_inflight = 0  # Tracks end-to-end management operations.
         self._disconnect_lock = threading.Lock()  # Serializes disconnect handling
         self._closed: bool = (
             False  # Tracks completion of shutdown for idempotent close()
@@ -1513,46 +1515,61 @@ class BLEInterface(MeshInterface):
         # lock order stays consistent: address gate first, then interface locks.
         with self._connect_lock, self._management_lock:
             self._validate_management_preconditions()
+            self._begin_management_operation_locked()
             existing_client = self._get_management_client_if_available(address)
             target_address = self._extract_client_address(existing_client)
-        if target_address is None:
-            target_address = self._resolve_target_address_for_management(address)
+        try:
+            if target_address is None:
+                target_address = self._resolve_target_address_for_management(address)
 
-        with self._management_target_gate(target_address):
-            with self._connect_lock:
-                with self._management_lock:
-                    self._validate_management_preconditions()
-                    if address is None:
-                        # The implicit target may have changed while we waited
-                        # for the per-address gate. Abort rather than acting on
-                        # a stale temporary target.
-                        self._revalidate_implicit_management_target(target_address)
-                    existing_client = self._get_management_client_for_target(
-                        target_address,
-                        prefer_current_client=address is None,
-                    )
-                    if existing_client is not None:
-                        client_to_use = existing_client
-                        temporary_client = None
-                    else:
-                        target_key = _addr_key(target_address)
-                        if (
-                            target_key is not None
-                            and _is_currently_connected_elsewhere(
-                                target_key, owner=self
-                            )
-                        ):
-                            raise self.BLEError(ERROR_CONNECTION_SUPPRESSED)
-                        temporary_client = BLEClient(
-                            target_address, log_if_no_address=False
+            with self._management_target_gate(target_address):
+                with self._connect_lock:
+                    with self._management_lock:
+                        self._validate_management_preconditions()
+                        if address is None:
+                            # The implicit target may have changed while we waited
+                            # for the per-address gate. Abort rather than acting on
+                            # a stale temporary target.
+                            self._revalidate_implicit_management_target(target_address)
+                        existing_client = self._get_management_client_for_target(
+                            target_address,
+                            prefer_current_client=address is None,
                         )
-                        client_to_use = temporary_client
+                        if existing_client is not None:
+                            client_to_use = existing_client
+                            temporary_client = None
+                        else:
+                            target_key = _addr_key(target_address)
+                            if (
+                                target_key is not None
+                                and _is_currently_connected_elsewhere(
+                                    target_key, owner=self
+                                )
+                            ):
+                                raise self.BLEError(ERROR_CONNECTION_SUPPRESSED)
+                            temporary_client = BLEClient(
+                                target_address, log_if_no_address=False
+                            )
+                            client_to_use = temporary_client
 
-                try:
-                    return command(client_to_use)
-                finally:
-                    if temporary_client is not None:
-                        self._client_manager._safe_close_client(temporary_client)
+                    try:
+                        return command(client_to_use)
+                    finally:
+                        if temporary_client is not None:
+                            self._client_manager._safe_close_client(temporary_client)
+        finally:
+            self._finish_management_operation()
+
+    def _begin_management_operation_locked(self) -> None:
+        """Record a management operation while holding `_management_lock`."""
+        self._management_inflight += 1
+
+    def _finish_management_operation(self) -> None:
+        """Mark a management operation complete and wake shutdown waiters."""
+        with self._management_lock:
+            self._management_inflight -= 1
+            if self._management_inflight == 0:
+                self._management_idle_condition.notify_all()
 
     def _validate_management_await_timeout(self, await_timeout: object) -> float:
         """Validate and return a bounded await timeout for management operations.
@@ -1610,6 +1627,23 @@ class BLEInterface(MeshInterface):
         ):
             raise self.BLEError(ERROR_TRUST_INVALID_TIMEOUT)
         return float(timeout)
+
+    def _validate_connect_timeout_override(
+        self,
+        connect_timeout: object,
+        *,
+        pair_on_connect: bool,
+    ) -> None:
+        """Validate a connect timeout override before connection orchestration."""
+        if connect_timeout is None:
+            return
+        try:
+            ConnectionOrchestrator._resolve_connect_timeout(
+                pair_on_connect=pair_on_connect,
+                connect_timeout=cast(float | None, connect_timeout),
+            )
+        except ValueError as exc:
+            raise self.BLEError(ERROR_INVALID_CONNECT_TIMEOUT.format(exc=exc)) from exc
 
     def pair(
         self,
@@ -1754,32 +1788,38 @@ class BLEInterface(MeshInterface):
         if bluetoothctl_path is None:
             raise self.BLEError(ERROR_TRUST_BLUETOOTHCTL_MISSING)
 
-        target_address = self._resolve_target_address_for_management(address)
-        canonical_address = self._format_bluetoothctl_address(target_address)
-        with self._management_target_gate(target_address):
-            # Hold the process-wide address gate during bluetoothctl execution so
-            # target-scoped trust operations stay serialized without blocking the
-            # interface locks for the full subprocess duration. For implicit
-            # targets, also hold _connect_lock so another thread cannot repoint
-            # this interface before the trust command runs.
-            if address is None:
-                with self._connect_lock:
-                    with self._management_lock:
+        with self._connect_lock, self._management_lock:
+            self._validate_management_preconditions()
+            self._begin_management_operation_locked()
+        try:
+            target_address = self._resolve_target_address_for_management(address)
+            canonical_address = self._format_bluetoothctl_address(target_address)
+            with self._management_target_gate(target_address):
+                # Hold the process-wide address gate during bluetoothctl execution so
+                # target-scoped trust operations stay serialized without blocking the
+                # interface locks for the full subprocess duration. For implicit
+                # targets, also hold _connect_lock so another thread cannot repoint
+                # this interface before the trust command runs.
+                if address is None:
+                    with self._connect_lock:
+                        with self._management_lock:
+                            self._validate_management_preconditions()
+                            self._revalidate_implicit_management_target(target_address)
+                        self._run_bluetoothctl_trust_command(
+                            bluetoothctl_path,
+                            canonical_address,
+                            validated_timeout,
+                        )
+                else:
+                    with self._connect_lock, self._management_lock:
                         self._validate_management_preconditions()
-                        self._revalidate_implicit_management_target(target_address)
                     self._run_bluetoothctl_trust_command(
                         bluetoothctl_path,
                         canonical_address,
                         validated_timeout,
                     )
-            else:
-                with self._connect_lock, self._management_lock:
-                    self._validate_management_preconditions()
-                self._run_bluetoothctl_trust_command(
-                    bluetoothctl_path,
-                    canonical_address,
-                    validated_timeout,
-                )
+        finally:
+            self._finish_management_operation()
 
     def _sanitize_address(self, address: str | None) -> str | None:
         """Provide a backward-compatible wrapper that returns a sanitized BLE address or None.
@@ -1992,21 +2032,18 @@ class BLEInterface(MeshInterface):
         -----
         Must be called while holding _connect_lock.
         """
-        try:
-            client = self._connection_orchestrator._establish_connection(
-                address,
-                self.address,
-                self._register_notifications,
-                # Defer _connected() publication until this interface has committed
-                # ownership of the new client and the post-connect stale/closing
-                # checks have passed.
-                lambda: None,
-                self._on_ble_disconnect,
-                pair_on_connect=pair_on_connect,
-                connect_timeout=connect_timeout,
-            )
-        except ValueError as exc:
-            raise self.BLEError(ERROR_INVALID_CONNECT_TIMEOUT.format(exc=exc)) from exc
+        client = self._connection_orchestrator._establish_connection(
+            address,
+            self.address,
+            self._register_notifications,
+            # Defer _connected() publication until this interface has committed
+            # ownership of the new client and the post-connect stale/closing
+            # checks have passed.
+            lambda: None,
+            self._on_ble_disconnect,
+            pair_on_connect=pair_on_connect,
+            connect_timeout=connect_timeout,
+        )
 
         device_address = getattr(
             getattr(client, "bleak_client", None), "address", None
@@ -2230,6 +2267,10 @@ class BLEInterface(MeshInterface):
         requested_identifier = address if address is not None else self.address
         normalized_request = sanitize_address(requested_identifier)
         pair_on_connect = self.pair_on_connect if pair is None else pair
+        self._validate_connect_timeout_override(
+            connect_timeout,
+            pair_on_connect=pair_on_connect,
+        )
 
         # Only use address registry for explicit addresses, not discovery mode (None)
         address_registry_key = (
@@ -2716,6 +2757,8 @@ class BLEInterface(MeshInterface):
                     ConnectionState.DISCONNECTING,
                 ):
                     self._state_manager._transition_to(ConnectionState.DISCONNECTING)
+            while self._management_inflight > 0:
+                self._management_idle_condition.wait()
 
         try:
             # Release lock before calling MeshInterface.close() to avoid deadlock

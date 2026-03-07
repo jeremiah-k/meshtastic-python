@@ -11,6 +11,7 @@ OTA_SOCKET_TIMEOUT_SECONDS = 15
 OTA_CHUNK_SIZE_BYTES = 1024
 FILE_HASH_READ_CHUNK_SIZE_BYTES = 4096
 OTA_PROGRESS_LOG_PERCENT_STEP = 5.0
+EMPTY_FIRMWARE_ERROR = "Firmware file {filename} is empty"
 
 
 class _SHA256Digest(Protocol):
@@ -101,6 +102,8 @@ class ESP32WiFiOTA:
             When not provided, progress is logged at INFO in coarse increments.
         """
         size = os.path.getsize(self._filename)
+        if size == 0:
+            raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
         next_progress_log_percent = OTA_PROGRESS_LOG_PERCENT_STEP
 
         logger.info(
@@ -145,7 +148,7 @@ class ESP32WiFiOTA:
                     if progress_callback:
                         progress_callback(sent_bytes, size)
                     else:
-                        progress_percent = (sent_bytes / size * 100) if size else 100.0
+                        progress_percent = sent_bytes / size * 100
                         if (
                             sent_bytes == size
                             or progress_percent >= next_progress_log_percent

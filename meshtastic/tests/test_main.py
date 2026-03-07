@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, cast
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, call, mock_open, patch
 
 import pytest
 import yaml
@@ -49,7 +49,7 @@ from ..tcp_interface import TCPInterface
 # from ..remote_hardware import onGPIOreceive
 # from ..config_pb2 import Config
 
-SDS_DISABLED_SENTINEL = 4_294_967_295
+SDS_DISABLED_SENTINEL: int = 4_294_967_295
 
 
 def _mock_sendText_helper(
@@ -4497,10 +4497,13 @@ def test_main_ota_update_retries_then_exits(
     assert "OTA update failed: boom" in err
     assert excinfo.value.code == 1
     assert ota.update.call_count == 5
-    assert any(
-        call.args == (main_module.OTA_RETRY_DELAY_SECONDS,)
-        for call in sleep_mock.call_args_list
-    )
+    assert sleep_mock.call_args_list == [
+        call(main_module.OTA_REBOOT_WAIT_SECONDS),
+        call(main_module.OTA_RETRY_DELAY_SECONDS),
+        call(main_module.OTA_RETRY_DELAY_SECONDS),
+        call(main_module.OTA_RETRY_DELAY_SECONDS),
+        call(main_module.OTA_RETRY_DELAY_SECONDS),
+    ]
 
 
 @pytest.mark.unit
@@ -4549,10 +4552,7 @@ def test_main_ota_update_succeeds_and_prints_completion(
     assert err == ""
     assert ota.update.call_count == 1
     node.startOTA.assert_called_once()
-    assert any(
-        call.args == (main_module.OTA_REBOOT_WAIT_SECONDS,)
-        for call in sleep_mock.call_args_list
-    )
+    assert sleep_mock.call_args_list == [call(main_module.OTA_REBOOT_WAIT_SECONDS)]
 
 
 @pytest.mark.unit

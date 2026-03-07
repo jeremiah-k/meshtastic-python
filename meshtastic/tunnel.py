@@ -190,7 +190,7 @@ class Tunnel:
         # Linux tunnel setup typically needs CAP_NET_ADMIN or root privileges.
         logger.info(
             "Starting IP to mesh tunnel (CAP_NET_ADMIN or root is typically "
-            "required for this *pre-alpha* feature). Mesh members:"
+            "required). Mesh members:"
         )
 
         pub.subscribe(onTunnelReceive, TUNNEL_TOPIC)

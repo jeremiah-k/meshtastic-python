@@ -31,7 +31,11 @@ INFO_READY_TIMEOUT_SECONDS = 60
 INFO_READY_POLL_INTERVAL_SECONDS = 2
 RESTORE_ATTEMPTS = 8
 RESTORE_RETRY_DELAY_SECONDS = 10
+DISCONNECT_PROBE_TIMEOUT_SECONDS = 1.0
 DEFAULT_URL_FRAGMENT = "CgUYAyIBAQ"
+_MUTATION_SETTLE_FAILURE_MSG = (
+    "Device never reached the expected post-mutation state:\n{output}"
+)
 CHANNEL_PRESET_INFO_PATTERNS: dict[str, str] = {
     "--ch-vlongslow": "VeryLongSlow",
     "--ch-longslow": "LongSlow",
@@ -306,9 +310,7 @@ def _wait_for_mutation_to_settle(
         if remaining <= 0:
             break
         time.sleep(min(INFO_READY_POLL_INTERVAL_SECONDS, remaining))
-    raise AssertionError(
-        f"Device never reached the expected post-mutation state:\n{last_output}"
-    )
+    raise AssertionError(_MUTATION_SETTLE_FAILURE_MSG.format(output=last_output))
 
 
 def _wait_for_get_readback(*fields: str, predicate: Callable[[str], bool]) -> str:
@@ -342,7 +344,7 @@ def _wait_for_disconnect_then_ready(action_name: str) -> str:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
-        probe_timeout = min(1.0, remaining)
+        probe_timeout = min(DISCONNECT_PROBE_TIMEOUT_SECONDS, remaining)
         code, output = _run("meshtastic", "--info", timeout=probe_timeout)
         if code != 0:
             remaining_after_disconnect = deadline - time.monotonic()

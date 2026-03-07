@@ -397,6 +397,7 @@ def test_close_waits_for_inflight_heartbeat_send(
     "disconnect_error",
     [
         OSError("bad fd"),
+        TypeError("stream closed"),
         MeshInterface.MeshInterfaceError("ble write failed"),
     ],
 )

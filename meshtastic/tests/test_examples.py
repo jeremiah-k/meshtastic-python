@@ -14,7 +14,9 @@ import yaml
 HELLO_WORLD_SERIAL_PATH = (
     Path(__file__).resolve().parents[2] / "examples" / "hello_world_serial.py"
 )
-EXAMPLE_CONFIG_PATH = Path(__file__).resolve().parents[2] / "example_config.yaml"
+EXAMPLE_CONFIG_PATH: Path = (
+    Path(__file__).resolve().parents[2] / "example_config.yaml"
+)
 
 
 def _run_hello_world_serial(monkeypatch: pytest.MonkeyPatch, *args: str) -> None:
@@ -69,6 +71,9 @@ def test_examples_example_config_yaml_is_valid() -> None:
     assert "ownerShort" not in config
     assert "channelUrl" not in config
 
+    bluetooth_cfg = config["config"]["bluetooth"]
+    assert bluetooth_cfg["enabled"] is True
+    assert "fixedPin" not in bluetooth_cfg
     assert config["config"]["device"]["serial_enabled"] is True
     assert "serialEnabled" not in config["config"]["device"]
     assert config["config"]["display"]["screen_on_secs"] == 600

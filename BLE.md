@@ -262,10 +262,9 @@ iface.pair()
 # Backend unpair (Linux/Windows backends where supported by Bleak).
 iface.unpair()
 
-# Linux-only trust helper. Omit the address only when the interface is already
-# connected to, or otherwise still bound to, the exact device you intend to
-# trust. Pass one explicitly when trusting a different resolved device.
-# Explicit-address trust does not require an active connection.
+# Linux-only trust helper. When connected, you can omit the address to trust
+# the current device. To trust a different device, pass its address explicitly
+# (no active connection required).
 iface.trust()
 iface.trust("AA:BB:CC:DD:EE:FF")
 ```

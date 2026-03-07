@@ -39,6 +39,10 @@ def test_is_device_not_found_error_matches_device_context_messages() -> None:
     assert _is_device_not_found_error(Exception("Device not found")) is True
     assert _is_device_not_found_error(Exception("Could not find peripheral")) is True
     assert _is_device_not_found_error(Exception("Characteristic not found")) is False
+    assert (
+        _is_device_not_found_error(Exception("Characteristic not found on device"))
+        is False
+    )
     assert _is_device_not_found_error(Exception("Service not found")) is False
 
 
@@ -1255,9 +1259,9 @@ def test_connection_orchestrator_handles_bleak_dbus_error_during_connect() -> No
         )
 
     assert state_manager._current_state == ConnectionState.DISCONNECTED
-    # BleakDBusError is a BleakError: one cleanup happens on direct-connect
-    # failure path, then outer BleakDBusError handling performs final cleanup.
-    assert client_manager._safe_close_client.call_count == 2
+    # DBus adapter failures should bypass discovery fallback and use only the
+    # dedicated outer cleanup path.
+    assert client_manager._safe_close_client.call_count == 1
 
 
 @pytest.mark.unit
