@@ -441,7 +441,18 @@ def _mark_disconnected(addr: str | None, owner: Any | None = None) -> None:
     if key is None:
         return
     with _REGISTRY_LOCK:
-        if owner is not None:
+        has_connected_claim = (
+            key in _CONNECTED_ADDRS
+            or key in _CONNECTED_OWNERS
+            or key in _CONNECTED_OWNER_IDS
+        )
+        has_connecting_claim = (
+            key in _CONNECTING_ADDRS
+            or key in _CONNECTING_OWNERS
+            or key in _CONNECTING_OWNER_IDS
+        )
+
+        if owner is not None and has_connected_claim:
             owner_ref = _CONNECTED_OWNERS.get(key)
             current_owner = owner_ref() if owner_ref is not None else None
             if current_owner is not None and current_owner is not owner:
@@ -462,6 +473,7 @@ def _mark_disconnected(addr: str | None, owner: Any | None = None) -> None:
                         key,
                     )
                     return
+        if owner is not None and has_connecting_claim:
             provisional_owner_ref = _CONNECTING_OWNERS.get(key)
             provisional_owner = (
                 provisional_owner_ref() if provisional_owner_ref is not None else None
@@ -474,9 +486,7 @@ def _mark_disconnected(addr: str | None, owner: Any | None = None) -> None:
                 return
             if provisional_owner is None:
                 provisional_owner_id = _CONNECTING_OWNER_IDS.get(key)
-                if provisional_owner_id is not None and provisional_owner_id != id(
-                    owner
-                ):
+                if provisional_owner_id is None or provisional_owner_id != id(owner):
                     logger.debug(
                         "Ignoring provisional disconnect mark for %s from non-owner instance.",
                         key,

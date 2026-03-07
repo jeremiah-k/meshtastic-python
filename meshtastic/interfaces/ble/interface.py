@@ -1412,8 +1412,13 @@ class BLEInterface(MeshInterface):
         Parameters
         ----------
         address : str | None
-            Target address or identifier. If None, prefer the interface's
-            current connected client when available.
+            Target address or identifier. When `None`, this helper first checks
+            `current_client = self.client` and returns it if connected. When an
+            explicit address is provided, the current client path is bypassed;
+            the helper normalizes `requested_identifier` via
+            `sanitize_address()` and validates only via
+            `_get_existing_client_if_valid()`. This asymmetry is intentional so
+            explicit address operations are validated against the registry path.
 
         Returns
         -------
@@ -1556,10 +1561,25 @@ class BLEInterface(MeshInterface):
                     )
             existing_client = self._get_management_client_if_available(address)
             target_address = self._extract_client_address(existing_client)
+            use_existing_client_without_resolved_address = (
+                existing_client is not None and target_address is None
+            )
         try:
-            if target_address is None:
+            if target_address is None and not use_existing_client_without_resolved_address:
                 target_address = self._resolve_target_address_for_management(address)
 
+            if use_existing_client_without_resolved_address:
+                with self._connect_lock:
+                    with self._management_lock:
+                        self._validate_management_preconditions()
+                        refreshed_existing_client = (
+                            self._get_management_client_if_available(address)
+                        )
+                        if refreshed_existing_client is None:
+                            raise self.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
+                return command(refreshed_existing_client)
+
+            assert target_address is not None
             with self._management_target_gate(target_address):
                 with self._connect_lock:
                     with self._management_lock:
@@ -1767,6 +1787,11 @@ class BLEInterface(MeshInterface):
         validated_timeout: float,
     ) -> None:
         """Run `bluetoothctl trust` and translate subprocess failures into BLEError."""
+        logger.debug(
+            "Running bluetoothctl trust command: %s (timeout=%.1fs)",
+            [bluetoothctl_path, "trust", canonical_address],
+            validated_timeout,
+        )
         try:
             result = subprocess.run(  # noqa: S603
                 [bluetoothctl_path, "trust", canonical_address],

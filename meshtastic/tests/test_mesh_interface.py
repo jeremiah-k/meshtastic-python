@@ -1722,7 +1722,7 @@ def test_send_position_waits_when_response_requested(
 def test_on_response_position_success_and_routing_error(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """onResponsePosition() should log parsed position and raise on NO_RESPONSE routing errors."""
+    """onResponsePosition() should log parsed position and route errors to waiters."""
     with MeshInterface(noProto=True) as iface:
         position = mesh_pb2.Position()
         position.latitude_i = 471234567
@@ -1776,17 +1776,18 @@ def test_on_response_position_success_and_routing_error(
             )
         assert "position disabled" in caplog.text
 
-        with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
-            iface.onResponsePosition(
-                {
-                    "decoded": {
-                        "portnum": portnums_pb2.PortNum.Name(
-                            portnums_pb2.PortNum.ROUTING_APP
-                        ),
-                        "routing": {"errorReason": "NO_RESPONSE"},
-                    }
+        iface.onResponsePosition(
+            {
+                "decoded": {
+                    "portnum": portnums_pb2.PortNum.Name(
+                        portnums_pb2.PortNum.ROUTING_APP
+                    ),
+                    "routing": {"errorReason": "NO_RESPONSE"},
                 }
-            )
+            }
+        )
+        with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
+            iface.waitForPosition()
 
 
 @pytest.mark.unit
@@ -1932,19 +1933,20 @@ def test_send_traceroute_and_response_rendering(
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_on_response_traceroute_routing_no_response_raises() -> None:
-    """Traceroute routing NO_RESPONSE replies should raise the standard API error."""
+    """Traceroute routing NO_RESPONSE replies should be surfaced by waitForTraceRoute()."""
     with MeshInterface(noProto=True) as iface:
-        with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
-            iface.onResponseTraceRoute(
-                {
-                    "decoded": {
-                        "portnum": portnums_pb2.PortNum.Name(
-                            portnums_pb2.PortNum.ROUTING_APP
-                        ),
-                        "routing": {"errorReason": "NO_RESPONSE"},
-                    }
+        iface.onResponseTraceRoute(
+            {
+                "decoded": {
+                    "portnum": portnums_pb2.PortNum.Name(
+                        portnums_pb2.PortNum.ROUTING_APP
+                    ),
+                    "routing": {"errorReason": "NO_RESPONSE"},
                 }
-            )
+            }
+        )
+        with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
+            iface.waitForTraceRoute(1.0)
 
 
 @pytest.mark.unit
@@ -2037,23 +2039,40 @@ def test_on_response_telemetry_paths(
             )
         assert "environmentMetrics:" in caplog.text
 
-        with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
-            iface.onResponseTelemetry(
-                {
-                    "decoded": {
-                        "portnum": portnums_pb2.PortNum.Name(
-                            portnums_pb2.PortNum.ROUTING_APP
-                        ),
-                        "routing": {"errorReason": "NO_RESPONSE"},
-                    }
+        iface.onResponseTelemetry(
+            {
+                "decoded": {
+                    "portnum": portnums_pb2.PortNum.Name(
+                        portnums_pb2.PortNum.ROUTING_APP
+                    ),
+                    "routing": {"errorReason": "NO_RESPONSE"},
                 }
-            )
+            }
+        )
+        with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
+            iface.waitForTelemetry()
+
+        iface.onResponseTelemetry(
+            {
+                "decoded": {
+                    "portnum": portnums_pb2.PortNum.Name(
+                        portnums_pb2.PortNum.ROUTING_APP
+                    ),
+                    "routing": {"errorReason": "NO_ROUTE"},
+                }
+            }
+        )
+        with pytest.raises(
+            MeshInterface.MeshInterfaceError,
+            match="Routing error on response: NO_ROUTE",
+        ):
+            iface.waitForTelemetry()
 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_on_response_waypoint_paths(caplog: pytest.LogCaptureFixture) -> None:
-    """onResponseWaypoint() should log waypoint payloads and raise on routing NO_RESPONSE."""
+    """onResponseWaypoint() should log waypoint payloads and route errors to waiters."""
     with MeshInterface(noProto=True) as iface:
         waypoint = mesh_pb2.Waypoint(name="WPT", id=5)
         with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
@@ -2070,17 +2089,18 @@ def test_on_response_waypoint_paths(caplog: pytest.LogCaptureFixture) -> None:
         assert "Waypoint received:" in caplog.text
         assert iface._acknowledgment.receivedWaypoint is True
 
-        with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
-            iface.onResponseWaypoint(
-                {
-                    "decoded": {
-                        "portnum": portnums_pb2.PortNum.Name(
-                            portnums_pb2.PortNum.ROUTING_APP
-                        ),
-                        "routing": {"errorReason": "NO_RESPONSE"},
-                    }
+        iface.onResponseWaypoint(
+            {
+                "decoded": {
+                    "portnum": portnums_pb2.PortNum.Name(
+                        portnums_pb2.PortNum.ROUTING_APP
+                    ),
+                    "routing": {"errorReason": "NO_RESPONSE"},
                 }
-            )
+            }
+        )
+        with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
+            iface.waitForWaypoint()
 
 
 @pytest.mark.unit

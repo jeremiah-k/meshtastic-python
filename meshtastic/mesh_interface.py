@@ -217,7 +217,7 @@ class MeshInterface:  # pylint: disable=R0902
         # Locking contract for MeshInterface shared state.
         #
         # Shared mutable state is intentionally split by concern:
-        # - _response_handlers_lock: responseHandlers map
+        # - _response_handlers_lock: responseHandlers map + response wait errors
         # - _heartbeat_lock: _closing, heartbeatTimer, _heartbeat_inflight,
         #   isConnected
         # - _packet_id_lock: currentPacketId generation
@@ -241,6 +241,7 @@ class MeshInterface:  # pylint: disable=R0902
         self.responseHandlers: dict[int, ResponseHandler] = (
             {}
         )  # A map from request ID to the handler
+        self._response_wait_errors: dict[str, str] = {}
         self.failure: BaseException | None = (
             None  # If we've encountered a fatal exception it will be kept here
         )
@@ -1104,6 +1105,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         if wantResponse:
             onResponse = self.onResponsePosition
+            self._clear_wait_error("receivedPosition")
         else:
             onResponse = None
 
@@ -1121,6 +1123,39 @@ class MeshInterface:  # pylint: disable=R0902
             self.waitForPosition()
         return d
 
+    def _clear_wait_error(self, acknowledgment_attr: str) -> None:
+        """Clear a previously recorded routing/wait error for one wait attribute."""
+        with self._response_handlers_lock:
+            self._response_wait_errors.pop(acknowledgment_attr, None)
+
+    def _set_wait_error(self, acknowledgment_attr: str, message: str) -> None:
+        """Record a wait error and wake the corresponding waiter."""
+        with self._response_handlers_lock:
+            self._response_wait_errors[acknowledgment_attr] = message
+        setattr(self._acknowledgment, acknowledgment_attr, True)
+
+    def _raise_wait_error_if_present(self, acknowledgment_attr: str) -> None:
+        """Raise and clear a pending wait error for the given acknowledgment attr."""
+        with self._response_handlers_lock:
+            error_message = self._response_wait_errors.pop(acknowledgment_attr, None)
+        if error_message is not None:
+            raise self.MeshInterfaceError(error_message)
+
+    def _record_routing_wait_error(
+        self,
+        *,
+        acknowledgment_attr: str,
+        routing_error_reason: str | None,
+    ) -> None:
+        """Record non-success routing responses into shared wait state."""
+        if routing_error_reason is None or routing_error_reason == "NONE":
+            return
+        if routing_error_reason == "NO_RESPONSE":
+            message = NO_RESPONSE_FIRMWARE_ERROR
+        else:
+            message = f"Routing error on response: {routing_error_reason}"
+        self._set_wait_error(acknowledgment_attr, message)
+
     def onResponsePosition(self, p: dict[str, Any]) -> None:
         """Process a position response packet and emit a concise human-readable summary.
 
@@ -1128,9 +1163,8 @@ class MeshInterface:  # pylint: disable=R0902
         protobuf from the packet payload, and emits latitude/longitude (degrees),
         altitude (meters) when present, and precision information. When INFO logging
         is configured, the summary is logged; otherwise it is printed to stdout for
-        backward compatibility. If the packet is a routing response whose
-        `decoded["routing"]["errorReason"]` equals `"NO_RESPONSE"`, raises
-        MeshInterfaceError with a message about the minimum required firmware.
+        backward compatibility. Routing replies are recorded into shared wait
+        state so waiters can surface routing failures consistently.
 
         Parameters
         ----------
@@ -1139,10 +1173,6 @@ class MeshInterface:  # pylint: disable=R0902
             `decoded["portnum"]` and `decoded["payload"]`. For routing error checks
             the nested `decoded["routing"]["errorReason"]` may be present.
 
-        Raises
-        ------
-        MeshInterfaceError
-            If a routing error occurs or no response is received from the node.
         """
         if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.POSITION_APP
@@ -1173,8 +1203,12 @@ class MeshInterface:  # pylint: disable=R0902
         elif p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.ROUTING_APP
         ):
-            if p["decoded"]["routing"]["errorReason"] == "NO_RESPONSE":
-                raise self.MeshInterfaceError(NO_RESPONSE_FIRMWARE_ERROR)
+            self._record_routing_wait_error(
+                acknowledgment_attr="receivedPosition",
+                routing_error_reason=p["decoded"]
+                .get("routing", {})
+                .get("errorReason"),
+            )
 
     def sendTraceRoute(
         self, dest: int | str, hopLimit: int, channelIndex: int = 0
@@ -1200,6 +1234,7 @@ class MeshInterface:  # pylint: disable=R0902
             If waiting for traceroute responses times out or the operation fails.
         """
         r = mesh_pb2.RouteDiscovery()
+        self._clear_wait_error("receivedTraceRoute")
         self.sendData(
             r,
             destinationId=dest,
@@ -1238,8 +1273,10 @@ class MeshInterface:  # pylint: disable=R0902
         if decoded.get("portnum") == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.ROUTING_APP
         ):
-            if decoded.get("routing", {}).get("errorReason") == "NO_RESPONSE":
-                raise self.MeshInterfaceError(NO_RESPONSE_FIRMWARE_ERROR)
+            self._record_routing_wait_error(
+                acknowledgment_attr="receivedTraceRoute",
+                routing_error_reason=decoded.get("routing", {}).get("errorReason"),
+            )
             return
 
         routeDiscovery = mesh_pb2.RouteDiscovery()
@@ -1403,6 +1440,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         if wantResponse:
             onResponse = self.onResponseTelemetry
+            self._clear_wait_error("receivedTelemetry")
         else:
             onResponse = None
 
@@ -1427,7 +1465,8 @@ class MeshInterface:  # pylint: disable=R0902
           for non-device_metrics telemetry, emits top-level keys and their subfields except the protobuf 'time' field.
           When INFO logging is configured, the summaries are logged; otherwise they are
           printed to stdout for backward compatibility.
-        - For ROUTING_APP: if routing.errorReason is "NO_RESPONSE", exits with a firmware-requirement message.
+        - For ROUTING_APP: records routing failures into shared wait state so
+          `waitForTelemetry()` can surface the failure to callers.
 
         Parameters
         ----------
@@ -1436,10 +1475,6 @@ class MeshInterface:  # pylint: disable=R0902
             with a "portnum" string and either a "payload" (Telemetry protobuf bytes) for TELEMETRY_APP
             or a "routing" mapping for ROUTING_APP.
 
-        Raises
-        ------
-        MeshInterfaceError
-            If the destination node requires a newer firmware version for telemetry responses.
         """
         if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.TELEMETRY_APP
@@ -1486,8 +1521,12 @@ class MeshInterface:  # pylint: disable=R0902
         elif p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.ROUTING_APP
         ):
-            if p["decoded"]["routing"]["errorReason"] == "NO_RESPONSE":
-                raise self.MeshInterfaceError(NO_RESPONSE_FIRMWARE_ERROR)
+            self._record_routing_wait_error(
+                acknowledgment_attr="receivedTelemetry",
+                routing_error_reason=p["decoded"]
+                .get("routing", {})
+                .get("errorReason"),
+            )
 
     def onResponseWaypoint(self, p: dict[str, Any]) -> None:
         """Handle a waypoint response or routing error contained in a received packet.
@@ -1495,10 +1534,9 @@ class MeshInterface:  # pylint: disable=R0902
         When the packet's port is WAYPOINT_APP, parse the Waypoint protobuf from
         decoded['payload'], mark the waypoint acknowledgment as received, and emit
         the waypoint. When INFO logging is configured, the summary is logged;
-        otherwise it is printed to stdout for backward compatibility. When the
-        packet's port is ROUTING_APP and decoded['routing']['errorReason'] ==
-        "NO_RESPONSE", raises MeshInterfaceError with a message about the minimum
-        firmware requirement.
+        otherwise it is printed to stdout for backward compatibility. Routing
+        errors are recorded into shared wait state so `waitForWaypoint()`
+        surfaces them directly.
 
         Parameters
         ----------
@@ -1506,10 +1544,6 @@ class MeshInterface:  # pylint: disable=R0902
             Packet dictionary containing a 'decoded' mapping. Expected keys include
             'portnum' (str) and, for WAYPOINT_APP, 'payload' (bytes) with a serialized Waypoint.
 
-        Raises
-        ------
-        MeshInterfaceError
-            If the destination node requires a newer firmware version for waypoint responses.
         """
         if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.WAYPOINT_APP
@@ -1521,8 +1555,12 @@ class MeshInterface:  # pylint: disable=R0902
         elif p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.ROUTING_APP
         ):
-            if p["decoded"]["routing"]["errorReason"] == "NO_RESPONSE":
-                raise self.MeshInterfaceError(NO_RESPONSE_FIRMWARE_ERROR)
+            self._record_routing_wait_error(
+                acknowledgment_attr="receivedWaypoint",
+                routing_error_reason=p["decoded"]
+                .get("routing", {})
+                .get("errorReason"),
+            )
 
     def sendWaypoint(  # pylint: disable=R0913
         self,
@@ -1595,6 +1633,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         if wantResponse:
             onResponse = self.onResponseWaypoint
+            self._clear_wait_error("receivedWaypoint")
         else:
             onResponse = None
 
@@ -1649,6 +1688,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         if wantResponse:
             onResponse = self.onResponseWaypoint
+            self._clear_wait_error("receivedWaypoint")
         else:
             onResponse = None
 
@@ -1877,6 +1917,7 @@ class MeshInterface:  # pylint: disable=R0902
             If the wait times out before a traceroute response is received.
         """
         success = self._timeout.waitForTraceRoute(waitFactor, self._acknowledgment)
+        self._raise_wait_error_if_present("receivedTraceRoute")
         if not success:
             raise MeshInterface.MeshInterfaceError("Timed out waiting for traceroute")
 
@@ -1889,6 +1930,7 @@ class MeshInterface:  # pylint: disable=R0902
             If a telemetry response is not received before the configured timeout.
         """
         success = self._timeout.waitForTelemetry(self._acknowledgment)
+        self._raise_wait_error_if_present("receivedTelemetry")
         if not success:
             raise MeshInterface.MeshInterfaceError("Timed out waiting for telemetry")
 
@@ -1901,6 +1943,7 @@ class MeshInterface:  # pylint: disable=R0902
             If waiting for the position times out.
         """
         success = self._timeout.waitForPosition(self._acknowledgment)
+        self._raise_wait_error_if_present("receivedPosition")
         if not success:
             raise MeshInterface.MeshInterfaceError("Timed out waiting for position")
 
@@ -1915,6 +1958,7 @@ class MeshInterface:  # pylint: disable=R0902
             If the wait times out before a waypoint acknowledgment is received.
         """
         success = self._timeout.waitForWaypoint(self._acknowledgment)
+        self._raise_wait_error_if_present("receivedWaypoint")
         if not success:
             raise MeshInterface.MeshInterfaceError("Timed out waiting for waypoint")
 

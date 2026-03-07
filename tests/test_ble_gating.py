@@ -11,6 +11,7 @@ from meshtastic.interfaces.ble.gating import (
     _ADDR_LOCKS,
     _CONNECTED_ADDRS,
     _CONNECTED_MARKED_AT,
+    _CONNECTING_MARKED_AT,
     _CONNECTING_ADDRS,
     _LOCK_HOLDERS,
     _REGISTRY_LOCK,
@@ -161,8 +162,9 @@ class TestMarkConnected:
         key = _addr_key("aabbccddeeff")
         assert key is not None
 
-        _mark_connecting("aabbccddeeff", owner=_ConnectedOwner())
-        _mark_connected("aabbccddeeff", owner=_ConnectedOwner())
+        owner = _ConnectedOwner()
+        _mark_connecting("aabbccddeeff", owner=owner)
+        _mark_connected("aabbccddeeff", owner=owner)
 
         assert key in _CONNECTED_ADDRS
         assert key not in _CONNECTING_ADDRS
@@ -248,11 +250,26 @@ class TestMarkDisconnected:
         key = _addr_key("aabbccddeeff")
         assert key is not None
 
-        _mark_connecting("aabbccddeeff", owner=_ConnectedOwner())
+        # Remove the fixture's default connected claim so this assertion
+        # isolates provisional-claim cleanup behavior.
         _mark_disconnected("aabbccddeeff")
+        owner = _ConnectedOwner()
+        _mark_connecting("aabbccddeeff", owner=owner)
+        _mark_disconnected("aabbccddeeff", owner=owner)
 
-        assert key not in _CONNECTED_ADDRS
         assert key not in _CONNECTING_ADDRS
+
+    def test_mark_disconnected_ignores_non_owner_for_provisional_claim(self) -> None:
+        """Owner-scoped disconnect should not clear another owner's provisional claim."""
+        key = _addr_key("aabbccddeeff")
+        assert key is not None
+
+        owner_a = _ConnectedOwner()
+        owner_b = _ConnectedOwner()
+        _mark_connecting("aabbccddeeff", owner=owner_a)
+        _mark_disconnected("aabbccddeeff", owner=owner_b)
+
+        assert key in _CONNECTING_ADDRS
 
 
 @pytest.mark.usefixtures("clear_registry")
@@ -323,11 +340,14 @@ class TestIsCurrentlyConnectedElsewhere:
         key = _addr_key("aabbccddeeff")
         assert key is not None
         _mark_connecting("aabbccddeeff")
+        stale_now = (
+            _CONNECTING_MARKED_AT[key]
+            + BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS
+            + 1.0
+        )
         monkeypatch.setattr(
             "meshtastic.interfaces.ble.gating.time.monotonic",
-            lambda: (
-                BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS + 1.0 + 1_000_000.0
-            ),
+            lambda: stale_now,
         )
 
         assert not _is_currently_connected_elsewhere("aabbccddeeff")

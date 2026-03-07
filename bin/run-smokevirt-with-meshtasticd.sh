@@ -18,6 +18,7 @@ EXTRA_PYTEST_ARGS=()
 PYTEST_TARGETS=()
 DEFAULT_PYTEST_TARGETS=()
 MESHTASTICD_CI_TARGETS=()
+SMOKEVIRT_TARGETS=()
 LOGS_PRINTED=false
 READY_LOG_FILE_IS_TEMP=false
 
@@ -82,7 +83,7 @@ fi
 
 require_regex "${MESHTASTICD_CONTAINER}" '^[A-Za-z0-9][A-Za-z0-9_.-]*$' "MESHTASTICD_CONTAINER"
 require_regex "${MESHTASTICD_IMAGE}" '^[^[:space:]]+$' "MESHTASTICD_IMAGE"
-require_regex "${MESHTASTICD_HOST}" '^[A-Za-z0-9._:-]+$' "MESHTASTICD_HOST"
+require_regex "${MESHTASTICD_HOST}" '^[A-Za-z0-9._:\[\]-]+$' "MESHTASTICD_HOST"
 require_regex "${MESHTASTICD_PORT}" '^[0-9]+$' "MESHTASTICD_PORT"
 require_regex "${MESHTASTICD_READY_TIMEOUT_SECONDS}" '^[0-9]+$' "MESHTASTICD_READY_TIMEOUT_SECONDS"
 MESHTASTICD_PORT_DEC=$((10#${MESHTASTICD_PORT}))
@@ -176,6 +177,7 @@ HAS_SMOKEVIRT_TARGET=false
 for target in "${PYTEST_TARGETS[@]}"; do
 	if [[ ${target} == *test_smokevirt.py ]]; then
 		HAS_SMOKEVIRT_TARGET=true
+		SMOKEVIRT_TARGETS+=("${target}")
 	fi
 	for default_target in "${DEFAULT_PYTEST_TARGETS[@]}"; do
 		if [[ ${target} == "${default_target}" ]]; then
@@ -189,8 +191,11 @@ if [[ -z ${MESHTASTICD_PYTEST_MARK_EXPR} ]]; then
 	if [[ ${HAS_SMOKEVIRT_TARGET} == true ]] && [[ ${#MESHTASTICD_CI_TARGETS[@]} -gt 0 ]]; then
 		echo "MESHTASTICD_PYTEST_TARGETS includes both smokevirt and meshtasticd-ci targets; set MESHTASTICD_PYTEST_MARK_EXPR explicitly." >&2
 		exit 1
-	elif [[ ${HAS_SMOKEVIRT_TARGET} == true ]]; then
+	elif [[ ${HAS_SMOKEVIRT_TARGET} == true ]] && [[ ${#SMOKEVIRT_TARGETS[@]} -eq ${#PYTEST_TARGETS[@]} ]]; then
 		MESHTASTICD_PYTEST_MARK_EXPR="smokevirt and not smoke1_destructive"
+	elif [[ ${HAS_SMOKEVIRT_TARGET} == true ]]; then
+		echo "MESHTASTICD_PYTEST_TARGETS mixes smokevirt with non-smokevirt targets; set MESHTASTICD_PYTEST_MARK_EXPR explicitly." >&2
+		exit 1
 	# Auto-apply "int" when every selected target is one of the dedicated
 	# meshtasticd CI files, including subsets of the default target list.
 	elif [[ ${#MESHTASTICD_CI_TARGETS[@]} -eq ${#PYTEST_TARGETS[@]} ]]; then

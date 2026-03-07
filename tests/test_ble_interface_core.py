@@ -596,6 +596,37 @@ def test_ble_interface_pair_prefers_active_client(
     iface.close()
 
 
+def test_ble_interface_pair_prefers_active_client_without_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """pair() should reuse an active client even when it cannot expose an address."""
+    client = DummyClient()
+    client.address = cast(Any, None)
+    client.bleak_client = SimpleNamespace(address=None)
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    with iface._state_lock:
+        iface.address = "mesh-node"
+    monkeypatch.setattr(
+        iface,
+        "findDevice",
+        lambda _address: pytest.fail(
+            "Unexpected findDevice call during active-client address-less pair reuse test"
+        ),
+    )
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.BLEClient",
+        lambda *_args, **_kwargs: pytest.fail(
+            "Unexpected temporary BLEClient created during active-client address-less pair reuse test"
+        ),
+    )
+
+    iface.pair(confirm=True, await_timeout=9.5)
+    assert client.pair_calls == 1
+    assert client.pair_kwargs == [{"confirm": True}]
+    assert client.pair_await_timeouts == [9.5]
+    iface.close()
+
+
 def test_ble_interface_unpair_prefers_active_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

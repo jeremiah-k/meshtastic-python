@@ -79,10 +79,13 @@ def test_examples_example_config_yaml_is_valid() -> None:
     owner = config.get("owner")
     owner_short = config.get("owner_short")
     channel_url = config.get("channel_url")
-    assert isinstance(owner, str) and owner.strip()
-    assert isinstance(owner_short, str) and owner_short.strip()
-    assert isinstance(channel_url, str) and channel_url.startswith(
-        "https://www.meshtastic.org/"
+    assert isinstance(owner, str), "owner should be a string"
+    assert owner.strip(), "owner should not be empty/whitespace"
+    assert isinstance(owner_short, str), "owner_short should be a string"
+    assert owner_short.strip(), "owner_short should not be empty/whitespace"
+    assert isinstance(channel_url, str), "channel_url should be a string"
+    assert channel_url.startswith("https://www.meshtastic.org/"), (
+        f"channel_url should start with meshtastic.org URL, got: {channel_url}"
     )
     assert "ownerShort" not in config
     assert "channelUrl" not in config

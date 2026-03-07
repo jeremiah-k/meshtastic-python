@@ -122,13 +122,14 @@ def _find_channel_index_by_name(info_output: str, channel_name: str) -> int | No
     return None
 
 
-def _channel_info_block(info_output: str, channel_index: int = 0) -> str:
+def _channel_info_block(info_output: str, channel_index: int = 0) -> str | None:
     """Extract the serialized `Index N:` channel block from `--info` output."""
     match = re.search(
         rf"(?ms)^\s*Index\s+{channel_index}:\s+\w+.*?(?=^\s*Index\s+\d+:|\Z)",
         info_output,
     )
-    assert match is not None, info_output
+    if match is None:
+        return None
     return match.group(0)
 
 
@@ -527,34 +528,22 @@ def test_smoke1_debug() -> None:
 
 
 @pytest.mark.smoke1
-def test_smoke1_seriallog_to_file() -> None:
+def test_smoke1_seriallog_to_file(tmp_path: Path) -> None:
     """`--seriallog` should create a log file."""
-    filepath = Path("tmpoutput.txt")
-    try:
-        if filepath.exists():
-            filepath.unlink()
-        return_value, _ = _run("meshtastic", "--info", "--seriallog", str(filepath))
-        assert filepath.exists()
-        assert return_value == 0
-    finally:
-        if filepath.exists():
-            filepath.unlink()
+    filepath = tmp_path / "tmpoutput.txt"
+    return_value, _ = _run("meshtastic", "--info", "--seriallog", str(filepath))
+    assert filepath.exists()
+    assert return_value == 0
 
 
 @pytest.mark.smoke1
-def test_smoke1_qr() -> None:
+def test_smoke1_qr(tmp_path: Path) -> None:
     """`--qr` should emit a PNG-sized payload to stdout redirection."""
-    filename = Path("tmpqr")
-    try:
-        if filename.exists():
-            filename.unlink()
-        return_value, _ = _run_shell(f"meshtastic --qr > {_quote_shell_path(filename)}")
-        assert filename.exists()
-        assert filename.stat().st_size > 20000
-        assert return_value == 0
-    finally:
-        if filename.exists():
-            filename.unlink()
+    filename = tmp_path / "tmpqr"
+    return_value, _ = _run_shell(f"meshtastic --qr > {_quote_shell_path(filename)}")
+    assert filename.exists()
+    assert filename.stat().st_size > 20000
+    assert return_value == 0
 
 
 @pytest.mark.smoke1
@@ -723,7 +712,10 @@ def test_smoke1_ch_values(preset_cmd: str, expected_preset: str) -> None:
     assert "Writing modified channels to device" in precondition_out
     assert precondition_code == 0
     _wait_for_mutation_to_settle(
-        predicate=lambda output: precondition_preset in _channel_info_block(output)
+        predicate=lambda output: (
+            (block := _channel_info_block(output)) is not None
+            and precondition_preset in block
+        )
     )
 
     return_value, out = _run("meshtastic", preset_cmd)
@@ -732,9 +724,13 @@ def test_smoke1_ch_values(preset_cmd: str, expected_preset: str) -> None:
     assert return_value == 0
 
     info_out = _wait_for_mutation_to_settle(
-        predicate=lambda output: expected_preset in _channel_info_block(output)
+        predicate=lambda output: (
+            (block := _channel_info_block(output)) is not None and expected_preset in block
+        )
     )
-    assert expected_preset in _channel_info_block(info_out)
+    channel_zero = _channel_info_block(info_out)
+    assert channel_zero is not None
+    assert expected_preset in channel_zero
 
 
 @_destructive_test
@@ -778,10 +774,14 @@ def test_smoke1_ch_set_downlink_and_uplink() -> None:
     assert return_value == 0
 
     info_out = _wait_for_mutation_to_settle(
-        predicate=lambda output: "uplinkEnabled" not in _channel_info_block(output)
-        and "downlinkEnabled" not in _channel_info_block(output)
+        predicate=lambda output: (
+            (block := _channel_info_block(output)) is not None
+            and "uplinkEnabled" not in block
+            and "downlinkEnabled" not in block
+        )
     )
     channel_zero = _channel_info_block(info_out)
+    assert channel_zero is not None
     assert "uplinkEnabled" not in channel_zero
     assert "downlinkEnabled" not in channel_zero
 
@@ -802,10 +802,14 @@ def test_smoke1_ch_set_downlink_and_uplink() -> None:
     assert return_value == 0
 
     info_out = _wait_for_mutation_to_settle(
-        predicate=lambda output: "uplinkEnabled" in _channel_info_block(output)
-        and "downlinkEnabled" in _channel_info_block(output)
+        predicate=lambda output: (
+            (block := _channel_info_block(output)) is not None
+            and "uplinkEnabled" in block
+            and "downlinkEnabled" in block
+        )
     )
     channel_zero = _channel_info_block(info_out)
+    assert channel_zero is not None
     assert "uplinkEnabled" in channel_zero
     assert "downlinkEnabled" in channel_zero
 

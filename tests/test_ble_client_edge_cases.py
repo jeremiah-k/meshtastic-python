@@ -550,7 +550,7 @@ def test_bleclient_pair_translates_wrapped_not_implemented_error(
     """pair() should preserve the unsupported contract when _async_await wraps NotImplementedError."""
 
     class _Backend:
-        async def pair(self, **_kwargs: Any) -> None:
+        async def pair(self, **_kwargs: object) -> None:
             raise NotImplementedError("backend unsupported")
 
     ble_client.bleak_client = cast(Any, _Backend())

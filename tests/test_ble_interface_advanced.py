@@ -49,6 +49,11 @@ def _get_connect_stub_calls(iface: BLEInterface) -> list[str | None]:
     return cast(list[str | None], getattr(iface, "_connect_stub_calls", []))
 
 
+def _get_connect_stub_kwargs(iface: BLEInterface) -> list[dict[str, object]]:
+    """Retrieve the test-only list of keyword args recorded for connect calls."""
+    return cast(list[dict[str, object]], getattr(iface, "_connect_stub_kwargs", []))
+
+
 def _get_stress_test_clients(iface: BLEInterface) -> list[Any]:
     """Retrieve the stress-test clients created by the patched connect stub."""
     return cast(list[Any], getattr(iface, "_stress_test_clients", []))
@@ -622,6 +627,7 @@ def test_rapid_connect_disconnect_stress_test(
         """
 
         connect_calls: list[str | None] = []
+        connect_kwargs: list[dict[str, object]] = []
         created_clients: list[StressTestClient] = []
 
         stack = ExitStack()
@@ -651,13 +657,15 @@ def test_rapid_connect_disconnect_stress_test(
             'StressTestClient'
                 The client instance attached to the interface.
             """
-            _ = (pair, connect_timeout)
             new_client = StressTestClient()
             new_client._should_fail_connect = cast(
                 bool,
                 getattr(self, "_stress_test_should_fail_connect", False),
             )
             connect_calls.append(address)
+            connect_kwargs.append(
+                {"pair": pair, "connect_timeout": connect_timeout}
+            )
             new_client.connect()
             cast(Any, self).client = new_client
             created_clients.append(new_client)
@@ -676,6 +684,7 @@ def test_rapid_connect_disconnect_stress_test(
                 auto_reconnect=True,
             )
             cast(Any, iface)._connect_stub_calls = connect_calls
+            cast(Any, iface)._connect_stub_kwargs = connect_kwargs
             cast(Any, iface)._stress_test_clients = created_clients
             client = cast("StressTestClient", iface.client)
             yield iface, client
@@ -733,6 +742,10 @@ def test_rapid_connect_disconnect_stress_test(
         assert (
             len(_get_connect_stub_calls(iface)) >= 2
         ), "Auto-reconnect should continue scheduling during rapid disconnects"
+        assert all(
+            {"pair", "connect_timeout"} <= set(kwargs)
+            for kwargs in _get_connect_stub_kwargs(iface)
+        )
         republished_clients = _wait_for_latest_stress_client(iface)
         assert len(republished_clients) >= 2
         assert cast(object, iface.client) is republished_clients[-1]
@@ -775,6 +788,10 @@ def test_rapid_connect_disconnect_stress_test(
         assert collected_worker_errors == []
         assert client2.bleak_client is not None
         assert cast(Any, client2.bleak_client).disconnect_count >= 0
+        assert all(
+            {"pair", "connect_timeout"} <= set(kwargs)
+            for kwargs in _get_connect_stub_kwargs(iface2)
+        )
         republished_clients = _wait_for_latest_stress_client(iface2)
         assert len(republished_clients) >= 2
         assert cast(object, iface2.client) is republished_clients[-1]
@@ -880,7 +897,9 @@ def test_ble_client_async_timeout_maps_to_ble_error(
 
     # BLEClient and BLEInterface already imported at top as ble_mod.BLEClient, ble_mod.BLEInterface
 
-    client = BLEClient()  # address=None keeps underlying bleak client unset
+    client = BLEClient(
+        log_if_no_address=False
+    )  # address=None keeps underlying bleak client unset
     fake_future = _make_fake_future(FutureTimeoutError())
     monkeypatch.setattr(client, "_async_run", _bind_coro_to_future(fake_future))
 
@@ -904,7 +923,7 @@ def test_ble_client_async_runtime_error_maps_to_ble_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """BLEClient._async_await should surface RuntimeError as a non-timeout BLE error."""
-    client = BLEClient()
+    client = BLEClient(log_if_no_address=False)
     fake_future = _make_fake_future(RuntimeError("loop is closed"))
     monkeypatch.setattr(client, "_async_run", _bind_coro_to_future(fake_future))
 

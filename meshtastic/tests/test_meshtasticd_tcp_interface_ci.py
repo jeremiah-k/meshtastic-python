@@ -84,7 +84,7 @@ def _parse_host_and_port(host: str) -> tuple[str, int]:
         # First check if the full host string is a valid IPv6 address.
         try:
             ipaddress.IPv6Address(host)
-        except ipaddress.AddressValueError:
+        except ipaddress.AddressValueError as exc:
             # Not a valid IPv6 address as-is. Check if it might be an
             # unbracketed IPv6:PORT combination (which is ambiguous and
             # must be rejected with a helpful error message).
@@ -100,14 +100,14 @@ def _parse_host_and_port(host: str) -> tuple[str, int]:
                             env_var=MESHTASTICD_HOST_ENV_VAR,
                             host=host,
                         )
-                    ) from None
+                    ) from exc
             # Neither a valid IPv6 address nor a valid IPv6:PORT form
             raise ValueError(
                 INVALID_IPV6_BRACKETED_PORT.format(
                     env_var=MESHTASTICD_HOST_ENV_VAR,
                     host=host,
                 )
-            ) from None
+            ) from exc
         else:
             # Valid IPv6 address. Check for ambiguous ::X:Y form where
             # Y looks like a port number. These should use bracket notation
