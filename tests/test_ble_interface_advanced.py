@@ -764,7 +764,11 @@ def test_rapid_connect_disconnect_stress_test(
             Triggers ten disconnect callbacks roughly 0.01 seconds apart to exercise the interface's reconnect and disconnect handling during tests.
             """
             for _ in range(10):
-                iface._on_ble_disconnect(cast(Any, client.bleak_client))
+                current_client = cast("StressTestClient", iface.client)
+                if current_client is None or current_client.bleak_client is None:
+                    time.sleep(0.01)
+                    continue
+                iface._on_ble_disconnect(cast(Any, current_client.bleak_client))
                 time.sleep(0.01)  # Very short delay between disconnects
 
         # Start rapid disconnect simulation in a separate thread

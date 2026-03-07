@@ -11,27 +11,31 @@ import pytest
 
 from meshtastic.tcp_interface import DEFAULT_TCP_PORT, TCPInterface
 
-MESHTASTICD_HOST_ENV_VAR = "MESHTASTICD_HOST"
-CONNECT_TIMEOUT_SECONDS = 5.0
-WAIT_CONNECTED_TIMEOUT_SECONDS = 10.0
-RECONNECT_RECOVERY_TIMEOUT_SECONDS = 25.0
-RECONNECT_RETRY_INTERVAL_SECONDS = 0.5
+MESHTASTICD_HOST_ENV_VAR: str = "MESHTASTICD_HOST"
+CONNECT_TIMEOUT_SECONDS: float = 5.0
+WAIT_CONNECTED_TIMEOUT_SECONDS: float = 10.0
+RECONNECT_RECOVERY_TIMEOUT_SECONDS: float = 25.0
+RECONNECT_RETRY_INTERVAL_SECONDS: float = 0.5
 
-INVALID_HOST_EMPTY = "Invalid {env_var}={host!r}: host component is empty."
-EXPECTED_HOST_PORT_ONLY = "Invalid {env_var}={host!r}: expected HOST[:PORT] only."
-INVALID_IPV6_BRACKETED_PORT = (
+INVALID_HOST_EMPTY: str = "Invalid {env_var}={host!r}: host component is empty."
+EXPECTED_HOST_PORT_ONLY: str = (
+    "Invalid {env_var}={host!r}: expected HOST[:PORT] only."
+)
+INVALID_IPV6_BRACKETED_PORT: str = (
     "Invalid {env_var}={host!r}: raw IPv6 literals "
     "with explicit ports must use bracket form like [::1]:4401."
 )
-INVALID_PORT_EMPTY = (
+INVALID_PORT_EMPTY: str = (
     "Invalid {env_var}={host!r}: invalid TCP port ''. Expected HOST[:PORT] "
     "with numeric PORT."
 )
-INVALID_PORT_NONNUMERIC = (
+INVALID_PORT_NONNUMERIC: str = (
     "Invalid {env_var}={host!r}: invalid TCP port {raw_port!r}. Expected "
     "HOST[:PORT] with numeric PORT."
 )
-INVALID_PORT_RANGE = "Invalid {env_var}={host!r}: port must be in range 1..65535."
+INVALID_PORT_RANGE: str = (
+    "Invalid {env_var}={host!r}: port must be in range 1..65535."
+)
 
 
 def _require_meshtasticd_host() -> str:
@@ -109,26 +113,8 @@ def _parse_host_and_port(host: str) -> tuple[str, int]:
                 )
             ) from exc
         else:
-            # Valid IPv6 address. Check the specific ambiguous ::X:Y shape:
-            # it starts with "::" and has exactly 3 colons, so the tail can be
-            # read either as two IPv6 segments or as HOST:PORT. Split on the
-            # last colon and if host_part is still valid IPv6 with numeric tail,
-            # require bracketed HOST:PORT form (INVALID_IPV6_BRACKETED_PORT).
-            if host.startswith("::") and host.count(":") == 3:
-                host_part, _, possible_port = host.rpartition(":")
-                if possible_port.isdigit():
-                    try:
-                        ipaddress.IPv6Address(host_part)
-                    except ipaddress.AddressValueError:
-                        pass
-                    else:
-                        # host_part is valid IPv6, so this is ambiguous
-                        raise ValueError(
-                            INVALID_IPV6_BRACKETED_PORT.format(
-                                env_var=MESHTASTICD_HOST_ENV_VAR,
-                                host=host,
-                            )
-                        )
+            # Full literal is a valid IPv6 host; treat it as host-only and
+            # use the default TCP port.
             return host, DEFAULT_TCP_PORT
 
     raw_port = _extract_port_component(host)
@@ -236,22 +222,20 @@ def test_parse_host_and_port_accepts_compressed_ipv6_with_numeric_tail() -> None
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize(
-    "host",
-    [
-        "::1:4401",
-        "::2:4401",
-        "::a:1234",
-        "2001:db8:0:1:2:3:4:5:4401",
-    ],
-)
-def test_parse_host_and_port_rejects_ambiguous_unbracketed_ipv6_port(host: str) -> None:
-    """_parse_host_and_port should reject IPv6 HOST:PORT values without brackets."""
+@pytest.mark.parametrize("host", ["::1:4401", "::2:4401", "::a:1234"])
+def test_parse_host_and_port_accepts_unbracketed_ipv6_numeric_tail(host: str) -> None:
+    """Valid raw IPv6 literals with numeric tails should parse as host-only values."""
+    assert _parse_host_and_port(host) == (host, DEFAULT_TCP_PORT)
+
+
+@pytest.mark.unit
+def test_parse_host_and_port_rejects_invalid_unbracketed_ipv6_port_shape() -> None:
+    """Invalid unbracketed IPv6:PORT-like strings should require bracket form."""
     with pytest.raises(
         ValueError,
         match=r"raw IPv6 literals with explicit ports must use bracket form",
     ):
-        _parse_host_and_port(host)
+        _parse_host_and_port("2001:db8:0:1:2:3:4:5:4401")
 
 
 @pytest.mark.unit

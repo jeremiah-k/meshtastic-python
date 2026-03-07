@@ -106,6 +106,8 @@ class ESP32WiFiOTA:
             When not provided, progress is logged at INFO in coarse increments.
         """
         size = self._size
+        if OTA_PROGRESS_LOG_PERCENT_STEP <= 0:
+            raise ValueError("OTA_PROGRESS_LOG_PERCENT_STEP must be > 0")
         next_progress_log_percent = OTA_PROGRESS_LOG_PERCENT_STEP
 
         logger.info(

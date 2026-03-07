@@ -433,7 +433,8 @@ class ConnectionOrchestrator:
         register_notifications_func : Callable
             Callable that registers notification handlers on `client`.
         on_connected_func : Callable
-            Callback invoked after the connection state transitions to CONNECTED.
+            Callback invoked after the connection state transitions to CONNECTED
+            when `emit_connected_side_effects` is True.
         emit_connected_side_effects : bool
             When True, emit reconnect wake signaling and success logging during
             finalization. Callers that defer "connected" publication can set this
@@ -489,8 +490,8 @@ class ConnectionOrchestrator:
                     CONNECTION_ERROR_STATE_TRANSITION_INVALIDATED
                 )
 
-        on_connected_func()
         if emit_connected_side_effects:
+            on_connected_func()
             if getattr(self.interface, "_ever_connected", False):
                 self.thread_coordinator._set_event("reconnected_event")
             normalized_device_address = sanitize_address(device_address)

@@ -275,6 +275,28 @@ def test_esp32_wifi_ota_update_logs_progress_without_callback(
 
 
 @pytest.mark.unit
+@patch("meshtastic.ota.socket.socket")
+def test_esp32_wifi_ota_update_rejects_non_positive_progress_step(
+    mock_socket_class: MagicMock,
+) -> None:
+    """update() should fail fast when OTA progress step is misconfigured."""
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
+        f.write(b"A" * 1024)
+        temp_file = f.name
+
+    try:
+        ota = ESP32WiFiOTA(temp_file, "192.168.1.1")
+        with patch("meshtastic.ota.OTA_PROGRESS_LOG_PERCENT_STEP", 0.0):
+            with pytest.raises(
+                ValueError, match="OTA_PROGRESS_LOG_PERCENT_STEP must be > 0"
+            ):
+                ota.update()
+        mock_socket_class.assert_not_called()
+    finally:
+        os.unlink(temp_file)
+
+
+@pytest.mark.unit
 def test_esp32_wifi_ota_init_rejects_empty_firmware() -> None:
     """Constructor should fail fast for zero-byte firmware before OTA mode begins."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:

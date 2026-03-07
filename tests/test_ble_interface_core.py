@@ -3060,10 +3060,10 @@ def test_connect_raises_when_registry_ownership_is_lost_after_gate_finalization(
     assert iface._last_connection_request == iface._sanitize_address(target_address)
 
 
-def test_connect_restores_concrete_address_after_name_target_loses_ownership(
+def test_connect_restores_requested_identifier_after_name_target_loses_ownership(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A discarded name-based connect should restore the resolved BLE address."""
+    """A discarded name-based connect should restore the caller's requested identifier."""
     target_identifier = "mesh-node"
     target_address = "AA:BB:CC:DD:EE:11"
     iface = _build_minimal_connect_test_interface()
@@ -3127,11 +3127,10 @@ def test_connect_restores_concrete_address_after_name_target_loses_ownership(
 
     assert closed_clients == [cast(BLEClient, connected_client)]
     assert released_claims == [("device-key",)]
-    assert iface.address == target_address
+    assert iface.address == target_identifier
     assert iface._last_connection_request == iface._sanitize_address(target_identifier)
     with iface._state_lock:
-        assert iface._get_current_implicit_management_address_locked() == target_address
-    iface._revalidate_implicit_management_target(target_address)
+        assert iface._get_current_implicit_management_address_locked() is None
 
 
 def test_connect_rechecks_ownership_before_publishing_connected(

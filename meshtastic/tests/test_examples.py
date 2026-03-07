@@ -28,7 +28,9 @@ def _require_mapping(value: object, *, label: str) -> dict[str, object]:
 
 def _require_int_strict(value: object, *, label: str) -> int:
     """Assert that `value` is an int (excluding bool) and return it."""
-    assert type(value) is int, f"{label} should be an int, got {type(value).__name__}"
+    assert isinstance(value, int) and not isinstance(value, bool), (
+        f"{label} should be an int, got {type(value).__name__}"
+    )
     return cast(int, value)
 
 

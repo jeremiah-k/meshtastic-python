@@ -589,7 +589,7 @@ def test_finalize_connection_can_defer_connected_side_effects() -> None:
         emit_connected_side_effects=False,
     )
 
-    on_connected.assert_called_once_with()
+    on_connected.assert_not_called()
     thread_coordinator._set_event.assert_not_called()
 
 

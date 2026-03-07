@@ -4499,13 +4499,11 @@ def test_main_ota_update_retries_then_exits(
     _, err = capsys.readouterr()
     assert "OTA update failed: boom" in err
     assert excinfo.value.code == 1
-    assert ota.update.call_count == 5
+    assert ota.update.call_count == main_module.OTA_MAX_RETRIES
     assert sleep_mock.call_args_list == [
         call(main_module.OTA_REBOOT_WAIT_SECONDS),
-        call(main_module.OTA_RETRY_DELAY_SECONDS),
-        call(main_module.OTA_RETRY_DELAY_SECONDS),
-        call(main_module.OTA_RETRY_DELAY_SECONDS),
-        call(main_module.OTA_RETRY_DELAY_SECONDS),
+        *[call(main_module.OTA_RETRY_DELAY_SECONDS)]
+        * (main_module.OTA_MAX_RETRIES - 1),
     ]
 
 

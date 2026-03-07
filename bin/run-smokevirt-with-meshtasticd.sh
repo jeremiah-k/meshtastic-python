@@ -84,6 +84,13 @@ fi
 require_regex "${MESHTASTICD_CONTAINER}" '^[A-Za-z0-9][A-Za-z0-9_.-]*$' "MESHTASTICD_CONTAINER"
 require_regex "${MESHTASTICD_IMAGE}" '^[^[:space:]]+$' "MESHTASTICD_IMAGE"
 require_regex "${MESHTASTICD_HOST}" '^(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9._-]+)(:[0-9]+)?$' "MESHTASTICD_HOST"
+if [[ ${MESHTASTICD_HOST} =~ :([0-9]+)$ ]]; then
+	MESHTASTICD_HOST_PORT_DEC=$((10#${BASH_REMATCH[1]}))
+	if ((MESHTASTICD_HOST_PORT_DEC < 1 || MESHTASTICD_HOST_PORT_DEC > 65535)); then
+		echo "MESHTASTICD_HOST port must be between 1 and 65535." >&2
+		exit 1
+	fi
+fi
 require_regex "${MESHTASTICD_PORT}" '^[0-9]+$' "MESHTASTICD_PORT"
 require_regex "${MESHTASTICD_READY_TIMEOUT_SECONDS}" '^[0-9]+$' "MESHTASTICD_READY_TIMEOUT_SECONDS"
 MESHTASTICD_PORT_DEC=$((10#${MESHTASTICD_PORT}))

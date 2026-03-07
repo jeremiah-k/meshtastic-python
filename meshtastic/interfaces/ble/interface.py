@@ -2298,13 +2298,19 @@ class BLEInterface(MeshInterface):
             still_owned, is_closing = self._get_connected_client_status_locked(
                 connected_client
             )
-            lost_gate_ownership = self._has_lost_gate_ownership(
-                connected_device_key,
-                connection_alias_key,
+        lost_gate_ownership = self._has_lost_gate_ownership(
+            connected_device_key,
+            connection_alias_key,
+        )
+        publish_connected = False
+        with self._state_lock:
+            still_owned, is_closing = self._get_connected_client_status_locked(
+                connected_client
             )
             if still_owned and not lost_gate_ownership:
                 self._client_publish_pending = False
-        if still_owned and not lost_gate_ownership:
+                publish_connected = True
+        if publish_connected:
             self._connected()
             self._emit_verified_connection_side_effects(connected_client)
             return
@@ -2353,8 +2359,8 @@ class BLEInterface(MeshInterface):
             is discarded before ownership is finalized.
         """
         restored_address = (
-            restore_address
-            if restore_address is not None and _looks_like_ble_address(restore_address)
+            restore_address.strip()
+            if restore_address is not None and restore_address.strip()
             else None
         )
         should_reset_state = False
@@ -2608,18 +2614,11 @@ class BLEInterface(MeshInterface):
                 self._finalize_connection_gates(
                     connected_client, connected_device_key, connection_alias_key
                 )
-                restored_connect_address = self._extract_client_address(connected_client)
-                if (
-                    restored_connect_address is None
-                    and requested_identifier is not None
-                    and _looks_like_ble_address(requested_identifier)
-                ):
-                    restored_connect_address = requested_identifier
                 self._verify_and_publish_connected(
                     connected_client,
                     connected_device_key,
                     connection_alias_key,
-                    restore_address=restored_connect_address,
+                    restore_address=requested_identifier,
                     restore_last_connection_request=normalized_request,
                 )
                 return connected_client

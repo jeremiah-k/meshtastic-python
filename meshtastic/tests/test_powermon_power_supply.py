@@ -1,5 +1,6 @@
 """Unit tests for PowerSupply voltage validation."""
 
+import importlib
 import math
 import warnings
 
@@ -159,3 +160,25 @@ def test_powermon_public_exports_remain_available() -> None:
     assert expected_exports.issubset(set(powermon.__all__))
     for export_name in expected_exports:
         assert hasattr(powermon, export_name)
+
+
+@pytest.mark.unit
+def test_powermon_optional_backends_are_lazy_and_dependency_error_is_clear(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Optional backend access should not require dependencies at package import time."""
+    for backend_name in ("PPK2PowerSupply", "RidenPowerSupply"):
+        powermon.__dict__.pop(backend_name, None)
+
+    real_import_module = importlib.import_module
+
+    def _fake_import_module(name: str, package: str | None = None) -> object:
+        if package == "meshtastic.powermon" and name in (".ppk2", ".riden"):
+            raise ImportError("optional backend missing")
+        return real_import_module(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", _fake_import_module)
+
+    backend_cls = getattr(powermon, "RidenPowerSupply")
+    with pytest.raises(ImportError, match="optional dependency"):
+        backend_cls(portName="/dev/null")
