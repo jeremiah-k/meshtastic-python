@@ -531,6 +531,7 @@ class DummyClient:
         self,
         *,
         await_timeout: float = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+        **_kwargs: object,
     ) -> None:
         """Record an unpair invocation."""
         self.unpair_calls += 1

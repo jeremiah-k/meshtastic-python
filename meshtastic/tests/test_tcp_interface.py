@@ -227,9 +227,11 @@ def test_TCPInterface_write_propagates_invalid_payload_type() -> None:
             mock_socket = MagicMock()
             iface.socket = mock_socket
 
-            with patch("meshtastic.tcp_interface.select.select") as select_mock:
-                with pytest.raises(TypeError, match="a bytes-like object is required"):
-                    iface._write_bytes(cast(Any, "abc"))
+            with (
+                patch("meshtastic.tcp_interface.select.select") as select_mock,
+                pytest.raises(TypeError, match="a bytes-like object is required"),
+            ):
+                iface._write_bytes(cast(Any, "abc"))
 
             select_mock.assert_not_called()
             mock_socket.close.assert_not_called()
@@ -322,9 +324,11 @@ def test_TCPInterface_read_propagates_invalid_length_type() -> None:
             mock_socket.recv.side_effect = TypeError("an integer is required")
             iface.socket = mock_socket
 
-            with patch.object(iface, "_attempt_reconnect") as reconnect_mock:
-                with pytest.raises(TypeError, match="an integer is required"):
-                    iface._read_bytes(cast(Any, "1"))
+            with (
+                patch.object(iface, "_attempt_reconnect") as reconnect_mock,
+                pytest.raises(TypeError, match="an integer is required"),
+            ):
+                iface._read_bytes(cast(Any, "1"))
 
             reconnect_mock.assert_not_called()
             mock_socket.close.assert_not_called()

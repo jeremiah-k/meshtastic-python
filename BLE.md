@@ -213,7 +213,7 @@ recovery logic.
 
 ### Pairing and trust workflows
 
-Pairing PIN/passkey entry remains OS-agent driven (for example BlueZ agent /
+Pairing PIN/passkey entry remains OS-agent-driven (for example BlueZ agent /
 desktop prompt / platform dialog). Meshtastic can request pairing during
 connect, either persistently with `pair_on_connect=True` or for one specific
 manual reconnect with `connect(pair=True)`, but it does not replace OS pairing

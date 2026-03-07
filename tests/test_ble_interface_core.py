@@ -1103,6 +1103,10 @@ def test_ble_interface_trust_requires_bluetoothctl_binary(
         "meshtastic.interfaces.ble.interface.shutil.which",
         lambda _name: None,
     )
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.subprocess.run",
+        lambda *_args, **_kwargs: pytest.fail("subprocess.run should not be reached"),
+    )
 
     with pytest.raises(BLEInterface.BLEError, match=ERROR_TRUST_BLUETOOTHCTL_MISSING):
         iface.trust("AA:BB:CC:DD:EE:FF")

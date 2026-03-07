@@ -190,14 +190,17 @@ def test_close_closes_stream_even_without_reader_thread() -> None:
 def test_close_stream_safely_suppresses_type_error() -> None:
     """_close_stream_safely() should swallow backend TypeError during close."""
     iface = StreamInterface(noProto=True, connectNow=False)
-    stream = MagicMock()
-    stream.close.side_effect = TypeError("fd is None")
-    iface.stream = stream
+    try:
+        stream = MagicMock()
+        stream.close.side_effect = TypeError("fd is None")
+        iface.stream = stream
 
-    iface._close_stream_safely()
+        iface._close_stream_safely()
 
-    stream.close.assert_called_once()
-    assert iface.stream is None
+        stream.close.assert_called_once()
+        assert iface.stream is None
+    finally:
+        iface.close()
 
 
 @pytest.mark.unit

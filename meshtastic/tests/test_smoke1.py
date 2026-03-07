@@ -168,7 +168,11 @@ def test_wait_for_disconnect_then_ready_requires_failed_probe(
     def _next_probe(*_args: object, **_kwargs: object) -> tuple[int, str]:
         return probe_results.pop(0)
 
-    def _ready_output() -> tuple[int, str]:
+    def _ready_output(
+        timeout: int | float = INFO_READY_TIMEOUT_SECONDS,
+        poll_interval: int | float = INFO_READY_POLL_INTERVAL_SECONDS,
+    ) -> tuple[int, str]:
+        _ = (timeout, poll_interval)
         return 0, "Connected to radio\nrecovered"
 
     def _record_sleep(seconds: float) -> None:
@@ -270,7 +274,13 @@ def _wait_for_disconnect_then_ready(action_name: str) -> str:
         probe_timeout = min(1.0, remaining)
         code, output = _run("meshtastic", "--info", timeout=probe_timeout)
         if code != 0:
-            info_code, info_out = _wait_for_info_ready()
+            remaining_after_disconnect = deadline - time.monotonic()
+            if remaining_after_disconnect <= 0:
+                break
+            info_code, info_out = _wait_for_info_ready(
+                timeout=remaining_after_disconnect,
+                poll_interval=INFO_READY_POLL_INTERVAL_SECONDS,
+            )
             assert info_code == 0, info_out
             _assert_connected(info_out)
             return info_out
@@ -551,15 +561,20 @@ def test_smoke1_set_location_info() -> None:
 @_destructive_test
 def test_smoke1_set_owner() -> None:
     """`--set-owner` should modify owner display text."""
-    return_value, out = _run("meshtastic", "--set-owner", "Bob")
+    owner_marker = f"Bob{uuid.uuid4().hex[:6]}"
+    return_value, out = _run("meshtastic", "--set-owner", owner_marker)
     _assert_connected(out)
-    assert re.search(r"^Setting device owner to Bob", out, re.MULTILINE)
+    assert re.search(
+        rf"^Setting device owner to {re.escape(owner_marker)}", out, re.MULTILINE
+    )
     assert return_value == 0
     info_out = _wait_for_mutation_to_settle(
-        predicate=lambda output: re.search(r"^Owner: Bob\b", output, re.MULTILINE)
+        predicate=lambda output: re.search(
+            rf"^Owner: {re.escape(owner_marker)}\b", output, re.MULTILINE
+        )
         is not None
     )
-    assert re.search(r"^Owner: Bob\b", info_out, re.MULTILINE)
+    assert re.search(rf"^Owner: {re.escape(owner_marker)}\b", info_out, re.MULTILINE)
 
 
 @_destructive_test
@@ -1024,3 +1039,5 @@ def test_smoke1_factory_reset() -> None:
     assert return_value == 0
     info_out = _wait_for_disconnect_then_ready("factory-reset")
     assert owner_marker not in info_out
+    assert re.search(r"^\s*Index\s+0:\s+PRIMARY", info_out, re.MULTILINE)
+    assert "LongFast" in info_out
