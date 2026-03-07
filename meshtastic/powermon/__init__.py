@@ -28,7 +28,7 @@ def _missing_optional_backend_class(
 
     class _MissingOptionalBackend(PowerSupply):
         def __init__(self, *args: object, **kwargs: object) -> None:
-            _ = (args, kwargs)
+            super().__init__(*args, **kwargs)
             raise ImportError(
                 f"{backend_name} requires optional dependency {dependency_name!r}. "
                 "Install Meshtastic with powermon extras to use this backend."
