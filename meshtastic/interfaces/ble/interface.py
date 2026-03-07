@@ -65,6 +65,7 @@ from meshtastic.interfaces.ble.constants import (
     ERROR_CONNECTION_SUPPRESSED,
     ERROR_DISCOVERY_MANAGER_UNAVAILABLE,
     ERROR_INTERFACE_CLOSING,
+    ERROR_INVALID_CONNECT_TIMEOUT,
     ERROR_MANAGEMENT_ADDRESS_EMPTY,
     ERROR_MANAGEMENT_ADDRESS_REQUIRED,
     ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID,
@@ -2005,7 +2006,7 @@ class BLEInterface(MeshInterface):
                 connect_timeout=connect_timeout,
             )
         except ValueError as exc:
-            raise self.BLEError(f"invalid connect_timeout: {exc}") from exc
+            raise self.BLEError(ERROR_INVALID_CONNECT_TIMEOUT.format(exc=exc)) from exc
 
         device_address = getattr(
             getattr(client, "bleak_client", None), "address", None

@@ -23,6 +23,7 @@ from meshtastic.interfaces.ble.constants import (
     CONNECTION_ERROR_STATE_TRANSITION_INVALIDATED,
     DIRECT_CONNECT_TIMEOUT_SECONDS,
     DISCONNECT_TIMEOUT_SECONDS,
+    ERROR_INVALID_CONNECT_TIMEOUT,
     BLEConfig,
 )
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator
@@ -596,7 +597,9 @@ class ConnectionOrchestrator:
                 connect_timeout=connect_timeout,
             )
         except ValueError as exc:
-            raise self.interface.BLEError(f"invalid connect_timeout: {exc}") from exc
+            raise self.interface.BLEError(
+                ERROR_INVALID_CONNECT_TIMEOUT.format(exc=exc)
+            ) from exc
         # Preserve the historical connection cadence: use the shorter timeout
         # for direct address attempts, but allow full connection time once a
         # device has been resolved via discovery unless the caller explicitly

@@ -98,6 +98,11 @@ def test_examples_example_config_yaml_is_valid() -> None:
     assert config["config"]["power"]["ls_secs"] == 300
     assert config["config"]["power"]["min_wake_secs"] == 10
     assert config["config"]["power"]["sds_secs"] == 4294967295
+    assert "waitBluetoothSecs" not in config["config"]["power"]
+    assert "lsSecs" not in config["config"]["power"]
+    assert "minWakeSecs" not in config["config"]["power"]
+    assert "sdsSecs" not in config["config"]["power"]
     assert config["module_config"]["telemetry"]["device_update_interval"] == 900
     assert config["module_config"]["telemetry"]["environment_update_interval"] == 900
     assert "deviceUpdateInterval" not in config["module_config"]["telemetry"]
+    assert "environmentUpdateInterval" not in config["module_config"]["telemetry"]

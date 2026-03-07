@@ -119,8 +119,8 @@ def test_read_bytes_wraps_stream_exceptions_as_stream_closed() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_read_bytes_wraps_type_error_as_stream_closed() -> None:
-    """_read_bytes should normalize backend TypeError to StreamClosedError."""
+def test_read_bytes_propagates_type_error() -> None:
+    """_read_bytes should not swallow backend TypeError programming errors."""
     iface = StreamInterface(noProto=True, connectNow=False)
     try:
         stream = MagicMock()
@@ -128,17 +128,16 @@ def test_read_bytes_wraps_type_error_as_stream_closed() -> None:
         stream.read.side_effect = TypeError("fd is None")
         iface.stream = stream
 
-        with pytest.raises(StreamInterface.StreamClosedError) as exc_info:
+        with pytest.raises(TypeError, match="fd is None"):
             iface._read_bytes(5)
-        assert isinstance(exc_info.value.__cause__, TypeError)
     finally:
         iface.close()
 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_write_bytes_wraps_type_error_as_stream_closed() -> None:
-    """_write_bytes should normalize backend TypeError to StreamClosedError."""
+def test_write_bytes_propagates_type_error() -> None:
+    """_write_bytes should not swallow backend TypeError programming errors."""
     iface = StreamInterface(noProto=True, connectNow=False)
     try:
         stream = MagicMock()
@@ -146,9 +145,8 @@ def test_write_bytes_wraps_type_error_as_stream_closed() -> None:
         stream.write.side_effect = TypeError("fd is None")
         iface.stream = stream
 
-        with pytest.raises(StreamInterface.StreamClosedError) as exc_info:
+        with pytest.raises(TypeError, match="fd is None"):
             iface._write_bytes(b"xxx")
-        assert isinstance(exc_info.value.__cause__, TypeError)
     finally:
         iface.close()
 

@@ -104,8 +104,8 @@ GPIO_READ_MAX_POLLS = 10
 POWER_ON_BOOT_DELAY_SECONDS = 5.0
 
 # OTA CLI timing and retry delay
-OTA_REBOOT_WAIT_SECONDS = 5
-OTA_RETRY_DELAY_SECONDS = 2
+OTA_REBOOT_WAIT_SECONDS = 5.0
+OTA_RETRY_DELAY_SECONDS = 2.0
 
 # Keep-alive sleep interval for main loop (effectively infinite wait)
 MAIN_LOOP_IDLE_SLEEP_SECONDS = 1000

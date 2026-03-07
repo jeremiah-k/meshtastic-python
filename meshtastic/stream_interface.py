@@ -29,10 +29,10 @@ WRITE_PROGRESS_TIMEOUT_SECONDS = 10.0  # Guard against indefinitely stalled writ
 STREAM_IO_EXCEPTIONS = (
     OSError,
     ValueError,
-    TypeError,
     serial.SerialException,
     serial.SerialTimeoutException,
 )
+STREAM_CLOSE_EXCEPTIONS = STREAM_IO_EXCEPTIONS + (TypeError,)
 # Read/write/flush exceptions that indicate stream closure.
 STREAM_WRITE_EXCEPTIONS = STREAM_IO_EXCEPTIONS
 STREAM_READ_EXCEPTIONS = STREAM_IO_EXCEPTIONS
@@ -231,7 +231,7 @@ class StreamInterface(MeshInterface):
         """Best-effort close and clear of the underlying stream handle."""
         s = self.stream
         if s is not None:
-            with contextlib.suppress(*STREAM_IO_EXCEPTIONS):
+            with contextlib.suppress(*STREAM_CLOSE_EXCEPTIONS):
                 s.close()
             self.stream = None
 

@@ -136,6 +136,7 @@ ERROR_MANAGEMENT_TARGET_CHANGED = "Management target changed while the operation
 ERROR_MANAGEMENT_CONNECTING = (
     "Management operations are unavailable while a connection is in progress."
 )
+ERROR_INVALID_CONNECT_TIMEOUT = "invalid connect_timeout: {exc}"
 ERROR_TRUST_ADDRESS_NOT_RESOLVED = (
     "Cannot trust device: {address!r} did not resolve to a BLE address."
 )

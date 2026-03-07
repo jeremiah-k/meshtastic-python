@@ -848,7 +848,6 @@ def test_ble_client_async_timeout_maps_to_ble_error(
 
     async def _test_coro() -> None:
         """Run a no-op coroutine used for tests."""
-        pass
 
     # BLEClient._async_await raises BLEClient.BLEError for timeouts
     with pytest.raises(BLEClient.BLEError) as excinfo:
@@ -873,7 +872,6 @@ def test_ble_client_async_runtime_error_maps_to_ble_error(
 
     async def _test_coro() -> None:
         """Run a no-op coroutine used for tests."""
-        pass
 
     # BLEClient._async_await raises BLEClient.BLEError for runtime errors
     with pytest.raises(BLEClient.BLEError) as excinfo:

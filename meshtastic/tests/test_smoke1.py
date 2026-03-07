@@ -225,7 +225,7 @@ def _wait_for_info_ready(
 ) -> tuple[int, str]:
     """Poll `meshtastic --info` until the device responds or the timeout expires."""
     deadline = time.monotonic() + timeout
-    last_result = 1, ""
+    last_result = (1, "")
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -246,7 +246,12 @@ def _wait_for_mutation_to_settle(
     settle_timeout: int | float = PAUSE_AFTER_COMMAND,
     predicate: Callable[[str], bool] | None = None,
 ) -> str:
-    """Wait for a post-mutation settle window and optional readback predicate."""
+    """Wait for a post-mutation settle window and optional readback predicate.
+
+    Total wall time can reach roughly ``settle_timeout +
+    INFO_READY_TIMEOUT_SECONDS`` because predicate polling starts after the
+    initial settle delay.
+    """
     if settle_timeout > 0:
         time.sleep(settle_timeout)
     deadline = time.monotonic() + INFO_READY_TIMEOUT_SECONDS
@@ -271,6 +276,24 @@ def _wait_for_mutation_to_settle(
     raise AssertionError(
         f"Device never reached the expected post-mutation state:\n{last_output}"
     )
+
+
+def _wait_for_get_readback(*fields: str, predicate: Callable[[str], bool]) -> str:
+    """Poll `meshtastic --get` until the supplied readback predicate succeeds."""
+    deadline = time.monotonic() + INFO_READY_TIMEOUT_SECONDS
+    cli_args = ["meshtastic"]
+    for field in fields:
+        cli_args.extend(["--get", field])
+    last_output = ""
+    while True:
+        return_value, output = _run(*cli_args)
+        last_output = output
+        if return_value == 0 and predicate(output):
+            return output
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(INFO_READY_POLL_INTERVAL_SECONDS)
+    raise AssertionError(f"CLI readback never reached the expected state:\n{last_output}")
 
 
 def _wait_for_disconnect_then_ready(action_name: str) -> str:
@@ -1028,28 +1051,17 @@ def test_smoke1_set_wifi_settings() -> None:
     )
     assert re.search(r"^Set network\.wifi_psk to temp1234", out, re.MULTILINE)
     assert return_value == 0
-    deadline = time.monotonic() + INFO_READY_TIMEOUT_SECONDS
-    while True:
-        return_value, out = _run(
-            "meshtastic",
-            "--get",
-            "network.wifi_ssid",
-            "--get",
-            "network.wifi_psk",
+    out = _wait_for_get_readback(
+        "network.wifi_ssid",
+        "network.wifi_psk",
+        predicate=lambda output: re.search(
+            rf"network\.wifi_ssid:\s+{re.escape(ssid_marker)}",
+            output,
+            re.MULTILINE,
         )
-        if (
-            return_value == 0
-            and re.search(
-                rf"network\.wifi_ssid:\s+{re.escape(ssid_marker)}",
-                out,
-                re.MULTILINE,
-            )
-            and re.search(r"network\.wifi_psk:\s+sekrit", out, re.MULTILINE)
-        ):
-            break
-        if time.monotonic() >= deadline:
-            pytest.fail(f"Wi-Fi settings never reached expected readback:\n{out}")
-        time.sleep(INFO_READY_POLL_INTERVAL_SECONDS)
+        is not None
+        and re.search(r"network\.wifi_psk:\s+sekrit", output, re.MULTILINE) is not None,
+    )
 
     assert re.search(
         rf"network\.wifi_ssid:\s+{re.escape(ssid_marker)}", out, re.MULTILINE

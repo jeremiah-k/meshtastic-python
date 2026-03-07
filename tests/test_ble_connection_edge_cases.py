@@ -3,6 +3,7 @@
 import logging
 from threading import Event, RLock
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import ANY, MagicMock
 
 import pytest
@@ -12,14 +13,16 @@ try:
     from bleak.exc import BleakDBusError, BleakDeviceNotFoundError
 
     from meshtastic.interfaces.ble.connection import (
-        AWAIT_TIMEOUT_BUFFER_SECONDS,
-        DIRECT_CONNECT_TIMEOUT_SECONDS,
         ClientManager,
         ConnectionOrchestrator,
         ConnectionValidator,
         _is_device_not_found_error,
     )
-    from meshtastic.interfaces.ble.constants import BLEConfig
+    from meshtastic.interfaces.ble.constants import (
+        AWAIT_TIMEOUT_BUFFER_SECONDS,
+        DIRECT_CONNECT_TIMEOUT_SECONDS,
+        BLEConfig,
+    )
     from meshtastic.interfaces.ble.reconnection import ReconnectWorker
     from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 except ImportError:
@@ -31,8 +34,8 @@ class MockBLEError(Exception):
 
 
 @pytest.mark.unit
-def test_is_device_not_found_error_requires_device_context() -> None:
-    """Generic 'not found' errors should not trigger device-not-found retries."""
+def test_is_device_not_found_error_matches_device_context_messages() -> None:
+    """Only device-level 'not found' errors should trigger device-not-found retries."""
     assert _is_device_not_found_error(Exception("Device not found")) is True
     assert _is_device_not_found_error(Exception("Could not find peripheral")) is True
     assert _is_device_not_found_error(Exception("Characteristic not found")) is False
@@ -445,7 +448,7 @@ def test_connection_orchestrator_aborts_fallback_when_interface_closing() -> Non
 
     connect_attempts = 0
 
-    def _connect_side_effect(*_args, **_kwargs) -> None:
+    def _connect_side_effect(*_args: object, **_kwargs: object) -> None:
         nonlocal connect_attempts
         connect_attempts += 1
         if connect_attempts == 1:
@@ -495,7 +498,7 @@ def test_transition_failure_to_disconnected_forces_reset_when_transitions_reject
         validator=validator,
         client_manager=MagicMock(),
         discovery_manager=MagicMock(),
-        state_manager=state_manager,  # type: ignore[arg-type]
+        state_manager=state_manager,
         state_lock=state_lock,
         thread_coordinator=MagicMock(),
     )
@@ -820,7 +823,7 @@ def test_connection_orchestrator_rejects_invalid_connect_timeout_override(
             on_connected_func=lambda: None,
             on_disconnect_func=lambda _client: None,
             pair_on_connect=False,
-            connect_timeout=invalid_timeout,
+            connect_timeout=cast(Any, invalid_timeout),
         )
 
     client_manager._create_client.assert_not_called()

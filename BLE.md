@@ -228,7 +228,10 @@ iface = BLEInterface(
     pair_on_connect=True,
 )
 
-# One-time trust setup remains explicit and Linux-only:
+# Use the interface normally after connect/pair completes.
+iface.sendText("hello from a paired session")
+
+# One-time trust setup remains explicit and Linux-only.
 iface.trust("AA:BB:CC:DD:EE:FF")
 iface.close()
 ```
@@ -243,6 +246,7 @@ iface_manual = BLEInterface(
 # automatic reconnect attempts.
 # Later, after the link drops and you want to reconnect with pairing:
 iface_manual.connect(pair=True)   # request pairing for this call
+iface_manual.sendText("hello after manual reconnect")
 iface_manual.trust("AA:BB:CC:DD:EE:FF")
 iface_manual.close()
 ```
@@ -250,17 +254,18 @@ iface_manual.close()
 Programmatic helpers:
 
 ```python
-# Pair against the currently connected device, or use a temporary client when
-# disconnected but a concrete target can be resolved.
+# Pair against the currently connected device. If disconnected but the
+# interface already has a resolved target address, BLEInterface may create a
+# short-lived temporary client internally to perform the operation.
 iface.pair()
 
 # Backend unpair (Linux/Windows backends where supported by Bleak).
 iface.unpair()
 
-# Linux-only trust helper. Omit the address to use the current/bound target,
-# or pass one explicitly to trust a different resolved device.
-# Explicit-address trust does not require an active connection; implicit
-# trust() should be used only when the interface target is already stable.
+# Linux-only trust helper. Omit the address only when the interface is already
+# connected to, or otherwise still bound to, the exact device you intend to
+# trust. Pass one explicitly when trusting a different resolved device.
+# Explicit-address trust does not require an active connection.
 iface.trust()
 iface.trust("AA:BB:CC:DD:EE:FF")
 ```

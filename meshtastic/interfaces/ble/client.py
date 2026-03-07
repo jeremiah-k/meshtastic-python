@@ -258,6 +258,10 @@ class BLEClient:
             raise self.BLEError(unsupported_error)
         try:
             self._async_await(operation(), timeout=await_timeout)
+        except self.BLEError as exc:
+            if isinstance(exc.__cause__, NotImplementedError):
+                raise self.BLEError(unsupported_error) from exc.__cause__
+            raise
         except NotImplementedError as exc:
             raise self.BLEError(unsupported_error) from exc
         return None
@@ -266,7 +270,7 @@ class BLEClient:
         self,
         *,
         await_timeout: float = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
-        **kwargs: object,
+        **kwargs: Any,
     ) -> None:
         """Pair the BLE client with the remote device.
 
@@ -276,7 +280,7 @@ class BLEClient:
             Maximum seconds to wait for the pairing coroutine to complete.
             Must be a finite positive timeout. Defaults to
             `BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT`.
-        **kwargs : object
+        **kwargs : Any
             Backend-specific pairing options forwarded to the underlying BLE client.
 
         Returns
@@ -325,7 +329,8 @@ class BLEClient:
         self._run_management_call(
             (
                 None
-                if bleak_client is None or getattr(bleak_client, "unpair", None) is None
+                if bleak_client is None
+                or not callable(getattr(bleak_client, "unpair", None))
                 else lambda: bleak_client.unpair()
             ),
             await_timeout=await_timeout,

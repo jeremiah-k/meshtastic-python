@@ -490,6 +490,7 @@ def test_ble_interface_repr_includes_non_default_flags(
         return None
 
     iface.debugOut = _debug_sink
+    iface.noProto = True
     iface.noNodes = True
     iface.auto_reconnect = True
     iface.pair_on_connect = True

@@ -264,6 +264,7 @@ def test_esp32_wifi_ota_update_logs_progress_without_callback(
                 ]
                 assert len(progress_messages) >= 2
                 assert any("100.0%" not in message for message in progress_messages)
+                assert any("100.0%" in message for message in progress_messages)
     finally:
         os.unlink(temp_file)
 

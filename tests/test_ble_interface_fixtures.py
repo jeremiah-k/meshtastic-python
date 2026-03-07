@@ -411,6 +411,8 @@ class DummyClient:
             Timeout arguments captured for each pair() invocation.
         unpair_await_timeouts : list[float | None]
             Timeout arguments captured for each unpair() invocation.
+        unpair_kwargs : list[dict[str, object]]
+            Backend keyword arguments captured for each unpair() invocation.
         address : str
             Client address identifier, set to "dummy".
         disconnect_exception : Exception | None
