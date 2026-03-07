@@ -1103,6 +1103,65 @@ def test_ble_interface_trust_revalidates_implicit_target_after_gate_handoff(
 
 
 @pytest.mark.parametrize("method_name", ["pair", "unpair", "trust"])
+def test_ble_interface_management_allows_bound_name_when_target_stays_resolved(
+    monkeypatch: pytest.MonkeyPatch,
+    method_name: str,
+) -> None:
+    """Disconnected name-bound management ops should revalidate by resolving the same target."""
+    target_name = "mesh-node"
+    target_address = "AA:BB:CC:DD:EE:20"
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    with iface._state_lock:
+        iface.client = None
+        iface.address = target_name
+        iface._state_manager._reset_to_disconnected()
+
+    monkeypatch.setattr(
+        iface,
+        "findDevice",
+        lambda identifier: _create_ble_device(target_address, str(identifier)),
+    )
+
+    if method_name == "trust":
+        run_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+        def _run(*args: object, **kwargs: object) -> SimpleNamespace:
+            run_calls.append((args, dict(kwargs)))
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        _pin_trust_environment(monkeypatch, run=_run)
+        iface.trust(timeout=7.0)
+        assert run_calls
+    else:
+        command_calls: list[str] = []
+        temp_client = SimpleNamespace(
+            pair=lambda **_kwargs: command_calls.append("pair"),
+            unpair=lambda **_kwargs: command_calls.append("unpair"),
+            bleak_client=SimpleNamespace(address=target_address),
+        )
+        cleanup_calls: list[object] = []
+
+        monkeypatch.setattr(
+            "meshtastic.interfaces.ble.interface.BLEClient",
+            lambda _address, **_kwargs: temp_client,
+        )
+        monkeypatch.setattr(
+            iface._client_manager,
+            "_safe_close_client",
+            lambda client: cleanup_calls.append(client),
+        )
+
+        if method_name == "pair":
+            iface.pair(confirm=True, await_timeout=7.0)
+        else:
+            iface.unpair(await_timeout=7.0)
+        assert command_calls == [method_name]
+        assert cleanup_calls == [temp_client]
+
+    iface.close()
+
+
+@pytest.mark.parametrize("method_name", ["pair", "unpair", "trust"])
 def test_ble_interface_management_requires_target_when_disconnected(
     monkeypatch: pytest.MonkeyPatch,
     method_name: str,
@@ -1597,6 +1656,68 @@ def test_ble_interface_close_waits_for_explicit_trust_without_active_client(
     assert trust_errors == []
     assert close_errors == []
     assert close_done.is_set() is True
+
+
+def test_ble_interface_close_skips_management_gate_after_wait_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """close() should not block on the per-target gate after management wait timeout."""
+    client = DummyClient()
+    client.address = "AA:BB:CC:DD:EE:21"
+    client.bleak_client = SimpleNamespace(address=client.address)
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    gate_calls: list[str] = []
+    unsubscribe_calls: list[object] = []
+    disconnect_calls: list[object] = []
+
+    with iface._management_lock:
+        iface._management_inflight = 1
+
+    monkeypatch.setattr(
+        iface._management_idle_condition,
+        "wait",
+        lambda timeout=None: False,
+        raising=True,
+    )
+
+    def _unexpected_management_gate(_address: str) -> contextlib.AbstractContextManager[None]:
+        gate_calls.append(_address)
+        return contextlib.nullcontext()
+
+    monkeypatch.setattr(
+        iface,
+        "_management_target_gate",
+        _unexpected_management_gate,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.MeshInterface.close",
+        lambda _self: None,
+    )
+    monkeypatch.setattr(
+        iface._notification_manager,
+        "_unsubscribe_all",
+        lambda active_client, timeout=None: unsubscribe_calls.append(active_client),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        iface,
+        "_disconnect_and_close_client",
+        lambda active_client: disconnect_calls.append(active_client),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        iface._notification_manager,
+        "_cleanup_all",
+        lambda: None,
+        raising=True,
+    )
+
+    iface.close()
+
+    assert gate_calls == []
+    assert unsubscribe_calls == [client]
+    assert disconnect_calls == [client]
 
 
 def test_ble_interface_implicit_trust_holds_connect_lock_during_subprocess(
@@ -2517,6 +2638,72 @@ def test_connect_finalizes_gates_after_address_lock_scope(
     iface.close()
 
 
+def test_connect_marks_provisional_claims_before_gate_release(
+    monkeypatch: pytest.MonkeyPatch,
+    clear_registry: None,
+) -> None:
+    """connect() should publish provisional ownership before releasing the address gate."""
+    _ = clear_registry
+    from meshtastic.interfaces.ble.gating import _is_currently_connected_elsewhere
+
+    target_identifier = "mesh-node"
+    device_key = "aabbccddee30"
+    iface = _build_minimal_connect_test_interface()
+    connected_client = DummyClient()
+    connected_client.address = "AA:BB:CC:DD:EE:30"
+    connected_client.bleak_client = SimpleNamespace(address=connected_client.address)
+    observed_claims: list[bool] = []
+
+    monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
+    monkeypatch.setattr(
+        iface, "_raise_if_duplicate_connect", lambda _connection_key: None, raising=True
+    )
+    monkeypatch.setattr(
+        iface, "_get_existing_client_if_valid", lambda _request: None, raising=True
+    )
+    monkeypatch.setattr(iface, "_connected", lambda: None, raising=True)
+
+    def _establish_stub(
+        _address: str | None,
+        _normalized_request: str | None,
+        _address_key: str | None,
+        *,
+        pair_on_connect: bool = False,
+        connect_timeout: float | None = None,
+    ) -> tuple[DummyClient, str | None, str | None]:
+        _ = (pair_on_connect, connect_timeout)
+        with iface._state_lock:
+            cast(Any, iface).client = connected_client
+            iface.address = connected_client.address
+            iface._state_manager._reset_to_disconnected()
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
+        return connected_client, device_key, target_identifier
+
+    def _finalize_stub(
+        _self: BLEInterface,
+        _client: BLEClient,
+        _device_key: str | None,
+        _alias_key: str | None,
+    ) -> None:
+        observed_claims.append(
+            _is_currently_connected_elsewhere(device_key, owner=object())
+        )
+
+    monkeypatch.setattr(
+        iface,
+        "_establish_and_update_client",
+        _establish_stub,
+        raising=True,
+    )
+    monkeypatch.setattr(BLEInterface, "_finalize_connection_gates", _finalize_stub)
+
+    iface.connect(target_identifier)
+
+    assert observed_claims == [True]
+    assert _is_currently_connected_elsewhere(device_key, owner=object()) is False
+
+
 def test_connect_raises_when_client_becomes_stale_after_gate_finalization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2888,7 +3075,7 @@ def test_connect_rechecks_ownership_before_publishing_connected(
     )
     monkeypatch.setattr(
         iface,
-        "_get_connected_client_status",
+        "_get_connected_client_status_locked",
         lambda _client: next(status_checks),
         raising=True,
     )

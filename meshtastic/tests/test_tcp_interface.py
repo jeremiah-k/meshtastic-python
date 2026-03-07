@@ -315,6 +315,41 @@ def test_TCPInterface_read_error_triggers_reconnect_cleanup(
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("recv_error_type", "message"),
+    [
+        pytest.param(TypeError, "fd is None", id="type-error"),
+        pytest.param(
+            ValueError,
+            "file descriptor cannot be a negative integer (-1)",
+            id="value-error",
+        ),
+    ],
+)
+def test_TCPInterface_read_fd_race_errors_trigger_reconnect_cleanup(
+    recv_error_type: type[BaseException],
+    message: str,
+) -> None:
+    """Valid read requests should treat fd-state race errors as dead sockets."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            mock_socket = MagicMock()
+            mock_socket.recv.side_effect = recv_error_type(message)
+            iface.socket = mock_socket
+
+            with patch.object(iface, "_attempt_reconnect") as reconnect_mock:
+                data = iface._read_bytes(1)
+
+            assert data == b""
+            reconnect_mock.assert_called_once_with()
+            mock_socket.close.assert_called_once()
+            assert iface.socket is None
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
 def test_TCPInterface_read_propagates_invalid_length_type() -> None:
     """_read_bytes should not treat caller type errors as dead sockets."""
     with patch("socket.socket"):

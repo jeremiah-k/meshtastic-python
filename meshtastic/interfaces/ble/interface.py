@@ -112,7 +112,9 @@ from meshtastic.interfaces.ble.errors import BLEErrorHandler, DecodeError
 from meshtastic.interfaces.ble.gating import (
     _addr_key,
     _addr_lock_context,
+    _clear_connecting,
     _is_currently_connected_elsewhere,
+    _mark_connecting,
     _mark_connected,
     _mark_disconnected,
 )
@@ -523,6 +525,16 @@ class BLEInterface(MeshInterface):
         with self._lock_ordered_address_keys(ordered_keys):
             for key in ordered_keys:
                 _mark_connected(key, owner=self)
+
+    def _mark_address_keys_connecting(self, *keys: str | None) -> None:
+        """Record provisional address claims for an in-flight connect result."""
+        for key in self._sorted_address_keys(*keys):
+            _mark_connecting(key, owner=self)
+
+    def _clear_address_keys_connecting(self, *keys: str | None) -> None:
+        """Clear provisional address claims for an in-flight connect result."""
+        for key in self._sorted_address_keys(*keys):
+            _clear_connecting(key, owner=self)
 
     def _mark_address_keys_disconnected(self, *keys: str | None) -> None:
         """Mark one or more address registry keys as disconnected.
@@ -1448,20 +1460,27 @@ class BLEInterface(MeshInterface):
                 return current_client
         return self._get_existing_client_if_valid(normalized_target)
 
-    def _get_current_implicit_management_address_locked(self) -> str | None:
-        """Return the current implicit management target while holding `_state_lock`."""
+    def _get_current_implicit_management_binding_locked(self) -> str | None:
+        """Return the current implicit management binding while holding `_state_lock`."""
         current_client = self.client
-        current_address = self.address
         if current_client is not None and current_client.isConnected():
             client_address = self._extract_client_address(current_client)
             if client_address is not None:
                 return client_address
-        if current_address and _looks_like_ble_address(current_address):
-            return current_address
+        return self.address
+
+    def _get_current_implicit_management_address_locked(self) -> str | None:
+        """Return the current implicit management target when it is already concrete."""
+        current_binding = self._get_current_implicit_management_binding_locked()
+        if current_binding and _looks_like_ble_address(current_binding):
+            return current_binding
         return None
 
     def _revalidate_implicit_management_target(
-        self, expected_target_address: str
+        self,
+        expected_target_address: str,
+        *,
+        expected_binding: str | None = None,
     ) -> None:
         """Abort when an implicit management target changed while waiting on the gate.
 
@@ -1478,11 +1497,19 @@ class BLEInterface(MeshInterface):
             a different concrete BLE address.
         """
         with self._state_lock:
-            current_target_address = (
-                self._get_current_implicit_management_address_locked()
-            )
-        if current_target_address is None:
+            current_binding = self._get_current_implicit_management_binding_locked()
+        if current_binding is None:
             raise self.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
+
+        if _looks_like_ble_address(current_binding):
+            current_target_address = current_binding
+        else:
+            if expected_binding is None or sanitize_address(
+                current_binding
+            ) != sanitize_address(expected_binding):
+                raise self.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
+            current_target_address = self.findDevice(current_binding).address
+
         if sanitize_address(current_target_address) != sanitize_address(
             expected_target_address
         ):
@@ -1517,6 +1544,12 @@ class BLEInterface(MeshInterface):
         with self._connect_lock, self._management_lock:
             self._validate_management_preconditions()
             self._begin_management_operation_locked()
+            expected_implicit_binding = None
+            if address is None:
+                with self._state_lock:
+                    expected_implicit_binding = (
+                        self._get_current_implicit_management_binding_locked()
+                    )
             existing_client = self._get_management_client_if_available(address)
             target_address = self._extract_client_address(existing_client)
         try:
@@ -1531,7 +1564,10 @@ class BLEInterface(MeshInterface):
                             # The implicit target may have changed while we waited
                             # for the per-address gate. Abort rather than acting on
                             # a stale temporary target.
-                            self._revalidate_implicit_management_target(target_address)
+                            self._revalidate_implicit_management_target(
+                                target_address,
+                                expected_binding=expected_implicit_binding,
+                            )
                         existing_client = self._get_management_client_for_target(
                             target_address,
                             prefer_current_client=address is None,
@@ -1791,6 +1827,12 @@ class BLEInterface(MeshInterface):
 
         with self._connect_lock, self._management_lock:
             self._validate_management_preconditions()
+            expected_implicit_binding = None
+            if address is None:
+                with self._state_lock:
+                    expected_implicit_binding = (
+                        self._get_current_implicit_management_binding_locked()
+                    )
 
         validated_timeout = self._validate_trust_timeout(timeout)
         if not sys.platform.startswith("linux"):
@@ -1815,7 +1857,10 @@ class BLEInterface(MeshInterface):
                     with self._connect_lock:
                         with self._management_lock:
                             self._validate_management_preconditions()
-                            self._revalidate_implicit_management_target(target_address)
+                            self._revalidate_implicit_management_target(
+                                target_address,
+                                expected_binding=expected_implicit_binding,
+                            )
                         self._run_bluetoothctl_trust_command(
                             bluetoothctl_path,
                             canonical_address,
@@ -2124,20 +2169,6 @@ class BLEInterface(MeshInterface):
             for key in keys
         )
 
-    def _get_post_connect_ownership_status(
-        self,
-        connected_client: BLEClient,
-        connected_device_key: str | None,
-        connection_alias_key: str | None,
-    ) -> tuple[bool, bool, bool]:
-        """Return ownership and shutdown status for a newly connected client."""
-        still_owned, is_closing = self._get_connected_client_status(connected_client)
-        lost_gate_ownership = self._has_lost_gate_ownership(
-            connected_device_key,
-            connection_alias_key,
-        )
-        return still_owned, is_closing, lost_gate_ownership
-
     def _raise_for_invalidated_connect_result(
         self,
         connected_client: BLEClient,
@@ -2174,6 +2205,38 @@ class BLEInterface(MeshInterface):
         if is_closing:
             raise self.BLEError(ERROR_INTERFACE_CLOSING)
         raise self.BLEError(CONNECTION_ERROR_LOST_OWNERSHIP)
+
+    def _verify_and_publish_connected(
+        self,
+        connected_client: BLEClient,
+        connected_device_key: str | None,
+        connection_alias_key: str | None,
+        *,
+        restore_address: str | None,
+        restore_last_connection_request: str | None,
+    ) -> None:
+        """Publish `_connected()` only if ownership is still valid at publish time."""
+        with self._state_lock:
+            still_owned, is_closing = self._get_connected_client_status_locked(
+                connected_client
+            )
+            lost_gate_ownership = self._has_lost_gate_ownership(
+                connected_device_key,
+                connection_alias_key,
+            )
+            if still_owned and not lost_gate_ownership:
+                self._connected()
+                return
+
+        self._raise_for_invalidated_connect_result(
+            connected_client,
+            connected_device_key,
+            connection_alias_key,
+            is_closing=is_closing,
+            lost_gate_ownership=lost_gate_ownership,
+            restore_address=restore_address,
+            restore_last_connection_request=restore_last_connection_request,
+        )
 
     def _discard_invalidated_connected_client(
         self,
@@ -2360,99 +2423,79 @@ class BLEInterface(MeshInterface):
         connected_client: BLEClient | None = None
         connected_device_key: str | None = None
         connection_alias_key: str | None = None
+        provisional_keys: list[str] = []
 
         # Apply address gating only for explicit-address connects.
         # Discovery-mode connects intentionally skip gating to avoid holding the
         # global registry lock during long-running scan/discovery operations.
-        with contextlib.ExitStack() as stack:
-            if address_registry_key is not None:
-                self._raise_if_duplicate_connect(address_registry_key)
-                # Acquire the per-address lock without holding _REGISTRY_LOCK to
-                # avoid lock-order inversion with paths that hold address locks
-                # and then take registry lock to mark ownership.
-                addr_lock = stack.enter_context(
-                    _addr_lock_context(address_registry_key)
-                )
-                stack.enter_context(addr_lock)
-                # Re-check after waiting for the address gate to close the TOCTOU window.
-                self._raise_if_duplicate_connect(address_registry_key)
+        try:
+            with contextlib.ExitStack() as stack:
+                if address_registry_key is not None:
+                    self._raise_if_duplicate_connect(address_registry_key)
+                    # Acquire the per-address lock without holding _REGISTRY_LOCK to
+                    # avoid lock-order inversion with paths that hold address locks
+                    # and then take registry lock to mark ownership.
+                    addr_lock = stack.enter_context(
+                        _addr_lock_context(address_registry_key)
+                    )
+                    stack.enter_context(addr_lock)
+                    # Re-check after waiting for the address gate to close the TOCTOU window.
+                    self._raise_if_duplicate_connect(address_registry_key)
 
-            with self._connect_lock:
-                # Re-check closing state inside connect_lock for extra safety
-                self._validate_connection_preconditions()
+                with self._connect_lock:
+                    # Re-check closing state inside connect_lock for extra safety
+                    self._validate_connection_preconditions()
 
-                # Check for existing valid client
-                existing_client = self._get_existing_client_if_valid(normalized_request)
-                if existing_client:
-                    logger.debug("Already connected, skipping connect call.")
-                    return existing_client
+                    # Check for existing valid client
+                    existing_client = self._get_existing_client_if_valid(
+                        normalized_request
+                    )
+                    if existing_client:
+                        logger.debug("Already connected, skipping connect call.")
+                        return existing_client
 
-                # Establish new connection and update state
-                (
-                    connected_client,
-                    connected_device_key,
-                    connection_alias_key,
-                ) = self._establish_and_update_client(
-                    address,
-                    normalized_request,
-                    address_registry_key,
-                    pair_on_connect=pair_on_connect,
-                    connect_timeout=connect_timeout,
-                )
-        # Finalize after the per-address lock scope exits to avoid nested
-        # lock-order inversions when gate finalization reacquires address locks.
-        if connected_client is None:
-            raise self.BLEError(ERROR_NO_CLIENT_ESTABLISHED)
-        self._finalize_connection_gates(
-            connected_client, connected_device_key, connection_alias_key
-        )
-        restored_connect_address = self._extract_client_address(connected_client)
-        if (
-            restored_connect_address is None
-            and requested_identifier is not None
-            and _looks_like_ble_address(requested_identifier)
-        ):
-            restored_connect_address = requested_identifier
-        (
-            still_owned,
-            is_closing,
-            lost_gate_ownership,
-        ) = self._get_post_connect_ownership_status(
-            connected_client,
-            connected_device_key,
-            connection_alias_key,
-        )
-        if not still_owned or lost_gate_ownership:
-            self._raise_for_invalidated_connect_result(
+                    # Establish new connection and update state
+                    (
+                        connected_client,
+                        connected_device_key,
+                        connection_alias_key,
+                    ) = self._establish_and_update_client(
+                        address,
+                        normalized_request,
+                        address_registry_key,
+                        pair_on_connect=pair_on_connect,
+                        connect_timeout=connect_timeout,
+                    )
+                    provisional_keys = self._sorted_address_keys(
+                        address_registry_key,
+                        connected_device_key,
+                        connection_alias_key,
+                    )
+                    self._mark_address_keys_connecting(*provisional_keys)
+            # Finalize after the per-address lock scope exits to avoid nested
+            # lock-order inversions when gate finalization reacquires address locks.
+            if connected_client is None:
+                raise self.BLEError(ERROR_NO_CLIENT_ESTABLISHED)
+            self._finalize_connection_gates(
+                connected_client, connected_device_key, connection_alias_key
+            )
+            restored_connect_address = self._extract_client_address(connected_client)
+            if (
+                restored_connect_address is None
+                and requested_identifier is not None
+                and _looks_like_ble_address(requested_identifier)
+            ):
+                restored_connect_address = requested_identifier
+            self._verify_and_publish_connected(
                 connected_client,
                 connected_device_key,
                 connection_alias_key,
-                is_closing=is_closing,
-                lost_gate_ownership=lost_gate_ownership,
                 restore_address=restored_connect_address,
                 restore_last_connection_request=normalized_request,
             )
-        (
-            still_owned,
-            is_closing,
-            lost_gate_ownership,
-        ) = self._get_post_connect_ownership_status(
-            connected_client,
-            connected_device_key,
-            connection_alias_key,
-        )
-        if not still_owned or lost_gate_ownership:
-            self._raise_for_invalidated_connect_result(
-                connected_client,
-                connected_device_key,
-                connection_alias_key,
-                is_closing=is_closing,
-                lost_gate_ownership=lost_gate_ownership,
-                restore_address=restored_connect_address,
-                restore_last_connection_request=normalized_request,
-            )
-        self._connected()
-        return connected_client
+            return connected_client
+        finally:
+            self._clear_address_keys_connecting(*provisional_keys)
 
     def _handle_read_loop_disconnect(
         self, error_message: str, previous_client: BLEClient
@@ -2836,6 +2879,7 @@ class BLEInterface(MeshInterface):
         # mark shutdown immediately so any in-flight connect/pair timeout path
         # can observe _closed/_is_closing and abort, rather than forcing close()
         # to wait behind a long BLE connect attempt.
+        management_wait_timed_out = False
         with self._management_lock:
             # Use unified state lock
             with self._state_lock:
@@ -2861,6 +2905,7 @@ class BLEInterface(MeshInterface):
                 if not self._management_idle_condition.wait(
                     timeout=_MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS
                 ):
+                    management_wait_timed_out = True
                     logger.warning(
                         "Timed out waiting for %d inflight management operation(s) during shutdown",
                         self._management_inflight,
@@ -2927,7 +2972,7 @@ class BLEInterface(MeshInterface):
             if client is not None:
                 gate_context = (
                     self._management_target_gate(client_address)
-                    if client_address is not None
+                    if client_address is not None and not management_wait_timed_out
                     else contextlib.nullcontext()
                 )
                 with gate_context:

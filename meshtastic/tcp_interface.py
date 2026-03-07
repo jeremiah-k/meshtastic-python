@@ -601,9 +601,12 @@ class TCPInterface(StreamInterface):
         """
         sock = self.socket
         if sock is not None:
+            valid_length = isinstance(length, int) and not isinstance(length, bool)
             try:
                 data = sock.recv(length)
-            except OSError as ex:
+            except TCP_WRITE_EXCEPTIONS as ex:
+                if isinstance(ex, (ValueError, TypeError)) and not valid_length:
+                    raise
                 logger.debug("Socket read error, treating as dead socket: %s", ex)
                 data = b""
             # empty byte indicates a disconnected socket,

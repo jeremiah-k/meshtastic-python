@@ -54,6 +54,10 @@ class ESP32WiFiOTA:
         if not os.path.exists(self._filename):
             raise FileNotFoundError(f"File {self._filename} does not exist")
 
+        self._size = os.path.getsize(self._filename)
+        if self._size == 0:
+            raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
+
         self._file_hash: _SHA256Digest = _file_sha256(self._filename)
 
     def _read_line(self) -> str:
@@ -101,9 +105,7 @@ class ESP32WiFiOTA:
             Callback invoked with ``(bytes_sent, total_bytes)`` during transfer.
             When not provided, progress is logged at INFO in coarse increments.
         """
-        size = os.path.getsize(self._filename)
-        if size == 0:
-            raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
+        size = self._size
         next_progress_log_percent = OTA_PROGRESS_LOG_PERCENT_STEP
 
         logger.info(

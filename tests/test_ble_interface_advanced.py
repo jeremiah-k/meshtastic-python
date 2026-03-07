@@ -693,6 +693,21 @@ def test_rapid_connect_disconnect_stress_test(
             finally:
                 stack.close()
 
+    def _wait_for_latest_stress_client(
+        iface: BLEInterface, *, timeout: float = 2.0
+    ) -> list["StressTestClient"]:
+        """Wait until the newest stress-test client is published on the interface."""
+        deadline = time.monotonic() + timeout
+        observed_clients = _get_stress_test_clients(iface)
+        while time.monotonic() < deadline:
+            observed_clients = _get_stress_test_clients(iface)
+            if len(observed_clients) >= 2 and (
+                cast(object, iface.client) is observed_clients[-1]
+            ):
+                return observed_clients
+            time.sleep(0.01)
+        return _get_stress_test_clients(iface)
+
     # Test 1: Rapid disconnect callbacks
     with create_interface_with_auto_reconnect() as (iface, client):
 
@@ -718,8 +733,9 @@ def test_rapid_connect_disconnect_stress_test(
         assert (
             len(_get_connect_stub_calls(iface)) >= 2
         ), "Auto-reconnect should continue scheduling during rapid disconnects"
-        assert len(_get_stress_test_clients(iface)) >= 2
-        assert cast(object, iface.client) is _get_stress_test_clients(iface)[-1]
+        republished_clients = _wait_for_latest_stress_client(iface)
+        assert len(republished_clients) >= 2
+        assert cast(object, iface.client) is republished_clients[-1]
 
     # Test 2: Concurrent connect/disconnect operations
     with create_interface_with_auto_reconnect() as (iface2, client2):
@@ -759,8 +775,9 @@ def test_rapid_connect_disconnect_stress_test(
         assert collected_worker_errors == []
         assert client2.bleak_client is not None
         assert cast(Any, client2.bleak_client).disconnect_count >= 0
-        assert len(_get_stress_test_clients(iface2)) >= 2
-        assert cast(object, iface2.client) is _get_stress_test_clients(iface2)[-1]
+        republished_clients = _wait_for_latest_stress_client(iface2)
+        assert len(republished_clients) >= 2
+        assert cast(object, iface2.client) is republished_clients[-1]
 
     # Test 3: Stress test with connection failures
     with create_interface_with_auto_reconnect() as (iface3, _client3):

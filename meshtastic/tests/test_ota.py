@@ -70,6 +70,7 @@ def test_esp32_wifi_ota_init_success() -> None:
         assert ota._filename == temp_file
         assert ota._hostname == "192.168.1.1"
         assert ota._port == 3232
+        assert ota._size == len(b"fake firmware data")
         assert ota._socket is None
         # Verify hash is calculated
         assert ota._file_hash is not None
@@ -275,18 +276,16 @@ def test_esp32_wifi_ota_update_logs_progress_without_callback(
 
 @pytest.mark.unit
 @patch("meshtastic.ota.socket.socket")
-def test_esp32_wifi_ota_update_rejects_empty_firmware(
+def test_esp32_wifi_ota_init_rejects_empty_firmware(
     mock_socket_class: MagicMock,
 ) -> None:
-    """update() should fail fast for zero-byte firmware before opening a socket."""
+    """Constructor should fail fast for zero-byte firmware before OTA mode begins."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
         temp_file = f.name
 
     try:
-        ota = ESP32WiFiOTA(temp_file, "192.168.1.1")
-
         with pytest.raises(OTAError, match="is empty"):
-            ota.update()
+            ESP32WiFiOTA(temp_file, "192.168.1.1")
 
         mock_socket_class.assert_not_called()
     finally:

@@ -1857,7 +1857,7 @@ def test_logger_visible_info_handler_only_counts_console_stream_handlers() -> No
         stdout_handler.close()
 
         class _RichLikeHandler(logging.Handler):
-            def __init__(self, stream: Any) -> None:
+            def __init__(self, stream: object) -> None:
                 super().__init__(level=logging.INFO)
                 self.console = types.SimpleNamespace(file=stream)
 
@@ -1927,6 +1927,24 @@ def test_send_traceroute_and_response_rendering(
     assert "Route traced towards destination:" in caplog.text
     assert "Route traced back to us:" in caplog.text
     assert iface._acknowledgment.receivedTraceRoute is True
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_on_response_traceroute_routing_no_response_raises() -> None:
+    """Traceroute routing NO_RESPONSE replies should raise the standard API error."""
+    with MeshInterface(noProto=True) as iface:
+        with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
+            iface.onResponseTraceRoute(
+                {
+                    "decoded": {
+                        "portnum": portnums_pb2.PortNum.Name(
+                            portnums_pb2.PortNum.ROUTING_APP
+                        ),
+                        "routing": {"errorReason": "NO_RESPONSE"},
+                    }
+                }
+            )
 
 
 @pytest.mark.unit

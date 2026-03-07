@@ -38,6 +38,7 @@ def test_is_device_not_found_error_matches_device_context_messages() -> None:
     """Only device-level 'not found' errors should trigger device-not-found retries."""
     assert _is_device_not_found_error(Exception("Device not found")) is True
     assert _is_device_not_found_error(Exception("Could not find peripheral")) is True
+    assert _is_device_not_found_error(Exception("Could not find adapter")) is False
     assert _is_device_not_found_error(Exception("Characteristic not found")) is False
     assert (
         _is_device_not_found_error(Exception("Characteristic not found on device"))

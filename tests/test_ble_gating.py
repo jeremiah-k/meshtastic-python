@@ -9,6 +9,7 @@ from hypothesis import strategies as st
 from meshtastic.interfaces.ble.constants import BLEConfig
 from meshtastic.interfaces.ble.gating import (
     _ADDR_LOCKS,
+    _CONNECTING_ADDRS,
     _CONNECTED_ADDRS,
     _CONNECTED_MARKED_AT,
     _LOCK_HOLDERS,
@@ -18,6 +19,7 @@ from meshtastic.interfaces.ble.gating import (
     _cleanup_addr_lock,
     _get_addr_lock,
     _is_currently_connected_elsewhere,
+    _mark_connecting,
     _mark_connected,
     _mark_disconnected,
     _release_addr_lock,
@@ -154,6 +156,17 @@ class TestMarkConnected:
         _mark_connected("")
         assert len(_CONNECTED_ADDRS) == 0
 
+    def test_mark_connected_clears_matching_provisional_claim(self) -> None:
+        """Final connected claims should replace provisional connecting claims."""
+        key = _addr_key("aabbccddeeff")
+        assert key is not None
+
+        _mark_connecting("aabbccddeeff", owner=_ConnectedOwner())
+        _mark_connected("aabbccddeeff", owner=_ConnectedOwner())
+
+        assert key in _CONNECTED_ADDRS
+        assert key not in _CONNECTING_ADDRS
+
 
 class TestMarkDisconnected:
     """Test cases for _mark_disconnected function."""
@@ -230,6 +243,17 @@ class TestMarkDisconnected:
 
         assert key in _CONNECTED_ADDRS
 
+    def test_mark_disconnected_clears_matching_provisional_claim(self) -> None:
+        """Disconnect cleanup should also clear provisional connecting claims."""
+        key = _addr_key("aabbccddeeff")
+        assert key is not None
+
+        _mark_connecting("aabbccddeeff", owner=_ConnectedOwner())
+        _mark_disconnected("aabbccddeeff")
+
+        assert key not in _CONNECTED_ADDRS
+        assert key not in _CONNECTING_ADDRS
+
 
 @pytest.mark.usefixtures("clear_registry")
 class TestIsCurrentlyConnectedElsewhere:
@@ -239,6 +263,12 @@ class TestIsCurrentlyConnectedElsewhere:
         """Test that it returns True for a connected address."""
         _mark_connected("aabbccddeeff")
         assert _is_currently_connected_elsewhere("aabbccddeeff")
+
+    def test_returns_true_for_provisional_connecting_claim(self) -> None:
+        """Provisional connect claims should also block duplicate connects."""
+        owner = _ConnectedOwner()
+        _mark_connecting("aabbccddeeff", owner=owner)
+        assert _is_currently_connected_elsewhere("aabbccddeeff", owner=object())
 
     def test_returns_false_for_non_connected_address(self) -> None:
         """Test that it returns False for a non-connected address."""
@@ -260,6 +290,13 @@ class TestIsCurrentlyConnectedElsewhere:
 
         assert not _is_currently_connected_elsewhere("aabbccddeeff", owner=owner)
 
+    def test_returns_false_for_same_owner_provisional_claim(self) -> None:
+        """A provisional claim owned by this interface is not connected elsewhere."""
+        owner = _ConnectedOwner()
+        _mark_connecting("aabbccddeeff", owner=owner)
+
+        assert not _is_currently_connected_elsewhere("aabbccddeeff", owner=owner)
+
     def test_returns_true_for_different_owner(self) -> None:
         """A live claim from another owner should be treated as connected elsewhere."""
         owner_a = _ConnectedOwner()
@@ -278,6 +315,25 @@ class TestIsCurrentlyConnectedElsewhere:
 
         assert not _is_currently_connected_elsewhere("aabbccddeeff")
         assert key not in _CONNECTED_ADDRS
+
+    def test_prunes_stale_unowned_provisional_claim(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Unowned provisional claims should expire after the stale window."""
+        key = _addr_key("aabbccddeeff")
+        assert key is not None
+        _mark_connecting("aabbccddeeff")
+        monkeypatch.setattr(
+            "meshtastic.interfaces.ble.gating.time.monotonic",
+            lambda: (
+                BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS
+                + 1.0
+                + 1_000_000.0
+            ),
+        )
+
+        assert not _is_currently_connected_elsewhere("aabbccddeeff")
+        assert key not in _CONNECTING_ADDRS
 
     def test_prunes_owner_claim_when_owner_not_connected(self) -> None:
         """Claims from owners no longer connected should be pruned."""

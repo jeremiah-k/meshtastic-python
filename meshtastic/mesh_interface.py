@@ -81,6 +81,9 @@ VALID_TELEMETRY_TYPES: tuple[TelemetryType, ...] = (
 VALID_TELEMETRY_TYPE_SET: frozenset[str] = frozenset(VALID_TELEMETRY_TYPES)
 UNKNOWN_SNR_QUARTER_DB = -128
 MISSING_NODE_NUM_ERROR_TEMPLATE = "NodeId {destination_id} has no numeric 'num' in DB"
+NO_RESPONSE_FIRMWARE_ERROR = (
+    "No response from node. At least firmware 2.1.22 is required on the destination node."
+)
 
 
 def _format_missing_node_num_error(destination_id: int | str) -> str:
@@ -217,7 +220,8 @@ class MeshInterface:  # pylint: disable=R0902
         #
         # Shared mutable state is intentionally split by concern:
         # - _response_handlers_lock: responseHandlers map
-        # - _heartbeat_lock: _closing, heartbeatTimer, _heartbeat_inflight
+        # - _heartbeat_lock: _closing, heartbeatTimer, _heartbeat_inflight,
+        #   isConnected
         # - _packet_id_lock: currentPacketId generation
         # - _queue_lock: queue + queueStatus
         # - _node_db_lock: nodes/nodesByNum/_localChannels plus myInfo/metadata
@@ -1172,9 +1176,7 @@ class MeshInterface:  # pylint: disable=R0902
             portnums_pb2.PortNum.ROUTING_APP
         ):
             if p["decoded"]["routing"]["errorReason"] == "NO_RESPONSE":
-                raise self.MeshInterfaceError(
-                    "No response from node. At least firmware 2.1.22 is required on the destination node."
-                )
+                raise self.MeshInterfaceError(NO_RESPONSE_FIRMWARE_ERROR)
 
     def sendTraceRoute(
         self, dest: int | str, hopLimit: int, channelIndex: int = 0
@@ -1234,8 +1236,16 @@ class MeshInterface:  # pylint: disable=R0902
         -----
         Emits formatted route strings and sets self._acknowledgment.receivedTraceRoute to True.
         """
+        decoded = p["decoded"]
+        if decoded.get("portnum") == portnums_pb2.PortNum.Name(
+            portnums_pb2.PortNum.ROUTING_APP
+        ):
+            if decoded.get("routing", {}).get("errorReason") == "NO_RESPONSE":
+                raise self.MeshInterfaceError(NO_RESPONSE_FIRMWARE_ERROR)
+            return
+
         routeDiscovery = mesh_pb2.RouteDiscovery()
-        routeDiscovery.ParseFromString(p["decoded"]["payload"])
+        routeDiscovery.ParseFromString(decoded["payload"])
         asDict = google.protobuf.json_format.MessageToDict(routeDiscovery)
 
         def _node_label(node_num: int) -> str:
@@ -1479,9 +1489,7 @@ class MeshInterface:  # pylint: disable=R0902
             portnums_pb2.PortNum.ROUTING_APP
         ):
             if p["decoded"]["routing"]["errorReason"] == "NO_RESPONSE":
-                raise self.MeshInterfaceError(
-                    "No response from node. At least firmware 2.1.22 is required on the destination node."
-                )
+                raise self.MeshInterfaceError(NO_RESPONSE_FIRMWARE_ERROR)
 
     def onResponseWaypoint(self, p: dict[str, Any]) -> None:
         """Handle a waypoint response or routing error contained in a received packet.
@@ -1516,9 +1524,7 @@ class MeshInterface:  # pylint: disable=R0902
             portnums_pb2.PortNum.ROUTING_APP
         ):
             if p["decoded"]["routing"]["errorReason"] == "NO_RESPONSE":
-                raise self.MeshInterfaceError(
-                    "No response from node. At least firmware 2.1.22 is required on the destination node."
-                )
+                raise self.MeshInterfaceError(NO_RESPONSE_FIRMWARE_ERROR)
 
     def sendWaypoint(  # pylint: disable=R0913
         self,

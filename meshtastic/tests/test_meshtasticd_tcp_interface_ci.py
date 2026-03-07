@@ -82,7 +82,7 @@ def _parse_host_and_port(host: str) -> tuple[str, int]:
         )
     if host.count(":") >= 2 and not host.startswith("["):
         host_part, separator, possible_port = host.rpartition(":")
-        if host.startswith("::") and separator and possible_port.isdigit():
+        if separator and possible_port.isdigit():
             try:
                 ipaddress.IPv6Address(host_part)
             except ipaddress.AddressValueError:
@@ -308,12 +308,19 @@ def test_tcp_interface_meshtasticd_recovers_after_socket_drop() -> None:
         deadline = time.monotonic() + RECONNECT_RECOVERY_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             try:
+                if not iface.isConnected.wait(timeout=RECONNECT_RETRY_INTERVAL_SECONDS):
+                    continue
                 packet = iface.sendText("meshtasticd tcp reconnect probe")
                 if packet is not None and iface.socket is not None:
                     if iface.socket is not original_socket:
                         recovered = True
                         break
-            except (ConnectionError, OSError, TimeoutError) as ex:
+            except (
+                ConnectionError,
+                OSError,
+                TimeoutError,
+                TCPInterface.MeshInterfaceError,
+            ) as ex:
                 last_error = ex
             time.sleep(RECONNECT_RETRY_INTERVAL_SECONDS)
 

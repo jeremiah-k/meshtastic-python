@@ -41,8 +41,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger("meshtastic.ble")
 _DEVICE_NOT_FOUND_MESSAGE_RE = re.compile(
     r"(?:"
-    r"\bcould not find (?:the )?(?:device|peripheral|adapter)\b|"
-    r"\b(?:device|peripheral|adapter)\b.{0,40}\bnot found\b"
+    r"\bcould not find (?:the )?(?:device|peripheral)\b|"
+    r"\b(?:device|peripheral)\b.{0,40}\bnot found\b"
     r")"
 )
 _CONNECT_TIMEOUT_INVALID_MSG = (
