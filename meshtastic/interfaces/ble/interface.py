@@ -329,7 +329,7 @@ class BLEInterface(MeshInterface):
         logger.debug("Threads running")
         try:
             logger.debug("BLE connecting to: %s", address if address else "any")
-            self.connect(address)
+            self.connect(address, connect_timeout=timeout)
             logger.debug("BLE connected")
 
             logger.debug("Mesh configure starting")
@@ -1534,6 +1534,14 @@ class BLEInterface(MeshInterface):
                         client_to_use = existing_client
                         temporary_client = None
                     else:
+                        target_key = _addr_key(target_address)
+                        if (
+                            target_key is not None
+                            and _is_currently_connected_elsewhere(
+                                target_key, owner=self
+                            )
+                        ):
+                            raise self.BLEError(ERROR_CONNECTION_SUPPRESSED)
                         temporary_client = BLEClient(
                             target_address, log_if_no_address=False
                         )
@@ -2259,6 +2267,11 @@ class BLEInterface(MeshInterface):
             connection_alias_key,
         )
         if not still_owned or lost_gate_ownership:
+            if not lost_gate_ownership:
+                self._mark_address_keys_disconnected(
+                    connected_device_key,
+                    connection_alias_key,
+                )
             self._discard_invalidated_connected_client(connected_client)
             if is_closing:
                 raise self.BLEError(ERROR_INTERFACE_CLOSING)

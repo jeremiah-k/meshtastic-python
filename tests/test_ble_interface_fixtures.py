@@ -523,6 +523,10 @@ class DummyClient:
         **_kwargs: object,
     ) -> None:
         """Record a pair invocation."""
+        if self.bleak_client is None:
+            raise AssertionError(
+                "DummyClient.pair() called without an initialized bleak_client"
+            )
         self.pair_calls += 1
         self.pair_await_timeouts.append(await_timeout)
         self.pair_kwargs.append(dict(_kwargs))
@@ -534,6 +538,10 @@ class DummyClient:
         **_kwargs: object,
     ) -> None:
         """Record an unpair invocation."""
+        if self.bleak_client is None:
+            raise AssertionError(
+                "DummyClient.unpair() called without an initialized bleak_client"
+            )
         self.unpair_calls += 1
         self.unpair_await_timeouts.append(await_timeout)
         if self.on_unpair is not None:

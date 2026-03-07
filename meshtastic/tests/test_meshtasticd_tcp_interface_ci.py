@@ -17,6 +17,22 @@ WAIT_CONNECTED_TIMEOUT_SECONDS = 10.0
 RECONNECT_RECOVERY_TIMEOUT_SECONDS = 25.0
 RECONNECT_RETRY_INTERVAL_SECONDS = 0.5
 
+INVALID_HOST_EMPTY = "Invalid {env_var}={host!r}: host component is empty."
+EXPECTED_HOST_PORT_ONLY = "Invalid {env_var}={host!r}: expected HOST[:PORT] only."
+INVALID_IPV6_BRACKETED_PORT = (
+    "Invalid {env_var}={host!r}: raw IPv6 literals "
+    "with explicit ports must use bracket form like [::1]:4401."
+)
+INVALID_PORT_EMPTY = (
+    "Invalid {env_var}={host!r}: invalid TCP port ''. Expected HOST[:PORT] "
+    "with numeric PORT."
+)
+INVALID_PORT_NONNUMERIC = (
+    "Invalid {env_var}={host!r}: invalid TCP port {raw_port!r}. Expected "
+    "HOST[:PORT] with numeric PORT."
+)
+INVALID_PORT_RANGE = "Invalid {env_var}={host!r}: port must be in range 1..65535."
+
 
 def _require_meshtasticd_host() -> str:
     """Return the configured meshtasticd host or skip when unset."""
@@ -55,11 +71,14 @@ def _parse_host_and_port(host: str) -> tuple[str, int]:
     """Parse ``HOST[:PORT]`` into a hostname and TCP port."""
     if not host:
         raise ValueError(
-            f"Invalid {MESHTASTICD_HOST_ENV_VAR}={host!r}: host component is empty."
+            INVALID_HOST_EMPTY.format(env_var=MESHTASTICD_HOST_ENV_VAR, host=host)
         )
     if any(separator in host for separator in ("@", "/", "?", "#", ";")):
         raise ValueError(
-            f"Invalid {MESHTASTICD_HOST_ENV_VAR}={host!r}: expected HOST[:PORT] only."
+            EXPECTED_HOST_PORT_ONLY.format(
+                env_var=MESHTASTICD_HOST_ENV_VAR,
+                host=host,
+            )
         )
     if host.count(":") >= 2 and not host.startswith("["):
         host_part, separator, possible_port = host.rpartition(":")
@@ -70,29 +89,35 @@ def _parse_host_and_port(host: str) -> tuple[str, int]:
                 pass
             else:
                 raise ValueError(
-                    f"Invalid {MESHTASTICD_HOST_ENV_VAR}={host!r}: raw IPv6 literals "
-                    "with explicit ports must use bracket form like [::1]:4401."
+                    INVALID_IPV6_BRACKETED_PORT.format(
+                        env_var=MESHTASTICD_HOST_ENV_VAR,
+                        host=host,
+                    )
                 )
         try:
             ipaddress.IPv6Address(host)
         except ipaddress.AddressValueError as exc:
             raise ValueError(
-                f"Invalid {MESHTASTICD_HOST_ENV_VAR}={host!r}: raw IPv6 literals "
-                "with explicit ports must use bracket form like [::1]:4401."
+                INVALID_IPV6_BRACKETED_PORT.format(
+                    env_var=MESHTASTICD_HOST_ENV_VAR,
+                    host=host,
+                )
             ) from exc
         return host, DEFAULT_TCP_PORT
 
     raw_port = _extract_port_component(host)
     if raw_port == "":
         raise ValueError(
-            f"Invalid {MESHTASTICD_HOST_ENV_VAR}={host!r}: invalid TCP port "
-            "''. Expected HOST[:PORT] with numeric PORT."
+            INVALID_PORT_EMPTY.format(env_var=MESHTASTICD_HOST_ENV_VAR, host=host)
         )
 
     parsed = urlparse(f"//{host}")
     if _has_extra_url_components(parsed):
         raise ValueError(
-            f"Invalid {MESHTASTICD_HOST_ENV_VAR}={host!r}: expected HOST[:PORT] only."
+            EXPECTED_HOST_PORT_ONLY.format(
+                env_var=MESHTASTICD_HOST_ENV_VAR,
+                host=host,
+            )
         )
     try:
         host_name = parsed.hostname
@@ -100,21 +125,22 @@ def _parse_host_and_port(host: str) -> tuple[str, int]:
     except ValueError as exc:
         if raw_port is not None and not raw_port.isdigit():
             raise ValueError(
-                f"Invalid {MESHTASTICD_HOST_ENV_VAR}={host!r}: invalid TCP port "
-                f"{raw_port!r}. Expected HOST[:PORT] with numeric PORT."
+                INVALID_PORT_NONNUMERIC.format(
+                    env_var=MESHTASTICD_HOST_ENV_VAR,
+                    host=host,
+                    raw_port=raw_port,
+                )
             ) from exc
         raise ValueError(
-            f"Invalid {MESHTASTICD_HOST_ENV_VAR}={host!r}: port must be in range "
-            "1..65535."
+            INVALID_PORT_RANGE.format(env_var=MESHTASTICD_HOST_ENV_VAR, host=host)
         ) from exc
     if not host_name:
         raise ValueError(
-            f"Invalid {MESHTASTICD_HOST_ENV_VAR}={host!r}: host component is empty."
+            INVALID_HOST_EMPTY.format(env_var=MESHTASTICD_HOST_ENV_VAR, host=host)
         )
     if raw_port == "0" or port == 0:
         raise ValueError(
-            f"Invalid {MESHTASTICD_HOST_ENV_VAR}={host!r}: port must be in range "
-            "1..65535."
+            INVALID_PORT_RANGE.format(env_var=MESHTASTICD_HOST_ENV_VAR, host=host)
         )
     if raw_port is None:
         return host_name, DEFAULT_TCP_PORT
