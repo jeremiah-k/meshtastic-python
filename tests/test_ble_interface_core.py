@@ -753,14 +753,10 @@ def test_ble_interface_management_rejects_temp_client_when_target_owned_elsewher
     )
 
     if method_name == "pair":
-        with pytest.raises(
-            BLEInterface.BLEError, match=ERROR_CONNECTION_SUPPRESSED
-        ):
+        with pytest.raises(BLEInterface.BLEError, match=ERROR_CONNECTION_SUPPRESSED):
             iface.pair("mesh-node", confirm=True, await_timeout=7.0)
     else:
-        with pytest.raises(
-            BLEInterface.BLEError, match=ERROR_CONNECTION_SUPPRESSED
-        ):
+        with pytest.raises(BLEInterface.BLEError, match=ERROR_CONNECTION_SUPPRESSED):
             iface.unpair("mesh-node", await_timeout=7.0)
 
     iface.close()
@@ -1308,14 +1304,18 @@ def test_ble_interface_trust_does_not_hold_interface_locks_during_subprocess(
     def _run_trust() -> None:
         try:
             iface.trust(trust_target, timeout=7.0)
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             trust_errors.append(exc)
 
     def _close_iface() -> None:
         try:
             close_started.set()
             iface.close()
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             close_errors.append(exc)
         finally:
             close_done.set()
@@ -1357,7 +1357,9 @@ def test_ble_interface_close_serializes_with_management_lock(
         try:
             close_started.set()
             iface.close()
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             close_errors.append(exc)
         finally:
             close_done.set()
@@ -1386,7 +1388,9 @@ def test_ble_interface_close_does_not_wait_for_connect_lock(
     def _close_iface() -> None:
         try:
             iface.close()
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             close_errors.append(exc)
         finally:
             close_done.set()

@@ -25,7 +25,7 @@ try:
 except ImportError:
     print_color = None
 
-from pubsub import pub  # type: ignore[import-untyped]
+from pubsub import pub
 from tabulate import tabulate
 
 import meshtastic.node
@@ -1420,9 +1420,7 @@ class MeshInterface:  # pylint: disable=R0902
                         telemetry.device_metrics.air_util_tx,
                     )
                 if telemetry.device_metrics.uptime_seconds is not None:
-                    logger.info(
-                        "Uptime: %s s", telemetry.device_metrics.uptime_seconds
-                    )
+                    logger.info("Uptime: %s s", telemetry.device_metrics.uptime_seconds)
             else:
                 # this is the new code if --request-telemetry <type> is used.
                 telemetry_dict = google.protobuf.json_format.MessageToDict(telemetry)
