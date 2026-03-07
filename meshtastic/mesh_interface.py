@@ -84,6 +84,9 @@ VALID_TELEMETRY_TYPE_SET: frozenset[str] = frozenset(VALID_TELEMETRY_TYPES)
 UNKNOWN_SNR_QUARTER_DB = -128
 MISSING_NODE_NUM_ERROR_TEMPLATE = "NodeId {destination_id} has no numeric 'num' in DB"
 NO_RESPONSE_FIRMWARE_ERROR = "No response from node. At least firmware 2.1.22 is required on the destination node."
+JSONValue: TypeAlias = (
+    None | bool | int | float | str | list["JSONValue"] | dict[str, "JSONValue"]
+)
 
 
 def _format_missing_node_num_error(destination_id: int | str) -> str:
@@ -121,7 +124,7 @@ def _emit_response_summary(message: str) -> None:
         print(message)
 
 
-def _normalize_json_serializable(value: Any) -> Any:
+def _normalize_json_serializable(value: object) -> JSONValue:
     """Recursively normalize common non-JSON-native values into JSON-safe forms."""
     if isinstance(value, (bytes, bytearray, memoryview)):
         return "base64:" + base64.b64encode(bytes(value)).decode("ascii")
@@ -130,13 +133,11 @@ def _normalize_json_serializable(value: Any) -> Any:
             str(key): _normalize_json_serializable(inner_value)
             for key, inner_value in value.items()
         }
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple, set)):
         return [_normalize_json_serializable(item) for item in value]
-    if isinstance(value, tuple):
-        return [_normalize_json_serializable(item) for item in value]
-    if isinstance(value, set):
-        return [_normalize_json_serializable(item) for item in value]
-    return value
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    return str(value)
 
 
 def _timeago(delta_secs: int) -> str:
@@ -321,9 +322,17 @@ class MeshInterface:  # pylint: disable=R0902
                         heartbeat_idle_condition.wait()
             try:
                 self._send_disconnect()
-            except (OSError, TypeError, MeshInterface.MeshInterfaceError):
+            except (OSError, MeshInterface.MeshInterfaceError):
                 logger.debug(
                     "Failed to send disconnect during close(); continuing shutdown.",
+                    exc_info=True,
+                )
+            except TypeError:
+                is_finalizing = getattr(sys, "is_finalizing", None)
+                if not (callable(is_finalizing) and is_finalizing()):
+                    raise
+                logger.debug(
+                    "Failed to send disconnect during interpreter finalization; continuing shutdown.",
                     exc_info=True,
                 )
         # debugOut is caller-owned (often shared via outer context managers);
@@ -469,7 +478,7 @@ class MeshInterface:  # pylint: disable=R0902
         if metadata_info:
             metadata = f"\nMetadata: {messageToJson(metadata_info)}"
         mesh = "\n\nNodes in mesh: "
-        nodes: dict[str, dict[str, Any]] = {}
+        nodes: dict[str, JSONValue] = {}
         with self._node_db_lock:
             nodes_snapshot = (
                 [copy.deepcopy(node) for node in self.nodes.values()]
@@ -501,9 +510,7 @@ class MeshInterface:  # pylint: disable=R0902
             # use id as dictionary key for correct json format in list of nodes
             node_id = user.get("id")
             if node_id is not None:
-                nodes[str(node_id)] = cast(
-                    dict[str, Any], _normalize_json_serializable(n2)
-                )
+                nodes[str(node_id)] = _normalize_json_serializable(n2)
         infos = owner + myinfo + metadata + mesh + json.dumps(nodes, indent=2)
         if file is None:
             file = sys.stdout
@@ -1144,6 +1151,7 @@ class MeshInterface:  # pylint: disable=R0902
         """Clear a previously recorded routing/wait error for one wait attribute."""
         with self._response_handlers_lock:
             self._response_wait_errors.pop(acknowledgment_attr, None)
+        setattr(self._acknowledgment, acknowledgment_attr, False)
 
     def _set_wait_error(self, acknowledgment_attr: str, message: str) -> None:
         """Record a wait error and wake the corresponding waiter."""
@@ -1524,24 +1532,27 @@ class MeshInterface:  # pylint: disable=R0902
             # Check if the telemetry message has the device_metrics field
             # This is the original code that was the default for --request-telemetry and is kept for compatibility
             if telemetry.HasField("device_metrics"):
-                if telemetry.device_metrics.battery_level is not None:
+                device_metrics_fields = {
+                    field.name for field, _ in telemetry.device_metrics.ListFields()
+                }
+                if "battery_level" in device_metrics_fields:
                     _emit_response_summary(
                         f"Battery level: {telemetry.device_metrics.battery_level:.2f}%"
                     )
-                if telemetry.device_metrics.voltage is not None:
+                if "voltage" in device_metrics_fields:
                     _emit_response_summary(
                         f"Voltage: {telemetry.device_metrics.voltage:.2f} V"
                     )
-                if telemetry.device_metrics.channel_utilization is not None:
+                if "channel_utilization" in device_metrics_fields:
                     _emit_response_summary(
                         "Total channel utilization: "
                         f"{telemetry.device_metrics.channel_utilization:.2f}%"
                     )
-                if telemetry.device_metrics.air_util_tx is not None:
+                if "air_util_tx" in device_metrics_fields:
                     _emit_response_summary(
                         f"Transmit air utilization: {telemetry.device_metrics.air_util_tx:.2f}%"
                     )
-                if telemetry.device_metrics.uptime_seconds is not None:
+                if "uptime_seconds" in device_metrics_fields:
                     _emit_response_summary(
                         f"Uptime: {telemetry.device_metrics.uptime_seconds} s"
                     )

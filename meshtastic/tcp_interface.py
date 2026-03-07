@@ -600,10 +600,10 @@ class TCPInterface(StreamInterface):
             The received bytes, or `b""` if no data was returned
             because the socket is absent, a reconnect was started, or shutdown was requested.
         """
+        if isinstance(length, bool) or not isinstance(length, int) or length <= 0:
+            raise ValueError(f"length must be a positive int, got {length!r}")
         sock = self.socket
         if sock is not None:
-            if isinstance(length, bool) or not isinstance(length, int) or length <= 0:
-                raise ValueError(f"length must be a positive int, got {length!r}")
             try:
                 data = sock.recv(length)
             except TCP_IO_EXCEPTIONS as ex:

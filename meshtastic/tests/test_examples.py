@@ -26,6 +26,12 @@ def _require_mapping(value: object, *, label: str) -> dict[str, object]:
     return cast(dict[str, object], value)
 
 
+def _require_int_strict(value: object, *, label: str) -> int:
+    """Assert that `value` is an int (excluding bool) and return it."""
+    assert type(value) is int, f"{label} should be an int, got {type(value).__name__}"
+    return cast(int, value)
+
+
 def _run_hello_world_serial(monkeypatch: pytest.MonkeyPatch, *args: str) -> None:
     """Execute the hello_world_serial example in-process with controlled argv."""
     monkeypatch.setattr(sys, "argv", ["examples/hello_world_serial.py", *args])
@@ -106,16 +112,16 @@ def test_examples_example_config_yaml_is_valid() -> None:
     display_cfg = _require_mapping(
         config_section.get("display"), label="config.display"
     )
-    assert isinstance(display_cfg.get("screen_on_secs"), int)
+    _require_int_strict(display_cfg.get("screen_on_secs"), label="screen_on_secs")
     assert "screenOnSecs" not in display_cfg
 
     lora_cfg = _require_mapping(config_section.get("lora"), label="config.lora")
     region = lora_cfg.get("region")
     assert isinstance(region, str), "region should be a string"
     assert region, "region should not be empty"
-    assert isinstance(lora_cfg.get("hop_limit"), int)
+    _require_int_strict(lora_cfg.get("hop_limit"), label="hop_limit")
     assert isinstance(lora_cfg.get("tx_enabled"), bool)
-    assert isinstance(lora_cfg.get("tx_power"), int)
+    _require_int_strict(lora_cfg.get("tx_power"), label="tx_power")
     assert "hopLimit" not in lora_cfg
     assert "txEnabled" not in lora_cfg
     assert "txPower" not in lora_cfg
@@ -130,10 +136,14 @@ def test_examples_example_config_yaml_is_valid() -> None:
         config_section.get("position"), label="config.position"
     )
     assert isinstance(position_cfg.get("gps_enabled"), bool)
-    assert isinstance(position_cfg.get("gps_attempt_time"), int)
-    assert isinstance(position_cfg.get("gps_update_interval"), int)
-    assert isinstance(position_cfg.get("position_broadcast_secs"), int)
-    assert isinstance(position_cfg.get("position_flags"), int)
+    _require_int_strict(position_cfg.get("gps_attempt_time"), label="gps_attempt_time")
+    _require_int_strict(
+        position_cfg.get("gps_update_interval"), label="gps_update_interval"
+    )
+    _require_int_strict(
+        position_cfg.get("position_broadcast_secs"), label="position_broadcast_secs"
+    )
+    _require_int_strict(position_cfg.get("position_flags"), label="position_flags")
     assert isinstance(position_cfg.get("position_broadcast_smart_enabled"), bool)
     assert "gpsEnabled" not in position_cfg
     assert "gpsAttemptTime" not in position_cfg
@@ -143,10 +153,12 @@ def test_examples_example_config_yaml_is_valid() -> None:
     assert "positionBroadcastSmartEnabled" not in position_cfg
 
     power_cfg = _require_mapping(config_section.get("power"), label="config.power")
-    assert isinstance(power_cfg.get("wait_bluetooth_secs"), int)
-    assert isinstance(power_cfg.get("ls_secs"), int)
-    assert isinstance(power_cfg.get("min_wake_secs"), int)
-    assert isinstance(power_cfg.get("sds_secs"), int)
+    _require_int_strict(
+        power_cfg.get("wait_bluetooth_secs"), label="wait_bluetooth_secs"
+    )
+    _require_int_strict(power_cfg.get("ls_secs"), label="ls_secs")
+    _require_int_strict(power_cfg.get("min_wake_secs"), label="min_wake_secs")
+    _require_int_strict(power_cfg.get("sds_secs"), label="sds_secs")
     assert "waitBluetoothSecs" not in power_cfg
     assert "lsSecs" not in power_cfg
     assert "minWakeSecs" not in power_cfg
@@ -155,7 +167,12 @@ def test_examples_example_config_yaml_is_valid() -> None:
     telemetry_cfg = _require_mapping(
         module_config.get("telemetry"), label="module_config.telemetry"
     )
-    assert isinstance(telemetry_cfg.get("device_update_interval"), int)
-    assert isinstance(telemetry_cfg.get("environment_update_interval"), int)
+    _require_int_strict(
+        telemetry_cfg.get("device_update_interval"), label="device_update_interval"
+    )
+    _require_int_strict(
+        telemetry_cfg.get("environment_update_interval"),
+        label="environment_update_interval",
+    )
     assert "deviceUpdateInterval" not in telemetry_cfg
     assert "environmentUpdateInterval" not in telemetry_cfg

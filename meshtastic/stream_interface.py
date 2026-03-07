@@ -34,7 +34,10 @@ STREAM_IO_EXCEPTIONS = (
 )
 # Suppress TypeError during best-effort close for half-torn-down stream objects
 # without broadening read/write-path exception handling.
-STREAM_CLOSE_EXCEPTIONS = (*STREAM_IO_EXCEPTIONS, TypeError)
+STREAM_CLOSE_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    *STREAM_IO_EXCEPTIONS,
+    TypeError,
+)
 # Read/write/flush exceptions that indicate stream closure.
 STREAM_WRITE_EXCEPTIONS = STREAM_IO_EXCEPTIONS
 STREAM_READ_EXCEPTIONS = STREAM_IO_EXCEPTIONS

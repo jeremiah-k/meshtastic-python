@@ -415,7 +415,6 @@ def test_close_waits_for_inflight_heartbeat_send(
     "disconnect_error",
     [
         OSError("bad fd"),
-        TypeError("stream closed"),
         MeshInterface.MeshInterfaceError("ble write failed"),
     ],
 )
@@ -441,6 +440,21 @@ def test_close_suppresses_disconnect_send_failures(
     assert (
         "Failed to send disconnect during close(); continuing shutdown." in caplog.text
     )
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_close_propagates_disconnect_type_error() -> None:
+    """close() should not swallow unexpected TypeError from disconnect send path."""
+    iface = MeshInterface(noProto=True)
+    try:
+        iface.debugOut = io.StringIO()
+        with patch.object(iface, "_send_disconnect", side_effect=TypeError("boom")):
+            with pytest.raises(TypeError, match="boom"):
+                iface.close()
+    finally:
+        if not getattr(iface, "_closing", False):
+            iface.close()
 
 
 @pytest.mark.unit

@@ -2162,7 +2162,8 @@ def test_connect_waits_for_inflight_management_before_establishing(
     wait_calls: list[bool] = []
     establish_calls: list[bool] = []
 
-    def _wait_for_management() -> bool:
+    def _wait_for_management(timeout: float | None = None) -> bool:
+        _ = timeout
         wait_calls.append(True)
         iface._management_inflight = 0
         return True

@@ -28,6 +28,7 @@ import atexit
 import contextlib
 import math
 import numbers
+import re
 import shutil
 import struct
 import subprocess
@@ -128,8 +129,13 @@ from meshtastic.protobuf import mesh_pb2
 
 T = TypeVar("T")
 _NOTIFY_ACQUIRED_FRAGMENT = "notify acquired"
-_BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS = 10.0
+_BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS: float = 10.0
 _MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS: float = 30.0
+_MANAGEMENT_CONNECT_WAIT_POLL_SECONDS: float = 0.5
+_MANAGEMENT_CONNECT_WAIT_TIMEOUT_SECONDS: float = 30.0
+_TRUST_COMMAND_OUTPUT_MAX_CHARS: int = 200
+_TRUST_HEX_BLOB_RE = re.compile(r"\b[0-9A-Fa-f]{16,}\b")
+_TRUST_TOKEN_RE = re.compile(r"\b[A-Za-z0-9+/=_-]{40,}\b")
 
 
 class BLEInterface(MeshInterface):
@@ -1594,7 +1600,8 @@ class BLEInterface(MeshInterface):
             # before `_management_target_gate(...)` so lock ordering remains
             # address-gate first, then interface locks. The interface locks are
             # re-acquired inside the gate before revalidation/client selection.
-            assert target_address is not None
+            if target_address is None:
+                raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_REQUIRED)
             with self._management_target_gate(target_address):
                 with self._connect_lock:
                     with self._management_lock:
@@ -1802,6 +1809,19 @@ class BLEInterface(MeshInterface):
         validated_timeout: float,
     ) -> None:
         """Run `bluetoothctl trust` and translate subprocess failures into BLEError."""
+
+        def _sanitize_trust_command_output(output: str) -> str:
+            """Return a redacted, single-line subprocess output snippet."""
+            sanitized = " ".join(output.splitlines())
+            sanitized = "".join(ch if ch.isprintable() else "?" for ch in sanitized)
+            sanitized = _TRUST_HEX_BLOB_RE.sub("[redacted-hex]", sanitized)
+            sanitized = _TRUST_TOKEN_RE.sub("[redacted-token]", sanitized)
+            sanitized = " ".join(sanitized.split())
+            if len(sanitized) > _TRUST_COMMAND_OUTPUT_MAX_CHARS:
+                max_prefix = _TRUST_COMMAND_OUTPUT_MAX_CHARS - 3
+                return f"{sanitized[:max_prefix]}..."
+            return sanitized
+
         logger.debug(
             "Running bluetoothctl trust command: %s (timeout=%.1fs)",
             [bluetoothctl_path, "trust", canonical_address],
@@ -1822,8 +1842,12 @@ class BLEInterface(MeshInterface):
                 )
             ) from exc
         if result.returncode != 0:
-            stderr_output = result.stderr.strip() if result.stderr else ""
-            stdout_output = result.stdout.strip() if result.stdout else ""
+            stderr_output = (
+                _sanitize_trust_command_output(result.stderr) if result.stderr else ""
+            )
+            stdout_output = (
+                _sanitize_trust_command_output(result.stdout) if result.stdout else ""
+            )
             detail_parts = []
             if stderr_output:
                 detail_parts.append(f"stderr: {stderr_output}")
@@ -2019,7 +2043,10 @@ class BLEInterface(MeshInterface):
         """
         self._validate_connection_preconditions()
         with self._state_lock:
-            if self._state_manager._current_state == ConnectionState.CONNECTING:
+            if (
+                self._state_manager._current_state == ConnectionState.CONNECTING
+                or self._client_publish_pending
+            ):
                 raise self.BLEError(ERROR_MANAGEMENT_CONNECTING)
 
     def _should_suppress_duplicate_connect(self, connection_key: str | None) -> bool:
@@ -2498,6 +2525,7 @@ class BLEInterface(MeshInterface):
         try:
             management_lock = getattr(self, "_management_lock", None)
             management_idle_condition = getattr(self, "_management_idle_condition", None)
+            management_wait_started = time.monotonic()
             while True:
                 # Management commands increment `_management_inflight` under
                 # `_connect_lock` and then continue work outside interface
@@ -2509,7 +2537,17 @@ class BLEInterface(MeshInterface):
                 ):
                     with management_lock:
                         while getattr(self, "_management_inflight", 0) > 0:
-                            management_idle_condition.wait()
+                            if not management_idle_condition.wait(
+                                timeout=_MANAGEMENT_CONNECT_WAIT_POLL_SECONDS
+                            ):
+                                elapsed = time.monotonic() - management_wait_started
+                                if elapsed >= _MANAGEMENT_CONNECT_WAIT_TIMEOUT_SECONDS:
+                                    logger.warning(
+                                        "Timed out waiting %.1fs for %d inflight management operation(s) before connect()",
+                                        elapsed,
+                                        getattr(self, "_management_inflight", 0),
+                                    )
+                                    raise self.BLEError(ERROR_MANAGEMENT_CONNECTING)
 
                 with contextlib.ExitStack() as stack:
                     if address_registry_key is not None:

@@ -46,6 +46,7 @@ def test_is_device_not_found_error_matches_device_context_messages() -> None:
     )
     assert _is_device_not_found_error(Exception("Service not found")) is False
     assert _is_device_not_found_error(Exception("Peripheral service not found")) is False
+    assert _is_device_not_found_error(Exception("Peripheral: service not found")) is False
 
 
 @pytest.mark.unit

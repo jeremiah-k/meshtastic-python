@@ -397,6 +397,28 @@ def test_TCPInterface_read_rejects_non_positive_length(invalid_length: int) -> N
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("invalid_length", [0, -1, True])
+def test_TCPInterface_read_rejects_invalid_length_when_socket_missing(
+    invalid_length: object,
+) -> None:
+    """Invalid lengths should raise before reconnect logic even when socket is missing."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            iface.socket = None
+            with (
+                patch.object(iface, "_attempt_reconnect") as reconnect_mock,
+                pytest.raises(ValueError, match="length must be a positive int"),
+            ):
+                iface._read_bytes(cast(Any, invalid_length))
+
+            reconnect_mock.assert_not_called()
+            assert iface.socket is None
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
 def test_TCPInterface_connect_fails_fast_when_shutting_down() -> None:
     """connect() should fail fast when shutdown/fatal flags block a new connect."""
     with patch("socket.socket"):

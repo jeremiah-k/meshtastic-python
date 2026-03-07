@@ -106,6 +106,7 @@ POWER_ON_BOOT_DELAY_SECONDS = 5.0
 # OTA CLI timing and retry delay
 OTA_REBOOT_WAIT_SECONDS: float = 5.0
 OTA_RETRY_DELAY_SECONDS: float = 2.0
+OTA_MAX_RETRIES: int = 5
 
 # Keep-alive sleep interval for main loop (effectively infinite wait)
 MAIN_LOOP_IDLE_SLEEP_SECONDS = 1000
@@ -823,7 +824,7 @@ def onConnected(interface: MeshInterface) -> None:
             print("Waiting for device to reboot into OTA mode...")
             time.sleep(OTA_REBOOT_WAIT_SECONDS)
 
-            retries = 5
+            retries = OTA_MAX_RETRIES
             while retries > 0:
                 try:
                     ota.update()

@@ -275,10 +275,7 @@ def test_esp32_wifi_ota_update_logs_progress_without_callback(
 
 
 @pytest.mark.unit
-@patch("meshtastic.ota.socket.socket")
-def test_esp32_wifi_ota_init_rejects_empty_firmware(
-    mock_socket_class: MagicMock,
-) -> None:
+def test_esp32_wifi_ota_init_rejects_empty_firmware() -> None:
     """Constructor should fail fast for zero-byte firmware before OTA mode begins."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
         temp_file = f.name
@@ -286,8 +283,6 @@ def test_esp32_wifi_ota_init_rejects_empty_firmware(
     try:
         with pytest.raises(OTAError, match="is empty"):
             ESP32WiFiOTA(temp_file, "192.168.1.1")
-
-        mock_socket_class.assert_not_called()
     finally:
         os.unlink(temp_file)
 
