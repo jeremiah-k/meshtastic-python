@@ -548,16 +548,20 @@ def test_ble_interface_pair_prefers_active_client(
 def test_ble_interface_unpair_prefers_active_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """unpair() should delegate to the active matching client when connected."""
+    """unpair() should delegate and run disconnect cleanup when the backend drops."""
     client = DummyClient()
     iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+
+    def _on_unpair() -> None:
+        iface._handle_disconnect("test-unpair", client=cast(BLEClient, client))
+
+    client.on_unpair = _on_unpair
 
     iface.unpair(await_timeout=8.0)
     assert client.unpair_calls == 1
     assert client.unpair_await_timeouts == [8.0]
-    # Do not assert a synchronous disconnected state here. Backend unpair
-    # semantics are observed through the disconnect callback path rather than a
-    # guaranteed immediate state transition at unpair() return.
+    assert iface.client is None
+    assert iface._state_manager._is_connected is False
     iface.close()
 
 
@@ -1172,11 +1176,16 @@ def test_ble_interface_trust_rejects_closing_interface(
         _unexpected_run,
     )
 
-    with pytest.raises(BLEInterface.BLEError, match="closing"):
-        iface.trust("mesh-node")
+    try:
+        with pytest.raises(BLEInterface.BLEError, match="closing"):
+            iface.trust("mesh-node")
 
-    assert find_device_called is False
-    assert subprocess_called is False
+        assert find_device_called is False
+        assert subprocess_called is False
+    finally:
+        with iface._state_lock:
+            iface._closed = False
+        iface.close()
 
 
 def test_ble_interface_trust_does_not_hold_interface_locks_during_subprocess(
@@ -1579,7 +1588,7 @@ def test_connect_wraps_invalid_connect_timeout_as_ble_error(
 
     with pytest.raises(
         BLEInterface.BLEError,
-        match="connect_timeout must be a finite positive number of seconds.",
+        match="invalid connect_timeout: connect_timeout must be a finite positive number of seconds.",
     ):
         iface.connect("AA:BB:CC:DD:EE:10", connect_timeout=cast(Any, 0.0))
 

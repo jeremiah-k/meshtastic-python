@@ -378,13 +378,22 @@ def mock_bleak_exc(
 class DummyClient:
     """Dummy client for testing BLE interface functionality."""
 
-    def __init__(self, disconnect_exception: Exception | None = None) -> None:
+    def __init__(
+        self,
+        disconnect_exception: Exception | None = None,
+        *,
+        on_unpair: Callable[[], None] | None = None,
+    ) -> None:
         """Create a test-double BLE client used by unit tests.
 
         Parameters
         ----------
         disconnect_exception : Exception | None
             Exception to raise when disconnect() is called; pass None to disable raising.
+        on_unpair : Callable[[], None] | None
+            Optional hook invoked after recording an unpair() call. Tests can
+            use this to simulate disconnect cleanup triggered by backend
+            unpair semantics.
 
         Attributes
         ----------
@@ -406,6 +415,8 @@ class DummyClient:
             Client address identifier, set to "dummy".
         disconnect_exception : Exception | None
             Stored exception raised by disconnect(), if any. (Default value = None)
+        on_unpair : Callable[[], None] | None
+            Optional callback invoked after unpair() records its call.
         services : types.SimpleNamespace
             Provides get_characteristic(specifier) -> None for characteristic lookups.
         bleak_client : types.SimpleNamespace
@@ -421,6 +432,7 @@ class DummyClient:
         self.stop_notify_calls: list[Any] = []
         self.address = "dummy"
         self.disconnect_exception = disconnect_exception
+        self.on_unpair = on_unpair
         self.services = SimpleNamespace(get_characteristic=lambda _specifier: None)
         # The bleak_client should be a separate object to correctly test identity checks
         self.bleak_client = SimpleNamespace(address=self.address)
@@ -523,6 +535,8 @@ class DummyClient:
         """Record an unpair invocation."""
         self.unpair_calls += 1
         self.unpair_await_timeouts.append(await_timeout)
+        if self.on_unpair is not None:
+            self.on_unpair()
 
     def close(self) -> None:
         """Record that the client was closed.

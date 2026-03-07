@@ -4,6 +4,7 @@ import asyncio
 import re
 import threading
 from collections.abc import Awaitable, Callable
+from functools import partial
 from typing import Any, cast
 
 import pytest
@@ -519,14 +520,20 @@ def test_bleclient_management_rejects_invalid_await_timeout(
             return None
 
     ble_client.bleak_client = cast(Any, _Backend())
+    invoke: Callable[[], None]
+    if method_name == "pair":
+        invoke = partial(
+            ble_client.pair,
+            confirm=True,
+            await_timeout=cast(Any, invalid_timeout),
+        )
+    else:
+        invoke = partial(ble_client.unpair, await_timeout=cast(Any, invalid_timeout))
 
     with pytest.raises(
         BLEClient.BLEError,
         match=re.escape(ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID),
     ):
-        if method_name == "pair":
-            ble_client.pair(confirm=True, await_timeout=cast(Any, invalid_timeout))
-        else:
-            ble_client.unpair(await_timeout=cast(Any, invalid_timeout))
+        invoke()
 
     assert backend_calls == {"pair": 0, "unpair": 0}

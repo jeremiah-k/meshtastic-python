@@ -782,7 +782,7 @@ def test_connection_orchestrator_allows_none_connect_timeout() -> None:
 def test_connection_orchestrator_rejects_invalid_connect_timeout_override(
     invalid_timeout: object,
 ) -> None:
-    """Explicit connect_timeout overrides should be finite positive values."""
+    """Explicit connect_timeout overrides should become BLEError on connect."""
     state_manager = BLEStateManager()
     state_lock = RLock()
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
@@ -802,7 +802,7 @@ def test_connection_orchestrator_rejects_invalid_connect_timeout_override(
         thread_coordinator=MagicMock(),
     )
 
-    with pytest.raises(ValueError, match="connect_timeout"):
+    with pytest.raises(MockBLEError, match="invalid connect_timeout"):
         orchestrator._establish_connection(
             address="AA:BB:CC:DD:EE:FF",
             current_address=None,

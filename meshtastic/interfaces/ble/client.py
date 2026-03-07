@@ -246,8 +246,7 @@ class BLEClient:
             requested operation.
         """
         if (
-            await_timeout is None
-            or isinstance(await_timeout, bool)
+            isinstance(await_timeout, bool)
             or not isinstance(await_timeout, (int, float))
             or not math.isfinite(await_timeout)
             or await_timeout <= 0

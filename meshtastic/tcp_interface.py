@@ -391,6 +391,12 @@ class TCPInterface(StreamInterface):
                     self.hostname,
                 )
             if isinstance(ex, (ValueError, TypeError)):
+                # Socket backends can surface fd-state races here (for example
+                # TypeError("fd is None")) after a descriptor is invalidated
+                # during close/reconnect. These cases are intentional,
+                # regression-tested transport failures and should continue down
+                # the reconnect path as OSError, not be treated as programmer
+                # bugs or silently ignored.
                 raise OSError(str(ex)) from ex
             raise
 

@@ -58,11 +58,32 @@ def test_examples_hello_world_serial_with_arg(
 
 @pytest.mark.examples
 def test_examples_example_config_yaml_is_valid() -> None:
-    """example_config.yaml should remain parseable and use canonical power keys."""
+    """example_config.yaml should remain parseable and use canonical renamed keys."""
     config = yaml.safe_load(EXAMPLE_CONFIG_PATH.read_text(encoding="utf-8"))
 
     assert config["owner"] == "Bob TBeam"
+    assert config["owner_short"] == "BOB"
+    assert config["channel_url"].startswith("https://www.meshtastic.org/")
+    assert "ownerShort" not in config
+    assert "channelUrl" not in config
+
+    assert config["config"]["device"]["serial_enabled"] is True
+    assert "serialEnabled" not in config["config"]["device"]
+    assert config["config"]["display"]["screen_on_secs"] == 600
+    assert "screenOnSecs" not in config["config"]["display"]
+    assert config["config"]["lora"]["region"] == "US"
+    assert config["config"]["lora"]["hop_limit"] == 3
+    assert "hopLimit" not in config["config"]["lora"]
+    assert config["config"]["network"]["ntp_server"] == "0.pool.ntp.org"
+    assert "ntpServer" not in config["config"]["network"]
+    assert config["config"]["position"]["gps_attempt_time"] == 900
+    assert config["config"]["position"]["position_broadcast_smart_enabled"] is True
+    assert "gpsAttemptTime" not in config["config"]["position"]
+    assert "positionBroadcastSmartEnabled" not in config["config"]["position"]
     assert config["config"]["power"]["wait_bluetooth_secs"] == 60
     assert config["config"]["power"]["ls_secs"] == 300
     assert config["config"]["power"]["min_wake_secs"] == 10
     assert config["config"]["power"]["sds_secs"] == 4294967295
+    assert config["module_config"]["telemetry"]["device_update_interval"] == 900
+    assert config["module_config"]["telemetry"]["environment_update_interval"] == 900
+    assert "deviceUpdateInterval" not in config["module_config"]["telemetry"]

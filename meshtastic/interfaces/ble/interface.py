@@ -1679,6 +1679,24 @@ class BLEInterface(MeshInterface):
     ) -> None:
         """Mark a BLE device as trusted via Linux bluetoothctl.
 
+        Parameters
+        ----------
+        address : str | None
+            Target device address or identifier. If None, use the active
+            connection target when available; otherwise fall back to the
+            interface's bound target.
+        timeout : float
+            Maximum seconds to wait for the `bluetoothctl` command to
+            complete. Must be a finite positive timeout. Defaults to
+            `_BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS`.
+
+        Raises
+        ------
+        BLEError
+            If the interface is closing, if the target address is blank or
+            unavailable, if not running on Linux, if `bluetoothctl` is not
+            found, or if the trust command fails.
+
         Notes
         -----
         - This helper is Linux-only and requires `bluetoothctl` on PATH.
@@ -1961,7 +1979,7 @@ class BLEInterface(MeshInterface):
                 connect_timeout=connect_timeout,
             )
         except ValueError as exc:
-            raise self.BLEError(str(exc)) from exc
+            raise self.BLEError(f"invalid connect_timeout: {exc}") from exc
 
         device_address = getattr(
             getattr(client, "bleak_client", None), "address", None

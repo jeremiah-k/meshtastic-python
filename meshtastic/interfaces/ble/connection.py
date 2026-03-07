@@ -582,10 +582,13 @@ class ConnectionOrchestrator:
         else:
             logger.info("Attempting discovery-mode connection (no address specified)")
 
-        direct_connect_timeout = self._resolve_connect_timeout(
-            pair_on_connect=pair_on_connect,
-            connect_timeout=connect_timeout,
-        )
+        try:
+            direct_connect_timeout = self._resolve_connect_timeout(
+                pair_on_connect=pair_on_connect,
+                connect_timeout=connect_timeout,
+            )
+        except ValueError as exc:
+            raise self.interface.BLEError(f"invalid connect_timeout: {exc}") from exc
         # Preserve the historical connection cadence: use the shorter timeout
         # for direct address attempts, but allow full connection time once a
         # device has been resolved via discovery unless the caller explicitly

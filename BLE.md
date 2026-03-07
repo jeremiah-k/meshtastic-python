@@ -257,7 +257,9 @@ iface.pair()
 # Backend unpair (Linux/Windows backends where supported by Bleak).
 iface.unpair()
 
-# Linux-only trust helper (calls bluetoothctl trust <address>).
+# Linux-only trust helper. Omit the address to use the current/bound target,
+# or pass one explicitly to trust a different resolved device.
+iface.trust()
 iface.trust("AA:BB:CC:DD:EE:FF")
 ```
 

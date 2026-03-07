@@ -726,8 +726,10 @@ def test_smoke1_ch_enable_and_disable() -> None:
     assert return_value == 0
     info_out = _wait_for_mutation_to_settle(
         predicate=lambda output: channel_name in output
+        and re.search(rf"^\s*Index\s+{idx}:\s+DISABLED", output, re.MULTILINE) is None
     )
     assert channel_name in info_out
+    assert re.search(rf"^\s*Index\s+{idx}:\s+DISABLED", info_out, re.MULTILINE) is None
 
     cleanup_return_value, cleanup_out = _run(
         "meshtastic",
@@ -809,7 +811,9 @@ def test_smoke1_ensure_ch_del_second_of_three_channels() -> None:
     idx_b = _extract_added_channel_index(out_b)
 
     if idx_a is None or idx_b is None:
-        _, info_out = _run("meshtastic", "--info")
+        info_out = _wait_for_mutation_to_settle(
+            predicate=lambda output: name_a in output and name_b in output
+        )
         idx_a = _find_channel_index_by_name(info_out, name_a)
         idx_b = _find_channel_index_by_name(info_out, name_b)
     assert idx_a is not None
@@ -817,8 +821,11 @@ def test_smoke1_ensure_ch_del_second_of_three_channels() -> None:
 
     rc_del, _ = _run("meshtastic", "--ch-del", "--ch-index", str(idx_a))
     assert rc_del == 0
-    out_info = _wait_for_mutation_to_settle(predicate=lambda output: name_b in output)
+    out_info = _wait_for_mutation_to_settle(
+        predicate=lambda output: name_b in output and name_a not in output
+    )
     assert name_b in out_info
+    assert name_a not in out_info
 
     idx_b_now = _find_channel_index_by_name(out_info, name_b)
     assert idx_b_now is not None
@@ -846,7 +853,9 @@ def test_smoke1_ensure_ch_del_third_of_three_channels() -> None:
     idx_b = _extract_added_channel_index(out_b)
 
     if idx_a is None or idx_b is None:
-        _, info_out = _run("meshtastic", "--info")
+        info_out = _wait_for_mutation_to_settle(
+            predicate=lambda output: name_a in output and name_b in output
+        )
         idx_a = _find_channel_index_by_name(info_out, name_a)
         idx_b = _find_channel_index_by_name(info_out, name_b)
     assert idx_a is not None
@@ -854,8 +863,11 @@ def test_smoke1_ensure_ch_del_third_of_three_channels() -> None:
 
     rc_del, _ = _run("meshtastic", "--ch-del", "--ch-index", str(idx_b))
     assert rc_del == 0
-    out_info = _wait_for_mutation_to_settle(predicate=lambda output: name_a in output)
+    out_info = _wait_for_mutation_to_settle(
+        predicate=lambda output: name_a in output and name_b not in output
+    )
     assert name_a in out_info
+    assert name_b not in out_info
 
     idx_a_now = _find_channel_index_by_name(out_info, name_a)
     assert idx_a_now is not None
@@ -966,15 +978,25 @@ def test_smoke1_set_wifi_settings() -> None:
     assert re.search(r"^Set network\.wifi_ssid to some_ssid", out, re.MULTILINE)
     assert re.search(r"^Set network\.wifi_psk to temp1234", out, re.MULTILINE)
     assert return_value == 0
-    _wait_for_mutation_to_settle()
+    deadline = time.monotonic() + INFO_READY_TIMEOUT_SECONDS
+    while True:
+        return_value, out = _run(
+            "meshtastic",
+            "--get",
+            "network.wifi_ssid",
+            "--get",
+            "network.wifi_psk",
+        )
+        if (
+            return_value == 0
+            and re.search(r"network\.wifi_ssid:\s+some_ssid", out, re.MULTILINE)
+            and re.search(r"network\.wifi_psk:\s+sekrit", out, re.MULTILINE)
+        ):
+            break
+        if time.monotonic() >= deadline:
+            pytest.fail(f"Wi-Fi settings never reached expected readback:\n{out}")
+        time.sleep(INFO_READY_POLL_INTERVAL_SECONDS)
 
-    return_value, out = _run(
-        "meshtastic",
-        "--get",
-        "network.wifi_ssid",
-        "--get",
-        "network.wifi_psk",
-    )
     assert re.search(r"network\.wifi_ssid:\s+some_ssid", out, re.MULTILINE)
     # PSK is intentionally masked on readback for security.
     assert re.search(r"network\.wifi_psk:\s+sekrit", out, re.MULTILINE)
