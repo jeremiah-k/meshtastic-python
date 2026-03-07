@@ -81,22 +81,14 @@ def _parse_host_and_port(host: str) -> tuple[str, int]:
             )
         )
     if host.count(":") >= 2 and not host.startswith("["):
-        host_part, separator, possible_port = host.rpartition(":")
-        if separator and possible_port.isdigit():
-            try:
-                ipaddress.IPv6Address(host_part)
-            except ipaddress.AddressValueError:
-                pass
-            else:
-                raise ValueError(
-                    INVALID_IPV6_BRACKETED_PORT.format(
-                        env_var=MESHTASTICD_HOST_ENV_VAR,
-                        host=host,
-                    )
-                )
+        # First check if the full host string is a valid IPv6 address.
         try:
             ipaddress.IPv6Address(host)
-        except ipaddress.AddressValueError as exc:
+        except ipaddress.AddressValueError:
+            # Not a valid IPv6 address as-is. Check if it might be an
+            # unbracketed IPv6:PORT combination (which is ambiguous and
+            # must be rejected with a helpful error message).
+            host_part, separator, possible_port = host.rpartition(":")
             if separator and possible_port.isdigit():
                 try:
                     ipaddress.IPv6Address(host_part)
@@ -108,14 +100,35 @@ def _parse_host_and_port(host: str) -> tuple[str, int]:
                             env_var=MESHTASTICD_HOST_ENV_VAR,
                             host=host,
                         )
-                    ) from exc
+                    ) from None
+            # Neither a valid IPv6 address nor a valid IPv6:PORT form
             raise ValueError(
                 INVALID_IPV6_BRACKETED_PORT.format(
                     env_var=MESHTASTICD_HOST_ENV_VAR,
                     host=host,
                 )
-            ) from exc
-        return host, DEFAULT_TCP_PORT
+            ) from None
+        else:
+            # Valid IPv6 address. Check for ambiguous ::X:Y form where
+            # Y looks like a port number. These should use bracket notation
+            # to disambiguate (e.g., [::1]:4401 instead of ::1:4401).
+            if host.startswith("::") and host.count(":") == 3:
+                # This is the ::X:Y pattern - ambiguous between IPv6 and IPv6:PORT
+                host_part, _, possible_port = host.rpartition(":")
+                if possible_port.isdigit():
+                    try:
+                        ipaddress.IPv6Address(host_part)
+                    except ipaddress.AddressValueError:
+                        pass
+                    else:
+                        # host_part is valid IPv6, so this is ambiguous
+                        raise ValueError(
+                            INVALID_IPV6_BRACKETED_PORT.format(
+                                env_var=MESHTASTICD_HOST_ENV_VAR,
+                                host=host,
+                            )
+                        )
+            return host, DEFAULT_TCP_PORT
 
     raw_port = _extract_port_component(host)
     if raw_port == "":

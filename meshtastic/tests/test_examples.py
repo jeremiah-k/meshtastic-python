@@ -88,9 +88,7 @@ def test_examples_example_config_yaml_is_valid() -> None:
     assert "channelUrl" not in config
 
     config_section = _require_mapping(config.get("config"), label="config")
-    module_config = _require_mapping(
-        config.get("module_config"), label="module_config"
-    )
+    module_config = _require_mapping(config.get("module_config"), label="module_config")
 
     bluetooth_cfg = _require_mapping(
         config_section.get("bluetooth"), label="config.bluetooth"

@@ -9,9 +9,9 @@ from hypothesis import strategies as st
 from meshtastic.interfaces.ble.constants import BLEConfig
 from meshtastic.interfaces.ble.gating import (
     _ADDR_LOCKS,
-    _CONNECTING_ADDRS,
     _CONNECTED_ADDRS,
     _CONNECTED_MARKED_AT,
+    _CONNECTING_ADDRS,
     _LOCK_HOLDERS,
     _REGISTRY_LOCK,
     _addr_key,
@@ -19,8 +19,8 @@ from meshtastic.interfaces.ble.gating import (
     _cleanup_addr_lock,
     _get_addr_lock,
     _is_currently_connected_elsewhere,
-    _mark_connecting,
     _mark_connected,
+    _mark_connecting,
     _mark_disconnected,
     _release_addr_lock,
 )
@@ -326,9 +326,7 @@ class TestIsCurrentlyConnectedElsewhere:
         monkeypatch.setattr(
             "meshtastic.interfaces.ble.gating.time.monotonic",
             lambda: (
-                BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS
-                + 1.0
-                + 1_000_000.0
+                BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS + 1.0 + 1_000_000.0
             ),
         )
 

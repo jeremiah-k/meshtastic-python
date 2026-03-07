@@ -1680,7 +1680,9 @@ def test_ble_interface_close_skips_management_gate_after_wait_timeout(
         raising=True,
     )
 
-    def _unexpected_management_gate(_address: str) -> contextlib.AbstractContextManager[None]:
+    def _unexpected_management_gate(
+        _address: str,
+    ) -> contextlib.AbstractContextManager[None]:
         gate_calls.append(_address)
         return contextlib.nullcontext()
 
@@ -3080,7 +3082,7 @@ def test_connect_rechecks_ownership_before_publishing_connected(
         raising=True,
     )
     monkeypatch.setattr(
-        iface, "_has_lost_gate_ownership", lambda *_keys: False, raising=True
+        iface, "_has_lost_gate_ownership", lambda *_keys: True, raising=True
     )
 
     def _establish_stub(
@@ -3385,9 +3387,7 @@ def test_find_device_multiple_matches_raises() -> None:
 def test_find_device_direct_connect_preserves_raw_address() -> None:
     """Direct-connect fallback should keep the raw BLE address format."""
     iface = object.__new__(ble_mod.BLEInterface)
-    iface._discovery_manager = SimpleNamespace(
-        _discover_devices=lambda _addr: []
-    )  # type: ignore[assignment]
+    iface._discovery_manager = SimpleNamespace(_discover_devices=lambda _addr: [])  # type: ignore[assignment]
 
     address = "AA:BB:CC:DD:EE:FF"
     direct_device = BLEInterface.findDevice(iface, address)

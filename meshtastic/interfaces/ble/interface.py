@@ -114,8 +114,8 @@ from meshtastic.interfaces.ble.gating import (
     _addr_lock_context,
     _clear_connecting,
     _is_currently_connected_elsewhere,
-    _mark_connecting,
     _mark_connected,
+    _mark_connecting,
     _mark_disconnected,
 )
 from meshtastic.interfaces.ble.notifications import NotificationManager
@@ -1508,7 +1508,11 @@ class BLEInterface(MeshInterface):
                 current_binding
             ) != sanitize_address(expected_binding):
                 raise self.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
-            current_target_address = self.findDevice(current_binding).address
+            # When there's an active connected client for an implicit target,
+            # use its concrete address directly instead of calling findDevice
+            # (which would trigger device discovery). The expected_target_address
+            # was already resolved from the active client before entering the gate.
+            current_target_address = expected_target_address
 
         if sanitize_address(current_target_address) != sanitize_address(
             expected_target_address
@@ -1677,7 +1681,9 @@ class BLEInterface(MeshInterface):
         if isinstance(connect_timeout, bool) or not isinstance(
             connect_timeout, numbers.Real
         ):
-            exc = ValueError("connect_timeout must be a finite positive number of seconds.")
+            exc = ValueError(
+                "connect_timeout must be a finite positive number of seconds."
+            )
             raise self.BLEError(ERROR_INVALID_CONNECT_TIMEOUT.format(exc=exc)) from exc
         try:
             ConnectionOrchestrator._resolve_connect_timeout(

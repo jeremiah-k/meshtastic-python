@@ -81,9 +81,7 @@ VALID_TELEMETRY_TYPES: tuple[TelemetryType, ...] = (
 VALID_TELEMETRY_TYPE_SET: frozenset[str] = frozenset(VALID_TELEMETRY_TYPES)
 UNKNOWN_SNR_QUARTER_DB = -128
 MISSING_NODE_NUM_ERROR_TEMPLATE = "NodeId {destination_id} has no numeric 'num' in DB"
-NO_RESPONSE_FIRMWARE_ERROR = (
-    "No response from node. At least firmware 2.1.22 is required on the destination node."
-)
+NO_RESPONSE_FIRMWARE_ERROR = "No response from node. At least firmware 2.1.22 is required on the destination node."
 
 
 def _format_missing_node_num_error(destination_id: int | str) -> str:

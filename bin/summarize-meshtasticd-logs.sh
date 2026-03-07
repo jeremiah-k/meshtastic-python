@@ -21,7 +21,7 @@ echo "### ${TITLE}"
 echo ""
 echo "- Runner script: \`${RUNNER_SCRIPT}\`"
 
-if [[ -n "${LOG_DIR}" && -d "${LOG_DIR}" ]]; then
+if [[ -n ${LOG_DIR} && -d ${LOG_DIR} ]]; then
 	shopt -s nullglob
 	log_files=("${LOG_DIR}"/*.log)
 	shopt -u nullglob
