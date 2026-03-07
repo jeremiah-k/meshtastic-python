@@ -157,6 +157,24 @@ def test_showInfo_tolerates_malformed_macaddr() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_showInfo_normalizes_nested_bytes_for_json_output() -> None:
+    """ShowInfo should serialize nested bytes payloads without raising TypeError."""
+    with MeshInterface(noProto=True) as iface:
+        iface.nodes = {
+            "!good": {
+                "num": 2,
+                "user": {"id": "!good"},
+                "position": {"raw_payload": b"\x01\x02"},
+            },
+        }
+        output = io.StringIO()
+        summary = iface.showInfo(file=output)
+
+    assert '"raw_payload": "base64:AQI="' in summary
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_getMyUser(iface_with_nodes: MeshInterface) -> None:
     """Test getMyUser()."""
     iface = iface_with_nodes
@@ -1825,7 +1843,7 @@ def test_on_response_position_prints_when_info_logging_not_visible(
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_logger_visible_info_handler_only_counts_console_stream_handlers() -> None:
-    """Only stdout/stderr handlers should suppress the stdout fallback."""
+    """Only stdout handlers should suppress the stdout fallback."""
     handler_logger = logging.getLogger("meshtastic.tests.visible-info-handler")
     original_handlers = list(handler_logger.handlers)
     original_propagate = handler_logger.propagate
@@ -1869,7 +1887,7 @@ def test_logger_visible_info_handler_only_counts_console_stream_handlers() -> No
         handler_logger.addHandler(rich_stderr_handler)
         assert (
             mesh_interface_module._logger_has_visible_info_handler(handler_logger)
-            is True
+            is False
         )
 
         handler_logger.removeHandler(rich_stderr_handler)
@@ -1946,6 +1964,25 @@ def test_on_response_traceroute_routing_no_response_raises() -> None:
             }
         )
         with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
+            iface.waitForTraceRoute(1.0)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_on_response_traceroute_parse_failures_surface_to_waiters() -> None:
+    """Traceroute parse errors should be recorded and raised by waitForTraceRoute()."""
+    with MeshInterface(noProto=True) as iface:
+        iface.onResponseTraceRoute(
+            {
+                "decoded": {
+                    "payload": 123,  # Invalid payload type for ParseFromString
+                }
+            }
+        )
+        with pytest.raises(
+            MeshInterface.MeshInterfaceError,
+            match="Failed to parse traceroute response payload",
+        ):
             iface.waitForTraceRoute(1.0)
 
 

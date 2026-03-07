@@ -373,7 +373,7 @@ def _prune_stale_connecting_claim_locked(key: str) -> bool:
     return False
 
 
-def _mark_connecting(addr: str | None, owner: Any | None = None) -> None:
+def _mark_connecting(addr: str | None, owner: object | None = None) -> None:
     """Record a provisional per-address ownership claim for an in-flight connect."""
     key = _addr_key(addr)
     if key is None:
@@ -388,7 +388,7 @@ def _mark_connecting(addr: str | None, owner: Any | None = None) -> None:
         _CONNECTING_MARKED_AT[key] = time.monotonic()
 
 
-def _clear_connecting(addr: str | None, owner: Any | None = None) -> None:
+def _clear_connecting(addr: str | None, owner: object | None = None) -> None:
     """Clear a provisional connecting claim, optionally requiring owner match."""
     key = _addr_key(addr)
     if key is None:

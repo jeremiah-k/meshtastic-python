@@ -2149,6 +2149,67 @@ def test_connect_wraps_invalid_connect_timeout_as_ble_error(
         iface.connect("AA:BB:CC:DD:EE:10", connect_timeout=cast(Any, 0.0))
 
 
+@pytest.mark.unit
+def test_connect_waits_for_inflight_management_before_establishing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """connect() should wait until in-flight management operations finish."""
+    iface = _build_minimal_connect_test_interface()
+    iface._management_lock = threading.RLock()
+    iface._management_idle_condition = threading.Condition(iface._management_lock)
+    iface._management_inflight = 1
+
+    wait_calls: list[bool] = []
+    establish_calls: list[bool] = []
+
+    def _wait_for_management() -> bool:
+        wait_calls.append(True)
+        iface._management_inflight = 0
+        return True
+
+    monkeypatch.setattr(
+        iface._management_idle_condition,
+        "wait",
+        _wait_for_management,
+        raising=True,
+    )
+    monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
+    monkeypatch.setattr(iface, "_get_existing_client_if_valid", lambda _req: None)
+    monkeypatch.setattr(iface, "_raise_if_duplicate_connect", lambda _key: None)
+    monkeypatch.setattr(iface, "_finalize_connection_gates", lambda *_args: None)
+    monkeypatch.setattr(
+        iface,
+        "_verify_and_publish_connected",
+        lambda *_args, **_kwargs: None,
+    )
+
+    def _establish_stub(
+        _address: str | None,
+        _normalized_request: str | None,
+        _address_key: str | None,
+        *,
+        pair_on_connect: bool = False,
+        connect_timeout: float | None = None,
+    ) -> tuple[DummyClient, str | None, str | None]:
+        _ = (pair_on_connect, connect_timeout)
+        establish_calls.append(True)
+        client = DummyClient()
+        with iface._state_lock:
+            cast(Any, iface).client = client
+            iface.address = client.address
+            iface._state_manager._reset_to_disconnected()
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
+        return client, None, None
+
+    monkeypatch.setattr(iface, "_establish_and_update_client", _establish_stub)
+
+    iface.connect("AA:BB:CC:DD:EE:10")
+
+    assert wait_calls == [True]
+    assert establish_calls == [True]
+
+
 def test_connect_does_not_relabel_unrelated_establish_connection_value_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

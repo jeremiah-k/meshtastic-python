@@ -714,10 +714,11 @@ def _build_interface(
         _ = args
         connect_calls.append(_address)
         connect_call_kwargs.append(dict(kwargs))
-        _self.client = client
-        _self._disconnect_notified = False
-        if hasattr(_self, "_reconnected_event"):
-            _self._reconnected_event.set()
+        with _self._state_lock:
+            _self.client = client
+            _self._disconnect_notified = False
+            if hasattr(_self, "_reconnected_event"):
+                _self._reconnected_event.set()
         return client
 
     def _stub_start_config(_self: "BLEInterface") -> None:

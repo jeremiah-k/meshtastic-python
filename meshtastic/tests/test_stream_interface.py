@@ -130,6 +130,8 @@ def test_read_bytes_propagates_type_error() -> None:
 
         with pytest.raises(TypeError, match="fd is None"):
             iface._read_bytes(5)
+        stream.close.assert_not_called()
+        assert iface.stream is stream
     finally:
         iface.close()
 
@@ -147,6 +149,8 @@ def test_write_bytes_propagates_type_error() -> None:
 
         with pytest.raises(TypeError, match="fd is None"):
             iface._write_bytes(b"xxx")
+        stream.close.assert_not_called()
+        assert iface.stream is stream
     finally:
         iface.close()
 

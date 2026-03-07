@@ -109,11 +109,12 @@ def _parse_host_and_port(host: str) -> tuple[str, int]:
                 )
             ) from exc
         else:
-            # Valid IPv6 address. Check for ambiguous ::X:Y form where
-            # Y looks like a port number. These should use bracket notation
-            # to disambiguate (e.g., [::1]:4401 instead of ::1:4401).
+            # Valid IPv6 address. Check the specific ambiguous ::X:Y shape:
+            # it starts with "::" and has exactly 3 colons, so the tail can be
+            # read either as two IPv6 segments or as HOST:PORT. Split on the
+            # last colon and if host_part is still valid IPv6 with numeric tail,
+            # require bracketed HOST:PORT form (INVALID_IPV6_BRACKETED_PORT).
             if host.startswith("::") and host.count(":") == 3:
-                # This is the ::X:Y pattern - ambiguous between IPv6 and IPv6:PORT
                 host_part, _, possible_port = host.rpartition(":")
                 if possible_port.isdigit():
                     try:

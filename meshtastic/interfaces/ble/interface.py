@@ -253,6 +253,7 @@ class BLEInterface(MeshInterface):
         self.auto_reconnect = auto_reconnect
         self.pair_on_connect = pair_on_connect
         self._disconnect_notified = False  # Prevents duplicate disconnect events
+        self._client_publish_pending = False  # Hide provisional clients.
         self._last_disconnect_source: str = (
             ""  # Set by _handle_disconnect on each disconnect
         )
@@ -1428,7 +1429,12 @@ class BLEInterface(MeshInterface):
         """
         requested_identifier = address if address is not None else self.address
         with self._state_lock:
-            current_client = self.client if address is None else None
+            current_client = (
+                self.client
+                if address is None
+                and not getattr(self, "_client_publish_pending", False)
+                else None
+            )
         if current_client is not None and current_client.isConnected():
             return current_client
         normalized_request = sanitize_address(requested_identifier)
@@ -1458,7 +1464,12 @@ class BLEInterface(MeshInterface):
         """
         normalized_target = sanitize_address(target_address)
         with self._state_lock:
-            current_client = self.client if prefer_current_client else None
+            current_client = (
+                self.client
+                if prefer_current_client
+                and not getattr(self, "_client_publish_pending", False)
+                else None
+            )
         if current_client is not None and current_client.isConnected():
             current_address = self._extract_client_address(current_client)
             if sanitize_address(current_address) == normalized_target:
@@ -2071,7 +2082,9 @@ class BLEInterface(MeshInterface):
             existing_client = self.client
             last_connection_request = self._last_connection_request
             is_connected = (
-                self._state_manager._is_connected and not self._disconnect_notified
+                self._state_manager._is_connected
+                and not self._disconnect_notified
+                and not getattr(self, "_client_publish_pending", False)
             )
         if not is_connected or existing_client is None:
             return None
@@ -2150,6 +2163,7 @@ class BLEInterface(MeshInterface):
                 self.address = device_address
                 self.client = client
                 self._disconnect_notified = False
+                self._client_publish_pending = True
                 normalized_device_address = sanitize_address(device_address or "")
                 if normalized_request is not None:
                     self._last_connection_request = normalized_request
@@ -2261,6 +2275,8 @@ class BLEInterface(MeshInterface):
                 connected_device_key,
                 connection_alias_key,
             )
+            if still_owned and not lost_gate_ownership:
+                self._client_publish_pending = False
         if still_owned and not lost_gate_ownership:
             self._connected()
             self._emit_verified_connection_side_effects(connected_client)
@@ -2320,6 +2336,7 @@ class BLEInterface(MeshInterface):
             if self.client is client:
                 is_closing = self._state_manager._is_closing or self._closed
                 self.client = None
+                self._client_publish_pending = False
                 # The disconnect callback remains registered on `client` until
                 # best-effort close completes, so mark this interface as already
                 # notified before close() can trigger a stale callback.
@@ -2479,71 +2496,95 @@ class BLEInterface(MeshInterface):
         # Discovery-mode connects intentionally skip gating to avoid holding the
         # global registry lock during long-running scan/discovery operations.
         try:
-            with contextlib.ExitStack() as stack:
-                if address_registry_key is not None:
-                    self._raise_if_duplicate_connect(address_registry_key)
-                    # Acquire the per-address lock without holding _REGISTRY_LOCK to
-                    # avoid lock-order inversion with paths that hold address locks
-                    # and then take registry lock to mark ownership.
-                    addr_lock = stack.enter_context(
-                        _addr_lock_context(address_registry_key)
-                    )
-                    stack.enter_context(addr_lock)
-                    # Re-check after waiting for the address gate to close the TOCTOU window.
-                    self._raise_if_duplicate_connect(address_registry_key)
+            management_lock = getattr(self, "_management_lock", None)
+            management_idle_condition = getattr(self, "_management_idle_condition", None)
+            while True:
+                # Management commands increment `_management_inflight` under
+                # `_connect_lock` and then continue work outside interface
+                # locks. Wait for current operations to settle, then re-check
+                # once we have `_connect_lock` to avoid the handoff race.
+                if (
+                    management_lock is not None
+                    and management_idle_condition is not None
+                ):
+                    with management_lock:
+                        while getattr(self, "_management_inflight", 0) > 0:
+                            management_idle_condition.wait()
 
-                with self._connect_lock:
-                    # Re-check closing state inside connect_lock for extra safety
-                    self._validate_connection_preconditions()
+                with contextlib.ExitStack() as stack:
+                    if address_registry_key is not None:
+                        self._raise_if_duplicate_connect(address_registry_key)
+                        # Acquire the per-address lock without holding
+                        # _REGISTRY_LOCK to avoid lock-order inversion with
+                        # paths that hold address locks and then take registry
+                        # lock to mark ownership.
+                        addr_lock = stack.enter_context(
+                            _addr_lock_context(address_registry_key)
+                        )
+                        stack.enter_context(addr_lock)
+                        # Re-check after waiting for the address gate to close
+                        # the TOCTOU window.
+                        self._raise_if_duplicate_connect(address_registry_key)
 
-                    # Check for existing valid client
-                    existing_client = self._get_existing_client_if_valid(
-                        normalized_request
-                    )
-                    if existing_client:
-                        logger.debug("Already connected, skipping connect call.")
-                        return existing_client
+                    with self._connect_lock:
+                        if management_lock is not None:
+                            with management_lock:
+                                if getattr(self, "_management_inflight", 0) > 0:
+                                    continue
 
-                    # Establish new connection and update state
-                    (
-                        connected_client,
-                        connected_device_key,
-                        connection_alias_key,
-                    ) = self._establish_and_update_client(
-                        address,
-                        normalized_request,
-                        address_registry_key,
-                        pair_on_connect=pair_on_connect,
-                        connect_timeout=connect_timeout,
-                    )
-                    provisional_keys = self._sorted_address_keys(
-                        address_registry_key,
-                        connected_device_key,
-                        connection_alias_key,
-                    )
-                    self._mark_address_keys_connecting(*provisional_keys)
-            # Finalize after the per-address lock scope exits to avoid nested
-            # lock-order inversions when gate finalization reacquires address locks.
-            if connected_client is None:
-                raise self.BLEError(ERROR_NO_CLIENT_ESTABLISHED)
-            self._finalize_connection_gates(
-                connected_client, connected_device_key, connection_alias_key
-            )
-            restored_connect_address = self._extract_client_address(connected_client)
-            if (
-                restored_connect_address is None
-                and requested_identifier is not None
-                and _looks_like_ble_address(requested_identifier)
-            ):
-                restored_connect_address = requested_identifier
-            self._verify_and_publish_connected(
-                connected_client,
-                connected_device_key,
-                connection_alias_key,
-                restore_address=restored_connect_address,
-                restore_last_connection_request=normalized_request,
-            )
-            return connected_client
+                        # Re-check closing state inside connect_lock for extra safety
+                        self._validate_connection_preconditions()
+
+                        # Check for existing valid client
+                        existing_client = self._get_existing_client_if_valid(
+                            normalized_request
+                        )
+                        if existing_client:
+                            logger.debug("Already connected, skipping connect call.")
+                            return existing_client
+
+                        # Establish new connection and update state
+                        (
+                            connected_client,
+                            connected_device_key,
+                            connection_alias_key,
+                        ) = self._establish_and_update_client(
+                            address,
+                            normalized_request,
+                            address_registry_key,
+                            pair_on_connect=pair_on_connect,
+                            connect_timeout=connect_timeout,
+                        )
+                        provisional_keys = self._sorted_address_keys(
+                            address_registry_key,
+                            connected_device_key,
+                            connection_alias_key,
+                        )
+                        self._mark_address_keys_connecting(*provisional_keys)
+
+                # Finalize after the per-address lock scope exits to avoid
+                # nested lock-order inversions when gate finalization
+                # reacquires address locks.
+                if connected_client is None:
+                    raise self.BLEError(ERROR_NO_CLIENT_ESTABLISHED)
+                self._finalize_connection_gates(
+                    connected_client, connected_device_key, connection_alias_key
+                )
+                restored_connect_address = self._extract_client_address(connected_client)
+                if (
+                    restored_connect_address is None
+                    and requested_identifier is not None
+                    and _looks_like_ble_address(requested_identifier)
+                ):
+                    restored_connect_address = requested_identifier
+                self._verify_and_publish_connected(
+                    connected_client,
+                    connected_device_key,
+                    connection_alias_key,
+                    restore_address=restored_connect_address,
+                    restore_last_connection_request=normalized_request,
+                )
+                return connected_client
         finally:
             self._clear_address_keys_connecting(*provisional_keys)
 

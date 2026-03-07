@@ -175,12 +175,13 @@ fi
 
 HAS_SMOKEVIRT_TARGET=false
 for target in "${PYTEST_TARGETS[@]}"; do
-	if [[ ${target} == *test_smokevirt.py ]]; then
+	normalized_target="${target%%::*}"
+	if [[ ${normalized_target} == *test_smokevirt.py ]]; then
 		HAS_SMOKEVIRT_TARGET=true
 		SMOKEVIRT_TARGETS+=("${target}")
 	fi
 	for default_target in "${DEFAULT_PYTEST_TARGETS[@]}"; do
-		if [[ ${target} == "${default_target}" ]]; then
+		if [[ ${normalized_target} == "${default_target}" ]]; then
 			MESHTASTICD_CI_TARGETS+=("${target}")
 			break
 		fi

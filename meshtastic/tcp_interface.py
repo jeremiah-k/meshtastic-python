@@ -37,6 +37,7 @@ class TCPInterface(StreamInterface):
         "got {0!r} (type: {1})"
     )
     SOCKET_NOT_CONNECTED_ERROR = "TCP socket is closed or not connected"
+    SOCKET_READ_DEAD_ERROR_LOG = "Socket read error, treating as dead socket: %s"
     WRITE_TIMEOUT_ERROR = "TCP write timed out waiting for socket readiness"
     WRITE_NO_PROGRESS_ERROR = "TCP write returned no bytes"
     CONNECT_SHUTTING_DOWN_ERROR = "Cannot connect to {}: interface is shutting down"
@@ -606,7 +607,7 @@ class TCPInterface(StreamInterface):
             try:
                 data = sock.recv(length)
             except TCP_IO_EXCEPTIONS as ex:
-                logger.debug("Socket read error, treating as dead socket: %s", ex)
+                logger.debug(self.SOCKET_READ_DEAD_ERROR_LOG, ex)
                 data = b""
             # empty byte indicates a disconnected socket,
             # we need to handle it to avoid an infinite loop reading from null socket

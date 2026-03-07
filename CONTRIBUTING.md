@@ -151,6 +151,10 @@ smoke1_destructive`).
 
 To run the destructive lane (reboot/factory reset/config mutation checks):
 
+> Warning: `make smoke1-destructive` reboots the attached device, mutates
+> configuration, and can factory-reset the node. Run this only on disposable
+> test hardware, or export/backup the device configuration first.
+
 ```bash
 make smoke1-destructive
 ```

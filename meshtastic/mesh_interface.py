@@ -2,6 +2,7 @@
 
 # pylint: disable=R0917,C0302
 
+import base64
 import collections
 import copy
 import json
@@ -91,16 +92,11 @@ def _format_missing_node_num_error(destination_id: int | str) -> str:
 
 
 def _logger_has_visible_info_handler(target_logger: logging.Logger) -> bool:
-    """Return whether INFO logs from `target_logger` are currently visible."""
+    """Return whether INFO logs from `target_logger` are currently visible on stdout."""
     if target_logger.disabled or target_logger.getEffectiveLevel() > logging.INFO:
         return False
 
-    visible_console_streams = {
-        sys.stdout,
-        sys.stderr,
-        sys.__stdout__,
-        sys.__stderr__,
-    }
+    visible_stdout_streams = {sys.stdout, sys.__stdout__}
     current_logger: logging.Logger | None = target_logger
     while current_logger is not None:
         for handler in current_logger.handlers:
@@ -108,8 +104,8 @@ def _logger_has_visible_info_handler(target_logger: logging.Logger) -> bool:
             console = getattr(handler, "console", None)
             console_stream = getattr(console, "file", None)
             if handler.level <= logging.INFO and (
-                handler_stream in visible_console_streams
-                or console_stream in visible_console_streams
+                handler_stream in visible_stdout_streams
+                or console_stream in visible_stdout_streams
             ):
                 return True
         if not current_logger.propagate:
@@ -123,6 +119,24 @@ def _emit_response_summary(message: str) -> None:
     logger.info("%s", message)
     if not _logger_has_visible_info_handler(logger):
         print(message)
+
+
+def _normalize_json_serializable(value: Any) -> Any:
+    """Recursively normalize common non-JSON-native values into JSON-safe forms."""
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return "base64:" + base64.b64encode(bytes(value)).decode("ascii")
+    if isinstance(value, dict):
+        return {
+            str(key): _normalize_json_serializable(inner_value)
+            for key, inner_value in value.items()
+        }
+    if isinstance(value, list):
+        return [_normalize_json_serializable(item) for item in value]
+    if isinstance(value, tuple):
+        return [_normalize_json_serializable(item) for item in value]
+    if isinstance(value, set):
+        return [_normalize_json_serializable(item) for item in value]
+    return value
 
 
 def _timeago(delta_secs: int) -> str:
@@ -487,7 +501,9 @@ class MeshInterface:  # pylint: disable=R0902
             # use id as dictionary key for correct json format in list of nodes
             node_id = user.get("id")
             if node_id is not None:
-                nodes[str(node_id)] = n2
+                nodes[str(node_id)] = cast(
+                    dict[str, Any], _normalize_json_serializable(n2)
+                )
         infos = owner + myinfo + metadata + mesh + json.dumps(nodes, indent=2)
         if file is None:
             file = sys.stdout
@@ -1288,8 +1304,15 @@ class MeshInterface:  # pylint: disable=R0902
             return
 
         routeDiscovery = mesh_pb2.RouteDiscovery()
-        routeDiscovery.ParseFromString(decoded["payload"])
-        asDict = google.protobuf.json_format.MessageToDict(routeDiscovery)
+        try:
+            routeDiscovery.ParseFromString(decoded["payload"])
+            asDict = google.protobuf.json_format.MessageToDict(routeDiscovery)
+        except (protobuf_message.DecodeError, KeyError, TypeError) as exc:
+            self._set_wait_error(
+                "receivedTraceRoute",
+                f"Failed to parse traceroute response payload: {exc}",
+            )
+            return
 
         def _node_label(node_num: int) -> str:
             """Return a human-readable identifier for a numeric node.
