@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 OTA_SOCKET_TIMEOUT_SECONDS = 15
 OTA_CHUNK_SIZE_BYTES = 1024
 FILE_HASH_READ_CHUNK_SIZE_BYTES = 4096
+OTA_PROGRESS_LOG_PERCENT_STEP = 5.0
 
 
 class _SHA256Digest(Protocol):
@@ -97,9 +98,10 @@ class ESP32WiFiOTA:
         ----------
         progress_callback : Callable[[int, int], None] | None, optional
             Callback invoked with ``(bytes_sent, total_bytes)`` during transfer.
-            When not provided, progress is printed to stdout.
+            When not provided, progress is logged at INFO in coarse increments.
         """
         size = os.path.getsize(self._filename)
+        next_progress_log_percent = OTA_PROGRESS_LOG_PERCENT_STEP
 
         logger.info(
             "Starting OTA update with %s (%d bytes, hash %s)",
@@ -143,13 +145,21 @@ class ESP32WiFiOTA:
                     if progress_callback:
                         progress_callback(sent_bytes, size)
                     else:
-                        print(
-                            f"[{sent_bytes / size * 100:5.1f}%] Sent {sent_bytes} of {size} bytes...",
-                            end="\r",
-                        )
-
-            if not progress_callback:
-                print()
+                        progress_percent = (sent_bytes / size * 100) if size else 100.0
+                        if (
+                            sent_bytes == size
+                            or progress_percent >= next_progress_log_percent
+                        ):
+                            logger.info(
+                                "OTA progress: %.1f%% (%d/%d bytes)",
+                                progress_percent,
+                                sent_bytes,
+                                size,
+                            )
+                            while next_progress_log_percent <= progress_percent:
+                                next_progress_log_percent += (
+                                    OTA_PROGRESS_LOG_PERCENT_STEP
+                                )
 
             # Wait for OK from device
             logger.info("Firmware sent, waiting for verification...")

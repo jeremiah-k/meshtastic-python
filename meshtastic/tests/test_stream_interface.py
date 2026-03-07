@@ -119,6 +119,40 @@ def test_read_bytes_wraps_stream_exceptions_as_stream_closed() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_read_bytes_propagates_type_error() -> None:
+    """_read_bytes should not swallow backend TypeError programming errors."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        stream = MagicMock()
+        stream.is_open = True
+        stream.read.side_effect = TypeError("fd is None")
+        iface.stream = stream
+
+        with pytest.raises(TypeError, match="fd is None"):
+            iface._read_bytes(5)
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_write_bytes_propagates_type_error() -> None:
+    """_write_bytes should not swallow backend TypeError programming errors."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        stream = MagicMock()
+        stream.is_open = True
+        stream.write.side_effect = TypeError("fd is None")
+        iface.stream = stream
+
+        with pytest.raises(TypeError, match="fd is None"):
+            iface._write_bytes(b"xxx")
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_read_bytes_raises_stream_closed_when_backend_returns_none() -> None:
     """_read_bytes should treat None from backend read as closed stream."""
     iface = StreamInterface(noProto=True, connectNow=False)
@@ -147,6 +181,24 @@ def test_close_closes_stream_even_without_reader_thread() -> None:
 
     stream.close.assert_called_once()
     assert iface.stream is None
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_close_stream_safely_suppresses_type_error() -> None:
+    """_close_stream_safely() should swallow backend TypeError during close."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        stream = MagicMock()
+        stream.close.side_effect = TypeError("fd is None")
+        iface.stream = stream
+
+        iface._close_stream_safely()
+
+        stream.close.assert_called_once()
+        assert iface.stream is None
+    finally:
+        iface.close()
 
 
 @pytest.mark.unit

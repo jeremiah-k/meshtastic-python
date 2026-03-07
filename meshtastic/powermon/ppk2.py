@@ -138,8 +138,8 @@ class PPK2PowerSupply(PowerSupply):
             # update invariants
             if len(samples) > 0:
                 # The following operations could be expensive, so do outside of the lock.
-                # TODO: Profile representative workloads and switch to numpy reduction
-                # helpers only if end-to-end CPU usage improves.
+                # Keep pure-Python reduction here unless profiling shows numpy
+                # materially improves end-to-end reader throughput.
                 batch_max = max(samples)
                 batch_min = min(samples)
                 latest_sum = sum(samples)

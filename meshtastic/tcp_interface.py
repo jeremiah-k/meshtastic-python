@@ -14,7 +14,11 @@ import threading
 import time
 from typing import IO, Any, Callable
 
-from meshtastic.stream_interface import WRITE_PROGRESS_TIMEOUT_SECONDS, StreamInterface
+from meshtastic.stream_interface import (
+    STREAM_CLOSE_EXCEPTIONS,
+    WRITE_PROGRESS_TIMEOUT_SECONDS,
+    StreamInterface,
+)
 
 DEFAULT_TCP_PORT = 4403
 logger = logging.getLogger(__name__)
@@ -359,8 +363,10 @@ class TCPInterface(StreamInterface):
         sock = self.socket
         if sock is None:
             raise ConnectionError(self.SOCKET_NOT_CONNECTED_ERROR)
+        # Validate payload shape before entering socket-recovery handling so
+        # caller contract errors do not reset an otherwise healthy socket.
+        payload = memoryview(b)
         try:
-            payload = memoryview(b)
             total_sent = 0
             write_deadline = time.monotonic() + WRITE_PROGRESS_TIMEOUT_SECONDS
             while total_sent < len(payload):
@@ -375,7 +381,7 @@ class TCPInterface(StreamInterface):
                     raise OSError(self.WRITE_NO_PROGRESS_ERROR)
                 total_sent += sent
                 write_deadline = time.monotonic() + WRITE_PROGRESS_TIMEOUT_SECONDS
-        except (OSError, ValueError) as ex:
+        except STREAM_CLOSE_EXCEPTIONS as ex:
             logger.warning(
                 "TCP write failed (%d bytes), resetting socket: %s", len(b), ex
             )
@@ -384,7 +390,13 @@ class TCPInterface(StreamInterface):
                     "Reconnect deferred to reader/reconnect path for %s",
                     self.hostname,
                 )
-            if isinstance(ex, ValueError):
+            if isinstance(ex, (ValueError, TypeError)):
+                # Socket backends can surface fd-state races here (for example
+                # TypeError("fd is None")) after a descriptor is invalidated
+                # during close/reconnect. These cases are intentional,
+                # regression-tested transport failures and should continue down
+                # the reconnect path as OSError, not be treated as programmer
+                # bugs or silently ignored.
                 raise OSError(str(ex)) from ex
             raise
 

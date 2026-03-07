@@ -38,6 +38,7 @@ class BLEConfig:
     GATT_IO_TIMEOUT = 10.0
     NOTIFICATION_START_TIMEOUT: float | None = 10.0
     CONNECTION_TIMEOUT = 60.0
+    MANAGEMENT_AWAIT_TIMEOUT: float = 60.0
     EMPTY_READ_WARNING_COOLDOWN = 10.0
     AUTO_RECONNECT_INITIAL_DELAY = 1.0
     AUTO_RECONNECT_MAX_DELAY = 30.0
@@ -82,6 +83,7 @@ SERVICE_CHARACTERISTIC_RETRY_DELAY = BLEConfig.SERVICE_CHARACTERISTIC_RETRY_DELA
 GATT_IO_TIMEOUT = BLEConfig.GATT_IO_TIMEOUT
 NOTIFICATION_START_TIMEOUT = BLEConfig.NOTIFICATION_START_TIMEOUT
 CONNECTION_TIMEOUT = BLEConfig.CONNECTION_TIMEOUT
+MANAGEMENT_AWAIT_TIMEOUT = BLEConfig.MANAGEMENT_AWAIT_TIMEOUT
 EMPTY_READ_WARNING_COOLDOWN = BLEConfig.EMPTY_READ_WARNING_COOLDOWN
 AUTO_RECONNECT_INITIAL_DELAY = BLEConfig.AUTO_RECONNECT_INITIAL_DELAY
 AUTO_RECONNECT_MAX_DELAY = BLEConfig.AUTO_RECONNECT_MAX_DELAY
@@ -125,6 +127,26 @@ ERROR_ADDRESS_RESOLUTION_FAILED = "Address resolution failed, cannot create devi
 ERROR_INTERFACE_CLOSING = "Cannot connect while interface is closing"
 ERROR_CONNECTION_SUPPRESSED = "Connection suppressed: recently connected elsewhere"
 ERROR_NO_CLIENT_ESTABLISHED = "Connection failed: no BLE client established"
+ERROR_MANAGEMENT_ADDRESS_EMPTY = "Management operations require a non-empty address."
+ERROR_MANAGEMENT_ADDRESS_REQUIRED = (
+    "Management operations require an explicit address when no device is connected."
+)
+ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID = "pair()/unpair() require a finite positive await_timeout to avoid blocking shutdown."
+ERROR_MANAGEMENT_TARGET_CHANGED = "Management target changed while the operation was pending; retry with an explicit address."
+ERROR_MANAGEMENT_CONNECTING = (
+    "Management operations are unavailable while a connection is in progress."
+)
+ERROR_INVALID_CONNECT_TIMEOUT = "invalid connect_timeout: {exc}"
+ERROR_TRUST_ADDRESS_NOT_RESOLVED = (
+    "Cannot trust device: {address!r} did not resolve to a BLE address."
+)
+ERROR_TRUST_INVALID_TIMEOUT = "Trust timeout must be a positive number of seconds."
+ERROR_TRUST_LINUX_ONLY = "trust() is only supported on Linux hosts via bluetoothctl."
+ERROR_TRUST_BLUETOOTHCTL_MISSING = "Cannot trust device: bluetoothctl was not found."
+ERROR_TRUST_COMMAND_TIMEOUT = (
+    "bluetoothctl trust timed out after {timeout:.1f}s for {address}"
+)
+ERROR_TRUST_COMMAND_FAILED = "bluetoothctl trust failed for {address}: {detail}"
 CONNECTION_ERROR_EMPTY_ADDRESS = "Cannot connect: empty address provided"
 CONNECTION_ERROR_INVALIDATED_BY_CONCURRENT_DISCONNECT = (
     "Connection invalidated by concurrent disconnect"
@@ -134,6 +156,9 @@ CONNECTION_ERROR_CLIENT_DISCONNECTED_DURING_FINALIZATION = (
 )
 CONNECTION_ERROR_STATE_TRANSITION_INVALIDATED = (
     "Connection invalidated during state transition to connected"
+)
+CONNECTION_ERROR_LOST_OWNERSHIP = (
+    "Connection invalidated: interface lost ownership of connected client"
 )
 UNREACHABLE_ADDRESSED_DEVICES_MSG = (
     "Unreachable: all addressed_devices length cases are handled"
@@ -145,6 +170,16 @@ BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT = BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIME
 BLECLIENT_ERROR_ASYNC_TIMEOUT = "Async operation timed out"
 BLECLIENT_ERROR_CANCELLED = "Async operation was cancelled"
 BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED = "Cannot pair: BLE client not initialized"
+BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED = (
+    "Cannot pair: BLE backend does not support pairing on this platform"
+)
+BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT = BLEConfig.MANAGEMENT_AWAIT_TIMEOUT
+BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED = (
+    "Cannot unpair: BLE client not initialized"
+)
+BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED = (
+    "Cannot unpair: BLE backend does not support unpair on this platform"
+)
 BLECLIENT_ERROR_CANNOT_CONNECT_NOT_INITIALIZED = (
     "Cannot connect: BLE client not initialized"
 )
