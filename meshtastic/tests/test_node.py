@@ -1,369 +1,487 @@
-"""Meshtastic unit tests for node.py"""
+"""Meshtastic unit tests for node.py."""
+
 # pylint: disable=C0302
 
+import base64
 import logging
 import re
+import threading
+from collections.abc import Callable
+from typing import Any, Literal, Protocol, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pytest import CaptureFixture, LogCaptureFixture
 
-from ..protobuf import admin_pb2, localonly_pb2, config_pb2
-from ..protobuf.channel_pb2 import Channel # pylint: disable=E0611
-from ..node import Node
-from ..serial_interface import SerialInterface
+from .. import node as node_module
 from ..mesh_interface import MeshInterface
+from ..node import MAX_CHANNELS, Node
+from ..protobuf import (
+    admin_pb2,
+    apponly_pb2,
+    config_pb2,
+    localonly_pb2,
+    mesh_pb2,
+)
+from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
+from ..serial_interface import SerialInterface
+from ..util import Acknowledgment, fromPSK
 
-# from ..config_pb2 import Config
-# from ..cannedmessages_pb2 import (CannedMessagePluginMessagePart1, CannedMessagePluginMessagePart2,
-#                                  CannedMessagePluginMessagePart3, CannedMessagePluginMessagePart4,
-#                                  CannedMessagePluginMessagePart5)
-# from ..util import Timeout
-
-
-@pytest.mark.unit
-def test_node(capsys):
-    """Test that we can instantiate a Node"""
-    iface = MagicMock(autospec=SerialInterface)
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        mo.localNode.getChannelByName.return_value = None
-        mo.myInfo.max_channels = 8
-        anode = Node(mo, "bar", noProto=True)
-        lc = localonly_pb2.LocalConfig()
-        anode.localConfig = lc
-        lc.lora.CopyFrom(config_pb2.Config.LoRaConfig())
-        anode.moduleConfig = localonly_pb2.LocalModuleConfig()
-        anode.showInfo()
-        out, err = capsys.readouterr()
-        assert re.search(r'Preferences', out)
-        assert re.search(r'Module preferences', out)
-        assert re.search(r'Channels', out)
-        assert re.search(r'Primary channel URL', out)
-        assert not re.search(r'remote node', out)
-        assert err == ''
-
-# TODO
-# @pytest.mark.unit
-# def test_node_requestConfig(capsys):
-#    """Test run requestConfig"""
-#    iface = MagicMock(autospec=SerialInterface)
-#    amesg = MagicMock(autospec=AdminMessage)
-#    with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#        with patch('meshtastic.admin_pb2.AdminMessage', return_value=amesg):
-#            anode = Node(mo, 'bar')
-#            anode.requestConfig()
-#    out, err = capsys.readouterr()
-#    assert re.search(r'Requesting preferences from remote node', out, re.MULTILINE)
-#    assert err == ''
+CHANNEL_LIMIT = MAX_CHANNELS
 
 
-# @pytest.mark.unit
-# def test_node_get_canned_message_with_all_parts(capsys):
-#    """Test run get_canned_message()"""
-#    iface = MagicMock(autospec=SerialInterface)
-#    amesg = MagicMock(autospec=AdminMessage)
-#    with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#        with patch('meshtastic.admin_pb2.AdminMessage', return_value=amesg):
-#            # we have a sleep in this method, so override it so it goes fast
-#            with patch('time.sleep'):
-#                anode = Node(mo, 'bar')
-#                anode.cannedPluginMessagePart1 = 'a'
-#                anode.cannedPluginMessagePart2 = 'b'
-#                anode.cannedPluginMessagePart3 = 'c'
-#                anode.cannedPluginMessagePart4 = 'd'
-#                anode.cannedPluginMessagePart5 = 'e'
-#                anode.get_canned_message()
-#    out, err = capsys.readouterr()
-#    assert re.search(r'canned_plugin_message:abcde', out, re.MULTILINE)
-#    assert err == ''
-#
-#
-# @pytest.mark.unit
-# def test_node_get_canned_message_with_some_parts(capsys):
-#    """Test run get_canned_message()"""
-#    iface = MagicMock(autospec=SerialInterface)
-#    amesg = MagicMock(autospec=AdminMessage)
-#    with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#        with patch('meshtastic.admin_pb2.AdminMessage', return_value=amesg):
-#            # we have a sleep in this method, so override it so it goes fast
-#            with patch('time.sleep'):
-#                anode = Node(mo, 'bar')
-#                anode.cannedPluginMessagePart1 = 'a'
-#                anode.get_canned_message()
-#    out, err = capsys.readouterr()
-#    assert re.search(r'canned_plugin_message:a', out, re.MULTILINE)
-#    assert err == ''
-#
-#
-# @pytest.mark.unit
-# def test_node_set_canned_message_one_part(caplog):
-#    """Test run set_canned_message()"""
-#    iface = MagicMock(autospec=SerialInterface)
-#    amesg = MagicMock(autospec=AdminMessage)
-#    with caplog.at_level(logging.DEBUG):
-#        with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#            with patch('meshtastic.admin_pb2.AdminMessage', return_value=amesg):
-#                anode = Node(mo, 'bar')
-#                anode.set_canned_message('foo')
-#    assert re.search(r"Setting canned message 'foo' part 1", caplog.text, re.MULTILINE)
-#    assert not re.search(r"Setting canned message '' part 2", caplog.text, re.MULTILINE)
-#
-#
-# @pytest.mark.unit
-# def test_node_set_canned_message_200(caplog):
-#    """Test run set_canned_message() 200 characters long"""
-#    iface = MagicMock(autospec=SerialInterface)
-#    amesg = MagicMock(autospec=AdminMessage)
-#    with caplog.at_level(logging.DEBUG):
-#        with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#            with patch('meshtastic.admin_pb2.AdminMessage', return_value=amesg):
-#                anode = Node(mo, 'bar')
-#                message_200_chars_long = 'a' * 200
-#                anode.set_canned_message(message_200_chars_long)
-#    assert re.search(r" part 1", caplog.text, re.MULTILINE)
-#    assert not re.search(r"Setting canned message '' part 2", caplog.text, re.MULTILINE)
-#
-#
-# @pytest.mark.unit
-# def test_node_set_canned_message_201(caplog):
-#    """Test run set_canned_message() 201 characters long"""
-#    iface = MagicMock(autospec=SerialInterface)
-#    amesg = MagicMock(autospec=AdminMessage)
-#    with caplog.at_level(logging.DEBUG):
-#        with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#            with patch('meshtastic.admin_pb2.AdminMessage', return_value=amesg):
-#                anode = Node(mo, 'bar')
-#                message_201_chars_long = 'a' * 201
-#                anode.set_canned_message(message_201_chars_long)
-#    assert re.search(r" part 1", caplog.text, re.MULTILINE)
-#    assert re.search(r"Setting canned message 'a' part 2", caplog.text, re.MULTILINE)
-#
-#
-# @pytest.mark.unit
-# def test_node_set_canned_message_1000(caplog):
-#    """Test run set_canned_message() 1000 characters long"""
-#    iface = MagicMock(autospec=SerialInterface)
-#    amesg = MagicMock(autospec=AdminMessage)
-#    with caplog.at_level(logging.DEBUG):
-#        with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#            with patch('meshtastic.admin_pb2.AdminMessage', return_value=amesg):
-#                anode = Node(mo, 'bar')
-#                message_1000_chars_long = 'a' * 1000
-#                anode.set_canned_message(message_1000_chars_long)
-#    assert re.search(r" part 1", caplog.text, re.MULTILINE)
-#    assert re.search(r" part 2", caplog.text, re.MULTILINE)
-#    assert re.search(r" part 3", caplog.text, re.MULTILINE)
-#    assert re.search(r" part 4", caplog.text, re.MULTILINE)
-#    assert re.search(r" part 5", caplog.text, re.MULTILINE)
-#
-#
-# @pytest.mark.unit
-# def test_node_set_canned_message_1001(capsys):
-#    """Test run set_canned_message() 1001 characters long"""
-#    iface = MagicMock(autospec=SerialInterface)
-#    with pytest.raises(SystemExit) as pytest_wrapped_e:
-#        with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#            anode = Node(mo, 'bar')
-#            message_1001_chars_long = 'a' * 1001
-#            anode.set_canned_message(message_1001_chars_long)
-#    assert pytest_wrapped_e.type == SystemExit
-#    assert pytest_wrapped_e.value.code == 1
-#    out, err = capsys.readouterr()
-#    assert re.search(r'Warning: The canned message', out, re.MULTILINE)
-#    assert err == ''
+class _FakeSendAdminProtocol(Protocol):
+    """Callable protocol for fake _send_admin helpers with optional parameters."""
+
+    def __call__(
+        self,
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int = 0,
+    ) -> mesh_pb2.MeshPacket | None: ...
 
 
-# TODO
-# @pytest.mark.unit
-# def test_setOwnerShort(caplog):
-#    """Test setOwner"""
-#    anode = Node('foo', 'bar', noProto=True)
-#    with caplog.at_level(logging.DEBUG):
-#        anode.setOwner(long_name=None, short_name='123')
-#    assert re.search(r'p.set_owner.short_name:123:', caplog.text, re.MULTILINE)
+class _DropChannelsOnEnterCountLock:
+    """Lock stub that clears ``node.channels`` on a specific acquisition count."""
+
+    def __init__(self, node: Node, trigger_enter: int) -> None:
+        self.node = node
+        self.trigger_enter = trigger_enter
+        self.enters = 0
+
+    def __enter__(self) -> "_DropChannelsOnEnterCountLock":
+        self.enters += 1
+        if self.enters == self.trigger_enter:
+            self.node.channels = None
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> Literal[False]:
+        _ = (exc_type, exc, tb)
+        return False
 
 
-# TODO
-# @pytest.mark.unit
-# def test_setOwner_no_short_name(caplog):
-#    """Test setOwner"""
-#    anode = Node('foo', 'bar', noProto=True)
-#    with caplog.at_level(logging.DEBUG):
-#        anode.setOwner(long_name ='Test123')
-#    assert re.search(r'p.set_owner.long_name:Test123:', caplog.text, re.MULTILINE)
-#    assert re.search(r'p.set_owner.short_name:Tst:', caplog.text, re.MULTILINE)
-#    assert re.search(r'p.set_owner.is_licensed:False', caplog.text, re.MULTILINE)
+def _make_fake_send_admin(
+    *,
+    sent_messages: list[admin_pb2.AdminMessage] | None = None,
+    captured: dict[str, object] | None = None,
+    expected_want_response: bool | None = None,
+    response_payload: dict[str, Any] | None = None,
+    return_packet: mesh_pb2.MeshPacket | None = None,
+) -> _FakeSendAdminProtocol:
+    """Create a configurable fake for Node._send_admin used by canned-message tests."""
 
+    def _fake_send_admin(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int = 0,
+    ) -> mesh_pb2.MeshPacket | None:
+        if sent_messages is not None:
+            sent_messages.append(msg)
+        if captured is not None:
+            captured["msg"] = msg
+            captured["wantResponse"] = wantResponse
+            captured["onResponse"] = onResponse
+            captured["adminIndex"] = adminIndex
+        if expected_want_response is not None:
+            assert wantResponse is expected_want_response
+        if response_payload is not None:
+            assert onResponse is not None
+            onResponse(response_payload)
+        return return_packet
 
-# TODO
-# @pytest.mark.unit
-# def test_setOwner_no_short_name_and_long_name_is_short(caplog):
-#    """Test setOwner"""
-#    anode = Node('foo', 'bar', noProto=True)
-#    with caplog.at_level(logging.DEBUG):
-#        anode.setOwner(long_name ='Tnt')
-#    assert re.search(r'p.set_owner.long_name:Tnt:', caplog.text, re.MULTILINE)
-#    assert re.search(r'p.set_owner.short_name:Tnt:', caplog.text, re.MULTILINE)
-#    assert re.search(r'p.set_owner.is_licensed:False', caplog.text, re.MULTILINE)
-
-
-# TODO
-# @pytest.mark.unit
-# def test_setOwner_no_short_name_and_long_name_has_words(caplog):
-#    """Test setOwner"""
-#    anode = Node('foo', 'bar', noProto=True)
-#    with caplog.at_level(logging.DEBUG):
-#        anode.setOwner(long_name ='A B C', is_licensed=True)
-#    assert re.search(r'p.set_owner.long_name:A B C:', caplog.text, re.MULTILINE)
-#    assert re.search(r'p.set_owner.short_name:ABC:', caplog.text, re.MULTILINE)
-#    assert re.search(r'p.set_owner.is_licensed:True', caplog.text, re.MULTILINE)
-
-
-# TODO
-# @pytest.mark.unit
-# def test_setOwner_long_name_no_short(caplog):
-#    """Test setOwner"""
-#    anode = Node('foo', 'bar', noProto=True)
-#    with caplog.at_level(logging.DEBUG):
-#        anode.setOwner(long_name ='Aabo', is_licensed=True)
-#    assert re.search(r'p.set_owner.long_name:Aabo:', caplog.text, re.MULTILINE)
-#    assert re.search(r'p.set_owner.short_name:Aab:', caplog.text, re.MULTILINE)
+    return _fake_send_admin
 
 
 @pytest.mark.unit
-def test_exitSimulator(caplog):
-    """Test exitSimulator"""
-    interface = MeshInterface()
-    interface.nodesByNum = {}
-    anode = Node(interface, "!ba400000", noProto=True)
-    with caplog.at_level(logging.DEBUG):
-        anode.exitSimulator()
+def test_node(capsys: CaptureFixture[str], mock_serial_interface: MagicMock) -> None:
+    """Test that we can instantiate a Node."""
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    lc = localonly_pb2.LocalConfig()
+    anode.localConfig = lc
+    lc.lora.CopyFrom(config_pb2.Config.LoRaConfig())
+    anode.moduleConfig = localonly_pb2.LocalModuleConfig()
+    anode.showInfo()
+    out, err = capsys.readouterr()
+    assert re.search(r"Preferences", out)
+    assert re.search(r"Module preferences", out)
+    assert re.search(r"Channels", out)
+    assert re.search(r"Primary channel URL", out)
+    assert not re.search(r"remote node", out)
+    assert err == ""
+
+
+@pytest.mark.unit
+def test_get_canned_message_returns_cached_value(
+    mock_serial_interface: MagicMock,
+) -> None:
+    """get_canned_message should return the cached message without sending."""
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    anode.cannedPluginMessage = "cached message"
+
+    send_admin = MagicMock()
+    anode._send_admin = send_admin  # type: ignore[method-assign]
+
+    assert anode.get_canned_message() == "cached message"
+    send_admin.assert_not_called()
+
+
+@pytest.mark.unit
+def test_get_canned_message_requests_and_caches_value(
+    mock_serial_interface: MagicMock,
+) -> None:
+    """get_canned_message should request, cache, and return the response payload."""
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    response_raw = admin_pb2.AdminMessage()
+    response_raw.get_canned_message_module_messages_response = "hello world"
+    sent_messages: list[admin_pb2.AdminMessage] = []
+    request_packet = mesh_pb2.MeshPacket()
+    response_payload: dict[str, Any] = {"decoded": {"admin": {"raw": response_raw}}}
+    fake_send_admin = _make_fake_send_admin(
+        sent_messages=sent_messages,
+        expected_want_response=True,
+        response_payload=response_payload,
+        return_packet=request_packet,
+    )
+    anode._send_admin = fake_send_admin  # type: ignore[method-assign,assignment]
+
+    assert anode.get_canned_message() == "hello world"
+    assert anode.cannedPluginMessage == "hello world"
+    assert len(sent_messages) == 1
+    assert sent_messages[0].get_canned_message_module_messages_request is True
+
+    # A second call should use cache and avoid another request.
+    assert anode.get_canned_message() == "hello world"
+    assert len(sent_messages) == 1
+
+
+@pytest.mark.unit
+def test_set_canned_message_sends_payload_and_invalidates_cache(
+    mock_serial_interface: MagicMock,
+) -> None:
+    """set_canned_message should send payload and clear cached message values."""
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    anode.cannedPluginMessage = "stale"
+    anode.cannedPluginMessageMessages = "stale-part"
+
+    captured: dict[str, object] = {}
+    sent_packet = mesh_pb2.MeshPacket()
+
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    fake_send_admin = _make_fake_send_admin(
+        captured=captured,
+        expected_want_response=False,
+        return_packet=sent_packet,
+    )
+    anode._send_admin = fake_send_admin  # type: ignore[method-assign,assignment]
+
+    result = anode.set_canned_message("fresh")
+
+    assert result is sent_packet
+    sent_msg = cast(admin_pb2.AdminMessage, captured["msg"])
+    assert sent_msg.set_canned_message_module_messages == "fresh"
+    assert captured["wantResponse"] is False
+    on_response = cast(Callable[[dict[str, Any]], Any], captured["onResponse"])
+    assert callable(on_response)
+    acknowledgment = Acknowledgment()
+    anode.iface._acknowledgment = acknowledgment
+    anode.iface.localNode.nodeNum = 999
+    on_response({"decoded": {"routing": {"errorReason": "NONE"}}, "from": 123})
+    assert acknowledgment.receivedAck is True
+    assert captured["adminIndex"] == 0
+    assert anode.cannedPluginMessage is None
+    assert anode.cannedPluginMessageMessages is None
+
+
+@pytest.mark.unit
+def test_set_canned_message_over_limit_raises(mock_serial_interface: MagicMock) -> None:
+    """set_canned_message should reject messages longer than 200 chars."""
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match="The canned message must be 200 characters or fewer",
+    ):
+        anode.set_canned_message("a" * 201)
+
+
+@pytest.mark.unit
+def test_on_response_request_settings_copies_local_config_from_raw_response(
+    mock_serial_interface: MagicMock,
+    caplog: LogCaptureFixture,
+) -> None:
+    """OnResponseRequestSettings should copy recognized LocalConfig payloads from admin.raw."""
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    anode.iface._acknowledgment = Acknowledgment()
+    raw_admin = admin_pb2.AdminMessage()
+    raw_admin.get_config_response.lora.hop_limit = 7
+
+    payload = {
+        "decoded": {
+            "admin": {
+                "getConfigResponse": {"lora": {}},
+                "raw": raw_admin,
+            }
+        }
+    }
+
+    with caplog.at_level(logging.INFO):
+        anode.onResponseRequestSettings(payload)
+
+    assert anode.localConfig.lora.hop_limit == 7
+    assert "lora:" in caplog.text
+
+
+@pytest.mark.unit
+def test_set_ringtone_returns_none_when_module_unavailable(
+    mock_serial_interface: MagicMock,
+    caplog: LogCaptureFixture,
+) -> None:
+    """_set_ringtone should return None when the ext notification module is unavailable."""
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    anode.module_available = MagicMock(return_value=False)  # type: ignore[method-assign]
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+
+    with caplog.at_level(logging.WARNING):
+        result = anode._set_ringtone("tone")
+
+    assert result is None
+    anode.ensureSessionKey.assert_not_called()
+    assert "External Notification module not present" in caplog.text
+
+
+@pytest.mark.unit
+def test_set_ringtone_rejects_payloads_longer_than_max(
+    mock_serial_interface: MagicMock,
+) -> None:
+    """_set_ringtone should reject values exceeding MAX_RINGTONE_LENGTH."""
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    anode.module_available = MagicMock(return_value=True)  # type: ignore[method-assign]
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock()  # type: ignore[method-assign]
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match=(
+            f"The ringtone must be {node_module.MAX_RINGTONE_LENGTH} characters or fewer"
+        ),
+    ):
+        anode._set_ringtone("x" * (node_module.MAX_RINGTONE_LENGTH + 1))
+
+    anode.ensureSessionKey.assert_not_called()
+    anode._send_admin.assert_not_called()
+
+
+@pytest.mark.unit
+def test_set_canned_message_returns_none_when_module_unavailable(
+    mock_serial_interface: MagicMock,
+    caplog: LogCaptureFixture,
+) -> None:
+    """_set_canned_message should return None when the canned message module is unavailable."""
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    anode.module_available = MagicMock(return_value=False)  # type: ignore[method-assign]
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+
+    with caplog.at_level(logging.WARNING):
+        result = anode._set_canned_message("hello")
+
+    assert result is None
+    anode.ensureSessionKey.assert_not_called()
+    assert "Canned Message module not present" in caplog.text
+
+
+@pytest.mark.unit
+def test_get_channels_with_hash_alias_delegates_to_canonical(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """get_channels_with_hash should delegate to getChannelsWithHash()."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    expected = [{"index": 0, "role": "PRIMARY", "name": "x", "hash": 1}]
+
+    with patch.object(anode, "getChannelsWithHash", return_value=expected) as wrapped:
+        assert anode.get_channels_with_hash() == expected
+
+    wrapped.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_exitSimulator(caplog: LogCaptureFixture) -> None:
+    """Verify that calling exitSimulator logs an indicative debug message.
+
+    Asserts that a DEBUG-level log record contains the text "in exitSimulator".
+
+    """
+    with MeshInterface(noProto=True) as interface:
+        interface.nodesByNum = {}
+        anode = Node(interface, "!ba400000", noProto=True)
+        with caplog.at_level(logging.DEBUG):
+            anode.exitSimulator()
     assert re.search(r"in exitSimulator", caplog.text, re.MULTILINE)
 
 
 @pytest.mark.unit
-def test_reboot(caplog):
-    """Test reboot"""
-    interface = MeshInterface()
-    interface.nodesByNum = {}
-    anode = Node(interface, 1234567890, noProto=True)
-    with caplog.at_level(logging.DEBUG):
-        anode.reboot()
+def test_reboot(caplog: LogCaptureFixture) -> None:
+    """Test reboot."""
+    with MeshInterface(noProto=True) as interface:
+        interface.nodesByNum = {}
+        anode = Node(interface, 1234567890, noProto=True)
+        with caplog.at_level(logging.DEBUG):
+            anode.reboot()
     assert re.search(r"Telling node to reboot", caplog.text, re.MULTILINE)
 
 
 @pytest.mark.unit
-def test_shutdown(caplog):
-    """Test shutdown"""
-    interface = MeshInterface()
-    interface.nodesByNum = {}
-    anode = Node(interface, 1234567890, noProto=True)
-    with caplog.at_level(logging.DEBUG):
-        anode.shutdown()
+def test_shutdown(caplog: LogCaptureFixture) -> None:
+    """Test shutdown."""
+    with MeshInterface(noProto=True) as interface:
+        interface.nodesByNum = {}
+        anode = Node(interface, 1234567890, noProto=True)
+        with caplog.at_level(logging.DEBUG):
+            anode.shutdown()
     assert re.search(r"Telling node to shutdown", caplog.text, re.MULTILINE)
 
 
 @pytest.mark.unit
-def test_setURL_empty_url(capsys):
-    """Test reboot"""
-    anode = Node("foo", "bar", noProto=True)
-    with pytest.raises(SystemExit) as pytest_wrapped_e:
+def test_setURL_raises_when_channels_not_loaded(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Test setURL raises when config/channels are not loaded."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="Config or channels not loaded"
+    ):
         anode.setURL("")
-    assert pytest_wrapped_e.type == SystemExit
-    assert pytest_wrapped_e.value.code == 1
-    out, err = capsys.readouterr()
-    assert re.search(r"Warning: config or channels not loaded", out, re.MULTILINE)
-    assert err == ""
-
-
-# TODO
-# @pytest.mark.unit
-# def test_setURL_valid_URL(caplog):
-#    """Test setURL"""
-#    iface = MagicMock(autospec=SerialInterface)
-#    url = "https://www.meshtastic.org/d/#CgUYAyIBAQ"
-#    with caplog.at_level(logging.DEBUG):
-#        anode = Node(iface, 'bar', noProto=True)
-#        anode.radioConfig = 'baz'
-#        channels = ['zoo']
-#        anode.channels = channels
-#        anode.setURL(url)
-#    assert re.search(r'Channel i:0', caplog.text, re.MULTILINE)
-#    assert re.search(r'modem_config: MidSlow', caplog.text, re.MULTILINE)
-#    assert re.search(r'psk: "\\001"', caplog.text, re.MULTILINE)
-#    assert re.search(r'role: PRIMARY', caplog.text, re.MULTILINE)
 
 
 @pytest.mark.unit
-def test_setURL_valid_URL_but_no_settings(capsys):
-    """Test setURL"""
-    iface = MagicMock(autospec=SerialInterface)
+def test_setURL_valid_URL_but_no_settings(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Test setURL."""
+    iface = autospec_local_node_iface(SerialInterface)
     url = "https://www.meshtastic.org/d/#"
-    with pytest.raises(SystemExit) as pytest_wrapped_e:
-        anode = Node(iface, "bar", noProto=True)
-        anode.radioConfig = "baz"
+    anode = Node(iface, "!12345678", noProto=True)
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="Config or channels not loaded"
+    ):
         anode.setURL(url)
-    assert pytest_wrapped_e.type == SystemExit
-    assert pytest_wrapped_e.value.code == 1
-    out, err = capsys.readouterr()
-    assert re.search(r"Warning: config or channels not loaded", out, re.MULTILINE)
-    assert err == ""
-
-
-# TODO
-# @pytest.mark.unit
-# def test_showChannels(capsys):
-#    """Test showChannels"""
-#    anode = Node('foo', 'bar')
-#
-#    # primary channel
-#    # role: 0=Disabled, 1=Primary, 2=Secondary
-#    # modem_config: 0-5
-#    # role: 0=Disabled, 1=Primary, 2=Secondary
-#    channel1 = Channel(index=1, role=1)
-#    channel1.settings.modem_config = 3
-#    channel1.settings.psk = b'\x01'
-#
-#    channel2 = Channel(index=2, role=2)
-#    channel2.settings.psk = b'\x8a\x94y\x0e\xc6\xc9\x1e5\x91\x12@\xa60\xa8\xb43\x87\x00\xf2K\x0e\xe7\x7fAz\xcd\xf5\xb0\x900\xa84'
-#    channel2.settings.name = 'testing'
-#
-#    channel3 = Channel(index=3, role=0)
-#    channel4 = Channel(index=4, role=0)
-#    channel5 = Channel(index=5, role=0)
-#    channel6 = Channel(index=6, role=0)
-#    channel7 = Channel(index=7, role=0)
-#    channel8 = Channel(index=8, role=0)
-#
-#    channels = [ channel1, channel2, channel3, channel4, channel5, channel6, channel7, channel8 ]
-#
-#    anode.channels = channels
-#    anode.showChannels()
-#    out, err = capsys.readouterr()
-#    assert re.search(r'Channels:', out, re.MULTILINE)
-#    # primary channel
-#    assert re.search(r'Primary channel URL', out, re.MULTILINE)
-#    assert re.search(r'PRIMARY psk=default ', out, re.MULTILINE)
-#    assert re.search(r'"modemConfig": "MidSlow"', out, re.MULTILINE)
-#    assert re.search(r'"psk": "AQ=="', out, re.MULTILINE)
-#    # secondary channel
-#    assert re.search(r'SECONDARY psk=secret ', out, re.MULTILINE)
-#    assert re.search(r'"psk": "ipR5DsbJHjWREkCmMKi0M4cA8ksO539Bes31sJAwqDQ="', out, re.MULTILINE)
-#    assert err == ''
 
 
 @pytest.mark.unit
-def test_getChannelByChannelIndex():
-    """Test getChannelByChannelIndex()"""
-    anode = Node("foo", "bar")
+def test_setURL_ignores_channels_over_device_limit(
+    caplog: LogCaptureFixture,
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Test that setURL ignores channels beyond the fixed device channel limit."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    anode.channels = [
+        Channel(index=i, role=Channel.Role.DISABLED) for i in range(CHANNEL_LIMIT)
+    ]
 
-    channel1 = Channel(index=1, role=1)  # primary channel
-    channel2 = Channel(index=2, role=2)  # secondary channel
-    channel3 = Channel(index=3, role=0)
-    channel4 = Channel(index=4, role=0)
-    channel5 = Channel(index=5, role=0)
-    channel6 = Channel(index=6, role=0)
-    channel7 = Channel(index=7, role=0)
-    channel8 = Channel(index=8, role=0)
+    channel_set = apponly_pb2.ChannelSet()
+    for i in range(CHANNEL_LIMIT + 1):
+        settings = channel_set.settings.add()
+        settings.name = f"ch{i}"
+        settings.psk = b"\x01"
+
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    encoded = encoded.replace("=", "")
+    url = f"https://meshtastic.org/e/#{encoded}"
+
+    with caplog.at_level(logging.WARNING):
+        anode.setURL(url)
+
+    assert re.search(
+        rf"URL contains more than {CHANNEL_LIMIT} channels",
+        caplog.text,
+        re.MULTILINE,
+    )
+    assert len(anode.channels) == CHANNEL_LIMIT
+    assert anode.channels[0].settings.name == "ch0"
+    assert anode.channels[CHANNEL_LIMIT - 1].settings.name == f"ch{CHANNEL_LIMIT - 1}"
+
+
+@pytest.mark.unit
+def test_setChannels_copies_input_channel_objects(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """SetChannels should snapshot caller-provided channels instead of storing shared references."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    source_channel = Channel(index=0, role=Channel.Role.PRIMARY)
+    source_channel.settings.name = "source"
+    source_channel.settings.psk = b"\x01"
+
+    anode.setChannels([source_channel])
+    source_channel.settings.name = "mutated-after-set"
+
+    assert anode.channels is not None
+    assert len(anode.channels) == CHANNEL_LIMIT
+    assert anode.channels[0] is not source_channel
+    assert anode.channels[0].settings.name == "source"
+
+
+def _configure_immediate_admin_timeout(anode: Node) -> None:
+    """Configure admin timeout mocks so wait-based admin reads fail immediately."""
+    anode.module_available = MagicMock(return_value=True)  # type: ignore[method-assign]
+    timeout_mock = MagicMock()
+    timeout_mock.waitForSet.return_value = False
+    timeout_mock.expireTimeout = 0
+    anode._timeout = timeout_mock
+    anode._send_admin = MagicMock()  # type: ignore[method-assign]
+
+
+@pytest.mark.unit
+def test_get_ringtone_times_out_without_response(
+    caplog: LogCaptureFixture,
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Verify get_ringtone times out when no response callback is invoked."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    _configure_immediate_admin_timeout(anode)
+
+    with caplog.at_level(logging.WARNING):
+        result = anode.get_ringtone()
+
+    assert result is None
+    assert re.search(
+        r"Timed out waiting for ringtone response", caplog.text, re.MULTILINE
+    )
+
+
+@pytest.mark.unit
+def test_get_canned_message_times_out_without_response(
+    caplog: LogCaptureFixture,
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Test get_canned_message returns None if the response callback is never invoked."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    _configure_immediate_admin_timeout(anode)
+
+    with caplog.at_level(logging.WARNING):
+        result = anode.get_canned_message()
+
+    assert result is None
+    assert re.search(
+        r"Timed out waiting for canned message response", caplog.text, re.MULTILINE
+    )
+
+
+@pytest.mark.unit
+def test_getChannelByChannelIndex(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Test getChannelByChannelIndex()."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+
+    channel1 = Channel(index=0, role=Channel.Role.PRIMARY)  # primary channel
+    channel2 = Channel(index=1, role=Channel.Role.SECONDARY)  # secondary channel
+    channel3 = Channel(index=2, role=Channel.Role.DISABLED)
+    channel4 = Channel(index=3, role=Channel.Role.DISABLED)
+    channel5 = Channel(index=4, role=Channel.Role.DISABLED)
+    channel6 = Channel(index=5, role=Channel.Role.DISABLED)
+    channel7 = Channel(index=6, role=Channel.Role.DISABLED)
+    channel8 = Channel(index=7, role=Channel.Role.DISABLED)
 
     channels = [
         channel1,
@@ -379,7 +497,9 @@ def test_getChannelByChannelIndex():
     anode.channels = channels
 
     # test primary
-    assert anode.getChannelByChannelIndex(0) is not None
+    selected_primary = anode.getChannelByChannelIndex(0)
+    assert selected_primary is not None
+    assert selected_primary is channel1
     # test secondary
     assert anode.getChannelByChannelIndex(1) is not None
     # test disabled
@@ -388,1076 +508,159 @@ def test_getChannelByChannelIndex():
     assert anode.getChannelByChannelIndex(-1) is None
     assert anode.getChannelByChannelIndex(9) is None
 
-
-# TODO
-# @pytest.mark.unit
-# def test_deleteChannel_try_to_delete_primary_channel(capsys):
-#    """Try to delete primary channel."""
-#    anode = Node('foo', 'bar')
-#
-#    channel1 = Channel(index=1, role=1)
-#    channel1.settings.modem_config = 3
-#    channel1.settings.psk = b'\x01'
-#
-#    # no secondary channels
-#    channel2 = Channel(index=2, role=0)
-#    channel3 = Channel(index=3, role=0)
-#    channel4 = Channel(index=4, role=0)
-#    channel5 = Channel(index=5, role=0)
-#    channel6 = Channel(index=6, role=0)
-#    channel7 = Channel(index=7, role=0)
-#    channel8 = Channel(index=8, role=0)
-#
-#    channels = [ channel1, channel2, channel3, channel4, channel5, channel6, channel7, channel8 ]
-#
-#    anode.channels = channels
-#    with pytest.raises(SystemExit) as pytest_wrapped_e:
-#        anode.deleteChannel(0)
-#    assert pytest_wrapped_e.type == SystemExit
-#    assert pytest_wrapped_e.value.code == 1
-#    out, err = capsys.readouterr()
-#    assert re.search(r'Warning: Only SECONDARY channels can be deleted', out, re.MULTILINE)
-#    assert err == ''
-
-
-# TODO
-# @pytest.mark.unit
-# def test_deleteChannel_secondary():
-#    """Try to delete a secondary channel."""
-#
-#    channel1 = Channel(index=1, role=1)
-#    channel1.settings.modem_config = 3
-#    channel1.settings.psk = b'\x01'
-#
-#    channel2 = Channel(index=2, role=2)
-#    channel2.settings.psk = b'\x8a\x94y\x0e\xc6\xc9\x1e5\x91\x12@\xa60\xa8\xb43\x87\x00\xf2K\x0e\xe7\x7fAz\xcd\xf5\xb0\x900\xa84'
-#    channel2.settings.name = 'testing'
-#
-#    channel3 = Channel(index=3, role=0)
-#    channel4 = Channel(index=4, role=0)
-#    channel5 = Channel(index=5, role=0)
-#    channel6 = Channel(index=6, role=0)
-#    channel7 = Channel(index=7, role=0)
-#    channel8 = Channel(index=8, role=0)
-#
-#    channels = [ channel1, channel2, channel3, channel4, channel5, channel6, channel7, channel8 ]
-#
-#
-#    iface = MagicMock(autospec=SerialInterface)
-#    with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#        mo.localNode.getChannelByName.return_value = None
-#        mo.myInfo.max_channels = 8
-#        anode = Node(mo, 'bar', noProto=True)
-#
-#        anode.channels = channels
-#        assert len(anode.channels) == 8
-#        assert channels[0].settings.modem_config == 3
-#        assert channels[1].settings.name == 'testing'
-#        assert channels[2].settings.name == ''
-#        assert channels[3].settings.name == ''
-#        assert channels[4].settings.name == ''
-#        assert channels[5].settings.name == ''
-#        assert channels[6].settings.name == ''
-#        assert channels[7].settings.name == ''
-#
-#        anode.deleteChannel(1)
-#
-#        assert len(anode.channels) == 8
-#        assert channels[0].settings.modem_config == 3
-#        assert channels[1].settings.name == ''
-#        assert channels[2].settings.name == ''
-#        assert channels[3].settings.name == ''
-#        assert channels[4].settings.name == ''
-#        assert channels[5].settings.name == ''
-#        assert channels[6].settings.name == ''
-#        assert channels[7].settings.name == ''
-
-
-# TODO
-# @pytest.mark.unit
-# def test_deleteChannel_secondary_with_admin_channel_after_testing():
-#    """Try to delete a secondary channel where there is an admin channel."""
-#
-#    channel1 = Channel(index=1, role=1)
-#    channel1.settings.modem_config = 3
-#    channel1.settings.psk = b'\x01'
-#
-#    channel2 = Channel(index=2, role=2)
-#    channel2.settings.psk = b'\x8a\x94y\x0e\xc6\xc9\x1e5\x91\x12@\xa60\xa8\xb43\x87\x00\xf2K\x0e\xe7\x7fAz\xcd\xf5\xb0\x900\xa84'
-#    channel2.settings.name = 'testing'
-#
-#    channel3 = Channel(index=3, role=2)
-#    channel3.settings.name = 'admin'
-#
-#    channel4 = Channel(index=4, role=0)
-#    channel5 = Channel(index=5, role=0)
-#    channel6 = Channel(index=6, role=0)
-#    channel7 = Channel(index=7, role=0)
-#    channel8 = Channel(index=8, role=0)
-#
-#    channels = [ channel1, channel2, channel3, channel4, channel5, channel6, channel7, channel8 ]
-#
-#
-#    iface = MagicMock(autospec=SerialInterface)
-#    with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#        mo.localNode.getChannelByName.return_value = None
-#        mo.myInfo.max_channels = 8
-#        anode = Node(mo, 'bar', noProto=True)
-#
-#        # Note: Have to do this next line because every call to MagicMock object/method returns a new magic mock
-#        mo.localNode = anode
-#
-#        assert mo.localNode == anode
-#
-#        anode.channels = channels
-#        assert len(anode.channels) == 8
-#        assert channels[0].settings.modem_config == 3
-#        assert channels[1].settings.name == 'testing'
-#        assert channels[2].settings.name == 'admin'
-#        assert channels[3].settings.name == ''
-#        assert channels[4].settings.name == ''
-#        assert channels[5].settings.name == ''
-#        assert channels[6].settings.name == ''
-#        assert channels[7].settings.name == ''
-#
-#        anode.deleteChannel(1)
-#
-#        assert len(anode.channels) == 8
-#        assert channels[0].settings.modem_config == 3
-#        assert channels[1].settings.name == 'admin'
-#        assert channels[2].settings.name == ''
-#        assert channels[3].settings.name == ''
-#        assert channels[4].settings.name == ''
-#        assert channels[5].settings.name == ''
-#        assert channels[6].settings.name == ''
-#        assert channels[7].settings.name == ''
-
-
-# TODO
-# @pytest.mark.unit
-# def test_deleteChannel_secondary_with_admin_channel_before_testing():
-#    """Try to delete a secondary channel where there is an admin channel."""
-#
-#    channel1 = Channel(index=1, role=1)
-#    channel1.settings.modem_config = 3
-#    channel1.settings.psk = b'\x01'
-#
-#    channel2 = Channel(index=2, role=2)
-#    channel2.settings.psk = b'\x8a\x94y\x0e\xc6\xc9\x1e5\x91\x12@\xa60\xa8\xb43\x87\x00\xf2K\x0e\xe7\x7fAz\xcd\xf5\xb0\x900\xa84'
-#    channel2.settings.name = 'admin'
-#
-#    channel3 = Channel(index=3, role=2)
-#    channel3.settings.name = 'testing'
-#
-#    channel4 = Channel(index=4, role=0)
-#    channel5 = Channel(index=5, role=0)
-#    channel6 = Channel(index=6, role=0)
-#    channel7 = Channel(index=7, role=0)
-#    channel8 = Channel(index=8, role=0)
-#
-#    channels = [ channel1, channel2, channel3, channel4, channel5, channel6, channel7, channel8 ]
-#
-#
-#    iface = MagicMock(autospec=SerialInterface)
-#    with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#        mo.localNode.getChannelByName.return_value = None
-#        mo.myInfo.max_channels = 8
-#        anode = Node(mo, 'bar', noProto=True)
-#
-#        anode.channels = channels
-#        assert len(anode.channels) == 8
-#        assert channels[0].settings.modem_config == 3
-#        assert channels[1].settings.name == 'admin'
-#        assert channels[2].settings.name == 'testing'
-#        assert channels[3].settings.name == ''
-#        assert channels[4].settings.name == ''
-#        assert channels[5].settings.name == ''
-#        assert channels[6].settings.name == ''
-#        assert channels[7].settings.name == ''
-#
-#        anode.deleteChannel(2)
-#
-#        assert len(anode.channels) == 8
-#        assert channels[0].settings.modem_config == 3
-#        assert channels[1].settings.name == 'admin'
-#        assert channels[2].settings.name == ''
-#        assert channels[3].settings.name == ''
-#        assert channels[4].settings.name == ''
-#        assert channels[5].settings.name == ''
-#        assert channels[6].settings.name == ''
-#        assert channels[7].settings.name == ''
-#
-#
-# @pytest.mark.unit
-# def test_getChannelByName():
-#    """Get a channel by the name."""
-#    anode = Node('foo', 'bar')
-#
-#    channel1 = Channel(index=1, role=1)
-#    channel1.settings.modem_config = 3
-#    channel1.settings.psk = b'\x01'
-#
-#    channel2 = Channel(index=2, role=2)
-#    channel2.settings.psk = b'\x8a\x94y\x0e\xc6\xc9\x1e5\x91\x12@\xa60\xa8\xb43\x87\x00\xf2K\x0e\xe7\x7fAz\xcd\xf5\xb0\x900\xa84'
-#    channel2.settings.name = 'admin'
-#
-#    channel3 = Channel(index=3, role=0)
-#    channel4 = Channel(index=4, role=0)
-#    channel5 = Channel(index=5, role=0)
-#    channel6 = Channel(index=6, role=0)
-#    channel7 = Channel(index=7, role=0)
-#    channel8 = Channel(index=8, role=0)
-#
-#    channels = [ channel1, channel2, channel3, channel4, channel5, channel6, channel7, channel8 ]
-#
-#    anode.channels = channels
-#    ch = anode.getChannelByName('admin')
-#    assert ch.index == 2
-
-
-# TODO
-# @pytest.mark.unit
-# def test_getChannelByName_invalid_name():
-#    """Get a channel by the name but one that is not present."""
-#    anode = Node('foo', 'bar')
-#
-#    channel1 = Channel(index=1, role=1)
-#    channel1.settings.modem_config = 3
-#    channel1.settings.psk = b'\x01'
-#
-#    channel2 = Channel(index=2, role=2)
-#    channel2.settings.psk = b'\x8a\x94y\x0e\xc6\xc9\x1e5\x91\x12@\xa60\xa8\xb43\x87\x00\xf2K\x0e\xe7\x7fAz\xcd\xf5\xb0\x900\xa84'
-#    channel2.settings.name = 'admin'
-#
-#    channel3 = Channel(index=3, role=0)
-#    channel4 = Channel(index=4, role=0)
-#    channel5 = Channel(index=5, role=0)
-#    channel6 = Channel(index=6, role=0)
-#    channel7 = Channel(index=7, role=0)
-#    channel8 = Channel(index=8, role=0)
-#
-#    channels = [ channel1, channel2, channel3, channel4, channel5, channel6, channel7, channel8 ]
-#
-#    anode.channels = channels
-#    ch = anode.getChannelByName('testing')
-#    assert ch is None
-#
-#
-# @pytest.mark.unit
-# def test_getDisabledChannel():
-#    """Get the first disabled channel."""
-#    anode = Node('foo', 'bar')
-#
-#    channel1 = Channel(index=1, role=1)
-#    channel1.settings.modem_config = 3
-#    channel1.settings.psk = b'\x01'
-#
-#    channel2 = Channel(index=2, role=2)
-#    channel2.settings.psk = b'\x8a\x94y\x0e\xc6\xc9\x1e5\x91\x12@\xa60\xa8\xb43\x87\x00\xf2K\x0e\xe7\x7fAz\xcd\xf5\xb0\x900\xa84'
-#    channel2.settings.name = 'testingA'
-#
-#    channel3 = Channel(index=3, role=2)
-#    channel3.settings.psk = b'\x8a\x94y\x0e\xc6\xc9\x1e5\x91\x12@\xa60\xa8\xb43\x87\x00\xf2K\x0e\xe7\x7fAz\xcd\xf5\xb0\x900\xa84'
-#    channel3.settings.name = 'testingB'
-#
-#    channel4 = Channel(index=4, role=0)
-#    channel5 = Channel(index=5, role=0)
-#    channel6 = Channel(index=6, role=0)
-#    channel7 = Channel(index=7, role=0)
-#    channel8 = Channel(index=8, role=0)
-#
-#    channels = [ channel1, channel2, channel3, channel4, channel5, channel6, channel7, channel8 ]
-#
-#    anode.channels = channels
-#    ch = anode.getDisabledChannel()
-#    assert ch.index == 4
-
-
-# TODO
-# @pytest.mark.unit
-# def test_getDisabledChannel_where_all_channels_are_used():
-#    """Get the first disabled channel."""
-#    anode = Node('foo', 'bar')
-#
-#    channel1 = Channel(index=1, role=1)
-#    channel1.settings.modem_config = 3
-#    channel1.settings.psk = b'\x01'
-#
-#    channel2 = Channel(index=2, role=2)
-#    channel3 = Channel(index=3, role=2)
-#    channel4 = Channel(index=4, role=2)
-#    channel5 = Channel(index=5, role=2)
-#    channel6 = Channel(index=6, role=2)
-#    channel7 = Channel(index=7, role=2)
-#    channel8 = Channel(index=8, role=2)
-#
-#    channels = [ channel1, channel2, channel3, channel4, channel5, channel6, channel7, channel8 ]
-#
-#    anode.channels = channels
-#    ch = anode.getDisabledChannel()
-#    assert ch is None
-
-
-# TODO
-# @pytest.mark.unit
-# def test_getAdminChannelIndex():
-#    """Get the 'admin' channel index."""
-#    anode = Node('foo', 'bar')
-#
-#    channel1 = Channel(index=1, role=1)
-#    channel1.settings.modem_config = 3
-#    channel1.settings.psk = b'\x01'
-#
-#    channel2 = Channel(index=2, role=2)
-#    channel2.settings.psk = b'\x8a\x94y\x0e\xc6\xc9\x1e5\x91\x12@\xa60\xa8\xb43\x87\x00\xf2K\x0e\xe7\x7fAz\xcd\xf5\xb0\x900\xa84'
-#    channel2.settings.name = 'admin'
-#
-#    channel3 = Channel(index=3, role=0)
-#    channel4 = Channel(index=4, role=0)
-#    channel5 = Channel(index=5, role=0)
-#    channel6 = Channel(index=6, role=0)
-#    channel7 = Channel(index=7, role=0)
-#    channel8 = Channel(index=8, role=0)
-#
-#    channels = [ channel1, channel2, channel3, channel4, channel5, channel6, channel7, channel8 ]
-#
-#    anode.channels = channels
-#    i = anode._getAdminChannelIndex()
-#    assert i == 2
-
-
-# TODO
-# @pytest.mark.unit
-# def test_getAdminChannelIndex_when_no_admin_named_channel():
-#    """Get the 'admin' channel when there is not one."""
-#    anode = Node('foo', 'bar')
-#
-#    channel1 = Channel(index=1, role=1)
-#    channel1.settings.modem_config = 3
-#    channel1.settings.psk = b'\x01'
-#
-#    channel2 = Channel(index=2, role=0)
-#    channel3 = Channel(index=3, role=0)
-#    channel4 = Channel(index=4, role=0)
-#    channel5 = Channel(index=5, role=0)
-#    channel6 = Channel(index=6, role=0)
-#    channel7 = Channel(index=7, role=0)
-#    channel8 = Channel(index=8, role=0)
-#
-#    channels = [ channel1, channel2, channel3, channel4, channel5, channel6, channel7, channel8 ]
-#
-#    anode.channels = channels
-#    i = anode._getAdminChannelIndex()
-#    assert i == 0
-
-
-# TODO
-# TODO: should we check if we need to turn it off?
-# @pytest.mark.unit
-# def test_turnOffEncryptionOnPrimaryChannel(capsys):
-#    """Turn off encryption when there is a psk."""
-#    anode = Node('foo', 'bar', noProto=True)
-#
-#    channel1 = Channel(index=1, role=1)
-#    channel1.settings.modem_config = 3
-#    # value from using "--ch-set psk 0x1a1a1a1a2b2b2b2b1a1a1a1a2b2b2b2b1a1a1a1a2b2b2b2b1a1a1a1a2b2b2b2b "
-#    channel1.settings.psk = b'\x1a\x1a\x1a\x1a++++\x1a\x1a\x1a\x1a++++\x1a\x1a\x1a\x1a++++\x1a\x1a\x1a\x1a++++'
-#
-#    channel2 = Channel(index=2, role=0)
-#    channel3 = Channel(index=3, role=0)
-#    channel4 = Channel(index=4, role=0)
-#    channel5 = Channel(index=5, role=0)
-#    channel6 = Channel(index=6, role=0)
-#    channel7 = Channel(index=7, role=0)
-#    channel8 = Channel(index=8, role=0)
-#
-#    channels = [ channel1, channel2, channel3, channel4, channel5, channel6, channel7, channel8 ]
-#
-#    anode.channels = channels
-#    anode.turnOffEncryptionOnPrimaryChannel()
-#    out, err = capsys.readouterr()
-#    assert re.search(r'Writing modified channels to device', out)
-#    assert err == ''
+    copied_primary = anode.getChannelCopyByChannelIndex(0)
+    assert copied_primary is not None
+    assert copied_primary is not channel1
+    copied_primary.role = Channel.Role.DISABLED
+    assert channel1.role == Channel.Role.PRIMARY
 
 
 @pytest.mark.unit
-def test_writeConfig_with_no_radioConfig(capsys):
-    """Test writeConfig with no radioConfig."""
-    anode = Node("foo", "bar", noProto=True)
+def test_writeConfig_with_no_radioConfig(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Test writeConfig raises MeshInterfaceError for invalid config name."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
 
-    with pytest.raises(SystemExit) as pytest_wrapped_e:
-        anode.writeConfig('foo')
-    assert pytest_wrapped_e.type == SystemExit
-    assert pytest_wrapped_e.value.code == 1
-    out, err = capsys.readouterr()
-    print(out)
-    assert re.search(r"Error: No valid config with name foo", out)
-    assert err == ""
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match="Error: No valid config with name foo",
+    ):
+        anode.writeConfig("foo")
 
 
 @pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_writeConfig_traffic_management():
-    """Test writeConfig with traffic_management module config."""
-    iface = MagicMock(autospec=SerialInterface)
-    anode = Node(iface, 123, noProto=True)
+def test_writeChannel_with_no_channels_raises_mesh_error(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Test writeChannel raises when channels have not been loaded."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = None
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="Error: No channels have been read"
+    ):
+        anode.writeChannel(0)
+
+
+@pytest.mark.unit
+def test_writeConfig_traffic_management(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Test writeConfig writes traffic_management module config through set_module_config."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
     anode.moduleConfig.traffic_management.enabled = True
     anode.moduleConfig.traffic_management.rate_limit_enabled = True
 
-    sent_admin = []
+    sent_messages: list[admin_pb2.AdminMessage] = []
+    anode._send_admin = _make_fake_send_admin(  # type: ignore[method-assign,assignment]
+        sent_messages=sent_messages
+    )
 
-    def capture_send(p, *args, **kwargs): # pylint: disable=W0613
-        sent_admin.append(p)
+    anode.writeConfig("traffic_management")
 
-    with patch.object(anode, "_sendAdmin", side_effect=capture_send):
-        anode.writeConfig("traffic_management")
-
-    assert len(sent_admin) == 1
-    assert sent_admin[0].HasField("set_module_config")
-    assert sent_admin[0].set_module_config.HasField("traffic_management")
-    assert sent_admin[0].set_module_config.traffic_management.enabled is True
-    assert sent_admin[0].set_module_config.traffic_management.rate_limit_enabled is True
-
-
-# TODO
-# @pytest.mark.unit
-# def test_writeConfig(caplog):
-#    """Test writeConfig"""
-#    anode = Node('foo', 'bar', noProto=True)
-#    radioConfig = RadioConfig()
-#    anode.radioConfig = radioConfig
-#
-#    with caplog.at_level(logging.DEBUG):
-#        anode.writeConfig()
-#    assert re.search(r'Wrote config', caplog.text, re.MULTILINE)
+    assert len(sent_messages) == 1
+    sent_message = sent_messages[0]
+    assert sent_message.HasField("set_module_config")
+    assert sent_message.set_module_config.HasField("traffic_management")
+    assert sent_message.set_module_config.traffic_management.enabled is True
+    assert sent_message.set_module_config.traffic_management.rate_limit_enabled is True
 
 
 @pytest.mark.unit
-def test_requestChannel_not_localNode(caplog, capsys):
-    """Test _requestChannel()"""
-    iface = MagicMock(autospec=SerialInterface)
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        mo.localNode.getChannelByName.return_value = None
-        mo.myInfo.max_channels = 8
-        anode = Node(mo, "bar", noProto=True)
-        with caplog.at_level(logging.DEBUG):
-            anode._requestChannel(0)
-            assert re.search(
-                r"Requesting channel 0 info from remote node", caplog.text, re.MULTILINE
-            )
-        out, err = capsys.readouterr()
-        assert re.search(r"Requesting channel 0 info", out, re.MULTILINE)
-        assert err == ""
+def test_requestChannel_not_localNode(
+    caplog: LogCaptureFixture, mock_serial_interface: MagicMock
+) -> None:
+    """Verify that requesting channel 0 on a non-local node logs a remote channel info request.
+
+    Sets up a mocked SerialInterface and a Node that is not the local node, configures max channels,
+    calls _request_channel(0), and asserts that an INFO log contains "Requesting channel 0 info".
+
+    """
+    iface = mock_serial_interface
+    anode = Node(iface, "!12345678", noProto=True)
+    with caplog.at_level(logging.INFO):
+        anode._request_channel(0)
+        assert re.search(
+            r"Requesting channel 0 info from remote node", caplog.text, re.MULTILINE
+        )
 
 
 @pytest.mark.unit
-def test_requestChannel_localNode(caplog):
-    """Test _requestChannel()"""
-    iface = MagicMock(autospec=SerialInterface)
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        mo.localNode.getChannelByName.return_value = None
-        mo.myInfo.max_channels = 8
-        anode = Node(mo, "bar", noProto=True)
+def test_requestChannel_localNode(
+    caplog: LogCaptureFixture, mock_serial_interface: MagicMock
+) -> None:
+    """Verify that a local node logs a local channel request when _request_channel is called.
 
-        # Note: Have to do this next line because every call to MagicMock object/method returns a new magic mock
-        mo.localNode = anode
+    Checks that the log contains "Requesting channel 0" and does not include "from remote node".
 
-        with caplog.at_level(logging.DEBUG):
-            anode._requestChannel(0)
-            assert re.search(r"Requesting channel 0", caplog.text, re.MULTILINE)
-            assert not re.search(r"from remote node", caplog.text, re.MULTILINE)
+    """
+    iface = mock_serial_interface
+    anode = Node(iface, "!12345678", noProto=True)
+    iface.localNode = anode
+
+    with caplog.at_level(logging.DEBUG):
+        anode._request_channel(0)
+        assert re.search(r"Requesting channel 0", caplog.text, re.MULTILINE)
+        assert not re.search(r"from remote node", caplog.text, re.MULTILINE)
+
 
 @pytest.mark.unit
-def test_requestChannels_non_localNode(caplog):
-    """Test requestChannels() with a starting index of 0"""
-    iface = MagicMock(autospec=SerialInterface)
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        mo.localNode.getChannelByName.return_value = None
-        mo.myInfo.max_channels = 8
-        anode = Node(mo, "bar", noProto=True)
-        anode.partialChannels = ['0']
-        with caplog.at_level(logging.DEBUG):
-            anode.requestChannels(0)
-            assert re.search(f"Requesting channel 0 info from remote node", caplog.text, re.MULTILINE)
-            assert anode.partialChannels == []
+def test_requestChannels_non_localNode(
+    caplog: LogCaptureFixture, mock_serial_interface: MagicMock
+) -> None:
+    """Test requestChannels() with a starting index of 0."""
+    iface = mock_serial_interface
+    anode = Node(iface, "!12345678", noProto=True)
+    # Set a sentinel value to verify it gets reset
+    anode.partialChannels = [Channel()]
+    with caplog.at_level(logging.DEBUG):
+        anode.requestChannels(0)
+        assert re.search(
+            "Requesting channel 0 info from remote node", caplog.text, re.MULTILINE
+        )
+        assert not anode.partialChannels
+
 
 @pytest.mark.unit
-def test_requestChannels_non_localNode_starting_index(caplog):
-    """Test requestChannels() with a starting index of non-0"""
-    iface = MagicMock(autospec=SerialInterface)
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        mo.localNode.getChannelByName.return_value = None
-        mo.myInfo.max_channels = 8
-        anode = Node(mo, "bar", noProto=True)
-        anode.partialChannels = ['1']
-        with caplog.at_level(logging.DEBUG):
-            anode.requestChannels(3)
-            assert re.search(f"Requesting channel 3 info from remote node", caplog.text, re.MULTILINE)
-            # make sure it hasn't been initialized
-            assert anode.partialChannels == ['1']
-
-# @pytest.mark.unit
-# def test_onResponseRequestCannedMessagePluginMesagePart1(caplog):
-#    """Test onResponseRequestCannedMessagePluginMessagePart1()"""
-#
-#    part1 = CannedMessagePluginMessagePart1()
-#    part1.text = 'foo1'
-#
-#    msg1 = MagicMock(autospec=AdminMessage)
-#    msg1.get_canned_message_plugin_part1_response = part1
-#
-#    packet = {
-#            'from': 682968612,
-#            'to': 682968612,
-#            'decoded': {
-#                'portnum': 'ADMIN_APP',
-#                'payload': 'faked',
-#                'requestId': 927039000,
-#                'admin': {
-#                    'getCannedMessagePluginPart1Response': {'text': 'foo1'},
-#                    'raw': msg1
-#                    }
-#                },
-#            'id': 589440320,
-#            'rxTime': 1642710843,
-#            'hopLimit': 3,
-#            'priority': 'RELIABLE',
-#            'raw': 'faked',
-#            'fromId': '!28b54624',
-#            'toId': '!28b54624'
-#            }
-#
-#    iface = MagicMock(autospec=SerialInterface)
-#    with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#        anode = Node(mo, 'bar', noProto=True)
-#        # Note: Have to do this next line because every call to MagicMock object/method returns a new magic mock
-#        mo.localNode = anode
-#
-#        with caplog.at_level(logging.DEBUG):
-#            anode.onResponseRequestCannedMessagePluginMessagePart1(packet)
-#            assert re.search(r'onResponseRequestCannedMessagePluginMessagePart1', caplog.text, re.MULTILINE)
-#            assert anode.cannedPluginMessagePart1 == 'foo1'
-
-
-# @pytest.mark.unit
-# def test_onResponseRequestCannedMessagePluginMesagePart2(caplog):
-#    """Test onResponseRequestCannedMessagePluginMessagePart2()"""
-#
-#    part2 = CannedMessagePluginMessagePart2()
-#    part2.text = 'foo2'
-#
-#    msg2 = MagicMock(autospec=AdminMessage)
-#    msg2.get_canned_message_plugin_part2_response = part2
-#
-#    packet = {
-#            'from': 682968612,
-#            'to': 682968612,
-#            'decoded': {
-#                'portnum': 'ADMIN_APP',
-#                'payload': 'faked',
-#                'requestId': 927039000,
-#                'admin': {
-#                    'getCannedMessagePluginPart2Response': {'text': 'foo2'},
-#                    'raw': msg2
-#                    }
-#                },
-#            'id': 589440320,
-#            'rxTime': 1642710843,
-#            'hopLimit': 3,
-#            'priority': 'RELIABLE',
-#            'raw': 'faked',
-#            'fromId': '!28b54624',
-#            'toId': '!28b54624'
-#            }
-#
-#    iface = MagicMock(autospec=SerialInterface)
-#    with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#        anode = Node(mo, 'bar', noProto=True)
-#        # Note: Have to do this next line because every call to MagicMock object/method returns a new magic mock
-#        mo.localNode = anode
-#
-#        with caplog.at_level(logging.DEBUG):
-#            anode.onResponseRequestCannedMessagePluginMessagePart2(packet)
-#            assert re.search(r'onResponseRequestCannedMessagePluginMessagePart2', caplog.text, re.MULTILINE)
-#            assert anode.cannedPluginMessagePart2 == 'foo2'
-
-
-# @pytest.mark.unit
-# def test_onResponseRequestCannedMessagePluginMesagePart3(caplog):
-#    """Test onResponseRequestCannedMessagePluginMessagePart3()"""
-#
-#    part3 = CannedMessagePluginMessagePart3()
-#    part3.text = 'foo3'
-#
-#    msg3 = MagicMock(autospec=AdminMessage)
-#    msg3.get_canned_message_plugin_part3_response = part3
-#
-#    packet = {
-#            'from': 682968612,
-#            'to': 682968612,
-#            'decoded': {
-#                'portnum': 'ADMIN_APP',
-#                'payload': 'faked',
-#                'requestId': 927039000,
-#                'admin': {
-#                    'getCannedMessagePluginPart3Response': {'text': 'foo3'},
-#                    'raw': msg3
-#                    }
-#                },
-#            'id': 589440320,
-#            'rxTime': 1642710843,
-#            'hopLimit': 3,
-#            'priority': 'RELIABLE',
-#            'raw': 'faked',
-#            'fromId': '!28b54624',
-#            'toId': '!28b54624'
-#            }
-#
-#    iface = MagicMock(autospec=SerialInterface)
-#    with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#        anode = Node(mo, 'bar', noProto=True)
-#        # Note: Have to do this next line because every call to MagicMock object/method returns a new magic mock
-#        mo.localNode = anode
-#
-#        with caplog.at_level(logging.DEBUG):
-#            anode.onResponseRequestCannedMessagePluginMessagePart3(packet)
-#            assert re.search(r'onResponseRequestCannedMessagePluginMessagePart3', caplog.text, re.MULTILINE)
-#            assert anode.cannedPluginMessagePart3 == 'foo3'
-
-
-# @pytest.mark.unit
-# def test_onResponseRequestCannedMessagePluginMesagePart4(caplog):
-#    """Test onResponseRequestCannedMessagePluginMessagePart4()"""
-#
-#    part4 = CannedMessagePluginMessagePart4()
-#    part4.text = 'foo4'
-#
-#    msg4 = MagicMock(autospec=AdminMessage)
-#    msg4.get_canned_message_plugin_part4_response = part4
-#
-#    packet = {
-#            'from': 682968612,
-#            'to': 682968612,
-#            'decoded': {
-#                'portnum': 'ADMIN_APP',
-#                'payload': 'faked',
-#                'requestId': 927039000,
-#                'admin': {
-#                    'getCannedMessagePluginPart4Response': {'text': 'foo4'},
-#                    'raw': msg4
-#                    }
-#                },
-#            'id': 589440320,
-#            'rxTime': 1642710843,
-#            'hopLimit': 3,
-#            'priority': 'RELIABLE',
-#            'raw': 'faked',
-#            'fromId': '!28b54624',
-#            'toId': '!28b54624'
-#            }
-#
-#    iface = MagicMock(autospec=SerialInterface)
-#    with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#        anode = Node(mo, 'bar', noProto=True)
-#        # Note: Have to do this next line because every call to MagicMock object/method returns a new magic mock
-#        mo.localNode = anode
-#
-#        with caplog.at_level(logging.DEBUG):
-#            anode.onResponseRequestCannedMessagePluginMessagePart4(packet)
-#            assert re.search(r'onResponseRequestCannedMessagePluginMessagePart4', caplog.text, re.MULTILINE)
-#            assert anode.cannedPluginMessagePart4 == 'foo4'
-
-
-# @pytest.mark.unit
-# def test_onResponseRequestCannedMessagePluginMesagePart5(caplog):
-#    """Test onResponseRequestCannedMessagePluginMessagePart5()"""
-#
-#    part5 = CannedMessagePluginMessagePart5()
-#    part5.text = 'foo5'
-#
-#    msg5 = MagicMock(autospec=AdminMessage)
-#    msg5.get_canned_message_plugin_part5_response = part5
-#
-#
-#    packet = {
-#            'from': 682968612,
-#            'to': 682968612,
-#            'decoded': {
-#                'portnum': 'ADMIN_APP',
-#                'payload': 'faked',
-#                'requestId': 927039000,
-#                'admin': {
-#                    'getCannedMessagePluginPart5Response': {'text': 'foo5'},
-#                    'raw': msg5
-#                    }
-#                },
-#            'id': 589440320,
-#            'rxTime': 1642710843,
-#            'hopLimit': 3,
-#            'priority': 'RELIABLE',
-#            'raw': 'faked',
-#            'fromId': '!28b54624',
-#            'toId': '!28b54624'
-#            }
-#
-#    iface = MagicMock(autospec=SerialInterface)
-#    with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#        anode = Node(mo, 'bar', noProto=True)
-#        # Note: Have to do this next line because every call to MagicMock object/method returns a new magic mock
-#        mo.localNode = anode
-#
-#        with caplog.at_level(logging.DEBUG):
-#            anode.onResponseRequestCannedMessagePluginMessagePart5(packet)
-#            assert re.search(r'onResponseRequestCannedMessagePluginMessagePart5', caplog.text, re.MULTILINE)
-#            assert anode.cannedPluginMessagePart5 == 'foo5'
-
-
-# @pytest.mark.unit
-# def test_onResponseRequestCannedMessagePluginMesagePart1_error(caplog, capsys):
-#    """Test onResponseRequestCannedMessagePluginMessagePart1() with error"""
-#
-#    packet = {
-#            'decoded': {
-#                'routing': {
-#                    'errorReason': 'some made up error',
-#                    },
-#                },
-#            }
-#
-#    iface = MagicMock(autospec=SerialInterface)
-#    with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#        anode = Node(mo, 'bar', noProto=True)
-#        # Note: Have to do this next line because every call to MagicMock object/method returns a new magic mock
-#        mo.localNode = anode
-#
-#        with caplog.at_level(logging.DEBUG):
-#            anode.onResponseRequestCannedMessagePluginMessagePart1(packet)
-#            assert re.search(r'onResponseRequestCannedMessagePluginMessagePart1', caplog.text, re.MULTILINE)
-#        out, err = capsys.readouterr()
-#        assert re.search(r'Error on response', out)
-#        assert err == ''
-
-
-# @pytest.mark.unit
-# def test_onResponseRequestCannedMessagePluginMesagePart2_error(caplog, capsys):
-#    """Test onResponseRequestCannedMessagePluginMessagePart2() with error"""
-#
-#    packet = {
-#            'decoded': {
-#                'routing': {
-#                    'errorReason': 'some made up error',
-#                    },
-#                },
-#            }
-#
-#    iface = MagicMock(autospec=SerialInterface)
-#    with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#        anode = Node(mo, 'bar', noProto=True)
-#        # Note: Have to do this next line because every call to MagicMock object/method returns a new magic mock
-#        mo.localNode = anode
-#
-#        with caplog.at_level(logging.DEBUG):
-#            anode.onResponseRequestCannedMessagePluginMessagePart2(packet)
-#            assert re.search(r'onResponseRequestCannedMessagePluginMessagePart2', caplog.text, re.MULTILINE)
-#        out, err = capsys.readouterr()
-#        assert re.search(r'Error on response', out)
-#        assert err == ''
-
-
-# @pytest.mark.unit
-# def test_onResponseRequestCannedMessagePluginMesagePart3_error(caplog, capsys):
-#    """Test onResponseRequestCannedMessagePluginMessagePart3() with error"""
-#
-#    packet = {
-#            'decoded': {
-#                'routing': {
-#                    'errorReason': 'some made up error',
-#                    },
-#                },
-#            }
-#
-#    iface = MagicMock(autospec=SerialInterface)
-#    with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#        anode = Node(mo, 'bar', noProto=True)
-#        # Note: Have to do this next line because every call to MagicMock object/method returns a new magic mock
-#        mo.localNode = anode
-#
-#        with caplog.at_level(logging.DEBUG):
-#            anode.onResponseRequestCannedMessagePluginMessagePart3(packet)
-#            assert re.search(r'onResponseRequestCannedMessagePluginMessagePart3', caplog.text, re.MULTILINE)
-#        out, err = capsys.readouterr()
-#        assert re.search(r'Error on response', out)
-#        assert err == ''
-#
-#
-# @pytest.mark.unit
-# def test_onResponseRequestCannedMessagePluginMesagePart4_error(caplog, capsys):
-#    """Test onResponseRequestCannedMessagePluginMessagePart4() with error"""
-#
-#    packet = {
-#            'decoded': {
-#                'routing': {
-#                    'errorReason': 'some made up error',
-#                    },
-#                },
-#            }
-#
-#    iface = MagicMock(autospec=SerialInterface)
-#    with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#        anode = Node(mo, 'bar', noProto=True)
-#        # Note: Have to do this next line because every call to MagicMock object/method returns a new magic mock
-#        mo.localNode = anode
-#
-#        with caplog.at_level(logging.DEBUG):
-#            anode.onResponseRequestCannedMessagePluginMessagePart4(packet)
-#            assert re.search(r'onResponseRequestCannedMessagePluginMessagePart4', caplog.text, re.MULTILINE)
-#        out, err = capsys.readouterr()
-#        assert re.search(r'Error on response', out)
-#        assert err == ''
-#
-#
-# @pytest.mark.unit
-# def test_onResponseRequestCannedMessagePluginMesagePart5_error(caplog, capsys):
-#    """Test onResponseRequestCannedMessagePluginMessagePart5() with error"""
-#
-#    packet = {
-#            'decoded': {
-#                'routing': {
-#                    'errorReason': 'some made up error',
-#                    },
-#                },
-#            }
-#
-#    iface = MagicMock(autospec=SerialInterface)
-#    with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#        anode = Node(mo, 'bar', noProto=True)
-#        # Note: Have to do this next line because every call to MagicMock object/method returns a new magic mock
-#        mo.localNode = anode
-#
-#        with caplog.at_level(logging.DEBUG):
-#            anode.onResponseRequestCannedMessagePluginMessagePart5(packet)
-#            assert re.search(r'onResponseRequestCannedMessagePluginMessagePart5', caplog.text, re.MULTILINE)
-#        out, err = capsys.readouterr()
-#        assert re.search(r'Error on response', out)
-#        assert err == ''
-
-
-# TODO
-# @pytest.mark.unit
-# def test_onResponseRequestChannel(caplog):
-#    """Test onResponseRequestChannel()"""
-#
-#    channel1 = Channel(index=1, role=1)
-#    channel1.settings.modem_config = 3
-#    channel1.settings.psk = b'\x01'
-#
-#    msg1 = MagicMock(autospec=AdminMessage)
-#    msg1.get_channel_response = channel1
-#
-#    msg2 = MagicMock(autospec=AdminMessage)
-#    channel2 = Channel(index=2, role=0) # disabled
-#    msg2.get_channel_response = channel2
-#
-#    # default primary channel
-#    packet1 = {
-#        'from': 2475227164,
-#        'to': 2475227164,
-#        'decoded': {
-#            'portnum': 'ADMIN_APP',
-#            'payload': b':\t\x12\x05\x18\x03"\x01\x01\x18\x01',
-#            'requestId': 2615094405,
-#            'admin': {
-#                'getChannelResponse': {
-#                    'settings': {
-#                        'modemConfig': 'Bw125Cr48Sf4096',
-#                        'psk': 'AQ=='
-#                    },
-#                    'role': 'PRIMARY'
-#                },
-#                'raw': msg1,
-#            }
-#        },
-#        'id': 1692918436,
-#        'hopLimit': 3,
-#        'priority': 'RELIABLE',
-#        'raw': 'fake',
-#        'fromId': '!9388f81c',
-#        'toId': '!9388f81c'
-#        }
-#
-#    # no other channels
-#    packet2 = {
-#        'from': 2475227164,
-#        'to': 2475227164,
-#        'decoded': {
-#            'portnum': 'ADMIN_APP',
-#            'payload': b':\x04\x08\x02\x12\x00',
-#            'requestId': 743049663,
-#            'admin': {
-#                'getChannelResponse': {
-#                    'index': 2,
-#                    'settings': {}
-#                },
-#                'raw': msg2,
-#            }
-#        },
-#        'id': 1692918456,
-#        'rxTime': 1640202239,
-#        'hopLimit': 3,
-#        'priority': 'RELIABLE',
-#        'raw': 'faked',
-#        'fromId': '!9388f81c',
-#        'toId': '!9388f81c'
-#    }
-#
-#    iface = MagicMock(autospec=SerialInterface)
-#    with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#        mo.localNode.getChannelByName.return_value = None
-#        mo.myInfo.max_channels = 8
-#        anode = Node(mo, 'bar', noProto=True)
-#
-#        radioConfig = RadioConfig()
-#        anode.radioConfig = radioConfig
-#
-#        # Note: Have to do this next line because every call to MagicMock object/method returns a new magic mock
-#        mo.localNode = anode
-#
-#        with caplog.at_level(logging.DEBUG):
-#            anode.requestConfig()
-#            anode.onResponseRequestChannel(packet1)
-#            assert re.search(r'Received channel', caplog.text, re.MULTILINE)
-#            anode.onResponseRequestChannel(packet2)
-#            assert re.search(r'Received channel', caplog.text, re.MULTILINE)
-#            assert re.search(r'Finished downloading channels', caplog.text, re.MULTILINE)
-#            assert len(anode.channels) == 8
-#            assert anode.channels[0].settings.modem_config == 3
-#            assert anode.channels[1].settings.name == ''
-#            assert anode.channels[2].settings.name == ''
-#            assert anode.channels[3].settings.name == ''
-#            assert anode.channels[4].settings.name == ''
-#            assert anode.channels[5].settings.name == ''
-#            assert anode.channels[6].settings.name == ''
-#            assert anode.channels[7].settings.name == ''
-
-
-# TODO
-# @pytest.mark.unit
-# def test_onResponseRequestSetting(caplog):
-#    """Test onResponseRequestSetting()"""
-#    # Note: Split out the get_radio_response to a MagicMock
-#    # so it could be "returned" (not really sure how to do that
-#    # in a python dict.
-#    amsg = MagicMock(autospec=AdminMessage)
-#    amsg.get_radio_response = """{
-#  preferences {
-#    phone_timeout_secs: 900
-#    ls_secs: 300
-#    position_broadcast_smart: true
-#    position_flags: 35
-#  }
-# }"""
-#    packet = {
-#        'from': 2475227164,
-#        'to': 2475227164,
-#        'decoded': {
-#            'portnum': 'ADMIN_APP',
-#            'payload': b'*\x0e\n\x0c0\x84\x07P\xac\x02\x88\x01\x01\xb0\t#',
-#            'requestId': 3145147848,
-#            'admin': {
-#                'getRadioResponse': {
-#                    'preferences': {
-#                        'phoneTimeoutSecs': 900,
-#                        'lsSecs': 300,
-#                        'positionBroadcastSmart': True,
-#                        'positionFlags': 35
-#                     }
-#                },
-#                'raw': amsg
-#            },
-#            'id': 365963704,
-#            'rxTime': 1640195197,
-#            'hopLimit': 3,
-#            'priority': 'RELIABLE',
-#            'raw': 'faked',
-#            'fromId': '!9388f81c',
-#            'toId': '!9388f81c'
-#        }
-#    }
-#    iface = MagicMock(autospec=SerialInterface)
-#    with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#        mo.localNode.getChannelByName.return_value = None
-#        mo.myInfo.max_channels = 8
-#        anode = Node(mo, 'bar', noProto=True)
-#
-#        radioConfig = RadioConfig()
-#        anode.radioConfig = radioConfig
-#
-#        # Note: Have to do this next line because every call to MagicMock object/method returns a new magic mock
-#        mo.localNode = anode
-#
-#        with caplog.at_level(logging.DEBUG):
-#            anode.onResponseRequestSettings(packet)
-#            assert re.search(r'Received radio config, now fetching channels..', caplog.text, re.MULTILINE)
-
-
-# TODO
-# @pytest.mark.unit
-# def test_onResponseRequestSetting_with_error(capsys):
-#    """Test onResponseRequestSetting() with an error"""
-#    packet = {
-#        'from': 2475227164,
-#        'to': 2475227164,
-#        'decoded': {
-#            'portnum': 'ADMIN_APP',
-#            'payload': b'*\x0e\n\x0c0\x84\x07P\xac\x02\x88\x01\x01\xb0\t#',
-#            'requestId': 3145147848,
-#            'routing': {
-#                'errorReason': 'some made up error',
-#            },
-#            'admin': {
-#                'getRadioResponse': {
-#                    'preferences': {
-#                        'phoneTimeoutSecs': 900,
-#                        'lsSecs': 300,
-#                        'positionBroadcastSmart': True,
-#                        'positionFlags': 35
-#                     }
-#                },
-#            },
-#            'id': 365963704,
-#            'rxTime': 1640195197,
-#            'hopLimit': 3,
-#            'priority': 'RELIABLE',
-#            'fromId': '!9388f81c',
-#            'toId': '!9388f81c'
-#        }
-#    }
-#    iface = MagicMock(autospec=SerialInterface)
-#    with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#        mo.localNode.getChannelByName.return_value = None
-#        mo.myInfo.max_channels = 8
-#        anode = Node(mo, 'bar', noProto=True)
-#
-#        radioConfig = RadioConfig()
-#        anode.radioConfig = radioConfig
-#
-#        # Note: Have to do this next line because every call to MagicMock object/method returns a new magic mock
-#        mo.localNode = anode
-#
-#        anode.onResponseRequestSettings(packet)
-#        out, err = capsys.readouterr()
-#        assert re.search(r'Error on response', out)
-#        assert err == ''
+def test_requestChannels_non_localNode_starting_index(
+    caplog: LogCaptureFixture, mock_serial_interface: MagicMock
+) -> None:
+    """Test requestChannels() with a starting index of non-0."""
+    iface = mock_serial_interface
+    anode = Node(iface, "!12345678", noProto=True)
+    sentinel_channel = Channel()
+    anode.partialChannels = [sentinel_channel]
+    with caplog.at_level(logging.DEBUG):
+        anode.requestChannels(3)
+        assert re.search(
+            "Requesting channel 3 info from remote node", caplog.text, re.MULTILINE
+        )
+        # make sure it hasn't been initialized (identity check ensures list wasn't replaced)
+        assert (
+            len(anode.partialChannels) == 1
+            and anode.partialChannels[0] is sentinel_channel
+        )
 
 
 @pytest.mark.unit
 @pytest.mark.parametrize("favorite", ["!1dec0ded", 502009325])
-def test_set_favorite(favorite):
-    """Test setFavorite"""
-    iface = MagicMock(autospec=SerialInterface)
+def test_set_favorite(
+    favorite: str | int,
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Verify setFavorite sends an admin message marking the given node as a favorite and transmits it.
+
+    Parameters
+    ----------
+    favorite : str | int
+        Node ID to mark as favorite.
+    """
+    iface = autospec_local_node_iface(SerialInterface)
     node = Node(iface, 12345678)
     amesg = admin_pb2.AdminMessage()
-    with patch("meshtastic.admin_pb2.AdminMessage", return_value=amesg):
+    with patch("meshtastic.node.admin_pb2.AdminMessage", return_value=amesg):
         node.setFavorite(favorite)
     assert amesg.set_favorite_node == 502009325
     iface.sendData.assert_called_once()
@@ -1465,12 +668,21 @@ def test_set_favorite(favorite):
 
 @pytest.mark.unit
 @pytest.mark.parametrize("favorite", ["!1dec0ded", 502009325])
-def test_remove_favorite(favorite):
-    """Test setFavorite"""
-    iface = MagicMock(autospec=SerialInterface)
+def test_remove_favorite(
+    favorite: str | int,
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Verify that removing a favorite node creates an AdminMessage with the expected node ID and sends it via the interface.
+
+    Parameters
+    ----------
+    favorite : str | int
+        Identifier of the favorite node to remove; used to populate the admin message sent to the interface.
+    """
+    iface = autospec_local_node_iface(SerialInterface)
     node = Node(iface, 12345678)
     amesg = admin_pb2.AdminMessage()
-    with patch("meshtastic.admin_pb2.AdminMessage", return_value=amesg):
+    with patch("meshtastic.node.admin_pb2.AdminMessage", return_value=amesg):
         node.removeFavorite(favorite)
 
     assert amesg.remove_favorite_node == 502009325
@@ -1479,12 +691,21 @@ def test_remove_favorite(favorite):
 
 @pytest.mark.unit
 @pytest.mark.parametrize("ignored", ["!1dec0ded", 502009325])
-def test_set_ignored(ignored):
-    """Test setFavorite"""
-    iface = MagicMock(autospec=SerialInterface)
+def test_set_ignored(
+    ignored: str | int,
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Verify that Node.setIgnored constructs an AdminMessage marking the given node ID as ignored and sends it.
+
+    Parameters
+    ----------
+    ignored : str | int
+        Node identifier passed to setIgnored.
+    """
+    iface = autospec_local_node_iface(SerialInterface)
     node = Node(iface, 12345678)
     amesg = admin_pb2.AdminMessage()
-    with patch("meshtastic.admin_pb2.AdminMessage", return_value=amesg):
+    with patch("meshtastic.node.admin_pb2.AdminMessage", return_value=amesg):
         node.setIgnored(ignored)
     assert amesg.set_ignored_node == 502009325
     iface.sendData.assert_called_once()
@@ -1492,12 +713,21 @@ def test_set_ignored(ignored):
 
 @pytest.mark.unit
 @pytest.mark.parametrize("ignored", ["!1dec0ded", 502009325])
-def test_remove_ignored(ignored):
-    """Test setFavorite"""
-    iface = MagicMock(autospec=SerialInterface)
+def test_remove_ignored(
+    ignored: str | int,
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Verify that calling removeIgnored sends an admin message to remove a node from the ignored list and transmits it.
+
+    Parameters
+    ----------
+    ignored : str | int
+        Node identifier (e.g., node ID or address) that will be encoded into `remove_ignored_node` on the AdminMessage.
+    """
+    iface = autospec_local_node_iface(SerialInterface)
     node = Node(iface, 12345678)
     amesg = admin_pb2.AdminMessage()
-    with patch("meshtastic.admin_pb2.AdminMessage", return_value=amesg):
+    with patch("meshtastic.node.admin_pb2.AdminMessage", return_value=amesg):
         node.removeIgnored(ignored)
 
     assert amesg.remove_ignored_node == 502009325
@@ -1505,118 +735,1088 @@ def test_remove_ignored(ignored):
 
 
 @pytest.mark.unit
-def test_setOwner_whitespace_only_long_name(capsys):
-    """Test setOwner with whitespace-only long name"""
-    iface = MagicMock(autospec=MeshInterface)
+@pytest.mark.parametrize(
+    ("param_name", "value", "expected_error"),
+    [
+        (
+            "long_name",
+            "   ",
+            "Long Name cannot be empty or contain only whitespace characters",
+        ),
+        (
+            "long_name",
+            "",
+            "Long Name cannot be empty or contain only whitespace characters",
+        ),
+        (
+            "short_name",
+            "   ",
+            "Short Name cannot be empty or contain only whitespace characters",
+        ),
+        (
+            "short_name",
+            "",
+            "Short Name cannot be empty or contain only whitespace characters",
+        ),
+    ],
+)
+def test_setOwner_rejects_empty_or_whitespace_names(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+    param_name: str,
+    value: str,
+    expected_error: str,
+) -> None:
+    """Test setOwner rejects empty or whitespace-only names."""
+    iface = autospec_local_node_iface(MeshInterface)
     anode = Node(iface, 123, noProto=True)
 
-    with pytest.raises(SystemExit) as excinfo:
-        anode.setOwner(long_name="   ")
-
-    out, _ = capsys.readouterr()
-    assert "ERROR: Long Name cannot be empty or contain only whitespace characters" in out
-    assert excinfo.value.code == 1
+    with pytest.raises(MeshInterface.MeshInterfaceError, match=expected_error):
+        anode.setOwner(**{param_name: value})  # type: ignore[arg-type]
 
 
 @pytest.mark.unit
-def test_setOwner_empty_long_name(capsys):
-    """Test setOwner with empty long name"""
-    iface = MagicMock(autospec=MeshInterface)
-    anode = Node(iface, 123, noProto=True)
-
-    with pytest.raises(SystemExit) as excinfo:
-        anode.setOwner(long_name="")
-
-    out, _ = capsys.readouterr()
-    assert "ERROR: Long Name cannot be empty or contain only whitespace characters" in out
-    assert excinfo.value.code == 1
-
-
-@pytest.mark.unit
-def test_setOwner_whitespace_only_short_name(capsys):
-    """Test setOwner with whitespace-only short name"""
-    iface = MagicMock(autospec=MeshInterface)
-    anode = Node(iface, 123, noProto=True)
-
-    with pytest.raises(SystemExit) as excinfo:
-        anode.setOwner(short_name="   ")
-
-    out, _ = capsys.readouterr()
-    assert "ERROR: Short Name cannot be empty or contain only whitespace characters" in out
-    assert excinfo.value.code == 1
-
-
-@pytest.mark.unit
-def test_setOwner_empty_short_name(capsys):
-    """Test setOwner with empty short name"""
-    iface = MagicMock(autospec=MeshInterface)
-    anode = Node(iface, 123, noProto=True)
-
-    with pytest.raises(SystemExit) as excinfo:
-        anode.setOwner(short_name="")
-
-    out, _ = capsys.readouterr()
-    assert "ERROR: Short Name cannot be empty or contain only whitespace characters" in out
-    assert excinfo.value.code == 1
-
-
-@pytest.mark.unit
-def test_setOwner_valid_names(caplog):
-    """Test setOwner with valid names"""
-    iface = MagicMock(autospec=MeshInterface)
+@pytest.mark.parametrize(
+    ("owner_kwargs", "expected_patterns"),
+    [
+        (
+            {"long_name": "ValidName", "short_name": "VN"},
+            (
+                r"p\.set_owner\.long_name:ValidName:",
+                r"p\.set_owner\.short_name:VN:",
+            ),
+        ),
+        (
+            {"short_name": "TST"},
+            (r"p\.set_owner\.short_name:TST:",),
+        ),
+        (
+            {"long_name": "TestUser", "short_name": "TOOLONG"},
+            (r"p\.set_owner\.short_name:TOOL:",),
+        ),
+        (
+            {"long_name": "LicensedUser", "is_licensed": True},
+            (r"p\.set_owner\.is_licensed:True:",),
+        ),
+        (
+            {"long_name": "TestUser", "is_unmessagable": True},
+            (r"p\.set_owner\.is_unmessagable:True:",),
+        ),
+    ],
+)
+def test_setOwner_logs_expected_fields_for_variants(
+    caplog: LogCaptureFixture,
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+    owner_kwargs: dict[str, Any],
+    expected_patterns: tuple[str, ...],
+) -> None:
+    """Test setOwner variants log the expected fields."""
+    iface = autospec_local_node_iface(MeshInterface)
     anode = Node(iface, 123, noProto=True)
 
     with caplog.at_level(logging.DEBUG):
-        anode.setOwner(long_name="ValidName", short_name="VN")
+        anode.setOwner(**owner_kwargs)
 
-    # Should not raise any exceptions
-    # Note: When noProto=True, _sendAdmin is not called as the method returns early
-    assert re.search(r'p.set_owner.long_name:ValidName:', caplog.text, re.MULTILINE)
-    assert re.search(r'p.set_owner.short_name:VN:', caplog.text, re.MULTILINE)
+    for pattern in expected_patterns:
+        assert re.search(pattern, caplog.text, re.MULTILINE)
 
 
 @pytest.mark.unit
-def test_start_ota_local_node():
-    """Test startOTA on local node"""
+def test_waitForConfig_timeout(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Test waitForConfig returns False on timeout."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, 123, noProto=True)
+    # Mock timeout to simulate immediate timeout (waitForSet returns False)
+    anode._timeout = MagicMock()
+    anode._timeout.waitForSet.return_value = False
+
+    result = anode.waitForConfig()
+    assert result is False
+
+
+@pytest.mark.unit
+def test_waitForConfig_success(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Test waitForConfig returns True when config is available."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, 123, noProto=True)
+
+    # Set up the config to be "available"
+    anode.localConfig = localonly_pb2.LocalConfig()
+
+    # Mock the timeout to return True
+    anode._timeout = MagicMock()
+    anode._timeout.waitForSet.return_value = True
+
+    result = anode.waitForConfig()
+    assert result is True
+
+
+@pytest.mark.unit
+def test_start_ota_local_node() -> None:
+    """Test startOTA on local node."""
     iface = MagicMock(autospec=MeshInterface)
     anode = Node(iface, 1234567890, noProto=True)
-    # Set up as local node
     iface.localNode = anode
 
-    amesg = admin_pb2.AdminMessage()
-    with patch("meshtastic.admin_pb2.AdminMessage", return_value=amesg):
-        with patch.object(anode, "_sendAdmin") as mock_send_admin:
-            test_hash = b"\x01\x02\x03" * 8  # 24 bytes hash
-            anode.startOTA(ota_mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=test_hash)
+    captured: dict[str, object] = {}
+    anode._send_admin = _make_fake_send_admin(  # type: ignore[method-assign,assignment]
+        captured=captured
+    )
 
-            # Verify the OTA request was set correctly
-            assert amesg.ota_request.reboot_ota_mode == admin_pb2.OTAMode.OTA_WIFI
-            assert amesg.ota_request.ota_hash == test_hash
-            mock_send_admin.assert_called_once_with(amesg)
+    test_hash = b"\x01\x02\x03" * 8  # 24-byte hash
+    anode.startOTA(mode=admin_pb2.OTAMode.OTA_WIFI, hash=test_hash)
+
+    sent_msg = cast(admin_pb2.AdminMessage, captured["msg"])
+    assert sent_msg.ota_request.reboot_ota_mode == admin_pb2.OTAMode.OTA_WIFI
+    assert sent_msg.ota_request.ota_hash == test_hash
 
 
 @pytest.mark.unit
-def test_start_ota_remote_node_raises_error():
-    """Test startOTA on remote node raises ValueError"""
+def test_start_ota_remote_node_raises_error() -> None:
+    """Test startOTA on remote node raises MeshInterfaceError."""
     iface = MagicMock(autospec=MeshInterface)
     local_node = Node(iface, 1234567890, noProto=True)
     remote_node = Node(iface, 9876543210, noProto=True)
     iface.localNode = local_node
 
     test_hash = b"\x01\x02\x03" * 8
-    with pytest.raises(ValueError, match="startOTA only possible in local node"):
-        remote_node.startOTA(
-            ota_mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=test_hash
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="startOTA only possible on local node"
+    ):
+        remote_node.startOTA(mode=admin_pb2.OTAMode.OTA_WIFI, hash=test_hash)
+
+
+@pytest.mark.unit
+def test_requestConfig_with_module_config_descriptor(
+    mock_serial_interface: MagicMock,
+) -> None:
+    """Verify requestConfig sets get_module_config_request for LocalModuleConfig fields.
+
+    Tests line 370: when configType is a field descriptor with containing_type.name
+    != 'LocalConfig', it should set get_module_config_request to the field index.
+    """
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    mock_serial_interface.localNode = anode
+
+    # Get a field descriptor from LocalModuleConfig (not LocalConfig)
+    module_config = localonly_pb2.LocalModuleConfig()
+    mqtt_field = module_config.DESCRIPTOR.fields_by_name["mqtt"]
+
+    sent_messages: list[admin_pb2.AdminMessage] = []
+    anode._send_admin = _make_fake_send_admin(  # type: ignore[method-assign,assignment]
+        sent_messages=sent_messages
+    )
+
+    anode.requestConfig(mqtt_field)
+
+    assert len(sent_messages) == 1
+    sent_msg = sent_messages[0]
+    # mqtt field has index 0, should be set as get_module_config_request
+    assert sent_msg.get_module_config_request == 0
+
+
+@pytest.mark.unit
+def test_showChannels_logs_snapshot_and_skips_disabled_entries(
+    caplog: LogCaptureFixture,
+    capsys: CaptureFixture[str],
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """ShowChannels should log channel snapshot and print only non-disabled channels."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    primary.settings.psk = b"\x01"
+    disabled = Channel(index=1, role=Channel.Role.DISABLED)
+    disabled.settings.name = "disabled"
+    anode.channels = [primary, disabled]
+    anode.getURL = MagicMock(side_effect=["primary-url", "complete-url"])  # type: ignore[method-assign]
+
+    with caplog.at_level(logging.DEBUG):
+        anode.showChannels()
+
+    out, _ = capsys.readouterr()
+    assert "self.channels" in caplog.text
+    assert "Index 0: PRIMARY" in out
+    assert "Index 1:" not in out
+
+
+@pytest.mark.unit
+def test_turnOffEncryptionOnPrimaryChannel_requires_loaded_channels(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """TurnOffEncryptionOnPrimaryChannel should fail when channels are missing."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = []
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match="Error: No channels have been read",
+    ):
+        anode.turnOffEncryptionOnPrimaryChannel()
+
+
+@pytest.mark.unit
+def test_turnOffEncryptionOnPrimaryChannel_updates_primary_and_writes(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """TurnOffEncryptionOnPrimaryChannel should disable PSK and write channel 0."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.psk = b"\x01"
+    anode.channels = [primary]
+    anode.writeChannel = MagicMock()  # type: ignore[method-assign]
+
+    anode.turnOffEncryptionOnPrimaryChannel()
+
+    assert anode.channels[0].settings.psk == fromPSK("none")
+    anode.writeChannel.assert_called_once_with(0)
+
+
+@pytest.mark.unit
+def test_writeChannel_out_of_range_raises_mesh_error(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """WriteChannel should reject invalid channel indices."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [Channel(index=0, role=Channel.Role.PRIMARY)]
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match=r"Channel index 1 out of range \(0-0\)",
+    ):
+        anode.writeChannel(1)
+
+
+@pytest.mark.unit
+def test_deleteChannel_rejects_non_secondary_or_disabled(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """DeleteChannel should only allow SECONDARY or DISABLED channels."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [Channel(index=0, role=Channel.Role.PRIMARY)]
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match="Only SECONDARY or DISABLED channels can be deleted",
+    ):
+        anode.deleteChannel(0)
+
+
+@pytest.mark.unit
+def test_deleteChannel_rewrites_following_channels_and_updates_admin_index(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """DeleteChannel should rewrite channels and use fresh admin-index resolution per write."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    iface.localNode = anode
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    admin_secondary = Channel(index=1, role=Channel.Role.SECONDARY)
+    admin_secondary.settings.name = "admin"
+    disabled = Channel(index=2, role=Channel.Role.DISABLED)
+    anode.channels = [primary, admin_secondary, disabled]
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock()  # type: ignore[method-assign]
+
+    anode.deleteChannel(1)
+
+    assert anode.channels is not None
+    assert len(anode.channels) == CHANNEL_LIMIT
+    assert anode._send_admin.call_count == CHANNEL_LIMIT - 1
+    assert all(
+        call.kwargs["adminIndex"] == 0 for call in anode._send_admin.call_args_list
+    )
+
+
+@pytest.mark.unit
+def test_channel_lookup_helpers_cover_name_disabled_and_admin_index(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Channel helper lookups should find expected channels under lock."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "main"
+    admin_channel = Channel(index=1, role=Channel.Role.SECONDARY)
+    admin_channel.settings.name = "AdMiN"
+    disabled = Channel(index=2, role=Channel.Role.DISABLED)
+    anode.channels = [primary, admin_channel, disabled]
+
+    named_channel = anode.getChannelByName("main")
+    assert named_channel is not None
+    assert named_channel is primary
+    assert named_channel.index == primary.index
+
+    disabled_channel = anode.getDisabledChannel()
+    assert disabled_channel is not None
+    assert disabled_channel is disabled
+    assert disabled_channel.index == disabled.index
+
+    named_channel_copy = anode.getChannelCopyByName("main")
+    assert named_channel_copy is not None
+    assert named_channel_copy is not primary
+    assert named_channel_copy.index == primary.index
+
+    disabled_channel_copy = anode.getDisabledChannelCopy()
+    assert disabled_channel_copy is not None
+    assert disabled_channel_copy is not disabled
+    assert disabled_channel_copy.index == disabled.index
+
+    named_channel.role = Channel.Role.DISABLED
+    assert primary.role == Channel.Role.DISABLED
+    disabled_channel.role = Channel.Role.PRIMARY
+    assert disabled.role == Channel.Role.PRIMARY
+    named_channel_copy.role = Channel.Role.PRIMARY
+    assert primary.role == Channel.Role.DISABLED
+    disabled_channel_copy.role = Channel.Role.DISABLED
+    assert disabled.role == Channel.Role.PRIMARY
+    assert anode._get_admin_channel_index() == 1
+    assert anode.getAdminChannelIndex() == 1
+
+    anode.channels = None
+    assert anode.getDisabledChannel() is None
+
+
+def _decode_channel_set_from_url(url: str) -> apponly_pb2.ChannelSet:
+    """Decode and parse a ChannelSet from a meshtastic URL."""
+    b64 = url.split("#")[-1]
+    missing_padding = len(b64) % 4
+    if missing_padding:
+        b64 += "=" * (4 - missing_padding)
+    raw = base64.urlsafe_b64decode(b64)
+    channel_set = apponly_pb2.ChannelSet()
+    channel_set.ParseFromString(raw)
+    return channel_set
+
+
+@pytest.mark.unit
+def test_getURL_requests_lora_when_local_config_empty(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """GetURL should request lora config when localConfig has no populated fields."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    primary.settings.psk = b"\x01"
+    secondary = Channel(index=1, role=Channel.Role.SECONDARY)
+    secondary.settings.name = "secondary"
+    secondary.settings.psk = b"\x02"
+    disabled = Channel(index=2, role=Channel.Role.DISABLED)
+    anode.channels = [primary, secondary, disabled]
+    anode.requestConfig = MagicMock()  # type: ignore[method-assign]
+
+    url = anode.getURL(includeAll=False)
+
+    anode.requestConfig.assert_called_once_with(
+        anode.localConfig.DESCRIPTOR.fields_by_name["lora"]
+    )
+    channel_set = _decode_channel_set_from_url(url)
+    assert len(channel_set.settings) == 1
+    assert channel_set.settings[0].name == "primary"
+
+
+@pytest.mark.unit
+def test_setURL_rejects_missing_fragment_and_empty_fragment_data(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """SetURL should fail fast for malformed fragment inputs once channels are loaded."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [Channel(index=0, role=Channel.Role.DISABLED)]
+
+    with pytest.raises(MeshInterface.MeshInterfaceError, match="Invalid URL"):
+        anode.setURL("https://meshtastic.org/e/not-a-fragment")
+
+    with pytest.raises(MeshInterface.MeshInterfaceError, match="no channel data found"):
+        anode.setURL("https://meshtastic.org/e/#")
+
+
+@pytest.mark.unit
+def test_setURL_add_only_adds_unique_named_channels(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=True) should ignore existing/empty names and add only new ones."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "existing"
+    disabled = Channel(index=1, role=Channel.Role.DISABLED)
+    anode.channels = [primary, disabled]
+    anode.writeChannel = MagicMock()  # type: ignore[method-assign]
+
+    channel_set = apponly_pb2.ChannelSet()
+    existing = channel_set.settings.add()
+    existing.name = "existing"
+    existing.psk = b"\x01"
+    empty = channel_set.settings.add()
+    empty.name = ""
+    empty.psk = b"\x02"
+    new_channel = channel_set.settings.add()
+    new_channel.name = "new-ch"
+    new_channel.psk = b"\x03"
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+    anode.setURL(url, addOnly=True)
+
+    assert anode.channels is not None
+    assert anode.channels[1].settings.name == "new-ch"
+    assert anode.channels[1].role == Channel.Role.SECONDARY
+    anode.writeChannel.assert_called_once_with(1)
+
+
+@pytest.mark.unit
+def test_setURL_add_only_raises_when_no_disabled_slot_available(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=True) should fail if no DISABLED channels remain."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [Channel(index=i, role=Channel.Role.SECONDARY) for i in range(2)]
+
+    channel_set = apponly_pb2.ChannelSet()
+    new_channel = channel_set.settings.add()
+    new_channel.name = "new-ch"
+    new_channel.psk = b"\x01"
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="No free channels were found"
+    ):
+        anode.setURL(url, addOnly=True)
+
+
+@pytest.mark.unit
+def test_setURL_replace_raises_if_channels_disappear_during_assignment(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """SetURL replace-path should recheck channels before assignment in each loop iteration."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [Channel(index=0, role=Channel.Role.DISABLED)]
+    anode._channels_lock = _DropChannelsOnEnterCountLock(  # type: ignore[assignment]
+        anode, trigger_enter=3
+    )
+
+    channel_set = apponly_pb2.ChannelSet()
+    setting = channel_set.settings.add()
+    setting.name = "primary"
+    setting.psk = b"\x01"
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="Config or channels not loaded"
+    ):
+        anode.setURL(url, addOnly=False)
+
+
+@pytest.mark.unit
+def test_fixup_channels_truncates_and_reindexes_to_limit(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """_fixup_channels should truncate over-limit input and maintain contiguous indices."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [
+        Channel(index=i, role=Channel.Role.SECONDARY) for i in range(CHANNEL_LIMIT + 2)
+    ]
+
+    anode._fixup_channels()
+
+    assert anode.channels is not None
+    assert len(anode.channels) == CHANNEL_LIMIT
+    assert [ch.index for ch in anode.channels] == list(range(CHANNEL_LIMIT))
+
+
+@pytest.mark.unit
+def test_fill_channels_handles_none_and_pads_to_limit(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """_fill_channels should no-op for None and pad existing channel lists to max size."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = None
+    anode._fill_channels()
+    assert anode.channels is None
+
+    anode.channels = [Channel(index=0, role=Channel.Role.PRIMARY)]
+    anode._fill_channels()
+    assert anode.channels is not None
+    assert len(anode.channels) == CHANNEL_LIMIT
+    assert anode.channels[-1].role == Channel.Role.DISABLED
+
+
+@pytest.mark.unit
+def test_onResponseRequestChannel_routing_paths(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """OnResponseRequestChannel should expire on routing failure and retry on routing success."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode._request_channel = MagicMock()  # type: ignore[method-assign]
+
+    anode.onResponseRequestChannel(
+        {
+            "decoded": {
+                "portnum": "ROUTING_APP",
+                "routing": {"errorReason": "NO_ROUTE"},
+            }
+        }
+    )
+    assert anode._request_channel.call_count == 0
+
+    ch = Channel(index=3, role=Channel.Role.SECONDARY)
+    anode.partialChannels = [ch]
+    anode.onResponseRequestChannel(
+        {"decoded": {"portnum": "ROUTING_APP", "routing": {"errorReason": "NONE"}}}
+    )
+    anode._request_channel.assert_called_once_with(3)
+
+
+@pytest.mark.unit
+def test_onResponseRequestChannel_handles_partial_and_final_channel(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """OnResponseRequestChannel should request next channel until the final channel arrives."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode._request_channel = MagicMock()  # type: ignore[method-assign]
+
+    partial = Channel(index=2, role=Channel.Role.SECONDARY)
+    anode.onResponseRequestChannel(
+        {
+            "decoded": {
+                "portnum": "ADMIN_APP",
+                "admin": {"raw": MagicMock(get_channel_response=partial)},
+            }
+        }
+    )
+    anode._request_channel.assert_called_once_with(3)
+
+    final = Channel(index=CHANNEL_LIMIT - 1, role=Channel.Role.SECONDARY)
+    anode._request_channel.reset_mock()
+    anode.onResponseRequestChannel(
+        {
+            "decoded": {
+                "portnum": "ADMIN_APP",
+                "admin": {"raw": MagicMock(get_channel_response=final)},
+            }
+        }
+    )
+    anode._request_channel.assert_not_called()
+    assert anode.channels is not None
+    assert len(anode.channels) == CHANNEL_LIMIT
+
+
+@pytest.mark.unit
+def test_onAckNak_handles_missing_invalid_and_ack_variants(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """OnAckNak should handle malformed payloads and update ACK state for valid variants."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface._acknowledgment = Acknowledgment()
+    iface.localNode.nodeNum = 123
+    anode = Node(iface, "!12345678", noProto=True)
+
+    anode.onAckNak({"decoded": {}})
+    assert iface._acknowledgment.receivedAck is False
+    assert iface._acknowledgment.receivedNak is False
+    assert iface._acknowledgment.receivedImplAck is False
+
+    anode.onAckNak({"decoded": {"routing": {"errorReason": "NO_REPLY"}}})
+    assert iface._acknowledgment.receivedNak is True
+
+    iface._acknowledgment = Acknowledgment()
+    anode.onAckNak({"decoded": {"routing": {"errorReason": "NONE"}}})
+    assert iface._acknowledgment.receivedAck is False
+
+    anode.onAckNak({"decoded": {"routing": {"errorReason": "NONE"}}, "from": "abc"})
+    assert iface._acknowledgment.receivedAck is False
+
+    anode.onAckNak({"decoded": {"routing": {"errorReason": "NONE"}}, "from": 123})
+    assert iface._acknowledgment.receivedImplAck is True
+
+    iface._acknowledgment = Acknowledgment()
+    anode.onAckNak({"decoded": {"routing": {"errorReason": "NONE"}}, "from": 124})
+    assert iface._acknowledgment.receivedAck is True
+
+
+@pytest.mark.unit
+def test_send_admin_no_proto_returns_none(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """_send_admin should no-op when protocol usage is disabled."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    msg = admin_pb2.AdminMessage()
+
+    assert anode._send_admin(msg) is None
+
+
+@pytest.mark.unit
+def test_send_admin_uses_session_passkey_and_selected_admin_index(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """_send_admin should attach passkey and send over the selected admin channel."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface.localNode._get_admin_channel_index.return_value = 3
+    iface._get_or_create_by_num.return_value = {"adminSessionPassKey": b"secret"}
+    packet = mesh_pb2.MeshPacket()
+    iface.sendData.return_value = packet
+    anode = Node(iface, 321, noProto=False)
+    msg = admin_pb2.AdminMessage()
+
+    response_handler = MagicMock()
+    result = anode._send_admin(msg, wantResponse=True, onResponse=response_handler)
+
+    assert result is packet
+    assert msg.session_passkey == b"secret"
+    iface.sendData.assert_called_once()
+    assert iface.sendData.call_args.kwargs["channelIndex"] == 3
+    assert iface.sendData.call_args.kwargs["pkiEncrypted"] is True
+
+
+@pytest.mark.unit
+def test_ensureSessionKey_requests_only_when_missing(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """EnsureSessionKey should request a key only if one is not already cached."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, 555, noProto=False)
+    anode.requestConfig = MagicMock()  # type: ignore[method-assign]
+
+    iface._get_or_create_by_num.return_value = {}
+    anode.ensureSessionKey()
+    anode.requestConfig.assert_called_once_with(
+        admin_pb2.AdminMessage.SESSIONKEY_CONFIG
+    )
+
+    anode.requestConfig.reset_mock()
+    iface._get_or_create_by_num.return_value = {"adminSessionPassKey": b"x"}
+    anode.ensureSessionKey()
+    anode.requestConfig.assert_not_called()
+
+
+@pytest.mark.unit
+def test_get_channels_with_hash_handles_missing_fields(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """_get_channels_with_hash should emit hashes only when both name and PSK are present."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    with_hash = Channel(index=0, role=Channel.Role.PRIMARY)
+    with_hash.settings.name = "hash-me"
+    with_hash.settings.psk = b"\x01\x02"
+    without_hash = Channel(index=1, role=Channel.Role.SECONDARY)
+    anode.channels = [with_hash, without_hash]
+
+    entries = anode._get_channels_with_hash()
+
+    assert len(entries) == 2
+    assert entries[0]["hash"] is not None
+    assert entries[1]["hash"] is None
+
+
+@pytest.mark.unit
+def test_deleteChannel_missing_or_out_of_range_validations(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """DeleteChannel should validate missing channels and invalid indices."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = None
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="Error: No channels have been read"
+    ):
+        anode.deleteChannel(0)
+
+    anode.channels = [Channel(index=0, role=Channel.Role.SECONDARY)]
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match=r"Channel index 5 out of range \(0-0\)",
+    ):
+        anode.deleteChannel(5)
+
+
+@pytest.mark.unit
+def test_deleteChannel_rewrite_uses_snapshot_when_channels_change_after_lock_release(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """DeleteChannel should complete rewrites from a captured snapshot even if channels change later."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    iface.localNode = anode
+    anode.channels = [Channel(index=0, role=Channel.Role.SECONDARY)]
+    anode._channels_lock = _DropChannelsOnEnterCountLock(  # type: ignore[assignment]
+        anode, trigger_enter=2
+    )
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock()  # type: ignore[method-assign]
+
+    anode.deleteChannel(0)
+
+    # The lock stub drops channels on the second lock acquisition (during admin
+    # index lookup), but rewrite sends still complete from the captured snapshot.
+    assert anode.channels is None
+    assert anode._send_admin.call_count == CHANNEL_LIMIT
+
+
+@pytest.mark.unit
+def test_channel_lookup_helpers_return_none_when_no_match(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Lookup helpers should return no result when entries are absent."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [Channel(index=0, role=Channel.Role.SECONDARY)]
+
+    assert anode.getChannelByName("missing") is None
+    assert anode.getDisabledChannel() is None
+    assert anode._get_admin_channel_index() == 0
+
+
+@pytest.mark.unit
+def test_setURL_reports_decode_and_parse_errors(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """SetURL should surface base64 decode and protobuf parse failures."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [Channel(index=0, role=Channel.Role.DISABLED)]
+
+    with pytest.raises(MeshInterface.MeshInterfaceError, match="Invalid URL"):
+        anode.setURL("https://meshtastic.org/e/#_")
+
+    bad_proto = base64.urlsafe_b64encode(b"\x00\x01").decode("ascii").rstrip("=")
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match="Unable to parse channel settings from URL",
+    ):
+        anode.setURL(f"https://meshtastic.org/e/#{bad_proto}")
+
+
+@pytest.mark.unit
+def test_setURL_reports_empty_settings_when_channels_loaded(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """SetURL should reject URLs that decode to an empty ChannelSet."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [Channel(index=0, role=Channel.Role.DISABLED)]
+    channel_set = apponly_pb2.ChannelSet()
+    channel_set.lora_config.tx_enabled = True
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="There were no settings"
+    ):
+        anode.setURL(f"https://meshtastic.org/e/#{encoded.rstrip('=')}")
+
+
+@pytest.mark.unit
+def test_setURL_add_only_rechecks_channels_before_addition(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """SetURL(addOnly=True) should fail if channels disappear before add loop mutation."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [Channel(index=0, role=Channel.Role.DISABLED)]
+    anode._channels_lock = _DropChannelsOnEnterCountLock(  # type: ignore[assignment]
+        anode, trigger_enter=2
+    )
+
+    channel_set = apponly_pb2.ChannelSet()
+    setting = channel_set.settings.add()
+    setting.name = "new-channel"
+    setting.psk = b"\x01"
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="Config or channels not loaded"
+    ):
+        anode.setURL(f"https://meshtastic.org/e/#{encoded.rstrip('=')}", addOnly=True)
+
+
+@pytest.mark.unit
+def test_setURL_replace_rechecks_channels_before_length_calculation(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """SetURL replace path should fail if channels disappear before max-channel snapshot."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [Channel(index=0, role=Channel.Role.DISABLED)]
+    anode._channels_lock = _DropChannelsOnEnterCountLock(  # type: ignore[assignment]
+        anode, trigger_enter=2
+    )
+
+    channel_set = apponly_pb2.ChannelSet()
+    setting = channel_set.settings.add()
+    setting.name = "primary"
+    setting.psk = b"\x01"
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="Config or channels not loaded"
+    ):
+        anode.setURL(f"https://meshtastic.org/e/#{encoded.rstrip('=')}")
+
+
+@pytest.mark.unit
+def test_fixup_channels_locked_returns_immediately_when_channels_none(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """_fixup_channels_locked should no-op when channels are unset."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = None
+
+    anode._fixup_channels()
+
+    assert anode.channels is None
+
+
+@pytest.mark.unit
+def test_onRequestGetMetadata_handles_routing_error_and_ack_only(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """OnRequestGetMetadata should NAK on routing error and avoid recursive retries."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface._acknowledgment = Acknowledgment()
+    anode = Node(iface, "!12345678", noProto=True)
+    anode.getMetadata = MagicMock()  # type: ignore[method-assign]
+
+    anode.onRequestGetMetadata(
+        {"decoded": {"portnum": "ROUTING_APP", "routing": {"errorReason": "NO_PATH"}}}
+    )
+    assert iface._acknowledgment.receivedNak is True
+
+    iface._acknowledgment = Acknowledgment()
+    anode.onRequestGetMetadata(
+        {"decoded": {"portnum": "ROUTING_APP", "routing": {"errorReason": "NONE"}}}
+    )
+    anode.getMetadata.assert_not_called()
+
+
+@pytest.mark.unit
+def test_onRequestGetMetadata_handles_non_routing_error_reason(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """OnRequestGetMetadata should mark NAK for decoded routing errors outside ROUTING_APP."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface._acknowledgment = Acknowledgment()
+    anode = Node(iface, "!12345678", noProto=True)
+
+    anode.onRequestGetMetadata(
+        {
+            "decoded": {
+                "portnum": "ADMIN_APP",
+                "routing": {"errorReason": "TIMEOUT"},
+            }
+        }
+    )
+
+    assert iface._acknowledgment.receivedNak is True
+
+
+@pytest.mark.unit
+def test_onRequestGetMetadata_logs_valid_and_fallback_enum_values(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+    caplog: LogCaptureFixture,
+) -> None:
+    """OnRequestGetMetadata should handle both valid and unknown enum values."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface._acknowledgment = Acknowledgment()
+    anode = Node(iface, "!12345678", noProto=True)
+    anode._timeout = MagicMock()
+
+    valid_raw = admin_pb2.AdminMessage()
+    valid_resp = valid_raw.get_device_metadata_response
+    valid_resp.firmware_version = "fw"
+    valid_resp.device_state_version = 1
+    valid_resp.role = config_pb2.Config.DeviceConfig.Role.CLIENT
+    valid_resp.position_flags = 0
+    valid_resp.hw_model = mesh_pb2.HardwareModel.TBEAM
+    valid_resp.hasPKC = True
+    with caplog.at_level(logging.INFO):
+        anode.onRequestGetMetadata(
+            {"decoded": {"portnum": "ADMIN_APP", "admin": {"raw": valid_raw}}}
+        )
+    assert iface._acknowledgment.receivedAck is True
+    assert iface.metadata.firmware_version == "fw"
+    anode._timeout.reset.assert_called()
+
+    iface._acknowledgment = Acknowledgment()
+    unknown_raw = admin_pb2.AdminMessage()
+    unknown_resp = unknown_raw.get_device_metadata_response
+    unknown_resp.firmware_version = "fw2"
+    unknown_resp.device_state_version = 2
+    unknown_resp.role = cast(config_pb2.Config.DeviceConfig.Role.ValueType, 999)
+    unknown_resp.position_flags = 0
+    unknown_resp.hw_model = cast(mesh_pb2.HardwareModel.ValueType, 999)
+    unknown_resp.hasPKC = False
+    unknown_resp.excluded_modules = 1
+    anode.onRequestGetMetadata(
+        {"decoded": {"portnum": "ADMIN_APP", "admin": {"raw": unknown_raw}}}
+    )
+    assert iface._acknowledgment.receivedAck is True
+    assert iface.metadata.firmware_version == "fw2"
+
+
+@pytest.mark.unit
+def test_onRequestGetMetadata_emits_stdout_when_redirected(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+    capsys: CaptureFixture[str],
+) -> None:
+    """Metadata response should still emit stdout lines for legacy redirect parsers."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface._acknowledgment = Acknowledgment()
+    anode = Node(iface, "!12345678", noProto=True)
+    anode._timeout = MagicMock()
+
+    raw = admin_pb2.AdminMessage()
+    resp = raw.get_device_metadata_response
+    resp.firmware_version = "2.7.18"
+    resp.device_state_version = 24
+    resp.role = config_pb2.Config.DeviceConfig.Role.CLIENT
+    resp.position_flags = 0
+    resp.hw_model = mesh_pb2.HardwareModel.PORTDUINO
+    resp.hasPKC = True
+
+    anode.onRequestGetMetadata(
+        {"decoded": {"portnum": "ADMIN_APP", "admin": {"raw": raw}}}
+    )
+
+    out, _err = capsys.readouterr()
+    assert "firmware_version: 2.7.18" in out
+
+
+@pytest.mark.unit
+def test_emit_cached_metadata_returns_false_without_firmware_version(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """_emit_cached_metadata_for_stdout should return False when firmware_version is missing."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface.metadata = mesh_pb2.DeviceMetadata()
+    anode = Node(iface, "!12345678", noProto=True)
+
+    assert anode._emit_cached_metadata_for_stdout() is False
+
+
+@pytest.mark.unit
+def test_emit_cached_metadata_uses_fallback_values_for_unknown_enums(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_emit_cached_metadata_for_stdout should emit numeric fallback values for unknown enum members."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface.metadata = mesh_pb2.DeviceMetadata(
+        firmware_version="2.7.18",
+        device_state_version=24,
+        role=cast(config_pb2.Config.DeviceConfig.Role.ValueType, 999),
+        position_flags=0,
+        hw_model=cast(mesh_pb2.HardwareModel.ValueType, 999),
+        hasPKC=False,
+        excluded_modules=1,
+    )
+    anode = Node(iface, "!12345678", noProto=True)
+    emitted: list[str] = []
+    monkeypatch.setattr(anode, "_emit_metadata_line", emitted.append)
+
+    assert anode._emit_cached_metadata_for_stdout() is True
+    assert "role: 999" in emitted
+    assert "hw_model: 999" in emitted
+    assert any(line.startswith("excluded_modules:") for line in emitted)
+
+
+@pytest.mark.unit
+def test_getMetadata_waits_for_redirected_stdout_callback_output(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+    capsys: CaptureFixture[str],
+) -> None:
+    """GetMetadata should keep redirected stdout active until metadata callback emits."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface._acknowledgment = Acknowledgment()
+    iface.waitForAckNak = MagicMock()
+    anode = Node(iface, "!12345678", noProto=True)
+    anode._emit_cached_metadata_for_stdout = MagicMock(return_value=True)  # type: ignore[method-assign]
+
+    def _fake_send_admin(
+        _msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int = 0,
+    ) -> None:
+        _ = (wantResponse, adminIndex)
+        assert onResponse is not None
+        raw = admin_pb2.AdminMessage()
+        response = raw.get_device_metadata_response
+        response.firmware_version = "2.7.18"
+        response.device_state_version = 24
+        response.role = config_pb2.Config.DeviceConfig.Role.CLIENT
+        response.position_flags = 0
+        response.hw_model = mesh_pb2.HardwareModel.PORTDUINO
+        response.hasPKC = True
+
+        timer = threading.Timer(
+            0.05,
+            lambda: onResponse(
+                {
+                    "decoded": {
+                        "portnum": "ADMIN_APP",
+                        "admin": {"raw": raw},
+                    }
+                }
+            ),
+        )
+        timer.daemon = True
+        timer.start()
+
+    anode._send_admin = _fake_send_admin  # type: ignore[assignment]
+    anode.getMetadata()
+
+    out, _err = capsys.readouterr()
+    assert "firmware_version: 2.7.18" in out
+    anode._emit_cached_metadata_for_stdout.assert_not_called()
+
+
+@pytest.mark.unit
+def test_getMetadata_emits_cached_metadata_when_callback_never_arrives(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+    capsys: CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GetMetadata should emit cached interface metadata for redirected stdout parsers."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface._acknowledgment = Acknowledgment()
+    iface.waitForAckNak = MagicMock()
+    iface.metadata = mesh_pb2.DeviceMetadata(
+        firmware_version="2.7.18",
+        device_state_version=24,
+        role=config_pb2.Config.DeviceConfig.Role.CLIENT_MUTE,
+        position_flags=0,
+        hw_model=mesh_pb2.HardwareModel.PORTDUINO,
+        hasPKC=True,
+    )
+    anode = Node(iface, "!12345678", noProto=True)
+
+    monkeypatch.setattr(node_module, "METADATA_STDOUT_COMPAT_WAIT_SECONDS", 0.01)
+
+    def _fake_send_admin(
+        _msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int = 0,
+    ) -> None:
+        _ = (wantResponse, onResponse, adminIndex)
+
+    anode._send_admin = _fake_send_admin  # type: ignore[assignment]
+    anode.getMetadata()
+
+    out, _err = capsys.readouterr()
+    assert "firmware_version: 2.7.18" in out
+
+
+@pytest.mark.unit
+def test_on_response_request_settings_warns_for_unrecognized_payload_shape(
+    mock_serial_interface: MagicMock,
+    caplog: LogCaptureFixture,
+) -> None:
+    """OnResponseRequestSettings should warn and return for unsupported response payloads."""
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    anode.iface._acknowledgment = Acknowledgment()
+
+    with caplog.at_level(logging.WARNING):
+        anode.onResponseRequestSettings(
+            {"decoded": {"admin": {"raw": admin_pb2.AdminMessage()}}}
         )
 
-
-# TODO
-# @pytest.mark.unitslow
-# def test_waitForConfig():
-#    """Test waitForConfig()"""
-#    anode = Node('foo', 'bar')
-#    radioConfig = RadioConfig()
-#    anode.radioConfig = radioConfig
-#    anode._timeout = Timeout(0.01)
-#    result = anode.waitForConfig()
-#    assert not result
+    assert "Did not receive a valid response" in caplog.text

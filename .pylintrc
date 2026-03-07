@@ -1,13 +1,19 @@
 # pylint configuration file
 #
 # Note: "pylint --generate-rcfile" is helpful to see what values to add to this file
-
+#
+# IMPORTANT: The CI workflow runs: pylint meshtastic examples/ --ignore-patterns ".*_pb2\.pyi?$"
+# This --ignore-patterns flag OVERRIDES the ignore-patterns setting here.
+# To keep local and CI in sync, either:
+# 1. Run locally: make lint (uses this file without override)
+# 2. Or run the exact CI command: pylint meshtastic examples/ --ignore-patterns ".*_pb2\.pyi?$"
 
 [MASTER]
 
 # Add files or directories matching the regex patterns to the blacklist. The
 # regex matches against base names, not paths.
-ignore-patterns=mqtt_pb2.py,channel_pb2.py,telemetry_pb2.py,admin_pb2.py,config_pb2.py,deviceonly_pb2.py,apponly_pb2.py,remote_hardware_pb2.py,portnums_pb2.py,mesh_pb2.py,storeforward_pb2.py,cannedmessages_pb2.py,module_config_pb2.py,localonly_pb2.py,node.py,device_metadata_pb2.py,nanopb_pb2.py
+# NOTE: CI overrides this with --ignore-patterns ".*_pb2\.pyi?$"
+ignore-patterns=.*_pb2\.pyi?$
 
 
 

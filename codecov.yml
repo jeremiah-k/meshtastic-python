@@ -1,0 +1,165 @@
+coverage:
+  status:
+    project:
+      default:
+        target: 70%
+        threshold: 2%
+    patch:
+      default:
+        target: 40%
+        threshold: 2%
+
+component_management:
+  default_rules:
+    statuses:
+      - type: project
+        target: auto
+        threshold: 2%
+      - type: patch
+        target: 40%
+        threshold: 2%
+  individual_components:
+    - component_id: core_interfaces
+      name: Core Interfaces
+      paths:
+        - meshtastic/mesh_interface.py
+        - meshtastic/serial_interface.py
+        - meshtastic/tcp_interface.py
+        - meshtastic/stream_interface.py
+      statuses:
+        - type: project
+          target: 50%
+          threshold: 3%
+        - type: patch
+          target: 50%
+          threshold: 3%
+    - component_id: ble_subsystem
+      name: BLE Subsystem
+      paths:
+        - meshtastic/ble_interface.py
+        - meshtastic/interfaces/ble/**
+      statuses:
+        - type: project
+          target: 40%
+          threshold: 3%
+        - type: patch
+          target: 40%
+          threshold: 3%
+    - component_id: node_management
+      name: Node Management
+      paths:
+        - meshtastic/node.py
+      statuses:
+        - type: project
+          target: 70%
+          threshold: 2%
+        - type: patch
+          target: 70%
+          threshold: 2%
+    - component_id: cli
+      name: CLI
+      paths:
+        - meshtastic/__main__.py
+      statuses:
+        - type: project
+          target: 60%
+          threshold: 3%
+        - type: patch
+          target: 60%
+          threshold: 3%
+    - component_id: utilities
+      name: Utilities
+      paths:
+        - meshtastic/util.py
+        - meshtastic/mt_config.py
+        - meshtastic/version.py
+        - meshtastic/supported_device.py
+      statuses:
+        - type: project
+          target: 60%
+          threshold: 3%
+        - type: patch
+          target: 60%
+          threshold: 3%
+    - component_id: powermon
+      name: Power Monitoring
+      paths:
+        - meshtastic/powermon/**
+      statuses:
+        - type: project
+          target: 60%
+          threshold: 3%
+        - type: patch
+          target: 60%
+          threshold: 3%
+    - component_id: slog
+      name: Structured Logging
+      paths:
+        - meshtastic/slog/**
+      statuses:
+        - type: project
+          target: 70%
+          threshold: 2%
+        - type: patch
+          target: 70%
+          threshold: 2%
+    - component_id: analysis
+      name: Analysis Tools
+      paths:
+        - meshtastic/analysis/**
+      statuses:
+        - type: project
+          target: 60%
+          threshold: 3%
+        - type: patch
+          target: 60%
+          threshold: 3%
+    - component_id: ota
+      name: OTA Updates
+      paths:
+        - meshtastic/ota.py
+      statuses:
+        - type: project
+          target: 60%
+          threshold: 3%
+        - type: patch
+          target: 60%
+          threshold: 3%
+    - component_id: remote_hardware
+      name: Remote Hardware
+      paths:
+        - meshtastic/remote_hardware.py
+      statuses:
+        - type: project
+          target: 60%
+          threshold: 3%
+        - type: patch
+          target: 60%
+          threshold: 3%
+    - component_id: tunnel
+      name: Tunnel
+      paths:
+        - meshtastic/tunnel.py
+      statuses:
+        - type: project
+          target: 70%
+          threshold: 2%
+        - type: patch
+          target: 70%
+          threshold: 2%
+    - component_id: test_utils
+      name: Test Utilities
+      paths:
+        - meshtastic/test.py
+      statuses:
+        - type: project
+          target: 70%
+          threshold: 2%
+        - type: patch
+          target: 70%
+          threshold: 2%
+
+comment:
+  layout: header, diff, flags, components, files
+  behavior: default
+  require_changes: true

@@ -1,4 +1,4 @@
-"""Meshtastic unit tests for ota.py"""
+"""Meshtastic unit tests for ota.py."""
 
 import hashlib
 import logging
@@ -10,15 +10,15 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from meshtastic.ota import (
-    _file_sha256,
     ESP32WiFiOTA,
     OTAError,
+    _file_sha256,
 )
 
 
 @pytest.mark.unit
-def test_file_sha256():
-    """Test _file_sha256 calculates correct hash"""
+def test_file_sha256() -> None:
+    """Test _file_sha256 calculates correct hash."""
     # Create a temporary file with known content
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
         test_data = b"Hello, World!"
@@ -34,8 +34,8 @@ def test_file_sha256():
 
 
 @pytest.mark.unit
-def test_file_sha256_large_file():
-    """Test _file_sha256 handles files larger than chunk size"""
+def test_file_sha256_large_file() -> None:
+    """Test _file_sha256 handles files larger than chunk size."""
     # Create a temporary file with more than 4096 bytes
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
         test_data = b"A" * 8192  # More than 4096 bytes
@@ -51,15 +51,15 @@ def test_file_sha256_large_file():
 
 
 @pytest.mark.unit
-def test_esp32_wifi_ota_init_file_not_found():
-    """Test ESP32WiFiOTA raises FileNotFoundError for non-existent file"""
+def test_esp32_wifi_ota_init_file_not_found() -> None:
+    """Test ESP32WiFiOTA raises FileNotFoundError for non-existent file."""
     with pytest.raises(FileNotFoundError, match="does not exist"):
         ESP32WiFiOTA("/nonexistent/firmware.bin", "192.168.1.1")
 
 
 @pytest.mark.unit
-def test_esp32_wifi_ota_init_success():
-    """Test ESP32WiFiOTA initializes correctly with valid file"""
+def test_esp32_wifi_ota_init_success() -> None:
+    """Test ESP32WiFiOTA initializes correctly with valid file."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
         f.write(b"fake firmware data")
         temp_file = f.name
@@ -78,8 +78,8 @@ def test_esp32_wifi_ota_init_success():
 
 
 @pytest.mark.unit
-def test_esp32_wifi_ota_init_default_port():
-    """Test ESP32WiFiOTA uses default port 3232"""
+def test_esp32_wifi_ota_init_default_port() -> None:
+    """Test ESP32WiFiOTA uses default port 3232."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
         f.write(b"fake firmware data")
         temp_file = f.name
@@ -92,8 +92,8 @@ def test_esp32_wifi_ota_init_default_port():
 
 
 @pytest.mark.unit
-def test_esp32_wifi_ota_hash_bytes():
-    """Test hash_bytes returns correct bytes"""
+def test_esp32_wifi_ota_hash_bytes() -> None:
+    """Test hash_bytes returns correct bytes."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
         test_data = b"firmware data"
         f.write(test_data)
@@ -110,8 +110,8 @@ def test_esp32_wifi_ota_hash_bytes():
 
 
 @pytest.mark.unit
-def test_esp32_wifi_ota_hash_hex():
-    """Test hash_hex returns correct hex string"""
+def test_esp32_wifi_ota_hash_hex() -> None:
+    """Test hash_hex returns correct hex string."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
         test_data = b"firmware data"
         f.write(test_data)
@@ -128,8 +128,8 @@ def test_esp32_wifi_ota_hash_hex():
 
 
 @pytest.mark.unit
-def test_esp32_wifi_ota_read_line_not_connected():
-    """Test _read_line raises ConnectionError when not connected"""
+def test_esp32_wifi_ota_read_line_not_connected() -> None:
+    """Test _read_line raises ConnectionError when not connected."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
         f.write(b"firmware")
         temp_file = f.name
@@ -143,8 +143,8 @@ def test_esp32_wifi_ota_read_line_not_connected():
 
 
 @pytest.mark.unit
-def test_esp32_wifi_ota_read_line_connection_closed():
-    """Test _read_line raises ConnectionError when connection closed"""
+def test_esp32_wifi_ota_read_line_connection_closed() -> None:
+    """Test _read_line raises ConnectionError when connection closed."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
         f.write(b"firmware")
         temp_file = f.name
@@ -163,8 +163,8 @@ def test_esp32_wifi_ota_read_line_connection_closed():
 
 
 @pytest.mark.unit
-def test_esp32_wifi_ota_read_line_success():
-    """Test _read_line successfully reads a line"""
+def test_esp32_wifi_ota_read_line_success() -> None:
+    """Test _read_line successfully reads a line."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
         f.write(b"firmware")
         temp_file = f.name
@@ -184,8 +184,8 @@ def test_esp32_wifi_ota_read_line_success():
 
 @pytest.mark.unit
 @patch("meshtastic.ota.socket.socket")
-def test_esp32_wifi_ota_update_success(mock_socket_class):
-    """Test update() with successful OTA"""
+def test_esp32_wifi_ota_update_success(mock_socket_class: MagicMock) -> None:
+    """Test update() with successful OTA."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
         test_data = b"A" * 1024  # 1KB of data
         f.write(test_data)
@@ -232,8 +232,10 @@ def test_esp32_wifi_ota_update_success(mock_socket_class):
 
 @pytest.mark.unit
 @patch("meshtastic.ota.socket.socket")
-def test_esp32_wifi_ota_update_with_progress_callback(mock_socket_class):
-    """Test update() with progress callback"""
+def test_esp32_wifi_ota_update_with_progress_callback(
+    mock_socket_class: MagicMock,
+) -> None:
+    """Test update() with progress callback."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
         test_data = b"A" * 1024  # 1KB of data
         f.write(test_data)
@@ -249,7 +251,7 @@ def test_esp32_wifi_ota_update_with_progress_callback(mock_socket_class):
         # Track progress callback calls
         progress_calls = []
 
-        def progress_callback(sent, total):
+        def progress_callback(sent: int, total: int) -> None:
             progress_calls.append((sent, total))
 
         # Mock _read_line
@@ -276,8 +278,10 @@ def test_esp32_wifi_ota_update_with_progress_callback(mock_socket_class):
 
 @pytest.mark.unit
 @patch("meshtastic.ota.socket.socket")
-def test_esp32_wifi_ota_update_device_error_on_start(mock_socket_class):
-    """Test update() raises OTAError when device reports error during start"""
+def test_esp32_wifi_ota_update_device_error_on_start(
+    mock_socket_class: MagicMock,
+) -> None:
+    """Test update() raises OTAError when device reports error during start."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
         f.write(b"firmware")
         temp_file = f.name
@@ -300,8 +304,10 @@ def test_esp32_wifi_ota_update_device_error_on_start(mock_socket_class):
 
 @pytest.mark.unit
 @patch("meshtastic.ota.socket.socket")
-def test_esp32_wifi_ota_update_device_error_on_finish(mock_socket_class):
-    """Test update() raises OTAError when device reports error after firmware sent"""
+def test_esp32_wifi_ota_update_device_error_on_finish(
+    mock_socket_class: MagicMock,
+) -> None:
+    """Test update() raises OTAError when device reports error after firmware sent."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
         f.write(b"firmware")
         temp_file = f.name
@@ -327,8 +333,10 @@ def test_esp32_wifi_ota_update_device_error_on_finish(mock_socket_class):
 
 @pytest.mark.unit
 @patch("meshtastic.ota.socket.socket")
-def test_esp32_wifi_ota_update_socket_cleanup_on_error(mock_socket_class):
-    """Test that socket is properly cleaned up on error"""
+def test_esp32_wifi_ota_update_socket_cleanup_on_error(
+    mock_socket_class: MagicMock,
+) -> None:
+    """Test that socket is properly cleaned up on error."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
         f.write(b"firmware")
         temp_file = f.name
@@ -355,8 +363,8 @@ def test_esp32_wifi_ota_update_socket_cleanup_on_error(mock_socket_class):
 
 @pytest.mark.unit
 @patch("meshtastic.ota.socket.socket")
-def test_esp32_wifi_ota_update_large_firmware(mock_socket_class):
-    """Test update() correctly chunks large firmware files"""
+def test_esp32_wifi_ota_update_large_firmware(mock_socket_class: MagicMock) -> None:
+    """Test update() correctly chunks large firmware files."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
         # Create a file larger than chunk_size (1024)
         test_data = b"B" * 3000
@@ -395,8 +403,10 @@ def test_esp32_wifi_ota_update_large_firmware(mock_socket_class):
 
 @pytest.mark.unit
 @patch("meshtastic.ota.socket.socket")
-def test_esp32_wifi_ota_update_unexpected_response_warning(mock_socket_class, caplog):
-    """Test update() logs warning on unexpected response during startup"""
+def test_esp32_wifi_ota_update_unexpected_response_warning(
+    mock_socket_class: MagicMock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test update() logs warning on unexpected response during startup."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
         f.write(b"firmware")
         temp_file = f.name
@@ -426,8 +436,10 @@ def test_esp32_wifi_ota_update_unexpected_response_warning(mock_socket_class, ca
 
 @pytest.mark.unit
 @patch("meshtastic.ota.socket.socket")
-def test_esp32_wifi_ota_update_unexpected_final_response(mock_socket_class, caplog):
-    """Test update() logs warning on unexpected final response after firmware upload"""
+def test_esp32_wifi_ota_update_unexpected_final_response(
+    mock_socket_class: MagicMock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test update() logs warning on unexpected final response after firmware upload."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
         f.write(b"firmware")
         temp_file = f.name

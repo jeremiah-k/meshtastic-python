@@ -1,96 +1,445 @@
 """Utilities for Apache Arrow serialization."""
 
 import logging
-import threading
 import os
-from typing import Optional, List
+import tempfile
+import threading
+import types
+from copy import deepcopy
 
 import pyarrow as pa
-from pyarrow import feather
 
-chunk_size = 1000  # disk writes are batched based on this number of rows
+CHUNK_SIZE = 1000  # disk writes are batched based on this number of rows
+logger = logging.getLogger(__name__)
+ARROW_EXTENSION = ".arrow"
+FEATHER_EXTENSION = ".feather"
+TEMP_FEATHER_SUFFIX = ".tmp"
+WARNING_REMOVE_STALE_FEATHER_DEST = "Failed to remove stale Feather destination file %s"
+WARNING_REMOVE_EMPTY_ARROW_SOURCE = "Failed to remove empty Arrow source file %s"
+WARNING_REMOVE_TEMP_FEATHER = "Failed to remove temporary Feather file %s"
+WARNING_REMOVE_TEMP_ARROW_SOURCE = "Failed to remove temporary Arrow source file %s"
+DISCARD_EMPTY_FILE_MESSAGE = "Discarding empty file: %s"
+DISCARD_EMPTY_ARROW_MESSAGE = "Discarding empty Arrow file: %s"
+
+
+class ArrowWriterStateError(RuntimeError):
+    """Raised for internal ArrowWriter state or initialization errors."""
+
+
+class SchemaAlreadySetError(ArrowWriterStateError):
+    """Raised when set_schema() is called after a schema is already configured."""
+
+    def __init__(self) -> None:
+        super().__init__("Schema already set; cannot call set_schema more than once.")
+
+
+class StreamInitError(ArrowWriterStateError):
+    """Raised when Arrow stream writer initialization fails."""
+
+    def __init__(self) -> None:
+        super().__init__("Failed to initialize Arrow stream writer.")
+
+
+class WriterNoneError(ArrowWriterStateError):
+    """Raised when writer is unexpectedly None after schema initialization."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Writer is None despite schema being set; schema initialization may have failed."
+        )
+
+
+class WriterClosedError(ArrowWriterStateError):
+    """Raised when an ArrowWriter operation is invoked after close()."""
+
+    def __init__(self) -> None:
+        super().__init__("Cannot perform operation: ArrowWriter is closed.")
+
+
+class LockNotHeldError(ArrowWriterStateError):
+    """Raised when lock-protected write path is called without owning the lock."""
+
+    def __init__(self) -> None:
+        super().__init__("_write() called without holding _lock")
 
 
 class ArrowWriter:
-    """Writes an arrow file in a streaming fashion"""
+    """Writes an arrow file in a streaming fashion."""
 
-    def __init__(self, file_name: str):
-        """Create a new ArrowWriter object.
+    def __init__(self, file_name: str) -> None:
+        """Initialize an ArrowWriter that streams Arrow-formatted data to the given file.
 
-        file_name (str): The name of the file to write to.
+        Opens a writable file sink, initializes the in-memory row buffer and
+        schema/writer placeholders, and creates a re-entrant lock to guard
+        concurrent access. The schema is not inferred or set until data is written
+        or set_schema is called.
+
+        Parameters
+        ----------
+        file_name : str
+            Path to the output file to write Arrow stream data to.
         """
-        self.sink = pa.OSFile(file_name, "wb")  # type: ignore
-        self.new_rows: List[dict] = []
-        self.schema: Optional[pa.Schema] = None  # haven't yet learned the schema
-        self.writer: Optional[pa.RecordBatchStreamWriter] = None
-        self._lock = threading.Condition()  # Ensure only one thread writes at a time
+        self.sink = pa.output_stream(file_name)
+        self.new_rows: list[dict[str, object]] = []
+        self.schema: pa.Schema | None = None  # haven't yet learned the schema
+        self.writer: pa.RecordBatchStreamWriter | None = None
+        # Re-entrant: _write() can call set_schema() while the same lock is held.
+        self._lock = threading.RLock()
+        self._closed = False
 
-    def close(self):
-        """Close the stream and writes the file as needed."""
+    def __enter__(self) -> "ArrowWriter":
+        """Return self for context-manager usage."""
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: types.TracebackType | None,
+    ) -> None:
+        """Close the writer on context-manager exit and propagate exceptions.
+
+        If an exception occurred within the with-block (exc_type is not None),
+        any exception raised by close() is logged and suppressed so the original
+        exception propagates. If no with-block exception occurred, close() exceptions
+        are allowed to propagate normally.
+        """
+        _ = traceback
+        try:
+            self.close()
+        except Exception:
+            if exc_type is not None:
+                logger.warning(
+                    "close() failed while unwinding an existing exception.",
+                    exc_info=True,
+                )
+            else:
+                raise
+
+    def close(self) -> None:
+        """Close the writer, flush any buffered rows, and close the underlying sink.
+
+        Flushes any accumulated rows to disk, closes the RecordBatchStreamWriter if one exists, and closes the file sink.
+        """
         with self._lock:
-            self._write()
-            if self.writer:
-                self.writer.close()
-            self.sink.close()
+            if self._closed:
+                return
+            write_exc: Exception | None = None
+            cleanup_exc: Exception | None = None
 
-    def set_schema(self, schema: pa.Schema):
+            try:
+                self._write()
+            except Exception as exc:  # noqa: BLE001 - preserve primary write failure
+                write_exc = exc
+
+            try:
+                if self.writer:
+                    self.writer.close()
+            except Exception as exc:  # noqa: BLE001 - cleanup should still continue
+                cleanup_exc = exc
+                logger.warning(
+                    "Failed to close Arrow stream writer cleanly.",
+                    exc_info=True,
+                )
+
+            try:
+                self.sink.close()
+            except Exception as exc:  # noqa: BLE001 - cleanup should still continue
+                if cleanup_exc is None:
+                    cleanup_exc = exc
+                else:
+                    logger.warning(
+                        "Additional sink close failure while cleaning up Arrow writer.",
+                        exc_info=True,
+                    )
+            finally:
+                self._closed = True
+
+            if write_exc is not None:
+                if cleanup_exc is not None:
+                    logger.warning(
+                        "Suppressed close() cleanup failure after write error.",
+                        exc_info=cleanup_exc,
+                    )
+                raise write_exc
+            if cleanup_exc is not None:
+                raise cleanup_exc
+
+    def _set_schema(self, schema: pa.Schema) -> None:
         """Set the schema for the file.
+
         Only needed for datasets where we can't learn it from the first record written.
 
-        schema (pa.Schema): The schema to use.
+        Parameters
+        ----------
+        schema : pa.Schema
+            The schema to use for the Arrow file.
         """
         with self._lock:
-            assert self.schema is None
+            if self._closed:
+                raise WriterClosedError()
+            if self.schema is not None:
+                raise SchemaAlreadySetError()
+            try:
+                writer = pa.ipc.new_stream(self.sink, schema)
+            except Exception as exc:
+                raise StreamInitError() from exc
             self.schema = schema
-            self.writer = pa.ipc.new_stream(self.sink, schema)
+            self.writer = writer
 
-    def _write(self):
-        """Write the new rows to the file."""
+    # COMPAT_STABLE_SHIM: historical snake_case alias.
+    def set_schema(self, schema: pa.Schema) -> None:
+        """Wrap _set_schema() for backwards compatibility.
+
+        Delegates to ``_set_schema()`` and preserves previous behavior.
+        Prefer ``setSchema()`` for new code.
+
+        Parameters
+        ----------
+        schema : pa.Schema
+            Schema to set for the Arrow stream.
+        """
+        self._set_schema(schema)
+
+    def setSchema(self, schema: pa.Schema) -> None:
+        """Set the schema for the Arrow file.
+
+        Only needed for datasets where the schema cannot be inferred from the
+        first record written.
+
+        Parameters
+        ----------
+        schema : pa.Schema
+            The schema to use for the Arrow file.
+        """
+        self._set_schema(schema)
+
+    def _write(self) -> None:
+        """Write buffered rows to the file.
+
+        Must be called with ``self._lock`` held.
+        """
+        # _is_owned() is a private CPython RLock detail; enforce this
+        # precondition only when that probe is available.
+        is_owned = getattr(self._lock, "_is_owned", None)
+        if callable(is_owned):
+            if not is_owned():
+                raise LockNotHeldError()
         if len(self.new_rows) > 0:
             if self.schema is None:
                 # only need to look at the first row to learn the schema
-                self.set_schema(pa.Table.from_pylist([self.new_rows[0]]).schema)
+                self._set_schema(pa.Table.from_pylist([self.new_rows[0]]).schema)
 
-            self.writer.write_batch(
-                pa.RecordBatch.from_pylist(self.new_rows, schema=self.schema)
-            )
+            if self.writer is None:
+                raise WriterNoneError()
+            table = pa.Table.from_pylist(self.new_rows, schema=self.schema)
+            self.writer.write_table(table)
             self.new_rows = []
 
-    def add_row(self, row_dict: dict):
+    def _add_row(self, row_dict: dict[str, object]) -> None:
         """Add a row to the arrow file.
+
         We will automatically learn the schema from the first row. But all rows must use that schema.
+
+        Parameters
+        ----------
+        row_dict : dict[str, object]
+            Dictionary representing a single row with field names matching the schema.
         """
         with self._lock:
-            self.new_rows.append(row_dict)
-            if len(self.new_rows) >= chunk_size:
+            if self._closed:
+                raise WriterClosedError()
+            # Snapshot caller input so later caller-side mutations do not
+            # corrupt buffered rows that have not yet been flushed.
+            self.new_rows.append(deepcopy(row_dict))
+            if len(self.new_rows) >= CHUNK_SIZE:
                 self._write()
+
+    # COMPAT_STABLE_SHIM: historical snake_case alias.
+    def add_row(self, row_dict: dict[str, object]) -> None:
+        """Wrap _add_row() for backwards compatibility.
+
+        Delegates to ``_add_row()`` and preserves previous behavior.
+        Prefer ``addRow()`` for new code.
+
+        Parameters
+        ----------
+        row_dict : dict[str, object]
+            Row payload to append to the buffered Arrow writer.
+        """
+        self._add_row(row_dict)
+
+    def addRow(self, row_dict: dict[str, object]) -> None:
+        """Add a row to the Arrow file.
+
+        The schema is automatically learned from the first row. All subsequent
+        rows must conform to that schema.
+
+        Parameters
+        ----------
+        row_dict : dict[str, object]
+            Dictionary representing a single row with field names matching the schema.
+        """
+        self._add_row(row_dict)
 
 
 class FeatherWriter(ArrowWriter):
     """A smaller more interoperable version of arrow files.
+
     Uses a temporary .arrow file (which could be huge) but converts to a much smaller (but still fast)
     feather file.
     """
 
-    def __init__(self, file_name: str):
-        super().__init__(file_name + ".arrow")
+    def __init__(self, file_name: str) -> None:
+        """Initialize a FeatherWriter that will write compressed Feather files.
+
+        Creates an ArrowWriter for a temporary .arrow file that will later be
+        converted to a compressed Feather file upon close.
+
+        Parameters
+        ----------
+        file_name : str
+            Base path for the output file (without extension).
+        """
+        super().__init__(file_name + ARROW_EXTENSION)
         self.base_file_name = file_name
+        self._conversion_done = False
+        self._conversion_in_progress = False
 
-    def close(self):
-        super().close()
-        src_name = self.base_file_name + ".arrow"
-        dest_name = self.base_file_name + ".feather"
-        if os.path.getsize(src_name) == 0:
-            logging.warning(f"Discarding empty file: {src_name}")
+    @staticmethod
+    def _remove_stale_dest_file(dest_name: str) -> None:
+        """Best-effort removal of stale destination file from prior runs."""
+        if not os.path.exists(dest_name):
+            return
+        try:
+            os.remove(dest_name)
+        except OSError:
+            logger.warning(
+                WARNING_REMOVE_STALE_FEATHER_DEST,
+                dest_name,
+                exc_info=True,
+            )
+
+    def _discard_empty_source(
+        self, src_name: str, dest_name: str, message: str
+    ) -> None:
+        """Log/drop an empty Arrow source and mark conversion complete."""
+        logger.warning(message, src_name)
+        try:
             os.remove(src_name)
-        else:
-            logging.info(f"Compressing log data into {dest_name}")
+        except OSError:
+            logger.warning(
+                WARNING_REMOVE_EMPTY_ARROW_SOURCE,
+                src_name,
+                exc_info=True,
+            )
+        self._remove_stale_dest_file(dest_name)
 
-            # note: must use open_stream, not open_file/read_table because the streaming layout is different
-            # data = feather.read_table(src_name)
-            with pa.memory_map(src_name) as source:
-                array = pa.ipc.open_stream(source).read_all()
+    def close(self) -> None:
+        """Close the writer and convert the temporary Arrow file to Feather format.
 
-            # See https://stackoverflow.com/a/72406099 for more info and performance testing measurements
-            feather.write_feather(array, dest_name, compression="zstd")
-            os.remove(src_name)
+        Converts the temporary .arrow file to a compressed .feather file and
+        removes the temporary file. Empty Arrow files are discarded.
+        """
+        with self._lock:
+            if self._conversion_done or self._conversion_in_progress:
+                return
+            self._conversion_in_progress = True
+            src_name = self.base_file_name + ARROW_EXTENSION
+            dest_name = self.base_file_name + FEATHER_EXTENSION
+
+        conversion_succeeded = False
+        try:
+            super().close()
+            if not os.path.exists(src_name):
+                self._remove_stale_dest_file(dest_name)
+                conversion_succeeded = True
+                return
+            if os.path.getsize(src_name) == 0:
+                self._discard_empty_source(
+                    src_name, dest_name, DISCARD_EMPTY_FILE_MESSAGE
+                )
+                conversion_succeeded = True
+                return
+
+            logger.info("Compressing log data into %s", dest_name)
+
+            # See https://stackoverflow.com/a/72406099 for more info and
+            # performance testing measurements.
+            temp_name: str | None = None
+            try:
+                # Reserve a unique temp path in the destination directory
+                # (delete=False), then close it so write_feather can reopen
+                # that path before os.replace() performs an atomic swap.
+                with tempfile.NamedTemporaryFile(
+                    mode="wb",
+                    dir=os.path.dirname(dest_name) or ".",
+                    prefix=os.path.basename(dest_name) + ".",
+                    suffix=TEMP_FEATHER_SUFFIX,
+                    delete=False,
+                ) as temp_file:
+                    temp_name = temp_file.name
+
+                # Convert stream->file incrementally to avoid loading the entire
+                # Arrow source into memory for large logs.
+                write_options = pa.ipc.IpcWriteOptions(compression="zstd")
+                wrote_rows = False
+                with pa.memory_map(src_name) as source:
+                    with pa.ipc.open_stream(source) as reader:
+                        with pa.output_stream(temp_name) as temp_out:
+                            with pa.ipc.new_file(
+                                temp_out,
+                                reader.schema,
+                                options=write_options,
+                            ) as file_writer:
+                                for batch in reader:
+                                    if batch.num_rows == 0:
+                                        continue
+                                    file_writer.write_batch(batch)
+                                    wrote_rows = True
+
+                if not wrote_rows:
+                    try:
+                        os.remove(temp_name)
+                    except OSError:
+                        logger.warning(
+                            WARNING_REMOVE_TEMP_FEATHER,
+                            temp_name,
+                            exc_info=True,
+                        )
+                    temp_name = None
+                    self._discard_empty_source(
+                        src_name,
+                        dest_name,
+                        DISCARD_EMPTY_ARROW_MESSAGE,
+                    )
+                    conversion_succeeded = True
+                    return
+
+                os.replace(temp_name, dest_name)
+                temp_name = None
+            except Exception:
+                if temp_name and os.path.exists(temp_name):
+                    try:
+                        os.remove(temp_name)
+                    except OSError:
+                        logger.warning(
+                            WARNING_REMOVE_TEMP_FEATHER,
+                            temp_name,
+                            exc_info=True,
+                        )
+                raise
+            try:
+                os.remove(src_name)
+            except OSError:
+                logger.warning(
+                    WARNING_REMOVE_TEMP_ARROW_SOURCE,
+                    src_name,
+                    exc_info=True,
+                )
+            conversion_succeeded = True
+        finally:
+            with self._lock:
+                if conversion_succeeded:
+                    self._conversion_done = True
+                self._conversion_in_progress = False

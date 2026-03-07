@@ -1,10 +1,15 @@
 version: 0.1
 cli:
-  version: 1.15.0
+  version: 1.25.0
+  options:
+    # Keep trunk check non-interactive by default so fixes are always explicit.
+    - commands:
+        - check
+      args: -n
 plugins:
   sources:
     - id: trunk
-      ref: v1.2.2
+      ref: v1.7.4
       uri: https://github.com/trunk-io/plugins
 lint:
   disabled:
@@ -13,29 +18,84 @@ lint:
     - linters: [ALL]
       paths:
         # Ignore generated files
-        - meshtastic/*_pb2.py
+        - meshtastic/**/*_pb2.py
+        - meshtastic/**/*_pb2.pyi
+        # Ignore external protobufs submodule content in this repo's lint scope.
+        - protobufs/**
+        # Keep project license text untouched by automated lint/format tools.
+        - LICENSE.md
+    - linters: [mypy-poetry]
+      paths:
+        # Keep Trunk's mypy scope aligned with CI (meshtastic/ only).
+        - examples/**
+        - tests/**
+        - meshtastic/tests/**
+    - linters: [pylint-poetry]
+      paths:
+        # Keep Trunk's pylint scope aligned with CI (meshtastic/ + examples/).
+        - tests/**
+        - meshtastic/tests/**
+  definitions:
+    - name: mypy-poetry
+      description: Run mypy via Poetry using the project's pinned dependencies.
+      files: [python, python-interface]
+      suggest_if: files_present
+      direct_configs:
+        - pyproject.toml
+        - mypy.ini
+        - .mypy.ini
+      commands:
+        - name: lint
+          output: mypy
+          run: poetry -C ${workspace} run mypy meshtastic/ --strict --exclude '^meshtastic/tests/'
+          target: meshtastic
+          run_from: ${root_or_parent_with_any_config}
+          disable_upstream: true
+          success_codes: [0, 1]
+          batch: true
+          stdin: false
+    - name: pylint-poetry
+      description: Run pylint via Poetry with the project's CI arguments.
+      files: [python]
+      suggest_if: files_present
+      direct_configs:
+        - pyproject.toml
+        - pylintrc
+        - .pylintrc
+      commands:
+        - name: lint
+          output: pylint
+          run: poetry -C ${workspace} run pylint meshtastic examples/ --exit-zero --ignore-patterns='.*_pb2.py,.*_pb2.pyi' --ignore-paths='^meshtastic/tests/|^meshtastic/protobuf/.*_pb2\\.pyi?$' --output ${tmpfile} --output-format json
+          target: meshtastic
+          read_output_from: tmp_file
+          run_from: ${root_or_parent_with_any_config}
+          disable_upstream: true
+          success_codes: [0]
+          batch: true
+          stdin: false
   enabled:
-    - actionlint@1.6.25
-    - black@23.7.0
-    - checkov@2.4.9
+    - actionlint@1.7.10
+    - black@26.1.0
+    - checkov@3.2.502
     - git-diff-check
-    - gitleaks@8.18.0
-    - isort@5.12.0
-    - markdownlint@0.36.0
-    - osv-scanner@1.3.6
-    - prettier@3.0.3
-    - pylint@2.17.5
-    - ruff@0.0.287
-    - shellcheck@0.9.0
+    - gitleaks@8.30.0
+    - isort@7.0.0
+    - markdownlint@0.47.0
+    - osv-scanner@2.3.3
+    - prettier@3.8.1
+    - ruff@0.15.1
+    - shellcheck@0.11.0
     - shfmt@3.6.0
-    - taplo@0.8.1
-    - trivy@0.44.1
-    - trufflehog@3.54.3
-    - yamllint@1.32.0
+    - taplo@0.10.0
+    - trivy@0.69.1
+    - trufflehog@3.93.3
+    - yamllint@1.38.0
+    - mypy-poetry
+    - pylint-poetry
 runtimes:
   enabled:
     - go@1.21.0
-    - node@18.12.1
+    - node@22.16.0
     - python@3.10.8
 actions:
   disabled:

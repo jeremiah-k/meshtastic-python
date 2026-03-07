@@ -1,5 +1,4 @@
-"""
-# A library for the Meshtastic Client API
+"""# A library for the Meshtastic Client API.
 
 Primary interfaces: SerialInterface, TCPInterface, BLEInterface
 
@@ -62,32 +61,26 @@ pub.subscribe(onConnection, "meshtastic.connection.established")
 interface = meshtastic.serial_interface.SerialInterface()
 
 ```
-
 """
 
-import base64
-import logging
-import os
-import platform
-import random
-import socket
-import stat
-import sys
-import threading
-import time
-import traceback
-from datetime import datetime
-from typing import *
+# ruff: noqa: F401
 
-import google.protobuf.json_format
-import serial # type: ignore[import-untyped]
+import copy
+import logging
+from importlib import import_module
+from typing import Any, Callable, NamedTuple, TypeGuard, cast
+
 from google.protobuf.json_format import MessageToJson
-from pubsub import pub # type: ignore[import-untyped]
-from tabulate import tabulate
 
 from meshtastic.node import Node
-from meshtastic.util import DeferredExecution, Timeout, catchAndIgnore, fixme, stripnl
+from meshtastic.util import (
+    DeferredExecution,
+    Timeout,
+    catchAndIgnore,
+    stripnl,
+)
 
+from . import util
 from .protobuf import (
     admin_pb2,
     apponly_pb2,
@@ -97,14 +90,53 @@ from .protobuf import (
     mqtt_pb2,
     paxcount_pb2,
     portnums_pb2,
+    powermon_pb2,
     remote_hardware_pb2,
     storeforward_pb2,
     telemetry_pb2,
-    powermon_pb2
 )
-from . import (
-    util,
-)
+
+pub = cast(Any, import_module("pubsub.pub"))
+
+# Keep this module aligned with historical master behavior by intentionally not
+# defining __all__. Public names remain available as module attributes.
+
+
+def __getattr__(name: str) -> Any:
+    """Provide lazy access to legacy module attributes.
+
+    When the attribute "serial" is requested, import the third-party pyserial
+    module, cache it on the module globals as "serial", and return it. For any
+    other attribute, raise AttributeError.
+
+    Parameters
+    ----------
+    name : str
+        Attribute name being accessed.
+
+    Returns
+    -------
+    Any
+        The resolved module object for the requested legacy attribute
+        (e.g., the third-party pyserial module for "serial").
+
+    Raises
+    ------
+    AttributeError
+        If the requested attribute is not provided by this lazy loader.
+    """
+    # COMPAT_STABLE_SHIM: preserve historical `meshtastic.serial` module access.
+    if name == "serial":
+        # Keep historical `meshtastic.serial` access to the third-party
+        # pyserial module as exposed on master.
+        serial_module = import_module("serial")
+        # Cache in module namespace so subsequent accesses bypass __getattr__
+        globals()["serial"] = serial_module
+        return serial_module
+    raise AttributeError(  # noqa: TRY003
+        f"module {__name__!r} has no attribute {name!r}"
+    )
+
 
 # Note: To follow PEP224, comments should be after the module variable.
 
@@ -128,142 +160,428 @@ NODELESS_WANT_CONFIG_ID = 69420
 """A special thing to pass for want_config_id that instructs nodes to skip sending nodeinfos other than its own."""
 
 publishingThread = DeferredExecution("publishing")
+"""Process-wide deferred publisher worker.
+
+`DeferredExecution.queueWork()` is thread-safe (backed by Queue) and all
+callbacks are serialized on the worker thread.
+"""
 
 logger = logging.getLogger(__name__)
 
+REDACTED_TEXT = "<redacted>"
+REDACTED_BYTES = b"<redacted>"
+
+
+ResponseCallback = Callable[[dict[str, Any]], Any]
+ProtobufFactory = Callable[[], Any]
+OnReceive = Callable[[Any, dict[str, Any]], None]
+
+
 class ResponseHandler(NamedTuple):
-    """A pending response callback, waiting for a response to one of our messages"""
+    """A pending response callback, waiting for a response to one of our messages."""
 
     # requestId: int - used only as a key
     #: a callable to call when a response is received
-    callback: Callable
+    callback: ResponseCallback
     #: Whether ACKs and NAKs should be passed to this handler
     ackPermitted: bool = False
     # FIXME, add timestamp and age out old requests
 
 
 class KnownProtocol(NamedTuple):
-    """Used to automatically decode known protocol payloads"""
+    """Used to automatically decode known protocol payloads."""
 
     #: A descriptive name (e.g. "text", "user", "admin")
     name: str
     #: If set, will be called to parse as a protocol buffer
-    protobufFactory: Optional[Callable] = None
+    protobufFactory: ProtobufFactory | None = None
     #: If set, invoked as onReceive(interface, packet)
-    onReceive: Optional[Callable] = None
+    onReceive: OnReceive | None = None
 
 
-def _onTextReceive(iface, asDict):
-    """Special text auto parsing for received messages"""
+def _packet_debug_summary(as_dict: dict[str, Any]) -> dict[str, Any]:
+    """Return a sanitized packet summary for debug logging.
+
+    The summary intentionally omits sensitive payload/body fields while retaining
+    enough context for troubleshooting receive-handler flows.
+    """
+    decoded = as_dict.get("decoded")
+    decoded_dict = decoded if isinstance(decoded, dict) else {}
+    payload = decoded_dict.get("payload")
+    payload_len = (
+        len(payload)
+        if isinstance(payload, (bytes, bytearray, memoryview, str))
+        else None
+    )
+    decoded_keys = sorted(str(key) for key in decoded_dict.keys())
+    return {
+        "from": as_dict.get("from"),
+        "to": as_dict.get("to"),
+        "portnum": decoded_dict.get("portnum"),
+        "decoded_keys": decoded_keys,
+        "payload_len": payload_len,
+    }
+
+
+def _sanitize_last_received(as_dict: dict[str, Any]) -> dict[str, Any]:
+    """Return a node-cache-safe packet copy for ``node['lastReceived']``.
+
+    Keeps historical packet structure for compatibility while redacting only
+    ``decoded.admin.raw.session_passkey`` when present.
+    """
+    sanitized = dict(as_dict)
+    decoded = sanitized.get("decoded")
+    if not isinstance(decoded, dict):
+        return sanitized
+    if "admin" not in decoded:
+        return sanitized
+    decoded_sanitized = dict(decoded)
+    admin_payload = decoded.get("admin")
+    if isinstance(admin_payload, dict):
+        admin_sanitized = dict(admin_payload)
+        raw_admin = admin_payload.get("raw")
+        if isinstance(raw_admin, dict):
+            raw_sanitized_dict = dict(raw_admin)
+            if "session_passkey" in raw_sanitized_dict:
+                raw_sanitized_dict["session_passkey"] = (
+                    REDACTED_BYTES
+                    if isinstance(
+                        raw_sanitized_dict["session_passkey"],
+                        (bytes, bytearray, memoryview),
+                    )
+                    else REDACTED_TEXT
+                )
+            admin_sanitized["raw"] = raw_sanitized_dict
+        elif hasattr(raw_admin, "session_passkey"):
+            raw_sanitized_obj: Any | None
+            try:
+                raw_sanitized_obj = copy.deepcopy(raw_admin)
+            except Exception:  # noqa: BLE001 - preserve packet flow on odd payloads
+                logger.debug(
+                    "deepcopy failed during admin payload redaction; using sentinel payload",
+                    exc_info=True,
+                )
+                raw_sanitized_obj = None
+            if raw_sanitized_obj is None:
+                admin_sanitized["raw"] = {"session_passkey": REDACTED_BYTES}
+            else:
+                try:
+                    raw_sanitized_obj.session_passkey = REDACTED_BYTES
+                except Exception:  # noqa: BLE001 - best effort redaction only
+                    logger.debug(
+                        "session_passkey assignment redaction failed; forcing fallback redaction",
+                        exc_info=True,
+                    )
+                    redaction_applied = False
+                    try:
+                        delattr(raw_sanitized_obj, "session_passkey")
+                        redaction_applied = True
+                    except Exception:  # noqa: BLE001 - final fallback below
+                        redaction_applied = False
+                    admin_sanitized["raw"] = (
+                        raw_sanitized_obj
+                        if redaction_applied
+                        else {"session_passkey": REDACTED_BYTES}
+                    )
+                else:
+                    admin_sanitized["raw"] = raw_sanitized_obj
+        decoded_sanitized["admin"] = admin_sanitized
+    else:
+        decoded_sanitized["admin"] = REDACTED_TEXT
+    sanitized["decoded"] = decoded_sanitized
+    return sanitized
+
+
+def _is_valid_node_num(value: object) -> TypeGuard[int]:
+    """Return True when value is an integer node number (excluding bool)."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _extract_sender_and_decoded(
+    as_dict: dict[str, Any],
+) -> tuple[int, dict[str, Any]] | None:
+    """Return validated packet sender and decoded payload dictionary.
+
+    Parameters
+    ----------
+    as_dict : dict[str, Any]
+        Packet dictionary expected to contain an integer ``from`` and dict
+        ``decoded`` payload.
+
+    Returns
+    -------
+    tuple[int, dict[str, Any]] | None
+        ``(sender, decoded)`` when both fields are present with expected types;
+        otherwise ``None``.
+    """
+    sender = as_dict.get("from")
+    decoded = as_dict.get("decoded")
+    if not _is_valid_node_num(sender) or not isinstance(decoded, dict):
+        return None
+    return sender, decoded
+
+
+def _on_text_receive(iface: Any, as_dict: dict[str, Any]) -> None:
+    """Decode text payloads from a received packet and update per-node metadata.
+
+    If the packet's decoded.payload contains valid UTF-8, store the decoded string in
+    as_dict["decoded"]["text"]. If decoding fails, leave that field unset and log an error.
+    Always invokes the interface's info-update path to refresh node metadata based on the packet.
+
+    Parameters
+    ----------
+    iface : Any
+        The interface instance that received the packet.
+    as_dict : dict[str, Any]
+        Packet dictionary expected to contain
+        decoded.payload (bytes) where the text is stored.
+    """
     # We don't throw if the utf8 is invalid in the text message.  Instead we just don't populate
     # the decoded.data.text and we log an error message.  This at least allows some delivery to
     # the app and the app can deal with the missing decoded representation.
     #
     # Usually btw this problem is caused by apps sending binary data but setting the payload type to
     # text.
-    logger.debug(f"in _onTextReceive() asDict:{asDict}")
+    logger.debug("in _on_text_receive() %s", _packet_debug_summary(as_dict))
     try:
-        asBytes = asDict["decoded"]["payload"]
-        asDict["decoded"]["text"] = asBytes.decode("utf-8")
-    except Exception as ex:
-        logger.error(f"Malformatted utf8 in text message: {ex}")
-    _receiveInfoUpdate(iface, asDict)
+        as_bytes = as_dict["decoded"]["payload"]
+        as_dict["decoded"]["text"] = as_bytes.decode("utf-8")
+    except (UnicodeDecodeError, KeyError, AttributeError, TypeError):
+        logger.exception("Malformatted utf8 in text message")
+    _receive_info_update(iface, as_dict)
 
 
-def _onPositionReceive(iface, asDict):
-    """Special auto parsing for received messages"""
-    logger.debug(f"in _onPositionReceive() asDict:{asDict}")
-    if "decoded" in asDict:
-        if "position" in asDict["decoded"] and "from" in asDict:
-            p = asDict["decoded"]["position"]
-            logger.debug(f"p:{p}")
-            p = iface._fixupPosition(p)
-            logger.debug(f"after fixup p:{p}")
-            # update node DB as needed
-            iface._getOrCreateByNum(asDict["from"])["position"] = p
+def _on_position_receive(iface: Any, as_dict: dict[str, Any]) -> None:
+    """Update the sender node's stored position when a received packet contains position data.
+
+    If as_dict contains a "from" field and a decoded "position", the position is normalized
+    using the interface's fixup routine and written to that node's "position" entry.
+
+    Parameters
+    ----------
+    iface : Any
+        Interface instance that provides position normalization and node lookup helpers.
+    as_dict : dict[str, Any]
+        Packet dictionary expected to contain
+        "from" and "decoded"->"position".
+    """
+    logger.debug("in _on_position_receive() %s", _packet_debug_summary(as_dict))
+    packet_guard = _extract_sender_and_decoded(as_dict)
+    if packet_guard is None:
+        return
+    sender, decoded = packet_guard
+    if "position" in decoded:
+        _receive_info_update(iface, as_dict)
+        p = decoded["position"]
+        logger.debug("position payload received from=%s", sender)
+        p = iface._fixup_position(p)
+        logger.debug("position payload normalized from=%s", sender)
+        node = iface._get_or_create_by_num(sender)
+        with iface._node_db_lock:
+            node["position"] = p
 
 
-def _onNodeInfoReceive(iface, asDict):
-    """Special auto parsing for received messages"""
-    logger.debug(f"in _onNodeInfoReceive() asDict:{asDict}")
-    if "decoded" in asDict:
-        if "user" in asDict["decoded"] and "from" in asDict:
-            p = asDict["decoded"]["user"]
-            # decode user protobufs and update nodedb, provide decoded version as "position" in the published msg
-            # update node DB as needed
-            n = iface._getOrCreateByNum(asDict["from"])
+def _on_node_info_receive(iface: Any, as_dict: dict[str, Any]) -> None:
+    """Update the local node record from a received NodeInfo ("user") payload.
+
+    When `as_dict` contains a decoded `"user"` entry and a `"from"` sender, stores
+    the decoded user protobuf on the sender's node under `node["user"]`, ensures
+    `iface.nodes` maps the user's `id` to that node, and refreshes per-node metadata
+    via _receive_info_update(iface, as_dict).
+
+    Parameters
+    ----------
+    iface : Any
+        Interface instance managing the node database.
+    as_dict : dict[str, Any]
+        Received packet dictionary; expected to contain
+        `"decoded" -> "user"` and `"from"`.
+    """
+    logger.debug("in _on_node_info_receive() %s", _packet_debug_summary(as_dict))
+    packet_guard = _extract_sender_and_decoded(as_dict)
+    if packet_guard is None:
+        return
+    sender, decoded = packet_guard
+    if "user" in decoded:
+        _receive_info_update(iface, as_dict)
+        p = decoded["user"]
+        # decode user protobufs and update nodedb, provide decoded version as "position" in the published msg
+        # update node DB as needed
+        n = iface._get_or_create_by_num(sender)
+        with iface._node_db_lock:
             n["user"] = p
             # We now have a node ID, make sure it is up-to-date in that table
-            iface.nodes[p["id"]] = n
-            _receiveInfoUpdate(iface, asDict)
+            node_id = p.get("id") if isinstance(p, dict) else None
+            nodes_by_id = iface.nodes
+            if isinstance(node_id, str) and node_id and isinstance(nodes_by_id, dict):
+                nodes_by_id[node_id] = n
 
-def _onTelemetryReceive(iface, asDict):
-    """Automatically update device metrics on received packets"""
-    logger.debug(f"in _onTelemetryReceive() asDict:{asDict}")
-    if "from" not in asDict:
+
+def _on_telemetry_receive(iface: Any, as_dict: dict[str, Any]) -> None:
+    """Update the appropriate telemetry section on the sender node when a telemetry packet is received.
+
+    Merges metrics from the packet's `decoded.telemetry` into one of the node's telemetry
+    sections: `deviceMetrics`, `environmentMetrics`, `airQualityMetrics`, `powerMetrics`,
+    or `localStats`. If the packet lacks a `from` field or none of these sections are
+    present, no change is made.
+
+    Parameters
+    ----------
+    iface : Any
+        Interface instance used to look up or create the target node.
+    as_dict : dict[str, Any]
+        Received packet dictionary; expected to include
+        a `from` key and may include `decoded.telemetry`.
+    """
+    logger.debug("in _on_telemetry_receive() %s", _packet_debug_summary(as_dict))
+    packet_guard = _extract_sender_and_decoded(as_dict)
+    if packet_guard is None:
         return
+    sender, decoded = packet_guard
+    _receive_info_update(iface, as_dict)
 
-    toUpdate = None
-
-    telemetry = asDict.get("decoded", {}).get("telemetry", {})
-    node = iface._getOrCreateByNum(asDict["from"])
+    to_update = None
+    telemetry = decoded.get("telemetry") or {}
+    if not isinstance(telemetry, dict):
+        logger.debug(
+            "Skipping telemetry update from=%s: unexpected telemetry payload type %s",
+            as_dict.get("from"),
+            type(telemetry).__name__,
+        )
+        return
     if "deviceMetrics" in telemetry:
-        toUpdate = "deviceMetrics"
+        to_update = "deviceMetrics"
     elif "environmentMetrics" in telemetry:
-        toUpdate = "environmentMetrics"
+        to_update = "environmentMetrics"
     elif "airQualityMetrics" in telemetry:
-        toUpdate = "airQualityMetrics"
+        to_update = "airQualityMetrics"
     elif "powerMetrics" in telemetry:
-        toUpdate = "powerMetrics"
+        to_update = "powerMetrics"
     elif "localStats" in telemetry:
-        toUpdate = "localStats"
+        to_update = "localStats"
     else:
         return
 
-    updateObj = telemetry.get(toUpdate)
-    newMetrics = node.get(toUpdate, {})
-    newMetrics.update(updateObj)
-    logger.debug(f"updating {toUpdate} metrics for {asDict['from']} to {newMetrics}")
-    node[toUpdate] = newMetrics
+    update_obj = telemetry.get(to_update)
+    if not isinstance(update_obj, dict):
+        return
+    node = iface._get_or_create_by_num(sender)
+    with iface._node_db_lock:
+        new_metrics = node.get(to_update, {})
+        if not isinstance(new_metrics, dict):
+            new_metrics = {}
+        new_metrics.update(update_obj)
+        logger.debug("updating %s metrics for %s to %s", to_update, sender, new_metrics)
+        node[to_update] = new_metrics
 
-def _receiveInfoUpdate(iface, asDict):
-    if "from" in asDict:
-        iface._getOrCreateByNum(asDict["from"])["lastReceived"] = asDict
-        iface._getOrCreateByNum(asDict["from"])["lastHeard"] = asDict.get("rxTime")
-        iface._getOrCreateByNum(asDict["from"])["snr"] = asDict.get("rxSnr")
-        iface._getOrCreateByNum(asDict["from"])["hopLimit"] = asDict.get("hopLimit")
 
-def _onAdminReceive(iface, asDict):
-    """Special auto parsing for received messages"""
-    logger.debug(f"in _onAdminReceive() asDict:{asDict}")
-    if "decoded" in asDict and "from" in asDict and "admin" in asDict["decoded"]:
-        adminMessage = asDict["decoded"]["admin"]["raw"]
-        iface._getOrCreateByNum(asDict["from"])["adminSessionPassKey"] = adminMessage.session_passkey
+def _receive_info_update(iface: Any, as_dict: dict[str, Any]) -> None:
+    """Update per-node metadata fields based on information present in a received packet dictionary.
 
-"""Well known message payloads can register decoders for automatic protobuf parsing"""
+    Parameters
+    ----------
+    iface : Any
+        The interface instance whose node store will be updated.
+    as_dict : dict[str, Any]
+        Parsed packet dictionary; if it contains an integer "from" key, the
+        node identified by that value will have these fields set:
+        - lastReceived: packet dictionary copy with admin session passkey redacted
+        - lastHeard: value of `rxTime` from the packet (or None)
+        - snr: value of `rxSnr` from the packet (or None)
+        - hopLimit: value of `hopLimit` from the packet (or None)
+    """
+    sender = as_dict.get("from")
+    if not _is_valid_node_num(sender):
+        if sender is not None:
+            logger.debug(
+                "Skipping receive info update due to non-integer sender type: %s",
+                type(sender).__name__,
+            )
+        return
+    node = iface._get_or_create_by_num(sender)
+    sanitized_last_received = _sanitize_last_received(as_dict)
+    with iface._node_db_lock:
+        node["lastReceived"] = sanitized_last_received
+        node["lastHeard"] = as_dict.get("rxTime")
+        node["snr"] = as_dict.get("rxSnr")
+        node["hopLimit"] = as_dict.get("hopLimit")
+
+
+def _on_admin_receive(iface: Any, as_dict: dict[str, Any]) -> None:
+    """Store the admin session passkey from an admin packet on the sending node.
+
+    If the expected fields are present in `as_dict`, sets the sender node's
+    "adminSessionPassKey" to the extracted `session_passkey`.
+
+    Parameters
+    ----------
+    iface : Any
+        The interface instance managing the node database.
+    as_dict : dict[str, Any]
+        Received packet dictionary; expected to contain
+        `decoded.admin.raw.session_passkey` and a `from` sender field.
+    """
+    logger.debug("in _on_admin_receive() from=%s", as_dict.get("from"))
+    packet_guard = _extract_sender_and_decoded(as_dict)
+    if packet_guard is None:
+        sender = as_dict.get("from")
+        decoded = as_dict.get("decoded")
+        if sender is None:
+            logger.debug("Dropping admin packet because 'from' field is missing")
+        elif not _is_valid_node_num(sender):
+            logger.debug("Admin packet has invalid 'from' field type: %r", type(sender))
+        elif not isinstance(decoded, dict):
+            logger.debug("Admin packet missing decoded dict from=%s", sender)
+        return
+
+    sender, decoded = packet_guard
+    _receive_info_update(iface, as_dict)
+
+    admin_payload = decoded.get("admin")
+    if not isinstance(admin_payload, dict):
+        logger.debug("Admin packet missing admin payload dict from=%s", sender)
+        return
+
+    raw_admin = admin_payload.get("raw")
+    session_passkey = getattr(raw_admin, "session_passkey", None)
+    if session_passkey is None and isinstance(raw_admin, dict):
+        session_passkey = raw_admin.get("session_passkey")
+
+    if session_passkey is None:
+        logger.debug(
+            "Admin session passkey not extracted from admin packet from=%s",
+            sender,
+        )
+        return
+
+    node = iface._get_or_create_by_num(sender)
+    with iface._node_db_lock:
+        node["adminSessionPassKey"] = session_passkey
+
+
+# Well known message payloads can register decoders for automatic protobuf parsing.
 protocols = {
     portnums_pb2.PortNum.TEXT_MESSAGE_APP: KnownProtocol(
-        "text", onReceive=_onTextReceive
+        "text", onReceive=_on_text_receive
     ),
     portnums_pb2.PortNum.RANGE_TEST_APP: KnownProtocol(
-        "rangetest", onReceive=_onTextReceive
+        "rangetest", onReceive=_on_text_receive
     ),
     portnums_pb2.PortNum.DETECTION_SENSOR_APP: KnownProtocol(
-        "detectionsensor", onReceive=_onTextReceive
+        "detectionsensor", onReceive=_on_text_receive
     ),
-
     portnums_pb2.PortNum.POSITION_APP: KnownProtocol(
-        "position", mesh_pb2.Position, _onPositionReceive
+        "position", mesh_pb2.Position, _on_position_receive
     ),
     portnums_pb2.PortNum.NODEINFO_APP: KnownProtocol(
-        "user", mesh_pb2.User, _onNodeInfoReceive
+        "user", mesh_pb2.User, _on_node_info_receive
     ),
     portnums_pb2.PortNum.ADMIN_APP: KnownProtocol(
-        "admin", admin_pb2.AdminMessage, _onAdminReceive
+        "admin", admin_pb2.AdminMessage, _on_admin_receive
     ),
     portnums_pb2.PortNum.ROUTING_APP: KnownProtocol("routing", mesh_pb2.Routing),
     portnums_pb2.PortNum.TELEMETRY_APP: KnownProtocol(
-        "telemetry", telemetry_pb2.Telemetry, _onTelemetryReceive
+        "telemetry", telemetry_pb2.Telemetry, _on_telemetry_receive
     ),
     portnums_pb2.PortNum.REMOTE_HARDWARE_APP: KnownProtocol(
         "remotehw", remote_hardware_pb2.HardwareMessage
@@ -276,8 +594,14 @@ protocols = {
         "powerstress", powermon_pb2.PowerStressMessage
     ),
     portnums_pb2.PortNum.WAYPOINT_APP: KnownProtocol("waypoint", mesh_pb2.Waypoint),
-    portnums_pb2.PortNum.PAXCOUNTER_APP: KnownProtocol("paxcounter", paxcount_pb2.Paxcount),
-    portnums_pb2.PortNum.STORE_FORWARD_APP: KnownProtocol("storeforward", storeforward_pb2.StoreAndForward),
-    portnums_pb2.PortNum.NEIGHBORINFO_APP: KnownProtocol("neighborinfo", mesh_pb2.NeighborInfo),
+    portnums_pb2.PortNum.PAXCOUNTER_APP: KnownProtocol(
+        "paxcounter", paxcount_pb2.Paxcount
+    ),
+    portnums_pb2.PortNum.STORE_FORWARD_APP: KnownProtocol(
+        "storeforward", storeforward_pb2.StoreAndForward
+    ),
+    portnums_pb2.PortNum.NEIGHBORINFO_APP: KnownProtocol(
+        "neighborinfo", mesh_pb2.NeighborInfo
+    ),
     portnums_pb2.PortNum.MAP_REPORT_APP: KnownProtocol("mapreport", mqtt_pb2.MapReport),
 }
