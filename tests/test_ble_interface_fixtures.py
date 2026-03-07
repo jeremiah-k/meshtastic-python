@@ -731,7 +731,12 @@ def _build_interface(
         """
         return None
 
-    def _stub_start_receive_thread(_self: "BLEInterface", *, name: str) -> None:
+    def _stub_start_receive_thread(
+        _self: "BLEInterface",
+        *,
+        name: str,
+        reset_recovery: bool = True,
+    ) -> None:
         """No-op replacement for BLEInterface._start_receive_thread.
 
         Accepts the same parameters as the production method but performs no action; parameters are kept for signature compatibility.
@@ -740,12 +745,14 @@ def _build_interface(
         ----------
         name : str
             Thread name (unused; kept for signature compatibility).
+        reset_recovery : bool
+            Whether recovery counters should be reset. Unused in tests.
 
         Returns
         -------
         None
         """
-        _ = (_self, name)
+        _ = (_self, name, reset_recovery)
         return None
 
     monkeypatch.setattr(BleInterfaceClass, "connect", _stub_connect)

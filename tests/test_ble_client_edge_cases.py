@@ -5,7 +5,7 @@ import re
 import threading
 from collections.abc import Awaitable, Callable, Coroutine
 from functools import partial
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 
 import pytest
 
@@ -57,7 +57,7 @@ def _make_run_awaitable(
 def _raise_wrapped_not_implemented(
     awaitable: Awaitable[object],
     timeout: float | None = None,
-) -> object:
+) -> NoReturn:
     """Simulate `_async_await` wrapping NotImplementedError in BLEError."""
     _ = timeout
     close_awaitable = getattr(awaitable, "close", None)

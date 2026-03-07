@@ -15,12 +15,16 @@ import time
 from typing import IO, Any, Callable
 
 from meshtastic.stream_interface import (
-    STREAM_CLOSE_EXCEPTIONS,
     WRITE_PROGRESS_TIMEOUT_SECONDS,
     StreamInterface,
 )
 
 DEFAULT_TCP_PORT = 4403
+TCP_WRITE_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    OSError,
+    ValueError,
+    TypeError,
+)
 logger = logging.getLogger(__name__)
 
 
@@ -381,7 +385,7 @@ class TCPInterface(StreamInterface):
                     raise OSError(self.WRITE_NO_PROGRESS_ERROR)
                 total_sent += sent
                 write_deadline = time.monotonic() + WRITE_PROGRESS_TIMEOUT_SECONDS
-        except STREAM_CLOSE_EXCEPTIONS as ex:
+        except TCP_WRITE_EXCEPTIONS as ex:
             logger.warning(
                 "TCP write failed (%d bytes), resetting socket: %s", len(b), ex
             )

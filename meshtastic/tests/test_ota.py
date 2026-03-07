@@ -239,7 +239,7 @@ def test_esp32_wifi_ota_update_logs_progress_without_callback(
 ) -> None:
     """Test update() logs coarse progress when no progress callback is provided."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
-        test_data = b"A" * (OTA_CHUNK_SIZE_BYTES * 3)
+        test_data = b"A" * (OTA_CHUNK_SIZE_BYTES * 10)
         f.write(test_data)
         temp_file = f.name
 
@@ -249,7 +249,10 @@ def test_esp32_wifi_ota_update_logs_progress_without_callback(
 
         ota = ESP32WiFiOTA(temp_file, "192.168.1.1")
 
-        with patch.object(ota, "_read_line") as mock_read_line:
+        with (
+            patch.object(ota, "_read_line") as mock_read_line,
+            patch("meshtastic.ota.OTA_PROGRESS_LOG_PERCENT_STEP", 50.0),
+        ):
             mock_read_line.side_effect = [
                 "OK",  # Device ready
                 "OK",  # Device finished
@@ -262,12 +265,11 @@ def test_esp32_wifi_ota_update_logs_progress_without_callback(
                     for record in caplog.records
                     if "OTA progress:" in record.message
                 ]
-                intermediate_progress_messages = [
-                    message for message in progress_messages if "100.0%" not in message
+                assert progress_messages == [
+                    "OTA progress: 50.0% (5120/10240 bytes)",
+                    "OTA progress: 100.0% (10240/10240 bytes)",
                 ]
-                assert len(progress_messages) >= 2
-                assert intermediate_progress_messages
-                assert any("100.0%" in message for message in progress_messages)
+                assert len(progress_messages) < 10
     finally:
         os.unlink(temp_file)
 

@@ -69,11 +69,11 @@ def _run_shell(command: str, timeout: int | float = 120) -> tuple[int, str]:
 
 
 def _destructive_test(func: Callable[..., object]) -> Callable[..., object]:
-    """Mark a smoke1 test as destructive and restore baseline config after it."""
+    """Mark a destructive single-device smoke test and restore baseline config."""
     return cast(
         Callable[..., object],
         pytest.mark.usefixtures("restore_smoke1_module_config")(
-            pytest.mark.smoke1(pytest.mark.smoke1_destructive(func))
+            pytest.mark.smoke1_destructive(func)
         ),
     )
 
@@ -210,7 +210,7 @@ def test_wait_for_get_readback_bounds_each_probe_to_remaining_deadline(
 ) -> None:
     """Readback polling should cap each CLI probe by the remaining outer deadline."""
     run_timeouts: list[int | float] = []
-    monotonic_values = iter([100.0, 100.0, 101.0, 101.0, 103.0, 103.0])
+    monotonic_values = iter([100.0, 100.0, 158.5, 158.5])
     sleep_calls: list[float] = []
 
     def _fake_monotonic() -> float:
@@ -233,8 +233,8 @@ def test_wait_for_get_readback_bounds_each_probe_to_remaining_deadline(
     )
 
     assert output == "network.wifi_ssid: ready"
-    assert run_timeouts == [INFO_READY_POLL_INTERVAL_SECONDS, 2.0]
-    assert sleep_calls == [INFO_READY_POLL_INTERVAL_SECONDS]
+    assert run_timeouts == [INFO_READY_POLL_INTERVAL_SECONDS, 1.5]
+    assert sleep_calls == [1.5]
 
 
 def _restore_config_with_retries(config_path: Path) -> tuple[int, str]:
@@ -888,7 +888,7 @@ def test_smoke1_attempt_to_delete_primary_channel() -> None:
 def test_smoke1_attempt_to_disable_primary_channel() -> None:
     """Disabling PRIMARY should be rejected."""
     return_value, out = _run("meshtastic", "--ch-disable", "--ch-index", "0")
-    assert re.search(r"Warning:\s+Cannot (disable|enable) primary channel", out)
+    assert re.search(r"Warning:\s+Cannot disable primary channel", out)
     assert return_value == 1
 
 

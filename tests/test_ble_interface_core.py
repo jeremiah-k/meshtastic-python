@@ -87,6 +87,22 @@ def _pin_trust_environment(
     monkeypatch.setattr("meshtastic.interfaces.ble.interface.subprocess.run", run)
 
 
+def _capture_management_wait_event(
+    monkeypatch: pytest.MonkeyPatch,
+    iface: BLEInterface,
+) -> threading.Event:
+    """Return an event that fires when close() blocks on in-flight management work."""
+    wait_entered = threading.Event()
+    original_wait = iface._management_idle_condition.wait
+
+    def _wait(timeout: float | None = None) -> bool:
+        wait_entered.set()
+        return original_wait(timeout=timeout)
+
+    monkeypatch.setattr(iface._management_idle_condition, "wait", _wait)
+    return wait_entered
+
+
 if TYPE_CHECKING:
 
     class _PubProtocol(Protocol):
@@ -740,6 +756,7 @@ def test_ble_interface_close_waits_for_temporary_pair_operation(
         "_safe_close_client",
         lambda client: cleanup_calls.append(client),
     )
+    management_wait_entered = _capture_management_wait_event(monkeypatch, iface)
 
     def _run_pair() -> None:
         try:
@@ -767,7 +784,7 @@ def test_ble_interface_close_waits_for_temporary_pair_operation(
 
     close_thread = threading.Thread(target=_run_close, daemon=True)
     close_thread.start()
-    time.sleep(0.05)
+    assert management_wait_entered.wait(timeout=1.0)
     with iface._state_lock:
         assert iface._closed is True
     assert close_done.is_set() is False
@@ -1468,6 +1485,7 @@ def test_ble_interface_trust_does_not_hold_interface_locks_during_subprocess(
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     _pin_trust_environment(monkeypatch, run=_blocking_run)
+    management_wait_entered = _capture_management_wait_event(monkeypatch, iface)
 
     def _run_trust() -> None:
         try:
@@ -1495,6 +1513,7 @@ def test_ble_interface_trust_does_not_hold_interface_locks_during_subprocess(
     close_thread = threading.Thread(target=_close_iface, daemon=True)
     close_thread.start()
     assert close_started.wait(timeout=1.0)
+    assert management_wait_entered.wait(timeout=1.0)
     with iface._state_lock:
         assert iface._closed is True
     assert close_done.is_set() is False
@@ -1534,6 +1553,7 @@ def test_ble_interface_close_waits_for_explicit_trust_without_active_client(
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     _pin_trust_environment(monkeypatch, run=_blocking_run)
+    management_wait_entered = _capture_management_wait_event(monkeypatch, iface)
 
     def _run_trust() -> None:
         try:
@@ -1559,7 +1579,7 @@ def test_ble_interface_close_waits_for_explicit_trust_without_active_client(
 
     close_thread = threading.Thread(target=_run_close, daemon=True)
     close_thread.start()
-    time.sleep(0.05)
+    assert management_wait_entered.wait(timeout=1.0)
     with iface._state_lock:
         assert iface._closed is True
     assert close_done.is_set() is False
@@ -2750,7 +2770,8 @@ def test_connect_raises_when_registry_ownership_is_lost_after_gate_finalization(
     assert released_claims == [("device-key",)]
     assert connected_callbacks == []
     assert iface.client is None
-    assert iface.address is None
+    assert iface.address == target_address
+    assert iface._last_connection_request == iface._sanitize_address(target_address)
 
 
 def test_connect_raises_when_shutdown_wins_after_gate_finalization(

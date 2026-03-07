@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 OTA_SOCKET_TIMEOUT_SECONDS = 15
 OTA_CHUNK_SIZE_BYTES = 1024
 FILE_HASH_READ_CHUNK_SIZE_BYTES = 4096
-OTA_PROGRESS_LOG_PERCENT_STEP = 5.0
-EMPTY_FIRMWARE_ERROR = "Firmware file {filename} is empty"
+OTA_PROGRESS_LOG_PERCENT_STEP: float = 5.0
+EMPTY_FIRMWARE_ERROR: str = "Firmware file {filename} is empty"
 
 
 class _SHA256Digest(Protocol):

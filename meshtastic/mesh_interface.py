@@ -2064,8 +2064,9 @@ class MeshInterface:  # pylint: disable=R0902
         notification only if the interface was previously connected. This keeps
         shutdown/retry paths from publishing duplicate "lost" events.
         """
-        was_connected = self.isConnected.is_set()
-        self.isConnected.clear()
+        with self._heartbeat_lock:
+            was_connected = self.isConnected.is_set()
+            self.isConnected.clear()
         if was_connected:
             publishingThread.queueWork(
                 lambda: pub.sendMessage("meshtastic.connection.lost", interface=self)

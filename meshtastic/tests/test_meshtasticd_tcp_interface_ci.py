@@ -114,7 +114,7 @@ def _parse_host_and_port(host: str) -> tuple[str, int]:
                     env_var=MESHTASTICD_HOST_ENV_VAR,
                     host=host,
                 )
-            )
+            ) from exc
         return host, DEFAULT_TCP_PORT
 
     raw_port = _extract_port_component(host)

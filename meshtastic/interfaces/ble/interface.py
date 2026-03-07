@@ -127,6 +127,7 @@ from meshtastic.protobuf import mesh_pb2
 T = TypeVar("T")
 _NOTIFY_ACQUIRED_FRAGMENT = "notify acquired"
 _BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS = 10.0
+_MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS: float = 30.0
 
 
 class BLEInterface(MeshInterface):
@@ -1637,12 +1638,17 @@ class BLEInterface(MeshInterface):
         """Validate a connect timeout override before connection orchestration."""
         if connect_timeout is None:
             return
+        if isinstance(connect_timeout, bool) or not isinstance(
+            connect_timeout, numbers.Real
+        ):
+            exc = ValueError("connect_timeout must be a finite positive number of seconds.")
+            raise self.BLEError(ERROR_INVALID_CONNECT_TIMEOUT.format(exc=exc)) from exc
         try:
             ConnectionOrchestrator._resolve_connect_timeout(
                 pair_on_connect=pair_on_connect,
-                connect_timeout=cast(float | None, connect_timeout),
+                connect_timeout=float(connect_timeout),
             )
-        except ValueError as exc:
+        except (TypeError, ValueError) as exc:
             raise self.BLEError(ERROR_INVALID_CONNECT_TIMEOUT.format(exc=exc)) from exc
 
     def pair(
@@ -2113,7 +2119,13 @@ class BLEInterface(MeshInterface):
             for key in keys
         )
 
-    def _discard_invalidated_connected_client(self, client: BLEClient) -> None:
+    def _discard_invalidated_connected_client(
+        self,
+        client: BLEClient,
+        *,
+        restore_address: str | None = None,
+        restore_last_connection_request: str | None = None,
+    ) -> None:
         """Best-effort cleanup for a connected client invalidated before return.
 
         Parameters
@@ -2121,6 +2133,12 @@ class BLEInterface(MeshInterface):
         client : BLEClient
             Connected client result that should no longer be published to
             callers because ownership was lost or shutdown began.
+        restore_address : str | None
+            Target identifier to restore when the connection result is discarded
+            before ownership is finalized.
+        restore_last_connection_request : str | None
+            Normalized request identifier to restore when the connection result
+            is discarded before ownership is finalized.
         """
         should_reset_state = False
         is_closing = False
@@ -2132,11 +2150,13 @@ class BLEInterface(MeshInterface):
                 # best-effort close completes, so mark this interface as already
                 # notified before close() can trigger a stale callback.
                 self._disconnect_notified = True
-                self._last_connection_request = None
                 if not is_closing:
-                    self.address = None
+                    self.address = restore_address
+                    self._last_connection_request = restore_last_connection_request
                     self._connection_alias_key = None
                     should_reset_state = True
+                else:
+                    self._last_connection_request = None
 
         self._client_manager._safe_close_client(client)
 
@@ -2347,7 +2367,11 @@ class BLEInterface(MeshInterface):
                 stale_keys = [key for key in stale_keys if key not in active_keys]
             if stale_keys:
                 self._mark_address_keys_disconnected(*stale_keys)
-            self._discard_invalidated_connected_client(connected_client)
+            self._discard_invalidated_connected_client(
+                connected_client,
+                restore_address=requested_identifier,
+                restore_last_connection_request=normalized_request,
+            )
             if is_closing:
                 raise self.BLEError(ERROR_INTERFACE_CLOSING)
             raise self.BLEError(CONNECTION_ERROR_LOST_OWNERSHIP)
@@ -2758,7 +2782,14 @@ class BLEInterface(MeshInterface):
                 ):
                     self._state_manager._transition_to(ConnectionState.DISCONNECTING)
             while self._management_inflight > 0:
-                self._management_idle_condition.wait()
+                if not self._management_idle_condition.wait(
+                    timeout=_MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS
+                ):
+                    logger.warning(
+                        "Timed out waiting for %d inflight management operation(s) during shutdown",
+                        self._management_inflight,
+                    )
+                    break
 
         try:
             # Release lock before calling MeshInterface.close() to avoid deadlock
