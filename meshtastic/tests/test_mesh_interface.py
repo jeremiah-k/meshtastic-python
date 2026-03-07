@@ -1852,6 +1852,34 @@ def test_logger_visible_info_handler_only_counts_console_stream_handlers() -> No
             mesh_interface_module._logger_has_visible_info_handler(handler_logger)
             is True
         )
+
+        handler_logger.removeHandler(stdout_handler)
+        stdout_handler.close()
+
+        class _RichLikeHandler(logging.Handler):
+            def __init__(self, stream: Any) -> None:
+                super().__init__(level=logging.INFO)
+                self.console = types.SimpleNamespace(file=stream)
+
+            def emit(self, record: logging.LogRecord) -> None:
+                _ = record
+
+        rich_stderr_handler = _RichLikeHandler(sys.__stderr__)
+        handler_logger.addHandler(rich_stderr_handler)
+        assert (
+            mesh_interface_module._logger_has_visible_info_handler(handler_logger)
+            is True
+        )
+
+        handler_logger.removeHandler(rich_stderr_handler)
+        rich_stderr_handler.close()
+
+        rich_string_handler = _RichLikeHandler(io.StringIO())
+        handler_logger.addHandler(rich_string_handler)
+        assert (
+            mesh_interface_module._logger_has_visible_info_handler(handler_logger)
+            is False
+        )
     finally:
         for handler in list(handler_logger.handlers):
             handler_logger.removeHandler(handler)

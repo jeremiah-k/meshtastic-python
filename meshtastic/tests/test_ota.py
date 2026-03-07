@@ -269,7 +269,6 @@ def test_esp32_wifi_ota_update_logs_progress_without_callback(
                     "OTA progress: 50.0% (5120/10240 bytes)",
                     "OTA progress: 100.0% (10240/10240 bytes)",
                 ]
-                assert len(progress_messages) < 10
     finally:
         os.unlink(temp_file)
 

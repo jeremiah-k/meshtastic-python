@@ -36,6 +36,13 @@ DEFAULT_URL_FRAGMENT = "CgUYAyIBAQ"
 _MUTATION_SETTLE_FAILURE_MSG = (
     "Device never reached the expected post-mutation state:\n{output}"
 )
+_DISCONNECT_SIGNAL_PATTERNS = (
+    "serial disconnected",
+    "device disconnected",
+    "could not open port",
+    "no such file or directory",
+    "port not found",
+)
 CHANNEL_PRESET_INFO_PATTERNS: dict[str, str] = {
     "--ch-vlongslow": "VeryLongSlow",
     "--ch-longslow": "LongSlow",
@@ -80,7 +87,15 @@ def _destructive_test(func: Callable[..., object]) -> Callable[..., object]:
 
 def _assert_connected(output: str) -> None:
     """Assert that CLI output indicates serial connection succeeded."""
-    assert re.search(r"^Connected to radio", output, re.MULTILINE)
+    assert re.search(
+        r"^Connected to radio", output, re.MULTILINE
+    ), f"Expected connection message in CLI output; got: {output!r}"
+
+
+def _looks_like_disconnect_probe_output(output: str) -> bool:
+    """Return whether CLI output looks like a real disconnect signal."""
+    normalized_output = output.casefold()
+    return any(pattern in normalized_output for pattern in _DISCONNECT_SIGNAL_PATTERNS)
 
 
 def _unique_channel_name(prefix: str = "t") -> str:
@@ -165,19 +180,21 @@ def test_wait_for_mutation_to_settle_honors_settle_window_and_predicate(
     )
 
     assert settled == "Connected to radio\nOwner: ready"
-    assert sleep_calls[0] == 3.0
+    assert sleep_calls == [3.0, INFO_READY_POLL_INTERVAL_SECONDS]
 
 
 @pytest.mark.unit
-def test_wait_for_disconnect_then_ready_requires_failed_probe(
+def test_wait_for_disconnect_then_ready_requires_disconnect_signal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Reboot/factory-reset helper should require a failed probe before recovery."""
+    """Reboot/factory-reset helper should require a disconnect-specific probe failure."""
     probe_results = [
         (0, "Connected to radio\nstill up"),
+        (1, "temporary cli failure"),
         (1, "serial disconnected"),
     ]
     sleep_calls: list[float] = []
+    ready_calls = 0
 
     def _next_probe(*_args: object, **_kwargs: object) -> tuple[int, str]:
         return probe_results.pop(0)
@@ -186,7 +203,9 @@ def test_wait_for_disconnect_then_ready_requires_failed_probe(
         timeout: int | float = INFO_READY_TIMEOUT_SECONDS,
         poll_interval: int | float = INFO_READY_POLL_INTERVAL_SECONDS,
     ) -> tuple[int, str]:
+        nonlocal ready_calls
         _ = (timeout, poll_interval)
+        ready_calls += 1
         return 0, "Connected to radio\nrecovered"
 
     def _record_sleep(seconds: float) -> None:
@@ -201,7 +220,11 @@ def test_wait_for_disconnect_then_ready_requires_failed_probe(
     recovered = _wait_for_disconnect_then_ready("reboot")
 
     assert recovered == "Connected to radio\nrecovered"
-    assert sleep_calls == [INFO_READY_POLL_INTERVAL_SECONDS]
+    assert ready_calls == 1
+    assert sleep_calls == [
+        INFO_READY_POLL_INTERVAL_SECONDS,
+        INFO_READY_POLL_INTERVAL_SECONDS,
+    ]
 
 
 @pytest.mark.unit
@@ -348,7 +371,7 @@ def _wait_for_disconnect_then_ready(action_name: str) -> str:
             break
         probe_timeout = min(DISCONNECT_PROBE_TIMEOUT_SECONDS, remaining)
         code, output = _run("meshtastic", "--info", timeout=probe_timeout)
-        if code != 0:
+        if code != 0 and _looks_like_disconnect_probe_output(output):
             remaining_after_disconnect = deadline - time.monotonic()
             if remaining_after_disconnect <= 0:
                 break
@@ -365,8 +388,7 @@ def _wait_for_disconnect_then_ready(action_name: str) -> str:
             break
         time.sleep(min(INFO_READY_POLL_INTERVAL_SECONDS, remaining))
     raise AssertionError(
-        f"Device never disappeared during {action_name}.\n"
-        f"last_successful_probe={last_output}"
+        f"Device never disappeared during {action_name}.\nlast_probe={last_output}"
     )
 
 

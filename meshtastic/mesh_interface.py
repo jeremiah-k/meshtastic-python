@@ -93,13 +93,21 @@ def _logger_has_visible_info_handler(target_logger: logging.Logger) -> bool:
     if target_logger.disabled or target_logger.getEffectiveLevel() > logging.INFO:
         return False
 
+    visible_console_streams = {
+        sys.stdout,
+        sys.stderr,
+        sys.__stdout__,
+        sys.__stderr__,
+    }
     current_logger: logging.Logger | None = target_logger
     while current_logger is not None:
         for handler in current_logger.handlers:
-            if (
-                isinstance(handler, logging.StreamHandler)
-                and getattr(handler, "stream", None) in {sys.stdout, sys.stderr}
-                and handler.level <= logging.INFO
+            handler_stream = getattr(handler, "stream", None)
+            console = getattr(handler, "console", None)
+            console_stream = getattr(console, "file", None)
+            if handler.level <= logging.INFO and (
+                handler_stream in visible_console_streams
+                or console_stream in visible_console_streams
             ):
                 return True
         if not current_logger.propagate:

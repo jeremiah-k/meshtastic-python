@@ -263,8 +263,9 @@ iface.pair()
 iface.unpair()
 
 # Linux-only trust helper. When connected, you can omit the address to trust
-# the current device. If disconnected, omit the address only when the interface
-# is still bound to the exact target you intend to trust; otherwise pass one
+# the current device. If disconnected, omit the address only when the
+# interface already has that device's concrete BLE address bound as its target;
+# if the target came from a name lookup or you are unsure, pass the address
 # explicitly (no active connection required).
 iface.trust()
 iface.trust("AA:BB:CC:DD:EE:FF")

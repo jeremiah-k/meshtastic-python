@@ -1742,7 +1742,12 @@ class BLEInterface(MeshInterface):
         if result.returncode != 0:
             stderr_output = result.stderr.strip() if result.stderr else ""
             stdout_output = result.stdout.strip() if result.stdout else ""
-            detail = stderr_output or stdout_output or f"exit code {result.returncode}"
+            detail_parts = []
+            if stderr_output:
+                detail_parts.append(f"stderr: {stderr_output}")
+            if stdout_output:
+                detail_parts.append(f"stdout: {stdout_output}")
+            detail = " | ".join(detail_parts) or f"exit code {result.returncode}"
             raise self.BLEError(
                 ERROR_TRUST_COMMAND_FAILED.format(
                     address=canonical_address, detail=detail
@@ -2119,6 +2124,57 @@ class BLEInterface(MeshInterface):
             for key in keys
         )
 
+    def _get_post_connect_ownership_status(
+        self,
+        connected_client: BLEClient,
+        connected_device_key: str | None,
+        connection_alias_key: str | None,
+    ) -> tuple[bool, bool, bool]:
+        """Return ownership and shutdown status for a newly connected client."""
+        still_owned, is_closing = self._get_connected_client_status(connected_client)
+        lost_gate_ownership = self._has_lost_gate_ownership(
+            connected_device_key,
+            connection_alias_key,
+        )
+        return still_owned, is_closing, lost_gate_ownership
+
+    def _raise_for_invalidated_connect_result(
+        self,
+        connected_client: BLEClient,
+        connected_device_key: str | None,
+        connection_alias_key: str | None,
+        *,
+        is_closing: bool,
+        lost_gate_ownership: bool,
+        restore_address: str | None,
+        restore_last_connection_request: str | None,
+    ) -> None:
+        """Clean up a stale connect result and raise the appropriate BLEError."""
+        stale_keys = self._sorted_address_keys(
+            connected_device_key,
+            connection_alias_key,
+        )
+        if not lost_gate_ownership:
+            with self._state_lock:
+                active_client = self.client
+                active_keys = set(
+                    self._sorted_address_keys(
+                        _addr_key(self._extract_client_address(active_client)),
+                        self._connection_alias_key,
+                    )
+                )
+            stale_keys = [key for key in stale_keys if key not in active_keys]
+        if stale_keys:
+            self._mark_address_keys_disconnected(*stale_keys)
+        self._discard_invalidated_connected_client(
+            connected_client,
+            restore_address=restore_address,
+            restore_last_connection_request=restore_last_connection_request,
+        )
+        if is_closing:
+            raise self.BLEError(ERROR_INTERFACE_CLOSING)
+        raise self.BLEError(CONNECTION_ERROR_LOST_OWNERSHIP)
+
     def _discard_invalidated_connected_client(
         self,
         client: BLEClient,
@@ -2140,6 +2196,11 @@ class BLEInterface(MeshInterface):
             Normalized request identifier to restore when the connection result
             is discarded before ownership is finalized.
         """
+        restored_address = (
+            restore_address
+            if restore_address is not None and _looks_like_ble_address(restore_address)
+            else None
+        )
         should_reset_state = False
         is_closing = False
         with self._state_lock:
@@ -2151,7 +2212,7 @@ class BLEInterface(MeshInterface):
                 # notified before close() can trigger a stale callback.
                 self._disconnect_notified = True
                 if not is_closing:
-                    self.address = restore_address
+                    self.address = restored_address
                     self._last_connection_request = restore_last_connection_request
                     self._connection_alias_key = None
                     should_reset_state = True
@@ -2345,36 +2406,51 @@ class BLEInterface(MeshInterface):
         self._finalize_connection_gates(
             connected_client, connected_device_key, connection_alias_key
         )
-        still_owned, is_closing = self._get_connected_client_status(connected_client)
-        lost_gate_ownership = self._has_lost_gate_ownership(
+        restored_connect_address = self._extract_client_address(connected_client)
+        if (
+            restored_connect_address is None
+            and requested_identifier is not None
+            and _looks_like_ble_address(requested_identifier)
+        ):
+            restored_connect_address = requested_identifier
+        (
+            still_owned,
+            is_closing,
+            lost_gate_ownership,
+        ) = self._get_post_connect_ownership_status(
+            connected_client,
             connected_device_key,
             connection_alias_key,
         )
         if not still_owned or lost_gate_ownership:
-            stale_keys = self._sorted_address_keys(
+            self._raise_for_invalidated_connect_result(
+                connected_client,
                 connected_device_key,
                 connection_alias_key,
-            )
-            if not lost_gate_ownership:
-                with self._state_lock:
-                    active_client = self.client
-                    active_keys = set(
-                        self._sorted_address_keys(
-                            _addr_key(self._extract_client_address(active_client)),
-                            self._connection_alias_key,
-                        )
-                    )
-                stale_keys = [key for key in stale_keys if key not in active_keys]
-            if stale_keys:
-                self._mark_address_keys_disconnected(*stale_keys)
-            self._discard_invalidated_connected_client(
-                connected_client,
-                restore_address=requested_identifier,
+                is_closing=is_closing,
+                lost_gate_ownership=lost_gate_ownership,
+                restore_address=restored_connect_address,
                 restore_last_connection_request=normalized_request,
             )
-            if is_closing:
-                raise self.BLEError(ERROR_INTERFACE_CLOSING)
-            raise self.BLEError(CONNECTION_ERROR_LOST_OWNERSHIP)
+        (
+            still_owned,
+            is_closing,
+            lost_gate_ownership,
+        ) = self._get_post_connect_ownership_status(
+            connected_client,
+            connected_device_key,
+            connection_alias_key,
+        )
+        if not still_owned or lost_gate_ownership:
+            self._raise_for_invalidated_connect_result(
+                connected_client,
+                connected_device_key,
+                connection_alias_key,
+                is_closing=is_closing,
+                lost_gate_ownership=lost_gate_ownership,
+                restore_address=restored_connect_address,
+                restore_last_connection_request=normalized_request,
+            )
         self._connected()
         return connected_client
 

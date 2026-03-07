@@ -1247,10 +1247,10 @@ def test_ble_interface_format_bluetoothctl_address_rejects_unresolved_input(
     iface.close()
 
 
-def test_ble_interface_trust_prefers_stderr_in_failure_details(
+def test_ble_interface_trust_includes_stdout_and_stderr_in_failure_details(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """trust() should surface stderr first when bluetoothctl fails."""
+    """trust() should include both stderr and stdout when bluetoothctl fails."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     with iface._state_lock:
         iface.client = None
@@ -1274,8 +1274,12 @@ def test_ble_interface_trust_prefers_stderr_in_failure_details(
         ),
     )
 
-    with pytest.raises(BLEInterface.BLEError, match="specific failure"):
+    with pytest.raises(BLEInterface.BLEError) as exc_info:
         iface.trust("mesh-node")
+
+    detail = str(exc_info.value)
+    assert "stderr: specific failure" in detail
+    assert "stdout: generic output" in detail
 
     iface.close()
 
@@ -2772,6 +2776,159 @@ def test_connect_raises_when_registry_ownership_is_lost_after_gate_finalization(
     assert iface.client is None
     assert iface.address == target_address
     assert iface._last_connection_request == iface._sanitize_address(target_address)
+
+
+def test_connect_restores_concrete_address_after_name_target_loses_ownership(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A discarded name-based connect should restore the resolved BLE address."""
+    target_identifier = "mesh-node"
+    target_address = "AA:BB:CC:DD:EE:11"
+    iface = _build_minimal_connect_test_interface()
+    connected_client = DummyClient()
+    connected_client.address = target_address
+    connected_client.bleak_client = SimpleNamespace(address=target_address)
+    closed_clients: list[BLEClient] = []
+    released_claims: list[tuple[str | None, ...]] = []
+
+    monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
+    monkeypatch.setattr(
+        iface, "_raise_if_duplicate_connect", lambda _connection_key: None, raising=True
+    )
+    monkeypatch.setattr(
+        iface, "_get_existing_client_if_valid", lambda _request: None, raising=True
+    )
+    monkeypatch.setattr(
+        iface._client_manager,
+        "_safe_close_client",
+        lambda client: closed_clients.append(client),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        iface,
+        "_mark_address_keys_disconnected",
+        lambda *keys: released_claims.append(keys),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface._is_currently_connected_elsewhere",
+        lambda key, owner=None: key == "device-key" and owner is iface,
+    )
+
+    def _establish_stub(
+        _address: str | None,
+        _normalized_request: str | None,
+        _address_key: str | None,
+        *,
+        pair_on_connect: bool = False,
+        connect_timeout: float | None = None,
+    ) -> tuple[DummyClient, str | None, str | None]:
+        _ = (pair_on_connect, connect_timeout)
+        with iface._state_lock:
+            cast(Any, iface).client = connected_client
+            iface.address = target_address
+            iface._state_manager._reset_to_disconnected()
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
+        return connected_client, "device-key", None
+
+    monkeypatch.setattr(
+        iface,
+        "_establish_and_update_client",
+        _establish_stub,
+        raising=True,
+    )
+    monkeypatch.setattr(BLEInterface, "_finalize_connection_gates", lambda *_args: None)
+
+    with pytest.raises(BLEInterface.BLEError, match=CONNECTION_ERROR_LOST_OWNERSHIP):
+        iface.connect(target_identifier)
+
+    assert closed_clients == [cast(BLEClient, connected_client)]
+    assert released_claims == [("device-key",)]
+    assert iface.address == target_address
+    assert iface._last_connection_request == iface._sanitize_address(target_identifier)
+    with iface._state_lock:
+        assert iface._get_current_implicit_management_address_locked() == target_address
+    iface._revalidate_implicit_management_target(target_address)
+
+
+def test_connect_rechecks_ownership_before_publishing_connected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """connect() should discard a client that becomes stale after the first check."""
+    target_address = "AA:BB:CC:DD:EE:12"
+    iface = _build_minimal_connect_test_interface()
+    connected_client = DummyClient()
+    connected_client.address = target_address
+    connected_client.bleak_client = SimpleNamespace(address=target_address)
+    connected_callbacks: list[bool] = []
+    closed_clients: list[BLEClient] = []
+    released_claims: list[tuple[str | None, ...]] = []
+    status_checks = iter([(True, False), (False, False)])
+
+    monkeypatch.setattr(iface, "_connected", lambda: connected_callbacks.append(True))
+    monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
+    monkeypatch.setattr(
+        iface, "_raise_if_duplicate_connect", lambda _connection_key: None, raising=True
+    )
+    monkeypatch.setattr(
+        iface, "_get_existing_client_if_valid", lambda _request: None, raising=True
+    )
+    monkeypatch.setattr(
+        iface._client_manager,
+        "_safe_close_client",
+        lambda client: closed_clients.append(client),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        iface,
+        "_mark_address_keys_disconnected",
+        lambda *keys: released_claims.append(keys),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        iface,
+        "_get_connected_client_status",
+        lambda _client: next(status_checks),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        iface, "_has_lost_gate_ownership", lambda *_keys: False, raising=True
+    )
+
+    def _establish_stub(
+        _address: str | None,
+        _normalized_request: str | None,
+        _address_key: str | None,
+        *,
+        pair_on_connect: bool = False,
+        connect_timeout: float | None = None,
+    ) -> tuple[DummyClient, str | None, str | None]:
+        _ = (pair_on_connect, connect_timeout)
+        with iface._state_lock:
+            cast(Any, iface).client = connected_client
+            iface.address = target_address
+            iface._state_manager._reset_to_disconnected()
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
+        return connected_client, "device-key", None
+
+    monkeypatch.setattr(
+        iface,
+        "_establish_and_update_client",
+        _establish_stub,
+        raising=True,
+    )
+    monkeypatch.setattr(BLEInterface, "_finalize_connection_gates", lambda *_args: None)
+
+    with pytest.raises(BLEInterface.BLEError, match=CONNECTION_ERROR_LOST_OWNERSHIP):
+        iface.connect(target_address)
+
+    assert connected_callbacks == []
+    assert released_claims == [("device-key",)]
+    assert closed_clients == [cast(BLEClient, connected_client)]
+    assert iface.client is None
+    assert iface.address == target_address
 
 
 def test_connect_raises_when_shutdown_wins_after_gate_finalization(
