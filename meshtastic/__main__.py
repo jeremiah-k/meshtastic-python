@@ -103,9 +103,9 @@ GPIO_READ_MAX_POLLS = 10
 # Time to wait for device boot after power-on
 POWER_ON_BOOT_DELAY_SECONDS = 5.0
 
-# OTA CLI timing
+# OTA CLI timing and retry delay
 OTA_REBOOT_WAIT_SECONDS = 5
-OTA_COMPLETION_WAIT_SECONDS = 2
+OTA_RETRY_DELAY_SECONDS = 2
 
 # Keep-alive sleep interval for main loop (effectively infinite wait)
 MAIN_LOOP_IDLE_SLEEP_SECONDS = 1000
@@ -834,7 +834,7 @@ def onConnected(interface: MeshInterface) -> None:
                     if retries == 0:
                         _cli_exit(f"OTA update failed: {e}")
 
-                    time.sleep(OTA_COMPLETION_WAIT_SECONDS)
+                    time.sleep(OTA_RETRY_DELAY_SECONDS)
 
             print("\nOTA update completed successfully!")
 

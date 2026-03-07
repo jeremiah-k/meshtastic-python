@@ -16,7 +16,7 @@ protobuf = ">=4.21.12"
 tabulate = "^0.10.0"
 requests = "^2.31.0"
 pyyaml = "^6.0.1"
-pypubsub = "^4.0.3"
+pypubsub = "^4.0.7"
 bleak = "^2.1.1"
 packaging = "^26.0"
 argcomplete = { version = "^3.5.2", optional = true }

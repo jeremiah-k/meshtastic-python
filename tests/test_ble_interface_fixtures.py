@@ -427,6 +427,7 @@ class DummyClient:
         self.pair_calls = 0
         self.unpair_calls = 0
         self.pair_kwargs: list[dict[str, object]] = []
+        self.unpair_kwargs: list[dict[str, object]] = []
         self.pair_await_timeouts: list[float | None] = []
         self.unpair_await_timeouts: list[float | None] = []
         self.stop_notify_calls: list[Any] = []
@@ -536,6 +537,7 @@ class DummyClient:
         """Record an unpair invocation."""
         self.unpair_calls += 1
         self.unpair_await_timeouts.append(await_timeout)
+        self.unpair_kwargs.append(dict(_kwargs))
         if self.on_unpair is not None:
             self.on_unpair()
 

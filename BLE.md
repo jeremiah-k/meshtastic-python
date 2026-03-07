@@ -259,6 +259,8 @@ iface.unpair()
 
 # Linux-only trust helper. Omit the address to use the current/bound target,
 # or pass one explicitly to trust a different resolved device.
+# Explicit-address trust does not require an active connection; implicit
+# trust() should be used only when the interface target is already stable.
 iface.trust()
 iface.trust("AA:BB:CC:DD:EE:FF")
 ```

@@ -49,6 +49,8 @@ from ..tcp_interface import TCPInterface
 # from ..remote_hardware import onGPIOreceive
 # from ..config_pb2 import Config
 
+SDS_DISABLED_SENTINEL = 4_294_967_295
+
 
 def _mock_sendText_helper(
     text: str,
@@ -1967,7 +1969,7 @@ def test_main_configure_applies_mixed_case_and_security_encodings(
                         "lsSecs": 222,
                         "waitBluetoothSecs": 77,
                         "minWakeSecs": 11,
-                        "sdsSecs": 4294967295,
+                        "sdsSecs": SDS_DISABLED_SENTINEL,
                     },
                     "security": {
                         "privateKey": f"base64:{base64.b64encode(private_key).decode()}",
@@ -2002,7 +2004,7 @@ def test_main_configure_applies_mixed_case_and_security_encodings(
     assert target_local.power.ls_secs == 222
     assert target_local.power.wait_bluetooth_secs == 77
     assert target_local.power.min_wake_secs == 11
-    assert target_local.power.sds_secs == 4294967295
+    assert target_local.power.sds_secs == SDS_DISABLED_SENTINEL
     assert target_local.security.private_key == private_key
     assert target_local.security.public_key == public_key
     assert list(target_local.security.admin_key) == [admin_key_1, admin_key_2]
@@ -2030,7 +2032,7 @@ def test_main_configure_applies_power_snake_case_keys(
                         "ls_secs": 222,
                         "wait_bluetooth_secs": 77,
                         "min_wake_secs": 11,
-                        "sds_secs": 4294967295,
+                        "sds_secs": SDS_DISABLED_SENTINEL,
                     }
                 }
             }
@@ -2046,7 +2048,7 @@ def test_main_configure_applies_power_snake_case_keys(
     assert target_local.power.ls_secs == 222
     assert target_local.power.wait_bluetooth_secs == 77
     assert target_local.power.min_wake_secs == 11
-    assert target_local.power.sds_secs == 4294967295
+    assert target_local.power.sds_secs == SDS_DISABLED_SENTINEL
     target_node.writeConfig.assert_called_once_with("power")
     target_node.commitSettingsTransaction.assert_called_once_with()
 
@@ -4496,7 +4498,7 @@ def test_main_ota_update_retries_then_exits(
     assert excinfo.value.code == 1
     assert ota.update.call_count == 5
     assert any(
-        call.args == (main_module.OTA_COMPLETION_WAIT_SECONDS,)
+        call.args == (main_module.OTA_RETRY_DELAY_SECONDS,)
         for call in sleep_mock.call_args_list
     )
 

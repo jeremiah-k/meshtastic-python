@@ -1644,7 +1644,6 @@ class BLEInterface(MeshInterface):
             address,
             lambda client: client.pair(await_timeout=validated_timeout, **kwargs),
         )
-        return None
 
     def unpair(
         self,
@@ -1677,7 +1676,38 @@ class BLEInterface(MeshInterface):
             address,
             lambda client: client.unpair(await_timeout=validated_timeout),
         )
-        return None
+
+    def _run_bluetoothctl_trust_command(
+        self,
+        bluetoothctl_path: str,
+        canonical_address: str,
+        validated_timeout: float,
+    ) -> None:
+        """Run `bluetoothctl trust` and translate subprocess failures into BLEError."""
+        try:
+            result = subprocess.run(  # noqa: S603
+                [bluetoothctl_path, "trust", canonical_address],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=validated_timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise self.BLEError(
+                ERROR_TRUST_COMMAND_TIMEOUT.format(
+                    timeout=validated_timeout, address=canonical_address
+                )
+            ) from exc
+        if result.returncode != 0:
+            stderr_output = result.stderr.strip() if result.stderr else ""
+            stdout_output = result.stdout.strip() if result.stdout else ""
+            detail = stderr_output or stdout_output or f"exit code {result.returncode}"
+            raise self.BLEError(
+                ERROR_TRUST_COMMAND_FAILED.format(
+                    address=canonical_address, detail=detail
+                )
+            )
+        logger.info("Trusted BLE device via bluetoothctl: %s", canonical_address)
 
     def trust(
         self,
@@ -1726,41 +1756,29 @@ class BLEInterface(MeshInterface):
         target_address = self._resolve_target_address_for_management(address)
         canonical_address = self._format_bluetoothctl_address(target_address)
         with self._management_target_gate(target_address):
-            with self._connect_lock, self._management_lock:
-                self._validate_management_preconditions()
-                if address is None:
-                    # Keep implicit trust() aligned with the interface's
-                    # current target after the gate handoff.
-                    self._revalidate_implicit_management_target(target_address)
             # Hold the process-wide address gate during bluetoothctl execution so
             # target-scoped trust operations stay serialized without blocking the
-            # interface locks for the full subprocess duration.
-            try:
-                result = subprocess.run(  # noqa: S603
-                    [bluetoothctl_path, "trust", canonical_address],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=validated_timeout,
-                )
-            except subprocess.TimeoutExpired as exc:
-                raise self.BLEError(
-                    ERROR_TRUST_COMMAND_TIMEOUT.format(
-                        timeout=validated_timeout, address=canonical_address
+            # interface locks for the full subprocess duration. For implicit
+            # targets, also hold _connect_lock so another thread cannot repoint
+            # this interface before the trust command runs.
+            if address is None:
+                with self._connect_lock:
+                    with self._management_lock:
+                        self._validate_management_preconditions()
+                        self._revalidate_implicit_management_target(target_address)
+                    self._run_bluetoothctl_trust_command(
+                        bluetoothctl_path,
+                        canonical_address,
+                        validated_timeout,
                     )
-                ) from exc
-            if result.returncode != 0:
-                stderr_output = result.stderr.strip() if result.stderr else ""
-                stdout_output = result.stdout.strip() if result.stdout else ""
-                detail = (
-                    stderr_output or stdout_output or f"exit code {result.returncode}"
+            else:
+                with self._connect_lock, self._management_lock:
+                    self._validate_management_preconditions()
+                self._run_bluetoothctl_trust_command(
+                    bluetoothctl_path,
+                    canonical_address,
+                    validated_timeout,
                 )
-                raise self.BLEError(
-                    ERROR_TRUST_COMMAND_FAILED.format(
-                        address=canonical_address, detail=detail
-                    )
-                )
-            logger.info("Trusted BLE device via bluetoothctl: %s", canonical_address)
 
     def _sanitize_address(self, address: str | None) -> str | None:
         """Provide a backward-compatible wrapper that returns a sanitized BLE address or None.

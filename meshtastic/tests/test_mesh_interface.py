@@ -1789,6 +1789,38 @@ def test_on_response_position_success_and_routing_error(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_on_response_position_prints_when_info_logging_not_visible(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """onResponsePosition() should preserve stdout summaries when INFO logging is not visible."""
+    monkeypatch.setattr(
+        mesh_interface_module,
+        "_logger_has_visible_info_handler",
+        lambda _logger: False,
+    )
+
+    with MeshInterface(noProto=True) as iface:
+        position = mesh_pb2.Position()
+        position.precision_bits = 32
+        iface.onResponsePosition(
+            {
+                "decoded": {
+                    "portnum": portnums_pb2.PortNum.Name(
+                        portnums_pb2.PortNum.POSITION_APP
+                    ),
+                    "payload": position.SerializeToString(),
+                }
+            }
+        )
+
+    out, _ = capsys.readouterr()
+    assert "Position received:" in out
+    assert "full precision" in out
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_send_traceroute_and_response_rendering(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,

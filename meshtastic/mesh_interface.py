@@ -88,6 +88,29 @@ def _format_missing_node_num_error(destination_id: int | str) -> str:
     return MISSING_NODE_NUM_ERROR_TEMPLATE.format(destination_id=destination_id)
 
 
+def _logger_has_visible_info_handler(target_logger: logging.Logger) -> bool:
+    """Return whether INFO logs from `target_logger` are currently visible."""
+    if target_logger.disabled or target_logger.getEffectiveLevel() > logging.INFO:
+        return False
+
+    current_logger: logging.Logger | None = target_logger
+    while current_logger is not None:
+        for handler in current_logger.handlers:
+            if handler.level <= logging.INFO:
+                return True
+        if not current_logger.propagate:
+            break
+        current_logger = current_logger.parent
+    return False
+
+
+def _emit_response_summary(message: str) -> None:
+    """Emit a short response summary without hiding legacy stdout behavior."""
+    logger.info("%s", message)
+    if not _logger_has_visible_info_handler(logger):
+        print(message)
+
+
 def _timeago(delta_secs: int) -> str:
     """Produce a short human-readable relative time string for a past interval.
 
@@ -1085,13 +1108,15 @@ class MeshInterface:  # pylint: disable=R0902
         return d
 
     def onResponsePosition(self, p: dict[str, Any]) -> None:
-        """Process a position response packet and log a concise human-readable summary.
+        """Process a position response packet and emit a concise human-readable summary.
 
         Marks the interface's position acknowledgment as received, parses the Position
-        protobuf from the packet payload, and logs latitude/longitude (degrees),
-        altitude (meters) when present, and precision information. If the packet is a
-        routing response whose `decoded["routing"]["errorReason"]` equals `"NO_RESPONSE"`,
-        raises MeshInterfaceError with a message about the minimum required firmware.
+        protobuf from the packet payload, and emits latitude/longitude (degrees),
+        altitude (meters) when present, and precision information. When INFO logging
+        is configured, the summary is logged; otherwise it is printed to stdout for
+        backward compatibility. If the packet is a routing response whose
+        `decoded["routing"]["errorReason"]` equals `"NO_RESPONSE"`, raises
+        MeshInterfaceError with a message about the minimum required firmware.
 
         Parameters
         ----------
@@ -1129,7 +1154,7 @@ class MeshInterface:  # pylint: disable=R0902
             elif position.precision_bits == 0:
                 ret += " position disabled"
 
-            logger.info("%s", ret)
+            _emit_response_summary(ret)
 
         elif p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.ROUTING_APP
@@ -1180,11 +1205,13 @@ class MeshInterface:  # pylint: disable=R0902
         self.waitForTraceRoute(waitFactor)
 
     def onResponseTraceRoute(self, p: dict[str, Any]) -> None:
-        """Log human-readable traceroute results from a RouteDiscovery payload.
+        """Emit human-readable traceroute results from a RouteDiscovery payload.
 
-        Parses the RouteDiscovery protobuf found in p["decoded"]["payload"], logs a forward route
-        from the response destination back to the origin and, when present, the traced return route
-        back to this node.
+        Parses the RouteDiscovery protobuf found in p["decoded"]["payload"], emits a
+        forward route from the response destination back to the origin and, when
+        present, the traced return route back to this node. When INFO logging is
+        configured, the summaries are logged; otherwise they are printed to stdout
+        for backward compatibility.
 
         Parameters
         ----------
@@ -1193,7 +1220,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         Notes
         -----
-        Logs formatted route strings at INFO and sets self._acknowledgment.receivedTraceRoute to True.
+        Emits formatted route strings and sets self._acknowledgment.receivedTraceRoute to True.
         """
         routeDiscovery = mesh_pb2.RouteDiscovery()
         routeDiscovery.ParseFromString(p["decoded"]["payload"])
@@ -1257,7 +1284,7 @@ class MeshInterface:  # pylint: disable=R0902
         snr_towards = asDict.get("snrTowards", [])
         snr_towards_valid = len(snr_towards) == len(route_towards) + 1
 
-        logger.info("Route traced towards destination:")
+        _emit_response_summary("Route traced towards destination:")
         routeStr = _node_label(p["to"])  # Start with destination of response
         for idx, nodeNum in enumerate(route_towards):  # Add intermediate hops
             hop_snr = _format_snr(snr_towards[idx]) if snr_towards_valid else "?"
@@ -1265,19 +1292,19 @@ class MeshInterface:  # pylint: disable=R0902
         final_towards_snr = _format_snr(snr_towards[-1]) if snr_towards_valid else "?"
         routeStr = _append_hop(routeStr, p["from"], final_towards_snr)
 
-        logger.info("%s", routeStr)
+        _emit_response_summary(routeStr)
 
         # Only if hopStart is set and there is an SNR entry (for the origin) it's valid, even though route might be empty (direct connection)
         route_back = asDict.get("routeBack", [])
         snr_back = asDict.get("snrBack", [])
         backValid = "hopStart" in p and len(snr_back) == len(route_back) + 1
         if backValid:
-            logger.info("Route traced back to us:")
+            _emit_response_summary("Route traced back to us:")
             routeStr = _node_label(p["from"])  # Start with origin of response
             for idx, nodeNum in enumerate(route_back):  # Add intermediate hops
                 routeStr = _append_hop(routeStr, nodeNum, _format_snr(snr_back[idx]))
             routeStr = _append_hop(routeStr, p["to"], _format_snr(snr_back[-1]))
-            logger.info("%s", routeStr)
+            _emit_response_summary(routeStr)
 
         self._acknowledgment.receivedTraceRoute = True
 
@@ -1372,12 +1399,14 @@ class MeshInterface:  # pylint: disable=R0902
             self.waitForTelemetry()
 
     def onResponseTelemetry(self, p: dict[str, Any]) -> None:
-        """Handle an incoming telemetry response: mark telemetry as received and log human-readable telemetry values.
+        """Handle an incoming telemetry response: mark telemetry as received and emit human-readable telemetry values.
 
         This inspects p["decoded"]["portnum"] and:
         - For TELEMETRY_APP: parses the Telemetry payload, sets the telemetry-received flag on the interface,
-          and logs device metrics (battery, voltage, channel/air utilization, uptime) when present;
-          for non-device_metrics telemetry, logs top-level keys and their subfields except the protobuf 'time' field.
+          and emits device metrics (battery, voltage, channel/air utilization, uptime) when present;
+          for non-device_metrics telemetry, emits top-level keys and their subfields except the protobuf 'time' field.
+          When INFO logging is configured, the summaries are logged; otherwise they are
+          printed to stdout for backward compatibility.
         - For ROUTING_APP: if routing.errorReason is "NO_RESPONSE", exits with a firmware-requirement message.
 
         Parameters
@@ -1398,39 +1427,41 @@ class MeshInterface:  # pylint: disable=R0902
             self._acknowledgment.receivedTelemetry = True
             telemetry = telemetry_pb2.Telemetry()
             telemetry.ParseFromString(p["decoded"]["payload"])
-            logger.info("Telemetry received:")
+            _emit_response_summary("Telemetry received:")
             # Check if the telemetry message has the device_metrics field
             # This is the original code that was the default for --request-telemetry and is kept for compatibility
             if telemetry.HasField("device_metrics"):
                 if telemetry.device_metrics.battery_level is not None:
-                    logger.info(
-                        "Battery level: %.2f%%",
-                        telemetry.device_metrics.battery_level,
+                    _emit_response_summary(
+                        f"Battery level: {telemetry.device_metrics.battery_level:.2f}%"
                     )
                 if telemetry.device_metrics.voltage is not None:
-                    logger.info("Voltage: %.2f V", telemetry.device_metrics.voltage)
+                    _emit_response_summary(
+                        f"Voltage: {telemetry.device_metrics.voltage:.2f} V"
+                    )
                 if telemetry.device_metrics.channel_utilization is not None:
-                    logger.info(
-                        "Total channel utilization: %.2f%%",
-                        telemetry.device_metrics.channel_utilization,
+                    _emit_response_summary(
+                        "Total channel utilization: "
+                        f"{telemetry.device_metrics.channel_utilization:.2f}%"
                     )
                 if telemetry.device_metrics.air_util_tx is not None:
-                    logger.info(
-                        "Transmit air utilization: %.2f%%",
-                        telemetry.device_metrics.air_util_tx,
+                    _emit_response_summary(
+                        f"Transmit air utilization: {telemetry.device_metrics.air_util_tx:.2f}%"
                     )
                 if telemetry.device_metrics.uptime_seconds is not None:
-                    logger.info("Uptime: %s s", telemetry.device_metrics.uptime_seconds)
+                    _emit_response_summary(
+                        f"Uptime: {telemetry.device_metrics.uptime_seconds} s"
+                    )
             else:
                 # this is the new code if --request-telemetry <type> is used.
                 telemetry_dict = google.protobuf.json_format.MessageToDict(telemetry)
                 for key, value in telemetry_dict.items():
                     if (
                         key != "time"
-                    ):  # protobuf includes a time field that we don't log for device_metrics.
-                        logger.info("%s:", key)
+                    ):  # protobuf includes a time field that we don't emit for device_metrics.
+                        _emit_response_summary(f"{key}:")
                         for sub_key, sub_value in value.items():
-                            logger.info("  %s: %s", sub_key, sub_value)
+                            _emit_response_summary(f"  {sub_key}: {sub_value}")
 
         elif p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.ROUTING_APP
@@ -1443,10 +1474,13 @@ class MeshInterface:  # pylint: disable=R0902
     def onResponseWaypoint(self, p: dict[str, Any]) -> None:
         """Handle a waypoint response or routing error contained in a received packet.
 
-        When the packet's port is WAYPOINT_APP, parse the Waypoint protobuf from decoded['payload'],
-        mark the waypoint acknowledgment as received, and log the waypoint. When the packet's port
-        is ROUTING_APP and decoded['routing']['errorReason'] == "NO_RESPONSE", raises
-        MeshInterfaceError with a message about the minimum firmware requirement.
+        When the packet's port is WAYPOINT_APP, parse the Waypoint protobuf from
+        decoded['payload'], mark the waypoint acknowledgment as received, and emit
+        the waypoint. When INFO logging is configured, the summary is logged;
+        otherwise it is printed to stdout for backward compatibility. When the
+        packet's port is ROUTING_APP and decoded['routing']['errorReason'] ==
+        "NO_RESPONSE", raises MeshInterfaceError with a message about the minimum
+        firmware requirement.
 
         Parameters
         ----------
@@ -1465,7 +1499,7 @@ class MeshInterface:  # pylint: disable=R0902
             self._acknowledgment.receivedWaypoint = True
             w = mesh_pb2.Waypoint()
             w.ParseFromString(p["decoded"]["payload"])
-            logger.info("Waypoint received: %s", w)
+            _emit_response_summary(f"Waypoint received: {w}")
         elif p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.ROUTING_APP
         ):

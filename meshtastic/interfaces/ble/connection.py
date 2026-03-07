@@ -3,6 +3,7 @@
 import logging
 import math
 import numbers
+import re
 import sys
 from collections.abc import Callable
 from threading import Event, RLock
@@ -37,7 +38,13 @@ if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
 
 logger = logging.getLogger("meshtastic.ble")
-_DEVICE_NOT_FOUND_FRAGMENT = "not found"
+_DEVICE_NOT_FOUND_MESSAGE_RE = re.compile(
+    r"(?:"
+    r"\bcould not find (?:the )?(?:device|peripheral|adapter)\b|"
+    r"\b(?:device|peripheral|adapter)\b.{0,40}\bnot found\b|"
+    r"\bnot found\b.{0,40}\b(?:device|peripheral|adapter)\b"
+    r")"
+)
 _CONNECT_TIMEOUT_INVALID_MSG = (
     "connect_timeout must be a finite positive number of seconds."
 )
@@ -47,7 +54,8 @@ def _is_device_not_found_error(err: Exception) -> bool:
     """Return True when an exception indicates the target BLE device was not found."""
     if isinstance(err, BleakDeviceNotFoundError):
         return True
-    return _DEVICE_NOT_FOUND_FRAGMENT in str(err).casefold()
+    message = str(err).casefold()
+    return bool(message) and _DEVICE_NOT_FOUND_MESSAGE_RE.search(message) is not None
 
 
 class ConnectionValidator:

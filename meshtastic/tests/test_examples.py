@@ -59,7 +59,9 @@ def test_examples_hello_world_serial_with_arg(
 @pytest.mark.examples
 def test_examples_example_config_yaml_is_valid() -> None:
     """example_config.yaml should remain parseable and use canonical renamed keys."""
+    assert EXAMPLE_CONFIG_PATH.exists(), f"Example config not found: {EXAMPLE_CONFIG_PATH}"
     config = yaml.safe_load(EXAMPLE_CONFIG_PATH.read_text(encoding="utf-8"))
+    assert config is not None, "example_config.yaml is empty or invalid"
 
     assert config["owner"] == "Bob TBeam"
     assert config["owner_short"] == "BOB"
@@ -73,12 +75,24 @@ def test_examples_example_config_yaml_is_valid() -> None:
     assert "screenOnSecs" not in config["config"]["display"]
     assert config["config"]["lora"]["region"] == "US"
     assert config["config"]["lora"]["hop_limit"] == 3
+    assert config["config"]["lora"]["tx_enabled"] is True
+    assert config["config"]["lora"]["tx_power"] == 30
     assert "hopLimit" not in config["config"]["lora"]
+    assert "txEnabled" not in config["config"]["lora"]
+    assert "txPower" not in config["config"]["lora"]
     assert config["config"]["network"]["ntp_server"] == "0.pool.ntp.org"
     assert "ntpServer" not in config["config"]["network"]
+    assert config["config"]["position"]["gps_enabled"] is True
     assert config["config"]["position"]["gps_attempt_time"] == 900
+    assert config["config"]["position"]["gps_update_interval"] == 120
+    assert config["config"]["position"]["position_broadcast_secs"] == 900
+    assert config["config"]["position"]["position_flags"] == 3
     assert config["config"]["position"]["position_broadcast_smart_enabled"] is True
+    assert "gpsEnabled" not in config["config"]["position"]
     assert "gpsAttemptTime" not in config["config"]["position"]
+    assert "gpsUpdateInterval" not in config["config"]["position"]
+    assert "positionBroadcastSecs" not in config["config"]["position"]
+    assert "positionFlags" not in config["config"]["position"]
     assert "positionBroadcastSmartEnabled" not in config["config"]["position"]
     assert config["config"]["power"]["wait_bluetooth_secs"] == 60
     assert config["config"]["power"]["ls_secs"] == 300

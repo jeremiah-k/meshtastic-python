@@ -388,7 +388,6 @@ def test_bleclient_unpair_delegates_to_backend(
     class _Backend:
         async def unpair(self) -> None:
             backend_calls.append(True)
-            return None
 
     ble_client.bleak_client = cast(Any, _Backend())
     monkeypatch.setattr(
@@ -436,7 +435,6 @@ def test_bleclient_pair_delegates_to_backend(
     class _Backend:
         async def pair(self, **kwargs: object) -> None:
             backend_calls.append(kwargs)
-            return None
 
     ble_client.bleak_client = cast(Any, _Backend())
     monkeypatch.setattr(
@@ -461,7 +459,7 @@ def test_bleclient_pair_uses_bounded_default_await_timeout(
 
     class _Backend:
         async def pair(self, **_kwargs: object) -> None:
-            return None
+            pass
 
     ble_client.bleak_client = cast(Any, _Backend())
     monkeypatch.setattr(
@@ -513,11 +511,9 @@ def test_bleclient_management_rejects_invalid_await_timeout(
     class _Backend:
         async def pair(self, **_kwargs: object) -> None:
             backend_calls["pair"] += 1
-            return None
 
         async def unpair(self) -> None:
             backend_calls["unpair"] += 1
-            return None
 
     ble_client.bleak_client = cast(Any, _Backend())
     invoke: Callable[[], None]

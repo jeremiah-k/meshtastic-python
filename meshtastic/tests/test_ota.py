@@ -11,6 +11,7 @@ import pytest
 
 from meshtastic.ota import (
     ESP32WiFiOTA,
+    OTA_CHUNK_SIZE_BYTES,
     OTAError,
     _file_sha256,
 )
@@ -238,7 +239,7 @@ def test_esp32_wifi_ota_update_logs_progress_without_callback(
 ) -> None:
     """Test update() logs coarse progress when no progress callback is provided."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
-        test_data = b"A" * 1024
+        test_data = b"A" * (OTA_CHUNK_SIZE_BYTES * 3)
         f.write(test_data)
         temp_file = f.name
 
@@ -250,14 +251,19 @@ def test_esp32_wifi_ota_update_logs_progress_without_callback(
 
         with patch.object(ota, "_read_line") as mock_read_line:
             mock_read_line.side_effect = [
-                "OK",
-                "OK",
+                "OK",  # Device ready
+                "OK",  # Device finished
             ]
 
             with caplog.at_level(logging.INFO):
                 ota.update()
-
-        assert "OTA progress:" in caplog.text
+                progress_messages = [
+                    record.message
+                    for record in caplog.records
+                    if "OTA progress:" in record.message
+                ]
+                assert len(progress_messages) >= 2
+                assert any("100.0%" not in message for message in progress_messages)
     finally:
         os.unlink(temp_file)
 

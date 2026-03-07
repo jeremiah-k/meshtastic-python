@@ -17,6 +17,7 @@ try:
         ClientManager,
         ConnectionOrchestrator,
         ConnectionValidator,
+        _is_device_not_found_error,
     )
     from meshtastic.interfaces.ble.constants import BLEConfig
     from meshtastic.interfaces.ble.reconnection import ReconnectWorker
@@ -27,6 +28,15 @@ except ImportError:
 
 class MockBLEError(Exception):
     """Mock BLE error for connection validator tests."""
+
+
+@pytest.mark.unit
+def test_is_device_not_found_error_requires_device_context() -> None:
+    """Generic 'not found' errors should not trigger device-not-found retries."""
+    assert _is_device_not_found_error(Exception("Device not found")) is True
+    assert _is_device_not_found_error(Exception("Could not find peripheral")) is True
+    assert _is_device_not_found_error(Exception("Characteristic not found")) is False
+    assert _is_device_not_found_error(Exception("Service not found")) is False
 
 
 @pytest.mark.unit

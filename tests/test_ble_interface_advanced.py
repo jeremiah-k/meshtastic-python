@@ -625,6 +625,7 @@ def test_rapid_connect_disconnect_stress_test(
             self: BLEInterface,
             address: str | None = None,
             *,
+            pair: bool | None = None,
             connect_timeout: float | None = None,
         ) -> "StressTestClient":
             """Attach a StressTestClient to this BLEInterface for testing and record the connection address.
@@ -641,7 +642,7 @@ def test_rapid_connect_disconnect_stress_test(
             'StressTestClient'
                 The client instance attached to the interface.
             """
-            _ = connect_timeout
+            _ = (pair, connect_timeout)
             connect_calls.append(address)
             outer_client.connect()
             cast(Any, self).client = outer_client

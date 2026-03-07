@@ -1344,6 +1344,55 @@ def test_ble_interface_trust_does_not_hold_interface_locks_during_subprocess(
         assert iface._closed is True
 
 
+def test_ble_interface_implicit_trust_holds_connect_lock_during_subprocess(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Implicit trust() should hold the connect lock until bluetoothctl returns."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    trust_target = "AA:BB:CC:DD:EE:FF"
+    with iface._state_lock:
+        assert iface.client is not None
+        active_client = cast(DummyClient, iface.client)
+        active_client.address = trust_target
+        active_client.bleak_client = SimpleNamespace(address=trust_target)
+        iface.address = trust_target
+
+    run_started = threading.Event()
+    allow_run_return = threading.Event()
+    trust_errors: list[Exception] = []
+
+    def _blocking_run(*_args: object, **_kwargs: object) -> SimpleNamespace:
+        run_started.set()
+        assert allow_run_return.wait(timeout=1.0)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    _pin_trust_environment(monkeypatch, run=_blocking_run)
+
+    def _run_trust() -> None:
+        try:
+            iface.trust(timeout=7.0)
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+            trust_errors.append(exc)
+
+    trust_thread = threading.Thread(target=_run_trust, daemon=True)
+    trust_thread.start()
+    assert run_started.wait(timeout=1.0)
+
+    assert iface._connect_lock.acquire(blocking=False) is False
+
+    allow_run_return.set()
+    trust_thread.join(timeout=2.0)
+
+    assert not trust_thread.is_alive()
+    assert trust_errors == []
+    assert iface._connect_lock.acquire(blocking=False) is True
+    iface._connect_lock.release()
+
+    iface.close()
+
+
 def test_ble_interface_close_serializes_with_management_lock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

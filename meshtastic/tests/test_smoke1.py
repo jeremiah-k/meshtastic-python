@@ -103,6 +103,16 @@ def _find_channel_index_by_name(info_output: str, channel_name: str) -> int | No
     return None
 
 
+def _channel_info_block(info_output: str, channel_index: int = 0) -> str:
+    """Extract the serialized `Index N:` channel block from `--info` output."""
+    match = re.search(
+        rf"(?ms)^\s*Index\s+{channel_index}:\s+\w+.*?(?=^\s*Index\s+\d+:|\Z)",
+        info_output,
+    )
+    assert match is not None, info_output
+    return match.group(0)
+
+
 @pytest.mark.unit
 def test_find_channel_index_by_name_handles_multiline_channel_blocks() -> None:
     """Channel lookup should work when channel JSON spans multiple lines."""
@@ -601,16 +611,25 @@ def test_smoke1_ch_set_modem_config_reports_unsupported() -> None:
 )
 def test_smoke1_ch_values(preset_cmd: str, expected_preset: str) -> None:
     """Channel preset switches should apply and be reflected in `--info`."""
+    precondition_cmd = "--ch-medfast" if preset_cmd != "--ch-medfast" else "--ch-longfast"
+    precondition_preset = CHANNEL_PRESET_INFO_PATTERNS[precondition_cmd]
+    precondition_code, precondition_out = _run("meshtastic", precondition_cmd)
+    _assert_connected(precondition_out)
+    assert "Writing modified channels to device" in precondition_out
+    assert precondition_code == 0
+    _wait_for_mutation_to_settle(
+        predicate=lambda output: precondition_preset in _channel_info_block(output)
+    )
+
     return_value, out = _run("meshtastic", preset_cmd)
     _assert_connected(out)
     assert "Writing modified channels to device" in out
     assert return_value == 0
 
     info_out = _wait_for_mutation_to_settle(
-        predicate=lambda output: re.search(expected_preset, output, re.MULTILINE)
-        is not None
+        predicate=lambda output: expected_preset in _channel_info_block(output)
     )
-    assert re.search(expected_preset, info_out, re.MULTILINE)
+    assert expected_preset in _channel_info_block(info_out)
 
 
 @_destructive_test
@@ -653,11 +672,12 @@ def test_smoke1_ch_set_downlink_and_uplink() -> None:
     assert return_value == 0
 
     info_out = _wait_for_mutation_to_settle(
-        predicate=lambda output: not re.search(r"uplinkEnabled", output, re.MULTILINE)
-        and not re.search(r"downlinkEnabled", output, re.MULTILINE)
+        predicate=lambda output: "uplinkEnabled" not in _channel_info_block(output)
+        and "downlinkEnabled" not in _channel_info_block(output)
     )
-    assert not re.search(r"uplinkEnabled", info_out, re.MULTILINE)
-    assert not re.search(r"downlinkEnabled", info_out, re.MULTILINE)
+    channel_zero = _channel_info_block(info_out)
+    assert "uplinkEnabled" not in channel_zero
+    assert "downlinkEnabled" not in channel_zero
 
     return_value, out = _run(
         "meshtastic",
@@ -676,12 +696,12 @@ def test_smoke1_ch_set_downlink_and_uplink() -> None:
     assert return_value == 0
 
     info_out = _wait_for_mutation_to_settle(
-        predicate=lambda output: re.search(r"uplinkEnabled", output, re.MULTILINE)
-        is not None
-        and re.search(r"downlinkEnabled", output, re.MULTILINE) is not None
+        predicate=lambda output: "uplinkEnabled" in _channel_info_block(output)
+        and "downlinkEnabled" in _channel_info_block(output)
     )
-    assert re.search(r"uplinkEnabled", info_out, re.MULTILINE)
-    assert re.search(r"downlinkEnabled", info_out, re.MULTILINE)
+    channel_zero = _channel_info_block(info_out)
+    assert "uplinkEnabled" in channel_zero
+    assert "downlinkEnabled" in channel_zero
 
 
 @_destructive_test

@@ -9,7 +9,8 @@ triage against firmware changes.
 ## Baseline
 
 - Python CLI: `maint-35-1` (validated commit `68c95c9`)
-- Firmware family: `2.7.x` (validated during this refactor cycle on `2.7.15`)
+- Firmware family: `2.7.x` (validated during this refactor cycle on `2.7.15`;
+  this is the tested baseline, not a guarantee for every `2.7.x` build)
 - Transport: single-node USB serial (`/dev/ttyACM*`)
 
 ## Stable Lane (`smoke1` without `smoke1_destructive`)
@@ -40,6 +41,8 @@ triage against firmware changes.
 - Invalid field-name handling currently prints an error but exits `0`; treat
   that as documented current CLI behavior for automation until exit-code
   semantics are changed upstream.
+- Invalid URL handling for `--seturl` currently exits `1`; smoke expectations
+  intentionally document that difference from invalid field-name handling.
 - Some firmware exports can omit full channel arrays; integration tests should
   prefer strong identity signals (`channel_url`) with resilient fallbacks.
 - Factory reset smoke checks should validate successful reset/reconnect and
