@@ -744,7 +744,9 @@ def test_ble_interface_close_waits_for_temporary_pair_operation(
     def _run_pair() -> None:
         try:
             iface.pair("mesh-node", confirm=True, await_timeout=7.0)
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             pair_errors.append(exc)
 
     close_done = threading.Event()
@@ -752,7 +754,9 @@ def test_ble_interface_close_waits_for_temporary_pair_operation(
     def _run_close() -> None:
         try:
             iface.close()
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             close_errors.append(exc)
         finally:
             close_done.set()
@@ -1534,13 +1538,17 @@ def test_ble_interface_close_waits_for_explicit_trust_without_active_client(
     def _run_trust() -> None:
         try:
             iface.trust("AA:BB:CC:DD:EE:FF", timeout=7.0)
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             trust_errors.append(exc)
 
     def _run_close() -> None:
         try:
             iface.close()
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             close_errors.append(exc)
         finally:
             close_done.set()

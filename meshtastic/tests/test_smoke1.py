@@ -333,7 +333,9 @@ def _wait_for_get_readback(*fields: str, predicate: Callable[[str], bool]) -> st
         if remaining <= 0:
             break
         time.sleep(min(INFO_READY_POLL_INTERVAL_SECONDS, remaining))
-    raise AssertionError(f"CLI readback never reached the expected state:\n{last_output}")
+    raise AssertionError(
+        f"CLI readback never reached the expected state:\n{last_output}"
+    )
 
 
 def _wait_for_disconnect_then_ready(action_name: str) -> str:
@@ -675,7 +677,9 @@ def test_smoke1_ch_set_modem_config_reports_unsupported() -> None:
 )
 def test_smoke1_ch_values(preset_cmd: str, expected_preset: str) -> None:
     """Channel preset switches should apply and be reflected in `--info`."""
-    precondition_cmd = "--ch-medfast" if preset_cmd != "--ch-medfast" else "--ch-longfast"
+    precondition_cmd = (
+        "--ch-medfast" if preset_cmd != "--ch-medfast" else "--ch-longfast"
+    )
     precondition_preset = CHANNEL_PRESET_INFO_PATTERNS[precondition_cmd]
     precondition_code, precondition_out = _run("meshtastic", precondition_cmd)
     _assert_connected(precondition_out)

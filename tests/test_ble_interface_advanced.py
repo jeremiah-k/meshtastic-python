@@ -775,7 +775,9 @@ def test_rapid_connect_disconnect_stress_test(
                     continue
                 iface3._on_ble_disconnect(cast(Any, current_client.bleak_client))
                 time.sleep(0.01)
-            except Exception as exc:  # noqa: BLE001 - test records failure-path behavior
+            except (
+                Exception
+            ) as exc:  # noqa: BLE001 - test records failure-path behavior
                 failure_errors.append(exc)
 
         assert failure_errors == []

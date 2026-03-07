@@ -14,9 +14,7 @@ import yaml
 HELLO_WORLD_SERIAL_PATH = (
     Path(__file__).resolve().parents[2] / "examples" / "hello_world_serial.py"
 )
-EXAMPLE_CONFIG_PATH: Path = (
-    Path(__file__).resolve().parents[2] / "example_config.yaml"
-)
+EXAMPLE_CONFIG_PATH: Path = Path(__file__).resolve().parents[2] / "example_config.yaml"
 
 
 def _run_hello_world_serial(monkeypatch: pytest.MonkeyPatch, *args: str) -> None:
@@ -61,7 +59,9 @@ def test_examples_hello_world_serial_with_arg(
 @pytest.mark.examples
 def test_examples_example_config_yaml_is_valid() -> None:
     """example_config.yaml should remain parseable and use canonical renamed keys."""
-    assert EXAMPLE_CONFIG_PATH.exists(), f"Example config not found: {EXAMPLE_CONFIG_PATH}"
+    assert (
+        EXAMPLE_CONFIG_PATH.exists()
+    ), f"Example config not found: {EXAMPLE_CONFIG_PATH}"
     config = yaml.safe_load(EXAMPLE_CONFIG_PATH.read_text(encoding="utf-8"))
     assert config is not None, "example_config.yaml is empty or invalid"
 
