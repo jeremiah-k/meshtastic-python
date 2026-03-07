@@ -253,7 +253,6 @@ def test_parse_host_and_port_rejects_extra_url_components(host: str) -> None:
 
 
 @pytest.mark.int
-@pytest.mark.smokevirt
 def test_tcp_interface_meshtasticd_connect_and_sendtext() -> None:
     """TCPInterface should connect to meshtasticd and send a text packet."""
     host = _require_meshtasticd_host()
@@ -273,7 +272,6 @@ def test_tcp_interface_meshtasticd_connect_and_sendtext() -> None:
 
 
 @pytest.mark.int
-@pytest.mark.smokevirt
 def test_tcp_interface_meshtasticd_recovers_after_socket_drop() -> None:
     """TCPInterface should recover after a forced local socket close."""
     host = _require_meshtasticd_host()

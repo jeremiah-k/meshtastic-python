@@ -1479,7 +1479,7 @@ class BLEInterface(MeshInterface):
                 self._get_current_implicit_management_address_locked()
             )
         if current_target_address is None:
-            return
+            raise self.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
         if sanitize_address(current_target_address) != sanitize_address(
             expected_target_address
         ):
@@ -2290,10 +2290,22 @@ class BLEInterface(MeshInterface):
             connection_alias_key,
         )
         if not still_owned or lost_gate_ownership:
-            self._mark_address_keys_disconnected(
+            stale_keys = self._sorted_address_keys(
                 connected_device_key,
                 connection_alias_key,
             )
+            if not lost_gate_ownership:
+                with self._state_lock:
+                    active_client = self.client
+                    active_keys = set(
+                        self._sorted_address_keys(
+                            _addr_key(self._extract_client_address(active_client)),
+                            self._connection_alias_key,
+                        )
+                    )
+                stale_keys = [key for key in stale_keys if key not in active_keys]
+            if stale_keys:
+                self._mark_address_keys_disconnected(*stale_keys)
             self._discard_invalidated_connected_client(connected_client)
             if is_closing:
                 raise self.BLEError(ERROR_INTERFACE_CLOSING)

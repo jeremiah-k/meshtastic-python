@@ -200,6 +200,39 @@ def test_wait_for_disconnect_then_ready_requires_failed_probe(
     assert sleep_calls == [INFO_READY_POLL_INTERVAL_SECONDS]
 
 
+@pytest.mark.unit
+def test_wait_for_get_readback_bounds_each_probe_to_remaining_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Readback polling should cap each CLI probe by the remaining outer deadline."""
+    run_timeouts: list[int | float] = []
+    monotonic_values = iter([100.0, 100.0, 101.0, 101.0, 103.0, 103.0])
+    sleep_calls: list[float] = []
+
+    def _fake_monotonic() -> float:
+        return next(monotonic_values)
+
+    def _fake_run(*argv: str, timeout: int | float = 120) -> tuple[int, str]:
+        _ = argv
+        run_timeouts.append(timeout)
+        if len(run_timeouts) == 1:
+            return 1, "not ready"
+        return 0, "network.wifi_ssid: ready"
+
+    monkeypatch.setattr("meshtastic.tests.test_smoke1.time.monotonic", _fake_monotonic)
+    monkeypatch.setattr("meshtastic.tests.test_smoke1.time.sleep", sleep_calls.append)
+    monkeypatch.setattr("meshtastic.tests.test_smoke1._run", _fake_run)
+
+    output = _wait_for_get_readback(
+        "network.wifi_ssid",
+        predicate=lambda text: "ready" in text,
+    )
+
+    assert output == "network.wifi_ssid: ready"
+    assert run_timeouts == [INFO_READY_POLL_INTERVAL_SECONDS, 2.0]
+    assert sleep_calls == [INFO_READY_POLL_INTERVAL_SECONDS]
+
+
 def _restore_config_with_retries(config_path: Path) -> tuple[int, str]:
     """Attempt to restore a saved config with retries to handle reboot windows."""
     output = ""
@@ -286,13 +319,18 @@ def _wait_for_get_readback(*fields: str, predicate: Callable[[str], bool]) -> st
         cli_args.extend(["--get", field])
     last_output = ""
     while True:
-        return_value, output = _run(*cli_args)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        probe_timeout = min(max(1.0, INFO_READY_POLL_INTERVAL_SECONDS), remaining)
+        return_value, output = _run(*cli_args, timeout=probe_timeout)
         last_output = output
         if return_value == 0 and predicate(output):
             return output
-        if time.monotonic() >= deadline:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
             break
-        time.sleep(INFO_READY_POLL_INTERVAL_SECONDS)
+        time.sleep(min(INFO_READY_POLL_INTERVAL_SECONDS, remaining))
     raise AssertionError(f"CLI readback never reached the expected state:\n{last_output}")
 
 
@@ -566,6 +604,7 @@ def test_smoke1_pos_fields_supported_values() -> None:
 @_destructive_test
 def test_smoke1_set_location_info() -> None:
     """`--setlat/--setlon/--setalt` should update fixed position values."""
+    altitude_marker = str(1400 + int(uuid.uuid4().hex[:2], 16))
     return_value, out = _run(
         "meshtastic",
         "--setlat",
@@ -573,7 +612,7 @@ def test_smoke1_set_location_info() -> None:
         "--setlon",
         "-96.7970",
         "--setalt",
-        "1337",
+        altitude_marker,
     )
     _assert_connected(out)
     assert "Fixing altitude" in out
@@ -583,10 +622,10 @@ def test_smoke1_set_location_info() -> None:
     assert return_value == 0
     info_out = _wait_for_mutation_to_settle(
         predicate=lambda output: all(
-            marker in output for marker in ("1337", "32.7767", "-96.797")
+            marker in output for marker in (altitude_marker, "32.7767", "-96.797")
         )
     )
-    assert "1337" in info_out
+    assert altitude_marker in info_out
     assert "32.7767" in info_out
     assert "-96.797" in info_out
 
@@ -658,21 +697,22 @@ def test_smoke1_ch_values(preset_cmd: str, expected_preset: str) -> None:
 @_destructive_test
 def test_smoke1_ch_set_name() -> None:
     """`--ch-set name` should update the selected channel name."""
+    channel_name = _unique_channel_name("n")
     return_value, out = _run(
         "meshtastic",
         "--ch-set",
         "name",
-        "MyChannel",
+        channel_name,
         "--ch-index",
         "0",
     )
     _assert_connected(out)
-    assert re.search(r"^Set name to MyChannel", out, re.MULTILINE)
+    assert re.search(rf"^Set name to {re.escape(channel_name)}", out, re.MULTILINE)
     assert return_value == 0
     info_out = _wait_for_mutation_to_settle(
-        predicate=lambda output: "MyChannel" in output
+        predicate=lambda output: channel_name in output
     )
-    assert "MyChannel" in info_out
+    assert channel_name in info_out
 
 
 @_destructive_test

@@ -7,6 +7,7 @@ import importlib.util
 import io
 import logging
 import re
+import sys
 import threading
 import time
 import types
@@ -1817,6 +1818,46 @@ def test_on_response_position_prints_when_info_logging_not_visible(
     out, _ = capsys.readouterr()
     assert "Position received:" in out
     assert "full precision" in out
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_logger_visible_info_handler_only_counts_console_stream_handlers() -> None:
+    """Only stdout/stderr handlers should suppress the stdout fallback."""
+    handler_logger = logging.getLogger("meshtastic.tests.visible-info-handler")
+    original_handlers = list(handler_logger.handlers)
+    original_propagate = handler_logger.propagate
+    original_level = handler_logger.level
+    try:
+        handler_logger.handlers = []
+        handler_logger.propagate = False
+        handler_logger.setLevel(logging.INFO)
+
+        string_handler = logging.StreamHandler(io.StringIO())
+        string_handler.setLevel(logging.INFO)
+        handler_logger.addHandler(string_handler)
+        assert (
+            mesh_interface_module._logger_has_visible_info_handler(handler_logger)
+            is False
+        )
+
+        handler_logger.removeHandler(string_handler)
+        string_handler.close()
+
+        stdout_handler = logging.StreamHandler(sys.stdout)
+        stdout_handler.setLevel(logging.INFO)
+        handler_logger.addHandler(stdout_handler)
+        assert (
+            mesh_interface_module._logger_has_visible_info_handler(handler_logger)
+            is True
+        )
+    finally:
+        for handler in list(handler_logger.handlers):
+            handler_logger.removeHandler(handler)
+            handler.close()
+        handler_logger.handlers = original_handlers
+        handler_logger.propagate = original_propagate
+        handler_logger.setLevel(original_level)
 
 
 @pytest.mark.unit

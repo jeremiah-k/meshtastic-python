@@ -96,7 +96,11 @@ def _logger_has_visible_info_handler(target_logger: logging.Logger) -> bool:
     current_logger: logging.Logger | None = target_logger
     while current_logger is not None:
         for handler in current_logger.handlers:
-            if handler.level <= logging.INFO:
+            if (
+                isinstance(handler, logging.StreamHandler)
+                and getattr(handler, "stream", None) in {sys.stdout, sys.stderr}
+                and handler.level <= logging.INFO
+            ):
                 return True
         if not current_logger.propagate:
             break

@@ -262,8 +262,11 @@ def test_esp32_wifi_ota_update_logs_progress_without_callback(
                     for record in caplog.records
                     if "OTA progress:" in record.message
                 ]
+                intermediate_progress_messages = [
+                    message for message in progress_messages if "100.0%" not in message
+                ]
                 assert len(progress_messages) >= 2
-                assert any("100.0%" not in message for message in progress_messages)
+                assert intermediate_progress_messages
                 assert any("100.0%" in message for message in progress_messages)
     finally:
         os.unlink(temp_file)

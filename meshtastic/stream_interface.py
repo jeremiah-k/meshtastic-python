@@ -32,7 +32,7 @@ STREAM_IO_EXCEPTIONS = (
     serial.SerialException,
     serial.SerialTimeoutException,
 )
-STREAM_CLOSE_EXCEPTIONS = STREAM_IO_EXCEPTIONS + (TypeError,)
+STREAM_CLOSE_EXCEPTIONS = (*STREAM_IO_EXCEPTIONS, TypeError)
 # Read/write/flush exceptions that indicate stream closure.
 STREAM_WRITE_EXCEPTIONS = STREAM_IO_EXCEPTIONS
 STREAM_READ_EXCEPTIONS = STREAM_IO_EXCEPTIONS
