@@ -46,18 +46,18 @@ def mock_serial(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     types.ModuleType
         The mocked `serial` module object that was inserted into sys.modules.
     """
-    serial_module: Any = types.ModuleType("serial")
+    serial_module = types.ModuleType("serial")
 
     # Create tools submodule
-    tools_module: Any = types.ModuleType("serial.tools")
-    list_ports_module: Any = types.ModuleType("serial.tools.list_ports")
-    list_ports_module.comports = lambda *_args, **_kwargs: []
-    tools_module.list_ports = list_ports_module
-    serial_module.tools = tools_module
+    tools_module = types.ModuleType("serial.tools")
+    list_ports_module = types.ModuleType("serial.tools.list_ports")
+    cast(Any, list_ports_module).comports = lambda *_args, **_kwargs: []
+    cast(Any, tools_module).list_ports = list_ports_module
+    cast(Any, serial_module).tools = tools_module
 
     # Add exception classes
-    serial_module.SerialException = Exception
-    serial_module.SerialTimeoutException = Exception
+    cast(Any, serial_module).SerialException = Exception
+    cast(Any, serial_module).SerialTimeoutException = Exception
 
     # Mock the modules
     monkeypatch.setitem(sys.modules, "serial", serial_module)
@@ -84,8 +84,8 @@ def mock_pubsub(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     types.ModuleType
         The injected `pubsub` module.
     """
-    pubsub_module: Any = types.ModuleType("pubsub")
-    pubsub_module.pub = SimpleNamespace(
+    pubsub_module = types.ModuleType("pubsub")
+    cast(Any, pubsub_module).pub = SimpleNamespace(
         subscribe=lambda *_args, **_kwargs: None,
         sendMessage=lambda *_args, **_kwargs: None,
         AUTO_TOPIC=None,
@@ -111,7 +111,7 @@ def mock_publishing_thread(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     types.ModuleType
         The mocked publishingThread module inserted into sys.modules.
     """
-    publishing_thread_module: Any = types.ModuleType("publishingThread")
+    publishing_thread_module = types.ModuleType("publishingThread")
 
     def queueWork(callback: Callable[[], Any] | None) -> None:
         """Execute the provided callback immediately.
@@ -124,7 +124,7 @@ def mock_publishing_thread(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
         if callback:
             callback()
 
-    publishing_thread_module.queueWork = queueWork
+    cast(Any, publishing_thread_module).queueWork = queueWork
 
     monkeypatch.setitem(sys.modules, "publishingThread", publishing_thread_module)
     monkeypatch.setitem(
@@ -151,8 +151,8 @@ def mock_tabulate(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     types.ModuleType
         The fake `tabulate` module inserted into `sys.modules`.
     """
-    tabulate_module: Any = types.ModuleType("tabulate")
-    tabulate_module.tabulate = lambda *_args, **_kwargs: ""
+    tabulate_module = types.ModuleType("tabulate")
+    cast(Any, tabulate_module).tabulate = lambda *_args, **_kwargs: ""
 
     monkeypatch.setitem(sys.modules, "tabulate", tabulate_module)
     return tabulate_module
@@ -173,8 +173,8 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     types.ModuleType
         The fake `bleak` module object inserted into `sys.modules`.
     """
-    bleak_module: Any = types.ModuleType("bleak")
-    bleak_module.__version__ = "2.1.1"
+    bleak_module = types.ModuleType("bleak")
+    cast(Any, bleak_module).__version__ = "2.1.1"
 
     class _StubBleakClient:
         """Minimal BleakClient test double.
@@ -318,19 +318,19 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
             """
             return await _stub_discover(**_kwargs)
 
-    bleak_module.BleakClient = _StubBleakClient
-    bleak_module.BleakScanner = _StubBleakScanner
-    bleak_module.BLEDevice = _StubBLEDevice
+    cast(Any, bleak_module).BleakClient = _StubBleakClient
+    cast(Any, bleak_module).BleakScanner = _StubBleakScanner
+    cast(Any, bleak_module).BLEDevice = _StubBLEDevice
     # Mark as package so submodules work
-    bleak_module.__path__ = []
+    cast(Any, bleak_module).__path__ = []
 
     # Provide bleak.backends.device.BLEDevice for production imports
-    bleak_backends_module: Any = types.ModuleType("bleak.backends")
-    bleak_backends_module.__path__ = []
-    bleak_backends_device_module: Any = types.ModuleType("bleak.backends.device")
-    bleak_backends_device_module.BLEDevice = _StubBLEDevice
-    bleak_backends_module.device = bleak_backends_device_module
-    bleak_module.backends = bleak_backends_module
+    bleak_backends_module = types.ModuleType("bleak.backends")
+    cast(Any, bleak_backends_module).__path__ = []
+    bleak_backends_device_module = types.ModuleType("bleak.backends.device")
+    cast(Any, bleak_backends_device_module).BLEDevice = _StubBLEDevice
+    cast(Any, bleak_backends_module).device = bleak_backends_device_module
+    cast(Any, bleak_module).backends = bleak_backends_module
 
     monkeypatch.setitem(sys.modules, "bleak", bleak_module)
     monkeypatch.setitem(sys.modules, "bleak.backends", bleak_backends_module)
@@ -580,7 +580,7 @@ def stub_atexit(
     mock_serial, mock_pubsub, mock_tabulate, mock_bleak, mock_bleak_exc, mock_publishing_thread : types.ModuleType
         Ordering-only fixture dependencies; values are intentionally unused.
     """
-    registered = []
+    registered: list[Callable[[], object]] = []
     # Consume fixture arguments to document ordering intent and silence Ruff (ARG001).
     _ = (
         mock_serial,
@@ -591,7 +591,7 @@ def stub_atexit(
         mock_publishing_thread,
     )
 
-    def fake_register(func: Any) -> Any:
+    def fake_register(func: Callable[[], object]) -> Callable[[], object]:
         """Register a callable to be invoked later during teardown.
 
         Parameters
@@ -607,7 +607,7 @@ def stub_atexit(
         registered.append(func)
         return func
 
-    def fake_unregister(func: Any) -> None:
+    def fake_unregister(func: Callable[[], object]) -> None:
         """Unregisters all callbacks identical to the given function from the module-level registration list.
 
         Removes every entry whose identity matches `func` (comparison is by `is`, not by equality).
@@ -661,11 +661,14 @@ def _build_interface(
         A BLEInterface instance configured for tests. The instance has `connect` replaced to attach and return `client`, `_start_config` replaced with a no-op, and a `_connect_stub_calls` list recording addresses passed to the stubbed `connect`.
     """
     ble_mod = _get_ble_module()
-    BleInterfaceClass = ble_mod.BLEInterface
+    BleInterfaceClass = cast(type["BLEInterface"], ble_mod.BLEInterface)
     connect_calls: list[str | None] = []
 
     def _stub_connect(
-        _self: Any, _address: str | None = None, *args, **kwargs
+        _self: Any,
+        _address: str | None = None,
+        *args: object,
+        **kwargs: object,
     ) -> "DummyClient":
         """Attach the prepared test client to a BLEInterface-like instance and record the connection attempt.
 
@@ -728,7 +731,7 @@ def _build_interface(
             BleInterfaceClass, "_start_receive_thread", _stub_start_receive_thread
         )
     iface = BleInterfaceClass(address="dummy", noProto=True)
-    iface._connect_stub_calls = connect_calls
+    cast(Any, iface)._connect_stub_calls = connect_calls
     return iface
 
 

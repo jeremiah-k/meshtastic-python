@@ -146,7 +146,9 @@ def _build_minimal_connect_test_interface() -> BLEInterface:
     iface._connection_alias_key = None
     iface._ever_connected = False
     iface._read_retry_count = 0
-    iface._client_manager = SimpleNamespace(_safe_close_client=lambda _client: None)
+    cast(Any, iface)._client_manager = SimpleNamespace(
+        _safe_close_client=lambda _client: None
+    )
     return iface
 
 
@@ -777,23 +779,23 @@ def test_ble_interface_management_revalidates_implicit_target_after_gate_handoff
     replacement_client.bleak_client = SimpleNamespace(address=replacement_address)
     command_calls: list[str] = []
 
-    def _record_pair(*, await_timeout: float | None = None, **kwargs: object) -> None:
+    def _record_pair(*, await_timeout: float = 0.0, **kwargs: object) -> None:
         _ = (await_timeout, kwargs)
         command_calls.append("pair")
 
-    def _record_unpair(*, await_timeout: float | None = None) -> None:
-        _ = await_timeout
+    def _record_unpair(*, await_timeout: float = 0.0, **kwargs: object) -> None:
+        _ = (await_timeout, kwargs)
         command_calls.append("unpair")
 
-    client.pair = _record_pair
-    client.unpair = _record_unpair
-    replacement_client.pair = _record_pair
-    replacement_client.unpair = _record_unpair
+    monkeypatch.setattr(client, "pair", _record_pair)
+    monkeypatch.setattr(client, "unpair", _record_unpair)
+    monkeypatch.setattr(replacement_client, "pair", _record_pair)
+    monkeypatch.setattr(replacement_client, "unpair", _record_unpair)
 
     @contextlib.contextmanager
     def _swap_target_gate(_target_address: str) -> Iterator[None]:
         with iface._state_lock:
-            iface.client = replacement_client
+            cast(Any, iface).client = replacement_client
             iface.address = replacement_address
             iface._state_manager._reset_to_disconnected()
             assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
@@ -890,7 +892,7 @@ def test_ble_interface_trust_revalidates_implicit_target_after_gate_handoff(
     @contextlib.contextmanager
     def _swap_target_gate(_target_address: str) -> Iterator[None]:
         with iface._state_lock:
-            iface.client = replacement_client
+            cast(Any, iface).client = replacement_client
             iface.address = replacement_address
             iface._state_manager._reset_to_disconnected()
             assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
@@ -1163,7 +1165,7 @@ def test_ble_interface_trust_rejects_invalid_timeout(
     _pin_trust_environment(monkeypatch)
 
     with pytest.raises(BLEInterface.BLEError, match=ERROR_TRUST_INVALID_TIMEOUT):
-        iface.trust("AA:BB:CC:DD:EE:FF", timeout=invalid_timeout)
+        iface.trust("AA:BB:CC:DD:EE:FF", timeout=cast(Any, invalid_timeout))
 
     iface.close()
 
@@ -1275,8 +1277,9 @@ def test_ble_interface_trust_does_not_hold_interface_locks_during_subprocess(
     trust_target = "AA:BB:CC:DD:EE:FF"
     with iface._state_lock:
         assert iface.client is not None
-        iface.client.address = trust_target
-        iface.client.bleak_client.address = trust_target
+        active_client = cast(DummyClient, iface.client)
+        active_client.address = trust_target
+        active_client.bleak_client = SimpleNamespace(address=trust_target)
         iface.address = trust_target
     run_started = threading.Event()
     allow_run_return = threading.Event()
@@ -1631,7 +1634,7 @@ def test_ble_interface_connect_uses_pair_override_for_orchestrator(
         captured_pair_flags.append(pair_on_connect)
         captured_timeouts.append(connect_timeout)
         with iface._state_lock:
-            iface.client = client
+            cast(Any, iface).client = client
             iface.address = client.address
             iface._state_manager._reset_to_disconnected()
             assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
@@ -1655,7 +1658,7 @@ def test_connect_wraps_invalid_connect_timeout_as_ble_error(
 ) -> None:
     """connect() should wrap invalid timeout overrides as BLEError."""
     iface = _build_minimal_connect_test_interface()
-    iface._connection_orchestrator = SimpleNamespace(
+    cast(Any, iface)._connection_orchestrator = SimpleNamespace(
         _establish_connection=lambda *_args, **_kwargs: (_ for _ in ()).throw(
             ValueError("connect_timeout must be a finite positive number of seconds.")
         )
@@ -1706,7 +1709,7 @@ def test_ble_interface_establish_and_update_client_discards_late_connection_resu
 
     assert cleanup_calls == [connected_client]
     with iface._state_lock:
-        assert iface.client is not connected_client
+        assert cast(object, iface.client) is not connected_client
     iface.close()
 
 
@@ -1734,7 +1737,7 @@ def test_handle_disconnect_ignores_stale_callbacks(
     )
 
     with iface._state_lock:
-        iface.client = active_client  # type: ignore[assignment]
+        cast(Any, iface).client = active_client
         iface._disconnect_notified = False
         iface._state_manager._reset_to_disconnected()
         assert iface._state_manager._transition_to(ConnectionState.CONNECTING) is True
@@ -1748,7 +1751,7 @@ def test_handle_disconnect_ignores_stale_callbacks(
         is True
     )
 
-    assert iface.client is active_client
+    assert cast(object, iface.client) is active_client
     assert iface._disconnect_notified is False
     assert reconnect_calls == []
     assert disconnected_calls == []
@@ -2095,7 +2098,7 @@ def test_connect_finalizes_gates_after_address_lock_scope(
     ) -> tuple[DummyClient, str | None, str | None]:
         _ = (pair_on_connect, connect_timeout)
         with iface._state_lock:
-            iface.client = connected_client
+            cast(Any, iface).client = connected_client
             iface.address = target_address
             iface._state_manager._reset_to_disconnected()
             assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
@@ -2114,7 +2117,7 @@ def test_connect_finalizes_gates_after_address_lock_scope(
 
     result = iface.connect(target_address)
 
-    assert result is connected_client
+    assert cast(object, result) is connected_client
     assert finalized_lock_states == [False]
     iface.close()
 
@@ -2165,7 +2168,7 @@ def test_connect_raises_when_client_becomes_stale_after_gate_finalization(
     ) -> tuple[DummyClient, str | None, str | None]:
         _ = (pair_on_connect, connect_timeout)
         with iface._state_lock:
-            iface.client = connected_client
+            cast(Any, iface).client = connected_client
             iface.address = target_address
             iface._state_manager._reset_to_disconnected()
             assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
@@ -2183,7 +2186,7 @@ def test_connect_raises_when_client_becomes_stale_after_gate_finalization(
         replacement_client.address = replacement_address
         replacement_client.bleak_client = SimpleNamespace(address=replacement_address)
         with iface._state_lock:
-            iface.client = replacement_client
+            cast(Any, iface).client = replacement_client
             iface.address = replacement_address
             iface._state_manager._reset_to_disconnected()
             assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
@@ -2200,11 +2203,11 @@ def test_connect_raises_when_client_becomes_stale_after_gate_finalization(
     with pytest.raises(BLEInterface.BLEError, match=CONNECTION_ERROR_LOST_OWNERSHIP):
         iface.connect(target_address)
 
-    assert finalized_clients == [connected_client]
-    assert closed_clients == [connected_client]
+    assert finalized_clients == [cast(BLEClient, connected_client)]
+    assert closed_clients == [cast(BLEClient, connected_client)]
     assert released_claims == [("device-key", None)]
     assert connected_callbacks == []
-    assert iface.client is not connected_client
+    assert cast(object, iface.client) is not connected_client
     assert iface.address != target_address
 
 
@@ -2257,7 +2260,7 @@ def test_connect_raises_when_registry_ownership_is_lost_after_gate_finalization(
     ) -> tuple[DummyClient, str | None, str | None]:
         _ = (pair_on_connect, connect_timeout)
         with iface._state_lock:
-            iface.client = connected_client
+            cast(Any, iface).client = connected_client
             iface.address = target_address
             iface._state_manager._reset_to_disconnected()
             assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
@@ -2283,8 +2286,8 @@ def test_connect_raises_when_registry_ownership_is_lost_after_gate_finalization(
     with pytest.raises(BLEInterface.BLEError, match=CONNECTION_ERROR_LOST_OWNERSHIP):
         iface.connect(target_address)
 
-    assert finalized_clients == [connected_client]
-    assert closed_clients == [connected_client]
+    assert finalized_clients == [cast(BLEClient, connected_client)]
+    assert closed_clients == [cast(BLEClient, connected_client)]
     assert released_claims == []
     assert connected_callbacks == []
     assert iface.client is None
@@ -2336,7 +2339,7 @@ def test_connect_raises_when_shutdown_wins_after_gate_finalization(
     ) -> tuple[DummyClient, str | None, str | None]:
         _ = (pair_on_connect, connect_timeout)
         with iface._state_lock:
-            iface.client = connected_client
+            cast(Any, iface).client = connected_client
             iface.address = target_address
             iface._state_manager._reset_to_disconnected()
             assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
@@ -2364,15 +2367,17 @@ def test_connect_raises_when_shutdown_wins_after_gate_finalization(
     with pytest.raises(BLEInterface.BLEError, match=ERROR_INTERFACE_CLOSING):
         iface.connect(target_address)
 
-    assert finalized_clients == [connected_client]
-    assert closed_clients == [connected_client]
+    assert finalized_clients == [cast(BLEClient, connected_client)]
+    assert closed_clients == [cast(BLEClient, connected_client)]
     assert released_claims == [("device-key", None)]
     assert connected_callbacks == []
-    assert iface.client is not connected_client
+    assert cast(object, iface.client) is not connected_client
     assert iface.address == target_address
 
 
-def test_transient_read_retry_uses_zero_based_delay(monkeypatch):
+def test_transient_read_retry_uses_zero_based_delay(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Transient read retries should pass a zero-based attempt index to policy delay."""
     iface = _build_interface(monkeypatch, DummyClient())
     delay_attempts: list[int] = []
@@ -2427,7 +2432,9 @@ def test_transient_read_retry_uses_zero_based_delay(monkeypatch):
     iface.close()
 
 
-def test_receive_loop_outer_catch_routes_to_disconnect_handler(monkeypatch):
+def test_receive_loop_outer_catch_routes_to_disconnect_handler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Outer receive-loop exceptions should use normal disconnect handling.
 
     Raises
@@ -2500,7 +2507,9 @@ def test_receive_loop_outer_catch_routes_to_disconnect_handler(monkeypatch):
     iface.close()
 
 
-def test_start_receive_thread_skips_when_interface_closed(monkeypatch):
+def test_start_receive_thread_skips_when_interface_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Receive thread start helper should no-op once the interface is closed.
 
     Raises
@@ -2511,7 +2520,7 @@ def test_start_receive_thread_skips_when_interface_closed(monkeypatch):
     iface = _build_interface(monkeypatch, client)
     iface.close()
 
-    def should_not_create_thread(*_args, **_kwargs):
+    def should_not_create_thread(*_args: object, **_kwargs: object) -> None:
         """Fail if thread creation is attempted after the interface has been closed.
 
         Raises
@@ -2531,7 +2540,7 @@ def test_start_receive_thread_skips_when_interface_closed(monkeypatch):
     iface._start_receive_thread(name="BLEReceiveAfterClose")
 
 
-def test_find_device_multiple_matches_raises():
+def test_find_device_multiple_matches_raises() -> None:
     """Providing an address that matches multiple devices should raise BLEError."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
@@ -2549,7 +2558,7 @@ def test_find_device_multiple_matches_raises():
     assert "Multiple Meshtastic BLE peripherals found matching" in str(excinfo.value)
 
 
-def test_find_device_direct_connect_preserves_raw_address():
+def test_find_device_direct_connect_preserves_raw_address() -> None:
     """Direct-connect fallback should keep the raw BLE address format."""
     iface = object.__new__(ble_mod.BLEInterface)
     iface._discovery_manager = SimpleNamespace(
@@ -2563,7 +2572,9 @@ def test_find_device_direct_connect_preserves_raw_address():
     assert direct_device.name == address
 
 
-def test_discovery_manager_filters_meshtastic_devices(monkeypatch):
+def test_discovery_manager_filters_meshtastic_devices(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """DiscoveryManager should return only devices advertising the Meshtastic service UUID."""
 
     filtered_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "Filtered")
@@ -2595,7 +2606,9 @@ def test_discovery_manager_filters_meshtastic_devices(monkeypatch):
     assert devices[0].address == filtered_device.address
 
 
-def test_discovery_manager_filters_targeted_scan_to_whitelist_match(monkeypatch):
+def test_discovery_manager_filters_targeted_scan_to_whitelist_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Targeted discovery should keep only exact address/name matches."""
     target_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "Target")
     other_meshtastic_device = _create_ble_device("11:22:33:44:55:66", "Other")
@@ -2782,14 +2795,19 @@ def test_close_discovery_client_best_effort_closes_coroutine_when_task_creation_
         """Bypass timeout wrapping to keep this branch deterministic."""
         return awaitable
 
-    monkeypatch.setattr(discovery_mod.asyncio, "get_running_loop", _get_running_loop)
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.discovery.asyncio.get_running_loop",
+        _get_running_loop,
+    )
     monkeypatch.setattr(
         discovery_mod, "_await_close_result", _await_close_result_passthrough
     )
-    monkeypatch.setattr(discovery_mod.asyncio, "wait_for", _wait_for_passthrough)
     monkeypatch.setattr(
-        discovery_mod.inspect,
-        "iscoroutine",
+        "meshtastic.interfaces.ble.discovery.asyncio.wait_for",
+        _wait_for_passthrough,
+    )
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.discovery.inspect.iscoroutine",
         lambda value: isinstance(value, _AwaitableClose),
     )
 
@@ -2817,7 +2835,7 @@ def test_finalize_discovery_close_task_discards_task_and_logs_exception(
         discovery_mod._finalize_discovery_close_task(task)  # type: ignore[arg-type]
 
     with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
-        assert task not in discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS
+        assert cast(Any, task) not in discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS
     assert (
         "Async close/disconnect failed for discarded discovery client." in caplog.text
     )
@@ -2872,21 +2890,27 @@ def test_close_discovery_client_best_effort_tracks_pending_task_on_running_loop(
         """Bypass timeout wrapping to keep this branch deterministic."""
         return awaitable
 
-    monkeypatch.setattr(discovery_mod.asyncio, "get_running_loop", _get_running_loop)
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.discovery.asyncio.get_running_loop",
+        _get_running_loop,
+    )
     monkeypatch.setattr(
         discovery_mod, "_await_close_result", _await_close_result_passthrough
     )
-    monkeypatch.setattr(discovery_mod.asyncio, "wait_for", _wait_for_passthrough)
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.discovery.asyncio.wait_for",
+        _wait_for_passthrough,
+    )
 
     _close_discovery_client_best_effort(_Client())
 
     with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
-        assert task in discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS
+        assert cast(Any, task) in discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS
     assert len(task._callbacks) == 1
 
     task._callbacks[0](task)
     with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
-        assert task not in discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS
+        assert cast(Any, task) not in discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS
 
 
 def test_discovery_manager_raises_when_factory_returns_none() -> None:
@@ -2897,7 +2921,7 @@ def test_discovery_manager_raises_when_factory_returns_none() -> None:
         manager._discover_devices(address=None)
 
 
-def test_parse_scan_response_prefers_exact_name_before_normalized_match():
+def test_parse_scan_response_prefers_exact_name_before_normalized_match() -> None:
     """Targeted scan should prefer an exact name match over normalized-name candidates."""
     exact_name_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "My Device")
     normalized_only_device = _create_ble_device("11:22:33:44:55:66", "my device")
@@ -2938,7 +2962,7 @@ def test_looks_like_ble_address_accepts_mac_and_uuid_shapes() -> None:
     assert not _looks_like_ble_address("Meshtastic Device")
 
 
-def test_filter_devices_rejects_ambiguous_normalized_name_matches():
+def test_filter_devices_rejects_ambiguous_normalized_name_matches() -> None:
     """Name matching should reject ambiguous normalized-name collisions."""
     devices = [
         _create_ble_device("AA:BB:CC:DD:EE:FF", "My Device"),
@@ -3013,15 +3037,15 @@ def test_discovery_manager_destructor_does_not_close_client() -> None:
 def test_discovery_manager_destructor_tolerates_unusable_lock() -> None:
     """DiscoveryManager.__del__ should fall back when _client_lock is not lock-like."""
     manager = object.__new__(DiscoveryManager)
-    manager._client_lock = cast(Any, object())  # type: ignore[attr-defined]
-    manager._client = cast(Any, object())  # type: ignore[attr-defined]
+    cast(Any, manager)._client_lock = object()
+    cast(Any, manager)._client = object()
 
     manager.__del__()
 
-    assert manager._client is None  # type: ignore[attr-defined]
+    assert cast(Any, manager)._client is None
 
 
-def test_connection_validator_enforces_state():
+def test_connection_validator_enforces_state() -> None:
     """ConnectionValidator should block connections when interface is closing or already connecting."""
 
     state_manager = BLEStateManager()
@@ -3045,7 +3069,7 @@ def test_connection_validator_enforces_state():
     assert "connection in progress" in str(excinfo.value)
 
 
-def test_connection_validator_existing_client_checks():
+def test_connection_validator_existing_client_checks() -> None:
     """check_existing_client should allow reuse only when the requested identifier matches."""
 
     state_manager = BLEStateManager()
@@ -3053,7 +3077,7 @@ def test_connection_validator_existing_client_checks():
         state_manager, state_manager._lock, BLEInterface.BLEError
     )
     client = DummyClient()
-    client.isConnected = lambda: True
+    cast(Any, client).isConnected = lambda: True
 
     ble_like = cast(BLEClient, client)
     assert validator._check_existing_client(ble_like, None, None) is True
@@ -3063,18 +3087,18 @@ def test_connection_validator_existing_client_checks():
     )
 
 
-def test_get_existing_client_if_valid_uses_last_request_snapshot():
+def test_get_existing_client_if_valid_uses_last_request_snapshot() -> None:
     """_get_existing_client_if_valid should validate against a lock-protected request snapshot."""
 
     iface = object.__new__(BLEInterface)
-    iface._state_lock = threading.RLock()  # type: ignore[attr-defined]
-    iface._last_connection_request = "old-request"  # type: ignore[attr-defined]
-    iface._state_manager = SimpleNamespace(_is_connected=True)  # type: ignore[attr-defined]
-    iface._disconnect_notified = False  # type: ignore[attr-defined]
+    cast(Any, iface)._state_lock = threading.RLock()
+    cast(Any, iface)._last_connection_request = "old-request"
+    cast(Any, iface)._state_manager = SimpleNamespace(_is_connected=True)
+    cast(Any, iface)._disconnect_notified = False
 
     class _Client:
         def isConnected(self) -> bool:
-            iface._last_connection_request = "new-request"  # type: ignore[attr-defined]
+            cast(Any, iface)._last_connection_request = "new-request"
             return True
 
     class _Validator:
@@ -3092,16 +3116,16 @@ def test_get_existing_client_if_valid_uses_last_request_snapshot():
 
     client = _Client()
     validator = _Validator()
-    iface.client = client  # type: ignore[attr-defined]
-    iface._connection_validator = validator  # type: ignore[attr-defined]
+    cast(Any, iface).client = client
+    cast(Any, iface)._connection_validator = validator
 
     result = BLEInterface._get_existing_client_if_valid(iface, normalized_request="any")
 
-    assert result is client
+    assert cast(object, result) is client
     assert validator.seen_last_request == "old-request"
 
 
-def test_close_idempotent(monkeypatch):
+def test_close_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that close() is idempotent and only calls disconnect once."""
     client = DummyClient()
     iface = _build_interface(monkeypatch, client)
@@ -3115,13 +3139,16 @@ def test_close_idempotent(monkeypatch):
 
 
 @pytest.mark.parametrize("exc_cls", [BleakError, RuntimeError, OSError])
-def test_close_handles_errors(monkeypatch, exc_cls):
+def test_close_handles_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    exc_cls: type[Exception],
+) -> None:
     """Test that close() handles various exception types gracefully."""
     # pub already imported at top as mesh_iface_module.pub
 
-    calls = []
+    calls: list[tuple[str, dict[str, object]]] = []
 
-    def _capture(topic, **kwargs):
+    def _capture(topic: str, **kwargs: object) -> None:
         """Record a published pubsub message for test inspection.
 
         Appends (topic, kwargs) to the module-level `calls` list.
@@ -3162,7 +3189,9 @@ def test_close_handles_errors(monkeypatch, exc_cls):
     assert client.close_calls == 1
 
 
-def test_close_skips_disconnect_when_interpreter_finalizing(monkeypatch):
+def test_close_skips_disconnect_when_interpreter_finalizing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """close() should avoid scheduling disconnect coroutines during finalization."""
     client = DummyClient()
     iface = _build_interface(monkeypatch, client)
@@ -3192,7 +3221,7 @@ def test_close_closes_discovery_manager_before_receive_thread_join(
         def close(self) -> None:
             discovery_closed.set()
 
-    iface._discovery_manager = _DiscoveryManager()  # type: ignore[assignment]
+    cast(Any, iface)._discovery_manager = _DiscoveryManager()
     receive_thread = threading.Thread(
         target=lambda: stop_worker.wait(1.0),
         name="BLEReceiveTest",
@@ -3222,7 +3251,7 @@ def test_close_closes_discovery_manager_before_receive_thread_join(
     assert not receive_thread.is_alive()
 
 
-def test_close_clears_ble_threads(monkeypatch):
+def test_close_clears_ble_threads(monkeypatch: pytest.MonkeyPatch) -> None:
     """Closing the interface should leave no BLE* threads running."""
     # threading already imported at top
 
@@ -3258,7 +3287,11 @@ def test_close_clears_ble_threads(monkeypatch):
 
 
 @pytest.mark.parametrize("exc_type", [RuntimeError, OSError])
-def test_receive_thread_specific_exceptions(monkeypatch, caplog, exc_type):
+def test_receive_thread_specific_exceptions(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    exc_type: type[Exception],
+) -> None:
     """Verify that the BLE receive thread treats specific exceptions as fatal: it logs a fatal error message and invokes the interface's close().
 
     The test injects a client whose read_gatt_char raises the given exception type,
@@ -3272,7 +3305,7 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog, exc_type):
     class ExceptionClient(DummyClient):
         """Mock client that raises specific exceptions for testing."""
 
-        def __init__(self, exception_type):
+        def __init__(self, exception_type: type[Exception]) -> None:
             """Create a test BLE client configured to raise the given exception from its faulting methods.
 
             Parameters
@@ -3283,7 +3316,7 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog, exc_type):
             super().__init__()
             self.exception_type = exception_type
 
-        def read_gatt_char(self, *_args, **_kwargs):
+        def read_gatt_char(self, *_args: object, **_kwargs: object) -> bytes:
             """Raise the client's configured exception to simulate a failing GATT characteristic read.
 
             Raises
@@ -3302,7 +3335,7 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog, exc_type):
     # Exercise the receive loop synchronously for deterministic assertions.
     iface._want_receive = True
     with iface._state_lock:
-        iface.client = client  # type: ignore[assignment]
+        cast(Any, iface).client = client
 
     iface._read_trigger.set()
     iface._receive_from_radio_impl()
@@ -3322,7 +3355,10 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog, exc_type):
         logging.warning("Cleanup error in iface.close(): %r", exc)
 
 
-def test_bleak_error_transient_retry_logic(monkeypatch, caplog):
+def test_bleak_error_transient_retry_logic(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Verify that BleakError in the receive thread goes through transient retry logic.
 
     The interface should retry on transient BleakError before giving up and closing.
@@ -3336,12 +3372,12 @@ def test_bleak_error_transient_retry_logic(monkeypatch, caplog):
     class BleakErrorClient(DummyClient):
         """Mock client that raises BleakError for testing retry logic."""
 
-        def __init__(self):
+        def __init__(self) -> None:
             """Initialize the instance and set the read operation counter to 0."""
             super().__init__()
             self.read_count = 0
 
-        def read_gatt_char(self, *_args, **_kwargs):
+        def read_gatt_char(self, *_args: object, **_kwargs: object) -> bytes:
             """Simulate a GATT characteristic read that increments self.read_count and always fails.
 
             Increments self.read_count and then raises a BleakError with the message "transient error".
@@ -3361,7 +3397,7 @@ def test_bleak_error_transient_retry_logic(monkeypatch, caplog):
     iface._want_receive = True
 
     with iface._state_lock:
-        iface.client = client  # type: ignore[assignment]
+        cast(Any, iface).client = client
 
     iface._read_trigger.set()
     iface._receive_from_radio_impl()
@@ -3378,14 +3414,16 @@ def test_bleak_error_transient_retry_logic(monkeypatch, caplog):
         logging.warning("Cleanup error in iface.close(): %r", exc)
 
 
-def test_log_notification_registration(monkeypatch):
+def test_log_notification_registration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test that log notifications are properly registered for both legacy and current log UUIDs."""
     # UUID constants already imported at top as ble_mod.FROMNUM_UUID, ble_mod.LEGACY_LOGRADIO_UUID, ble_mod.LOGRADIO_UUID
 
     class MockClientWithLogChars(DummyClient):
         """Mock client that has log characteristics."""
 
-        def __init__(self):
+        def __init__(self) -> None:
             """Initialize the mock BLE client and its notification/characteristic tracking.
 
             Attributes
@@ -3397,14 +3435,14 @@ def test_log_notification_registration(monkeypatch):
                 LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, and FROMNUM_UUID to True.
             """
             super().__init__()
-            self.start_notify_calls = []
+            self.start_notify_calls: list[tuple[object, object]] = []
             self.has_characteristic_map = {
                 LEGACY_LOGRADIO_UUID: True,
                 LOGRADIO_UUID: True,
                 FROMNUM_UUID: True,
             }
 
-        def has_characteristic(self, uuid):
+        def has_characteristic(self, uuid: str) -> bool:
             """Determine whether the client exposes a GATT characteristic identified by the given UUID.
 
             Parameters
@@ -3419,7 +3457,7 @@ def test_log_notification_registration(monkeypatch):
             """
             return self.has_characteristic_map.get(uuid, False)
 
-        def start_notify(self, *_args, **_kwargs):
+        def start_notify(self, *_args: object, **_kwargs: object) -> None:
             """Record a notification registration by saving the characteristic UUID and its handler.
 
             If called with at least two positional arguments, treats the first as the characteristic UUID and the second as the notification handler, and appends the pair to self.start_notify_calls. Any additional positional or keyword arguments are accepted and ignored.
@@ -3612,7 +3650,9 @@ def test_read_from_radio_with_retries_polling_mode_does_single_read(
     iface.close()
 
 
-def test_close_unsubscribes_tracked_notifications(monkeypatch):
+def test_close_unsubscribes_tracked_notifications(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """close() should best-effort stop tracked notifications before client teardown."""
     client = DummyClient()
     iface = _build_interface(monkeypatch, client, start_receive_thread=False)
@@ -3625,7 +3665,7 @@ def test_close_unsubscribes_tracked_notifications(monkeypatch):
     assert FROMNUM_UUID in client.stop_notify_calls
 
 
-def test_reconnect_scheduler_tracks_threads():
+def test_reconnect_scheduler_tracks_threads() -> None:
     """ReconnectScheduler should start at most one reconnect thread and respect closing state."""
 
     state_manager = BLEStateManager()
@@ -3634,14 +3674,22 @@ def test_reconnect_scheduler_tracks_threads():
     class StubCoordinator:
         """Thread coordinator stub used by reconnect scheduler tests."""
 
-        def __init__(self):
+        def __init__(self) -> None:
             """Initialize the instance and prepare storage for items created during tests.
 
             Creates an empty `created` list used to record items that this helper constructs.
             """
-            self.created = []
+            self.created: list[SimpleNamespace] = []
 
-        def _create_thread(self, target, name, *, daemon=True, args=(), kwargs=None):
+        def _create_thread(
+            self,
+            target: Callable[..., object],
+            name: str,
+            *,
+            daemon: bool = True,
+            args: tuple[object, ...] = (),
+            kwargs: dict[str, object] | None = None,
+        ) -> SimpleNamespace:
             """Create a lightweight thread-like SimpleNamespace, record it in self.created, and return it.
 
             Parameters
@@ -3675,7 +3723,7 @@ def test_reconnect_scheduler_tracks_threads():
             return thread
 
         @staticmethod
-        def _start_thread(thread):
+        def _start_thread(thread: SimpleNamespace) -> None:
             """Mark a thread-like object's `started` attribute as True.
 
             Parameters
@@ -3712,13 +3760,13 @@ def test_reconnect_scheduler_tracks_threads():
     assert scheduler._schedule_reconnect(True, shutdown_event) is False
 
 
-def test_reconnect_worker_successful_attempt():
+def test_reconnect_worker_successful_attempt() -> None:
     """ReconnectWorker should reconnect and clear thread references on success; cleanup/resubscribe are handled by the interface layer, not the worker."""
 
     class StubPolicy:
         """Reconnect policy stub for successful reconnect tests."""
 
-        def __init__(self):
+        def __init__(self) -> None:
             """Initialize the stub retry policy used by reconnect tests.
 
             Sets initial state for test assertions.
@@ -3733,7 +3781,7 @@ def test_reconnect_worker_successful_attempt():
             self.reset_called = False
             self._attempt_count = 0
 
-        def _reset(self):
+        def _reset(self) -> None:
             """Reset the retry policy to its initial state.
 
             Sets the internal attempt counter to 0 and records that a reset occurred by setting `reset_called` to True.
@@ -3741,11 +3789,11 @@ def test_reconnect_worker_successful_attempt():
             self.reset_called = True
             self._attempt_count = 0
 
-        def _get_attempt_count(self):
+        def _get_attempt_count(self) -> int:
             """Return the internal attempt count for ReconnectWorker tests."""
             return self._attempt_count
 
-        def _next_attempt(self):
+        def _next_attempt(self) -> tuple[float, bool]:
             """Determine the delay before the next retry and whether another attempt should be made.
 
             Increments the internal attempt counter as a side effect.
@@ -3770,7 +3818,7 @@ def test_reconnect_worker_successful_attempt():
 
         BLEError = RuntimeError
 
-        def __init__(self):
+        def __init__(self) -> None:
             """Create a minimal stub interface for reconnect-related tests.
 
             Initializes lightweight test doubles and records connect invocations.
@@ -3807,9 +3855,9 @@ def test_reconnect_worker_successful_attempt():
             self._is_connection_connected = False
             self.address = "addr"
             self.client = object()
-            self.connect_calls = []
+            self.connect_calls: list[str] = []
 
-        def connect(self, address):
+        def connect(self, address: str) -> None:
             """Record that a connection was attempted for the given device address by appending it to this instance's `connect_calls` list.
 
             Parameters
@@ -3833,7 +3881,9 @@ def test_reconnect_worker_successful_attempt():
     assert iface._reconnect_scheduler.cleared is True
 
 
-def test_reconnect_worker_respects_retry_limits(monkeypatch):
+def test_reconnect_worker_respects_retry_limits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Ensure ReconnectWorker respects the retry policy and stops after the allowed attempts when connect continuously fails.
 
     Simulates an interface whose connect() always raises and a LimitedPolicy that permits a single retry. Verifies that:
@@ -3848,10 +3898,10 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
     BLEError
     """
 
-    sleep_calls = []
+    sleep_calls: list[float] = []
 
     # Mock shutdown_event.wait to capture the sleep delay instead of actually waiting
-    def mock_wait(timeout=None):
+    def mock_wait(timeout: float | None = None) -> bool:
         """Simulate waiting for a shutdown event while recording requested timeouts.
 
         Records the provided timeout value into the surrounding `sleep_calls` list when not None, and always returns `False` to indicate the wait timed out (not interrupted by a shutdown/notification).
@@ -3874,7 +3924,7 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
     class LimitedPolicy:
         """Reconnect policy stub with a bounded retry window."""
 
-        def __init__(self):
+        def __init__(self) -> None:
             """Initialize a stub reconnect policy for tests, resetting counters and flags.
 
             Attributes
@@ -3887,7 +3937,7 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
             self.reset_called = False
             self.attempts = 0
 
-        def _reset(self):
+        def _reset(self) -> None:
             """Mark the retry policy as reset and clear its attempt counter.
 
             Sets the internal `reset_called` flag to True and resets `attempts` to 0.
@@ -3895,11 +3945,11 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
             self.reset_called = True
             self.attempts = 0
 
-        def _get_attempt_count(self):
+        def _get_attempt_count(self) -> int:
             """Return the internal attempt count for ReconnectWorker tests."""
             return self.attempts
 
-        def _next_attempt(self):
+        def _next_attempt(self) -> tuple[float, bool]:
             """Return the delay before the next retry and whether another retry should be attempted.
 
             Returns
@@ -3922,7 +3972,7 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
 
         BLEError = RuntimeError
 
-        def __init__(self):
+        def __init__(self) -> None:
             """Initialize a minimal stub interface used by reconnect tests.
 
             Attributes
@@ -3961,7 +4011,7 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
             self.client = None
             self.connect_attempts = 0
 
-        def connect(self, *_args, **_kwargs):
+        def connect(self, *_args: object, **_kwargs: object) -> None:
             """Simulate a failing connection attempt for tests and record the attempt.
 
             Increments the instance's `connect_attempts` counter and raises an error to emulate a failed connection.
