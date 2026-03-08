@@ -1846,6 +1846,11 @@ def test_on_response_position_success_and_routing_error(
                 }
             }
         )
+        iface._clear_wait_error("receivedPosition")
+        iface._record_routing_wait_error(
+            acknowledgment_attr="receivedPosition",
+            routing_error_reason="NO_RESPONSE",
+        )
         with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
             iface.waitForPosition()
 
@@ -1884,8 +1889,8 @@ def test_on_response_position_prints_when_info_logging_not_visible(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_logger_visible_info_handler_only_counts_console_stream_handlers() -> None:
-    """Stdout/stderr console handlers should suppress the print fallback."""
+def test_logger_visible_info_handler_only_counts_stdout_handlers() -> None:
+    """Only stdout-backed console handlers should suppress the print fallback."""
     handler_logger = logging.getLogger("meshtastic.tests.visible-info-handler")
     original_handlers = list(handler_logger.handlers)
     original_propagate = handler_logger.propagate
@@ -1929,7 +1934,7 @@ def test_logger_visible_info_handler_only_counts_console_stream_handlers() -> No
         handler_logger.addHandler(rich_stderr_handler)
         assert (
             mesh_interface_module._logger_has_visible_info_handler(handler_logger)
-            is True
+            is False
         )
 
         handler_logger.removeHandler(rich_stderr_handler)
@@ -2128,6 +2133,11 @@ def test_on_response_telemetry_paths(
                 }
             }
         )
+        iface._clear_wait_error("receivedTelemetry")
+        iface._record_routing_wait_error(
+            acknowledgment_attr="receivedTelemetry",
+            routing_error_reason="NO_RESPONSE",
+        )
         with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
             iface.waitForTelemetry()
 
@@ -2140,6 +2150,11 @@ def test_on_response_telemetry_paths(
                     "routing": {"errorReason": "NO_ROUTE"},
                 }
             }
+        )
+        iface._clear_wait_error("receivedTelemetry")
+        iface._record_routing_wait_error(
+            acknowledgment_attr="receivedTelemetry",
+            routing_error_reason="NO_ROUTE",
         )
         with pytest.raises(
             MeshInterface.MeshInterfaceError,
@@ -2177,6 +2192,11 @@ def test_on_response_waypoint_paths(caplog: pytest.LogCaptureFixture) -> None:
                     "routing": {"errorReason": "NO_RESPONSE"},
                 }
             }
+        )
+        iface._clear_wait_error("receivedWaypoint")
+        iface._record_routing_wait_error(
+            acknowledgment_attr="receivedWaypoint",
+            routing_error_reason="NO_RESPONSE",
         )
         with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
             iface.waitForWaypoint()
@@ -2431,7 +2451,9 @@ def test_send_data_rolls_back_wait_state_when_send_packet_raises(
     with MeshInterface(noProto=True) as iface:
         observed_request_ids: list[int] = []
 
-        def _fail_send(packet: Any, *_args: object, **_kwargs: object) -> NoReturn:
+        def _fail_send(
+            packet: mesh_pb2.MeshPacket, *_args: object, **_kwargs: object
+        ) -> NoReturn:
             observed_request_ids.append(packet.id)
             raise OSError("socket send failed")
 
@@ -2487,6 +2509,67 @@ def test_wait_for_request_ack_supports_overlapping_same_type_waits() -> None:
         assert not wait_22.is_alive()
         with iface._response_handlers_lock:
             assert "receivedTelemetry" not in iface._active_wait_request_ids
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_request_scoped_wait_wakes_immediately_on_recorded_error() -> None:
+    """request_id waiters should wake promptly when a matching wait error is recorded."""
+    with MeshInterface(noProto=True) as iface:
+        iface._timeout = Timeout(maxSecs=5.0)
+        iface._timeout.sleepInterval = 0.001
+        request_id = 303
+        iface._clear_wait_error("receivedTelemetry", request_id=request_id)
+        iface._record_routing_wait_error(
+            acknowledgment_attr="receivedTelemetry",
+            routing_error_reason="NO_ROUTE",
+            request_id=request_id,
+        )
+        started = time.monotonic()
+        with pytest.raises(
+            MeshInterface.MeshInterfaceError,
+            match="Routing error on response: NO_ROUTE",
+        ):
+            iface.waitForTelemetry(request_id=request_id)
+        assert time.monotonic() - started < 0.5
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_request_scoped_wait_raises_for_unscoped_error_across_overlapping_waits() -> None:
+    """Overlapping request-scoped waits should surface one unscoped routing error."""
+    with MeshInterface(noProto=True) as iface:
+        iface._timeout = Timeout(maxSecs=1.0)
+        iface._timeout.sleepInterval = 0.001
+        request_a = 411
+        request_b = 422
+        iface._clear_wait_error("receivedTelemetry", request_id=request_a)
+        iface._clear_wait_error("receivedTelemetry", request_id=request_b)
+        iface._record_routing_wait_error(
+            acknowledgment_attr="receivedTelemetry",
+            routing_error_reason="NO_ROUTE",
+        )
+
+        with pytest.raises(
+            MeshInterface.MeshInterfaceError,
+            match="Routing error on response: NO_ROUTE",
+        ):
+            iface.waitForTelemetry(request_id=request_a)
+        with pytest.raises(
+            MeshInterface.MeshInterfaceError,
+            match="Routing error on response: NO_ROUTE",
+        ):
+            iface.waitForTelemetry(request_id=request_b)
+
+        with iface._response_handlers_lock:
+            assert (
+                "receivedTelemetry" not in iface._active_wait_request_ids
+            )
+            assert (
+                "receivedTelemetry",
+                mesh_interface_module.UNSCOPED_WAIT_REQUEST_ID,
+            ) not in iface._response_wait_errors
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")

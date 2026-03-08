@@ -83,11 +83,13 @@ VALID_TELEMETRY_TYPES: tuple[TelemetryType, ...] = (
 VALID_TELEMETRY_TYPE_SET: frozenset[str] = frozenset(VALID_TELEMETRY_TYPES)
 UNKNOWN_SNR_QUARTER_DB = -128
 MISSING_NODE_NUM_ERROR_TEMPLATE = "NodeId {destination_id} has no numeric 'num' in DB"
-NO_RESPONSE_FIRMWARE_ERROR = "No response from node. At least firmware 2.1.22 is required on the destination node."
+NO_RESPONSE_FIRMWARE_ERROR: str = (
+    "No response from node. At least firmware 2.1.22 is required on the destination node."
+)
 JSONValue: TypeAlias = (
     None | bool | int | float | str | list["JSONValue"] | dict[str, "JSONValue"]
 )
-UNSCOPED_WAIT_REQUEST_ID = -1
+UNSCOPED_WAIT_REQUEST_ID: int = -1
 
 
 def _format_missing_node_num_error(destination_id: int | str) -> str:
@@ -100,12 +102,7 @@ def _logger_has_visible_info_handler(target_logger: logging.Logger) -> bool:
     if target_logger.disabled or target_logger.getEffectiveLevel() > logging.INFO:
         return False
 
-    visible_console_streams = {
-        sys.stdout,
-        sys.__stdout__,
-        sys.stderr,
-        sys.__stderr__,
-    }
+    visible_console_streams = {sys.stdout, sys.__stdout__}
     current_logger: logging.Logger | None = target_logger
     while current_logger is not None:
         for handler in current_logger.handlers:
@@ -1299,6 +1296,11 @@ class MeshInterface:  # pylint: disable=R0902
                 (acknowledgment_attr, resolved_request_id),
                 None,
             )
+            if error_message is None and request_id is not None:
+                unscoped_key = (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID)
+                error_message = self._response_wait_errors.get(unscoped_key)
+                if error_message is not None and len(active_request_ids) <= 1:
+                    self._response_wait_errors.pop(unscoped_key, None)
         if error_message is not None:
             raise self.MeshInterfaceError(error_message)
 
@@ -1315,6 +1317,13 @@ class MeshInterface:  # pylint: disable=R0902
                     active_request_ids.discard(request_id)
                     if not active_request_ids:
                         self._active_wait_request_ids.pop(acknowledgment_attr, None)
+                        self._response_wait_errors.pop(
+                            (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID),
+                            None,
+                        )
+                        self._response_wait_acks.discard(
+                            (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID)
+                        )
                     else:
                         self._active_wait_request_ids[acknowledgment_attr] = (
                             active_request_ids
@@ -1370,9 +1379,26 @@ class MeshInterface:  # pylint: disable=R0902
         sleep_interval = max(0.01, float(getattr(self._timeout, "sleepInterval", 0.1)))
         while time.monotonic() < deadline:
             with self._response_handlers_lock:
+                active_request_ids = self._active_wait_request_ids.get(
+                    acknowledgment_attr, set()
+                )
                 key = (acknowledgment_attr, request_id)
+                unscoped_key = (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID)
+                if key in self._response_wait_errors:
+                    return True
+                if (
+                    request_id in active_request_ids
+                    and unscoped_key in self._response_wait_errors
+                ):
+                    return True
                 if key in self._response_wait_acks:
                     self._response_wait_acks.discard(key)
+                    return True
+                if (
+                    request_id in active_request_ids
+                    and unscoped_key in self._response_wait_acks
+                ):
+                    self._response_wait_acks.discard(unscoped_key)
                     return True
             time.sleep(sleep_interval)
         return False

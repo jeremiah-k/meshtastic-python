@@ -4557,6 +4557,49 @@ def test_main_ota_update_succeeds_and_prints_completion(
 
 
 @pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_ota_update_rejects_remote_dest(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--ota-update should fail fast when --dest targets a non-local node."""
+    sys.argv = [
+        "",
+        "--host",
+        "localhost",
+        "--dest",
+        "!abcd1234",
+        "--ota-update",
+        "firmware.bin",
+    ]
+    mt_config.args = cast(Any, sys.argv)
+
+    class _FakeTCPInterface:
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            self.hostname = "localhost"
+
+        def __enter__(self) -> "_FakeTCPInterface":
+            return self
+
+        def __exit__(self, *_args: Any) -> None:
+            return None
+
+    with (
+        patch("meshtastic.tcp_interface.TCPInterface", _FakeTCPInterface),
+        patch("meshtastic.ota.ESP32WiFiOTA") as ota_cls,
+        pytest.raises(SystemExit) as excinfo,
+    ):
+        main()
+
+    _, err = capsys.readouterr()
+    assert (
+        "OTA update only supports the directly connected local node; omit --dest."
+        in err
+    )
+    assert excinfo.value.code == 1
+    ota_cls.assert_not_called()
+
+
+@pytest.mark.unit
 def test_create_power_meter_requires_initialized_args(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -14,6 +14,7 @@ try:
 
     from meshtastic.interfaces.ble.client import BLEClient
     from meshtastic.interfaces.ble.constants import (
+        BLECLIENT_ERROR_ASYNC_OPERATION_FAILED,
         BLECLIENT_ERROR_ASYNC_TIMEOUT,
         BLECLIENT_ERROR_CANCELLED,
         BLECLIENT_ERROR_CANNOT_CONNECT_NOT_INITIALIZED,
@@ -66,7 +67,9 @@ def _raise_wrapped_not_implemented(
     try:
         raise NotImplementedError("backend unsupported")
     except NotImplementedError as exc:
-        raise BLEClient.BLEError(f"Async operation failed: {exc}") from exc
+        raise BLEClient.BLEError(
+            BLECLIENT_ERROR_ASYNC_OPERATION_FAILED.format(exc)
+        ) from exc
 
 
 @pytest.mark.unit

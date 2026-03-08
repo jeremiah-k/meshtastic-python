@@ -4,6 +4,7 @@ set -euo pipefail
 
 if [[ $# -lt 3 ]]; then
 	echo "Usage: $0 <title> <runner-script> <log-dir> [single|multinode]" >&2
+	echo "  Use \"\" for <log-dir> to intentionally skip log processing." >&2
 	exit 1
 fi
 

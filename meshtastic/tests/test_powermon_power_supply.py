@@ -184,7 +184,7 @@ def test_powermon_optional_backends_are_lazy_and_dependency_error_is_clear(
 
     monkeypatch.setattr(importlib, "import_module", _fake_import_module)
 
-    backend_cls = getattr(powermon, "RidenPowerSupply")
+    backend_cls = powermon.RidenPowerSupply
     with pytest.raises(ImportError, match="optional dependency"):
         backend_cls(portName="/dev/null")
 
@@ -209,4 +209,4 @@ def test_powermon_optional_backend_lookup_re_raises_unrelated_missing_module(
     monkeypatch.setattr(importlib, "import_module", _fake_import_module)
 
     with pytest.raises(ModuleNotFoundError, match="backend import bug"):
-        getattr(powermon, "RidenPowerSupply")
+        _ = powermon.RidenPowerSupply

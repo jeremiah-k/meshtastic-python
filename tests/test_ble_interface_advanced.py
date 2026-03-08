@@ -690,6 +690,14 @@ def test_rapid_connect_disconnect_stress_test(
             with self._state_lock:
                 cast(Any, self).client = new_client
                 created_clients.append(new_client)
+                if "pair" in kwargs:
+                    self._last_connect_pair_override = cast(
+                        bool | None, kwargs.get("pair")
+                    )
+                if "connect_timeout" in kwargs:
+                    self._last_connect_timeout_override = cast(
+                        float | None, kwargs.get("connect_timeout")
+                    )
                 self._disconnect_notified = False
                 if hasattr(self, "_reconnected_event"):
                     self._reconnected_event.set()
@@ -725,27 +733,37 @@ def test_rapid_connect_disconnect_stress_test(
                 stack.close()
 
     def _wait_for_latest_stress_client(
-        iface: BLEInterface, *, timeout: float = 2.0
+        iface: BLEInterface,
+        *,
+        min_created_clients: int,
+        timeout: float = 2.0,
     ) -> tuple[list["StressTestClient"], list["StressTestClient"]]:
         """Wait until latest successful reconnect attempt owns iface.client."""
+
         def _snapshot_stress_state() -> tuple[
             object | None, list["StressTestClient"], list["StressTestClient"]
         ]:
             with iface._state_lock:
                 current_client = cast(object | None, iface.client)
-                attempts = list(cast(list["StressTestClient"], _get_stress_test_attempts(iface)))
-                clients = list(cast(list["StressTestClient"], _get_stress_test_clients(iface)))
+                attempts = list(
+                    cast(list["StressTestClient"], _get_stress_test_attempts(iface))
+                )
+                clients = list(
+                    cast(list["StressTestClient"], _get_stress_test_clients(iface))
+                )
             return current_client, attempts, clients
 
         deadline = time.monotonic() + timeout
         observed_client, observed_attempts, observed_clients = _snapshot_stress_state()
         while time.monotonic() < deadline:
-            observed_client, observed_attempts, observed_clients = _snapshot_stress_state()
+            observed_client, observed_attempts, observed_clients = (
+                _snapshot_stress_state()
+            )
             latest_successful_attempt = _latest_successful_stress_attempt(
                 observed_attempts, observed_clients
             )
             if (
-                len(observed_clients) >= 2
+                len(observed_clients) >= min_created_clients
                 and latest_successful_attempt is not None
                 and observed_client is latest_successful_attempt
             ):
@@ -763,6 +781,8 @@ def test_rapid_connect_disconnect_stress_test(
     # Test 1: Rapid disconnect callbacks
     with create_interface_with_auto_reconnect() as (iface, client):
         iface.connect(mock_device.address, pair=True, connect_timeout=3.5)
+        baseline_connects = len(_get_connect_stub_calls(iface))
+        baseline_clients = len(_get_stress_test_clients(iface))
 
         def simulate_rapid_disconnects() -> None:
             """Simulate a burst of rapid BLE disconnect events against the test interface.
@@ -788,13 +808,19 @@ def test_rapid_connect_disconnect_stress_test(
         assert client.bleak_client is not None
         # Test reaching this point without crashing indicates success
         assert (
-            len(_get_connect_stub_calls(iface)) >= 2
+            len(_get_connect_stub_calls(iface)) >= baseline_connects + 1
         ), "Auto-reconnect should continue scheduling during rapid disconnects"
         stub_kwargs = _get_connect_stub_kwargs(iface)
-        assert {"pair": True, "connect_timeout": 3.5} in stub_kwargs
-        assert any(kwargs == {} for kwargs in stub_kwargs)
-        attempted_clients, republished_clients = _wait_for_latest_stress_client(iface)
-        assert len(republished_clients) >= 2
+        reconnect_kwargs = stub_kwargs[baseline_connects:]
+        assert reconnect_kwargs
+        assert all(
+            kwargs == {"pair": True, "connect_timeout": 3.5}
+            for kwargs in reconnect_kwargs
+        )
+        attempted_clients, republished_clients = _wait_for_latest_stress_client(
+            iface, min_created_clients=baseline_clients + 1
+        )
+        assert len(republished_clients) >= baseline_clients + 1
         latest_successful_attempt = _latest_successful_stress_attempt(
             attempted_clients,
             republished_clients,
@@ -805,6 +831,8 @@ def test_rapid_connect_disconnect_stress_test(
     # Test 2: Concurrent connect/disconnect operations
     with create_interface_with_auto_reconnect() as (iface2, client2):
         iface2.connect(mock_device.address, pair=False, connect_timeout=7.0)
+        baseline_connects = len(_get_connect_stub_calls(iface2))
+        baseline_clients = len(_get_stress_test_clients(iface2))
         worker_errors: Queue[Exception] = Queue()
 
         def _stress_test_disconnects() -> None:
@@ -841,11 +869,18 @@ def test_rapid_connect_disconnect_stress_test(
         assert collected_worker_errors == []
         assert client2.bleak_client is not None
         assert cast(Any, client2.bleak_client).disconnect_count >= 0
+        assert len(_get_connect_stub_calls(iface2)) >= baseline_connects + 1
         stub_kwargs = _get_connect_stub_kwargs(iface2)
-        assert {"pair": False, "connect_timeout": 7.0} in stub_kwargs
-        assert any(kwargs == {} for kwargs in stub_kwargs)
-        attempted_clients, republished_clients = _wait_for_latest_stress_client(iface2)
-        assert len(republished_clients) >= 2
+        reconnect_kwargs = stub_kwargs[baseline_connects:]
+        assert reconnect_kwargs
+        assert all(
+            kwargs == {"pair": False, "connect_timeout": 7.0}
+            for kwargs in reconnect_kwargs
+        )
+        attempted_clients, republished_clients = _wait_for_latest_stress_client(
+            iface2, min_created_clients=baseline_clients + 1
+        )
+        assert len(republished_clients) >= baseline_clients + 1
         latest_successful_attempt = _latest_successful_stress_attempt(
             attempted_clients,
             republished_clients,

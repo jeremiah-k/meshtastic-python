@@ -187,10 +187,7 @@ class Tunnel:
         self.tcpBlacklist = self.TCP_BLACKLIST
         self.protocolBlacklist = self.PROTOCOL_BLACKLIST
 
-        logger.info(
-            "Starting IP to mesh tunnel. Creating a TapDevice typically needs "
-            "CAP_NET_ADMIN or root. Mesh members:"
-        )
+        logger.info("Starting IP to mesh tunnel. Mesh members:")
 
         pub.subscribe(onTunnelReceive, TUNNEL_TOPIC)
         self._subscribed = True
@@ -212,6 +209,9 @@ class Tunnel:
                     "Not creating a TapDevice() because it is disabled by noProto"
                 )
             else:
+                logger.info(
+                    "Creating TapDevice; CAP_NET_ADMIN or root is typically required."
+                )
                 self.tun = TapDevice(name="mesh")
                 self.tun.up()
                 self.tun.ifconfig(address=myAddr, netmask=netmask, mtu=200)

@@ -292,9 +292,11 @@ def test_esp32_wifi_ota_update_logs_progress_without_callback(
                     for record in caplog.records
                     if "OTA progress:" in record.message
                 ]
+                total_bytes = len(test_data)
+                half_bytes = min(OTA_CHUNK_SIZE_BYTES * 5, total_bytes)
                 assert progress_messages == [
-                    "OTA progress: 50.0% (5120/10240 bytes)",
-                    "OTA progress: 100.0% (10240/10240 bytes)",
+                    f"OTA progress: 50.0% ({half_bytes}/{total_bytes} bytes)",
+                    f"OTA progress: 100.0% ({total_bytes}/{total_bytes} bytes)",
                 ]
     finally:
         os.unlink(temp_file)

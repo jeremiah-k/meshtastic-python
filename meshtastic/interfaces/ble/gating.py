@@ -302,7 +302,19 @@ def _remove_connected_record_locked(key: str) -> None:
 
 
 def _remove_connecting_record_locked(key: str) -> None:
-    """Remove all provisional connecting-state bookkeeping for the normalized key."""
+    """Remove provisional connecting-state bookkeeping for a normalized key.
+
+    Parameters
+    ----------
+    key : str
+        Normalized address key to remove provisional connecting-state records
+        for.
+
+    Returns
+    -------
+    None
+        This helper mutates global registry state in place.
+    """
     _CONNECTING_ADDRS.discard(key)
     _CONNECTING_OWNERS.pop(key, None)
     _CONNECTING_OWNER_IDS.pop(key, None)
@@ -356,7 +368,18 @@ def _prune_stale_unowned_claim_locked(key: str) -> bool:
 
 
 def _prune_stale_connecting_claim_locked(key: str) -> bool:
-    """Prune a stale provisional connecting claim when it is unowned or too old."""
+    """Prune stale provisional connecting-state for a normalized key.
+
+    Parameters
+    ----------
+    key : str
+        Normalized address key to evaluate for stale provisional ownership.
+
+    Returns
+    -------
+    bool
+        `True` when a stale provisional record was removed, otherwise `False`.
+    """
     marked_at = _CONNECTING_MARKED_AT.get(key)
     if marked_at is None or (
         time.monotonic() - marked_at > BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS
@@ -373,7 +396,9 @@ def _prune_stale_connecting_claim_locked(key: str) -> bool:
     return False
 
 
-def _is_connecting_claim_elsewhere_locked(key: str, owner: Any | None) -> bool | None:
+def _is_connecting_claim_elsewhere_locked(
+    key: str, owner: object | None
+) -> bool | None:
     """Return whether a provisional claim currently blocks `owner` for `key`.
 
     Must be called while holding `_REGISTRY_LOCK`.
@@ -382,7 +407,7 @@ def _is_connecting_claim_elsewhere_locked(key: str, owner: Any | None) -> bool |
     ----------
     key : str
         Normalized address key to evaluate.
-    owner : Any | None
+    owner : object | None
         Optional owner object requesting the check.
 
     Returns
@@ -397,14 +422,18 @@ def _is_connecting_claim_elsewhere_locked(key: str, owner: Any | None) -> bool |
     current_owner_id = _CONNECTING_OWNER_IDS.get(key)
     if key not in _CONNECTING_ADDRS:
         return None
-    if owner is not None and (
-        current_owner is owner
-        or (current_owner_id is not None and current_owner_id == id(owner))
-    ):
-        return False
     if owner_ref is not None and current_owner is None:
         _remove_connecting_record_locked(key)
         _cleanup_addr_lock(key)
+        return False
+    if owner is not None and (
+        current_owner is owner
+        or (
+            owner_ref is None
+            and current_owner_id is not None
+            and current_owner_id == id(owner)
+        )
+    ):
         return False
     if current_owner is None:
         if _prune_stale_connecting_claim_locked(key):

@@ -60,6 +60,12 @@ def __getattr__(name: str) -> Any:
     globals()[name] = value
     return value
 
+
+def __dir__() -> list[str]:
+    """Return module attributes including lazy optional backend exports."""
+    return sorted(set(globals().keys()) | set(_OPTIONAL_POWERMON_BACKENDS.keys()))
+
+
 __all__ = [
     "PPK2PowerSupply",
     "PowerError",

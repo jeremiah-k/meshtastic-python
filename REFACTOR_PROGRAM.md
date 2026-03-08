@@ -411,10 +411,11 @@ Still intentionally pending as follow-up work:
 
 - full dependency refresh and advisory remediation workstream described above.
 
-## 17) Develop Merge Hardening Checklist (Current Cycle)
+## 17) Maintenance Merge Hardening Checklist (Current Cycle)
 
 This section tracks the post-refactor stabilization pass focused on merging
-cleanly to `develop` with race/concurrency/state behavior explicitly validated.
+cleanly to the target maintenance branch with race/concurrency/state behavior
+explicitly validated.
 
 ### 17.1 Objectives for this cycle
 
@@ -509,17 +510,17 @@ cleanly to `develop` with race/concurrency/state behavior explicitly validated.
     - Removes unrelated test-environment failures caused by missing optional
       hardware dependencies and keeps base test bring-up deterministic.
 
-### 17.3 Explicitly deferred in this cycle
+### 17.3 Completed follow-up items (post-draft)
 
-- Request-scoped wait-error correlation by packet/request-id in `MeshInterface`.
-  - Reason: this is a larger behavior-model change touching callback/waiter
-    lifecycle semantics and should be implemented as a dedicated focused change
-    with targeted design review.
+The following items were initially deferred when this section was first drafted,
+then completed in the same stabilization cycle:
 
+- Request-scoped wait-error correlation by packet/request-id in
+  `MeshInterface` (`_response_wait_errors` + `_active_wait_request_ids`
+  request-scoped handling).
 - Concrete device-key reservation before long name/discovery connect waits in
-  BLE multi-interface coordination.
-  - Reason: needs careful lock-order design and may require orchestration
-    restructuring to pre-resolve concrete targets before long-running I/O.
+  BLE multi-interface coordination (alias + resolved-key reservation before
+  long-running connect windows).
 
 ## 18) Validation Notes for This Cycle
 
@@ -531,189 +532,10 @@ Validation for this cycle should continue to include:
 - meshtasticd host parser tests for IPv6/port edge cases,
 - powermon import/lazy-backend tests in environments without optional backends.
 
-## 19) Comprehensive CodeRabbit Pass Plan (2026-03-07)
+## 19) Review Execution Tracking
 
-This section is the execution checklist for the current CodeRabbit comment set.
-Each item was re-verified against current `maint-35-2` code before triage.
+PR-local review triage and execution checklists are intentionally tracked in a
+separate artifact to keep this program document focused on durable architecture
+and policy.
 
-### 19.1 Priority A: correctness/concurrency/state safety
-
-- [x] **BLE gating weakref-id reuse hardening**
-  - Files: `meshtastic/interfaces/ble/gating.py`
-  - Implement dead-weakref pruning in `_clear_connecting()` and
-    `_mark_disconnected()` before any stored `id(owner)` fallback checks.
-  - Why: avoids stale `id()` reuse incorrectly matching a different owner.
-
-- [x] **Clear publish-pending on provisional disconnect edge**
-  - Files: `meshtastic/interfaces/ble/interface.py`
-  - Ensure `_client_publish_pending` is reset even when disconnect cleanup
-    sees `self.client is not client` (already detached client path).
-  - Why: prevent stuck `ERROR_MANAGEMENT_CONNECTING` after invalidated connects.
-
-- [x] **Request-scoped wait-error state in MeshInterface**
-  - Files: `meshtastic/mesh_interface.py`
-  - Move wait-error bookkeeping from key=`acknowledgment_attr` to a
-    request-scoped key (attribute + request-id) and ensure late responses from
-    timed-out requests cannot flip wait state for newer requests.
-  - Why: current shared-key model can cross-contaminate sequential waits.
-
-- [x] **OTA metadata drift protection**
-  - Files: `meshtastic/ota.py`
-  - Recompute size/hash immediately before streaming in `update()` (and use
-    those values in logs and OTA header) so sent bytes match announced metadata.
-  - Why: constructor-cached file metadata can drift if firmware file changes.
-
-- [x] **Powermon optional-backend import masking fix**
-  - Files: `meshtastic/powermon/__init__.py`
-  - Catch `ModuleNotFoundError` (or equivalent narrowed missing-dependency
-    cases) only when missing module matches the declared optional dependency;
-    re-raise unrelated import failures from backend modules.
-  - Why: avoid hiding real backend bugs behind "missing optional dependency."
-
-- [x] **Powermon placeholder backend constructor fix (W0231)**
-  - Files: `meshtastic/powermon/__init__.py`
-  - Replace placeholder class raise-from-`__init__` path with immediate failure
-    from `__new__` (or equivalent) so base initializer contract is not violated.
-  - Why: remove pylint W0231 and keep clear dependency errors.
-
-- [x] **Smokevirt host/port mismatch guard**
-  - Files: `bin/run-smokevirt-with-meshtasticd.sh`
-  - After normalizing `MESHTASTICD_HOST_PORT_DEC` and `MESHTASTICD_PORT_DEC`,
-    fail fast when both are set and differ.
-  - Why: prevents docker publishing one port while readiness probes use another.
-
-- [x] **BLE client address synchronization**
-  - Files: `meshtastic/interfaces/ble/client.py`
-  - Keep `BLEClient.address` synchronized with `bleak_client.address`
-    (property or explicit resync after connect/pair/unpair).
-  - Why: BlueZ can update resolved identity address after pairing.
-
-- [x] **Name/discovery connect concrete-key reservation (design follow-up)**
-  - Files: `meshtastic/interfaces/ble/interface.py`
-  - For name/implicit connects, reserve the eventual concrete address key before
-    long connect windows so per-address management/connection gates stay atomic.
-  - Why: avoid cross-interface connect/management interleaving on same device.
-
-### 19.2 Priority B: behavior hygiene and test-lane stability
-
-- [x] **Destructive smoke lane isolation**
-  - Files: `meshtastic/tests/test_smoke1.py`
-  - Remove `smoke1` marker from `_destructive_test()` and update marker
-    expectation test accordingly.
-  - Why: keep destructive tests out of generic `-m smoke1` lane.
-
-- [x] **Remove plaintext PSK contract in smoke test**
-  - Files: `meshtastic/tests/test_smoke1.py`
-  - Drop assertion requiring cleartext `network.wifi_psk` echo.
-  - Why: avoid locking plaintext credential output into test contract.
-
-- [x] **Bound smoke restore retry budget**
-  - Files: `meshtastic/tests/test_smoke1.py`
-  - Reduce restore attempts/backoff and/or enforce total restore deadline.
-  - Why: teardown currently can burn lane time on persistent failures.
-
-- [x] **MeshInterface close TypeError policy decision**
-  - Files: `meshtastic/mesh_interface.py`
-  - Decide whether non-finalization `TypeError` in `_send_disconnect()` should
-    be surfaced (programming bug visibility) or always treated as best-effort.
-  - Why: current behavior intentionally re-raises outside finalization.
-
-### 19.2.1 Validation Snapshot (2026-03-07)
-
-- `make ci-strict` executed once for this cycle and progressed through full
-  pytest/coverage before failing at pylint style rule `C0207` in:
-  - `meshtastic/tests/test_analysis.py`
-  - `meshtastic/tests/conftest.py`
-- Follow-up fixes applied (`split(".", maxsplit=1)`), then targeted verification:
-  - `PYLINTHOME=${TMPDIR:-/tmp}/pylint-cache poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2\\.pyi?$"` ✅
-  - `poetry run mypy meshtastic/ --strict` ✅
-  - `ruff check` on all touched Python files ✅
-  - Targeted pytest suites:
-    - `tests/test_ble_gating.py tests/test_ble_interface_core.py tests/test_ble_client_edge_cases.py` ✅
-    - `meshtastic/tests/test_mesh_interface.py meshtastic/tests/test_ota.py meshtastic/tests/test_powermon_power_supply.py` ✅
-    - `meshtastic/tests/test_smoke1.py -m unit` ✅
-    - `meshtastic/tests/test_examples.py -m examples` ✅
-
-### 19.3 Priority C: API/docs/test quality alignment
-
-- [ ] **Document `_read_bytes()` ValueError contract**
-  - Files: `meshtastic/tcp_interface.py`
-  - Update NumPy docstring parameter contract and `Raises` section for invalid
-    `length` (bool/non-int/<=0).
-
-- [ ] **Annotate timeout aliases**
-  - Files: `meshtastic/interfaces/ble/constants.py`
-  - Add explicit `: float` for `MANAGEMENT_AWAIT_TIMEOUT` and
-    `BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT`.
-
-- [ ] **Use `object` returns in stress helper stubs**
-  - Files: `tests/test_ble_interface_advanced.py`
-  - Change `_delegate_to_bleak()` and `connect()` return annotations from `Any`
-    to `object`.
-
-- [ ] **Resolve dead pair/unpair init guard in fixture stub**
-  - Files: `tests/test_ble_interface_fixtures.py`
-  - Either remove unreachable `bleak_client is None` guards or add explicit
-    controllable uninitialized state for tests.
-
-- [ ] **Powermon test state restoration robustness**
-  - Files: `meshtastic/tests/test_powermon_power_supply.py`
-  - Replace raw `__dict__.pop()` mutation with `monkeypatch.delitem(...)` and/or
-    explicit restore of cached exports.
-
-- [ ] **Add reconnect-settle delay in meshtasticd TCP recovery test**
-  - Files: `meshtastic/tests/test_meshtasticd_tcp_interface_ci.py`
-  - Add short post-close sleep before polling reconnect to reduce reader-thread race.
-
-- [ ] **Mark/public-use note for `EXAMPLE_CONFIG_PATH`**
-  - Files: `meshtastic/tests/test_examples.py`
-  - Add brief comment or `__all__` to make intended export usage explicit.
-
-- [ ] **Tunnel privilege log wording accuracy**
-  - Files: `meshtastic/tunnel.py`
-  - Reword startup log to indicate root/CAP_NET_ADMIN is needed only when
-    creating `TapDevice` (non-`noProto` path).
-
-- [ ] **BLE docs trust note optional-address wording**
-  - Files: `BLE.md`
-  - Update platform note to reflect `trust(address=None)` semantics while
-    preserving Linux/bluetoothctl requirement details.
-
-- [ ] **Connection finalization call-site deduplication**
-  - Files: `meshtastic/interfaces/ble/connection.py`
-  - Collapse duplicate `_finalize_connection(...)` branches by forwarding
-    `emit_connected_side_effects` directly.
-
-- [ ] **Avoid reentrant cleanup in stale-connecting prune helper**
-  - Files: `meshtastic/interfaces/ble/gating.py`
-  - Switch `_prune_stale_connecting_claim_locked()` post-remove cleanup from
-    `_cleanup_addr_lock()` to `_maybe_remove_addr_lock_entry()` under lock.
-
-- [ ] **Parser de-dup follow-up (test/runtime shared helper)**
-  - Files: `meshtastic/tests/test_meshtasticd_tcp_interface_ci.py` (+ runtime target)
-  - Extract host/port parser into a shared runtime helper to prevent drift.
-
-### 19.4 Explicitly deferred or intentionally not in this cycle
-
-- [ ] **Trunk/plugin pin alignment changes**
-  - Files: `.trunk/trunk.yaml`
-  - Deferred by current cycle policy; trunk/pin realignment handled separately.
-
-- [ ] **`_emit_response_summary` stderr-visible-handler policy**
-  - Files: `meshtastic/mesh_interface.py`
-  - Deferred pending explicit UX policy decision for stdout/stderr summary duplication.
-
-### 19.5 Verified complete from recent review comments
-
-- [x] OTA retry-budget constant extraction in CLI and tests (`OTA_MAX_RETRIES`).
-- [x] BLE trust timeout constant type annotation in interface internals.
-- [x] Replace connect-time `assert target_address is not None` with explicit runtime error.
-- [x] Bluetoothctl trust subprocess output sanitization/truncation.
-- [x] Bounded management wait before connect.
-- [x] Proto3 telemetry optional-field presence checks via `ListFields()`.
-- [x] Strict int-without-bool checks in example config tests.
-- [x] Empty firmware constructor test cleanup (removed unused socket patch).
-- [x] BLE stress reconnect attempt-order test hardening.
-- [x] Rapid disconnect stress loop now targets active client per iteration.
-- [x] meshtasticd host parser accepts valid full IPv6 literals with numeric tails.
-- [x] Smokevirt inline host-port range validation (1..65535) added.
+- Current detailed triage/checklist: `CODERABBIT_SWEEP_CHECKLIST.md`

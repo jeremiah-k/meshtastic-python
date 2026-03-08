@@ -77,12 +77,10 @@ class ESP32WiFiOTA:
         self._file_hash = file_hash
         return size, file_hash
 
-    def _assert_session_firmware_unchanged(self) -> None:
-        """Ensure OTA session metadata still matches the firmware on disk."""
-        current_size = os.path.getsize(self._filename)
-        if current_size == 0:
-            raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
-        current_hash = _file_sha256(self._filename)
+    def _assert_session_firmware_unchanged(
+        self, *, current_size: int, current_hash: _SHA256Digest
+    ) -> None:
+        """Ensure OTA session metadata still matches the file snapshot being uploaded."""
         if current_size != self._size or current_hash.digest() != self._file_hash.digest():
             raise OTAError(FIRMWARE_CHANGED_ERROR.format(filename=self._filename))
 
@@ -131,49 +129,60 @@ class ESP32WiFiOTA:
             Callback invoked with ``(bytes_sent, total_bytes)`` during transfer.
             When not provided, progress is logged at INFO in coarse increments.
         """
-        self._assert_session_firmware_unchanged()
-        size = self._size
-        file_hash = self._file_hash
-        if OTA_PROGRESS_LOG_PERCENT_STEP <= 0:
-            raise ValueError("OTA_PROGRESS_LOG_PERCENT_STEP must be > 0")
-        next_progress_log_percent = OTA_PROGRESS_LOG_PERCENT_STEP
+        with open(self._filename, "rb") as firmware:
+            size = os.fstat(firmware.fileno()).st_size
+            if size == 0:
+                raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
 
-        logger.info(
-            "Starting OTA update with %s (%d bytes, hash %s)",
-            self._filename,
-            size,
-            file_hash.hexdigest(),
-        )
+            file_hash = hashlib.sha256()
+            for block in iter(
+                lambda: firmware.read(FILE_HASH_READ_CHUNK_SIZE_BYTES), b""
+            ):
+                file_hash.update(block)
+            self._assert_session_firmware_unchanged(
+                current_size=size, current_hash=file_hash
+            )
+            firmware.seek(0)
 
-        self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._socket.settimeout(OTA_SOCKET_TIMEOUT_SECONDS)
-        try:
-            self._socket.connect((self._hostname, self._port))
-            logger.debug("Connected to %s:%d", self._hostname, self._port)
+            if OTA_PROGRESS_LOG_PERCENT_STEP <= 0:
+                raise ValueError("OTA_PROGRESS_LOG_PERCENT_STEP must be > 0")
+            next_progress_log_percent = OTA_PROGRESS_LOG_PERCENT_STEP
 
-            # Send start command
-            self._socket.sendall(
-                f"OTA {size} {file_hash.hexdigest()}\n".encode("utf-8")
+            logger.info(
+                "Starting OTA update with %s (%d bytes, hash %s)",
+                self._filename,
+                size,
+                file_hash.hexdigest(),
             )
 
-            # Wait for OK from the device
-            while True:
-                response = self._read_line()
-                if response == "OK":
-                    break
+            self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._socket.settimeout(OTA_SOCKET_TIMEOUT_SECONDS)
+            try:
+                self._socket.connect((self._hostname, self._port))
+                logger.debug("Connected to %s:%d", self._hostname, self._port)
 
-                if response == "ERASING":
-                    logger.info("Device is erasing flash...")
-                elif response.startswith("ERR "):
-                    raise OTAError(f"Device reported error: {response}")
-                else:
-                    logger.warning("Unexpected response: %s", response)
+                # Send start command
+                self._socket.sendall(
+                    f"OTA {size} {file_hash.hexdigest()}\n".encode("utf-8")
+                )
 
-            # Stream firmware
-            sent_bytes = 0
-            with open(self._filename, "rb") as f:
+                # Wait for OK from the device
                 while True:
-                    chunk = f.read(OTA_CHUNK_SIZE_BYTES)
+                    response = self._read_line()
+                    if response == "OK":
+                        break
+
+                    if response == "ERASING":
+                        logger.info("Device is erasing flash...")
+                    elif response.startswith("ERR "):
+                        raise OTAError(f"Device reported error: {response}")
+                    else:
+                        logger.warning("Unexpected response: %s", response)
+
+                # Stream firmware from the same validated snapshot handle.
+                sent_bytes = 0
+                while True:
+                    chunk = firmware.read(OTA_CHUNK_SIZE_BYTES)
                     if not chunk:
                         break
                     self._socket.sendall(chunk)
@@ -198,20 +207,20 @@ class ESP32WiFiOTA:
                                     OTA_PROGRESS_LOG_PERCENT_STEP
                                 )
 
-            # Wait for OK from device
-            logger.info("Firmware sent, waiting for verification...")
-            while True:
-                response = self._read_line()
-                if response == "OK":
-                    logger.info("OTA update completed successfully!")
-                    break
+                # Wait for OK from device
+                logger.info("Firmware sent, waiting for verification...")
+                while True:
+                    response = self._read_line()
+                    if response == "OK":
+                        logger.info("OTA update completed successfully!")
+                        break
 
-                if response.startswith("ERR "):
-                    raise OTAError(f"OTA update failed: {response}")
-                elif response != "ACK":
-                    logger.warning("Unexpected final response: %s", response)
+                    if response.startswith("ERR "):
+                        raise OTAError(f"OTA update failed: {response}")
+                    elif response != "ACK":
+                        logger.warning("Unexpected final response: %s", response)
 
-        finally:
-            if self._socket:
-                self._socket.close()
-                self._socket = None
+            finally:
+                if self._socket:
+                    self._socket.close()
+                    self._socket = None

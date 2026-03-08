@@ -83,8 +83,16 @@ fi
 
 require_regex "${MESHTASTICD_CONTAINER}" '^[A-Za-z0-9][A-Za-z0-9_.-]*$' "MESHTASTICD_CONTAINER"
 require_regex "${MESHTASTICD_IMAGE}" '^[^[:space:]]+$' "MESHTASTICD_IMAGE"
-require_regex "${MESHTASTICD_HOST}" '^(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9._-]+)(:[0-9]+)?$' "MESHTASTICD_HOST"
-if [[ ${MESHTASTICD_HOST} =~ :([0-9]+)$ ]]; then
+require_regex "${MESHTASTICD_HOST}" '^[A-Za-z0-9._:\[\]-]+$' "MESHTASTICD_HOST"
+MESHTASTICD_HOST_BARE_IPV6=false
+if [[ ${MESHTASTICD_HOST} == *:*:* && ${MESHTASTICD_HOST} != \[* ]]; then
+	if ! python3 -c 'import ipaddress, sys; ipaddress.IPv6Address(sys.argv[1])' "${MESHTASTICD_HOST}" >/dev/null 2>&1; then
+		echo "MESHTASTICD_HOST must be HOST[:PORT] or a valid IPv6 literal." >&2
+		exit 1
+	fi
+	MESHTASTICD_HOST_BARE_IPV6=true
+fi
+if [[ ${MESHTASTICD_HOST_BARE_IPV6} == false ]] && [[ ${MESHTASTICD_HOST} =~ :([0-9]+)$ ]]; then
 	MESHTASTICD_HOST_PORT_DEC=$((10#${BASH_REMATCH[1]}))
 	if ((MESHTASTICD_HOST_PORT_DEC < 1 || MESHTASTICD_HOST_PORT_DEC > 65535)); then
 		echo "MESHTASTICD_HOST port must be between 1 and 65535." >&2
@@ -97,6 +105,13 @@ MESHTASTICD_PORT_DEC=$((10#${MESHTASTICD_PORT}))
 if [[ -n ${MESHTASTICD_HOST_PORT_DEC:-} ]] && ((MESHTASTICD_HOST_PORT_DEC != MESHTASTICD_PORT_DEC)); then
 	echo "MESHTASTICD_HOST port must match MESHTASTICD_PORT, or omit the inline port." >&2
 	exit 1
+fi
+if [[ -z ${MESHTASTICD_HOST_PORT_DEC:-} ]]; then
+	if [[ ${MESHTASTICD_HOST_BARE_IPV6} == true ]]; then
+		MESHTASTICD_HOST="[${MESHTASTICD_HOST}]:${MESHTASTICD_PORT_DEC}"
+	else
+		MESHTASTICD_HOST="${MESHTASTICD_HOST}:${MESHTASTICD_PORT_DEC}"
+	fi
 fi
 if [[ -z ${READY_LOG_FILE} ]]; then
 	if [[ -n ${MESHTASTICD_LOG_DIR} ]]; then

@@ -257,6 +257,8 @@ class BLEInterface(MeshInterface):
         self.address = address
         self._last_connection_request: str | None = sanitize_address(address)
         self.auto_reconnect = auto_reconnect
+        if not isinstance(pair_on_connect, bool):
+            raise TypeError("pair_on_connect must be a bool.")
         self.pair_on_connect = pair_on_connect
         self._disconnect_notified = False  # Prevents duplicate disconnect events
         self._client_publish_pending = False  # Hide provisional clients.
@@ -264,6 +266,9 @@ class BLEInterface(MeshInterface):
             ""  # Set by _handle_disconnect on each disconnect
         )
         self._connection_alias_key: str | None = None  # Track alias for cleanup
+        self._prior_publish_was_reconnect = False
+        self._last_connect_pair_override: bool | None = None
+        self._last_connect_timeout_override: float | None = None
 
         # Error handling infrastructure
         self.error_handler = BLEErrorHandler()
@@ -2240,7 +2245,6 @@ class BLEInterface(MeshInterface):
             and address_key != connected_device_key
             else None
         )
-        self._ever_connected = True
         self._read_retry_count = 0
 
         return client, connected_device_key, connection_alias_key
@@ -2326,17 +2330,36 @@ class BLEInterface(MeshInterface):
             connection_alias_key,
         )
         publish_connected = False
+        prior_ever_connected = False
         with self._state_lock:
             still_owned, is_closing = self._get_connected_client_status_locked(
                 connected_client
             )
             if still_owned and not lost_gate_ownership:
                 self._client_publish_pending = False
+                prior_ever_connected = self._ever_connected
                 publish_connected = True
         if publish_connected:
-            self._connected()
-            self._emit_verified_connection_side_effects(connected_client)
-            return
+            still_owned, is_closing = self._get_connected_client_status(connected_client)
+            if still_owned:
+                lost_gate_ownership = self._has_lost_gate_ownership(
+                    connected_device_key,
+                    connection_alias_key,
+                )
+                if not lost_gate_ownership:
+                    publish_now = False
+                    with self._state_lock:
+                        still_owned, is_closing = (
+                            self._get_connected_client_status_locked(connected_client)
+                        )
+                        if still_owned:
+                            self._ever_connected = True
+                            self._prior_publish_was_reconnect = prior_ever_connected
+                            publish_now = True
+                    if publish_now:
+                        self._connected()
+                        self._emit_verified_connection_side_effects(connected_client)
+                        return
 
         self._raise_for_invalidated_connect_result(
             connected_client,
@@ -2350,8 +2373,10 @@ class BLEInterface(MeshInterface):
 
     def _emit_verified_connection_side_effects(self, connected_client: BLEClient) -> None:
         """Emit reconnect signaling/logging only after verified connect publish."""
-        if self._ever_connected:
-            self.thread_coordinator._set_event("reconnected_event")
+        coordinator = getattr(self, "thread_coordinator", None)
+        if self._prior_publish_was_reconnect and coordinator is not None:
+            coordinator._set_event("reconnected_event")
+        self._prior_publish_was_reconnect = False
         normalized_device_address = sanitize_address(
             self._extract_client_address(connected_client)
         )
@@ -2545,6 +2570,9 @@ class BLEInterface(MeshInterface):
             connect_timeout,
             pair_on_connect=pair_on_connect,
         )
+        with self._state_lock:
+            self._last_connect_pair_override = pair
+            self._last_connect_timeout_override = connect_timeout
 
         # Keep alias tracking for the requested identifier while optionally
         # reserving the resolved concrete address key for name/discovery

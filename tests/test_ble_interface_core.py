@@ -4936,7 +4936,7 @@ def test_reconnect_worker_successful_attempt() -> None:
             self.client = object()
             self.connect_calls: list[str] = []
 
-        def connect(self, address: str) -> None:
+        def connect(self, address: str, **_kwargs: object) -> None:
             """Record that a connection was attempted for the given device address by appending it to this instance's `connect_calls` list.
 
             Parameters

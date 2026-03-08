@@ -277,6 +277,8 @@ class TestMarkDisconnected:
         key = _addr_key("aabbccddeeff")
         assert key is not None
 
+        # Remove fixture default connected claim so this exercises provisional path.
+        _mark_disconnected("aabbccddeeff")
         owner_a = _ConnectedOwner()
         owner_b = _ConnectedOwner()
         _mark_connecting("aabbccddeeff", owner=owner_a)

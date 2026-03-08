@@ -240,6 +240,10 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
             """
             return None
 
+        async def stop_notify(self, *_args: object, **_kwargs: object) -> None:
+            """Compatibility shim for the bleak stop_notify API."""
+            return None
+
         async def read_gatt_char(self, *_args: object, **_kwargs: object) -> bytes:
             """Provide an empty value for any GATT characteristic read.
 
@@ -398,6 +402,7 @@ class DummyClient:
         disconnect_exception: Exception | None = None,
         *,
         on_unpair: Callable[[], None] | None = None,
+        initialized: bool = True,
     ) -> None:
         """Create a test-double BLE client used by unit tests.
 
@@ -409,6 +414,9 @@ class DummyClient:
             Optional hook invoked after recording an unpair() call. Tests can
             use this to simulate disconnect cleanup triggered by backend
             unpair semantics.
+        initialized : bool
+            If False, initialize without a backing bleak_client so tests can
+            exercise "not initialized" pair/unpair paths.
 
         Attributes
         ----------
@@ -452,8 +460,11 @@ class DummyClient:
         self.disconnect_exception = disconnect_exception
         self.on_unpair = on_unpair
         self.services = SimpleNamespace(get_characteristic=lambda _specifier: None)
+        self._initialized = initialized
         # The bleak_client should be a separate object to correctly test identity checks
-        self.bleak_client = SimpleNamespace(address=self.address)
+        self.bleak_client = (
+            SimpleNamespace(address=self.address) if initialized else None
+        )
 
     def has_characteristic(self, _specifier: Any) -> bool:
         """Report whether this mock client exposes a BLE characteristic matching the given specifier.
@@ -541,7 +552,7 @@ class DummyClient:
         **_kwargs: object,
     ) -> None:
         """Record a pair invocation."""
-        if self.bleak_client is None:
+        if not self._initialized or self.bleak_client is None:
             raise _get_ble_module().BLEClient.BLEError(
                 BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED
             )
@@ -556,7 +567,7 @@ class DummyClient:
         **_kwargs: object,
     ) -> None:
         """Record an unpair invocation."""
-        if self.bleak_client is None:
+        if not self._initialized or self.bleak_client is None:
             raise _get_ble_module().BLEClient.BLEError(
                 BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED
             )
@@ -717,6 +728,8 @@ def _build_interface(
         with _self._state_lock:
             _self.client = client
             _self._disconnect_notified = False
+            _self._client_publish_pending = False
+            _self._state_manager._transition_to(ble_mod.ConnectionState.CONNECTED)
             if hasattr(_self, "_reconnected_event"):
                 _self._reconnected_event.set()
         return client
