@@ -2626,7 +2626,9 @@ class BLEInterface(MeshInterface):
             _addr_key(resolved_connect_target) if resolved_connect_target else None
         )
         connect_target_identifier = (
-            resolved_connect_target if resolved_connect_target is not None else address
+            resolved_connect_target
+            if resolved_connect_target is not None
+            else requested_identifier
         )
         reservation_keys = self._sorted_address_keys(
             requested_registry_key,
@@ -3073,11 +3075,17 @@ class BLEInterface(MeshInterface):
             return
 
         write_successful = False
+        is_disconnect_msg = toRadio.WhichOneof("payload_variant") == "disconnect"
         # Grab the current client under the shared lock, but perform the blocking write outside
         with self._state_lock:
             client = self.client
+            publish_pending = self._client_publish_pending
 
-        is_disconnect_msg = toRadio.WhichOneof("payload_variant") == "disconnect"
+        if publish_pending and not is_disconnect_msg:
+            logger.debug(
+                "Skipping TORADIO write while connect publication is pending verification."
+            )
+            return
         if not client or (self._is_connection_closing and not is_disconnect_msg):
             logger.debug(
                 "Skipping TORADIO write: no BLE client or interface is closing."

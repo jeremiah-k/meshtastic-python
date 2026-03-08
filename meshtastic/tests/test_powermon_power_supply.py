@@ -248,7 +248,7 @@ def test_powermon_type_checking_import_branch(
         assert reloaded.RidenPowerSupply is cast(Any, stub_riden).RidenPowerSupply
 
     for backend_name in ("PPK2PowerSupply", "RidenPowerSupply"):
-        powermon_module.__dict__.pop(backend_name, None)
+        monkeypatch.delitem(powermon_module.__dict__, backend_name, raising=False)
     reloaded = importlib.reload(powermon_module)
     assert "PPK2PowerSupply" not in reloaded.__dict__
     assert "RidenPowerSupply" not in reloaded.__dict__

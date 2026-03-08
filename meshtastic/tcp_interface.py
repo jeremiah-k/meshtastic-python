@@ -38,6 +38,7 @@ class TCPInterface(StreamInterface):
     )
     SOCKET_NOT_CONNECTED_ERROR = "TCP socket is closed or not connected"
     SOCKET_READ_DEAD_ERROR_LOG = "Socket read error, treating as dead socket: %s"
+    READ_LENGTH_ERROR = "length must be a positive int, got {value!r}"
     WRITE_TIMEOUT_ERROR = "TCP write timed out waiting for socket readiness"
     WRITE_NO_PROGRESS_ERROR = "TCP write returned no bytes"
     CONNECT_SHUTTING_DOWN_ERROR = "Cannot connect to {}: interface is shutting down"
@@ -608,7 +609,7 @@ class TCPInterface(StreamInterface):
             non-int, or `<= 0`).
         """
         if isinstance(length, bool) or not isinstance(length, int) or length <= 0:
-            raise ValueError(f"length must be a positive int, got {length!r}")
+            raise ValueError(self.READ_LENGTH_ERROR.format(value=length))
         sock = self.socket
         if sock is not None:
             try:

@@ -7,8 +7,6 @@ from typing import cast
 
 import pytest
 
-from meshtastic.host_port import parseHostAndPort, parse_host_and_port
-
 MESHTASTICD_HOST_ENV_VAR: str = "MESHTASTICD_HOST"
 CONNECT_TIMEOUT_SECONDS: float = 5.0
 WAIT_CONNECTED_TIMEOUT_SECONDS: float = 10.0
@@ -28,6 +26,9 @@ def _require_meshtasticd_host() -> str:
 
 def _parse_host_and_port(host: str) -> tuple[str, int]:
     """Parse ``HOST[:PORT]`` into a hostname and TCP port via shared runtime helper."""
+    from meshtastic.host_port import (  # pylint: disable=import-outside-toplevel
+        parseHostAndPort,
+    )
     from meshtastic.tcp_interface import (  # pylint: disable=import-outside-toplevel
         DEFAULT_TCP_PORT,
     )
@@ -97,6 +98,11 @@ def test_parse_host_and_port_accepts_bracketed_ipv6_with_port() -> None:
 @pytest.mark.unit
 def test_parse_host_and_port_snake_case_alias_matches_canonical_name() -> None:
     """The snake_case host parser alias should delegate to the canonical camelCase name."""
+    from meshtastic.host_port import (  # pylint: disable=import-outside-toplevel
+        parseHostAndPort,
+        parse_host_and_port,
+    )
+
     assert parse_host_and_port(
         "localhost:4401",
         default_port=_default_tcp_port(),
@@ -155,6 +161,10 @@ def test_parse_host_and_port_rejects_invalid_default_port(
     default_port: int,
 ) -> None:
     """Host-only parse paths should reject invalid default ports before returning."""
+    from meshtastic.host_port import (  # pylint: disable=import-outside-toplevel
+        parseHostAndPort,
+    )
+
     with pytest.raises(
         ValueError,
         match=rf"Invalid {MESHTASTICD_HOST_ENV_VAR}=.*1\.\.65535",

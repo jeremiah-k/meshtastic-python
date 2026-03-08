@@ -273,6 +273,7 @@ iface.trust("AA:BB:CC:DD:EE:FF")
 
 Platform notes:
 
+- `pair()` and `connect(pair=True)` can trigger OS PIN/passkey prompts; do not assume headless flow.
 - `pair()` depends on backend/platform support and may be unavailable on some hosts.
 - `unpair()` depends on backend/platform support (typically Linux/Windows).
 - `trust(address=None)` is Linux-only and requires `bluetoothctl` in `PATH`.

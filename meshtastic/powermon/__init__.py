@@ -17,6 +17,9 @@ _OPTIONAL_POWERMON_BACKENDS: dict[str, tuple[str, str]] = {
 if TYPE_CHECKING:
     from .ppk2 import PPK2PowerSupply
     from .riden import RidenPowerSupply
+else:
+    for backend_name in _OPTIONAL_POWERMON_BACKENDS:
+        globals().pop(backend_name, None)
 
 
 def _missing_optional_backend_class(

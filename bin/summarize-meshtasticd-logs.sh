@@ -28,7 +28,7 @@ elif [[ ${5-} == "--no-logs" ]]; then
 		exit 1
 	fi
 elif [[ -n ${5-} ]]; then
-	echo "Invalid argument: ${5}. No arguments allowed after --no-logs." >&2
+	echo "Unexpected argument: ${5}. Expected '--no-logs' or no additional arguments." >&2
 	exit 1
 fi
 

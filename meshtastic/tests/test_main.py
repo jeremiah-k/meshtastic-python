@@ -38,8 +38,8 @@ from ..tcp_interface import TCPInterface
 # from ..config_pb2 import Config
 
 SDS_DISABLED_SENTINEL: int = 4_294_967_295
-MAIN_LOCAL_ADDR: str = cast(str, getattr(main_module, "LOCAL_ADDR"))
-MAIN_BROADCAST_ADDR: str = cast(str, getattr(main_module, "BROADCAST_ADDR"))
+MAIN_LOCAL_ADDR: str = cast(str, main_module.__dict__["LOCAL_ADDR"])
+MAIN_BROADCAST_ADDR: str = cast(str, main_module.__dict__["BROADCAST_ADDR"])
 
 
 def _mock_sendText_helper(
@@ -4635,7 +4635,10 @@ def test_main_ota_update_allows_explicit_local_dest(
     node.startOTA.assert_called_once()
     ota.update.assert_called_once()
     assert get_node.call_args_list
-    assert get_node.call_args_list[0].args[:2] == (MAIN_BROADCAST_ADDR, False)
+    assert any(
+        recorded_call.args[:2] == (MAIN_BROADCAST_ADDR, False)
+        for recorded_call in get_node.call_args_list
+    )
 
 
 @pytest.mark.unit

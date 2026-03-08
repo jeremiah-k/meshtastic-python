@@ -2,7 +2,6 @@
 
 import hashlib
 import logging
-import os
 import socket
 from typing import Callable, Protocol
 
@@ -35,8 +34,10 @@ def _file_sha256(filename: str) -> _SHA256Digest:
     """Calculate SHA256 hash of a file."""
     sha256_hash = hashlib.sha256()
 
-    with open(filename, "rb") as f:
-        for byte_block in iter(lambda: f.read(FILE_HASH_READ_CHUNK_SIZE_BYTES), b""):
+    with open(filename, "rb") as firmware:
+        for byte_block in iter(
+            lambda: firmware.read(FILE_HASH_READ_CHUNK_SIZE_BYTES), b""
+        ):
             sha256_hash.update(byte_block)
 
     return sha256_hash
@@ -67,15 +68,21 @@ class ESP32WiFiOTA:
         tuple[int, _SHA256Digest]
             The firmware size in bytes and corresponding SHA-256 digest.
         """
+        file_hash = hashlib.sha256()
+        size = 0
         try:
-            size = os.path.getsize(self._filename)
+            with open(self._filename, "rb") as firmware:
+                for block in iter(
+                    lambda: firmware.read(FILE_HASH_READ_CHUNK_SIZE_BYTES), b""
+                ):
+                    size += len(block)
+                    file_hash.update(block)
         except FileNotFoundError as exc:
             raise FileNotFoundError(
                 MISSING_FIRMWARE_ERROR.format(filename=self._filename)
             ) from exc
         if size == 0:
             raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
-        file_hash = _file_sha256(self._filename)
         self._size = size
         self._file_hash = file_hash
         return size, file_hash
@@ -147,7 +154,7 @@ class ESP32WiFiOTA:
         except FileNotFoundError as exc:
             raise OTAError(MISSING_FIRMWARE_ERROR.format(filename=self._filename)) from exc
 
-        firmware_image = bytes(image)
+        firmware_image = memoryview(image)
         size = len(firmware_image)
         if size == 0:
             raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
@@ -194,7 +201,7 @@ class ESP32WiFiOTA:
                 self._socket.sendall(chunk)
                 sent_bytes += len(chunk)
 
-                if progress_callback:
+                if progress_callback is not None:
                     progress_callback(sent_bytes, size)
                 else:
                     progress_percent = sent_bytes / size * 100

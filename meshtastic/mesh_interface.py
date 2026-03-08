@@ -14,7 +14,6 @@ import sys
 import threading
 import time
 import traceback
-import warnings
 from datetime import datetime
 from types import TracebackType
 from typing import IO, Any, Callable, Literal, TypeAlias, cast
@@ -330,9 +329,17 @@ class MeshInterface:  # pylint: disable=R0902
                         heartbeat_idle_condition.wait()
             try:
                 self._send_disconnect()
-            except (OSError, TypeError, MeshInterface.MeshInterfaceError):
+            except (OSError, MeshInterface.MeshInterfaceError):
                 logger.debug(
                     "Failed to send disconnect during close(); continuing shutdown.",
+                    exc_info=True,
+                )
+            except TypeError:
+                is_finalizing = getattr(sys, "is_finalizing", None)
+                if not (callable(is_finalizing) and is_finalizing()):
+                    raise
+                logger.debug(
+                    "Failed to send disconnect during interpreter finalization; continuing shutdown.",
                     exc_info=True,
                 )
         # debugOut is caller-owned (often shared via outer context managers);
@@ -983,9 +990,47 @@ class MeshInterface:  # pylint: disable=R0902
         publicKey: bytes | None = None,
         priority: mesh_pb2.MeshPacket.Priority.ValueType = mesh_pb2.MeshPacket.Priority.RELIABLE,
         replyId: int | None = None,
-        response_wait_attr: str | None = None,
     ) -> mesh_pb2.MeshPacket:
         """Send a payload to a mesh node.
+
+        This public API intentionally excludes request-scoped wait wiring;
+        request-scoped wait bookkeeping lives in `_send_data_with_wait()`.
+        """
+        return self._send_data_with_wait(
+            data,
+            destinationId=destinationId,
+            portNum=portNum,
+            wantAck=wantAck,
+            wantResponse=wantResponse,
+            onResponse=onResponse,
+            onResponseAckPermitted=onResponseAckPermitted,
+            channelIndex=channelIndex,
+            hopLimit=hopLimit,
+            pkiEncrypted=pkiEncrypted,
+            publicKey=publicKey,
+            priority=priority,
+            replyId=replyId,
+            response_wait_attr=None,
+        )
+
+    def _send_data_with_wait(  # pylint: disable=R0913
+        self,
+        data: Any,
+        destinationId: int | str = BROADCAST_ADDR,
+        portNum: portnums_pb2.PortNum.ValueType = portnums_pb2.PortNum.PRIVATE_APP,
+        wantAck: bool = False,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        onResponseAckPermitted: bool = False,
+        channelIndex: int = 0,
+        hopLimit: int | None = None,
+        pkiEncrypted: bool = False,
+        publicKey: bytes | None = None,
+        priority: mesh_pb2.MeshPacket.Priority.ValueType = mesh_pb2.MeshPacket.Priority.RELIABLE,
+        replyId: int | None = None,
+        response_wait_attr: str | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        """Send payload data while optionally pre-registering request-scoped wait bookkeeping.
 
         Serializes protobuf payloads when provided, validates payload size and port number,
         assigns a packet id, registers an optional response handler, and transmits the packet.
@@ -1035,7 +1080,6 @@ class MeshInterface:  # pylint: disable=R0902
             If the payload exceeds the maximum allowed size, a valid
             packet id cannot be generated, or if an invalid port number is supplied.
         """
-
         serializer = getattr(data, "SerializeToString", None)
         if callable(serializer):
             logger.debug("Serializing protobuf as data: %s", stripnl(data))
@@ -1154,7 +1198,7 @@ class MeshInterface:  # pylint: disable=R0902
             onResponse = None
             response_wait_attr = None
 
-        d = self.sendData(
+        d = self._send_data_with_wait(
             p,
             destinationId,
             portNum=portnums_pb2.PortNum.POSITION_APP,
@@ -1217,7 +1261,8 @@ class MeshInterface:  # pylint: disable=R0902
                 active_ids.add(request_id)
                 self._response_wait_errors.pop((acknowledgment_attr, request_id), None)
                 self._response_wait_acks.discard((acknowledgment_attr, request_id))
-        setattr(self._acknowledgment, acknowledgment_attr, False)
+        if request_id is None:
+            setattr(self._acknowledgment, acknowledgment_attr, False)
 
     def _set_wait_error(
         self,
@@ -1227,6 +1272,7 @@ class MeshInterface:  # pylint: disable=R0902
         request_id: int | None = None,
     ) -> None:
         """Record a wait error and wake the matching waiter."""
+        set_legacy_ack_flag = False
         with self._response_handlers_lock:
             active_request_ids_for_attr = self._active_wait_request_ids.get(
                 acknowledgment_attr
@@ -1270,12 +1316,17 @@ class MeshInterface:  # pylint: disable=R0902
                 self._response_wait_errors[
                     (acknowledgment_attr, resolved_request_id)
                 ] = message
-        setattr(self._acknowledgment, acknowledgment_attr, True)
+                set_legacy_ack_flag = True
+            if request_id is not None and not has_request_scope:
+                set_legacy_ack_flag = True
+        if set_legacy_ack_flag:
+            setattr(self._acknowledgment, acknowledgment_attr, True)
 
     def _mark_wait_acknowledged(
         self, acknowledgment_attr: str, *, request_id: int | None = None
     ) -> None:
         """Set acknowledgment flag for the matching request scope."""
+        set_legacy_ack_flag = False
         with self._response_handlers_lock:
             active_request_ids_for_attr = self._active_wait_request_ids.get(
                 acknowledgment_attr
@@ -1307,7 +1358,12 @@ class MeshInterface:  # pylint: disable=R0902
                     acknowledgment_attr,
                 )
                 return
-        setattr(self._acknowledgment, acknowledgment_attr, True)
+            else:
+                set_legacy_ack_flag = True
+            if request_id is not None and not has_request_scope:
+                set_legacy_ack_flag = True
+        if set_legacy_ack_flag:
+            setattr(self._acknowledgment, acknowledgment_attr, True)
 
     def _raise_wait_error_if_present(
         self, acknowledgment_attr: str, request_id: int | None = None
@@ -1380,7 +1436,8 @@ class MeshInterface:  # pylint: disable=R0902
                 self._response_wait_acks.discard(
                     (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID)
                 )
-        setattr(self._acknowledgment, acknowledgment_attr, False)
+        if request_id is None:
+            setattr(self._acknowledgment, acknowledgment_attr, False)
 
     def _wait_for_request_ack(
         self,
@@ -1545,7 +1602,7 @@ class MeshInterface:  # pylint: disable=R0902
             If waiting for traceroute responses times out or the operation fails.
         """
         r = mesh_pb2.RouteDiscovery()
-        packet = self.sendData(
+        packet = self._send_data_with_wait(
             r,
             destinationId=dest,
             portNum=portnums_pb2.PortNum.TRACEROUTE_APP,
@@ -1721,12 +1778,11 @@ class MeshInterface:  # pylint: disable=R0902
         telemetry_type = telemetryType
         if telemetry_type not in VALID_TELEMETRY_TYPE_SET:
             # Backwards compatibility: unknown types fall back to device_metrics with deprecation warning
-            warnings.warn(
+            logger.warning(
                 f"Unsupported telemetryType '{telemetry_type}' is deprecated. "
                 f"Supported values: {sorted(VALID_TELEMETRY_TYPES)}. "
                 f"Falling back to '{DEFAULT_TELEMETRY_TYPE}'. "
                 "This will raise an error in a future version.",
-                DeprecationWarning,
                 stacklevel=2,
             )
             telemetry_type = DEFAULT_TELEMETRY_TYPE
@@ -1773,7 +1829,7 @@ class MeshInterface:  # pylint: disable=R0902
             onResponse = None
             response_wait_attr = None
 
-        packet = self.sendData(
+        packet = self._send_data_with_wait(
             r,
             destinationId=destinationId,
             portNum=portnums_pb2.PortNum.TELEMETRY_APP,
@@ -2007,7 +2063,7 @@ class MeshInterface:  # pylint: disable=R0902
             onResponse = None
             response_wait_attr = None
 
-        d = self.sendData(
+        d = self._send_data_with_wait(
             w,
             destinationId,
             portNum=portnums_pb2.PortNum.WAYPOINT_APP,
@@ -2068,7 +2124,7 @@ class MeshInterface:  # pylint: disable=R0902
             onResponse = None
             response_wait_attr = None
 
-        d = self.sendData(
+        d = self._send_data_with_wait(
             p,
             destinationId,
             portNum=portnums_pb2.PortNum.WAYPOINT_APP,

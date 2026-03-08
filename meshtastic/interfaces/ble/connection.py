@@ -21,7 +21,6 @@ from meshtastic.interfaces.ble.constants import (
     CONNECTION_ERROR_EMPTY_ADDRESS,
     CONNECTION_ERROR_INVALIDATED_BY_CONCURRENT_DISCONNECT,
     CONNECTION_ERROR_STATE_TRANSITION_INVALIDATED,
-    DIRECT_CONNECT_TIMEOUT_SECONDS,
     DISCONNECT_TIMEOUT_SECONDS,
     ERROR_INVALID_CONNECT_TIMEOUT,
     BLEConfig,
@@ -375,7 +374,10 @@ class ConnectionOrchestrator:
         """
         if pair_on_connect:
             return BLEConfig.CONNECTION_TIMEOUT
-        return min(DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT)
+        return min(
+            BLEConfig.DIRECT_CONNECT_TIMEOUT_SECONDS,
+            BLEConfig.CONNECTION_TIMEOUT,
+        )
 
     @classmethod
     def _resolve_connect_timeout(

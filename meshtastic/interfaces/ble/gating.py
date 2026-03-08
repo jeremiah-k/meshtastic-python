@@ -439,6 +439,9 @@ def _is_connecting_claim_elsewhere_locked(
         if _prune_stale_connecting_claim_locked(key):
             return False
         return True
+    if _prune_stale_connecting_claim_locked(key):
+        _cleanup_addr_lock(key)
+        return False
     return True
 
 
@@ -540,6 +543,8 @@ def _mark_disconnected(addr: str | None, owner: Any | None = None) -> None:
         if owner is not None and has_connected_claim:
             owner_ref = _CONNECTED_OWNERS.get(key)
             current_owner = owner_ref() if owner_ref is not None else None
+            if owner_ref is not None and current_owner is None:
+                _CONNECTED_OWNERS.pop(key, None)
             if current_owner is not None and current_owner is not owner:
                 logger.debug(
                     "Ignoring disconnect mark for %s from non-owner instance.",

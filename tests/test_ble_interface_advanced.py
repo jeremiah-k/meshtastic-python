@@ -46,7 +46,8 @@ def _get_connect_stub_calls(iface: BLEInterface) -> list[str | None]:
     list[str | None]
         Recorded addresses for each connect call; `None` represents a connect attempt without an address. Returns an empty list if the attribute is not present.
     """
-    return cast(list[str | None], getattr(iface, "_connect_stub_calls", []))
+    connect_calls, _ = _snapshot_connect_stub_state(iface)
+    return connect_calls
 
 
 def _get_connect_stub_kwargs(iface: BLEInterface) -> list[dict[str, object]]:
@@ -62,7 +63,24 @@ def _get_connect_stub_kwargs(iface: BLEInterface) -> list[dict[str, object]]:
     list[dict[str, object]]
         Recorded keyword-argument dictionaries for each connect call. Returns an empty list if the attribute is not present.
     """
-    return cast(list[dict[str, object]], getattr(iface, "_connect_stub_kwargs", []))
+    _, connect_kwargs = _snapshot_connect_stub_state(iface)
+    return connect_kwargs
+
+
+def _snapshot_connect_stub_state(
+    iface: BLEInterface,
+) -> tuple[list[str | None], list[dict[str, object]]]:
+    """Return a lock-consistent snapshot of recorded connect addresses and kwargs."""
+    with iface._state_lock:
+        return (
+            list(cast(list[str | None], getattr(iface, "_connect_stub_calls", []))),
+            list(
+                cast(
+                    list[dict[str, object]],
+                    getattr(iface, "_connect_stub_kwargs", []),
+                )
+            ),
+        )
 
 
 def _get_stress_test_clients(iface: BLEInterface) -> list[Any]:
@@ -728,16 +746,18 @@ def test_rapid_connect_disconnect_stress_test(
                 bool,
                 getattr(self, "_stress_test_should_fail_connect", False),
             )
-            connect_calls.append(address)
-            connect_kwargs.append(dict(kwargs))
             with self._state_lock:
+                connect_calls.append(address)
+                connect_kwargs.append(dict(kwargs))
                 attempted_clients.append(new_client)
             new_client.connect()
             with self._state_lock:
                 cast(Any, self).client = new_client
                 created_clients.append(new_client)
                 self._client_publish_pending = False
-                self._state_manager._transition_to(ble_mod.ConnectionState.CONNECTED)
+                self._state_manager._transition_to(
+                    cast(Any, ble_mod).ConnectionState.CONNECTED
+                )
                 if "pair" in kwargs:
                     self._last_connect_pair_override = cast(
                         bool | None, kwargs.get("pair")
@@ -822,21 +842,16 @@ def test_rapid_connect_disconnect_stress_test(
                     for baseline_client in baseline_clients
                 )
             ):
-                return (
-                    cast(list["StressTestClient"], observed_attempts),
-                    cast(list["StressTestClient"], observed_clients),
-                )
+                return observed_attempts, observed_clients
             time.sleep(0.01)
         _, final_attempts, final_clients = _snapshot_stress_state()
-        return (
-            cast(list["StressTestClient"], final_attempts),
-            cast(list["StressTestClient"], final_clients),
-        )
+        return final_attempts, final_clients
 
     # Test 1: Rapid disconnect callbacks
     with create_interface_with_auto_reconnect() as (iface, client):
         iface.connect(mock_device.address, pair=True, connect_timeout=3.5)
-        baseline_connects = len(_get_connect_stub_calls(iface))
+        baseline_connect_snapshot, _ = _snapshot_connect_stub_state(iface)
+        baseline_connects = len(baseline_connect_snapshot)
         baseline_attempts = list(
             cast(list["StressTestClient"], _get_stress_test_attempts(iface))
         )
@@ -870,10 +885,10 @@ def test_rapid_connect_disconnect_stress_test(
         # Verify that the interface handled rapid disconnects gracefully
         assert client.bleak_client is not None
         # Test reaching this point without crashing indicates success
+        connect_call_snapshot, stub_kwargs = _snapshot_connect_stub_state(iface)
         assert (
-            len(_get_connect_stub_calls(iface)) >= baseline_connects + 1
+            len(connect_call_snapshot) >= baseline_connects + 1
         ), "Auto-reconnect should continue scheduling during rapid disconnects"
-        stub_kwargs = _get_connect_stub_kwargs(iface)
         reconnect_kwargs = stub_kwargs[baseline_connects:]
         assert reconnect_kwargs
         assert all(
@@ -896,7 +911,8 @@ def test_rapid_connect_disconnect_stress_test(
     # Test 2: Concurrent connect/disconnect operations
     with create_interface_with_auto_reconnect() as (iface2, client2):
         iface2.connect(mock_device.address, pair=False, connect_timeout=7.0)
-        baseline_connects = len(_get_connect_stub_calls(iface2))
+        baseline_connect_snapshot, _ = _snapshot_connect_stub_state(iface2)
+        baseline_connects = len(baseline_connect_snapshot)
         baseline_attempts = list(
             cast(list["StressTestClient"], _get_stress_test_attempts(iface2))
         )
@@ -942,8 +958,8 @@ def test_rapid_connect_disconnect_stress_test(
         assert collected_worker_errors == []
         assert client2.bleak_client is not None
         assert cast(Any, client2.bleak_client).disconnect_count >= 0
-        assert len(_get_connect_stub_calls(iface2)) >= baseline_connects + 1
-        stub_kwargs = _get_connect_stub_kwargs(iface2)
+        connect_call_snapshot, stub_kwargs = _snapshot_connect_stub_state(iface2)
+        assert len(connect_call_snapshot) >= baseline_connects + 1
         reconnect_kwargs = stub_kwargs[baseline_connects:]
         assert reconnect_kwargs
         assert all(
@@ -967,7 +983,7 @@ def test_rapid_connect_disconnect_stress_test(
     with create_interface_with_auto_reconnect() as (iface3, _client3):
         cast(Any, iface3)._stress_test_should_fail_connect = True
         failure_errors: list[Exception] = []
-        baseline_connect_calls = len(_get_connect_stub_calls(iface3))
+        baseline_connect_count = len(_get_connect_stub_calls(iface3))
 
         for _ in range(5):
             try:
@@ -984,7 +1000,7 @@ def test_rapid_connect_disconnect_stress_test(
 
         assert failure_errors == []
         assert (
-            len(_get_connect_stub_calls(iface3)) >= baseline_connect_calls + 1
+            len(_get_connect_stub_calls(iface3)) >= baseline_connect_count + 1
         ), "Failure path should still schedule reconnect attempts"
 
     # Verify no critical errors in logs

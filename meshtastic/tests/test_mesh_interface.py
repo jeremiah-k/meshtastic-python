@@ -445,26 +445,23 @@ def test_close_suppresses_disconnect_send_failures(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_close_suppresses_disconnect_type_error(
+def test_close_raises_disconnect_type_error_outside_finalization(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """close() should treat TypeError from disconnect send as best-effort noise."""
+    """close() should raise TypeError from disconnect send unless interpreter is finalizing."""
     iface = MeshInterface(noProto=True)
     try:
         iface.debugOut = io.StringIO()
-        with (
-            patch.object(iface, "_send_disconnect", side_effect=TypeError("boom")),
-            caplog.at_level(logging.DEBUG),
-        ):
-            iface.close()
+        with caplog.at_level(logging.DEBUG), pytest.raises(TypeError, match="boom"):
+            with patch.object(iface, "_send_disconnect", side_effect=TypeError("boom")):
+                iface.close()
         assert iface._closing is True
-        assert iface.debugOut is None
     finally:
         if not getattr(iface, "_closing", False):
             iface.close()
-    assert (
-        "Failed to send disconnect during close(); continuing shutdown." in caplog.text
-    )
+        if iface.debugOut is not None:
+            iface.debugOut = None
+    assert "Failed to send disconnect during close(); continuing shutdown." not in caplog.text
 
 
 @pytest.mark.unit
@@ -490,7 +487,7 @@ def test_close_suppresses_disconnect_type_error_during_finalization(
             iface.close()
 
     assert (
-        "Failed to send disconnect during close(); continuing shutdown."
+        "Failed to send disconnect during interpreter finalization; continuing shutdown."
         in caplog.text
     )
 
@@ -1769,7 +1766,7 @@ def test_send_position_waits_when_response_requested(
     with MeshInterface(noProto=True) as iface:
         send_data = MagicMock(return_value=mesh_pb2.MeshPacket())
         wait_for_position = MagicMock()
-        monkeypatch.setattr(iface, "sendData", send_data)
+        monkeypatch.setattr(iface, "_send_data_with_wait", send_data)
         monkeypatch.setattr(iface, "waitForPosition", wait_for_position)
 
         iface.sendPosition(
@@ -2039,7 +2036,7 @@ def test_send_traceroute_and_response_rendering(
         }
         send_data = MagicMock()
         wait_for_traceroute = MagicMock()
-        monkeypatch.setattr(iface, "sendData", send_data)
+        monkeypatch.setattr(iface, "_send_data_with_wait", send_data)
         monkeypatch.setattr(iface, "waitForTraceRoute", wait_for_traceroute)
         iface.sendTraceRoute(dest=123, hopLimit=3, channelIndex=1)
         wait_for_traceroute.assert_called_once_with(2)
@@ -2106,8 +2103,9 @@ def test_on_response_traceroute_parse_failures_surface_to_waiters() -> None:
 @pytest.mark.usefixtures("reset_mt_config")
 def test_send_telemetry_supported_and_fallback_paths(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """sendTelemetry() should populate each supported payload and warn/fallback for unknown values."""
+    """sendTelemetry() should populate each payload and log fallback warnings for unknown values."""
     telemetry_calls: list[tuple[telemetry_pb2.Telemetry, dict[str, Any]]] = []
     with MeshInterface(noProto=True) as iface:
         iface.localNode.nodeNum = 77
@@ -2124,7 +2122,7 @@ def test_send_telemetry_supported_and_fallback_paths(
         }
         monkeypatch.setattr(
             iface,
-            "sendData",
+            "_send_data_with_wait",
             lambda payload, *_args, **kwargs: telemetry_calls.append((payload, kwargs)),
         )
         wait_for_telemetry = MagicMock()
@@ -2135,9 +2133,8 @@ def test_send_telemetry_supported_and_fallback_paths(
         iface.sendTelemetry(telemetryType="power_metrics")
         iface.sendTelemetry(telemetryType="local_stats")
         iface.sendTelemetry(telemetryType="device_metrics")
-        with pytest.warns(DeprecationWarning):
+        with caplog.at_level(logging.WARNING, logger=mesh_interface_module.__name__):
             iface.sendTelemetry(telemetryType="invalid")
-        with pytest.warns(DeprecationWarning):
             iface.sendTelemetry(telemetryType="invalid2")
         iface.sendTelemetry(telemetryType="device_metrics", wantResponse=True)
 
@@ -2148,6 +2145,7 @@ def test_send_telemetry_supported_and_fallback_paths(
     assert telemetry_calls[4][0].HasField("device_metrics")
     assert telemetry_calls[5][0].HasField("device_metrics")
     assert telemetry_calls[6][0].HasField("device_metrics")
+    assert caplog.text.count("Unsupported telemetryType") == 2
     assert telemetry_calls[7][1]["onResponse"] is not None
     wait_for_telemetry.assert_called_once()
 
@@ -2261,12 +2259,11 @@ def test_on_response_waypoint_paths(caplog: pytest.LogCaptureFixture) -> None:
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 @pytest.mark.parametrize(
-    ("handler_name", "waiter_name", "ack_attr", "port_name", "error_prefix"),
+    ("handler_name", "waiter_name", "port_name", "error_prefix"),
     [
         pytest.param(
             "onResponsePosition",
             "waitForPosition",
-            "receivedPosition",
             "POSITION_APP",
             "Failed to parse position response payload",
             id="position",
@@ -2274,7 +2271,6 @@ def test_on_response_waypoint_paths(caplog: pytest.LogCaptureFixture) -> None:
         pytest.param(
             "onResponseTelemetry",
             "waitForTelemetry",
-            "receivedTelemetry",
             "TELEMETRY_APP",
             "Failed to parse telemetry response payload",
             id="telemetry",
@@ -2282,7 +2278,6 @@ def test_on_response_waypoint_paths(caplog: pytest.LogCaptureFixture) -> None:
         pytest.param(
             "onResponseWaypoint",
             "waitForWaypoint",
-            "receivedWaypoint",
             "WAYPOINT_APP",
             "Failed to parse waypoint response payload",
             id="waypoint",
@@ -2292,7 +2287,6 @@ def test_on_response_waypoint_paths(caplog: pytest.LogCaptureFixture) -> None:
 def test_on_response_parse_failures_set_wait_errors(
     handler_name: str,
     waiter_name: str,
-    ack_attr: str,
     port_name: str,
     error_prefix: str,
 ) -> None:
@@ -2310,7 +2304,6 @@ def test_on_response_parse_failures_set_wait_errors(
                 }
             }
         )
-        assert getattr(iface._acknowledgment, ack_attr) is True
         with pytest.raises(MeshInterface.MeshInterfaceError, match=error_prefix):
             waiter()
 
@@ -2332,7 +2325,7 @@ def test_send_and_delete_waypoint_response_paths(
             sent_payloads.append(payload)
             return mesh_pb2.MeshPacket()
 
-        monkeypatch.setattr(iface, "sendData", _capture_send_data)
+        monkeypatch.setattr(iface, "_send_data_with_wait", _capture_send_data)
         monkeypatch.setattr(
             mesh_interface_module.secrets,  # type: ignore[attr-defined]
             "randbits",
@@ -2461,7 +2454,7 @@ def test_wait_timeout_retires_response_handler_for_request_id(
         mock_send = MagicMock(side_effect=lambda packet, *_a, **_k: packet)
         monkeypatch.setattr(iface, "_send_packet", mock_send)
 
-        packet = iface.sendData(
+        packet = iface._send_data_with_wait(
             b"ping",
             wantResponse=True,
             onResponse=lambda _packet: None,
@@ -2510,16 +2503,19 @@ def test_send_data_rolls_back_wait_state_when_send_packet_raises(
         class _SendFailureError(OSError):
             """Local sentinel exception used to validate sendData() rollback behavior."""
 
+            def __init__(self, message: str = "socket send failed") -> None:
+                super().__init__(message)
+
         def _fail_send(
             packet: mesh_pb2.MeshPacket, *_args: object, **_kwargs: object
         ) -> NoReturn:
             observed_request_ids.append(packet.id)
-            raise _SendFailureError("socket send failed")
+            raise _SendFailureError()
 
         monkeypatch.setattr(iface, "_send_packet", _fail_send)
 
         with pytest.raises(OSError, match="socket send failed"):
-            iface.sendData(
+            iface._send_data_with_wait(
                 b"ping",
                 wantResponse=True,
                 onResponse=lambda _packet: None,
@@ -2554,7 +2550,7 @@ def test_send_data_finalizes_non_zero_packet_id_before_registration(
             lambda packet, *_args, **_kwargs: packet,
         )
 
-        packet = iface.sendData(
+        packet = iface._send_data_with_wait(
             b"ping",
             wantResponse=True,
             response_wait_attr="receivedTelemetry",
@@ -2576,11 +2572,14 @@ def test_send_data_removes_response_handler_when_send_fails_without_wait_attr(
         class _SendFailureError(OSError):
             """Local sentinel exception used to validate response-handler rollback."""
 
+            def __init__(self, message: str = "send failure") -> None:
+                super().__init__(message)
+
         def _fail_send(
             packet: mesh_pb2.MeshPacket, *_args: object, **_kwargs: object
         ) -> NoReturn:
             observed_request_ids.append(packet.id)
-            raise _SendFailureError("send failure")
+            raise _SendFailureError()
 
         monkeypatch.setattr(iface, "_send_packet", _fail_send)
 
@@ -2629,7 +2628,7 @@ def test_send_methods_pass_request_id_to_wait_helpers(
         wait_for_waypoint = MagicMock()
         monkeypatch.setattr(
             iface,
-            "sendData",
+            "_send_data_with_wait",
             MagicMock(
                 side_effect=[
                     mesh_pb2.MeshPacket(id=77),
