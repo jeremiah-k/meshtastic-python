@@ -17,7 +17,7 @@ import pytest
 import yaml
 
 import meshtastic.__main__ as main_module
-from meshtastic import BROADCAST_ADDR, LOCAL_ADDR, mt_config
+from meshtastic import mt_config
 from meshtastic.__main__ import (_create_power_meter, _normalize_pref_name,
                                  _parse_host_port, _prefix_base64_key,
                                  _set_missing_flags_false, export_config,
@@ -38,6 +38,8 @@ from ..tcp_interface import TCPInterface
 # from ..config_pb2 import Config
 
 SDS_DISABLED_SENTINEL: int = 4_294_967_295
+MAIN_LOCAL_ADDR: str = cast(str, getattr(main_module, "LOCAL_ADDR"))
+MAIN_BROADCAST_ADDR: str = cast(str, getattr(main_module, "BROADCAST_ADDR"))
 
 
 def _mock_sendText_helper(
@@ -4574,7 +4576,7 @@ def test_main_ota_update_rejects_remote_dest(
 
     _, err = capsys.readouterr()
     assert (
-        "OTA update only supports the directly connected local node; omit --dest."
+        "OTA update only supports the directly connected local node; omit --dest or use --dest ^local."
         in err
     )
     assert excinfo.value.code == 1
@@ -4592,7 +4594,7 @@ def test_main_ota_update_allows_explicit_local_dest(
         "--host",
         "localhost",
         "--dest",
-        LOCAL_ADDR,
+        MAIN_LOCAL_ADDR,
         "--ota-update",
         "firmware.bin",
     ]
@@ -4632,8 +4634,8 @@ def test_main_ota_update_allows_explicit_local_dest(
     assert err == ""
     node.startOTA.assert_called_once()
     ota.update.assert_called_once()
-    assert get_node.call_args is not None
-    assert get_node.call_args.args[:2] == (BROADCAST_ADDR, False)
+    assert get_node.call_args_list
+    assert get_node.call_args_list[0].args[:2] == (MAIN_BROADCAST_ADDR, False)
 
 
 @pytest.mark.unit

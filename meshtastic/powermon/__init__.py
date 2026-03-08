@@ -17,9 +17,6 @@ _OPTIONAL_POWERMON_BACKENDS: dict[str, tuple[str, str]] = {
 if TYPE_CHECKING:
     from .ppk2 import PPK2PowerSupply
     from .riden import RidenPowerSupply
-else:
-    globals().pop("PPK2PowerSupply", None)
-    globals().pop("RidenPowerSupply", None)
 
 
 def _missing_optional_backend_class(
@@ -30,7 +27,9 @@ def _missing_optional_backend_class(
     """Return a placeholder backend class that raises a clear dependency error."""
 
     class _MissingOptionalBackend(PowerSupply):
-        def __new__(cls, *args: object, **kwargs: object) -> "_MissingOptionalBackend":
+        def __new__(  # pylint: disable=undefined-variable
+            cls, *args: object, **kwargs: object
+        ) -> _MissingOptionalBackend:
             _ = (cls, args, kwargs)
             raise ImportError(
                 f"{backend_name} requires optional dependency {dependency_name!r}. "

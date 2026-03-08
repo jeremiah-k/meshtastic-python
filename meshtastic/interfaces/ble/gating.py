@@ -653,22 +653,23 @@ def _is_currently_connected_elsewhere(
         current_owner = owner_ref() if owner_ref is not None else None
         current_owner_id = _CONNECTED_OWNER_IDS.get(key)
 
-        # Same owner is not "connected elsewhere".
-        # CPython can reuse id() values after GC; stale _CONNECTED_OWNER_IDS matches
-        # are mitigated by immediate weakref-dead pruning via
-        # _remove_connected_record_locked/_cleanup_addr_lock, connection-state
-        # validation via _owner_connected_state, and timed stale-claim cleanup
-        # using _CONNECTED_MARKED_AT + BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS.
-        if owner is not None and (
-            current_owner is owner
-            or (current_owner_id is not None and current_owner_id == id(owner))
-        ):
-            return False
-
         # Prune stale claims when owner object was garbage collected.
         if owner_ref is not None and current_owner is None:
             _remove_connected_record_locked(key)
             _cleanup_addr_lock(key)
+            return False
+
+        # Same owner is not "connected elsewhere".
+        # Only use id() fallback when no weakref owner entry exists, so dead
+        # weakrefs are pruned before CPython id() reuse can match stale ids.
+        if owner is not None and (
+            current_owner is owner
+            or (
+                owner_ref is None
+                and current_owner_id is not None
+                and current_owner_id == id(owner)
+            )
+        ):
             return False
 
         if current_owner is not None:
@@ -696,15 +697,19 @@ def _is_currently_connected_elsewhere(
         current_owner = owner_ref() if owner_ref is not None else None
         current_owner_id = _CONNECTED_OWNER_IDS.get(key)
 
-        if owner is not None and (
-            current_owner is owner
-            or (current_owner_id is not None and current_owner_id == id(owner))
-        ):
-            return False
-
         if owner_ref is not None and current_owner is None:
             _remove_connected_record_locked(key)
             _cleanup_addr_lock(key)
+            return False
+
+        if owner is not None and (
+            current_owner is owner
+            or (
+                owner_ref is None
+                and current_owner_id is not None
+                and current_owner_id == id(owner)
+            )
+        ):
             return False
 
         # Only apply the sampled owner state if the claim still belongs to the

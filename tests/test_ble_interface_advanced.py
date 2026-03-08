@@ -736,6 +736,8 @@ def test_rapid_connect_disconnect_stress_test(
             with self._state_lock:
                 cast(Any, self).client = new_client
                 created_clients.append(new_client)
+                self._client_publish_pending = False
+                self._state_manager._transition_to(ble_mod.ConnectionState.CONNECTED)
                 if "pair" in kwargs:
                     self._last_connect_pair_override = cast(
                         bool | None, kwargs.get("pair")
@@ -781,7 +783,8 @@ def test_rapid_connect_disconnect_stress_test(
     def _wait_for_latest_stress_client(
         iface: BLEInterface,
         *,
-        min_created_clients: int,
+        baseline_attempts: Sequence["StressTestClient"],
+        baseline_clients: Sequence["StressTestClient"],
         timeout: float = 2.0,
     ) -> tuple[list["StressTestClient"], list["StressTestClient"]]:
         """Wait until latest successful reconnect attempt owns iface.client."""
@@ -808,9 +811,16 @@ def test_rapid_connect_disconnect_stress_test(
                 observed_attempts, observed_clients
             )
             if (
-                len(observed_clients) >= min_created_clients
-                and latest_successful_attempt is not None
+                latest_successful_attempt is not None
                 and observed_client is latest_successful_attempt
+                and all(
+                    latest_successful_attempt is not baseline_attempt
+                    for baseline_attempt in baseline_attempts
+                )
+                and all(
+                    latest_successful_attempt is not baseline_client
+                    for baseline_client in baseline_clients
+                )
             ):
                 return (
                     cast(list["StressTestClient"], observed_attempts),
@@ -827,7 +837,13 @@ def test_rapid_connect_disconnect_stress_test(
     with create_interface_with_auto_reconnect() as (iface, client):
         iface.connect(mock_device.address, pair=True, connect_timeout=3.5)
         baseline_connects = len(_get_connect_stub_calls(iface))
+        baseline_attempts = list(
+            cast(list["StressTestClient"], _get_stress_test_attempts(iface))
+        )
         baseline_clients = len(_get_stress_test_clients(iface))
+        baseline_client_objects = list(
+            cast(list["StressTestClient"], _get_stress_test_clients(iface))
+        )
 
         def simulate_rapid_disconnects() -> None:
             """Simulate a burst of rapid BLE disconnect events against the test interface.
@@ -839,7 +855,9 @@ def test_rapid_connect_disconnect_stress_test(
                 if current_client is None or current_client.bleak_client is None:
                     time.sleep(0.01)
                     continue
-                iface._on_ble_disconnect(cast(Any, current_client.bleak_client))
+                bleak_client = cast(Any, current_client.bleak_client)
+                bleak_client.is_connected_result = False
+                iface._on_ble_disconnect(bleak_client)
                 time.sleep(0.01)  # Very short delay between disconnects
 
         # Start rapid disconnect simulation in a separate thread
@@ -863,7 +881,9 @@ def test_rapid_connect_disconnect_stress_test(
             for kwargs in reconnect_kwargs
         )
         attempted_clients, republished_clients = _wait_for_latest_stress_client(
-            iface, min_created_clients=baseline_clients + 1
+            iface,
+            baseline_attempts=baseline_attempts,
+            baseline_clients=baseline_client_objects,
         )
         assert len(republished_clients) >= baseline_clients + 1
         latest_successful_attempt = _latest_successful_stress_attempt(
@@ -877,7 +897,13 @@ def test_rapid_connect_disconnect_stress_test(
     with create_interface_with_auto_reconnect() as (iface2, client2):
         iface2.connect(mock_device.address, pair=False, connect_timeout=7.0)
         baseline_connects = len(_get_connect_stub_calls(iface2))
+        baseline_attempts = list(
+            cast(list["StressTestClient"], _get_stress_test_attempts(iface2))
+        )
         baseline_clients = len(_get_stress_test_clients(iface2))
+        baseline_client_objects = list(
+            cast(list["StressTestClient"], _get_stress_test_clients(iface2))
+        )
         worker_errors: Queue[Exception] = Queue()
 
         def _stress_test_disconnects() -> None:
@@ -892,7 +918,9 @@ def test_rapid_connect_disconnect_stress_test(
                     if current_client is None or current_client.bleak_client is None:
                         time.sleep(0.005)
                         continue
-                    iface2._on_ble_disconnect(cast(Any, current_client.bleak_client))
+                    bleak_client = cast(Any, current_client.bleak_client)
+                    bleak_client.is_connected_result = False
+                    iface2._on_ble_disconnect(bleak_client)
                     time.sleep(0.005)
                 except Exception as exc:  # noqa: BLE001 - test collects worker failures
                     worker_errors.put(exc)
@@ -923,7 +951,9 @@ def test_rapid_connect_disconnect_stress_test(
             for kwargs in reconnect_kwargs
         )
         attempted_clients, republished_clients = _wait_for_latest_stress_client(
-            iface2, min_created_clients=baseline_clients + 1
+            iface2,
+            baseline_attempts=baseline_attempts,
+            baseline_clients=baseline_client_objects,
         )
         assert len(republished_clients) >= baseline_clients + 1
         latest_successful_attempt = _latest_successful_stress_attempt(
@@ -945,7 +975,9 @@ def test_rapid_connect_disconnect_stress_test(
                 if current_client is None or current_client.bleak_client is None:
                     time.sleep(0.01)
                     continue
-                iface3._on_ble_disconnect(cast(Any, current_client.bleak_client))
+                bleak_client = cast(Any, current_client.bleak_client)
+                bleak_client.is_connected_result = False
+                iface3._on_ble_disconnect(bleak_client)
                 time.sleep(0.01)
             except Exception as exc:  # noqa: BLE001 - test records failure-path behavior
                 failure_errors.append(exc)

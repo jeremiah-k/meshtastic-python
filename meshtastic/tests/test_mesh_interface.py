@@ -445,17 +445,26 @@ def test_close_suppresses_disconnect_send_failures(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_close_propagates_disconnect_type_error() -> None:
-    """close() should re-raise unexpected TypeError outside interpreter finalization."""
+def test_close_suppresses_disconnect_type_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """close() should treat TypeError from disconnect send as best-effort noise."""
     iface = MeshInterface(noProto=True)
     try:
         iface.debugOut = io.StringIO()
-        with patch.object(iface, "_send_disconnect", side_effect=TypeError("boom")):
-            with pytest.raises(TypeError, match="boom"):
-                iface.close()
+        with (
+            patch.object(iface, "_send_disconnect", side_effect=TypeError("boom")),
+            caplog.at_level(logging.DEBUG),
+        ):
+            iface.close()
+        assert iface._closing is True
+        assert iface.debugOut is None
     finally:
         if not getattr(iface, "_closing", False):
             iface.close()
+    assert (
+        "Failed to send disconnect during close(); continuing shutdown." in caplog.text
+    )
 
 
 @pytest.mark.unit
@@ -464,7 +473,7 @@ def test_close_suppresses_disconnect_type_error_during_finalization(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """close() should suppress TypeError during interpreter finalization cleanup."""
+    """close() should still suppress TypeError during interpreter finalization cleanup."""
     iface = MeshInterface(noProto=True)
     try:
         iface.debugOut = io.StringIO()
@@ -481,7 +490,7 @@ def test_close_suppresses_disconnect_type_error_during_finalization(
             iface.close()
 
     assert (
-        "Failed to send disconnect during interpreter finalization; continuing shutdown."
+        "Failed to send disconnect during close(); continuing shutdown."
         in caplog.text
     )
 
@@ -1886,10 +1895,10 @@ def test_on_response_position_prints_when_info_logging_not_visible(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_logger_visible_info_handler_counts_console_stdout_and_stderr_handlers() -> (
+def test_logger_visible_info_handler_prefers_stdout_visibility_for_print_fallback() -> (
     None
 ):
-    """Console handlers backed by stdout or stderr should suppress the print fallback."""
+    """Only stdout-backed handlers should suppress the legacy stdout print fallback."""
     handler_logger = logging.getLogger("meshtastic.tests.visible-info-handler")
     original_handlers = list(handler_logger.handlers)
     original_propagate = handler_logger.propagate
@@ -1926,7 +1935,7 @@ def test_logger_visible_info_handler_counts_console_stdout_and_stderr_handlers()
         handler_logger.addHandler(stderr_handler)
         assert (
             mesh_interface_module._logger_has_visible_info_handler(handler_logger)
-            is True
+            is False
         )
 
         handler_logger.removeHandler(stderr_handler)
@@ -1944,7 +1953,7 @@ def test_logger_visible_info_handler_counts_console_stdout_and_stderr_handlers()
         handler_logger.addHandler(rich_stderr_handler)
         assert (
             mesh_interface_module._logger_has_visible_info_handler(handler_logger)
-            is True
+            is False
         )
 
         handler_logger.removeHandler(rich_stderr_handler)
@@ -2498,11 +2507,14 @@ def test_send_data_rolls_back_wait_state_when_send_packet_raises(
     with MeshInterface(noProto=True) as iface:
         observed_request_ids: list[int] = []
 
+        class _SendFailureError(OSError):
+            """Local sentinel exception used to validate sendData() rollback behavior."""
+
         def _fail_send(
             packet: mesh_pb2.MeshPacket, *_args: object, **_kwargs: object
         ) -> NoReturn:
             observed_request_ids.append(packet.id)
-            raise OSError("socket send failed")
+            raise _SendFailureError("socket send failed")
 
         monkeypatch.setattr(iface, "_send_packet", _fail_send)
 
@@ -2561,11 +2573,14 @@ def test_send_data_removes_response_handler_when_send_fails_without_wait_attr(
     with MeshInterface(noProto=True) as iface:
         observed_request_ids: list[int] = []
 
+        class _SendFailureError(OSError):
+            """Local sentinel exception used to validate response-handler rollback."""
+
         def _fail_send(
             packet: mesh_pb2.MeshPacket, *_args: object, **_kwargs: object
         ) -> NoReturn:
             observed_request_ids.append(packet.id)
-            raise OSError("send failure")
+            raise _SendFailureError("send failure")
 
         monkeypatch.setattr(iface, "_send_packet", _fail_send)
 

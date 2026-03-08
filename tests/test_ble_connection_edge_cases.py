@@ -12,25 +12,24 @@ from unittest.mock import ANY, MagicMock
 
 import pytest
 
-try:
-    from bleak.backends.device import BLEDevice
-    from bleak.exc import BleakDBusError, BleakDeviceNotFoundError
+pytest.importorskip("bleak")
 
-    from meshtastic.interfaces.ble.connection import (
-        ClientManager,
-        ConnectionOrchestrator,
-        ConnectionValidator,
-        _is_device_not_found_error,
-    )
-    from meshtastic.interfaces.ble.constants import (
-        AWAIT_TIMEOUT_BUFFER_SECONDS,
-        DIRECT_CONNECT_TIMEOUT_SECONDS,
-        BLEConfig,
-    )
-    from meshtastic.interfaces.ble.reconnection import ReconnectWorker
-    from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
-except ImportError:
-    pytest.skip("BLE dependencies not available", allow_module_level=True)
+from bleak.backends.device import BLEDevice
+from bleak.exc import BleakDBusError, BleakDeviceNotFoundError
+
+from meshtastic.interfaces.ble.connection import (
+    ClientManager,
+    ConnectionOrchestrator,
+    ConnectionValidator,
+    _is_device_not_found_error,
+)
+from meshtastic.interfaces.ble.constants import (
+    AWAIT_TIMEOUT_BUFFER_SECONDS,
+    DIRECT_CONNECT_TIMEOUT_SECONDS,
+    BLEConfig,
+)
+from meshtastic.interfaces.ble.reconnection import ReconnectWorker
+from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 
 
 class MockBLEError(Exception):
@@ -42,6 +41,16 @@ def test_is_device_not_found_error_matches_device_context_messages() -> None:
     """Only device-level 'not found' errors should trigger device-not-found retries."""
     assert _is_device_not_found_error(Exception("Device not found")) is True
     assert _is_device_not_found_error(Exception("Could not find peripheral")) is True
+    assert (
+        _is_device_not_found_error(Exception("Could not find peripheral service"))
+        is False
+    )
+    assert (
+        _is_device_not_found_error(
+            Exception("Could not find the device characteristic")
+        )
+        is False
+    )
     assert _is_device_not_found_error(Exception("Could not find adapter")) is False
     assert _is_device_not_found_error(Exception("Characteristic not found")) is False
     assert (

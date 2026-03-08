@@ -40,6 +40,7 @@ def test_tunnel_initialization_creates_tap_device_when_proto_enabled(
         def is_alive(self) -> bool:
             return False
 
+    imported_with_fake_pytap2 = False
     try:
         tunnel_module = importlib.import_module("meshtastic.tunnel")
     except ModuleNotFoundError as exc:
@@ -49,6 +50,7 @@ def test_tunnel_initialization_creates_tap_device_when_proto_enabled(
         fake_pytap2.TapDevice = _FakeTapDevice
         monkeypatch.setitem(sys.modules, "pytap2", fake_pytap2)
         tunnel_module = importlib.import_module("meshtastic.tunnel")
+        imported_with_fake_pytap2 = True
     else:
         monkeypatch.setattr(tunnel_module, "TapDevice", _FakeTapDevice)
     monkeypatch.setattr(tunnel_module.platform, "system", lambda: "Linux")
@@ -80,4 +82,7 @@ def test_tunnel_initialization_creates_tap_device_when_proto_enabled(
     finally:
         if tunnel is not None:
             tunnel.close()
+        if imported_with_fake_pytap2:
+            sys.modules.pop("meshtastic.tunnel", None)
+            sys.modules.pop("pytap2", None)
         mt_config.reset()

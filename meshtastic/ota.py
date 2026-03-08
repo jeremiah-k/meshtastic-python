@@ -55,9 +55,6 @@ class ESP32WiFiOTA:
         self._port = port
         self._socket: socket.socket | None = None
 
-        if not os.path.exists(self._filename):
-            raise FileNotFoundError(MISSING_FIRMWARE_ERROR.format(filename=self._filename))
-
         self._size = 0
         self._file_hash: _SHA256Digest = hashlib.sha256()
         self._refresh_firmware_metadata()
@@ -70,7 +67,12 @@ class ESP32WiFiOTA:
         tuple[int, _SHA256Digest]
             The firmware size in bytes and corresponding SHA-256 digest.
         """
-        size = os.path.getsize(self._filename)
+        try:
+            size = os.path.getsize(self._filename)
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(
+                MISSING_FIRMWARE_ERROR.format(filename=self._filename)
+            ) from exc
         if size == 0:
             raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
         file_hash = _file_sha256(self._filename)

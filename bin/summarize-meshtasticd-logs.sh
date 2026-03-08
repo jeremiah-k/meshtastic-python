@@ -18,13 +18,17 @@ if [[ ${4-} == "--no-logs" ]]; then
 	MODE="single"
 	NO_LOGS=true
 	if [[ -n ${5-} ]]; then
-		echo "Invalid argument: ${5}. Expected --no-logs." >&2
+		echo "Unexpected additional argument: ${5}. No further arguments are allowed after --no-logs." >&2
 		exit 1
 	fi
 elif [[ ${5-} == "--no-logs" ]]; then
 	NO_LOGS=true
+	if [[ -n ${6-} ]]; then
+		echo "Invalid argument: ${6}. No arguments allowed after --no-logs." >&2
+		exit 1
+	fi
 elif [[ -n ${5-} ]]; then
-	echo "Invalid argument: ${5}. Expected --no-logs." >&2
+	echo "Invalid argument: ${5}. No arguments allowed after --no-logs." >&2
 	exit 1
 fi
 

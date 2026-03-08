@@ -104,9 +104,7 @@ def _logger_has_visible_info_handler(target_logger: logging.Logger) -> bool:
 
     visible_console_streams = {
         sys.stdout,
-        sys.stderr,
         sys.__stdout__,
-        sys.__stderr__,
     }
     current_logger: logging.Logger | None = target_logger
     while current_logger is not None:
@@ -332,17 +330,9 @@ class MeshInterface:  # pylint: disable=R0902
                         heartbeat_idle_condition.wait()
             try:
                 self._send_disconnect()
-            except (OSError, MeshInterface.MeshInterfaceError):
+            except (OSError, TypeError, MeshInterface.MeshInterfaceError):
                 logger.debug(
                     "Failed to send disconnect during close(); continuing shutdown.",
-                    exc_info=True,
-                )
-            except TypeError:
-                is_finalizing = getattr(sys, "is_finalizing", None)
-                if not (callable(is_finalizing) and is_finalizing()):
-                    raise
-                logger.debug(
-                    "Failed to send disconnect during interpreter finalization; continuing shutdown.",
                     exc_info=True,
                 )
         # debugOut is caller-owned (often shared via outer context managers);
@@ -1238,13 +1228,15 @@ class MeshInterface:  # pylint: disable=R0902
     ) -> None:
         """Record a wait error and wake the matching waiter."""
         with self._response_handlers_lock:
-            active_request_ids = self._active_wait_request_ids.get(
-                acknowledgment_attr, set()
+            active_request_ids_for_attr = self._active_wait_request_ids.get(
+                acknowledgment_attr
             )
+            has_request_scope = active_request_ids_for_attr is not None
+            active_request_ids = active_request_ids_for_attr or set()
             if request_id is not None:
                 if request_id in active_request_ids:
                     resolved_request_id = request_id
-                elif active_request_ids:
+                elif has_request_scope:
                     logger.debug(
                         "Ignoring stale wait error for %s request_id=%s (active=%s)",
                         acknowledgment_attr,
@@ -1267,6 +1259,12 @@ class MeshInterface:  # pylint: disable=R0902
                     self._response_wait_errors[
                         (acknowledgment_attr, active_request_id)
                     ] = message
+            elif has_request_scope:
+                logger.debug(
+                    "Ignoring stale unscoped wait error for %s; no active request ids remain.",
+                    acknowledgment_attr,
+                )
+                return
             else:
                 resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
                 self._response_wait_errors[
@@ -1279,13 +1277,15 @@ class MeshInterface:  # pylint: disable=R0902
     ) -> None:
         """Set acknowledgment flag for the matching request scope."""
         with self._response_handlers_lock:
-            active_request_ids = self._active_wait_request_ids.get(
-                acknowledgment_attr, set()
+            active_request_ids_for_attr = self._active_wait_request_ids.get(
+                acknowledgment_attr
             )
+            has_request_scope = active_request_ids_for_attr is not None
+            active_request_ids = active_request_ids_for_attr or set()
             if request_id is not None:
                 if request_id in active_request_ids:
                     resolved_request_id = request_id
-                elif active_request_ids:
+                elif has_request_scope:
                     logger.debug(
                         "Ignoring stale acknowledgement for %s request_id=%s (active=%s)",
                         acknowledgment_attr,
@@ -1301,6 +1301,12 @@ class MeshInterface:  # pylint: disable=R0902
             elif len(active_request_ids) == 1:
                 active_request_id = next(iter(active_request_ids))
                 self._response_wait_acks.add((acknowledgment_attr, active_request_id))
+            elif has_request_scope:
+                logger.debug(
+                    "Ignoring stale unscoped acknowledgement for %s; no active request ids remain.",
+                    acknowledgment_attr,
+                )
+                return
         setattr(self._acknowledgment, acknowledgment_attr, True)
 
     def _raise_wait_error_if_present(

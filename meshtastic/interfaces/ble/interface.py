@@ -609,6 +609,7 @@ class BLEInterface(MeshInterface):
         client_at_start: BLEClient | None = None
         should_reconnect = False
         should_schedule_reconnect = False
+        was_publish_pending = False
         address = "unknown"
         disconnect_keys: list[str] = []
         try:
@@ -621,6 +622,7 @@ class BLEInterface(MeshInterface):
                 current_state = self._state_manager._current_state
                 current_client = self.client
                 is_closing = self._state_manager._is_closing or self._closed
+                was_publish_pending = self._client_publish_pending
 
                 if current_state == ConnectionState.CONNECTING:
                     logger.debug(
@@ -760,7 +762,13 @@ class BLEInterface(MeshInterface):
             self._mark_address_keys_disconnected(*disconnect_keys)
 
         _close_previous_client_async()
-        self._disconnected()
+        if not was_publish_pending:
+            self._disconnected()
+        else:
+            logger.debug(
+                "Skipping public disconnect event for provisional session from %s.",
+                source,
+            )
 
         if should_reconnect:
             # Event coordination for reconnection (only if not closed)
@@ -1591,21 +1599,23 @@ class BLEInterface(MeshInterface):
         # Snapshot preconditions/current client under interface locks, then
         # release them before waiting on the per-address gate so the documented
         # lock order stays consistent: address gate first, then interface locks.
-        with self._connect_lock, self._management_lock:
-            self._validate_management_preconditions()
-            self._begin_management_operation_locked()
-            expected_implicit_binding = None
-            if address is None:
-                with self._state_lock:
-                    expected_implicit_binding = (
-                        self._get_current_implicit_management_binding_locked()
-                    )
-            existing_client = self._get_management_client_if_available(address)
-            target_address = self._extract_client_address(existing_client)
-            use_existing_client_without_resolved_address = (
-                existing_client is not None and target_address is None
-            )
+        management_started = False
         try:
+            with self._connect_lock, self._management_lock:
+                self._validate_management_preconditions()
+                self._begin_management_operation_locked()
+                management_started = True
+                expected_implicit_binding = None
+                if address is None:
+                    with self._state_lock:
+                        expected_implicit_binding = (
+                            self._get_current_implicit_management_binding_locked()
+                        )
+                existing_client = self._get_management_client_if_available(address)
+                target_address = self._extract_client_address(existing_client)
+                use_existing_client_without_resolved_address = (
+                    existing_client is not None and target_address is None
+                )
             if (
                 target_address is None
                 and not use_existing_client_without_resolved_address
@@ -1668,7 +1678,8 @@ class BLEInterface(MeshInterface):
                         if temporary_client is not None:
                             self._client_manager._safe_close_client(temporary_client)
         finally:
-            self._finish_management_operation()
+            if management_started:
+                self._finish_management_operation()
 
     def _begin_management_operation_locked(self) -> None:
         """Record a management operation while holding `_management_lock`."""
@@ -1950,10 +1961,12 @@ class BLEInterface(MeshInterface):
         if bluetoothctl_path is None:
             raise self.BLEError(ERROR_TRUST_BLUETOOTHCTL_MISSING)
 
-        with self._connect_lock, self._management_lock:
-            self._validate_management_preconditions()
-            self._begin_management_operation_locked()
+        management_started = False
         try:
+            with self._connect_lock, self._management_lock:
+                self._validate_management_preconditions()
+                self._begin_management_operation_locked()
+                management_started = True
             target_address = self._resolve_target_address_for_management(address)
             canonical_address = self._format_bluetoothctl_address(target_address)
             with self._management_target_gate(target_address):
@@ -1984,7 +1997,8 @@ class BLEInterface(MeshInterface):
                         validated_timeout,
                     )
         finally:
-            self._finish_management_operation()
+            if management_started:
+                self._finish_management_operation()
 
     def _sanitize_address(self, address: str | None) -> str | None:
         """Provide a backward-compatible wrapper that returns a sanitized BLE address or None.
@@ -2361,11 +2375,6 @@ class BLEInterface(MeshInterface):
                         still_owned, is_closing = (
                             self._get_connected_client_status_locked(connected_client)
                         )
-                        if still_owned:
-                            lost_gate_ownership = self._has_lost_gate_ownership(
-                                connected_device_key,
-                                connection_alias_key,
-                            )
                         if still_owned and not lost_gate_ownership:
                             self._client_publish_pending = False
                             self._ever_connected = True
@@ -2451,6 +2460,15 @@ class BLEInterface(MeshInterface):
                 # disconnect path before this cleanup runs; ensure callers do
                 # not remain stuck in ERROR_MANAGEMENT_CONNECTING.
                 self._client_publish_pending = False
+                is_closing = self._state_manager._is_closing or self._closed
+                if not is_closing:
+                    self.address = restored_address
+                    self._last_connection_request = restore_last_connection_request
+                    self._connection_alias_key = None
+                    self._disconnect_notified = False
+                    should_reset_state = True
+                else:
+                    self._last_connection_request = None
 
         self._client_manager._safe_close_client(client)
 

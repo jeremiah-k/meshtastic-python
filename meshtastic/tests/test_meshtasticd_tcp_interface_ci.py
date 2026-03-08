@@ -8,7 +8,6 @@ from typing import cast
 import pytest
 
 from meshtastic.host_port import parseHostAndPort, parse_host_and_port
-from meshtastic.tcp_interface import DEFAULT_TCP_PORT, TCPInterface
 
 MESHTASTICD_HOST_ENV_VAR: str = "MESHTASTICD_HOST"
 CONNECT_TIMEOUT_SECONDS: float = 5.0
@@ -29,11 +28,24 @@ def _require_meshtasticd_host() -> str:
 
 def _parse_host_and_port(host: str) -> tuple[str, int]:
     """Parse ``HOST[:PORT]`` into a hostname and TCP port via shared runtime helper."""
+    from meshtastic.tcp_interface import (  # pylint: disable=import-outside-toplevel
+        DEFAULT_TCP_PORT,
+    )
+
     return parseHostAndPort(
         host,
         default_port=DEFAULT_TCP_PORT,
         env_var=MESHTASTICD_HOST_ENV_VAR,
     )
+
+
+def _default_tcp_port() -> int:
+    """Return the runtime default TCP port used by TCPInterface."""
+    from meshtastic.tcp_interface import (  # pylint: disable=import-outside-toplevel
+        DEFAULT_TCP_PORT,
+    )
+
+    return DEFAULT_TCP_PORT
 
 
 @pytest.mark.unit
@@ -87,11 +99,11 @@ def test_parse_host_and_port_snake_case_alias_matches_canonical_name() -> None:
     """The snake_case host parser alias should delegate to the canonical camelCase name."""
     assert parse_host_and_port(
         "localhost:4401",
-        default_port=DEFAULT_TCP_PORT,
+        default_port=_default_tcp_port(),
         env_var=MESHTASTICD_HOST_ENV_VAR,
     ) == parseHostAndPort(
         "localhost:4401",
-        default_port=DEFAULT_TCP_PORT,
+        default_port=_default_tcp_port(),
         env_var=MESHTASTICD_HOST_ENV_VAR,
     )
 
@@ -106,7 +118,7 @@ def test_parse_host_and_port_rejects_malformed_bracketed_ipv6() -> None:
 @pytest.mark.unit
 def test_parse_host_and_port_accepts_raw_ipv6_without_port() -> None:
     """_parse_host_and_port should treat raw IPv6 literals as host-only values."""
-    assert _parse_host_and_port("::1") == ("::1", DEFAULT_TCP_PORT)
+    assert _parse_host_and_port("::1") == ("::1", _default_tcp_port())
 
 
 @pytest.mark.unit
@@ -114,7 +126,7 @@ def test_parse_host_and_port_accepts_compressed_ipv6_with_numeric_tail() -> None
     """_parse_host_and_port should accept compressed IPv6 literals whose tail is numeric."""
     assert _parse_host_and_port("2001:db8::1:2:3") == (
         "2001:db8::1:2:3",
-        DEFAULT_TCP_PORT,
+        _default_tcp_port(),
     )
 
 
@@ -122,7 +134,7 @@ def test_parse_host_and_port_accepts_compressed_ipv6_with_numeric_tail() -> None
 @pytest.mark.parametrize("host", ["::1:4401", "::2:4401", "::a:1234"])
 def test_parse_host_and_port_accepts_unbracketed_ipv6_numeric_tail(host: str) -> None:
     """Valid raw IPv6 literals with numeric tails should parse as host-only values."""
-    assert _parse_host_and_port(host) == (host, DEFAULT_TCP_PORT)
+    assert _parse_host_and_port(host) == (host, _default_tcp_port())
 
 
 @pytest.mark.unit
@@ -178,6 +190,10 @@ def test_parse_host_and_port_rejects_extra_url_components(host: str) -> None:
 @pytest.mark.int
 def test_tcp_interface_meshtasticd_connect_and_sendtext() -> None:
     """TCPInterface should connect to meshtasticd and send a text packet."""
+    from meshtastic.tcp_interface import (  # pylint: disable=import-outside-toplevel
+        TCPInterface,
+    )
+
     host = _require_meshtasticd_host()
     host_name, port = _parse_host_and_port(host)
 
@@ -197,6 +213,10 @@ def test_tcp_interface_meshtasticd_connect_and_sendtext() -> None:
 @pytest.mark.int
 def test_tcp_interface_meshtasticd_recovers_after_socket_drop() -> None:
     """TCPInterface should recover after a forced local socket close."""
+    from meshtastic.tcp_interface import (  # pylint: disable=import-outside-toplevel
+        TCPInterface,
+    )
+
     host = _require_meshtasticd_host()
     host_name, port = _parse_host_and_port(host)
 

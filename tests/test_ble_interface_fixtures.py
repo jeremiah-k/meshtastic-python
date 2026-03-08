@@ -558,6 +558,8 @@ class DummyClient:
             The exception instance stored in `self.disconnect_exception`, if present.
         """
         self.disconnect_calls += 1
+        self._initialized = False
+        self.bleak_client = None
         if self.disconnect_exception:
             raise self.disconnect_exception
 
@@ -601,6 +603,8 @@ class DummyClient:
         Increments the internal `close_calls` counter so tests can assert how many times `close()` was invoked.
         """
         self.close_calls += 1
+        self._initialized = False
+        self.bleak_client = None
 
     def _get_services(self) -> SimpleNamespace:
         """Stub for _get_services."""
