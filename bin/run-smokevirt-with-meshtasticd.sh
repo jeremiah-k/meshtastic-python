@@ -83,7 +83,21 @@ fi
 
 require_regex "${MESHTASTICD_CONTAINER}" '^[A-Za-z0-9][A-Za-z0-9_.-]*$' "MESHTASTICD_CONTAINER"
 require_regex "${MESHTASTICD_IMAGE}" '^[^[:space:]]+$' "MESHTASTICD_IMAGE"
-require_regex "${MESHTASTICD_HOST}" '^[A-Za-z0-9._:\[\]-]+$' "MESHTASTICD_HOST"
+if [[ -z ${MESHTASTICD_HOST} || ${MESHTASTICD_HOST} == *[[:space:]]* ]]; then
+	echo "Invalid MESHTASTICD_HOST: ${MESHTASTICD_HOST}" >&2
+	exit 1
+fi
+if [[ ${MESHTASTICD_HOST} == *$'\n'* ]] || [[ ${MESHTASTICD_HOST} == *$'\r'* ]]; then
+	echo "Invalid MESHTASTICD_HOST: ${MESHTASTICD_HOST}" >&2
+	exit 1
+fi
+case "${MESHTASTICD_HOST}" in
+*"@"* | *"/"* | *"?"* | *"#"* | *";"*)
+	echo "Invalid MESHTASTICD_HOST: ${MESHTASTICD_HOST}" >&2
+	exit 1
+	;;
+*) ;;
+esac
 MESHTASTICD_HOST_BARE_IPV6=false
 if [[ ${MESHTASTICD_HOST} == *:*:* && ${MESHTASTICD_HOST} != \[* ]]; then
 	if ! python3 -c 'import ipaddress, sys; ipaddress.IPv6Address(sys.argv[1])' "${MESHTASTICD_HOST}" >/dev/null 2>&1; then
@@ -91,6 +105,8 @@ if [[ ${MESHTASTICD_HOST} == *:*:* && ${MESHTASTICD_HOST} != \[* ]]; then
 		exit 1
 	fi
 	MESHTASTICD_HOST_BARE_IPV6=true
+else
+	require_regex "${MESHTASTICD_HOST}" '^(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9._-]+)(:[0-9]+)?$' "MESHTASTICD_HOST"
 fi
 if [[ ${MESHTASTICD_HOST_BARE_IPV6} == false ]] && [[ ${MESHTASTICD_HOST} =~ :([0-9]+)$ ]]; then
 	MESHTASTICD_HOST_PORT_DEC=$((10#${BASH_REMATCH[1]}))
