@@ -137,11 +137,9 @@ def test_client_manager_handles_concurrent_updates() -> None:
 @pytest.mark.unit
 def test_connection_timeout_configuration_consistency() -> None:
     """Verify timeout constants are consistent and reasonable across the stack."""
-    from meshtastic.interfaces.ble.connection import (
+    from meshtastic.interfaces.ble.constants import (
         AWAIT_TIMEOUT_BUFFER_SECONDS,
         DIRECT_CONNECT_TIMEOUT_SECONDS,
-    )
-    from meshtastic.interfaces.ble.constants import (
         DISCONNECT_TIMEOUT_SECONDS,
         EVENT_THREAD_JOIN_TIMEOUT,
         RECEIVE_THREAD_JOIN_TIMEOUT,
