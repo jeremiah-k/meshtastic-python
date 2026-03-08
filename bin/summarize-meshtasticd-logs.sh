@@ -17,6 +17,10 @@ NO_LOGS=false
 if [[ ${4-} == "--no-logs" ]]; then
 	MODE="single"
 	NO_LOGS=true
+	if [[ -n ${5-} ]]; then
+		echo "Invalid argument: ${5}. Expected --no-logs." >&2
+		exit 1
+	fi
 elif [[ ${5-} == "--no-logs" ]]; then
 	NO_LOGS=true
 elif [[ -n ${5-} ]]; then
@@ -40,6 +44,8 @@ if [[ -z ${LOG_DIR} ]]; then
 		echo "- Log directory is required; pass --no-logs to skip processing." >&2
 		exit 1
 	fi
+elif [[ ${NO_LOGS} == true ]]; then
+	echo "- Log directory: skipped (--no-logs)"
 elif [[ -d ${LOG_DIR} ]]; then
 	shopt -s nullglob
 	log_files=("${LOG_DIR}"/*.log)

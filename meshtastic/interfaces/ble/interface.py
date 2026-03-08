@@ -35,9 +35,10 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Awaitable, Callable
 from queue import Empty
 from threading import Event
-from typing import IO, Any, Awaitable, Callable, TypeVar, cast
+from typing import IO, Any, TypeVar, cast
 
 from bleak import BleakClient as BleakRootClient
 from bleak.backends.device import BLEDevice
@@ -2657,10 +2658,9 @@ class BLEInterface(MeshInterface):
                         self._raise_if_duplicate_connect(reservation_key)
 
                     with self._connect_lock:
-                        if management_lock is not None:
-                            with management_lock:
-                                if getattr(self, "_management_inflight", 0) > 0:
-                                    continue
+                        with management_lock:
+                            if self._management_inflight > 0:
+                                continue
 
                         # Re-check closing state inside connect_lock for extra safety
                         self._validate_connection_preconditions()

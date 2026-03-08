@@ -40,12 +40,17 @@ def test_tunnel_initialization_creates_tap_device_when_proto_enabled(
         def is_alive(self) -> bool:
             return False
 
-    fake_pytap2 = types.ModuleType("pytap2")
-    fake_pytap2.TapDevice = _FakeTapDevice
-    monkeypatch.setitem(sys.modules, "pytap2", fake_pytap2)
-
-    tunnel_module = importlib.import_module("meshtastic.tunnel")
-    tunnel_module = importlib.reload(tunnel_module)
+    try:
+        tunnel_module = importlib.import_module("meshtastic.tunnel")
+    except ModuleNotFoundError as exc:
+        if exc.name != "pytap2":
+            raise
+        fake_pytap2 = types.ModuleType("pytap2")
+        fake_pytap2.TapDevice = _FakeTapDevice
+        monkeypatch.setitem(sys.modules, "pytap2", fake_pytap2)
+        tunnel_module = importlib.import_module("meshtastic.tunnel")
+    else:
+        monkeypatch.setattr(tunnel_module, "TapDevice", _FakeTapDevice)
     monkeypatch.setattr(tunnel_module.platform, "system", lambda: "Linux")
     monkeypatch.setattr(
         tunnel_module.threading,
@@ -66,11 +71,13 @@ def test_tunnel_initialization_creates_tap_device_when_proto_enabled(
         sendData=lambda *_args, **_kwargs: None,
     )
 
-    tunnel = tunnel_module.Tunnel(iface)
+    tunnel = None
     try:
+        tunnel = tunnel_module.Tunnel(iface)
         assert ("init", "mesh") in tap_events
         assert ("up",) in tap_events
         assert any(event[0] == "ifconfig" for event in tap_events)
     finally:
-        tunnel.close()
+        if tunnel is not None:
+            tunnel.close()
         mt_config.reset()

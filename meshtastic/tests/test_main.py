@@ -17,7 +17,7 @@ import pytest
 import yaml
 
 import meshtastic.__main__ as main_module
-from meshtastic import LOCAL_ADDR, mt_config
+from meshtastic import BROADCAST_ADDR, LOCAL_ADDR, mt_config
 from meshtastic.__main__ import (_create_power_meter, _normalize_pref_name,
                                  _parse_host_port, _prefix_base64_key,
                                  _set_missing_flags_false, export_config,
@@ -4456,10 +4456,12 @@ def test_main_ota_update_retries_then_exits(
     mt_config.args = cast(Any, sys.argv)
 
     node = MagicMock(autospec=Node)
+    get_node = MagicMock(return_value=node)
 
     class _FakeTCPInterface:
         def __init__(self, *_args: object, **_kwargs: object) -> None:
             self.hostname = "localhost"
+            self.getNode = get_node
 
         def __enter__(self) -> "_FakeTCPInterface":
             return self
@@ -4505,10 +4507,12 @@ def test_main_ota_update_succeeds_and_prints_completion(
     mt_config.args = cast(Any, sys.argv)
 
     node = MagicMock(autospec=Node)
+    get_node = MagicMock(return_value=node)
 
     class _FakeTCPInterface:
         def __init__(self, *_args: object, **_kwargs: object) -> None:
             self.hostname = "localhost"
+            self.getNode = get_node
 
         def __enter__(self) -> "_FakeTCPInterface":
             return self
@@ -4605,10 +4609,12 @@ def test_main_ota_update_allows_explicit_local_dest(
     mt_config.args = cast(Any, sys.argv)
 
     node = MagicMock(autospec=Node)
+    get_node = MagicMock(return_value=node)
 
     class _FakeTCPInterface:
         def __init__(self, *_args: object, **_kwargs: object) -> None:
             self.hostname = "localhost"
+            self.getNode = get_node
 
         def __enter__(self) -> "_FakeTCPInterface":
             return self
@@ -4619,11 +4625,6 @@ def test_main_ota_update_allows_explicit_local_dest(
         def close(self) -> None:
             """No-op close used by onConnected cleanup path."""
             return None
-
-        @staticmethod
-        def getNode(*_args: object, **_kwargs: object) -> MagicMock:
-            """Return the mocked node used by this OTA local-destination test."""
-            return node
 
     ota = MagicMock()
     ota.hash_bytes.return_value = b"\x01\x02"
@@ -4641,6 +4642,8 @@ def test_main_ota_update_allows_explicit_local_dest(
     assert err == ""
     node.startOTA.assert_called_once()
     ota.update.assert_called_once()
+    assert get_node.call_args is not None
+    assert get_node.call_args.args[:2] == (BROADCAST_ADDR, False)
 
 
 @pytest.mark.unit

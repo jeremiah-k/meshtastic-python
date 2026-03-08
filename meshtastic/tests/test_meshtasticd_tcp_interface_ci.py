@@ -7,7 +7,7 @@ from typing import cast
 
 import pytest
 
-from meshtastic.host_port import parse_host_and_port
+from meshtastic.host_port import parseHostAndPort, parse_host_and_port
 from meshtastic.tcp_interface import DEFAULT_TCP_PORT, TCPInterface
 
 MESHTASTICD_HOST_ENV_VAR: str = "MESHTASTICD_HOST"
@@ -29,7 +29,7 @@ def _require_meshtasticd_host() -> str:
 
 def _parse_host_and_port(host: str) -> tuple[str, int]:
     """Parse ``HOST[:PORT]`` into a hostname and TCP port via shared runtime helper."""
-    return parse_host_and_port(
+    return parseHostAndPort(
         host,
         default_port=DEFAULT_TCP_PORT,
         env_var=MESHTASTICD_HOST_ENV_VAR,
@@ -83,6 +83,20 @@ def test_parse_host_and_port_accepts_bracketed_ipv6_with_port() -> None:
 
 
 @pytest.mark.unit
+def test_parse_host_and_port_snake_case_alias_matches_canonical_name() -> None:
+    """The snake_case host parser alias should delegate to the canonical camelCase name."""
+    assert parse_host_and_port(
+        "localhost:4401",
+        default_port=DEFAULT_TCP_PORT,
+        env_var=MESHTASTICD_HOST_ENV_VAR,
+    ) == parseHostAndPort(
+        "localhost:4401",
+        default_port=DEFAULT_TCP_PORT,
+        env_var=MESHTASTICD_HOST_ENV_VAR,
+    )
+
+
+@pytest.mark.unit
 def test_parse_host_and_port_rejects_malformed_bracketed_ipv6() -> None:
     """Malformed bracketed IPv6 literals should raise a clear parse error."""
     with pytest.raises(ValueError, match=r"raw IPv6 literals"):
@@ -119,6 +133,25 @@ def test_parse_host_and_port_rejects_invalid_unbracketed_ipv6_port_shape() -> No
         match=r"raw IPv6 literals with explicit ports must use bracket form",
     ):
         _parse_host_and_port("2001:db8:0:1:2:3:4:5:4401")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("host", ["localhost", "::1"])
+@pytest.mark.parametrize("default_port", [0, 70000])
+def test_parse_host_and_port_rejects_invalid_default_port(
+    host: str,
+    default_port: int,
+) -> None:
+    """Host-only parse paths should reject invalid default ports before returning."""
+    with pytest.raises(
+        ValueError,
+        match=rf"Invalid {MESHTASTICD_HOST_ENV_VAR}=.*1\.\.65535",
+    ):
+        parseHostAndPort(
+            host,
+            default_port=default_port,
+            env_var=MESHTASTICD_HOST_ENV_VAR,
+        )
 
 
 @pytest.mark.unit

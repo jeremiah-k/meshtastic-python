@@ -50,17 +50,50 @@ def _get_connect_stub_calls(iface: BLEInterface) -> list[str | None]:
 
 
 def _get_connect_stub_kwargs(iface: BLEInterface) -> list[dict[str, object]]:
-    """Retrieve the test-only list of keyword args recorded for connect calls."""
+    """Retrieve the test-only list of keyword args recorded for connect calls.
+
+    Parameters
+    ----------
+    iface : BLEInterface
+        Interface instance that may expose a `_connect_stub_kwargs` attribute used by tests.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Recorded keyword-argument dictionaries for each connect call. Returns an empty list if the attribute is not present.
+    """
     return cast(list[dict[str, object]], getattr(iface, "_connect_stub_kwargs", []))
 
 
 def _get_stress_test_clients(iface: BLEInterface) -> list[Any]:
-    """Retrieve the stress-test clients created by the patched connect stub."""
+    """Retrieve the stress-test clients created by the patched connect stub.
+
+    Parameters
+    ----------
+    iface : BLEInterface
+        Interface instance that may expose a `_stress_test_clients` attribute used by tests.
+
+    Returns
+    -------
+    list[Any]
+        Created stress-test client objects in creation order. Returns an empty list if the attribute is not present.
+    """
     return cast(list[Any], getattr(iface, "_stress_test_clients", []))
 
 
 def _get_stress_test_attempts(iface: BLEInterface) -> list[Any]:
-    """Retrieve reconnect attempts recorded before connect completion."""
+    """Retrieve reconnect attempts recorded before connect completion.
+
+    Parameters
+    ----------
+    iface : BLEInterface
+        Interface instance that may expose a `_stress_test_attempts` attribute used by tests.
+
+    Returns
+    -------
+    list[Any]
+        Attempt objects recorded before connect completion. Returns an empty list if the attribute is not present.
+    """
     return cast(list[Any], getattr(iface, "_stress_test_attempts", []))
 
 
@@ -68,7 +101,20 @@ def _latest_successful_stress_attempt(
     attempts: Sequence[object],
     successful_clients: Sequence[object],
 ) -> object | None:
-    """Return the highest-order reconnect attempt that completed successfully."""
+    """Return the highest-order reconnect attempt that completed successfully.
+
+    Parameters
+    ----------
+    attempts : Sequence[object]
+        Reconnect attempt objects in creation order.
+    successful_clients : Sequence[object]
+        Successfully connected client objects to match against the attempt list.
+
+    Returns
+    -------
+    object | None
+        The latest successful reconnect attempt object, or `None` when no attempt completed successfully.
+    """
     successful_ids = {id(client) for client in successful_clients}
     for attempt in reversed(attempts):
         if id(attempt) in successful_ids:
@@ -754,7 +800,6 @@ def test_rapid_connect_disconnect_stress_test(
             return current_client, attempts, clients
 
         deadline = time.monotonic() + timeout
-        observed_client, observed_attempts, observed_clients = _snapshot_stress_state()
         while time.monotonic() < deadline:
             observed_client, observed_attempts, observed_clients = (
                 _snapshot_stress_state()

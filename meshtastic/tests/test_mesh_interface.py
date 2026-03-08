@@ -1886,8 +1886,10 @@ def test_on_response_position_prints_when_info_logging_not_visible(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_logger_visible_info_handler_only_counts_stdout_handlers() -> None:
-    """Only stdout-backed console handlers should suppress the print fallback."""
+def test_logger_visible_info_handler_counts_console_stdout_and_stderr_handlers() -> (
+    None
+):
+    """Console handlers backed by stdout or stderr should suppress the print fallback."""
     handler_logger = logging.getLogger("meshtastic.tests.visible-info-handler")
     original_handlers = list(handler_logger.handlers)
     original_propagate = handler_logger.propagate
@@ -1919,6 +1921,17 @@ def test_logger_visible_info_handler_only_counts_stdout_handlers() -> None:
         handler_logger.removeHandler(stdout_handler)
         stdout_handler.close()
 
+        stderr_handler = logging.StreamHandler(sys.stderr)
+        stderr_handler.setLevel(logging.INFO)
+        handler_logger.addHandler(stderr_handler)
+        assert (
+            mesh_interface_module._logger_has_visible_info_handler(handler_logger)
+            is True
+        )
+
+        handler_logger.removeHandler(stderr_handler)
+        stderr_handler.close()
+
         class _RichLikeHandler(logging.Handler):
             def __init__(self, stream: object) -> None:
                 super().__init__(level=logging.INFO)
@@ -1931,7 +1944,7 @@ def test_logger_visible_info_handler_only_counts_stdout_handlers() -> None:
         handler_logger.addHandler(rich_stderr_handler)
         assert (
             mesh_interface_module._logger_has_visible_info_handler(handler_logger)
-            is False
+            is True
         )
 
         handler_logger.removeHandler(rich_stderr_handler)
@@ -2656,6 +2669,25 @@ def test_wait_state_helpers_cover_request_resolution_branches() -> None:
         iface._mark_wait_acknowledged("receivedTelemetry", request_id=999)
         with iface._response_handlers_lock:
             assert ("receivedTelemetry", 999) not in iface._response_wait_acks
+
+        iface._clear_wait_error("receivedTelemetry")
+        iface._set_wait_error(
+            "receivedTelemetry",
+            "legacy-unscoped-error",
+            request_id=777,
+        )
+        with pytest.raises(
+            MeshInterface.MeshInterfaceError, match="legacy-unscoped-error"
+        ):
+            iface._raise_wait_error_if_present("receivedTelemetry", request_id=777)
+
+        iface._clear_wait_error("receivedPosition")
+        iface._mark_wait_acknowledged("receivedPosition", request_id=888)
+        with iface._response_handlers_lock:
+            assert (
+                "receivedPosition",
+                mesh_interface_module.UNSCOPED_WAIT_REQUEST_ID,
+            ) in iface._response_wait_acks
 
         iface._clear_wait_error("receivedTelemetry", request_id=601)
         iface._clear_wait_error("receivedTelemetry", request_id=602)

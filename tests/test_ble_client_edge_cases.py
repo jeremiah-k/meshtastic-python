@@ -247,6 +247,7 @@ def test_bleclient_management_call_reraises_non_notimplemented_bleerror() -> Non
             not_initialized_error=BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED,
             unsupported_error=BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED,
         )
+    client.close()
 
 
 @pytest.mark.unit

@@ -34,6 +34,20 @@ def _get_ble_module() -> types.ModuleType:
     return ble_mod
 
 
+def _validate_await_timeout(await_timeout: float) -> float:
+    """Validate a BLE management await timeout and return it as a float."""
+    if (
+        isinstance(await_timeout, bool)
+        or not isinstance(await_timeout, (int, float))
+        or not math.isfinite(await_timeout)
+        or await_timeout <= 0
+    ):
+        raise _get_ble_module().BLEClient.BLEError(
+            ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID
+        )
+    return float(await_timeout)
+
+
 @pytest.fixture
 def mock_serial(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     """Inject a minimal fake `serial` package into sys.modules for tests.
@@ -554,15 +568,7 @@ class DummyClient:
         **_kwargs: object,
     ) -> None:
         """Record a pair invocation."""
-        if (
-            isinstance(await_timeout, bool)
-            or not isinstance(await_timeout, (int, float))
-            or not math.isfinite(await_timeout)
-            or await_timeout <= 0
-        ):
-            raise _get_ble_module().BLEClient.BLEError(
-                ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID
-            )
+        await_timeout = _validate_await_timeout(await_timeout)
         if not self._initialized or self.bleak_client is None:
             raise _get_ble_module().BLEClient.BLEError(
                 BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED
@@ -578,15 +584,7 @@ class DummyClient:
         **_kwargs: object,
     ) -> None:
         """Record an unpair invocation."""
-        if (
-            isinstance(await_timeout, bool)
-            or not isinstance(await_timeout, (int, float))
-            or not math.isfinite(await_timeout)
-            or await_timeout <= 0
-        ):
-            raise _get_ble_module().BLEClient.BLEError(
-                ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID
-            )
+        await_timeout = _validate_await_timeout(await_timeout)
         if not self._initialized or self.bleak_client is None:
             raise _get_ble_module().BLEClient.BLEError(
                 BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED

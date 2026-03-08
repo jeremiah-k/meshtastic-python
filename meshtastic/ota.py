@@ -11,6 +11,7 @@ OTA_SOCKET_TIMEOUT_SECONDS = 15
 OTA_CHUNK_SIZE_BYTES = 1024
 FILE_HASH_READ_CHUNK_SIZE_BYTES = 4096
 OTA_PROGRESS_LOG_PERCENT_STEP: float = 5.0
+MISSING_FIRMWARE_ERROR: str = "Firmware file {filename} does not exist"
 EMPTY_FIRMWARE_ERROR: str = "Firmware file {filename} is empty"
 FIRMWARE_CHANGED_ERROR: str = (
     "Firmware file {filename} changed after OTA session initialization."
@@ -55,7 +56,7 @@ class ESP32WiFiOTA:
         self._socket: socket.socket | None = None
 
         if not os.path.exists(self._filename):
-            raise FileNotFoundError(f"File {self._filename} does not exist")
+            raise FileNotFoundError(MISSING_FIRMWARE_ERROR.format(filename=self._filename))
 
         self._size = 0
         self._file_hash: _SHA256Digest = hashlib.sha256()
@@ -134,12 +135,15 @@ class ESP32WiFiOTA:
         """
         image = bytearray()
         file_hash = hashlib.sha256()
-        with open(self._filename, "rb") as firmware:
-            for block in iter(
-                lambda: firmware.read(FILE_HASH_READ_CHUNK_SIZE_BYTES), b""
-            ):
-                image.extend(block)
-                file_hash.update(block)
+        try:
+            with open(self._filename, "rb") as firmware:
+                for block in iter(
+                    lambda: firmware.read(FILE_HASH_READ_CHUNK_SIZE_BYTES), b""
+                ):
+                    image.extend(block)
+                    file_hash.update(block)
+        except FileNotFoundError as exc:
+            raise OTAError(MISSING_FIRMWARE_ERROR.format(filename=self._filename)) from exc
 
         firmware_image = bytes(image)
         size = len(firmware_image)

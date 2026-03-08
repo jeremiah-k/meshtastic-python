@@ -59,23 +59,26 @@ def test_connection_module_type_checking_import_branch(
 ) -> None:
     """Reloading with TYPE_CHECKING=True should execute typing-only BLEInterface import."""
     connection_module = importlib.import_module("meshtastic.interfaces.ble.connection")
-    original_type_checking = typing.TYPE_CHECKING
     stub_interface_module = types.ModuleType("meshtastic.interfaces.ble.interface")
     stub_ble_interface = type("BLEInterface", (), {})
     stub_interface_module.BLEInterface = stub_ble_interface
 
-    try:
-        monkeypatch.setitem(
+    with monkeypatch.context() as patch_context:
+        patch_context.setitem(
             sys.modules,
             "meshtastic.interfaces.ble.interface",
             stub_interface_module,
         )
-        monkeypatch.setattr(typing, "TYPE_CHECKING", True)
+        patch_context.setattr(typing, "TYPE_CHECKING", True)
         reloaded = importlib.reload(connection_module)
         assert getattr(reloaded, "BLEInterface", None) is stub_ble_interface
-    finally:
-        monkeypatch.setattr(typing, "TYPE_CHECKING", original_type_checking)
-        importlib.reload(connection_module)
+
+    for leaked_name in ("BLEInterface", "DiscoveryManager", "BleakRootClient"):
+        if hasattr(connection_module, leaked_name):
+            delattr(connection_module, leaked_name)
+
+    reloaded = importlib.reload(connection_module)
+    assert not hasattr(reloaded, "BLEInterface")
 
 
 @pytest.mark.unit

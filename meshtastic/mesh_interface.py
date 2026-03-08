@@ -102,7 +102,12 @@ def _logger_has_visible_info_handler(target_logger: logging.Logger) -> bool:
     if target_logger.disabled or target_logger.getEffectiveLevel() > logging.INFO:
         return False
 
-    visible_console_streams = {sys.stdout, sys.__stdout__}
+    visible_console_streams = {
+        sys.stdout,
+        sys.stderr,
+        sys.__stdout__,
+        sys.__stderr__,
+    }
     current_logger: logging.Logger | None = target_logger
     while current_logger is not None:
         for handler in current_logger.handlers:
@@ -1237,7 +1242,9 @@ class MeshInterface:  # pylint: disable=R0902
                 acknowledgment_attr, set()
             )
             if request_id is not None:
-                if request_id not in active_request_ids:
+                if request_id in active_request_ids:
+                    resolved_request_id = request_id
+                elif active_request_ids:
                     logger.debug(
                         "Ignoring stale wait error for %s request_id=%s (active=%s)",
                         acknowledgment_attr,
@@ -1245,7 +1252,8 @@ class MeshInterface:  # pylint: disable=R0902
                         sorted(active_request_ids),
                     )
                     return
-                resolved_request_id = request_id
+                else:
+                    resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
                 self._response_wait_errors[
                     (acknowledgment_attr, resolved_request_id)
                 ] = message
@@ -1274,16 +1282,22 @@ class MeshInterface:  # pylint: disable=R0902
             active_request_ids = self._active_wait_request_ids.get(
                 acknowledgment_attr, set()
             )
-            if request_id is not None and (request_id not in active_request_ids):
-                logger.debug(
-                    "Ignoring stale acknowledgement for %s request_id=%s (active=%s)",
-                    acknowledgment_attr,
-                    request_id,
-                    sorted(active_request_ids),
-                )
-                return
             if request_id is not None:
-                self._response_wait_acks.add((acknowledgment_attr, request_id))
+                if request_id in active_request_ids:
+                    resolved_request_id = request_id
+                elif active_request_ids:
+                    logger.debug(
+                        "Ignoring stale acknowledgement for %s request_id=%s (active=%s)",
+                        acknowledgment_attr,
+                        request_id,
+                        sorted(active_request_ids),
+                    )
+                    return
+                else:
+                    resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
+                self._response_wait_acks.add(
+                    (acknowledgment_attr, resolved_request_id)
+                )
             elif len(active_request_ids) == 1:
                 active_request_id = next(iter(active_request_ids))
                 self._response_wait_acks.add((acknowledgment_attr, active_request_id))

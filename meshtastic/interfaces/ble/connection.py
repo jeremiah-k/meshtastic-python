@@ -37,6 +37,10 @@ if TYPE_CHECKING:
 
     from meshtastic.interfaces.ble.discovery import DiscoveryManager
     from meshtastic.interfaces.ble.interface import BLEInterface
+else:
+    globals().pop("BleakRootClient", None)
+    globals().pop("DiscoveryManager", None)
+    globals().pop("BLEInterface", None)
 
 logger = logging.getLogger("meshtastic.ble")
 _DEVICE_NOT_FOUND_MESSAGE_RE = re.compile(

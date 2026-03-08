@@ -155,6 +155,7 @@ def test_tunnel_creates_tap_device_when_proto_enabled(
     assert ("init", "mesh") in events
     assert ("up",) in events
     assert any(event[0] == "ifconfig" for event in events)
+    assert ("close",) in events
 
 
 @pytest.mark.unitslow

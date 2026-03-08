@@ -229,19 +229,24 @@ def test_powermon_type_checking_import_branch(
 ) -> None:
     """Reload powermon with TYPE_CHECKING enabled to execute typing-only backend imports."""
     powermon_module = importlib.import_module("meshtastic.powermon")
-    original_type_checking = typing.TYPE_CHECKING
     stub_ppk2 = types.ModuleType("meshtastic.powermon.ppk2")
     stub_riden = types.ModuleType("meshtastic.powermon.riden")
     cast(Any, stub_ppk2).PPK2PowerSupply = type("PPK2PowerSupply", (), {})
     cast(Any, stub_riden).RidenPowerSupply = type("RidenPowerSupply", (), {})
 
-    try:
-        monkeypatch.setitem(sys.modules, "meshtastic.powermon.ppk2", stub_ppk2)
-        monkeypatch.setitem(sys.modules, "meshtastic.powermon.riden", stub_riden)
-        monkeypatch.setattr(typing, "TYPE_CHECKING", True)
+    for backend_name in ("PPK2PowerSupply", "RidenPowerSupply"):
+        monkeypatch.delitem(powermon_module.__dict__, backend_name, raising=False)
+
+    with monkeypatch.context() as patch_context:
+        patch_context.setitem(sys.modules, "meshtastic.powermon.ppk2", stub_ppk2)
+        patch_context.setitem(sys.modules, "meshtastic.powermon.riden", stub_riden)
+        patch_context.setattr(typing, "TYPE_CHECKING", True)
         reloaded = importlib.reload(powermon_module)
         assert "PPK2PowerSupply" in reloaded.__all__
         assert "RidenPowerSupply" in reloaded.__all__
-    finally:
-        monkeypatch.setattr(typing, "TYPE_CHECKING", original_type_checking)
-        importlib.reload(powermon_module)
+        assert reloaded.PPK2PowerSupply is cast(Any, stub_ppk2).PPK2PowerSupply
+        assert reloaded.RidenPowerSupply is cast(Any, stub_riden).RidenPowerSupply
+
+    reloaded = importlib.reload(powermon_module)
+    assert "PPK2PowerSupply" not in reloaded.__dict__
+    assert "RidenPowerSupply" not in reloaded.__dict__

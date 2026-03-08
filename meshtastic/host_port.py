@@ -46,7 +46,19 @@ def _has_extra_url_components(parsed: ParseResult) -> bool:
     )
 
 
-def parse_host_and_port(
+def _validate_port(
+    port: int,
+    *,
+    host: str,
+    env_var: str,
+) -> int:
+    """Validate a TCP port value and return it unchanged when valid."""
+    if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+        raise ValueError(_INVALID_PORT_RANGE.format(env_var=env_var, host=host))
+    return port
+
+
+def parseHostAndPort(
     host: str,
     *,
     default_port: int,
@@ -78,6 +90,8 @@ def parse_host_and_port(
 
     if any(separator in host for separator in _FORBIDDEN_HOST_SEPARATORS):
         raise ValueError(_EXPECTED_HOST_PORT_ONLY.format(env_var=env_var, host=host))
+
+    default_port = _validate_port(default_port, host=host, env_var=env_var)
 
     if host.count(":") >= 2 and not host.startswith("["):
         try:
@@ -150,7 +164,18 @@ def parse_host_and_port(
         return host_name, default_port
 
     assert port is not None
-    return host_name, port
+    return host_name, _validate_port(port, host=host, env_var=env_var)
 
 
-__all__ = ["parse_host_and_port"]
+# COMPAT_STABLE_SHIM: naming-only snake_case alias for the shared host/port parser.
+def parse_host_and_port(
+    host: str,
+    *,
+    default_port: int,
+    env_var: str,
+) -> tuple[str, int]:
+    """Compatibility alias for parseHostAndPort()."""
+    return parseHostAndPort(host, default_port=default_port, env_var=env_var)
+
+
+__all__ = ["parseHostAndPort", "parse_host_and_port"]

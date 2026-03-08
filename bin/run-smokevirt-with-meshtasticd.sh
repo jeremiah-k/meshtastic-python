@@ -103,15 +103,15 @@ require_regex "${MESHTASTICD_READY_TIMEOUT_SECONDS}" '^[0-9]+$' "MESHTASTICD_REA
 MESHTASTICD_PORT_DEC=$((10#${MESHTASTICD_PORT}))
 
 MESHTASTICD_PARSED_HOST_AND_PORT="$(
-	python3 - "${MESHTASTICD_HOST}" "${MESHTASTICD_PORT_DEC}" <<'PY'
+	poetry run python - "${MESHTASTICD_HOST}" "${MESHTASTICD_PORT_DEC}" <<'PY'
 import sys
 
-from meshtastic.host_port import parse_host_and_port
+from meshtastic.host_port import parseHostAndPort
 
 host = sys.argv[1]
 default_port = int(sys.argv[2])
 try:
-    parsed_host, parsed_port = parse_host_and_port(
+    parsed_host, parsed_port = parseHostAndPort(
         host,
         default_port=default_port,
         env_var="MESHTASTICD_HOST",

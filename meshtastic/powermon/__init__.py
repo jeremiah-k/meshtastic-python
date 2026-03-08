@@ -3,20 +3,23 @@
 from __future__ import annotations
 
 import importlib
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Any
 
 from .power_supply import PowerError, PowerMeter, PowerSupply
 from .sim import SimPowerSupply
 from .stress import PowerStress
 
-if TYPE_CHECKING:
-    from .ppk2 import PPK2PowerSupply
-    from .riden import RidenPowerSupply
-
 _OPTIONAL_POWERMON_BACKENDS: dict[str, tuple[str, str]] = {
     "PPK2PowerSupply": (".ppk2", "ppk2_api"),
     "RidenPowerSupply": (".riden", "riden"),
 }
+
+if TYPE_CHECKING:
+    from .ppk2 import PPK2PowerSupply
+    from .riden import RidenPowerSupply
+else:
+    globals().pop("PPK2PowerSupply", None)
+    globals().pop("RidenPowerSupply", None)
 
 
 def _missing_optional_backend_class(
@@ -27,7 +30,7 @@ def _missing_optional_backend_class(
     """Return a placeholder backend class that raises a clear dependency error."""
 
     class _MissingOptionalBackend(PowerSupply):
-        def __new__(cls, *args: object, **kwargs: object) -> Self:
+        def __new__(cls, *args: object, **kwargs: object) -> PowerSupply:
             _ = (cls, args, kwargs)
             raise ImportError(
                 f"{backend_name} requires optional dependency {dependency_name!r}. "
