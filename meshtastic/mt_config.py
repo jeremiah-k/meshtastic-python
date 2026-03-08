@@ -34,7 +34,7 @@ MODULE_STATE_DEFAULTS: dict[str, Any] = {
     "channel_index": None,
     "logfile": None,
     "tunnel_instance": None,
-    # TODO: to migrate to camel_case for v1.3 change this value to True
+    # Keep the current naming mode stable until an explicit breaking-change flip.
     "camel_case": False,
 }
 

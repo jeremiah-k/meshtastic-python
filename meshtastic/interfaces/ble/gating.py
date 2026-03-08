@@ -41,10 +41,14 @@ logger = logging.getLogger("meshtastic.ble")
 _REGISTRY_LOCK = RLock()
 _ADDR_LOCKS: dict[str, RLock] = {}
 _CONNECTED_ADDRS: set[str] = set()
+_CONNECTING_ADDRS: set[str] = set()
 # Optional owner references for active connected-address claims.
 _CONNECTED_OWNERS: dict[str, weakref.ReferenceType[Any] | None] = {}
 _CONNECTED_OWNER_IDS: dict[str, int | None] = {}
 _CONNECTED_MARKED_AT: dict[str, float] = {}
+_CONNECTING_OWNERS: dict[str, weakref.ReferenceType[Any] | None] = {}
+_CONNECTING_OWNER_IDS: dict[str, int | None] = {}
+_CONNECTING_MARKED_AT: dict[str, float] = {}
 # Track locks that are currently held to prevent premature cleanup
 _LOCK_HOLDERS: dict[str, int] = {}  # key -> count of holders
 
@@ -65,9 +69,13 @@ def _clear_all_registries() -> None:
     with _REGISTRY_LOCK:
         _ADDR_LOCKS.clear()
         _CONNECTED_ADDRS.clear()
+        _CONNECTING_ADDRS.clear()
         _CONNECTED_MARKED_AT.clear()
+        _CONNECTING_MARKED_AT.clear()
         _CONNECTED_OWNER_IDS.clear()
+        _CONNECTING_OWNER_IDS.clear()
         _CONNECTED_OWNERS.clear()
+        _CONNECTING_OWNERS.clear()
         _LOCK_HOLDERS.clear()
 
 
@@ -138,7 +146,7 @@ def _get_addr_lock_by_key(key: str | None) -> RLock:
 
 
 def _maybe_remove_addr_lock_entry(key: str) -> None:
-    """Remove per-address lock bookkeeping when no holders remain and key is disconnected.
+    """Remove per-address lock bookkeeping when no holders/claims remain.
 
     Must be called while holding `_REGISTRY_LOCK`.
 
@@ -147,7 +155,11 @@ def _maybe_remove_addr_lock_entry(key: str) -> None:
     key : str
         Normalized address key to evaluate.
     """
-    if _LOCK_HOLDERS.get(key, 0) <= 0 and key not in _CONNECTED_ADDRS:
+    if (
+        _LOCK_HOLDERS.get(key, 0) <= 0
+        and key not in _CONNECTED_ADDRS
+        and key not in _CONNECTING_ADDRS
+    ):
         _ADDR_LOCKS.pop(key, None)
         _LOCK_HOLDERS.pop(key, None)
         logger.debug("Cleaned up address lock for %s", key)
@@ -186,7 +198,7 @@ def _release_addr_lock_by_key(key: str | None) -> None:
 
 
 def _cleanup_addr_lock(key: str | None) -> None:
-    """Remove a per-address lock from the registry when there are no remaining holders.
+    """Remove a per-address lock when there are no holders or ownership claims.
 
     If `key` is None this function does nothing. When `key` is provided, the registry entries for that address (the lock and its holder count) are removed only if the tracked holder count is less than or equal to zero; otherwise the entries are left intact.
 
@@ -199,7 +211,11 @@ def _cleanup_addr_lock(key: str | None) -> None:
         return
     with _REGISTRY_LOCK:
         holder_count = _LOCK_HOLDERS.get(key, 0)
-        if holder_count > 0 or key in _CONNECTED_ADDRS:
+        if (
+            holder_count > 0
+            or key in _CONNECTED_ADDRS
+            or key in _CONNECTING_ADDRS
+        ):
             logger.debug(
                 "Skipping cleanup of address lock for %s (holders: %d)",
                 key,
@@ -285,6 +301,26 @@ def _remove_connected_record_locked(key: str) -> None:
     _CONNECTED_MARKED_AT.pop(key, None)
 
 
+def _remove_connecting_record_locked(key: str) -> None:
+    """Remove provisional connecting-state bookkeeping for a normalized key.
+
+    Parameters
+    ----------
+    key : str
+        Normalized address key to remove provisional connecting-state records
+        for.
+
+    Returns
+    -------
+    None
+        This helper mutates global registry state in place.
+    """
+    _CONNECTING_ADDRS.discard(key)
+    _CONNECTING_OWNERS.pop(key, None)
+    _CONNECTING_OWNER_IDS.pop(key, None)
+    _CONNECTING_MARKED_AT.pop(key, None)
+
+
 def _prune_stale_unowned_claim_locked(key: str) -> bool:
     """Prune an unowned claim when its marker timestamp is missing or stale.
 
@@ -331,6 +367,120 @@ def _prune_stale_unowned_claim_locked(key: str) -> bool:
     return False
 
 
+def _prune_stale_connecting_claim_locked(key: str) -> bool:
+    """Prune stale provisional connecting-state for a normalized key.
+
+    Parameters
+    ----------
+    key : str
+        Normalized address key to evaluate for stale provisional ownership.
+
+    Returns
+    -------
+    bool
+        `True` when a stale provisional record was removed, otherwise `False`.
+    """
+    marked_at = _CONNECTING_MARKED_AT.get(key)
+    if marked_at is None or (
+        time.monotonic() - marked_at > BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS
+    ):
+        logger.debug(
+            "Pruning stale provisional claim for %s (marked_at=%s, threshold=%.1fs).",
+            key,
+            marked_at,
+            BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS,
+        )
+        _remove_connecting_record_locked(key)
+        _maybe_remove_addr_lock_entry(key)
+        return True
+    return False
+
+
+def _is_connecting_claim_elsewhere_locked(
+    key: str, owner: object | None
+) -> bool | None:
+    """Return whether a provisional claim currently blocks `owner` for `key`.
+
+    Must be called while holding `_REGISTRY_LOCK`.
+
+    Parameters
+    ----------
+    key : str
+        Normalized address key to evaluate.
+    owner : object | None
+        Optional owner object requesting the check.
+
+    Returns
+    -------
+    bool | None
+        `True` when a different owner currently holds a provisional claim,
+        `False` when the key has a provisional record but should not block this
+        owner, and `None` when no provisional claim exists for `key`.
+    """
+    owner_ref = _CONNECTING_OWNERS.get(key)
+    current_owner = owner_ref() if owner_ref is not None else None
+    current_owner_id = _CONNECTING_OWNER_IDS.get(key)
+    if key not in _CONNECTING_ADDRS:
+        return None
+    if owner_ref is not None and current_owner is None:
+        _remove_connecting_record_locked(key)
+        _cleanup_addr_lock(key)
+        return False
+    if owner is not None and (
+        current_owner is owner
+        or (
+            owner_ref is None
+            and current_owner_id is not None
+            and current_owner_id == id(owner)
+        )
+    ):
+        return False
+    if current_owner is None:
+        if _prune_stale_connecting_claim_locked(key):
+            return False
+        return True
+    return True
+
+
+def _mark_connecting(addr: str | None, owner: object | None = None) -> None:
+    """Record a provisional per-address ownership claim for an in-flight connect."""
+    key = _addr_key(addr)
+    if key is None:
+        return
+    with _REGISTRY_LOCK:
+        # Keep a concrete per-address lock entry while a provisional claim is
+        # active so cleanup cannot drop/recreate the lock mid-connect.
+        _ADDR_LOCKS.setdefault(key, RLock())
+        _CONNECTING_ADDRS.add(key)
+        _CONNECTING_OWNERS[key] = _owner_ref(owner)
+        _CONNECTING_OWNER_IDS[key] = id(owner) if owner is not None else None
+        _CONNECTING_MARKED_AT[key] = time.monotonic()
+
+
+def _clear_connecting(addr: str | None, owner: object | None = None) -> None:
+    """Clear a provisional connecting claim, optionally requiring owner match."""
+    key = _addr_key(addr)
+    if key is None:
+        return
+    with _REGISTRY_LOCK:
+        if owner is not None:
+            owner_ref = _CONNECTING_OWNERS.get(key)
+            current_owner = owner_ref() if owner_ref is not None else None
+            # Dead weakrefs must be pruned before any id(owner) fallback checks.
+            if owner_ref is not None and current_owner is None:
+                _remove_connecting_record_locked(key)
+                _cleanup_addr_lock(key)
+                return
+            if current_owner is not None and current_owner is not owner:
+                return
+            if current_owner is None:
+                stored_id = _CONNECTING_OWNER_IDS.get(key)
+                if stored_id is None or stored_id != id(owner):
+                    return
+        _remove_connecting_record_locked(key)
+        _cleanup_addr_lock(key)
+
+
 def _mark_connected(addr: str | None, owner: Any | None = None) -> None:
     """Mark a BLE address as connected and record optional owner metadata.
 
@@ -353,6 +503,7 @@ def _mark_connected(addr: str | None, owner: Any | None = None) -> None:
     if key is None:
         return
     with _REGISTRY_LOCK:
+        _remove_connecting_record_locked(key)
         _CONNECTED_ADDRS.add(key)
         _CONNECTED_OWNERS[key] = _owner_ref(owner)
         _CONNECTED_OWNER_IDS[key] = id(owner) if owner is not None else None
@@ -375,7 +526,18 @@ def _mark_disconnected(addr: str | None, owner: Any | None = None) -> None:
     if key is None:
         return
     with _REGISTRY_LOCK:
-        if owner is not None:
+        has_connected_claim = (
+            key in _CONNECTED_ADDRS
+            or key in _CONNECTED_OWNERS
+            or key in _CONNECTED_OWNER_IDS
+        )
+        has_connecting_claim = (
+            key in _CONNECTING_ADDRS
+            or key in _CONNECTING_OWNERS
+            or key in _CONNECTING_OWNER_IDS
+        )
+
+        if owner is not None and has_connected_claim:
             owner_ref = _CONNECTED_OWNERS.get(key)
             current_owner = owner_ref() if owner_ref is not None else None
             if current_owner is not None and current_owner is not owner:
@@ -396,7 +558,34 @@ def _mark_disconnected(addr: str | None, owner: Any | None = None) -> None:
                         key,
                     )
                     return
+        if owner is not None and has_connecting_claim:
+            provisional_owner_ref = _CONNECTING_OWNERS.get(key)
+            provisional_owner = (
+                provisional_owner_ref() if provisional_owner_ref is not None else None
+            )
+            # Prune dead provisional weakrefs before id(owner) fallback checks.
+            pruned_dead_provisional_owner = False
+            if provisional_owner_ref is not None and provisional_owner is None:
+                _CONNECTING_OWNERS.pop(key, None)
+                _CONNECTING_OWNER_IDS.pop(key, None)
+                pruned_dead_provisional_owner = True
+            if not pruned_dead_provisional_owner:
+                if provisional_owner is not None and provisional_owner is not owner:
+                    logger.debug(
+                        "Ignoring provisional disconnect mark for %s from non-owner instance.",
+                        key,
+                    )
+                    return
+                if provisional_owner is None:
+                    provisional_owner_id = _CONNECTING_OWNER_IDS.get(key)
+                    if provisional_owner_id is None or provisional_owner_id != id(owner):
+                        logger.debug(
+                            "Ignoring provisional disconnect mark for %s from non-owner instance.",
+                            key,
+                        )
+                        return
         _remove_connected_record_locked(key)
+        _remove_connecting_record_locked(key)
         _cleanup_addr_lock(key)
 
 
@@ -457,7 +646,8 @@ def _is_currently_connected_elsewhere(
     # Phase 1: Check under registry lock.
     with _REGISTRY_LOCK:
         if key not in _CONNECTED_ADDRS:
-            return False
+            provisional_elsewhere = _is_connecting_claim_elsewhere_locked(key, owner)
+            return False if provisional_elsewhere is None else provisional_elsewhere
 
         owner_ref = _CONNECTED_OWNERS.get(key)
         current_owner = owner_ref() if owner_ref is not None else None
@@ -499,7 +689,8 @@ def _is_currently_connected_elsewhere(
     # Phase 2: Verify owner connection state; re-check under registry lock to close the TOCTOU window.
     with _REGISTRY_LOCK:
         if key not in _CONNECTED_ADDRS:
-            return False
+            provisional_elsewhere = _is_connecting_claim_elsewhere_locked(key, owner)
+            return False if provisional_elsewhere is None else provisional_elsewhere
 
         owner_ref = _CONNECTED_OWNERS.get(key)
         current_owner = owner_ref() if owner_ref is not None else None

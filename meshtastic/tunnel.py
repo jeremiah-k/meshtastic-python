@@ -21,7 +21,7 @@ import threading
 from contextlib import suppress
 from typing import Any
 
-from pubsub import pub  # type: ignore[import-untyped,unused-ignore]
+from pubsub import pub
 from pytap2 import TapDevice
 
 from meshtastic import mt_config
@@ -187,11 +187,7 @@ class Tunnel:
         self.tcpBlacklist = self.TCP_BLACKLIST
         self.protocolBlacklist = self.PROTOCOL_BLACKLIST
 
-        # TODO: check if root?
-        logger.info(
-            "Starting IP to mesh tunnel (you must be root for this *pre-alpha* "
-            "feature to work).  Mesh members:"
-        )
+        logger.info("Starting IP to mesh tunnel. Mesh members:")
 
         pub.subscribe(onTunnelReceive, TUNNEL_TOPIC)
         self._subscribed = True
@@ -213,6 +209,9 @@ class Tunnel:
                     "Not creating a TapDevice() because it is disabled by noProto"
                 )
             else:
+                logger.info(
+                    "Creating TapDevice; CAP_NET_ADMIN or root is typically required."
+                )
                 self.tun = TapDevice(name="mesh")
                 self.tun.up()
                 self.tun.ifconfig(address=myAddr, netmask=netmask, mtu=200)

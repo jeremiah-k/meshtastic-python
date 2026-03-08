@@ -114,6 +114,7 @@ Semantic deprecation:
 
 | Module            | Compatibility symbol      | Canonical symbol       |
 | ----------------- | ------------------------- | ---------------------- |
+| `meshtastic.host_port` | `parse_host_and_port()` | `parseHostAndPort()` |
 | `meshtastic.util` | `blacklistVids`           | `BLACKLIST_VIDS`       |
 | `meshtastic.util` | `whitelistVids`           | `WHITELIST_VIDS`       |
 | `meshtastic.util` | `our_exit()`              | `ourExit()`            |

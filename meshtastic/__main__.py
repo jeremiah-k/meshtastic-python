@@ -18,13 +18,13 @@ from typing import Any, NoReturn
 
 import yaml
 from google.protobuf.json_format import MessageToDict
-from pubsub import pub  # type: ignore[import-untyped,unused-ignore]
+from pubsub import pub
 
 import meshtastic.ota
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
-from meshtastic import BROADCAST_ADDR, mt_config, remote_hardware
+from meshtastic import BROADCAST_ADDR, LOCAL_ADDR, mt_config, remote_hardware
 from meshtastic.interfaces.ble import BLEInterface
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import (
@@ -102,6 +102,11 @@ GPIO_READ_MAX_POLLS = 10
 
 # Time to wait for device boot after power-on
 POWER_ON_BOOT_DELAY_SECONDS = 5.0
+
+# OTA CLI timing and retry delay
+OTA_REBOOT_WAIT_SECONDS: float = 5.0
+OTA_RETRY_DELAY_SECONDS: float = 2.0
+OTA_MAX_RETRIES: int = 5
 
 # Keep-alive sleep interval for main loop (effectively infinite wait)
 MAIN_LOOP_IDLE_SLEEP_SECONDS = 1000
@@ -808,6 +813,12 @@ def onConnected(interface: MeshInterface) -> None:
                 _cli_exit(
                     "Error: OTA update currently requires a TCP connection to the node (use --host)."
                 )
+            if args.dest not in {BROADCAST_ADDR, LOCAL_ADDR}:
+                _cli_exit(
+                    "Error: OTA update only supports the directly connected local node; omit --dest."
+                )
+            if args.dest == LOCAL_ADDR:
+                args.dest = BROADCAST_ADDR
 
             ota = meshtastic.ota.ESP32WiFiOTA(args.ota_update, interface.hostname)
 
@@ -817,9 +828,9 @@ def onConnected(interface: MeshInterface) -> None:
             )
 
             print("Waiting for device to reboot into OTA mode...")
-            time.sleep(5)
+            time.sleep(OTA_REBOOT_WAIT_SECONDS)
 
-            retries = 5
+            retries = OTA_MAX_RETRIES
             while retries > 0:
                 try:
                     ota.update()
@@ -830,7 +841,7 @@ def onConnected(interface: MeshInterface) -> None:
                     if retries == 0:
                         _cli_exit(f"OTA update failed: {e}")
 
-                    time.sleep(2)
+                    time.sleep(OTA_RETRY_DELAY_SECONDS)
 
             print("\nOTA update completed successfully!")
 

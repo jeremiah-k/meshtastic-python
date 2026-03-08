@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from meshtastic.ota import (
+    OTA_CHUNK_SIZE_BYTES,
     ESP32WiFiOTA,
     OTAError,
     _file_sha256,
@@ -69,6 +70,7 @@ def test_esp32_wifi_ota_init_success() -> None:
         assert ota._filename == temp_file
         assert ota._hostname == "192.168.1.1"
         assert ota._port == 3232
+        assert ota._size == len(b"fake firmware data")
         assert ota._socket is None
         # Verify hash is calculated
         assert ota._file_hash is not None
@@ -226,6 +228,157 @@ def test_esp32_wifi_ota_update_success(mock_socket_class: MagicMock) -> None:
             # Verify socket was closed
             mock_socket.close.assert_called_once()
 
+    finally:
+        os.unlink(temp_file)
+
+
+@pytest.mark.unit
+@patch("meshtastic.ota.socket.socket")
+def test_esp32_wifi_ota_update_rejects_firmware_changed_after_init(
+    mock_socket_class: MagicMock,
+) -> None:
+    """update() should fail if firmware bytes drift after OTA session initialization."""
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
+        f.write(b"A" * 32)
+        temp_file = f.name
+
+    try:
+        ota = ESP32WiFiOTA(temp_file, "192.168.1.1")
+        assert ota._size == 32
+        assert ota.hash_hex() == hashlib.sha256(b"A" * 32).hexdigest()
+        replacement_data = b"B" * 64
+        with open(temp_file, "wb") as fw:
+            fw.write(replacement_data)
+
+        with pytest.raises(OTAError, match="changed after OTA session initialization"):
+            ota.update()
+
+        mock_socket_class.assert_not_called()
+    finally:
+        os.unlink(temp_file)
+
+
+@pytest.mark.unit
+@patch("meshtastic.ota.socket.socket")
+def test_esp32_wifi_ota_update_rejects_firmware_truncated_to_empty_after_init(
+    mock_socket_class: MagicMock,
+) -> None:
+    """update() should fail fast when firmware becomes empty after object construction."""
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
+        f.write(b"A" * 32)
+        temp_file = f.name
+
+    try:
+        ota = ESP32WiFiOTA(temp_file, "192.168.1.1")
+        with open(temp_file, "wb") as fw:
+            fw.write(b"")
+
+        with pytest.raises(OTAError, match="is empty"):
+            ota.update()
+
+        mock_socket_class.assert_not_called()
+    finally:
+        os.unlink(temp_file)
+
+
+@pytest.mark.unit
+@patch("meshtastic.ota.socket.socket")
+def test_esp32_wifi_ota_update_wraps_missing_file_after_init(
+    mock_socket_class: MagicMock,
+) -> None:
+    """update() should wrap firmware deletion after init in an OTA-specific error."""
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
+        f.write(b"A" * 32)
+        temp_file = f.name
+
+    try:
+        ota = ESP32WiFiOTA(temp_file, "192.168.1.1")
+        os.unlink(temp_file)
+
+        with pytest.raises(OTAError, match=r"Firmware file .* does not exist"):
+            ota.update()
+
+        mock_socket_class.assert_not_called()
+    finally:
+        if os.path.exists(temp_file):
+            os.unlink(temp_file)
+
+
+@pytest.mark.unit
+@patch("meshtastic.ota.socket.socket")
+def test_esp32_wifi_ota_update_logs_progress_without_callback(
+    mock_socket_class: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test update() logs coarse progress when no progress callback is provided."""
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
+        test_data = b"A" * (OTA_CHUNK_SIZE_BYTES * 10)
+        f.write(test_data)
+        temp_file = f.name
+
+    try:
+        mock_socket = MagicMock()
+        mock_socket_class.return_value = mock_socket
+
+        ota = ESP32WiFiOTA(temp_file, "192.168.1.1")
+
+        with (
+            patch.object(ota, "_read_line") as mock_read_line,
+            patch("meshtastic.ota.OTA_PROGRESS_LOG_PERCENT_STEP", 50.0),
+        ):
+            mock_read_line.side_effect = [
+                "OK",  # Device ready
+                "OK",  # Device finished
+            ]
+
+            with caplog.at_level(logging.INFO):
+                ota.update()
+                progress_messages = [
+                    record.message
+                    for record in caplog.records
+                    if "OTA progress:" in record.message
+                ]
+                total_bytes = len(test_data)
+                half_bytes = min(OTA_CHUNK_SIZE_BYTES * 5, total_bytes)
+                assert progress_messages == [
+                    f"OTA progress: 50.0% ({half_bytes}/{total_bytes} bytes)",
+                    f"OTA progress: 100.0% ({total_bytes}/{total_bytes} bytes)",
+                ]
+    finally:
+        os.unlink(temp_file)
+
+
+@pytest.mark.unit
+@patch("meshtastic.ota.socket.socket")
+def test_esp32_wifi_ota_update_rejects_non_positive_progress_step(
+    mock_socket_class: MagicMock,
+) -> None:
+    """update() should fail fast when OTA progress step is misconfigured."""
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
+        f.write(b"A" * 1024)
+        temp_file = f.name
+
+    try:
+        ota = ESP32WiFiOTA(temp_file, "192.168.1.1")
+        with patch("meshtastic.ota.OTA_PROGRESS_LOG_PERCENT_STEP", 0.0):
+            with pytest.raises(
+                ValueError, match="OTA_PROGRESS_LOG_PERCENT_STEP must be > 0"
+            ):
+                ota.update()
+        mock_socket_class.assert_not_called()
+    finally:
+        os.unlink(temp_file)
+
+
+@pytest.mark.unit
+def test_esp32_wifi_ota_init_rejects_empty_firmware() -> None:
+    """Constructor should fail fast for zero-byte firmware before OTA mode begins."""
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
+        temp_file = f.name
+
+    try:
+        with pytest.raises(OTAError, match="is empty"):
+            ESP32WiFiOTA(temp_file, "192.168.1.1")
     finally:
         os.unlink(temp_file)
 

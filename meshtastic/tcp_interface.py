@@ -14,9 +14,17 @@ import threading
 import time
 from typing import IO, Any, Callable
 
-from meshtastic.stream_interface import WRITE_PROGRESS_TIMEOUT_SECONDS, StreamInterface
+from meshtastic.stream_interface import (
+    WRITE_PROGRESS_TIMEOUT_SECONDS,
+    StreamInterface,
+)
 
 DEFAULT_TCP_PORT = 4403
+TCP_IO_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    OSError,
+    ValueError,
+    TypeError,
+)
 logger = logging.getLogger(__name__)
 
 
@@ -29,6 +37,7 @@ class TCPInterface(StreamInterface):
         "got {0!r} (type: {1})"
     )
     SOCKET_NOT_CONNECTED_ERROR = "TCP socket is closed or not connected"
+    SOCKET_READ_DEAD_ERROR_LOG = "Socket read error, treating as dead socket: %s"
     WRITE_TIMEOUT_ERROR = "TCP write timed out waiting for socket readiness"
     WRITE_NO_PROGRESS_ERROR = "TCP write returned no bytes"
     CONNECT_SHUTTING_DOWN_ERROR = "Cannot connect to {}: interface is shutting down"
@@ -359,8 +368,10 @@ class TCPInterface(StreamInterface):
         sock = self.socket
         if sock is None:
             raise ConnectionError(self.SOCKET_NOT_CONNECTED_ERROR)
+        # Validate payload shape before entering socket-recovery handling so
+        # caller contract errors do not reset an otherwise healthy socket.
+        payload = memoryview(b)
         try:
-            payload = memoryview(b)
             total_sent = 0
             write_deadline = time.monotonic() + WRITE_PROGRESS_TIMEOUT_SECONDS
             while total_sent < len(payload):
@@ -375,7 +386,7 @@ class TCPInterface(StreamInterface):
                     raise OSError(self.WRITE_NO_PROGRESS_ERROR)
                 total_sent += sent
                 write_deadline = time.monotonic() + WRITE_PROGRESS_TIMEOUT_SECONDS
-        except (OSError, ValueError) as ex:
+        except TCP_IO_EXCEPTIONS as ex:
             logger.warning(
                 "TCP write failed (%d bytes), resetting socket: %s", len(b), ex
             )
@@ -384,7 +395,13 @@ class TCPInterface(StreamInterface):
                     "Reconnect deferred to reader/reconnect path for %s",
                     self.hostname,
                 )
-            if isinstance(ex, ValueError):
+            if isinstance(ex, (ValueError, TypeError)):
+                # Socket backends can surface fd-state races here (for example
+                # TypeError("fd is None")) after a descriptor is invalidated
+                # during close/reconnect. These cases are intentional,
+                # regression-tested transport failures and should continue down
+                # the reconnect path as OSError, not be treated as programmer
+                # bugs or silently ignored.
                 raise OSError(str(ex)) from ex
             raise
 
@@ -575,20 +592,29 @@ class TCPInterface(StreamInterface):
         Parameters
         ----------
         length : int
-            Maximum number of bytes to read.
+            Maximum number of bytes to read. Must be a positive integer
+            (booleans are rejected).
 
         Returns
         -------
         bytes
             The received bytes, or `b""` if no data was returned
             because the socket is absent, a reconnect was started, or shutdown was requested.
+
+        Raises
+        ------
+        ValueError
+            If `length` is not a positive integer (for example, bool,
+            non-int, or `<= 0`).
         """
+        if isinstance(length, bool) or not isinstance(length, int) or length <= 0:
+            raise ValueError(f"length must be a positive int, got {length!r}")
         sock = self.socket
         if sock is not None:
             try:
                 data = sock.recv(length)
-            except OSError as ex:
-                logger.debug("Socket read error, treating as dead socket: %s", ex)
+            except TCP_IO_EXCEPTIONS as ex:
+                logger.debug(self.SOCKET_READ_DEAD_ERROR_LOG, ex)
                 data = b""
             # empty byte indicates a disconnected socket,
             # we need to handle it to avoid an infinite loop reading from null socket

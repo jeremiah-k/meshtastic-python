@@ -3,7 +3,9 @@
 set -euo pipefail
 
 if [[ $# -lt 3 ]]; then
-	echo "Usage: $0 <title> <runner-script> <log-dir> [single|multinode]" >&2
+	echo "Usage: $0 <title> <runner-script> <log-dir> [single|multinode] [--no-logs]" >&2
+	echo "  Provide a non-empty <log-dir> when log processing is expected." >&2
+	echo "  Use --no-logs to explicitly skip log processing." >&2
 	exit 1
 fi
 
@@ -11,6 +13,20 @@ TITLE="$1"
 RUNNER_SCRIPT="$2"
 LOG_DIR="$3"
 MODE="${4:-single}"
+NO_LOGS=false
+if [[ ${4-} == "--no-logs" ]]; then
+	MODE="single"
+	NO_LOGS=true
+	if [[ -n ${5-} ]]; then
+		echo "Invalid argument: ${5}. Expected --no-logs." >&2
+		exit 1
+	fi
+elif [[ ${5-} == "--no-logs" ]]; then
+	NO_LOGS=true
+elif [[ -n ${5-} ]]; then
+	echo "Invalid argument: ${5}. Expected --no-logs." >&2
+	exit 1
+fi
 
 if [[ ${MODE} != "single" && ${MODE} != "multinode" ]]; then
 	echo "Invalid mode: ${MODE}. Expected 'single' or 'multinode'." >&2
@@ -21,7 +37,16 @@ echo "### ${TITLE}"
 echo ""
 echo "- Runner script: \`${RUNNER_SCRIPT}\`"
 
-if [[ -d "${LOG_DIR}" ]]; then
+if [[ -z ${LOG_DIR} ]]; then
+	if [[ ${NO_LOGS} == true ]]; then
+		echo "- Log directory: skipped (--no-logs)"
+	else
+		echo "- Log directory is required; pass --no-logs to skip processing." >&2
+		exit 1
+	fi
+elif [[ ${NO_LOGS} == true ]]; then
+	echo "- Log directory: skipped (--no-logs)"
+elif [[ -d ${LOG_DIR} ]]; then
 	shopt -s nullglob
 	log_files=("${LOG_DIR}"/*.log)
 	shopt -u nullglob

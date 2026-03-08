@@ -4,7 +4,7 @@ import logging
 import threading
 import time
 import types
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import ExitStack, contextmanager
 from queue import Queue
@@ -20,6 +20,7 @@ import meshtastic.mesh_interface as mesh_iface_module
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import (
     FROMNUM_UUID,
+    FROMRADIO_UUID,
     LEGACY_LOGRADIO_UUID,
     LOGRADIO_UUID,
 )
@@ -46,6 +47,79 @@ def _get_connect_stub_calls(iface: BLEInterface) -> list[str | None]:
         Recorded addresses for each connect call; `None` represents a connect attempt without an address. Returns an empty list if the attribute is not present.
     """
     return cast(list[str | None], getattr(iface, "_connect_stub_calls", []))
+
+
+def _get_connect_stub_kwargs(iface: BLEInterface) -> list[dict[str, object]]:
+    """Retrieve the test-only list of keyword args recorded for connect calls.
+
+    Parameters
+    ----------
+    iface : BLEInterface
+        Interface instance that may expose a `_connect_stub_kwargs` attribute used by tests.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Recorded keyword-argument dictionaries for each connect call. Returns an empty list if the attribute is not present.
+    """
+    return cast(list[dict[str, object]], getattr(iface, "_connect_stub_kwargs", []))
+
+
+def _get_stress_test_clients(iface: BLEInterface) -> list[Any]:
+    """Retrieve the stress-test clients created by the patched connect stub.
+
+    Parameters
+    ----------
+    iface : BLEInterface
+        Interface instance that may expose a `_stress_test_clients` attribute used by tests.
+
+    Returns
+    -------
+    list[Any]
+        Created stress-test client objects in creation order. Returns an empty list if the attribute is not present.
+    """
+    return cast(list[Any], getattr(iface, "_stress_test_clients", []))
+
+
+def _get_stress_test_attempts(iface: BLEInterface) -> list[Any]:
+    """Retrieve reconnect attempts recorded before connect completion.
+
+    Parameters
+    ----------
+    iface : BLEInterface
+        Interface instance that may expose a `_stress_test_attempts` attribute used by tests.
+
+    Returns
+    -------
+    list[Any]
+        Attempt objects recorded before connect completion. Returns an empty list if the attribute is not present.
+    """
+    return cast(list[Any], getattr(iface, "_stress_test_attempts", []))
+
+
+def _latest_successful_stress_attempt(
+    attempts: Sequence[object],
+    successful_clients: Sequence[object],
+) -> object | None:
+    """Return the highest-order reconnect attempt that completed successfully.
+
+    Parameters
+    ----------
+    attempts : Sequence[object]
+        Reconnect attempt objects in creation order.
+    successful_clients : Sequence[object]
+        Successfully connected client objects to match against the attempt list.
+
+    Returns
+    -------
+    object | None
+        The latest successful reconnect attempt object, or `None` when no attempt completed successfully.
+    """
+    successful_ids = {id(client) for client in successful_clients}
+    for attempt in reversed(attempts):
+        if id(attempt) in successful_ids:
+            return attempt
+    return None
 
 
 def _make_fake_future(exception_to_raise: Exception) -> Any:
@@ -88,7 +162,7 @@ def test_log_notification_registration_missing_characteristics(
     class MockClientWithoutLogChars(DummyClient):
         """Mock client that doesn't have log characteristics."""
 
-        def __init__(self):
+        def __init__(self) -> None:
             """Create a mock BLE client that exposes only the FROMNUM characteristic.
 
             Attributes
@@ -99,7 +173,7 @@ def test_log_notification_registration_missing_characteristics(
                 Mapping of characteristic UUID to bool; contains only `FROMNUM_UUID: True`.
             """
             super().__init__()
-            self.start_notify_calls = []
+            self.start_notify_calls: list[tuple[object, object]] = []
             self.has_characteristic_map = {
                 FROMNUM_UUID: True,  # Only have the critical one
             }
@@ -164,7 +238,7 @@ def test_receive_loop_handles_decode_error(
     class MockClient(DummyClient):
         """Mock client that returns invalid protobuf data to trigger DecodeError."""
 
-        def read_gatt_char(self, *_args, **_kwargs) -> bytes:
+        def read_gatt_char(self, *_args: object, **_kwargs: object) -> bytes:
             """Return raw GATT characteristic bytes for this test client.
 
             When the requested UUID equals ble_mod.FROMRADIO_UUID, returns malformed protobuf bytes to simulate a decode error; otherwise returns empty bytes.
@@ -175,7 +249,7 @@ def test_receive_loop_handles_decode_error(
                 Malformed protobuf bytes for `ble_mod.FROMRADIO_UUID`, empty bytes otherwise.
             """
             # Extract uuid from args if available
-            if _args and _args[0] == ble_mod.FROMRADIO_UUID:
+            if _args and _args[0] == FROMRADIO_UUID:
                 return b"invalid-protobuf-data"
             return b""
 
@@ -185,7 +259,7 @@ def test_receive_loop_handles_decode_error(
     close_called = threading.Event()
     original_close = iface.close
 
-    def mock_close():
+    def mock_close() -> None:
         """Signal that the mock close was invoked and then call the original close callable.
 
         Sets the `close_called` event to notify waiters and then invokes `original_close`.
@@ -200,7 +274,7 @@ def test_receive_loop_handles_decode_error(
 
     # Set up the client
     with iface._state_lock:
-        iface.client = client  # type: ignore[assignment]
+        cast(Any, iface).client = client
 
     # Trigger the receive loop to process the bad data
     iface._read_trigger.set()
@@ -258,8 +332,7 @@ def test_auto_reconnect_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(mesh_iface_module, "pub", fresh_pub)
     monkeypatch.setattr(
-        mesh_iface_module.publishingThread,
-        "queueWork",
+        "meshtastic.mesh_interface.publishingThread.queueWork",
         lambda callback: callback() if callback else None,
     )
 
@@ -274,10 +347,10 @@ def test_auto_reconnect_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
     ], "Initial connect should occur on instantiation"
 
     # Track if close() was called
-    close_called = []
+    close_called: list[bool] = []
     original_close = iface.close
 
-    def _track_close():
+    def _track_close() -> None:
         """Mark that close() was invoked and delegate to the preserved original close function.
 
         Returns
@@ -297,7 +370,10 @@ def test_auto_reconnect_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
 
     # Allow time for auto-reconnect thread to run
     for _ in range(50):
-        if len(_get_connect_stub_calls(iface)) >= 2 and iface.client is client:
+        if (
+            len(_get_connect_stub_calls(iface)) >= 2
+            and cast(object, iface.client) is client
+        ):
             break
         time.sleep(0.01)
 
@@ -322,7 +398,7 @@ def test_auto_reconnect_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
         len(_get_connect_stub_calls(iface)) >= 2
     ), f"Expected at least 2 connect calls, got {len(_get_connect_stub_calls(iface))}"
     assert (
-        iface.client is client
+        cast(object, iface.client) is client
     ), "client should be restored after successful auto-reconnect"
 
     # Simulate config completion to publish connected=True and verify it was emitted
@@ -473,8 +549,11 @@ def test_rapid_connect_disconnect_stress_test(
         """Shared BLE client stub behavior for stress-test doubles."""
 
         def __init__(
-            self, address: str = "00:11:22:33:44:55", is_connected_result: bool = True
-        ):
+            self,
+            address: str = "00:11:22:33:44:55",
+            *,
+            is_connected_result: bool = True,
+        ) -> None:
             """Initialize the shared BLE test stub state."""
             self.connect_count = 0
             self.disconnect_count = 0
@@ -482,7 +561,7 @@ def test_rapid_connect_disconnect_stress_test(
             self.is_connected_result = is_connected_result
             self._should_fail_connect = False
 
-        def connect(self, *_args, **_kwargs):
+        def connect(self, *_args: object, **_kwargs: object) -> "BaseMockBleakClient":
             """Simulate a BLE client connection for tests.
 
             Increments the client's connect_count and returns the client instance. If the client is configured to fail, raises a RuntimeError.
@@ -502,24 +581,24 @@ def test_rapid_connect_disconnect_stress_test(
             self.connect_count += 1
             return self
 
-        def is_connected(self):
+        def is_connected(self) -> bool:
             """Report whether the mock client is configured as connected."""
             return self.is_connected_result
 
-        def disconnect(self, *_args, **_kwargs):
+        def disconnect(self, *_args: object, **_kwargs: object) -> None:
             """Record a disconnect attempt on the mock client.
 
             Increments the `disconnect_count` attribute by 1. Any positional or keyword arguments are accepted for call-site compatibility and ignored.
             """
             self.disconnect_count += 1
 
-        def start_notify(self, *_args, **_kwargs):
+        def start_notify(self, *_args: object, **_kwargs: object) -> None:
             """Accept any positional and keyword arguments and perform no action.
 
             This stub is a no-op placeholder that intentionally ignores all inputs.
             """
 
-        def stopNotify(self, *_args, **_kwargs):
+        def stopNotify(self, *_args: object, **_kwargs: object) -> None:
             """Compatibility shim that accepts any arguments and performs no action.
 
             Provided for API compatibility with BLE client implementations; accepts any positional and keyword arguments and does nothing.
@@ -531,7 +610,7 @@ def test_rapid_connect_disconnect_stress_test(
     class StressTestClient(BLEClient):
         """Mock client that simulates rapid connect/disconnect cycles."""
 
-        def __init__(self):  # pylint: disable=super-init-not-called
+        def __init__(self) -> None:  # pylint: disable=super-init-not-called
             # Don't call super().__init__() to avoid creating real event loop
             """Create a mock BLE root client that simulates a Bleak client and connection state for tests.
 
@@ -552,35 +631,41 @@ def test_rapid_connect_disconnect_stress_test(
             self._eventLoop = None
             self._eventThread = None
 
-        def _delegate_to_bleak(self, method_name: str, *args, **kwargs):
+        def _delegate_to_bleak(
+            self, method_name: str, *args: object, **kwargs: object
+        ) -> object:
             """Invoke a method on the backing mock bleak client."""
             bleak_client = cast(Any, self.bleak_client)
             method = getattr(bleak_client, method_name)
             return method(*args, **kwargs)
 
-        def connect(self, *_args, **_kwargs):
+        def connect(self, *_args: object, **_kwargs: object) -> object:
             """Delegate connection behavior to the shared bleak client stub."""
             bleak_client = cast(Any, self.bleak_client)
             bleak_client._should_fail_connect = self._should_fail_connect
             return self._delegate_to_bleak("connect", *_args, **_kwargs)
 
-        def is_connected(self):
+        def is_connected(self) -> bool:
             """Delegate connection-state queries to the shared bleak client stub."""
-            return self._delegate_to_bleak("is_connected")
+            return cast(bool, self._delegate_to_bleak("is_connected"))
 
-        def disconnect(self, *_args, **_kwargs):
+        def isConnected(self) -> bool:
+            """Compatibility wrapper for the promoted camelCase BLE API."""
+            return self.is_connected()
+
+        def disconnect(self, *_args: object, **_kwargs: object) -> None:
             """Delegate disconnect behavior to the shared bleak client stub."""
             self._delegate_to_bleak("disconnect", *_args, **_kwargs)
 
-        def start_notify(self, *_args, **_kwargs):
+        def start_notify(self, *_args: object, **_kwargs: object) -> None:
             """Delegate notify-start behavior to the shared bleak client stub."""
             self._delegate_to_bleak("start_notify", *_args, **_kwargs)
 
-        def stopNotify(self, *_args, **_kwargs):
+        def stopNotify(self, *_args: object, **_kwargs: object) -> None:
             """Delegate notify-stop behavior to the shared bleak client stub."""
             self._delegate_to_bleak("stopNotify", *_args, **_kwargs)
 
-        def close(self):
+        def close(self) -> None:
             """No-op close method used in tests to avoid interacting with the event loop.
 
             This intentionally performs no action so that calling `close()` on a mock client does not trigger
@@ -608,18 +693,25 @@ def test_rapid_connect_disconnect_stress_test(
             `client` is the attached StressTestClient.
         """
 
-        outer_client = StressTestClient()
         connect_calls: list[str | None] = []
+        connect_kwargs: list[dict[str, object]] = []
+        attempted_clients: list[StressTestClient] = []
+        created_clients: list[StressTestClient] = []
 
         stack = ExitStack()
 
         def _patched_connect(
             self: BLEInterface,
             address: str | None = None,
+            **kwargs: object,
         ) -> "StressTestClient":
-            """Attach a StressTestClient to this BLEInterface for testing and record the connection address.
+            """Attach a fresh StressTestClient to this BLEInterface for testing and record the connection address.
 
-            Records the attempted connection address in the test's connect_calls list, sets the interface's client to the provided StressTestClient, clears the interface's _disconnect_notified flag, and signals a _reconnected_event if present.
+            Records the attempted connection address in the test's connect_calls
+            list, creates a new StressTestClient for this connect attempt, sets
+            the interface's client to that fresh instance, clears the
+            interface's _disconnect_notified flag, and signals a
+            _reconnected_event if present.
 
             Parameters
             ----------
@@ -631,13 +723,31 @@ def test_rapid_connect_disconnect_stress_test(
             'StressTestClient'
                 The client instance attached to the interface.
             """
+            new_client = StressTestClient()
+            new_client._should_fail_connect = cast(
+                bool,
+                getattr(self, "_stress_test_should_fail_connect", False),
+            )
             connect_calls.append(address)
-            outer_client.connect()
-            self.client = outer_client
-            self._disconnect_notified = False
-            if hasattr(self, "_reconnected_event"):
-                self._reconnected_event.set()
-            return outer_client
+            connect_kwargs.append(dict(kwargs))
+            with self._state_lock:
+                attempted_clients.append(new_client)
+            new_client.connect()
+            with self._state_lock:
+                cast(Any, self).client = new_client
+                created_clients.append(new_client)
+                if "pair" in kwargs:
+                    self._last_connect_pair_override = cast(
+                        bool | None, kwargs.get("pair")
+                    )
+                if "connect_timeout" in kwargs:
+                    self._last_connect_timeout_override = cast(
+                        float | None, kwargs.get("connect_timeout")
+                    )
+                self._disconnect_notified = False
+                if hasattr(self, "_reconnected_event"):
+                    self._reconnected_event.set()
+            return new_client
 
         stack.enter_context(patch.object(BLEInterface, "connect", _patched_connect))
 
@@ -648,7 +758,10 @@ def test_rapid_connect_disconnect_stress_test(
                 noProto=True,
                 auto_reconnect=True,
             )
-            iface._connect_stub_calls = connect_calls  # type: ignore[attr-defined]
+            cast(Any, iface)._connect_stub_calls = connect_calls
+            cast(Any, iface)._connect_stub_kwargs = connect_kwargs
+            cast(Any, iface)._stress_test_attempts = attempted_clients
+            cast(Any, iface)._stress_test_clients = created_clients
             client = cast("StressTestClient", iface.client)
             yield iface, client
         finally:
@@ -665,16 +778,68 @@ def test_rapid_connect_disconnect_stress_test(
             finally:
                 stack.close()
 
+    def _wait_for_latest_stress_client(
+        iface: BLEInterface,
+        *,
+        min_created_clients: int,
+        timeout: float = 2.0,
+    ) -> tuple[list["StressTestClient"], list["StressTestClient"]]:
+        """Wait until latest successful reconnect attempt owns iface.client."""
+
+        def _snapshot_stress_state() -> tuple[
+            object | None, list["StressTestClient"], list["StressTestClient"]
+        ]:
+            with iface._state_lock:
+                current_client = cast(object | None, iface.client)
+                attempts = list(
+                    cast(list["StressTestClient"], _get_stress_test_attempts(iface))
+                )
+                clients = list(
+                    cast(list["StressTestClient"], _get_stress_test_clients(iface))
+                )
+            return current_client, attempts, clients
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            observed_client, observed_attempts, observed_clients = (
+                _snapshot_stress_state()
+            )
+            latest_successful_attempt = _latest_successful_stress_attempt(
+                observed_attempts, observed_clients
+            )
+            if (
+                len(observed_clients) >= min_created_clients
+                and latest_successful_attempt is not None
+                and observed_client is latest_successful_attempt
+            ):
+                return (
+                    cast(list["StressTestClient"], observed_attempts),
+                    cast(list["StressTestClient"], observed_clients),
+                )
+            time.sleep(0.01)
+        _, final_attempts, final_clients = _snapshot_stress_state()
+        return (
+            cast(list["StressTestClient"], final_attempts),
+            cast(list["StressTestClient"], final_clients),
+        )
+
     # Test 1: Rapid disconnect callbacks
     with create_interface_with_auto_reconnect() as (iface, client):
+        iface.connect(mock_device.address, pair=True, connect_timeout=3.5)
+        baseline_connects = len(_get_connect_stub_calls(iface))
+        baseline_clients = len(_get_stress_test_clients(iface))
 
-        def simulate_rapid_disconnects():
+        def simulate_rapid_disconnects() -> None:
             """Simulate a burst of rapid BLE disconnect events against the test interface.
 
             Triggers ten disconnect callbacks roughly 0.01 seconds apart to exercise the interface's reconnect and disconnect handling during tests.
             """
             for _ in range(10):
-                iface._on_ble_disconnect(cast(Any, client.bleak_client))
+                current_client = cast("StressTestClient", iface.client)
+                if current_client is None or current_client.bleak_client is None:
+                    time.sleep(0.01)
+                    continue
+                iface._on_ble_disconnect(cast(Any, current_client.bleak_client))
                 time.sleep(0.01)  # Very short delay between disconnects
 
         # Start rapid disconnect simulation in a separate thread
@@ -688,35 +853,52 @@ def test_rapid_connect_disconnect_stress_test(
         assert client.bleak_client is not None
         # Test reaching this point without crashing indicates success
         assert (
-            len(_get_connect_stub_calls(iface)) >= 2
+            len(_get_connect_stub_calls(iface)) >= baseline_connects + 1
         ), "Auto-reconnect should continue scheduling during rapid disconnects"
+        stub_kwargs = _get_connect_stub_kwargs(iface)
+        reconnect_kwargs = stub_kwargs[baseline_connects:]
+        assert reconnect_kwargs
+        assert all(
+            kwargs == {"pair": True, "connect_timeout": 3.5}
+            for kwargs in reconnect_kwargs
+        )
+        attempted_clients, republished_clients = _wait_for_latest_stress_client(
+            iface, min_created_clients=baseline_clients + 1
+        )
+        assert len(republished_clients) >= baseline_clients + 1
+        latest_successful_attempt = _latest_successful_stress_attempt(
+            attempted_clients,
+            republished_clients,
+        )
+        assert latest_successful_attempt is not None
+        assert cast(object, iface.client) is latest_successful_attempt
 
     # Test 2: Concurrent connect/disconnect operations
     with create_interface_with_auto_reconnect() as (iface2, client2):
+        iface2.connect(mock_device.address, pair=False, connect_timeout=7.0)
+        baseline_connects = len(_get_connect_stub_calls(iface2))
+        baseline_clients = len(_get_stress_test_clients(iface2))
+        worker_errors: Queue[Exception] = Queue()
 
-        def _stress_test_disconnects():
+        def _stress_test_disconnects() -> None:
             """Perform a burst of simulated BLE disconnects on iface2 to exercise auto-reconnect and disconnect handling.
 
-            Performs five disconnect attempts spaced 5 milliseconds apart. Exceptions raised during attempts are caught and logged and do not interrupt remaining attempts; RuntimeError, AttributeError, and KeyError are logged with a standard message and any other exception is logged as an unexpected error.
+            Performs five disconnect attempts spaced 5 milliseconds apart and
+            records worker failures for assertion on the main thread.
             """
-            for i in range(5):
+            for _ in range(5):
                 try:
-                    iface2._on_ble_disconnect(cast(Any, client2.bleak_client))
+                    current_client = cast("StressTestClient", iface2.client)
+                    if current_client is None or current_client.bleak_client is None:
+                        time.sleep(0.005)
+                        continue
+                    iface2._on_ble_disconnect(cast(Any, current_client.bleak_client))
                     time.sleep(0.005)
-                except (RuntimeError, AttributeError, KeyError) as e:
-                    logging.debug(
-                        "Stress test disconnect %d: %s: %s", i, type(e).__name__, e
-                    )
-                except Exception as e:  # noqa: BLE001 - test teardown must be resilient
-                    logging.debug(
-                        "Unexpected stress test disconnect %d: %s: %s",
-                        i,
-                        type(e).__name__,
-                        e,
-                    )
+                except Exception as exc:  # noqa: BLE001 - test collects worker failures
+                    worker_errors.put(exc)
 
         # Start multiple threads for concurrent operations
-        threads = []
+        threads: list[threading.Thread] = []
         for _ in range(3):
             thread = threading.Thread(target=_stress_test_disconnects, daemon=True)
             threads.append(thread)
@@ -726,30 +908,51 @@ def test_rapid_connect_disconnect_stress_test(
         for thread in threads:
             thread.join()
 
-        # Verify thread-safety - no exceptions should be raised
+        collected_worker_errors: list[Exception] = []
+        while not worker_errors.empty():
+            collected_worker_errors.append(worker_errors.get_nowait())
+        assert collected_worker_errors == []
         assert client2.bleak_client is not None
         assert cast(Any, client2.bleak_client).disconnect_count >= 0
+        assert len(_get_connect_stub_calls(iface2)) >= baseline_connects + 1
+        stub_kwargs = _get_connect_stub_kwargs(iface2)
+        reconnect_kwargs = stub_kwargs[baseline_connects:]
+        assert reconnect_kwargs
+        assert all(
+            kwargs == {"pair": False, "connect_timeout": 7.0}
+            for kwargs in reconnect_kwargs
+        )
+        attempted_clients, republished_clients = _wait_for_latest_stress_client(
+            iface2, min_created_clients=baseline_clients + 1
+        )
+        assert len(republished_clients) >= baseline_clients + 1
+        latest_successful_attempt = _latest_successful_stress_attempt(
+            attempted_clients,
+            republished_clients,
+        )
+        assert latest_successful_attempt is not None
+        assert cast(object, iface2.client) is latest_successful_attempt
 
     # Test 3: Stress test with connection failures
-    with create_interface_with_auto_reconnect() as (iface3, client3):
-        client3._should_fail_connect = True
+    with create_interface_with_auto_reconnect() as (iface3, _client3):
+        cast(Any, iface3)._stress_test_should_fail_connect = True
+        failure_errors: list[Exception] = []
+        baseline_connect_calls = len(_get_connect_stub_calls(iface3))
 
-        # Simulate disconnects that trigger reconnection attempts
-        # Exceptions are expected and suppressed to continue stress testing
         for _ in range(5):
             try:
-                iface3._on_ble_disconnect(cast(Any, client3.bleak_client))
+                current_client = cast("StressTestClient", iface3.client)
+                if current_client is None or current_client.bleak_client is None:
+                    time.sleep(0.01)
+                    continue
+                iface3._on_ble_disconnect(cast(Any, current_client.bleak_client))
                 time.sleep(0.01)
-            except Exception as e:  # noqa: BLE001 - expected during failure stress
-                logging.debug(
-                    "Expected failure during stress reconnect: %s: %s",
-                    type(e).__name__,
-                    e,
-                )
+            except Exception as exc:  # noqa: BLE001 - test records failure-path behavior
+                failure_errors.append(exc)
 
-        # Verify graceful handling of connection failures
+        assert failure_errors == []
         assert (
-            len(_get_connect_stub_calls(iface3)) >= 1
+            len(_get_connect_stub_calls(iface3)) >= baseline_connect_calls + 1
         ), "Failure path should still schedule reconnect attempts"
 
     # Verify no critical errors in logs
@@ -793,7 +996,7 @@ def test_ble_client_is_connected_exception_handling(
             raise self.exception_type("conn check failed")  # noqa: TRY003
 
     # Create BLEClient with a mock bleak client that raises exceptions
-    ble_client = ble_mod.BLEClient(log_if_no_address=False)
+    ble_client = BLEClient(log_if_no_address=False)
     try:
         ble_client.bleak_client = cast(Any, ExceptionBleakClient(AttributeError))
 
@@ -830,13 +1033,14 @@ def test_ble_client_async_timeout_maps_to_ble_error(
 
     # BLEClient and BLEInterface already imported at top as ble_mod.BLEClient, ble_mod.BLEInterface
 
-    client = ble_mod.BLEClient()  # address=None keeps underlying bleak client unset
+    client = BLEClient(
+        log_if_no_address=False
+    )  # address=None keeps underlying bleak client unset
     fake_future = _make_fake_future(FutureTimeoutError())
     monkeypatch.setattr(client, "_async_run", _bind_coro_to_future(fake_future))
 
-    async def _test_coro():
+    async def _test_coro() -> None:
         """Run a no-op coroutine used for tests."""
-        return None
 
     # BLEClient._async_await raises BLEClient.BLEError for timeouts
     with pytest.raises(BLEClient.BLEError) as excinfo:
@@ -855,13 +1059,12 @@ def test_ble_client_async_runtime_error_maps_to_ble_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """BLEClient._async_await should surface RuntimeError as a non-timeout BLE error."""
-    client = ble_mod.BLEClient()
+    client = BLEClient(log_if_no_address=False)
     fake_future = _make_fake_future(RuntimeError("loop is closed"))
     monkeypatch.setattr(client, "_async_run", _bind_coro_to_future(fake_future))
 
-    async def _test_coro():
+    async def _test_coro() -> None:
         """Run a no-op coroutine used for tests."""
-        return None
 
     # BLEClient._async_await raises BLEClient.BLEError for runtime errors
     with pytest.raises(BLEClient.BLEError) as excinfo:
@@ -968,7 +1171,7 @@ def test_drain_publish_queue_exceptions(
     class ExceptionRunnable:
         """Mock runnable that raises ValueError when called."""
 
-        def __call__(self):
+        def __call__(self) -> None:
             """Call the mock callback; this implementation always raises a ValueError.
 
             Raises
@@ -978,7 +1181,7 @@ def test_drain_publish_queue_exceptions(
             """
             raise ValueError("callback failed")  # noqa: TRY003
 
-    mock_queue = Queue()
+    mock_queue: Queue[Callable[[], object]] = Queue()
     mock_queue.put(ExceptionRunnable())
 
     # Mock publishingThread with the queue
@@ -987,14 +1190,14 @@ def test_drain_publish_queue_exceptions(
     class MockPublishingThread:
         """Mock publishingThread with a predefined queue."""
 
-        def __init__(self):
+        def __init__(self) -> None:
             """Initialize the mock publishing thread with a provided external queue.
 
             Store the external `mock_queue` on `self.queue` so tests can inject, control, and inspect deferred publish callbacks.
             """
             self.queue = mock_queue
 
-        def queueWork(self, _callback):
+        def queueWork(self, _callback: Callable[[], object] | None) -> object | None:
             """Execute a callback immediately to simulate scheduling work.
 
             Parameters

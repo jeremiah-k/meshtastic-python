@@ -1,27 +1,76 @@
 """Additional edge case tests for BLE client functionality."""
 
 import asyncio
+import re
 import threading
-from typing import Any
+from collections.abc import Awaitable, Callable, Coroutine
+from functools import partial
+from types import SimpleNamespace
+from typing import Any, NoReturn, cast
 
 import pytest
 
 try:
     from bleak.exc import BleakError
 
-    from meshtastic.interfaces.ble.client import (
-        SERVICE_CHARACTERISTIC_RETRY_COUNT,
-        BLEClient,
-    )
+    from meshtastic.interfaces.ble.client import BLEClient
     from meshtastic.interfaces.ble.constants import (
+        BLECLIENT_ERROR_ASYNC_OPERATION_FAILED,
         BLECLIENT_ERROR_ASYNC_TIMEOUT,
         BLECLIENT_ERROR_CANCELLED,
+        BLECLIENT_ERROR_CANNOT_CONNECT_NOT_INITIALIZED,
+        BLECLIENT_ERROR_CANNOT_DISCONNECT_NOT_INITIALIZED,
+        BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_INITIALIZED,
+        BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED,
+        BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED,
+        BLECLIENT_ERROR_CANNOT_READ_NOT_INITIALIZED,
+        BLECLIENT_ERROR_CANNOT_START_NOTIFY_NOT_INITIALIZED,
+        BLECLIENT_ERROR_CANNOT_STOP_NOTIFY_NOT_INITIALIZED,
+        BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED,
+        BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED,
+        BLECLIENT_ERROR_CANNOT_WRITE_NOT_INITIALIZED,
         BLECLIENT_ERROR_RUNNER_THREAD_WAIT,
+        BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+        ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID,
+        SERVICE_CHARACTERISTIC_RETRY_COUNT,
     )
 except ImportError:
     pytest.skip("BLE dependencies not available", allow_module_level=True)
 
 TRANSIENT_SERVICES_LOOKUP_FAILURE = "transient services lookup failure"
+
+
+def _make_run_awaitable(
+    captured_timeout: list[float | None] | None = None,
+) -> Callable[[Coroutine[Any, Any, object], float | None], object]:
+    """Create a simple `_async_await` stand-in that runs the awaitable locally."""
+
+    def _run_awaitable(
+        awaitable: Coroutine[Any, Any, object],
+        timeout: float | None = None,
+    ) -> object:
+        if captured_timeout is not None:
+            captured_timeout.append(timeout)
+        return asyncio.run(awaitable)
+
+    return _run_awaitable
+
+
+def _raise_wrapped_not_implemented(
+    awaitable: Awaitable[object],
+    timeout: float | None = None,
+) -> NoReturn:
+    """Simulate `_async_await` wrapping NotImplementedError in BLEError."""
+    _ = timeout
+    close_awaitable = getattr(awaitable, "close", None)
+    if callable(close_awaitable):
+        close_awaitable()
+    try:
+        raise NotImplementedError("backend unsupported")
+    except NotImplementedError as exc:
+        raise BLEClient.BLEError(
+            BLECLIENT_ERROR_ASYNC_OPERATION_FAILED.format(exc)
+        ) from exc
 
 
 @pytest.mark.unit
@@ -73,42 +122,48 @@ def test_bleclient_error_class_exists() -> None:
 def test_bleclient_operations_require_initialized_client(ble_client: BLEClient) -> None:
     """BLEClient operations should raise BLEError when bleak_client is not initialized."""
     with pytest.raises(
-        BLEClient.BLEError, match="Cannot connect: BLE client not initialized"
+        BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_CONNECT_NOT_INITIALIZED
     ):
         ble_client.connect()
 
     with pytest.raises(
-        BLEClient.BLEError, match="Cannot disconnect: BLE client not initialized"
+        BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_DISCONNECT_NOT_INITIALIZED
     ):
         ble_client.disconnect()
 
     with pytest.raises(
-        BLEClient.BLEError, match="Cannot read: BLE client not initialized"
+        BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_READ_NOT_INITIALIZED
     ):
         ble_client.read_gatt_char("uuid")
 
     with pytest.raises(
-        BLEClient.BLEError, match="Cannot write: BLE client not initialized"
+        BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_WRITE_NOT_INITIALIZED
     ):
         ble_client.write_gatt_char("uuid", b"data")
 
     with pytest.raises(
-        BLEClient.BLEError, match="Cannot pair: BLE client not initialized"
+        BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED
     ):
         ble_client.pair()
 
     with pytest.raises(
-        BLEClient.BLEError, match="Cannot get services: BLE client not initialized"
+        BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED
+    ):
+        ble_client.unpair()
+
+    with pytest.raises(
+        BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_INITIALIZED
     ):
         ble_client._get_services()
 
     with pytest.raises(
-        BLEClient.BLEError, match="Cannot start notify: BLE client not initialized"
+        BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_START_NOTIFY_NOT_INITIALIZED
     ):
         ble_client.start_notify("uuid", lambda *_args: None)
 
     with pytest.raises(
-        BLEClient.BLEError, match="Cannot stop notify: BLE client not initialized"
+        BLEClient.BLEError,
+        match=BLECLIENT_ERROR_CANNOT_STOP_NOTIFY_NOT_INITIALIZED,
     ):
         ble_client.stopNotify("uuid")
 
@@ -125,10 +180,74 @@ def test_bleclient_has_characteristic_returns_false_without_client(
 def test_bleclient_stop_notify_alias(ble_client: BLEClient) -> None:
     """stop_notify should be an alias for stopNotify."""
     # Both should raise the same error
-    with pytest.raises(BLEClient.BLEError, match="Cannot stop notify"):
+    with pytest.raises(
+        BLEClient.BLEError,
+        match=BLECLIENT_ERROR_CANNOT_STOP_NOTIFY_NOT_INITIALIZED,
+    ):
         ble_client.stopNotify("uuid")
-    with pytest.raises(BLEClient.BLEError, match="Cannot stop notify"):
+    with pytest.raises(
+        BLEClient.BLEError,
+        match=BLECLIENT_ERROR_CANNOT_STOP_NOTIFY_NOT_INITIALIZED,
+    ):
         ble_client.stop_notify("uuid")
+
+
+@pytest.mark.unit
+def test_bleclient_init_with_address_syncs_from_bleak(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BLEClient should create bleak client and sync canonical address from backend."""
+
+    class _BleakStub:
+        def __init__(self, _address: object, **_kwargs: object) -> None:
+            self.address = "AA:BB:CC:DD:EE:FF"
+
+    monkeypatch.setattr("meshtastic.interfaces.ble.client.BleakRootClient", _BleakStub)
+
+    client = BLEClient("11:22:33:44:55:66")
+    assert client.bleak_client is not None
+    assert client.address == "AA:BB:CC:DD:EE:FF"
+    client.close()
+
+
+@pytest.mark.unit
+def test_bleclient_sync_address_noops_without_bleak_client(ble_client: BLEClient) -> None:
+    """Address sync should return early when the backend client is not initialized."""
+    ble_client.address = "11:22:33:44:55:66"
+    ble_client.bleak_client = None
+    ble_client._sync_address_from_bleak()
+    assert ble_client.address == "11:22:33:44:55:66"
+
+
+@pytest.mark.unit
+def test_bleclient_management_call_reraises_non_notimplemented_bleerror() -> None:
+    """_run_management_call should re-raise BLEError unless caused by NotImplementedError."""
+    client = BLEClient(address=None)
+    client.bleak_client = cast(Any, SimpleNamespace())
+
+    async def _noop_operation() -> None:
+        return None
+
+    def _raise_bleerror(awaitable: Awaitable[object], timeout: float | None = None) -> NoReturn:
+        _ = timeout
+        close_awaitable = getattr(awaitable, "close", None)
+        if callable(close_awaitable):
+            close_awaitable()
+        try:
+            raise ValueError("backend failure")
+        except ValueError as exc:
+            raise BLEClient.BLEError("wrapped failure") from exc
+
+    client._async_await = _raise_bleerror  # type: ignore[method-assign]
+
+    with pytest.raises(BLEClient.BLEError, match="wrapped failure"):
+        client._run_management_call(
+            lambda: _noop_operation(),
+            await_timeout=BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+            not_initialized_error=BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED,
+            unsupported_error=BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED,
+        )
+    client.close()
 
 
 @pytest.mark.unit
@@ -308,7 +427,7 @@ def test_bleclient_has_characteristic_returns_false_when_services_lookup_fails(
             """Simulate a services property that fails at access time."""
             raise BleakError("services unavailable")
 
-    ble_client.bleak_client = _BleakClientWithBrokenServices()
+    ble_client.bleak_client = cast(Any, _BleakClientWithBrokenServices())
     monkeypatch.setattr(ble_client, "_get_services", lambda: None)
     monkeypatch.setattr(
         ble_client.error_handler,
@@ -317,3 +436,273 @@ def test_bleclient_has_characteristic_returns_false_when_services_lookup_fails(
     )
 
     assert ble_client.has_characteristic("0000") is False
+
+
+@pytest.mark.unit
+def test_bleclient_unpair_raises_when_backend_does_not_support_unpair(
+    ble_client: BLEClient,
+) -> None:
+    """unpair() should fail with a clear message when backend lacks unpair support."""
+    ble_client.bleak_client = type("_NoUnpairClient", (), {"unpair": None})()
+    with pytest.raises(
+        BLEClient.BLEError,
+        match=BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED,
+    ):
+        ble_client.unpair()
+
+
+@pytest.mark.unit
+def test_bleclient_unpair_delegates_to_backend(
+    monkeypatch: pytest.MonkeyPatch,
+    ble_client: BLEClient,
+) -> None:
+    """unpair() should invoke backend unpair through _async_await."""
+    backend_calls: list[bool] = []
+    captured_timeout: list[float | None] = []
+
+    class _Backend:
+        def __init__(self) -> None:
+            self.address = "AA:BB:CC:DD:EE:01"
+
+        async def unpair(self) -> None:
+            backend_calls.append(True)
+            self.address = "AA:BB:CC:DD:EE:02"
+
+    ble_client.bleak_client = cast(Any, _Backend())
+    ble_client.address = "AA:BB:CC:DD:EE:01"
+    monkeypatch.setattr(
+        ble_client,
+        "_async_await",
+        _make_run_awaitable(captured_timeout),
+    )
+
+    ble_client.unpair(await_timeout=12.5)
+    assert backend_calls == [True]
+    assert captured_timeout == [12.5]
+    assert ble_client.address == "AA:BB:CC:DD:EE:02"
+
+
+@pytest.mark.unit
+def test_bleclient_unpair_translates_not_implemented_error(
+    monkeypatch: pytest.MonkeyPatch,
+    ble_client: BLEClient,
+) -> None:
+    """unpair() should wrap backend NotImplementedError as unsupported."""
+
+    class _Backend:
+        async def unpair(self) -> None:
+            raise NotImplementedError
+
+    ble_client.bleak_client = cast(Any, _Backend())
+    monkeypatch.setattr(ble_client, "_async_await", _make_run_awaitable())
+
+    with pytest.raises(
+        BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED
+    ) as exc_info:
+        ble_client.unpair()
+
+    assert isinstance(exc_info.value.__cause__, NotImplementedError)
+
+
+@pytest.mark.unit
+def test_bleclient_unpair_translates_wrapped_not_implemented_error(
+    monkeypatch: pytest.MonkeyPatch,
+    ble_client: BLEClient,
+) -> None:
+    """unpair() should preserve the unsupported contract when _async_await wraps NotImplementedError."""
+
+    class _Backend:
+        async def unpair(self) -> None:
+            raise NotImplementedError("backend unsupported")
+
+    ble_client.bleak_client = cast(Any, _Backend())
+    monkeypatch.setattr(ble_client, "_async_await", _raise_wrapped_not_implemented)
+
+    with pytest.raises(
+        BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED
+    ) as exc_info:
+        ble_client.unpair()
+
+    assert isinstance(exc_info.value.__cause__, NotImplementedError)
+
+
+@pytest.mark.unit
+def test_bleclient_pair_rejects_backends_without_pair_support(
+    ble_client: BLEClient,
+) -> None:
+    """pair() should report unsupported backends that do not expose pair()."""
+    ble_client.bleak_client = cast(Any, object())
+
+    with pytest.raises(
+        BLEClient.BLEError,
+        match=BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED,
+    ):
+        ble_client.pair(confirm=True)
+
+
+@pytest.mark.unit
+def test_bleclient_pair_delegates_to_backend(
+    monkeypatch: pytest.MonkeyPatch,
+    ble_client: BLEClient,
+) -> None:
+    """pair() should invoke backend pair through _async_await and return None."""
+    backend_calls: list[dict[str, object]] = []
+    captured_timeout: list[float | None] = []
+
+    class _Backend:
+        def __init__(self) -> None:
+            self.address = "AA:BB:CC:DD:EE:0A"
+
+        async def pair(self, **kwargs: object) -> None:
+            backend_calls.append(kwargs)
+            self.address = "AA:BB:CC:DD:EE:0B"
+
+    ble_client.bleak_client = cast(Any, _Backend())
+    ble_client.address = "AA:BB:CC:DD:EE:0A"
+    monkeypatch.setattr(
+        ble_client,
+        "_async_await",
+        _make_run_awaitable(captured_timeout),
+    )
+
+    ble_client.pair(confirm=True, await_timeout=9.0)
+    assert backend_calls == [{"confirm": True}]
+    assert captured_timeout == [9.0]
+    assert ble_client.address == "AA:BB:CC:DD:EE:0B"
+
+
+@pytest.mark.unit
+def test_bleclient_connect_refreshes_cached_address_from_backend(
+    monkeypatch: pytest.MonkeyPatch,
+    ble_client: BLEClient,
+) -> None:
+    """connect() should refresh BLEClient.address from backend-resolved address."""
+    captured_timeout: list[float | None] = []
+
+    class _Backend:
+        def __init__(self) -> None:
+            self.address = "AA:BB:CC:DD:EE:10"
+
+        async def connect(self, **_kwargs: object) -> None:
+            self.address = "AA:BB:CC:DD:EE:11"
+
+    ble_client.bleak_client = cast(Any, _Backend())
+    ble_client.address = "AA:BB:CC:DD:EE:10"
+    monkeypatch.setattr(
+        ble_client,
+        "_async_await",
+        _make_run_awaitable(captured_timeout),
+    )
+
+    ble_client.connect(await_timeout=7.5)
+
+    assert captured_timeout == [7.5]
+    assert ble_client.address == "AA:BB:CC:DD:EE:11"
+
+
+@pytest.mark.unit
+def test_bleclient_pair_uses_bounded_default_await_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    ble_client: BLEClient,
+) -> None:
+    """pair() should use the named bounded await timeout by default."""
+    captured_timeout: list[float | None] = []
+
+    class _Backend:
+        async def pair(self, **_kwargs: object) -> None:
+            pass
+
+    ble_client.bleak_client = cast(Any, _Backend())
+    monkeypatch.setattr(
+        ble_client,
+        "_async_await",
+        _make_run_awaitable(captured_timeout),
+    )
+
+    ble_client.pair()
+    assert captured_timeout == [BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT]
+
+
+@pytest.mark.unit
+def test_bleclient_pair_translates_not_implemented_error(
+    monkeypatch: pytest.MonkeyPatch,
+    ble_client: BLEClient,
+) -> None:
+    """pair() should wrap backend NotImplementedError as unsupported."""
+
+    class _Backend:
+        async def pair(self, **_kwargs: object) -> None:
+            raise NotImplementedError
+
+    ble_client.bleak_client = cast(Any, _Backend())
+    monkeypatch.setattr(ble_client, "_async_await", _make_run_awaitable())
+
+    with pytest.raises(
+        BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED
+    ) as exc_info:
+        ble_client.pair(confirm=True)
+
+    assert isinstance(exc_info.value.__cause__, NotImplementedError)
+
+
+@pytest.mark.unit
+def test_bleclient_pair_translates_wrapped_not_implemented_error(
+    monkeypatch: pytest.MonkeyPatch,
+    ble_client: BLEClient,
+) -> None:
+    """pair() should preserve the unsupported contract when _async_await wraps NotImplementedError."""
+
+    class _Backend:
+        async def pair(self, **_kwargs: object) -> None:
+            raise NotImplementedError("backend unsupported")
+
+    ble_client.bleak_client = cast(Any, _Backend())
+    monkeypatch.setattr(ble_client, "_async_await", _raise_wrapped_not_implemented)
+
+    with pytest.raises(
+        BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED
+    ) as exc_info:
+        ble_client.pair(confirm=True)
+
+    assert isinstance(exc_info.value.__cause__, NotImplementedError)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("method_name", ["pair", "unpair"])
+@pytest.mark.parametrize(
+    "invalid_timeout",
+    [None, 0.0, -1.0, float("nan"), float("inf"), float("-inf"), True],
+)
+def test_bleclient_management_rejects_invalid_await_timeout(
+    ble_client: BLEClient,
+    method_name: str,
+    invalid_timeout: object,
+) -> None:
+    """pair()/unpair() should require a finite positive await timeout."""
+    backend_calls = {"pair": 0, "unpair": 0}
+
+    class _Backend:
+        async def pair(self, **_kwargs: object) -> None:
+            backend_calls["pair"] += 1
+
+        async def unpair(self) -> None:
+            backend_calls["unpair"] += 1
+
+    ble_client.bleak_client = cast(Any, _Backend())
+    invoke: Callable[[], None]
+    if method_name == "pair":
+        invoke = partial(
+            ble_client.pair,
+            confirm=True,
+            await_timeout=cast(Any, invalid_timeout),
+        )
+    else:
+        invoke = partial(ble_client.unpair, await_timeout=cast(Any, invalid_timeout))
+
+    with pytest.raises(
+        BLEClient.BLEError,
+        match=re.escape(ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID),
+    ):
+        invoke()
+
+    assert backend_calls == {"pair": 0, "unpair": 0}
