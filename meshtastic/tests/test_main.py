@@ -4469,11 +4469,6 @@ def test_main_ota_update_retries_then_exits(
         def __exit__(self, *_args: object) -> None:
             return None
 
-        @staticmethod
-        def getNode(*_args: object, **_kwargs: object) -> MagicMock:
-            """Return the mocked node used by this OTA retry test."""
-            return node
-
     ota = MagicMock()
     ota.hash_bytes.return_value = b"\x01\x02"
     ota.update.side_effect = RuntimeError("boom")
@@ -4523,11 +4518,6 @@ def test_main_ota_update_succeeds_and_prints_completion(
         def close(self) -> None:
             """No-op close used by onConnected cleanup path."""
             return None
-
-        @staticmethod
-        def getNode(*_args: object, **_kwargs: object) -> MagicMock:
-            """Return the mocked node used by this OTA success test."""
-            return node
 
     ota = MagicMock()
     ota.hash_bytes.return_value = b"\x01\x02"

@@ -30,7 +30,7 @@ def _missing_optional_backend_class(
     """Return a placeholder backend class that raises a clear dependency error."""
 
     class _MissingOptionalBackend(PowerSupply):
-        def __new__(cls, *args: object, **kwargs: object) -> PowerSupply:
+        def __new__(cls, *args: object, **kwargs: object) -> "_MissingOptionalBackend":
             _ = (cls, args, kwargs)
             raise ImportError(
                 f"{backend_name} requires optional dependency {dependency_name!r}. "
