@@ -94,6 +94,10 @@ fi
 require_regex "${MESHTASTICD_PORT}" '^[0-9]+$' "MESHTASTICD_PORT"
 require_regex "${MESHTASTICD_READY_TIMEOUT_SECONDS}" '^[0-9]+$' "MESHTASTICD_READY_TIMEOUT_SECONDS"
 MESHTASTICD_PORT_DEC=$((10#${MESHTASTICD_PORT}))
+if [[ -n ${MESHTASTICD_HOST_PORT_DEC:-} ]] && ((MESHTASTICD_HOST_PORT_DEC != MESHTASTICD_PORT_DEC)); then
+	echo "MESHTASTICD_HOST port must match MESHTASTICD_PORT, or omit the inline port." >&2
+	exit 1
+fi
 if [[ -z ${READY_LOG_FILE} ]]; then
 	if [[ -n ${MESHTASTICD_LOG_DIR} ]]; then
 		READY_LOG_FILE="${MESHTASTICD_LOG_DIR}/meshtasticd-smokevirt-ready.log"

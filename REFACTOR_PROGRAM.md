@@ -538,57 +538,57 @@ Each item was re-verified against current `maint-35-2` code before triage.
 
 ### 19.1 Priority A: correctness/concurrency/state safety
 
-- [ ] **BLE gating weakref-id reuse hardening**
+- [x] **BLE gating weakref-id reuse hardening**
   - Files: `meshtastic/interfaces/ble/gating.py`
   - Implement dead-weakref pruning in `_clear_connecting()` and
     `_mark_disconnected()` before any stored `id(owner)` fallback checks.
   - Why: avoids stale `id()` reuse incorrectly matching a different owner.
 
-- [ ] **Clear publish-pending on provisional disconnect edge**
+- [x] **Clear publish-pending on provisional disconnect edge**
   - Files: `meshtastic/interfaces/ble/interface.py`
   - Ensure `_client_publish_pending` is reset even when disconnect cleanup
     sees `self.client is not client` (already detached client path).
   - Why: prevent stuck `ERROR_MANAGEMENT_CONNECTING` after invalidated connects.
 
-- [ ] **Request-scoped wait-error state in MeshInterface**
+- [x] **Request-scoped wait-error state in MeshInterface**
   - Files: `meshtastic/mesh_interface.py`
   - Move wait-error bookkeeping from key=`acknowledgment_attr` to a
     request-scoped key (attribute + request-id) and ensure late responses from
     timed-out requests cannot flip wait state for newer requests.
   - Why: current shared-key model can cross-contaminate sequential waits.
 
-- [ ] **OTA metadata drift protection**
+- [x] **OTA metadata drift protection**
   - Files: `meshtastic/ota.py`
   - Recompute size/hash immediately before streaming in `update()` (and use
     those values in logs and OTA header) so sent bytes match announced metadata.
   - Why: constructor-cached file metadata can drift if firmware file changes.
 
-- [ ] **Powermon optional-backend import masking fix**
+- [x] **Powermon optional-backend import masking fix**
   - Files: `meshtastic/powermon/__init__.py`
   - Catch `ModuleNotFoundError` (or equivalent narrowed missing-dependency
     cases) only when missing module matches the declared optional dependency;
     re-raise unrelated import failures from backend modules.
   - Why: avoid hiding real backend bugs behind "missing optional dependency."
 
-- [ ] **Powermon placeholder backend constructor fix (W0231)**
+- [x] **Powermon placeholder backend constructor fix (W0231)**
   - Files: `meshtastic/powermon/__init__.py`
   - Replace placeholder class raise-from-`__init__` path with immediate failure
     from `__new__` (or equivalent) so base initializer contract is not violated.
   - Why: remove pylint W0231 and keep clear dependency errors.
 
-- [ ] **Smokevirt host/port mismatch guard**
+- [x] **Smokevirt host/port mismatch guard**
   - Files: `bin/run-smokevirt-with-meshtasticd.sh`
   - After normalizing `MESHTASTICD_HOST_PORT_DEC` and `MESHTASTICD_PORT_DEC`,
     fail fast when both are set and differ.
   - Why: prevents docker publishing one port while readiness probes use another.
 
-- [ ] **BLE client address synchronization**
+- [x] **BLE client address synchronization**
   - Files: `meshtastic/interfaces/ble/client.py`
   - Keep `BLEClient.address` synchronized with `bleak_client.address`
     (property or explicit resync after connect/pair/unpair).
   - Why: BlueZ can update resolved identity address after pairing.
 
-- [ ] **Name/discovery connect concrete-key reservation (design follow-up)**
+- [x] **Name/discovery connect concrete-key reservation (design follow-up)**
   - Files: `meshtastic/interfaces/ble/interface.py`
   - For name/implicit connects, reserve the eventual concrete address key before
     long connect windows so per-address management/connection gates stay atomic.
@@ -596,27 +596,43 @@ Each item was re-verified against current `maint-35-2` code before triage.
 
 ### 19.2 Priority B: behavior hygiene and test-lane stability
 
-- [ ] **Destructive smoke lane isolation**
+- [x] **Destructive smoke lane isolation**
   - Files: `meshtastic/tests/test_smoke1.py`
   - Remove `smoke1` marker from `_destructive_test()` and update marker
     expectation test accordingly.
   - Why: keep destructive tests out of generic `-m smoke1` lane.
 
-- [ ] **Remove plaintext PSK contract in smoke test**
+- [x] **Remove plaintext PSK contract in smoke test**
   - Files: `meshtastic/tests/test_smoke1.py`
   - Drop assertion requiring cleartext `network.wifi_psk` echo.
   - Why: avoid locking plaintext credential output into test contract.
 
-- [ ] **Bound smoke restore retry budget**
+- [x] **Bound smoke restore retry budget**
   - Files: `meshtastic/tests/test_smoke1.py`
   - Reduce restore attempts/backoff and/or enforce total restore deadline.
   - Why: teardown currently can burn lane time on persistent failures.
 
-- [ ] **MeshInterface close TypeError policy decision**
+- [x] **MeshInterface close TypeError policy decision**
   - Files: `meshtastic/mesh_interface.py`
   - Decide whether non-finalization `TypeError` in `_send_disconnect()` should
     be surfaced (programming bug visibility) or always treated as best-effort.
   - Why: current behavior intentionally re-raises outside finalization.
+
+### 19.2.1 Validation Snapshot (2026-03-07)
+
+- `make ci-strict` executed once for this cycle and progressed through full
+  pytest/coverage before failing at pylint style rule `C0207` in:
+  - `meshtastic/tests/test_analysis.py`
+  - `meshtastic/tests/conftest.py`
+- Follow-up fixes applied (`split(".", maxsplit=1)`), then targeted verification:
+  - `PYLINTHOME=${TMPDIR:-/tmp}/pylint-cache poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2\\.pyi?$"` ✅
+  - `poetry run mypy meshtastic/ --strict` ✅
+  - `ruff check` on all touched Python files ✅
+  - Targeted pytest suites:
+    - `tests/test_ble_gating.py tests/test_ble_interface_core.py tests/test_ble_client_edge_cases.py` ✅
+    - `meshtastic/tests/test_mesh_interface.py meshtastic/tests/test_ota.py meshtastic/tests/test_powermon_power_supply.py` ✅
+    - `meshtastic/tests/test_smoke1.py -m unit` ✅
+    - `meshtastic/tests/test_examples.py -m examples` ✅
 
 ### 19.3 Priority C: API/docs/test quality alignment
 

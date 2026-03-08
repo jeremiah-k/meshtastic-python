@@ -54,11 +54,19 @@ class ESP32WiFiOTA:
         if not os.path.exists(self._filename):
             raise FileNotFoundError(f"File {self._filename} does not exist")
 
-        self._size = os.path.getsize(self._filename)
-        if self._size == 0:
-            raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
+        self._size = 0
+        self._file_hash: _SHA256Digest = hashlib.sha256()
+        self._refresh_firmware_metadata()
 
-        self._file_hash: _SHA256Digest = _file_sha256(self._filename)
+    def _refresh_firmware_metadata(self) -> tuple[int, _SHA256Digest]:
+        """Refresh cached firmware size/hash from disk and validate non-empty file."""
+        size = os.path.getsize(self._filename)
+        if size == 0:
+            raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
+        file_hash = _file_sha256(self._filename)
+        self._size = size
+        self._file_hash = file_hash
+        return size, file_hash
 
     def _read_line(self) -> str:
         """Read a line from the socket."""
@@ -105,7 +113,7 @@ class ESP32WiFiOTA:
             Callback invoked with ``(bytes_sent, total_bytes)`` during transfer.
             When not provided, progress is logged at INFO in coarse increments.
         """
-        size = self._size
+        size, file_hash = self._refresh_firmware_metadata()
         if OTA_PROGRESS_LOG_PERCENT_STEP <= 0:
             raise ValueError("OTA_PROGRESS_LOG_PERCENT_STEP must be > 0")
         next_progress_log_percent = OTA_PROGRESS_LOG_PERCENT_STEP
@@ -114,7 +122,7 @@ class ESP32WiFiOTA:
             "Starting OTA update with %s (%d bytes, hash %s)",
             self._filename,
             size,
-            self.hashHex(),
+            file_hash.hexdigest(),
         )
 
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -124,7 +132,9 @@ class ESP32WiFiOTA:
             logger.debug("Connected to %s:%d", self._hostname, self._port)
 
             # Send start command
-            self._socket.sendall(f"OTA {size} {self.hashHex()}\n".encode("utf-8"))
+            self._socket.sendall(
+                f"OTA {size} {file_hash.hexdigest()}\n".encode("utf-8")
+            )
 
             # Wait for OK from the device
             while True:

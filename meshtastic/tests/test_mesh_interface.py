@@ -444,14 +444,15 @@ def test_close_suppresses_disconnect_send_failures(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_close_propagates_disconnect_type_error() -> None:
-    """close() should not swallow unexpected TypeError from disconnect send path."""
+def test_close_suppresses_disconnect_type_error() -> None:
+    """close() should treat TypeError as best-effort disconnect noise."""
     iface = MeshInterface(noProto=True)
     try:
         iface.debugOut = io.StringIO()
         with patch.object(iface, "_send_disconnect", side_effect=TypeError("boom")):
-            with pytest.raises(TypeError, match="boom"):
-                iface.close()
+            iface.close()
+        assert iface._closing is True
+        assert iface.debugOut is None
     finally:
         if not getattr(iface, "_closing", False):
             iface.close()
@@ -2304,6 +2305,68 @@ def test_wait_helpers_raise_expected_timeout_errors() -> None:
         with pytest.raises(MeshInterface.MeshInterfaceError, match="waypoint"):
             iface.waitForWaypoint()
 
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_wait_errors_ignore_stale_request_ids() -> None:
+    """Routing errors from stale requestIds must not poison active wait state."""
+    with MeshInterface(noProto=True) as iface:
+        iface._clear_wait_error("receivedTelemetry", request_id=101)
+
+        iface.onResponseTelemetry(
+            {
+                "decoded": {
+                    "portnum": portnums_pb2.PortNum.Name(
+                        portnums_pb2.PortNum.ROUTING_APP
+                    ),
+                    "requestId": 100,
+                    "routing": {"errorReason": "NO_RESPONSE"},
+                }
+            }
+        )
+
+        assert iface._acknowledgment.receivedTelemetry is False
+        iface._raise_wait_error_if_present("receivedTelemetry", request_id=101)
+
+        iface.onResponseTelemetry(
+            {
+                "decoded": {
+                    "portnum": portnums_pb2.PortNum.Name(
+                        portnums_pb2.PortNum.ROUTING_APP
+                    ),
+                    "requestId": 101,
+                    "routing": {"errorReason": "NO_RESPONSE"},
+                }
+            }
+        )
+
+        with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
+            iface._raise_wait_error_if_present("receivedTelemetry", request_id=101)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_wait_timeout_retires_response_handler_for_request_id() -> None:
+    """waitFor* timeouts should retire request-scoped response handlers."""
+    with MeshInterface(noProto=True) as iface:
+        iface._timeout = MagicMock()
+        iface._timeout.waitForTelemetry.return_value = False
+        monkeypatch_send = MagicMock(side_effect=lambda packet, *_a, **_k: packet)
+        iface._send_packet = monkeypatch_send  # type: ignore[method-assign]
+
+        packet = iface.sendData(
+            b"ping",
+            wantResponse=True,
+            onResponse=lambda _packet: None,
+            response_wait_attr="receivedTelemetry",
+        )
+        request_id = packet.id
+        assert request_id in iface.responseHandlers
+
+        with pytest.raises(MeshInterface.MeshInterfaceError, match="telemetry"):
+            iface.waitForTelemetry(request_id=request_id)
+
+        assert request_id not in iface.responseHandlers
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")

@@ -397,6 +397,11 @@ def _clear_connecting(addr: str | None, owner: object | None = None) -> None:
         if owner is not None:
             owner_ref = _CONNECTING_OWNERS.get(key)
             current_owner = owner_ref() if owner_ref is not None else None
+            # Dead weakrefs must be pruned before any id(owner) fallback checks.
+            if owner_ref is not None and current_owner is None:
+                _remove_connecting_record_locked(key)
+                _cleanup_addr_lock(key)
+                return
             if current_owner is not None and current_owner is not owner:
                 return
             if current_owner is None:
@@ -489,20 +494,27 @@ def _mark_disconnected(addr: str | None, owner: Any | None = None) -> None:
             provisional_owner = (
                 provisional_owner_ref() if provisional_owner_ref is not None else None
             )
-            if provisional_owner is not None and provisional_owner is not owner:
-                logger.debug(
-                    "Ignoring provisional disconnect mark for %s from non-owner instance.",
-                    key,
-                )
-                return
-            if provisional_owner is None:
-                provisional_owner_id = _CONNECTING_OWNER_IDS.get(key)
-                if provisional_owner_id is None or provisional_owner_id != id(owner):
+            # Prune dead provisional weakrefs before id(owner) fallback checks.
+            pruned_dead_provisional_owner = False
+            if provisional_owner_ref is not None and provisional_owner is None:
+                _CONNECTING_OWNERS.pop(key, None)
+                _CONNECTING_OWNER_IDS.pop(key, None)
+                pruned_dead_provisional_owner = True
+            if not pruned_dead_provisional_owner:
+                if provisional_owner is not None and provisional_owner is not owner:
                     logger.debug(
                         "Ignoring provisional disconnect mark for %s from non-owner instance.",
                         key,
                     )
                     return
+                if provisional_owner is None:
+                    provisional_owner_id = _CONNECTING_OWNER_IDS.get(key)
+                    if provisional_owner_id is None or provisional_owner_id != id(owner):
+                        logger.debug(
+                            "Ignoring provisional disconnect mark for %s from non-owner instance.",
+                            key,
+                        )
+                        return
         _remove_connected_record_locked(key)
         _remove_connecting_record_locked(key)
         _cleanup_addr_lock(key)

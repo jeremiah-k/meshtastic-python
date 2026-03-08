@@ -1380,6 +1380,29 @@ class BLEInterface(MeshInterface):
             return requested_identifier
         return self.findDevice(requested_identifier).address
 
+    def _resolve_target_address_for_connect(
+        self, requested_identifier: str | None
+    ) -> str | None:
+        """Resolve a connect target to a concrete BLE address when possible.
+
+        Parameters
+        ----------
+        requested_identifier : str | None
+            Explicit connect identifier (address/name) or None for implicit
+            target selection.
+
+        Returns
+        -------
+        str | None
+            Concrete BLE address when resolution is available, otherwise None.
+        """
+        if requested_identifier and _looks_like_ble_address(requested_identifier):
+            return requested_identifier
+        if getattr(self, "_discovery_manager", None) is None:
+            # Minimal/unit-test interfaces can intentionally omit discovery.
+            return None
+        return self.findDevice(requested_identifier).address
+
     @classmethod
     def _format_bluetoothctl_address(cls, address: str) -> str:
         """Canonicalize a BLE address for bluetoothctl commands."""
@@ -2381,6 +2404,11 @@ class BLEInterface(MeshInterface):
                     should_reset_state = True
                 else:
                     self._last_connection_request = None
+            elif self.client is None and self._client_publish_pending:
+                # A provisional client can be detached by a concurrent
+                # disconnect path before this cleanup runs; ensure callers do
+                # not remain stuck in ERROR_MANAGEMENT_CONNECTING.
+                self._client_publish_pending = False
 
         self._client_manager._safe_close_client(client)
 
@@ -2516,18 +2544,34 @@ class BLEInterface(MeshInterface):
             pair_on_connect=pair_on_connect,
         )
 
-        # Only use address registry for explicit addresses, not discovery mode (None)
-        address_registry_key = (
+        # Keep alias tracking for the requested identifier while optionally
+        # reserving the resolved concrete address key for name/discovery
+        # connects before the long connect attempt.
+        requested_registry_key = (
             _addr_key(requested_identifier) if requested_identifier else None
+        )
+        preexisting_client = self._get_existing_client_if_valid(normalized_request)
+        if preexisting_client:
+            logger.debug("Already connected, skipping connect call.")
+            return preexisting_client
+        resolved_connect_target = self._resolve_target_address_for_connect(
+            requested_identifier
+        )
+        concrete_registry_key = (
+            _addr_key(resolved_connect_target) if resolved_connect_target else None
+        )
+        connect_target_identifier = (
+            resolved_connect_target if resolved_connect_target is not None else address
+        )
+        reservation_keys = self._sorted_address_keys(
+            requested_registry_key,
+            concrete_registry_key,
         )
         connected_client: BLEClient | None = None
         connected_device_key: str | None = None
         connection_alias_key: str | None = None
         provisional_keys: list[str] = []
 
-        # Apply address gating only for explicit-address connects.
-        # Discovery-mode connects intentionally skip gating to avoid holding the
-        # global registry lock during long-running scan/discovery operations.
         try:
             management_lock = getattr(self, "_management_lock", None)
             management_idle_condition = getattr(self, "_management_idle_condition", None)
@@ -2556,19 +2600,19 @@ class BLEInterface(MeshInterface):
                                     raise self.BLEError(ERROR_MANAGEMENT_CONNECTING)
 
                 with contextlib.ExitStack() as stack:
-                    if address_registry_key is not None:
-                        self._raise_if_duplicate_connect(address_registry_key)
-                        # Acquire the per-address lock without holding
-                        # _REGISTRY_LOCK to avoid lock-order inversion with
-                        # paths that hold address locks and then take registry
-                        # lock to mark ownership.
+                    for reservation_key in reservation_keys:
+                        self._raise_if_duplicate_connect(reservation_key)
+                    # Acquire per-address locks without holding _REGISTRY_LOCK
+                    # to avoid lock-order inversion with paths that hold
+                    # address locks and then mark ownership in registry state.
+                    for reservation_key in reservation_keys:
                         addr_lock = stack.enter_context(
-                            _addr_lock_context(address_registry_key)
+                            _addr_lock_context(reservation_key)
                         )
                         stack.enter_context(addr_lock)
-                        # Re-check after waiting for the address gate to close
-                        # the TOCTOU window.
-                        self._raise_if_duplicate_connect(address_registry_key)
+                    for reservation_key in reservation_keys:
+                        # Re-check after lock acquisition to close TOCTOU windows.
+                        self._raise_if_duplicate_connect(reservation_key)
 
                     with self._connect_lock:
                         if management_lock is not None:
@@ -2593,14 +2637,14 @@ class BLEInterface(MeshInterface):
                             connected_device_key,
                             connection_alias_key,
                         ) = self._establish_and_update_client(
-                            address,
+                            connect_target_identifier,
                             normalized_request,
-                            address_registry_key,
+                            requested_registry_key,
                             pair_on_connect=pair_on_connect,
                             connect_timeout=connect_timeout,
                         )
                         provisional_keys = self._sorted_address_keys(
-                            address_registry_key,
+                            requested_registry_key,
                             connected_device_key,
                             connection_alias_key,
                         )

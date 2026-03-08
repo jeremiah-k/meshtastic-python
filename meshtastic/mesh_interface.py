@@ -87,6 +87,7 @@ NO_RESPONSE_FIRMWARE_ERROR = "No response from node. At least firmware 2.1.22 is
 JSONValue: TypeAlias = (
     None | bool | int | float | str | list["JSONValue"] | dict[str, "JSONValue"]
 )
+UNSCOPED_WAIT_REQUEST_ID = -1
 
 
 def _format_missing_node_num_error(destination_id: int | str) -> str:
@@ -257,7 +258,8 @@ class MeshInterface:  # pylint: disable=R0902
         self.responseHandlers: dict[int, ResponseHandler] = (
             {}
         )  # A map from request ID to the handler
-        self._response_wait_errors: dict[str, str] = {}
+        self._response_wait_errors: dict[tuple[str, int], str] = {}
+        self._active_wait_request_ids: dict[str, int] = {}
         self.failure: BaseException | None = (
             None  # If we've encountered a fatal exception it will be kept here
         )
@@ -322,17 +324,9 @@ class MeshInterface:  # pylint: disable=R0902
                         heartbeat_idle_condition.wait()
             try:
                 self._send_disconnect()
-            except (OSError, MeshInterface.MeshInterfaceError):
+            except (OSError, TypeError, MeshInterface.MeshInterfaceError):
                 logger.debug(
                     "Failed to send disconnect during close(); continuing shutdown.",
-                    exc_info=True,
-                )
-            except TypeError:
-                is_finalizing = getattr(sys, "is_finalizing", None)
-                if not (callable(is_finalizing) and is_finalizing()):
-                    raise
-                logger.debug(
-                    "Failed to send disconnect during interpreter finalization; continuing shutdown.",
                     exc_info=True,
                 )
         # debugOut is caller-owned (often shared via outer context managers);
@@ -983,6 +977,7 @@ class MeshInterface:  # pylint: disable=R0902
         publicKey: bytes | None = None,
         priority: mesh_pb2.MeshPacket.Priority.ValueType = mesh_pb2.MeshPacket.Priority.RELIABLE,
         replyId: int | None = None,
+        response_wait_attr: str | None = None,
     ) -> mesh_pb2.MeshPacket:
         """Send a payload to a mesh node.
 
@@ -1018,6 +1013,10 @@ class MeshInterface:  # pylint: disable=R0902
             Packet priority enum value to assign to the packet. (Default value = mesh_pb2.MeshPacket.Priority.RELIABLE)
         replyId : int | None
             If provided, marks this packet as a reply to the given message id. (Default value = None)
+        response_wait_attr : str | None
+            Optional acknowledgment attribute name used to scope wait/error
+            state to this packet id before send (for example
+            "receivedTelemetry"). (Default value = None)
 
         Returns
         -------
@@ -1061,6 +1060,9 @@ class MeshInterface:  # pylint: disable=R0902
             meshPacket.decoded.reply_id = replyId
         if priority is not None:
             meshPacket.priority = priority
+
+        if response_wait_attr is not None:
+            self._clear_wait_error(response_wait_attr, request_id=meshPacket.id)
 
         if onResponse is not None:
             logger.debug("Setting a response handler for requestId %s", meshPacket.id)
@@ -1129,9 +1131,10 @@ class MeshInterface:  # pylint: disable=R0902
 
         if wantResponse:
             onResponse = self.onResponsePosition
-            self._clear_wait_error("receivedPosition")
+            response_wait_attr = "receivedPosition"
         else:
             onResponse = None
+            response_wait_attr = None
 
         d = self.sendData(
             p,
@@ -1142,35 +1145,156 @@ class MeshInterface:  # pylint: disable=R0902
             onResponse=onResponse,
             channelIndex=channelIndex,
             hopLimit=hopLimit,
+            response_wait_attr=response_wait_attr,
         )
         if wantResponse:
-            self.waitForPosition()
+            request_id = self._extract_request_id_from_sent_packet(d)
+            if request_id is None:
+                self.waitForPosition()
+            else:
+                self.waitForPosition(request_id=request_id)
         return d
 
-    def _clear_wait_error(self, acknowledgment_attr: str) -> None:
-        """Clear a previously recorded routing/wait error for one wait attribute."""
+    @staticmethod
+    def _extract_request_id_from_packet(packet: dict[str, Any]) -> int | None:
+        """Return decoded requestId as an int when present and valid."""
+        decoded = packet.get("decoded")
+        if not isinstance(decoded, dict):
+            return None
+        raw_request_id = decoded.get("requestId")
+        if isinstance(raw_request_id, bool):
+            return None
+        if isinstance(raw_request_id, int):
+            return raw_request_id if raw_request_id > 0 else None
+        if isinstance(raw_request_id, str) and raw_request_id.isdigit():
+            parsed_request_id = int(raw_request_id)
+            return parsed_request_id if parsed_request_id > 0 else None
+        return None
+
+    @staticmethod
+    def _extract_request_id_from_sent_packet(packet: object) -> int | None:
+        """Return sent packet id when present and positive."""
+        raw_packet_id = getattr(packet, "id", None)
+        if isinstance(raw_packet_id, bool) or not isinstance(raw_packet_id, int):
+            return None
+        return raw_packet_id if raw_packet_id > 0 else None
+
+    def _clear_wait_error(
+        self, acknowledgment_attr: str, request_id: int | None = None
+    ) -> None:
+        """Clear wait error state for an attribute and optional request id."""
         with self._response_handlers_lock:
-            self._response_wait_errors.pop(acknowledgment_attr, None)
+            if request_id is None:
+                for key in list(self._response_wait_errors):
+                    if key[0] == acknowledgment_attr:
+                        self._response_wait_errors.pop(key, None)
+                self._active_wait_request_ids.pop(acknowledgment_attr, None)
+            else:
+                for key in list(self._response_wait_errors):
+                    if key[0] == acknowledgment_attr:
+                        self._response_wait_errors.pop(key, None)
+                self._active_wait_request_ids[acknowledgment_attr] = request_id
         setattr(self._acknowledgment, acknowledgment_attr, False)
 
-    def _set_wait_error(self, acknowledgment_attr: str, message: str) -> None:
-        """Record a wait error and wake the corresponding waiter."""
+    def _set_wait_error(
+        self,
+        acknowledgment_attr: str,
+        message: str,
+        *,
+        request_id: int | None = None,
+    ) -> None:
+        """Record a wait error and wake the matching waiter."""
         with self._response_handlers_lock:
-            self._response_wait_errors[acknowledgment_attr] = message
+            active_request_id = self._active_wait_request_ids.get(acknowledgment_attr)
+            if request_id is not None:
+                if active_request_id is None or request_id != active_request_id:
+                    logger.debug(
+                        "Ignoring stale wait error for %s request_id=%s (active=%s)",
+                        acknowledgment_attr,
+                        request_id,
+                        active_request_id,
+                    )
+                    return
+                resolved_request_id = request_id
+            elif active_request_id is not None:
+                resolved_request_id = active_request_id
+            else:
+                resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
+            self._response_wait_errors[(acknowledgment_attr, resolved_request_id)] = (
+                message
+            )
         setattr(self._acknowledgment, acknowledgment_attr, True)
 
-    def _raise_wait_error_if_present(self, acknowledgment_attr: str) -> None:
-        """Raise and clear a pending wait error for the given acknowledgment attr."""
+    def _mark_wait_acknowledged(
+        self, acknowledgment_attr: str, *, request_id: int | None = None
+    ) -> None:
+        """Set acknowledgment flag for the matching request scope."""
         with self._response_handlers_lock:
-            error_message = self._response_wait_errors.pop(acknowledgment_attr, None)
+            active_request_id = self._active_wait_request_ids.get(acknowledgment_attr)
+            if request_id is not None and (
+                active_request_id is None or request_id != active_request_id
+            ):
+                logger.debug(
+                    "Ignoring stale acknowledgement for %s request_id=%s (active=%s)",
+                    acknowledgment_attr,
+                    request_id,
+                    active_request_id,
+                )
+                return
+        setattr(self._acknowledgment, acknowledgment_attr, True)
+
+    def _raise_wait_error_if_present(
+        self, acknowledgment_attr: str, request_id: int | None = None
+    ) -> None:
+        """Raise and clear any pending wait error for the given wait scope."""
+        with self._response_handlers_lock:
+            active_request_id = self._active_wait_request_ids.get(acknowledgment_attr)
+            if request_id is not None:
+                resolved_request_id = request_id
+            elif active_request_id is not None:
+                resolved_request_id = active_request_id
+            else:
+                resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
+            error_message = self._response_wait_errors.pop(
+                (acknowledgment_attr, resolved_request_id),
+                None,
+            )
         if error_message is not None:
             raise self.MeshInterfaceError(error_message)
+
+    def _retire_wait_request(
+        self, acknowledgment_attr: str, request_id: int | None = None
+    ) -> None:
+        """Retire response handler and wait bookkeeping for a completed wait."""
+        with self._response_handlers_lock:
+            active_request_id = self._active_wait_request_ids.get(acknowledgment_attr)
+            resolved_request_id = (
+                request_id if request_id is not None else active_request_id
+            )
+            if (
+                active_request_id is not None
+                and resolved_request_id == active_request_id
+            ):
+                self._active_wait_request_ids.pop(acknowledgment_attr, None)
+            if resolved_request_id is not None:
+                self.responseHandlers.pop(resolved_request_id, None)
+                self._response_wait_errors.pop(
+                    (acknowledgment_attr, resolved_request_id),
+                    None,
+                )
+            else:
+                self._response_wait_errors.pop(
+                    (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID),
+                    None,
+                )
+        setattr(self._acknowledgment, acknowledgment_attr, False)
 
     def _record_routing_wait_error(
         self,
         *,
         acknowledgment_attr: str,
         routing_error_reason: str | None,
+        request_id: int | None = None,
     ) -> None:
         """Record non-success routing responses into shared wait state."""
         if routing_error_reason is None or routing_error_reason == "NONE":
@@ -1179,7 +1303,11 @@ class MeshInterface:  # pylint: disable=R0902
             message = NO_RESPONSE_FIRMWARE_ERROR
         else:
             message = f"Routing error on response: {routing_error_reason}"
-        self._set_wait_error(acknowledgment_attr, message)
+        self._set_wait_error(
+            acknowledgment_attr,
+            message,
+            request_id=request_id,
+        )
 
     def onResponsePosition(self, p: dict[str, Any]) -> None:
         """Process a position response packet and emit a concise human-readable summary.
@@ -1199,6 +1327,7 @@ class MeshInterface:  # pylint: disable=R0902
             the nested `decoded["routing"]["errorReason"]` may be present.
 
         """
+        request_id = self._extract_request_id_from_packet(p)
         if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.POSITION_APP
         ):
@@ -1209,9 +1338,13 @@ class MeshInterface:  # pylint: disable=R0902
                 self._set_wait_error(
                     "receivedPosition",
                     f"Failed to parse position response payload: {exc}",
+                    request_id=request_id,
                 )
                 return
-            self._acknowledgment.receivedPosition = True
+            self._mark_wait_acknowledged(
+                "receivedPosition",
+                request_id=request_id,
+            )
 
             ret = "Position received: "
             if position.latitude_i != 0 and position.longitude_i != 0:
@@ -1240,6 +1373,7 @@ class MeshInterface:  # pylint: disable=R0902
                 routing_error_reason=p["decoded"]
                 .get("routing", {})
                 .get("errorReason"),
+                request_id=request_id,
             )
 
     def sendTraceRoute(
@@ -1266,8 +1400,7 @@ class MeshInterface:  # pylint: disable=R0902
             If waiting for traceroute responses times out or the operation fails.
         """
         r = mesh_pb2.RouteDiscovery()
-        self._clear_wait_error("receivedTraceRoute")
-        self.sendData(
+        packet = self.sendData(
             r,
             destinationId=dest,
             portNum=portnums_pb2.PortNum.TRACEROUTE_APP,
@@ -1275,13 +1408,18 @@ class MeshInterface:  # pylint: disable=R0902
             onResponse=self.onResponseTraceRoute,
             channelIndex=channelIndex,
             hopLimit=hopLimit,
+            response_wait_attr="receivedTraceRoute",
         )
         # extend timeout based on number of nodes, limit by configured hopLimit
         with self._node_db_lock:
             node_count = len(self.nodes) if self.nodes else 0
         nodes_based_factor = (node_count - 1) if node_count else (hopLimit + 1)
         waitFactor = max(1, min(nodes_based_factor, hopLimit + 1))
-        self.waitForTraceRoute(waitFactor)
+        request_id = self._extract_request_id_from_sent_packet(packet)
+        if request_id is None:
+            self.waitForTraceRoute(waitFactor)
+        else:
+            self.waitForTraceRoute(waitFactor, request_id=request_id)
 
     def onResponseTraceRoute(self, p: dict[str, Any]) -> None:
         """Emit human-readable traceroute results from a RouteDiscovery payload.
@@ -1302,12 +1440,14 @@ class MeshInterface:  # pylint: disable=R0902
         Emits formatted route strings and sets self._acknowledgment.receivedTraceRoute to True.
         """
         decoded = p["decoded"]
+        request_id = self._extract_request_id_from_packet(p)
         if decoded.get("portnum") == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.ROUTING_APP
         ):
             self._record_routing_wait_error(
                 acknowledgment_attr="receivedTraceRoute",
                 routing_error_reason=decoded.get("routing", {}).get("errorReason"),
+                request_id=request_id,
             )
             return
 
@@ -1319,6 +1459,7 @@ class MeshInterface:  # pylint: disable=R0902
             self._set_wait_error(
                 "receivedTraceRoute",
                 f"Failed to parse traceroute response payload: {exc}",
+                request_id=request_id,
             )
             return
 
@@ -1402,7 +1543,10 @@ class MeshInterface:  # pylint: disable=R0902
             routeStr = _append_hop(routeStr, p["to"], _format_snr(snr_back[-1]))
             _emit_response_summary(routeStr)
 
-        self._acknowledgment.receivedTraceRoute = True
+        self._mark_wait_acknowledged(
+            "receivedTraceRoute",
+            request_id=request_id,
+        )
 
     def sendTelemetry(
         self,
@@ -1479,11 +1623,12 @@ class MeshInterface:  # pylint: disable=R0902
 
         if wantResponse:
             onResponse = self.onResponseTelemetry
-            self._clear_wait_error("receivedTelemetry")
+            response_wait_attr = "receivedTelemetry"
         else:
             onResponse = None
+            response_wait_attr = None
 
-        self.sendData(
+        packet = self.sendData(
             r,
             destinationId=destinationId,
             portNum=portnums_pb2.PortNum.TELEMETRY_APP,
@@ -1491,9 +1636,14 @@ class MeshInterface:  # pylint: disable=R0902
             onResponse=onResponse,
             channelIndex=channelIndex,
             hopLimit=hopLimit,
+            response_wait_attr=response_wait_attr,
         )
         if wantResponse:
-            self.waitForTelemetry()
+            request_id = self._extract_request_id_from_sent_packet(packet)
+            if request_id is None:
+                self.waitForTelemetry()
+            else:
+                self.waitForTelemetry(request_id=request_id)
 
     def onResponseTelemetry(self, p: dict[str, Any]) -> None:
         """Handle an incoming telemetry response: mark telemetry as received and emit human-readable telemetry values.
@@ -1515,6 +1665,7 @@ class MeshInterface:  # pylint: disable=R0902
             or a "routing" mapping for ROUTING_APP.
 
         """
+        request_id = self._extract_request_id_from_packet(p)
         if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.TELEMETRY_APP
         ):
@@ -1525,9 +1676,13 @@ class MeshInterface:  # pylint: disable=R0902
                 self._set_wait_error(
                     "receivedTelemetry",
                     f"Failed to parse telemetry response payload: {exc}",
+                    request_id=request_id,
                 )
                 return
-            self._acknowledgment.receivedTelemetry = True
+            self._mark_wait_acknowledged(
+                "receivedTelemetry",
+                request_id=request_id,
+            )
             _emit_response_summary("Telemetry received:")
             # Check if the telemetry message has the device_metrics field
             # This is the original code that was the default for --request-telemetry and is kept for compatibility
@@ -1575,6 +1730,7 @@ class MeshInterface:  # pylint: disable=R0902
                 routing_error_reason=p["decoded"]
                 .get("routing", {})
                 .get("errorReason"),
+                request_id=request_id,
             )
 
     def onResponseWaypoint(self, p: dict[str, Any]) -> None:
@@ -1594,6 +1750,7 @@ class MeshInterface:  # pylint: disable=R0902
             'portnum' (str) and, for WAYPOINT_APP, 'payload' (bytes) with a serialized Waypoint.
 
         """
+        request_id = self._extract_request_id_from_packet(p)
         if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.WAYPOINT_APP
         ):
@@ -1604,9 +1761,13 @@ class MeshInterface:  # pylint: disable=R0902
                 self._set_wait_error(
                     "receivedWaypoint",
                     f"Failed to parse waypoint response payload: {exc}",
+                    request_id=request_id,
                 )
                 return
-            self._acknowledgment.receivedWaypoint = True
+            self._mark_wait_acknowledged(
+                "receivedWaypoint",
+                request_id=request_id,
+            )
             _emit_response_summary(f"Waypoint received: {w}")
         elif p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.ROUTING_APP
@@ -1616,6 +1777,7 @@ class MeshInterface:  # pylint: disable=R0902
                 routing_error_reason=p["decoded"]
                 .get("routing", {})
                 .get("errorReason"),
+                request_id=request_id,
             )
 
     def sendWaypoint(  # pylint: disable=R0913
@@ -1689,9 +1851,10 @@ class MeshInterface:  # pylint: disable=R0902
 
         if wantResponse:
             onResponse = self.onResponseWaypoint
-            self._clear_wait_error("receivedWaypoint")
+            response_wait_attr = "receivedWaypoint"
         else:
             onResponse = None
+            response_wait_attr = None
 
         d = self.sendData(
             w,
@@ -1702,9 +1865,14 @@ class MeshInterface:  # pylint: disable=R0902
             onResponse=onResponse,
             channelIndex=channelIndex,
             hopLimit=hopLimit,
+            response_wait_attr=response_wait_attr,
         )
         if wantResponse:
-            self.waitForWaypoint()
+            request_id = self._extract_request_id_from_sent_packet(d)
+            if request_id is None:
+                self.waitForWaypoint()
+            else:
+                self.waitForWaypoint(request_id=request_id)
         return d
 
     def deleteWaypoint(
@@ -1744,9 +1912,10 @@ class MeshInterface:  # pylint: disable=R0902
 
         if wantResponse:
             onResponse = self.onResponseWaypoint
-            self._clear_wait_error("receivedWaypoint")
+            response_wait_attr = "receivedWaypoint"
         else:
             onResponse = None
+            response_wait_attr = None
 
         d = self.sendData(
             p,
@@ -1757,9 +1926,14 @@ class MeshInterface:  # pylint: disable=R0902
             onResponse=onResponse,
             channelIndex=channelIndex,
             hopLimit=hopLimit,
+            response_wait_attr=response_wait_attr,
         )
         if wantResponse:
-            self.waitForWaypoint()
+            request_id = self._extract_request_id_from_sent_packet(d)
+            if request_id is None:
+                self.waitForWaypoint()
+            else:
+                self.waitForWaypoint(request_id=request_id)
         return d
 
     def _add_response_handler(
@@ -1957,7 +2131,9 @@ class MeshInterface:  # pylint: disable=R0902
                 "Timed out waiting for an acknowledgment"
             )
 
-    def waitForTraceRoute(self, waitFactor: float) -> None:
+    def waitForTraceRoute(
+        self, waitFactor: float, request_id: int | None = None
+    ) -> None:
         """Wait for trace route completion using the configured timeout.
 
         Blocks until a trace route response is acknowledged or the configured timeout multiplied by waitFactor elapses.
@@ -1966,57 +2142,98 @@ class MeshInterface:  # pylint: disable=R0902
         ----------
         waitFactor : float
             Multiplier applied to the base trace-route timeout to extend the wait period.
+        request_id : int | None
+            Optional request id used to scope wait/error handling to a specific
+            traceroute request.
 
         Raises
         ------
         MeshInterface.MeshInterfaceError
             If the wait times out before a traceroute response is received.
         """
-        success = self._timeout.waitForTraceRoute(waitFactor, self._acknowledgment)
-        self._raise_wait_error_if_present("receivedTraceRoute")
-        if not success:
-            raise MeshInterface.MeshInterfaceError("Timed out waiting for traceroute")
+        try:
+            success = self._timeout.waitForTraceRoute(waitFactor, self._acknowledgment)
+            self._raise_wait_error_if_present("receivedTraceRoute", request_id=request_id)
+            if not success:
+                raise MeshInterface.MeshInterfaceError(
+                    "Timed out waiting for traceroute"
+                )
+        finally:
+            self._retire_wait_request("receivedTraceRoute", request_id=request_id)
 
-    def waitForTelemetry(self) -> None:
+    def waitForTelemetry(self, request_id: int | None = None) -> None:
         """Wait for a telemetry response or until the configured timeout elapses.
+
+        Parameters
+        ----------
+        request_id : int | None
+            Optional request id used to scope wait/error handling to a specific
+            telemetry request.
 
         Raises
         ------
         MeshInterface.MeshInterfaceError
             If a telemetry response is not received before the configured timeout.
         """
-        success = self._timeout.waitForTelemetry(self._acknowledgment)
-        self._raise_wait_error_if_present("receivedTelemetry")
-        if not success:
-            raise MeshInterface.MeshInterfaceError("Timed out waiting for telemetry")
+        try:
+            success = self._timeout.waitForTelemetry(self._acknowledgment)
+            self._raise_wait_error_if_present("receivedTelemetry", request_id=request_id)
+            if not success:
+                raise MeshInterface.MeshInterfaceError(
+                    "Timed out waiting for telemetry"
+                )
+        finally:
+            self._retire_wait_request("receivedTelemetry", request_id=request_id)
 
-    def waitForPosition(self) -> None:
+    def waitForPosition(self, request_id: int | None = None) -> None:
         """Block until a position acknowledgment is received.
+
+        Parameters
+        ----------
+        request_id : int | None
+            Optional request id used to scope wait/error handling to a specific
+            position request.
 
         Raises
         ------
         MeshInterface.MeshInterfaceError
             If waiting for the position times out.
         """
-        success = self._timeout.waitForPosition(self._acknowledgment)
-        self._raise_wait_error_if_present("receivedPosition")
-        if not success:
-            raise MeshInterface.MeshInterfaceError("Timed out waiting for position")
+        try:
+            success = self._timeout.waitForPosition(self._acknowledgment)
+            self._raise_wait_error_if_present("receivedPosition", request_id=request_id)
+            if not success:
+                raise MeshInterface.MeshInterfaceError(
+                    "Timed out waiting for position"
+                )
+        finally:
+            self._retire_wait_request("receivedPosition", request_id=request_id)
 
-    def waitForWaypoint(self) -> None:
+    def waitForWaypoint(self, request_id: int | None = None) -> None:
         """Block until a waypoint acknowledgment is received.
 
         Waits for the internal waypoint acknowledgment event to be set; raises MeshInterface.MeshInterfaceError if the wait times out.
+
+        Parameters
+        ----------
+        request_id : int | None
+            Optional request id used to scope wait/error handling to a specific
+            waypoint request.
 
         Raises
         ------
         MeshInterface.MeshInterfaceError
             If the wait times out before a waypoint acknowledgment is received.
         """
-        success = self._timeout.waitForWaypoint(self._acknowledgment)
-        self._raise_wait_error_if_present("receivedWaypoint")
-        if not success:
-            raise MeshInterface.MeshInterfaceError("Timed out waiting for waypoint")
+        try:
+            success = self._timeout.waitForWaypoint(self._acknowledgment)
+            self._raise_wait_error_if_present("receivedWaypoint", request_id=request_id)
+            if not success:
+                raise MeshInterface.MeshInterfaceError(
+                    "Timed out waiting for waypoint"
+                )
+        finally:
+            self._retire_wait_request("receivedWaypoint", request_id=request_id)
 
     def getMyNodeInfo(self) -> dict[str, Any] | None:
         """Get the stored node-info dictionary for the local node.

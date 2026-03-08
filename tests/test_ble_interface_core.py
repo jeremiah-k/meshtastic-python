@@ -2370,6 +2370,41 @@ def test_discard_invalidated_connected_client_marks_stale_callbacks_notified(
     iface.close()
 
 
+def test_discard_invalidated_connected_client_clears_pending_when_already_detached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pending publish flag should clear even if the provisional client already detached."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    discarded_client = DummyClient()
+    discarded_client.address = "AA:BB:CC:DD:EE:44"
+    discarded_client.bleak_client = SimpleNamespace(address=discarded_client.address)
+    closed_clients: list[BLEClient] = []
+
+    monkeypatch.setattr(
+        iface._client_manager,
+        "_safe_close_client",
+        lambda client: closed_clients.append(client),
+        raising=True,
+    )
+
+    with iface._state_lock:
+        cast(Any, iface).client = None
+        iface._client_publish_pending = True
+        iface._disconnect_notified = False
+        iface._state_manager._reset_to_disconnected()
+        assert iface._state_manager._transition_to(ConnectionState.CONNECTING) is True
+
+    iface._discard_invalidated_connected_client(cast(BLEClient, discarded_client))
+
+    assert closed_clients == [cast(BLEClient, discarded_client)]
+    with iface._state_lock:
+        assert iface.client is None
+        assert iface._client_publish_pending is False
+        assert iface._disconnect_notified is False
+
+    iface.close()
+
+
 def test_concurrent_connect_and_disconnect_do_not_deadlock(
     monkeypatch: pytest.MonkeyPatch, clear_registry: Any
 ) -> None:
@@ -2797,6 +2832,100 @@ def test_connect_marks_provisional_claims_before_gate_release(
 
     assert observed_claims == [True]
     assert _is_currently_connected_elsewhere(device_key, owner=object()) is False
+
+
+def test_connect_name_target_reserves_requested_and_resolved_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Name-based connect should reserve both alias and resolved concrete keys."""
+    from meshtastic.interfaces.ble.gating import _addr_key
+
+    iface = _build_minimal_connect_test_interface()
+    target_identifier = "mesh-node"
+    resolved_address = "AA:BB:CC:DD:EE:31"
+    connected_client = DummyClient()
+    connected_client.address = resolved_address
+    connected_client.bleak_client = SimpleNamespace(address=resolved_address)
+    cast(Any, iface)._discovery_manager = object()
+    duplicate_checks: list[str] = []
+    addr_lock_keys: list[str | None] = []
+    established_args: list[tuple[str | None, str | None, str | None]] = []
+
+    monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
+    monkeypatch.setattr(
+        iface, "_get_existing_client_if_valid", lambda _request: None, raising=True
+    )
+    monkeypatch.setattr(
+        iface,
+        "findDevice",
+        lambda _identifier: BLEDevice(address=resolved_address, name="Mesh", details={}),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        iface, "_raise_if_duplicate_connect", duplicate_checks.append, raising=True
+    )
+    monkeypatch.setattr(iface, "_finalize_connection_gates", lambda *_args: None)
+    monkeypatch.setattr(iface, "_connected", lambda: None, raising=True)
+    monkeypatch.setattr(
+        iface,
+        "_emit_verified_connection_side_effects",
+        lambda _client: None,
+        raising=True,
+    )
+
+    @contextlib.contextmanager
+    def _record_addr_lock_context(_addr: str | None) -> Iterator[threading.RLock]:
+        addr_lock_keys.append(_addr)
+        lock = threading.RLock()
+        yield lock
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface._addr_lock_context",
+        _record_addr_lock_context,
+    )
+
+    def _establish_stub(
+        address: str | None,
+        normalized_request: str | None,
+        address_key: str | None,
+        *,
+        pair_on_connect: bool = False,
+        connect_timeout: float | None = None,
+    ) -> tuple[DummyClient, str | None, str | None]:
+        _ = (pair_on_connect, connect_timeout)
+        established_args.append((address, normalized_request, address_key))
+        with iface._state_lock:
+            cast(Any, iface).client = connected_client
+            iface.address = resolved_address
+            iface._state_manager._reset_to_disconnected()
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
+        return connected_client, _addr_key(resolved_address), _addr_key(target_identifier)
+
+    monkeypatch.setattr(
+        iface,
+        "_establish_and_update_client",
+        _establish_stub,
+        raising=True,
+    )
+
+    result = iface.connect(target_identifier)
+
+    assert cast(object, result) is connected_client
+    requested_key = _addr_key(target_identifier)
+    resolved_key = _addr_key(resolved_address)
+    assert requested_key is not None and resolved_key is not None
+    assert duplicate_checks.count(requested_key) >= 2
+    assert duplicate_checks.count(resolved_key) >= 2
+    assert requested_key in addr_lock_keys
+    assert resolved_key in addr_lock_keys
+    assert established_args == [
+        (
+            resolved_address,
+            iface._sanitize_address(target_identifier),
+            requested_key,
+        )
+    ]
 
 
 def test_connect_raises_when_client_becomes_stale_after_gate_finalization(

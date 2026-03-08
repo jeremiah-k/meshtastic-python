@@ -13,6 +13,7 @@ from meshtastic.interfaces.ble.gating import (
     _CONNECTED_MARKED_AT,
     _CONNECTING_MARKED_AT,
     _CONNECTING_ADDRS,
+    _clear_connecting,
     _LOCK_HOLDERS,
     _REGISTRY_LOCK,
     _addr_key,
@@ -283,6 +284,24 @@ class TestMarkDisconnected:
 
         assert key in _CONNECTING_ADDRS
 
+    def test_mark_disconnected_prunes_dead_provisional_owner_before_id_fallback(
+        self,
+    ) -> None:
+        """Dead provisional weakrefs should be pruned without stale id(owner) checks."""
+        key = _addr_key("aabbccddeeff")
+        assert key is not None
+
+        # Remove fixture default connected claim to isolate provisional behavior.
+        _mark_disconnected("aabbccddeeff")
+        owner = _ConnectedOwner()
+        _mark_connecting("aabbccddeeff", owner=owner)
+        del owner
+        gc.collect()
+
+        _mark_disconnected("aabbccddeeff", owner=object())
+
+        assert key not in _CONNECTING_ADDRS
+
 
 @pytest.mark.usefixtures("clear_registry")
 class TestIsCurrentlyConnectedElsewhere:
@@ -363,6 +382,21 @@ class TestIsCurrentlyConnectedElsewhere:
         )
 
         assert not _is_currently_connected_elsewhere("aabbccddeeff")
+        assert key not in _CONNECTING_ADDRS
+
+    def test_clear_connecting_prunes_dead_owner_weakref_without_id_fallback(
+        self,
+    ) -> None:
+        """Owner-scoped clear should prune dead weakref claims immediately."""
+        key = _addr_key("aabbccddeeff")
+        assert key is not None
+        owner = _ConnectedOwner()
+        _mark_connecting("aabbccddeeff", owner=owner)
+        del owner
+        gc.collect()
+
+        _clear_connecting("aabbccddeeff", owner=object())
+
         assert key not in _CONNECTING_ADDRS
 
     def test_prunes_owner_claim_when_owner_not_connected(self) -> None:

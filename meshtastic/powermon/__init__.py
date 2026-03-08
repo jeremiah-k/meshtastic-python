@@ -27,8 +27,10 @@ def _missing_optional_backend_class(
     """Return a placeholder backend class that raises a clear dependency error."""
 
     class _MissingOptionalBackend(PowerSupply):
-        def __init__(self, *args: object, **kwargs: object) -> None:
-            super().__init__(*args, **kwargs)
+        def __new__(
+            cls, *args: object, **kwargs: object
+        ) -> "_MissingOptionalBackend":
+            _ = (cls, args, kwargs)
             raise ImportError(
                 f"{backend_name} requires optional dependency {dependency_name!r}. "
                 "Install Meshtastic with powermon extras to use this backend."
@@ -48,7 +50,11 @@ def __getattr__(name: str) -> Any:
     try:
         module = importlib.import_module(module_name, __name__)
         value = getattr(module, name)
-    except ImportError as exc:
+    except ModuleNotFoundError as exc:
+        missing_name = getattr(exc, "name", "")
+        if missing_name not in (dependency_name, f"{dependency_name}."):
+            if not missing_name.startswith(f"{dependency_name}."):
+                raise
         value = _missing_optional_backend_class(name, dependency_name, exc)
     globals()[name] = value
     return value

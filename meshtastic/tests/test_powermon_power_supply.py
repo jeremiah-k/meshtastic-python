@@ -174,7 +174,9 @@ def test_powermon_optional_backends_are_lazy_and_dependency_error_is_clear(
 
     def _fake_import_module(name: str, package: str | None = None) -> object:
         if package == "meshtastic.powermon" and name in (".ppk2", ".riden"):
-            raise ImportError("optional backend missing")
+            missing = ModuleNotFoundError("optional backend missing")
+            missing.name = "riden" if name == ".riden" else "ppk2_api"
+            raise missing
         return real_import_module(name, package)
 
     monkeypatch.setattr(importlib, "import_module", _fake_import_module)
@@ -182,3 +184,24 @@ def test_powermon_optional_backends_are_lazy_and_dependency_error_is_clear(
     backend_cls = getattr(powermon, "RidenPowerSupply")
     with pytest.raises(ImportError, match="optional dependency"):
         backend_cls(portName="/dev/null")
+
+
+@pytest.mark.unit
+def test_powermon_optional_backend_lookup_re_raises_unrelated_missing_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Optional backend shim should not mask backend-module import bugs."""
+    powermon.__dict__.pop("RidenPowerSupply", None)
+    real_import_module = importlib.import_module
+
+    def _fake_import_module(name: str, package: str | None = None) -> object:
+        if package == "meshtastic.powermon" and name == ".riden":
+            missing = ModuleNotFoundError("backend import bug")
+            missing.name = "meshtastic.powermon.riden_internal"
+            raise missing
+        return real_import_module(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", _fake_import_module)
+
+    with pytest.raises(ModuleNotFoundError, match="backend import bug"):
+        getattr(powermon, "RidenPowerSupply")

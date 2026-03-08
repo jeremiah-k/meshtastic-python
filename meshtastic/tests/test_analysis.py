@@ -44,7 +44,7 @@ try:
     # Import private function for testing
     _is_loopback_host = analysis_main._is_loopback_host
 except ModuleNotFoundError as exc:
-    missing = (exc.name or "").split(".")[0]
+    missing = (exc.name or "").split(".", maxsplit=1)[0]
     if missing in OPTIONAL_ANALYSIS_DEPS:
         pytest.skip("Can't import meshtastic.analysis", allow_module_level=True)
     raise

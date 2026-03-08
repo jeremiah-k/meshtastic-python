@@ -399,10 +399,15 @@ def test_bleclient_unpair_delegates_to_backend(
     captured_timeout: list[float | None] = []
 
     class _Backend:
+        def __init__(self) -> None:
+            self.address = "AA:BB:CC:DD:EE:01"
+
         async def unpair(self) -> None:
             backend_calls.append(True)
+            self.address = "AA:BB:CC:DD:EE:02"
 
     ble_client.bleak_client = cast(Any, _Backend())
+    ble_client.address = "AA:BB:CC:DD:EE:01"
     monkeypatch.setattr(
         ble_client,
         "_async_await",
@@ -412,6 +417,7 @@ def test_bleclient_unpair_delegates_to_backend(
     ble_client.unpair(await_timeout=12.5)
     assert backend_calls == [True]
     assert captured_timeout == [12.5]
+    assert ble_client.address == "AA:BB:CC:DD:EE:02"
 
 
 @pytest.mark.unit
@@ -482,10 +488,15 @@ def test_bleclient_pair_delegates_to_backend(
     captured_timeout: list[float | None] = []
 
     class _Backend:
+        def __init__(self) -> None:
+            self.address = "AA:BB:CC:DD:EE:0A"
+
         async def pair(self, **kwargs: object) -> None:
             backend_calls.append(kwargs)
+            self.address = "AA:BB:CC:DD:EE:0B"
 
     ble_client.bleak_client = cast(Any, _Backend())
+    ble_client.address = "AA:BB:CC:DD:EE:0A"
     monkeypatch.setattr(
         ble_client,
         "_async_await",
@@ -495,6 +506,36 @@ def test_bleclient_pair_delegates_to_backend(
     ble_client.pair(confirm=True, await_timeout=9.0)
     assert backend_calls == [{"confirm": True}]
     assert captured_timeout == [9.0]
+    assert ble_client.address == "AA:BB:CC:DD:EE:0B"
+
+
+@pytest.mark.unit
+def test_bleclient_connect_refreshes_cached_address_from_backend(
+    monkeypatch: pytest.MonkeyPatch,
+    ble_client: BLEClient,
+) -> None:
+    """connect() should refresh BLEClient.address from backend-resolved address."""
+    captured_timeout: list[float | None] = []
+
+    class _Backend:
+        def __init__(self) -> None:
+            self.address = "AA:BB:CC:DD:EE:10"
+
+        async def connect(self, **_kwargs: object) -> None:
+            self.address = "AA:BB:CC:DD:EE:11"
+
+    ble_client.bleak_client = cast(Any, _Backend())
+    ble_client.address = "AA:BB:CC:DD:EE:10"
+    monkeypatch.setattr(
+        ble_client,
+        "_async_await",
+        _make_run_awaitable(captured_timeout),
+    )
+
+    ble_client.connect(await_timeout=7.5)
+
+    assert captured_timeout == [7.5]
+    assert ble_client.address == "AA:BB:CC:DD:EE:11"
 
 
 @pytest.mark.unit

@@ -169,6 +169,16 @@ class BLEClient:
 
         # Create underlying Bleak client for actual BLE communication
         self.bleak_client = BleakRootClient(address, **kwargs)
+        self._sync_address_from_bleak()
+
+    def _sync_address_from_bleak(self) -> None:
+        """Refresh cached address from the underlying Bleak client when available."""
+        bleak_client = self.bleak_client
+        if bleak_client is None:
+            return
+        bleak_address = getattr(bleak_client, "address", None)
+        if isinstance(bleak_address, str) and bleak_address:
+            self.address = bleak_address
 
     def _discover(self, **kwargs: Any) -> Any:
         """Discover nearby BLE devices.
@@ -266,6 +276,7 @@ class BLEClient:
             raise
         except NotImplementedError as exc:
             raise self.BLEError(unsupported_error) from exc
+        self._sync_address_from_bleak()
         return None
 
     def pair(
@@ -369,7 +380,9 @@ class BLEClient:
         bleak_client = self.bleak_client
         if bleak_client is None:
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_CONNECT_NOT_INITIALIZED)
-        return self._async_await(bleak_client.connect(**kwargs), timeout=await_timeout)
+        result = self._async_await(bleak_client.connect(**kwargs), timeout=await_timeout)
+        self._sync_address_from_bleak()
+        return result
 
     def isConnected(self) -> bool:
         """Return whether the underlying Bleak client currently has an active connection.
@@ -438,6 +451,7 @@ class BLEClient:
         if bleak_client is None:
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_DISCONNECT_NOT_INITIALIZED)
         self._async_await(bleak_client.disconnect(**kwargs), timeout=await_timeout)
+        self._sync_address_from_bleak()
 
     def read_gatt_char(
         self, *args: Any, timeout: float | None = None, **kwargs: Any
