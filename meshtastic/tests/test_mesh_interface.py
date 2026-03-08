@@ -13,7 +13,7 @@ import time
 import types
 from collections import OrderedDict
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
@@ -444,18 +444,45 @@ def test_close_suppresses_disconnect_send_failures(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_close_suppresses_disconnect_type_error() -> None:
-    """close() should treat TypeError as best-effort disconnect noise."""
+def test_close_propagates_disconnect_type_error() -> None:
+    """close() should re-raise unexpected TypeError outside interpreter finalization."""
     iface = MeshInterface(noProto=True)
     try:
         iface.debugOut = io.StringIO()
         with patch.object(iface, "_send_disconnect", side_effect=TypeError("boom")):
+            with pytest.raises(TypeError, match="boom"):
+                iface.close()
+    finally:
+        if not getattr(iface, "_closing", False):
+            iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_close_suppresses_disconnect_type_error_during_finalization(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """close() should suppress TypeError during interpreter finalization cleanup."""
+    iface = MeshInterface(noProto=True)
+    try:
+        iface.debugOut = io.StringIO()
+        monkeypatch.setattr("meshtastic.mesh_interface.sys.is_finalizing", lambda: True)
+        with (
+            patch.object(iface, "_send_disconnect", side_effect=TypeError("boom")),
+            caplog.at_level(logging.DEBUG),
+        ):
             iface.close()
         assert iface._closing is True
         assert iface.debugOut is None
     finally:
         if not getattr(iface, "_closing", False):
             iface.close()
+
+    assert (
+        "Failed to send disconnect during interpreter finalization; continuing shutdown."
+        in caplog.text
+    )
 
 
 @pytest.mark.unit
@@ -1858,7 +1885,7 @@ def test_on_response_position_prints_when_info_logging_not_visible(
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_logger_visible_info_handler_only_counts_console_stream_handlers() -> None:
-    """Only stdout handlers should suppress the stdout fallback."""
+    """Stdout/stderr console handlers should suppress the print fallback."""
     handler_logger = logging.getLogger("meshtastic.tests.visible-info-handler")
     original_handlers = list(handler_logger.handlers)
     original_propagate = handler_logger.propagate
@@ -1902,7 +1929,7 @@ def test_logger_visible_info_handler_only_counts_console_stream_handlers() -> No
         handler_logger.addHandler(rich_stderr_handler)
         assert (
             mesh_interface_module._logger_has_visible_info_handler(handler_logger)
-            is False
+            is True
         )
 
         handler_logger.removeHandler(rich_stderr_handler)
@@ -2346,13 +2373,17 @@ def test_wait_errors_ignore_stale_request_ids() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_wait_timeout_retires_response_handler_for_request_id() -> None:
+def test_wait_timeout_retires_response_handler_for_request_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """waitFor* timeouts should retire request-scoped response handlers."""
     with MeshInterface(noProto=True) as iface:
         iface._timeout = MagicMock()
         iface._timeout.waitForTelemetry.return_value = False
-        monkeypatch_send = MagicMock(side_effect=lambda packet, *_a, **_k: packet)
-        iface._send_packet = monkeypatch_send  # type: ignore[method-assign]
+        iface._timeout.expireTimeout = 0.01
+        iface._timeout.sleepInterval = 0.001
+        mock_send = MagicMock(side_effect=lambda packet, *_a, **_k: packet)
+        monkeypatch.setattr(iface, "_send_packet", mock_send)
 
         packet = iface.sendData(
             b"ping",
@@ -2367,6 +2398,95 @@ def test_wait_timeout_retires_response_handler_for_request_id() -> None:
             iface.waitForTelemetry(request_id=request_id)
 
         assert request_id not in iface.responseHandlers
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_request_scoped_wait_state_supports_multiple_active_request_ids() -> None:
+    """Multiple same-type waits should keep independent request-scoped error state."""
+    with MeshInterface(noProto=True) as iface:
+        iface._clear_wait_error("receivedTelemetry", request_id=101)
+        iface._clear_wait_error("receivedTelemetry", request_id=202)
+
+        iface._record_routing_wait_error(
+            acknowledgment_attr="receivedTelemetry",
+            routing_error_reason="NO_RESPONSE",
+            request_id=101,
+        )
+
+        iface._raise_wait_error_if_present("receivedTelemetry", request_id=202)
+        with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
+            iface._raise_wait_error_if_present("receivedTelemetry", request_id=101)
+
+        iface._retire_wait_request("receivedTelemetry", request_id=101)
+        iface._retire_wait_request("receivedTelemetry", request_id=202)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_send_data_rolls_back_wait_state_when_send_packet_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """sendData() should remove response state if _send_packet fails before send."""
+    with MeshInterface(noProto=True) as iface:
+        observed_request_ids: list[int] = []
+
+        def _fail_send(packet: Any, *_args: object, **_kwargs: object) -> NoReturn:
+            observed_request_ids.append(packet.id)
+            raise OSError("socket send failed")
+
+        monkeypatch.setattr(iface, "_send_packet", _fail_send)
+
+        with pytest.raises(OSError, match="socket send failed"):
+            iface.sendData(
+                b"ping",
+                wantResponse=True,
+                onResponse=lambda _packet: None,
+                response_wait_attr="receivedTelemetry",
+            )
+
+        assert len(observed_request_ids) == 1
+        request_id = observed_request_ids[0]
+        with iface._response_handlers_lock:
+            assert request_id not in iface.responseHandlers
+            assert ("receivedTelemetry", request_id) not in iface._response_wait_errors
+            assert ("receivedTelemetry", request_id) not in iface._response_wait_acks
+            assert "receivedTelemetry" not in iface._active_wait_request_ids
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_wait_for_request_ack_supports_overlapping_same_type_waits() -> None:
+    """Request-scoped wait path should handle overlapping telemetry waits independently."""
+    with MeshInterface(noProto=True) as iface:
+        iface._timeout = Timeout(maxSecs=0.5)
+        iface._timeout.sleepInterval = 0.001
+        iface._clear_wait_error("receivedTelemetry", request_id=11)
+        iface._clear_wait_error("receivedTelemetry", request_id=22)
+        errors: list[BaseException] = []
+
+        def _wait_for(req_id: int) -> None:
+            try:
+                iface.waitForTelemetry(request_id=req_id)
+            except Exception as exc:  # noqa: BLE001 - assertion below
+                errors.append(exc)
+
+        wait_11 = threading.Thread(target=_wait_for, args=(11,), daemon=True)
+        wait_22 = threading.Thread(target=_wait_for, args=(22,), daemon=True)
+        wait_11.start()
+        wait_22.start()
+        time.sleep(0.02)
+        iface._mark_wait_acknowledged("receivedTelemetry", request_id=11)
+        time.sleep(0.02)
+        iface._mark_wait_acknowledged("receivedTelemetry", request_id=22)
+        wait_11.join(timeout=1.0)
+        wait_22.join(timeout=1.0)
+
+        assert not errors
+        assert not wait_11.is_alive()
+        assert not wait_22.is_alive()
+        with iface._response_handlers_lock:
+            assert "receivedTelemetry" not in iface._active_wait_request_ids
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")

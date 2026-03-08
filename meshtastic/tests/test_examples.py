@@ -15,6 +15,7 @@ import yaml
 HELLO_WORLD_SERIAL_PATH = (
     Path(__file__).resolve().parents[2] / "examples" / "hello_world_serial.py"
 )
+# Shared by example-config structure tests and external test helpers.
 EXAMPLE_CONFIG_PATH: Path = Path(__file__).resolve().parents[2] / "example_config.yaml"
 
 
@@ -28,9 +29,8 @@ def _require_mapping(value: object, *, label: str) -> dict[str, object]:
 
 def _require_int_strict(value: object, *, label: str) -> int:
     """Assert that `value` is an int (excluding bool) and return it."""
-    assert isinstance(value, int) and not isinstance(value, bool), (
-        f"{label} should be an int, got {type(value).__name__}"
-    )
+    assert isinstance(value, int), f"{label} should be an int, got {type(value).__name__}"
+    assert not isinstance(value, bool), f"{label} must not be a bool"
     return value
 
 

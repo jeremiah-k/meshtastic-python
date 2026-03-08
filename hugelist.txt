@@ -1,0 +1,2371 @@
+My overall take: this is still moving in the right direction, and bbf5fdf4 is a quality-improving commit. For a merge onto develop, I do not see a new blocker in the latest bundle.
+
+What got better in the latest tip
+
+The strongest new improvement is the MeshInterface wait-state isolation.
+
+Before, the shared wait/error bookkeeping had a real risk of state leakage across sequential waits. The new request-scoped handling is materially better:
+
+wait errors are keyed by (ack_attr, request_id)
+
+stale acknowledgments and stale routing errors are ignored
+
+wait helper cleanup retires request-scoped handlers after completion or timeout
+
+sendData() can clear wait state using the outgoing packet id before send
+
+That is the right fix for the exact class of “one request poisons the next one” bugs that tend to surface in CLI flows and flaky response timing.
+
+The BLE side also improved in sensible ways:
+
+BLE client address is now synchronized back from the underlying Bleak client after connect, disconnect, pair, and unpair
+
+dead weakrefs in the gating registry are pruned before falling back to id(owner) matching
+
+provisional publish-pending state is cleared even when the provisional client was already detached by another path
+
+name-based connects now reserve both the requested alias key and the resolved concrete address key
+
+Those are all good polish passes. They reduce registry drift and narrow race windows rather than expanding them.
+
+The ancillary fixes are also good:
+
+OTA now recomputes firmware size/hash immediately before streaming, which protects against stale metadata
+
+optional powermon backend loading now avoids masking unrelated import failures
+
+smokevirt now validates inline host-port vs explicit port mismatch up front
+
+What I think is solid enough for develop
+
+The BLE connection-management model continues to look stronger than develop:
+
+provisional connect ownership
+
+delayed publication of connected clients
+
+explicit coordination with management operations
+
+better alias/concrete-address reconciliation
+
+improved cleanup around stale or invalidated clients
+
+The latest commit tightened the exact places I would have worried about:
+
+address ownership drift after connect/pair/unpair
+
+dead owner weakrefs leaving false registry state behind
+
+request wait state persisting past timeout boundaries
+
+stale routing responses waking or poisoning a later waiter
+
+That is all good upstream hygiene for an internal merge to develop.
+
+The two remaining things I would still call out
+1) Request-scoped waits are better, but same-attribute concurrent waits still are not a first-class supported model
+
+The new logic prevents sequential cross-contamination well. It does not fully generalize to multiple overlapping waits for the same acknowledgment attribute.
+
+Why:
+
+_active_wait_request_ids stores one active request id per acknowledgment attribute
+
+_acknowledgment.receivedTelemetry / receivedPosition / etc. is still a single shared boolean per attribute
+
+starting a new wait for the same attribute supersedes the older one
+
+That is probably fine if the API contract is “only one live telemetry wait at a time,” which seems to be the practical design. But it is worth being explicit. I would not block the merge on this, though I would either document it or add a guard that fails fast if overlapping same-type waits are attempted.
+
+2) close() now swallows TypeError unconditionally in the disconnect-send path
+
+This is the one code-review item that I would keep an eye on.
+
+The new behavior is safer during shutdown noise, but catching TypeError broadly can also hide a genuine programming mistake. In other words, this improves resilience, but slightly weakens bug visibility.
+
+For develop, I would treat this as a minor concern, not a blocker. The simplest refinement would be to keep the suppression but log it a bit more explicitly so real regressions do not disappear silently in debug-only output.
+
+Things I looked for and did not find
+
+I specifically checked for:
+
+obvious lock-order inversion
+
+new state-reset gaps
+
+duplicate-connect registry regressions
+
+publish-before-ownership regressions
+
+stale-client callbacks being reintroduced
+
+new disconnect/connect deadlock openings
+
+optional-backend import masking getting worse
+
+Nothing in bbf5fdf4 stood out as a new correctness regression.
+
+What I could validate directly
+
+I ran:
+
+branch verification and history inspection
+
+diff review against develop
+
+git diff --check on develop...maint-35-2
+
+python -m compileall -q meshtastic tests
+
+The tree compiles cleanly.
+
+I could not run the meaningful pytest suites in this container because required runtime deps are not installed here:
+
+serial
+
+pubsub
+
+bleak
+
+So I can give a strong code review, but not a full execution signoff from this environment.
+
+My merge recommendation
+
+For merge onto develop, I think this branch is in good shape.
+
+I would describe it this way:
+
+strong code-review pass
+
+no obvious new blocker at bbf5fdf4
+
+mergeable once a final targeted test pass is done in a provisioned environment
+
+I would not send this back for another broad refactor cycle. The branch looks like it is in late-stage polish, not in design churn.
+
+What should be done next
+
+The next pass should be narrow and deliberate.
+
+First, run targeted tests in a fully provisioned environment, especially:
+
+BLE unit/regression suites
+
+meshtastic/tests/test_mesh_interface.py
+
+meshtastic/tests/test_ota.py
+
+meshtastic/tests/test_powermon_power_supply.py
+
+smokevirt/meshtasticd tests affected by the script validation changes
+
+Second, add or confirm one more regression test around the only subtle remaining semantic edge:
+
+overlapping waits of the same acknowledgment type
+or, if that is intentionally unsupported,
+
+a test or documented guard that makes the limitation explicit
+
+Third, I would add one more very specific regression case:
+
+a routing error without requestId arriving while a newer request-scoped wait is active
+
+The new logic is good when request ids are present. That one case is still worth pinning down.
+
+Fourth, I would take one more look at the TypeError suppression in close(). I do not think it blocks the merge, but I would decide consciously whether the current breadth is intentional.
+
+Fifth, keep the PR narrative for develop focused on:
+
+BLE coordination hardening
+
+request-scoped wait correctness
+
+address/ownership synchronization
+
+OTA metadata freshness
+
+optional dependency behavior
+
+smokevirt validation
+
+That is the actual story of the branch now.
+
+Bottom line
+
+Compared with the prior bundle, this one is better again.
+
+---
+
+
+left a comment
+Code Review
+This is a substantial pull request that introduces significant new BLE device management capabilities (pairing, unpairing, trust), enhances connection and ownership semantics for greater robustness, and massively expands the testing framework. The changes to serialize BLE management operations, reduce race conditions, and improve error handling in various interfaces are particularly valuable.
+My review has identified a few areas for improvement. I found a potential concurrency issue in the BLE gating logic that could lead to leaked claims, some redundant code in the connection orchestration, and duplicated parsing logic between a test file and a shell script. These are detailed in the specific comments.
+Overall, this is a very impressive set of changes that greatly improves the reliability and functionality of the library.
+
+meshtastic/interfaces/ble/gating.py
+            BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS,
+        )
+        _remove_connecting_record_locked(key)
+        _cleanup_addr_lock(key)
+@gemini-code-assist
+gemini-code-assist bot
+19 minutes ago
+medium
+
+_prune_stale_connecting_claim_locked is called while holding _REGISTRY_LOCK, but _cleanup_addr_lock also acquires this lock. While using an RLock prevents a deadlock, this re-entrant locking pattern can be confusing. To improve clarity and avoid re-entrancy, consider replacing this call with _maybe_remove_addr_lock_entry(key), which is designed to be called when the lock is already held.
+
+Suggested change
+        _cleanup_addr_lock(key)
+        _maybe_remove_addr_lock_entry(key)
+@jeremiah-k	Reply...
+meshtastic/interfaces/ble/connection.py
+Comment on lines +679 to +693
+                    if emit_connected_side_effects:
+                        self._finalize_connection(
+                            client,
+                            target_address,
+                            register_notifications_func,
+                            on_connected_func,
+                        )
+                    else:
+                        self._finalize_connection(
+                            client,
+                            target_address,
+                            register_notifications_func,
+                            on_connected_func,
+                            emit_connected_side_effects=False,
+                        )
+@gemini-code-assist
+gemini-code-assist bot
+19 minutes ago
+medium
+
+This if/else block is redundant. The else branch is equivalent to the if branch when emit_connected_side_effects is False. You can simplify this by calling _finalize_connection once and passing emit_connected_side_effects directly.
+
+                    self._finalize_connection(
+                        client,
+                        target_address,
+                        register_notifications_func,
+                        on_connected_func,
+                        emit_connected_side_effects=emit_connected_side_effects,
+                    )
+@jeremiah-k	Reply...
+meshtastic/interfaces/ble/connection.py
+Comment on lines +755 to +769
+            if emit_connected_side_effects:
+                self._finalize_connection(
+                    client,
+                    resolved_address,
+                    register_notifications_func,
+                    on_connected_func,
+                )
+            else:
+                self._finalize_connection(
+                    client,
+                    resolved_address,
+                    register_notifications_func,
+                    on_connected_func,
+                    emit_connected_side_effects=False,
+                )
+@gemini-code-assist
+gemini-code-assist bot
+19 minutes ago
+medium
+
+Similar to a previous comment, this if/else block is redundant. It can be simplified by calling _finalize_connection once and passing the emit_connected_side_effects parameter directly.
+
+            if emit_connected_side_effects:
+                self._finalize_connection(
+                    client,
+                    resolved_address,
+                    register_notifications_func,
+                    on_connected_func,
+                    emit_connected_side_effects=emit_connected_side_effects,
+                )
+@jeremiah-k	Reply...
+meshtastic/tests/test_meshtasticd_tcp_interface_ci.py
+Comment on lines +74 to +161
+def _parse_host_and_port(host: str) -> tuple[str, int]:
+    """Parse ``HOST[:PORT]`` into a hostname and TCP port."""
+    if not host:
+        raise ValueError(
+            INVALID_HOST_EMPTY.format(env_var=MESHTASTICD_HOST_ENV_VAR, host=host)
+        )
+    if any(separator in host for separator in ("@", "/", "?", "#", ";")):
+        raise ValueError(
+            EXPECTED_HOST_PORT_ONLY.format(
+                env_var=MESHTASTICD_HOST_ENV_VAR,
+                host=host,
+            )
+        )
+    if host.count(":") >= 2 and not host.startswith("["):
+        # First check if the full host string is a valid IPv6 address.
+        try:
+            ipaddress.IPv6Address(host)
+        except ipaddress.AddressValueError as exc:
+            # Not a valid IPv6 address as-is. Check if it might be an
+            # unbracketed IPv6:PORT combination (which is ambiguous and
+            # must be rejected with a helpful error message).
+            host_part, separator, possible_port = host.rpartition(":")
+            if separator and possible_port.isdigit():
+                try:
+                    ipaddress.IPv6Address(host_part)
+                except ipaddress.AddressValueError:
+                    pass
+                else:
+                    raise ValueError(
+                        INVALID_IPV6_BRACKETED_PORT.format(
+                            env_var=MESHTASTICD_HOST_ENV_VAR,
+                            host=host,
+                        )
+                    ) from exc
+            # Neither a valid IPv6 address nor a valid IPv6:PORT form
+            raise ValueError(
+                INVALID_IPV6_BRACKETED_PORT.format(
+                    env_var=MESHTASTICD_HOST_ENV_VAR,
+                    host=host,
+                )
+            ) from exc
+        else:
+            # Full literal is a valid IPv6 host; treat it as host-only and
+            # use the default TCP port.
+            return host, DEFAULT_TCP_PORT
+
+    raw_port = _extract_port_component(host)
+    if raw_port == "":
+        raise ValueError(
+            INVALID_PORT_EMPTY.format(env_var=MESHTASTICD_HOST_ENV_VAR, host=host)
+        )
+
+    parsed = urlparse(f"//{host}")
+    if _has_extra_url_components(parsed):
+        raise ValueError(
+            EXPECTED_HOST_PORT_ONLY.format(
+                env_var=MESHTASTICD_HOST_ENV_VAR,
+                host=host,
+            )
+        )
+    try:
+        host_name = parsed.hostname
+        port = parsed.port
+    except ValueError as exc:
+        if raw_port is not None and not raw_port.isdigit():
+            raise ValueError(
+                INVALID_PORT_NONNUMERIC.format(
+                    env_var=MESHTASTICD_HOST_ENV_VAR,
+                    host=host,
+                    raw_port=raw_port,
+                )
+            ) from exc
+        raise ValueError(
+            INVALID_PORT_RANGE.format(env_var=MESHTASTICD_HOST_ENV_VAR, host=host)
+        ) from exc
+    if not host_name:
+        raise ValueError(
+            INVALID_HOST_EMPTY.format(env_var=MESHTASTICD_HOST_ENV_VAR, host=host)
+        )
+    if raw_port == "0" or port == 0:
+        raise ValueError(
+            INVALID_PORT_RANGE.format(env_var=MESHTASTICD_HOST_ENV_VAR, host=host)
+        )
+    if raw_port is None:
+        return host_name, DEFAULT_TCP_PORT
+    assert port is not None
+    return host_name, port
+
+@gemini-code-assist
+gemini-code-assist bot
+19 minutes ago
+medium
+
+The _parse_host_and_port function duplicates host/port parsing logic that also exists in bin/run-smokevirt-with-meshtasticd.sh. To avoid logic drift and improve maintainability, consider extracting this parser into a shared helper that can be used by both the test suite and the shell script (e.g., via a small Python utility script called from the shell).
+
+@jeremiah-k	Reply...
+coderabbitai[bot]
+coderabbitai bot reviewed 6 minutes ago
+coderabbitai bot
+left a comment
+Actionable comments posted: 11
+
+Caution
+
+Some comments are outside the diff and can’t be posted inline due to platform limitations.
+
+⚠️ Outside diff range comments (2)
+meshtastic/mesh_interface.py (1)
+1064-1079: ⚠️ Potential issue | 🟠 Major
+
+Clean up the registered response handler when send fails.
+
+responseHandlers[meshPacket.id] and the new wait bookkeeping are installed before _send_packet() runs. Any exception there leaves stale callback/state behind, so a later packet-id reuse can hit the wrong callback or keep wait state polluted.
+
+🧹 Roll back handler state on send failure
+         if onResponse is not None:
+             logger.debug("Setting a response handler for requestId %s", meshPacket.id)
+             self._add_response_handler(
+                 meshPacket.id, onResponse, ackPermitted=onResponseAckPermitted
+             )
+-        p = self._send_packet(
+-            meshPacket,
+-            destinationId,
+-            wantAck=wantAck,
+-            hopLimit=hopLimit,
+-            pkiEncrypted=pkiEncrypted,
+-            publicKey=publicKey,
+-        )
+-        return p
++        try:
++            return self._send_packet(
++                meshPacket,
++                destinationId,
++                wantAck=wantAck,
++                hopLimit=hopLimit,
++                pkiEncrypted=pkiEncrypted,
++                publicKey=publicKey,
++            )
++        except Exception:
++            if response_wait_attr is not None:
++                self._retire_wait_request(
++                    response_wait_attr,
++                    request_id=meshPacket.id,
++                )
++            elif onResponse is not None:
++                with self._response_handlers_lock:
++                    self.responseHandlers.pop(meshPacket.id, None)
++            raise
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@meshtastic/mesh_interface.py` around lines 1064 - 1079, The code registers
+response state (via self._add_response_handler for meshPacket.id and wait
+bookkeeping tracked by response_wait_attr) before calling self._send_packet, so
+if _send_packet raises you must clean up to avoid stale handlers; wrap the
+_send_packet call in a try/except (or try/finally) that on exception removes the
+registered response handler and clears the wait bookkeeping by calling the
+inverse cleanup functions (e.g., remove the entry from the responseHandlers map
+and call self._clear_wait_error(response_wait_attr, request_id=meshPacket.id))
+and then re-raise the exception so callers still see the failure.
+tests/test_ble_interface_advanced.py (1)
+657-690: ⚠️ Potential issue | 🟠 Major
+
+The new reconnect-kwargs checks are tautological.
+
+_patched_connect() always appends both "pair" and "connect_timeout" because those parameters are defaulted in the stub signature, so the later key-presence assertions pass even when the production reconnect path omits those kwargs or drops the original values. Capture the raw **kwargs (or use sentinel defaults) and assert expected values from a non-default reconnect scenario so this actually protects the pair/timeout propagation work.
+
+🔍 Tighten the stub so it records only explicitly forwarded kwargs
+-        def _patched_connect(
+-            self: BLEInterface,
+-            address: str | None = None,
+-            *,
+-            pair: bool | None = None,
+-            connect_timeout: float | None = None,
+-        ) -> "StressTestClient":
++        def _patched_connect(
++            self: BLEInterface,
++            address: str | None = None,
++            **kwargs: object,
++        ) -> "StressTestClient":
+             ...
+-            connect_kwargs.append(
+-                {"pair": pair, "connect_timeout": connect_timeout}
+-            )
++            connect_kwargs.append(dict(kwargs))
+Also applies to: 787-790, 838-841
+
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@tests/test_ble_interface_advanced.py` around lines 657 - 690, The test stub
+_patched_connect in tests/test_ble_interface_advanced.py records pair and
+connect_timeout unconditionally because the stub signature provides defaulted
+parameters; change it to capture raw **kwargs (or use unique sentinel defaults)
+so connect_kwargs only records explicitly forwarded kwargs from production
+reconnect paths, update assertions to trigger a non-default reconnect scenario
+and verify the recorded kwargs contain the expected forwarded keys/values;
+reference _patched_connect, connect_kwargs, connect_calls and StressTestClient
+to locate and modify the stub and its assertions accordingly.
+♻️ Duplicate comments (4)
+.trunk/trunk.yaml (1)
+meshtastic/tests/test_smoke1.py (1)
+81-88: ⚠️ Potential issue | 🟠 Major
+
+Mark destructive helpers as smoke1 too.
+
+These are still single-device smoke tests. Keeping only smoke1_destructive drops them from any lane/filter that selects smoke1, and the unit test below is currently encoding that broken behavior by asserting the base marker is absent.
+
+🏷️ Apply both markers and update the expectation
+ def _destructive_test(func: Callable[..., object]) -> Callable[..., object]:
+     """Mark a destructive single-device smoke test and restore baseline config."""
+     return cast(
+         Callable[..., object],
+         pytest.mark.usefixtures("restore_smoke1_module_config")(
+-            pytest.mark.smoke1_destructive(func)
++            pytest.mark.smoke1(pytest.mark.smoke1_destructive(func))
+         ),
+     )
+-    assert "smoke1" not in marker_names
++    assert "smoke1" in marker_names
+     assert "smoke1_destructive" in marker_names
+     assert "usefixtures" in marker_names
+As per coding guidelines: "Use `@pytest.mark.smoke1` for single device smoke tests".
+Also applies to: 158-170
+
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@meshtastic/tests/test_smoke1.py` around lines 81 - 88, The helper
+_destructive_test currently applies only pytest.mark.smoke1_destructive which
+omits the base smoke1 marker; update the decorator application to apply both
+pytest.mark.smoke1 and pytest.mark.smoke1_destructive (alongside
+pytest.mark.usefixtures("restore_smoke1_module_config")) so destructive
+single-device tests are included in smoke1 runs, and adjust the related unit
+test assertion (the test that checks for absence/presence of the smoke1 marker)
+to expect the smoke1 marker to be present; refer to _destructive_test,
+restore_smoke1_module_config, pytest.mark.smoke1_destructive and the unit test
+around lines 158-170 when making changes.
+meshtastic/mesh_interface.py (1)
+325-331: ⚠️ Potential issue | 🟠 Major
+
+Don't swallow arbitrary TypeError during shutdown.
+
+Line 327 now treats programmer errors in _send_disconnect() / _send_to_radio() the same as transport failures, so close() can silently succeed with a broken teardown path. Limit this handler to expected transport exceptions, or only tolerate TypeError during interpreter finalization.
+
+🩹 Narrow the suppression set
+-            except (OSError, TypeError, MeshInterface.MeshInterfaceError):
++            except (OSError, MeshInterface.MeshInterfaceError):
+                 logger.debug(
+                     "Failed to send disconnect during close(); continuing shutdown.",
+                     exc_info=True,
+                 )
++            except TypeError:
++                is_finalizing = getattr(sys, "is_finalizing", None)
++                if not (callable(is_finalizing) and is_finalizing()):
++                    raise
++                logger.debug(
++                    "Failed to send disconnect during interpreter finalization; continuing shutdown.",
++                    exc_info=True,
++                )
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@meshtastic/mesh_interface.py` around lines 325 - 331, The close() shutdown
+currently catches TypeError alongside OSError and
+MeshInterface.MeshInterfaceError which can hide programmer errors in
+_send_disconnect()/_send_to_radio(); change the except set to only (OSError,
+MeshInterface.MeshInterfaceError) and, if you still want to tolerate TypeError
+during interpreter teardown, add a separate except TypeError that checks
+interpreter finalization (via sys.is_finalizing()) and only suppresses/logs the
+error in that case, otherwise re-raise so real TypeError bugs in
+_send_disconnect()/_send_to_radio() surface.
+meshtastic/interfaces/ble/interface.py (1)
+2212-2216: ⚠️ Potential issue | 🟠 Major
+
+Don't publish the provisional client before post-connect verification finishes.
+
+This still assigns self.client/self.address before _finalize_connection_gates() and _verify_and_publish_connected() run. _client_publish_pending only protects helpers that explicitly check it, but raw readers like _receive_from_radio_impl() read self.client directly and can start I/O on a client that this connect path may discard moments later for lost ownership or shutdown.
+
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@meshtastic/interfaces/ble/interface.py` around lines 2212 - 2216, The code
+currently assigns self.client and self.address before
+_finalize_connection_gates()/_verify_and_publish_connected(), allowing readers
+like _receive_from_radio_impl() to use a provisional client; instead, keep the
+new client/address in local variables (and store previous_client locally), run
+_finalize_connection_gates() and _verify_and_publish_connected() first, and only
+on successful verification assign self.client and self.address and set
+_disconnect_notified/_client_publish_pending; on failure revert to
+previous_client and do not publish the provisional client so raw readers never
+observe an unverified client.
+🤖 Prompt for all review comments with AI agents
+Verify each finding against the current code and only fix it if needed.
+
+Inline comments:
+In `@meshtastic/interfaces/ble/gating.py`:
+- Around line 580-598: The second-phase recheck currently only checks
+_CONNECTED_ADDRS and ignores provisional claims in _CONNECTING_*; update the
+phase-2 recheck to mirror the provisional-claim logic used in the first lock:
+when re-evaluating the key, consult _CONNECTING_ADDRS, _CONNECTING_OWNERS and
+_CONNECTING_OWNER_IDS the same way (including pruning via
+_prune_stale_connecting_claim_locked, removing via
+_remove_connecting_record_locked, and calling _cleanup_addr_lock) before falling
+back to _CONNECTED_ADDRS so a provisional claim added after sampling
+owner_to_check cannot be missed; also add a regression test that flips between
+using _CONNECTED_* and _CONNECTING_* across the two lock phases to reproduce the
+race.
+
+In `@meshtastic/interfaces/ble/interface.py`:
+- Around line 2541-2545: The code accepts any non-None `pair` value making
+`pair="false"` or `pair=1` behave like True; add a fast-fail type check before
+computing `pair_on_connect`: if `pair` is not None and not an instance of bool,
+raise a TypeError (or ValueError) with a clear message; then keep the existing
+assignment `pair_on_connect = self.pair_on_connect if pair is None else pair`
+and call `_validate_connect_timeout_override(connect_timeout,
+pair_on_connect=pair_on_connect)` so only real booleans are allowed for `pair`.
+
+In `@meshtastic/mesh_interface.py`:
+- Around line 1182-1197: The code currently allows only one in-flight wait id
+per response type by storing a single int in _active_wait_request_ids; change
+this to map each acknowledgment_attr to a set (or list) of active request_ids so
+multiple overlapping wantResponse calls are tracked. In _clear_wait_error (and
+corresponding places that add/validate waits) use the set: when request_id is
+None remove all ids for the attr and clear related _response_wait_errors for
+keys matching the attr; when request_id is provided remove only that id from the
+attr's set and only pop matching _response_wait_errors entries for that specific
+request id, and only delete the attr key when the set becomes empty. Update any
+checks that previously compared a single id (references:
+_active_wait_request_ids, _response_wait_errors, _clear_wait_error,
+acknowledgment_attr, request_id, _response_handlers_lock, _acknowledgment) to
+consult the set membership instead.
+
+In `@meshtastic/ota.py`:
+- Around line 61-69: The _refresh_firmware_metadata method currently re-reads
+the firmware file mid-session causing startOTA/start and update phases to see
+different metadata; instead preserve the constructor-cached metadata for the
+lifetime of a single OTA session and remove the implicit re-read from
+_refresh_firmware_metadata during OTA operations, or else convert the refresh
+into an explicit preflight method that callers (e.g., meshtastic.__main__.py
+before calling startOTA()) must invoke so both startOTA() and update() use the
+same size/hash; update references to hashBytes()/hashHex(), the constructor,
+startOTA(), and update() to rely on the single-session cached _size/_file_hash
+(or call the new explicit preflight) rather than allowing mid-session
+_refresh_firmware_metadata() to overwrite them.
+
+In `@meshtastic/powermon/__init__.py`:
+- Line 32: Remove the unnecessary string quotes around the forward reference in
+the return annotation: change the function/method signature that currently
+returns "_MissingOptionalBackend" to use the bare identifier
+_MissingOptionalBackend (i.e., -> _MissingOptionalBackend) because from
+__future__ import annotations is already present (line 3) and makes quotes
+redundant; update the signature where it appears in meshtastic.powermon.__init__
+to reference the actual class name without quotes.
+
+In `@meshtastic/tests/test_examples.py`:
+- Around line 29-34: The compound assertion in _require_int_strict combines type
+and bool checks; split it into two single-purpose assertions: first assert
+isinstance(value, int) with a message like "{label} should be an int, got
+{type(value).__name__}", then assert not isinstance(value, bool) with a specific
+message like "{label} must not be a bool"; keep the function signature and
+return the value as before so the behavior is unchanged.
+
+In `@REFACTOR_PROGRAM.md`:
+- Around line 512-523: The document currently contradicts itself by deferring
+work on request-scoped wait-error correlation in MeshInterface and concrete
+device-key reservation for BLE in Section 17.3 but marking them complete in
+Section 19.1; update the text so the status is consistent: either mark both
+items as completed in 17.3 or mark them as deferred in 19.1, or add a brief note
+in 19.1 stating these specific items were completed after 17.3 was authored
+(include the MeshInterface symbol and the BLE concrete device-key reservation
+wording to make clear which items the note applies to). Ensure both Section 17.3
+and Section 19.1 refer to the same resolution and remove the contradiction.
+- Around line 416-417: Update the sentence that currently reads "merging cleanly
+to `develop`" to use the actual target branch or a neutral phrase: replace
+`develop` with `maint-35-2-2nd-review` or change it to "the target maintenance
+branch" so the checklist accurately reflects the PR target; also scan the
+surrounding paragraph for any other hard-coded references to `develop` and make
+them consistent with the chosen replacement.
+- Around line 534-719: The "CodeRabbit Pass Plan" branch-local review checklist
+(header "## 19) Comprehensive CodeRabbit Pass Plan (2026-03-07)" plus its
+sub-sections like "19.1 Priority A", "19.2 Priority B", and the Validation
+Snapshot) is a transient PR-specific execution log and should be removed from
+the durable REFACTOR_PROGRAM.md; extract that entire section and its checklists
+into a temporary review artifact (e.g., the PR description or a new review-only
+document such as "CodeRabbit-PR-REVIEW.md") and replace the removed content in
+REFACTOR_PROGRAM.md with a short pointer/note that review triage lives in the PR
+artifact and is not part of the long-lived refactor policy document.
+
+In `@tests/test_ble_interface_advanced.py`:
+- Around line 691-699: The test has a race: reconnect threads mutate
+iface.client, created_clients and attempted_clients under _state_lock while
+_wait_for_latest_stress_client() reads iface.client, _stress_test_attempts and
+_stress_test_clients without locking, causing mixed generations; fix by taking
+one locked snapshot inside the same _state_lock used by the stress
+helper—acquire _state_lock, copy iface.client,
+list(self._stress_test_attempts)/list(self._stress_test_clients)/list(created_clients)/list(attempted_clients)
+into local variables, then release the lock and use those locals to compute
+latest_successful_attempt; also ensure the stress helper records
+attempted_clients while holding _state_lock (the block where cast(Any,
+self).client = new_client, created_clients.append(new_client), and setting
+_disconnect_notified/_reconnected_event are done).
+
+In `@tests/test_ble_interface_fixtures.py`:
+- Around line 690-695: The stub `_stub_connect` currently types its receiver as
+`_self: Any`; change this to match the real method by annotating `_self` as
+"BLEInterface" (or a tiny Protocol that exposes the same connect signature) so
+the fixture mirrors `BLEInterface.connect`'s callable surface and satisfies type
+checking; update the annotation in the `_stub_connect` signature and add any
+necessary forward reference or local Protocol import to keep the file
+self-contained.
+
+---
+
+Outside diff comments:
+In `@meshtastic/mesh_interface.py`:
+- Around line 1064-1079: The code registers response state (via
+self._add_response_handler for meshPacket.id and wait bookkeeping tracked by
+response_wait_attr) before calling self._send_packet, so if _send_packet raises
+you must clean up to avoid stale handlers; wrap the _send_packet call in a
+try/except (or try/finally) that on exception removes the registered response
+handler and clears the wait bookkeeping by calling the inverse cleanup functions
+(e.g., remove the entry from the responseHandlers map and call
+self._clear_wait_error(response_wait_attr, request_id=meshPacket.id)) and then
+re-raise the exception so callers still see the failure.
+
+In `@tests/test_ble_interface_advanced.py`:
+- Around line 657-690: The test stub _patched_connect in
+tests/test_ble_interface_advanced.py records pair and connect_timeout
+unconditionally because the stub signature provides defaulted parameters; change
+it to capture raw **kwargs (or use unique sentinel defaults) so connect_kwargs
+only records explicitly forwarded kwargs from production reconnect paths, update
+assertions to trigger a non-default reconnect scenario and verify the recorded
+kwargs contain the expected forwarded keys/values; reference _patched_connect,
+connect_kwargs, connect_calls and StressTestClient to locate and modify the stub
+and its assertions accordingly.
+
+---
+
+Duplicate comments:
+In @.trunk/trunk.yaml:
+- Line 12: The pinned linter versions in the Trunk config don't match the plugin
+ref; update the ref or the pins: either change the ref value "ref: v1.7.5" to a
+plugin release that publishes the newer known_good_version for actionlint,
+checkov, isort, markdownlint, ruff, and trivy, or modify the pin entries for
+actionlint/checkov/isort/markdownlint/ruff/trivy to the versions actually
+published by the current v1.7.5 plugin set; ensure the ref string "ref: v1.7.5"
+and the corresponding pin keys (actionlint, checkov, isort, markdownlint, ruff,
+trivy) are consistent.
+
+In `@meshtastic/interfaces/ble/interface.py`:
+- Around line 2212-2216: The code currently assigns self.client and self.address
+before _finalize_connection_gates()/_verify_and_publish_connected(), allowing
+readers like _receive_from_radio_impl() to use a provisional client; instead,
+keep the new client/address in local variables (and store previous_client
+locally), run _finalize_connection_gates() and _verify_and_publish_connected()
+first, and only on successful verification assign self.client and self.address
+and set _disconnect_notified/_client_publish_pending; on failure revert to
+previous_client and do not publish the provisional client so raw readers never
+observe an unverified client.
+
+In `@meshtastic/mesh_interface.py`:
+- Around line 325-331: The close() shutdown currently catches TypeError
+alongside OSError and MeshInterface.MeshInterfaceError which can hide programmer
+errors in _send_disconnect()/_send_to_radio(); change the except set to only
+(OSError, MeshInterface.MeshInterfaceError) and, if you still want to tolerate
+TypeError during interpreter teardown, add a separate except TypeError that
+checks interpreter finalization (via sys.is_finalizing()) and only
+suppresses/logs the error in that case, otherwise re-raise so real TypeError
+bugs in _send_disconnect()/_send_to_radio() surface.
+
+In `@meshtastic/tests/test_smoke1.py`:
+- Around line 81-88: The helper _destructive_test currently applies only
+pytest.mark.smoke1_destructive which omits the base smoke1 marker; update the
+decorator application to apply both pytest.mark.smoke1 and
+pytest.mark.smoke1_destructive (alongside
+pytest.mark.usefixtures("restore_smoke1_module_config")) so destructive
+single-device tests are included in smoke1 runs, and adjust the related unit
+test assertion (the test that checks for absence/presence of the smoke1 marker)
+to expect the smoke1 marker to be present; refer to _destructive_test,
+restore_smoke1_module_config, pytest.mark.smoke1_destructive and the unit test
+around lines 158-170 when making changes.
+ℹ️ Review info
+meshtastic/interfaces/ble/gating.py
+Comment on lines +580 to +598
+            owner_ref = _CONNECTING_OWNERS.get(key)
+            current_owner = owner_ref() if owner_ref is not None else None
+            current_owner_id = _CONNECTING_OWNER_IDS.get(key)
+            if key not in _CONNECTING_ADDRS:
+                return False
+            if owner is not None and (
+                current_owner is owner
+                or (current_owner_id is not None and current_owner_id == id(owner))
+            ):
+                return False
+            if owner_ref is not None and current_owner is None:
+                _remove_connecting_record_locked(key)
+                _cleanup_addr_lock(key)
+                return False
+            if current_owner is None:
+                if _prune_stale_connecting_claim_locked(key):
+                    return False
+                return True
+            return True
+@coderabbitai
+coderabbitai bot
+6 minutes ago
+⚠️ Potential issue | 🟠 Major
+
+Re-check provisional claims in the second lock phase.
+
+This adds _CONNECTING_* handling only to the first registry snapshot. If the connected claim is dropped after owner_to_check is sampled and another interface records a provisional claim before Line 639 runs, the current if key not in _CONNECTED_ADDRS: return False path reports the address as free and can let a duplicate connect proceed. Please mirror the provisional-claim branch in the phase-2 recheck as well, and add a regression that swaps _CONNECTED_* for _CONNECTING_* between the two lock sections.
+
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@meshtastic/interfaces/ble/gating.py` around lines 580 - 598, The second-phase
+recheck currently only checks _CONNECTED_ADDRS and ignores provisional claims in
+_CONNECTING_*; update the phase-2 recheck to mirror the provisional-claim logic
+used in the first lock: when re-evaluating the key, consult _CONNECTING_ADDRS,
+_CONNECTING_OWNERS and _CONNECTING_OWNER_IDS the same way (including pruning via
+_prune_stale_connecting_claim_locked, removing via
+_remove_connecting_record_locked, and calling _cleanup_addr_lock) before falling
+back to _CONNECTED_ADDRS so a provisional claim added after sampling
+owner_to_check cannot be missed; also add a regression test that flips between
+using _CONNECTED_* and _CONNECTING_* across the two lock phases to reproduce the
+race.
+@jeremiah-k	Reply...
+meshtastic/interfaces/ble/interface.py
+Comment on lines +2541 to +2545
+        pair_on_connect = self.pair_on_connect if pair is None else pair
+        self._validate_connect_timeout_override(
+            connect_timeout,
+            pair_on_connect=pair_on_connect,
+        )
+@coderabbitai
+coderabbitai bot
+6 minutes ago
+⚠️ Potential issue | 🟡 Minor
+
+Validate pair as a real boolean.
+
+pair_on_connect = ... if pair is None else pair accepts any non-None object. pair="false" or pair=1 currently enables pairing and changes timeout selection instead of failing fast, which makes this public API easy to misuse.
+
+💡 Minimal fix
+-        pair_on_connect = self.pair_on_connect if pair is None else pair
++        pair_on_connect = self.pair_on_connect if pair is None else pair
++        if not isinstance(pair_on_connect, bool):
++            raise self.BLEError("pair must be a boolean when provided.")
+         self._validate_connect_timeout_override(
+             connect_timeout,
+             pair_on_connect=pair_on_connect,
+         )
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@meshtastic/interfaces/ble/interface.py` around lines 2541 - 2545, The code
+accepts any non-None `pair` value making `pair="false"` or `pair=1` behave like
+True; add a fast-fail type check before computing `pair_on_connect`: if `pair`
+is not None and not an instance of bool, raise a TypeError (or ValueError) with
+a clear message; then keep the existing assignment `pair_on_connect =
+self.pair_on_connect if pair is None else pair` and call
+`_validate_connect_timeout_override(connect_timeout,
+pair_on_connect=pair_on_connect)` so only real booleans are allowed for `pair`.
+@jeremiah-k	Reply...
+meshtastic/mesh_interface.py
+Comment on lines +1182 to +1197
+    def _clear_wait_error(
+        self, acknowledgment_attr: str, request_id: int | None = None
+    ) -> None:
+        """Clear wait error state for an attribute and optional request id."""
+        with self._response_handlers_lock:
+            if request_id is None:
+                for key in list(self._response_wait_errors):
+                    if key[0] == acknowledgment_attr:
+                        self._response_wait_errors.pop(key, None)
+                self._active_wait_request_ids.pop(acknowledgment_attr, None)
+            else:
+                for key in list(self._response_wait_errors):
+                    if key[0] == acknowledgment_attr:
+                        self._response_wait_errors.pop(key, None)
+                self._active_wait_request_ids[acknowledgment_attr] = request_id
+        setattr(self._acknowledgment, acknowledgment_attr, False)
+@coderabbitai
+coderabbitai bot
+6 minutes ago
+⚠️ Potential issue | 🟠 Major
+
+This still only tracks one in-flight wait per response type.
+
+_active_wait_request_ids stores a single id for "receivedTelemetry" / "receivedPosition" / etc. A second same-type request overwrites the first at Line 1196, and the first response is then discarded as stale at Lines 1234-1243. Overlapping wantResponse=True calls of the same kind will still time out nondeterministically unless you either reject them up front or track active request ids per wait attribute.
+
+Also applies to: 1207-1245
+
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@meshtastic/mesh_interface.py` around lines 1182 - 1197, The code currently
+allows only one in-flight wait id per response type by storing a single int in
+_active_wait_request_ids; change this to map each acknowledgment_attr to a set
+(or list) of active request_ids so multiple overlapping wantResponse calls are
+tracked. In _clear_wait_error (and corresponding places that add/validate waits)
+use the set: when request_id is None remove all ids for the attr and clear
+related _response_wait_errors for keys matching the attr; when request_id is
+provided remove only that id from the attr's set and only pop matching
+_response_wait_errors entries for that specific request id, and only delete the
+attr key when the set becomes empty. Update any checks that previously compared
+a single id (references: _active_wait_request_ids, _response_wait_errors,
+_clear_wait_error, acknowledgment_attr, request_id, _response_handlers_lock,
+_acknowledgment) to consult the set membership instead.
+@jeremiah-k	Reply...
+meshtastic/ota.py
+Comment on lines +61 to +69
+    def _refresh_firmware_metadata(self) -> tuple[int, _SHA256Digest]:
+        """Refresh cached firmware size/hash from disk and validate non-empty file."""
+        size = os.path.getsize(self._filename)
+        if size == 0:
+            raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
+        file_hash = _file_sha256(self._filename)
+        self._size = size
+        self._file_hash = file_hash
+        return size, file_hash
+@coderabbitai
+coderabbitai bot
+6 minutes ago
+⚠️ Potential issue | 🟠 Major
+
+Keep firmware metadata immutable for a single OTA session.
+
+Line 116 re-reads size/file_hash after callers may already have used hashBytes()/hashHex() from the constructor. In this PR’s CLI flow, meshtastic/__main__.py Line 821 sends the constructor-cached hash in startOTA(), then update() can switch to a different hash if the file changes during the reboot window. That can put the device into OTA mode for hash A and then upload hash/bytes for B. Reuse the cached session metadata here, or move the refresh into a shared preflight that runs before both phases. The new refresh-before-send test will need to change with this fix.
+
+💡 Suggested direction
+ class ESP32WiFiOTA:
+@@
+     def update(
+         self, progress_callback: Callable[[int, int], None] | None = None
+     ) -> None:
+@@
+-        size, file_hash = self._refresh_firmware_metadata()
++        size = self._size
++        file_hash = self._file_hash
+         if OTA_PROGRESS_LOG_PERCENT_STEP <= 0:
+             raise ValueError("OTA_PROGRESS_LOG_PERCENT_STEP must be > 0")
+If you still want a late on-disk refresh, make it an explicit preflight step and have callers invoke that before startOTA() so both phases share the same size/hash.
+
+Also applies to: 116-137
+
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@meshtastic/ota.py` around lines 61 - 69, The _refresh_firmware_metadata
+method currently re-reads the firmware file mid-session causing startOTA/start
+and update phases to see different metadata; instead preserve the
+constructor-cached metadata for the lifetime of a single OTA session and remove
+the implicit re-read from _refresh_firmware_metadata during OTA operations, or
+else convert the refresh into an explicit preflight method that callers (e.g.,
+meshtastic.__main__.py before calling startOTA()) must invoke so both startOTA()
+and update() use the same size/hash; update references to hashBytes()/hashHex(),
+the constructor, startOTA(), and update() to rely on the single-session cached
+_size/_file_hash (or call the new explicit preflight) rather than allowing
+mid-session _refresh_firmware_metadata() to overwrite them.
+@jeremiah-k	Reply...
+meshtastic/powermon/__init__.py
+    class _MissingOptionalBackend(PowerSupply):
+        def __new__(
+            cls, *args: object, **kwargs: object
+        ) -> "_MissingOptionalBackend":
+@coderabbitai
+coderabbitai bot
+6 minutes ago
+🧹 Nitpick | 🔵 Trivial
+
+Consider removing the string quotes from the type annotation.
+
+The from __future__ import annotations at line 3 makes all annotations lazily evaluated, so the forward reference quotes around "_MissingOptionalBackend" are unnecessary.
+
+Suggested fix
+         def __new__(
+             cls, *args: object, **kwargs: object
+-        ) -> "_MissingOptionalBackend":
++        ) -> _MissingOptionalBackend:
+🧰 Tools
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@meshtastic/powermon/__init__.py` at line 32, Remove the unnecessary string
+quotes around the forward reference in the return annotation: change the
+function/method signature that currently returns "_MissingOptionalBackend" to
+use the bare identifier _MissingOptionalBackend (i.e., ->
+_MissingOptionalBackend) because from __future__ import annotations is already
+present (line 3) and makes quotes redundant; update the signature where it
+appears in meshtastic.powermon.__init__ to reference the actual class name
+without quotes.
+@jeremiah-k	Reply...
+meshtastic/tests/test_examples.py
+Comment on lines +29 to +34
+def _require_int_strict(value: object, *, label: str) -> int:
+    """Assert that `value` is an int (excluding bool) and return it."""
+    assert isinstance(value, int) and not isinstance(value, bool), (
+        f"{label} should be an int, got {type(value).__name__}"
+    )
+    return value
+@coderabbitai
+coderabbitai bot
+6 minutes ago
+⚠️ Potential issue | 🟡 Minor
+
+🧩 Analysis chain
+Split _require_int_strict() into single-purpose assertions.
+
+Ruff PT018 flags the compound assert at lines 31-33, and splitting it improves clarity—the first assertion catches non-int types, while the second specifically rejects bool with a dedicated message.
+
+♻️ Suggested fix
+ def _require_int_strict(value: object, *, label: str) -> int:
+     """Assert that `value` is an int (excluding bool) and return it."""
+-    assert isinstance(value, int) and not isinstance(value, bool), (
+-        f"{label} should be an int, got {type(value).__name__}"
+-    )
++    assert isinstance(value, int), (
++        f"{label} should be an int, got {type(value).__name__}"
++    )
++    assert not isinstance(value, bool), f"{label} should be an int, got bool"
+     return value
+🧰 Tools
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@meshtastic/tests/test_examples.py` around lines 29 - 34, The compound
+assertion in _require_int_strict combines type and bool checks; split it into
+two single-purpose assertions: first assert isinstance(value, int) with a
+message like "{label} should be an int, got {type(value).__name__}", then assert
+not isinstance(value, bool) with a specific message like "{label} must not be a
+bool"; keep the function signature and return the value as before so the
+behavior is unchanged.
+@jeremiah-k	Reply...
+REFACTOR_PROGRAM.md
+Comment on lines +416 to +417
+This section tracks the post-refactor stabilization pass focused on merging
+cleanly to `develop` with race/concurrency/state behavior explicitly validated.
+@coderabbitai
+coderabbitai bot
+6 minutes ago
+⚠️ Potential issue | 🟡 Minor
+
+Use the actual target branch here.
+
+This section says the cycle is about merging cleanly to develop, but this PR is targeting maint-35-2-2nd-review. If this lands as-is, the document will immediately misstate which branch/stream the checklist was validated against. Consider either naming the real target branch or generalizing this to “the target maintenance branch.”
+
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@REFACTOR_PROGRAM.md` around lines 416 - 417, Update the sentence that
+currently reads "merging cleanly to `develop`" to use the actual target branch
+or a neutral phrase: replace `develop` with `maint-35-2-2nd-review` or change it
+to "the target maintenance branch" so the checklist accurately reflects the PR
+target; also scan the surrounding paragraph for any other hard-coded references
+to `develop` and make them consistent with the chosen replacement.
+@jeremiah-k	Reply...
+REFACTOR_PROGRAM.md
+Comment on lines +512 to +523
+### 17.3 Explicitly deferred in this cycle
+
+- Request-scoped wait-error correlation by packet/request-id in `MeshInterface`.
+  - Reason: this is a larger behavior-model change touching callback/waiter
+    lifecycle semantics and should be implemented as a dedicated focused change
+    with targeted design review.
+
+- Concrete device-key reservation before long name/discovery connect waits in
+  BLE multi-interface coordination.
+  - Reason: needs careful lock-order design and may require orchestration
+    restructuring to pre-resolve concrete targets before long-running I/O.
+
+@coderabbitai
+coderabbitai bot
+6 minutes ago
+⚠️ Potential issue | 🟡 Minor
+
+Resolve the deferred-vs-complete contradiction.
+
+Two items are listed as explicitly deferred in Section 17.3, then later checked off as complete in Section 19.1: the request-scoped wait-error work in MeshInterface and the concrete-key reservation follow-up for BLE name/discovery connects. Please pick one status or add a note that Section 19 reflects work completed after Section 17 was written.
+
+Also applies to: 553-595
+
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@REFACTOR_PROGRAM.md` around lines 512 - 523, The document currently
+contradicts itself by deferring work on request-scoped wait-error correlation in
+MeshInterface and concrete device-key reservation for BLE in Section 17.3 but
+marking them complete in Section 19.1; update the text so the status is
+consistent: either mark both items as completed in 17.3 or mark them as deferred
+in 19.1, or add a brief note in 19.1 stating these specific items were completed
+after 17.3 was authored (include the MeshInterface symbol and the BLE concrete
+device-key reservation wording to make clear which items the note applies to).
+Ensure both Section 17.3 and Section 19.1 refer to the same resolution and
+remove the contradiction.
+@jeremiah-k	Reply...
+REFACTOR_PROGRAM.md
+Comment on lines +534 to +719
+## 19) Comprehensive CodeRabbit Pass Plan (2026-03-07)
+
+This section is the execution checklist for the current CodeRabbit comment set.
+Each item was re-verified against current `maint-35-2` code before triage.
+
+### 19.1 Priority A: correctness/concurrency/state safety
+
+- [x] **BLE gating weakref-id reuse hardening**
+  - Files: `meshtastic/interfaces/ble/gating.py`
+  - Implement dead-weakref pruning in `_clear_connecting()` and
+    `_mark_disconnected()` before any stored `id(owner)` fallback checks.
+  - Why: avoids stale `id()` reuse incorrectly matching a different owner.
+
+- [x] **Clear publish-pending on provisional disconnect edge**
+  - Files: `meshtastic/interfaces/ble/interface.py`
+  - Ensure `_client_publish_pending` is reset even when disconnect cleanup
+    sees `self.client is not client` (already detached client path).
+  - Why: prevent stuck `ERROR_MANAGEMENT_CONNECTING` after invalidated connects.
+
+- [x] **Request-scoped wait-error state in MeshInterface**
+  - Files: `meshtastic/mesh_interface.py`
+  - Move wait-error bookkeeping from key=`acknowledgment_attr` to a
+    request-scoped key (attribute + request-id) and ensure late responses from
+    timed-out requests cannot flip wait state for newer requests.
+  - Why: current shared-key model can cross-contaminate sequential waits.
+
+- [x] **OTA metadata drift protection**
+  - Files: `meshtastic/ota.py`
+  - Recompute size/hash immediately before streaming in `update()` (and use
+    those values in logs and OTA header) so sent bytes match announced metadata.
+  - Why: constructor-cached file metadata can drift if firmware file changes.
+
+- [x] **Powermon optional-backend import masking fix**
+  - Files: `meshtastic/powermon/__init__.py`
+  - Catch `ModuleNotFoundError` (or equivalent narrowed missing-dependency
+    cases) only when missing module matches the declared optional dependency;
+    re-raise unrelated import failures from backend modules.
+  - Why: avoid hiding real backend bugs behind "missing optional dependency."
+
+- [x] **Powermon placeholder backend constructor fix (W0231)**
+  - Files: `meshtastic/powermon/__init__.py`
+  - Replace placeholder class raise-from-`__init__` path with immediate failure
+    from `__new__` (or equivalent) so base initializer contract is not violated.
+  - Why: remove pylint W0231 and keep clear dependency errors.
+
+- [x] **Smokevirt host/port mismatch guard**
+  - Files: `bin/run-smokevirt-with-meshtasticd.sh`
+  - After normalizing `MESHTASTICD_HOST_PORT_DEC` and `MESHTASTICD_PORT_DEC`,
+    fail fast when both are set and differ.
+  - Why: prevents docker publishing one port while readiness probes use another.
+
+- [x] **BLE client address synchronization**
+  - Files: `meshtastic/interfaces/ble/client.py`
+  - Keep `BLEClient.address` synchronized with `bleak_client.address`
+    (property or explicit resync after connect/pair/unpair).
+  - Why: BlueZ can update resolved identity address after pairing.
+
+- [x] **Name/discovery connect concrete-key reservation (design follow-up)**
+  - Files: `meshtastic/interfaces/ble/interface.py`
+  - For name/implicit connects, reserve the eventual concrete address key before
+    long connect windows so per-address management/connection gates stay atomic.
+  - Why: avoid cross-interface connect/management interleaving on same device.
+
+### 19.2 Priority B: behavior hygiene and test-lane stability
+
+- [x] **Destructive smoke lane isolation**
+  - Files: `meshtastic/tests/test_smoke1.py`
+  - Remove `smoke1` marker from `_destructive_test()` and update marker
+    expectation test accordingly.
+  - Why: keep destructive tests out of generic `-m smoke1` lane.
+
+- [x] **Remove plaintext PSK contract in smoke test**
+  - Files: `meshtastic/tests/test_smoke1.py`
+  - Drop assertion requiring cleartext `network.wifi_psk` echo.
+  - Why: avoid locking plaintext credential output into test contract.
+
+- [x] **Bound smoke restore retry budget**
+  - Files: `meshtastic/tests/test_smoke1.py`
+  - Reduce restore attempts/backoff and/or enforce total restore deadline.
+  - Why: teardown currently can burn lane time on persistent failures.
+
+- [x] **MeshInterface close TypeError policy decision**
+  - Files: `meshtastic/mesh_interface.py`
+  - Decide whether non-finalization `TypeError` in `_send_disconnect()` should
+    be surfaced (programming bug visibility) or always treated as best-effort.
+  - Why: current behavior intentionally re-raises outside finalization.
+
+### 19.2.1 Validation Snapshot (2026-03-07)
+
+- `make ci-strict` executed once for this cycle and progressed through full
+  pytest/coverage before failing at pylint style rule `C0207` in:
+  - `meshtastic/tests/test_analysis.py`
+  - `meshtastic/tests/conftest.py`
+- Follow-up fixes applied (`split(".", maxsplit=1)`), then targeted verification:
+  - `PYLINTHOME=${TMPDIR:-/tmp}/pylint-cache poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2\\.pyi?$"` ✅
+  - `poetry run mypy meshtastic/ --strict` ✅
+  - `ruff check` on all touched Python files ✅
+  - Targeted pytest suites:
+    - `tests/test_ble_gating.py tests/test_ble_interface_core.py tests/test_ble_client_edge_cases.py` ✅
+    - `meshtastic/tests/test_mesh_interface.py meshtastic/tests/test_ota.py meshtastic/tests/test_powermon_power_supply.py` ✅
+    - `meshtastic/tests/test_smoke1.py -m unit` ✅
+    - `meshtastic/tests/test_examples.py -m examples` ✅
+
+### 19.3 Priority C: API/docs/test quality alignment
+
+- [ ] **Document `_read_bytes()` ValueError contract**
+  - Files: `meshtastic/tcp_interface.py`
+  - Update NumPy docstring parameter contract and `Raises` section for invalid
+    `length` (bool/non-int/<=0).
+
+- [ ] **Annotate timeout aliases**
+  - Files: `meshtastic/interfaces/ble/constants.py`
+  - Add explicit `: float` for `MANAGEMENT_AWAIT_TIMEOUT` and
+    `BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT`.
+
+- [ ] **Use `object` returns in stress helper stubs**
+  - Files: `tests/test_ble_interface_advanced.py`
+  - Change `_delegate_to_bleak()` and `connect()` return annotations from `Any`
+    to `object`.
+
+- [ ] **Resolve dead pair/unpair init guard in fixture stub**
+  - Files: `tests/test_ble_interface_fixtures.py`
+  - Either remove unreachable `bleak_client is None` guards or add explicit
+    controllable uninitialized state for tests.
+
+- [ ] **Powermon test state restoration robustness**
+  - Files: `meshtastic/tests/test_powermon_power_supply.py`
+  - Replace raw `__dict__.pop()` mutation with `monkeypatch.delitem(...)` and/or
+    explicit restore of cached exports.
+
+- [ ] **Add reconnect-settle delay in meshtasticd TCP recovery test**
+  - Files: `meshtastic/tests/test_meshtasticd_tcp_interface_ci.py`
+  - Add short post-close sleep before polling reconnect to reduce reader-thread race.
+
+- [ ] **Mark/public-use note for `EXAMPLE_CONFIG_PATH`**
+  - Files: `meshtastic/tests/test_examples.py`
+  - Add brief comment or `__all__` to make intended export usage explicit.
+
+- [ ] **Tunnel privilege log wording accuracy**
+  - Files: `meshtastic/tunnel.py`
+  - Reword startup log to indicate root/CAP_NET_ADMIN is needed only when
+    creating `TapDevice` (non-`noProto` path).
+
+- [ ] **BLE docs trust note optional-address wording**
+  - Files: `BLE.md`
+  - Update platform note to reflect `trust(address=None)` semantics while
+    preserving Linux/bluetoothctl requirement details.
+
+- [ ] **Connection finalization call-site deduplication**
+  - Files: `meshtastic/interfaces/ble/connection.py`
+  - Collapse duplicate `_finalize_connection(...)` branches by forwarding
+    `emit_connected_side_effects` directly.
+
+- [ ] **Avoid reentrant cleanup in stale-connecting prune helper**
+  - Files: `meshtastic/interfaces/ble/gating.py`
+  - Switch `_prune_stale_connecting_claim_locked()` post-remove cleanup from
+    `_cleanup_addr_lock()` to `_maybe_remove_addr_lock_entry()` under lock.
+
+- [ ] **Parser de-dup follow-up (test/runtime shared helper)**
+  - Files: `meshtastic/tests/test_meshtasticd_tcp_interface_ci.py` (+ runtime target)
+  - Extract host/port parser into a shared runtime helper to prevent drift.
+
+### 19.4 Explicitly deferred or intentionally not in this cycle
+
+- [ ] **Trunk/plugin pin alignment changes**
+  - Files: `.trunk/trunk.yaml`
+  - Deferred by current cycle policy; trunk/pin realignment handled separately.
+
+- [ ] **`_emit_response_summary` stderr-visible-handler policy**
+  - Files: `meshtastic/mesh_interface.py`
+  - Deferred pending explicit UX policy decision for stdout/stderr summary duplication.
+
+### 19.5 Verified complete from recent review comments
+
+- [x] OTA retry-budget constant extraction in CLI and tests (`OTA_MAX_RETRIES`).
+- [x] BLE trust timeout constant type annotation in interface internals.
+- [x] Replace connect-time `assert target_address is not None` with explicit runtime error.
+- [x] Bluetoothctl trust subprocess output sanitization/truncation.
+- [x] Bounded management wait before connect.
+- [x] Proto3 telemetry optional-field presence checks via `ListFields()`.
+- [x] Strict int-without-bool checks in example config tests.
+- [x] Empty firmware constructor test cleanup (removed unused socket patch).
+- [x] BLE stress reconnect attempt-order test hardening.
+- [x] Rapid disconnect stress loop now targets active client per iteration.
+- [x] meshtasticd host parser accepts valid full IPv6 literals with numeric tails.
+- [x] Smokevirt inline host-port range validation (1..65535) added.
+@coderabbitai
+coderabbitai bot
+6 minutes ago
+🧹 Nitpick | 🔵 Trivial
+
+Move branch-local review triage out of the durable program doc.
+
+The dated “CodeRabbit Pass Plan”, validation snapshot, and per-comment checklist read like PR-local review notes rather than long-lived refactor rationale. Keeping them in REFACTOR_PROGRAM.md will make this document stale quickly and harder to trust. I’d keep this file focused on durable architecture/policy decisions and move the execution checklist to the PR description or a temporary review artifact.
+
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@REFACTOR_PROGRAM.md` around lines 534 - 719, The "CodeRabbit Pass Plan"
+branch-local review checklist (header "## 19) Comprehensive CodeRabbit Pass Plan
+(2026-03-07)" plus its sub-sections like "19.1 Priority A", "19.2 Priority B",
+and the Validation Snapshot) is a transient PR-specific execution log and should
+be removed from the durable REFACTOR_PROGRAM.md; extract that entire section and
+its checklists into a temporary review artifact (e.g., the PR description or a
+new review-only document such as "CodeRabbit-PR-REVIEW.md") and replace the
+removed content in REFACTOR_PROGRAM.md with a short pointer/note that review
+triage lives in the PR artifact and is not part of the long-lived refactor
+policy document.
+@jeremiah-k	Reply...
+tests/test_ble_interface_advanced.py
+Comment on lines +691 to +699
+            attempted_clients.append(new_client)
+            new_client.connect()
+            with self._state_lock:
+                cast(Any, self).client = new_client
+                created_clients.append(new_client)
+                self._disconnect_notified = False
+                if hasattr(self, "_reconnected_event"):
+                    self._reconnected_event.set()
+            return new_client
+@coderabbitai
+coderabbitai bot
+6 minutes ago
+⚠️ Potential issue | 🟠 Major
+
+Snapshot the reconnect state under one lock.
+
+The stress helper writes iface.client and created_clients under _state_lock, but _wait_for_latest_stress_client() reads iface.client, _stress_test_attempts, and _stress_test_clients via separate unlocked calls while reconnect threads are still mutating them. That can mix generations and make this test flaky. Take one locked snapshot of the lists plus iface.client before evaluating latest_successful_attempt, and record attempted_clients under the same lock as well.
+
+🔒 Keep the read/write sides on the same synchronization primitive
+-            attempted_clients.append(new_client)
++            with self._state_lock:
++                attempted_clients.append(new_client)
+             new_client.connect()
+             with self._state_lock:
+                 cast(Any, self).client = new_client
+                 created_clients.append(new_client)
+                 self._disconnect_notified = False
+                 if hasattr(self, "_reconnected_event"):
+                     self._reconnected_event.set()
+             return new_client
+...
+         while time.monotonic() < deadline:
+-            observed_attempts = _get_stress_test_attempts(iface)
+-            observed_clients = _get_stress_test_clients(iface)
++            with iface._state_lock:
++                observed_attempts = list(_get_stress_test_attempts(iface))
++                observed_clients = list(_get_stress_test_clients(iface))
++                current_client = cast(object, iface.client)
+             latest_successful_attempt = _latest_successful_stress_attempt(
+                 observed_attempts, observed_clients
+             )
+             if (
+                 len(observed_clients) >= 2
+                 and latest_successful_attempt is not None
+-                and cast(object, iface.client) is latest_successful_attempt
++                and current_client is latest_successful_attempt
+             ):
+Also applies to: 730-756
+
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@tests/test_ble_interface_advanced.py` around lines 691 - 699, The test has a
+race: reconnect threads mutate iface.client, created_clients and
+attempted_clients under _state_lock while _wait_for_latest_stress_client() reads
+iface.client, _stress_test_attempts and _stress_test_clients without locking,
+causing mixed generations; fix by taking one locked snapshot inside the same
+_state_lock used by the stress helper—acquire _state_lock, copy iface.client,
+list(self._stress_test_attempts)/list(self._stress_test_clients)/list(created_clients)/list(attempted_clients)
+into local variables, then release the lock and use those locals to compute
+latest_successful_attempt; also ensure the stress helper records
+attempted_clients while holding _state_lock (the block where cast(Any,
+self).client = new_client, created_clients.append(new_client), and setting
+_disconnect_notified/_reconnected_event are done).
+@jeremiah-k	Reply...
+tests/test_ble_interface_fixtures.py
+Comment on lines 690 to 695
+    def _stub_connect(
+        _self: Any, _address: str | None = None, *args, **kwargs
+        _self: Any,
+        _address: str | None = None,
+        *args: object,
+        **kwargs: object,
+    ) -> "DummyClient":
+@coderabbitai
+coderabbitai bot
+6 minutes ago
+⚠️ Potential issue | 🟡 Minor
+
+Tighten the stub receiver type instead of using Any.
+
+Ruff is already flagging _self: Any here. Since this stub is patching BLEInterface.connect, annotate _self as "BLEInterface" (or a tiny Protocol) so the fixture keeps the same callable surface as the real method.
+
+💡 Minimal fix
+-    def _stub_connect(
+-        _self: Any,
++    def _stub_connect(
++        _self: "BLEInterface",
+         _address: str | None = None,
+         *args: object,
+         **kwargs: object,
+     ) -> "DummyClient":
+As per coding guidelines: "Add type hints to all new code".
+🧰 Tools
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@tests/test_ble_interface_fixtures.py` around lines 690 - 695, The stub
+`_stub_connect` currently types its receiver as `_self: Any`; change this to
+match the real method by annotating `_self` as "BLEInterface" (or a tiny
+Protocol that exposes the same connect signature) so the fixture mirrors
+`BLEInterface.connect`'s callable surface and satisfies type checking; update
+the annotation in the `_stub_connect` signature and add any necessary forward
+reference or local Protocol import to keep the file self-contained.
+
+gemini-code-assist bot
+left a comment
+Code Review
+This is an impressive and substantial pull request that significantly enhances the BLE capabilities, configuration handling, and overall robustness of the library. The introduction of BLE pairing, unpairing, and trust management is a major feature addition, and the accompanying refactoring of the connection and management logic to be serialized and race-free is a huge improvement in stability. The extensive additions and refactoring of the test suite, particularly splitting smoke tests into destructive and non-destructive lanes and replacing fixed sleeps with polling, greatly improve the project's test infrastructure. The changes are well-documented and demonstrate a deep attention to detail. I have one suggestion for a minor refactoring to improve maintainability.
+
+Note: Security Review did not run due to the size of the PR.
+
+meshtastic/tests/test_meshtasticd_tcp_interface_ci.py
+Comment on lines +74 to +161
+def _parse_host_and_port(host: str) -> tuple[str, int]:
+    """Parse ``HOST[:PORT]`` into a hostname and TCP port."""
+    if not host:
+        raise ValueError(
+            INVALID_HOST_EMPTY.format(env_var=MESHTASTICD_HOST_ENV_VAR, host=host)
+        )
+    if any(separator in host for separator in ("@", "/", "?", "#", ";")):
+        raise ValueError(
+            EXPECTED_HOST_PORT_ONLY.format(
+                env_var=MESHTASTICD_HOST_ENV_VAR,
+                host=host,
+            )
+        )
+    if host.count(":") >= 2 and not host.startswith("["):
+        # First check if the full host string is a valid IPv6 address.
+        try:
+            ipaddress.IPv6Address(host)
+        except ipaddress.AddressValueError as exc:
+            # Not a valid IPv6 address as-is. Check if it might be an
+            # unbracketed IPv6:PORT combination (which is ambiguous and
+            # must be rejected with a helpful error message).
+            host_part, separator, possible_port = host.rpartition(":")
+            if separator and possible_port.isdigit():
+                try:
+                    ipaddress.IPv6Address(host_part)
+                except ipaddress.AddressValueError:
+                    pass
+                else:
+                    raise ValueError(
+                        INVALID_IPV6_BRACKETED_PORT.format(
+                            env_var=MESHTASTICD_HOST_ENV_VAR,
+                            host=host,
+                        )
+                    ) from exc
+            # Neither a valid IPv6 address nor a valid IPv6:PORT form
+            raise ValueError(
+                INVALID_IPV6_BRACKETED_PORT.format(
+                    env_var=MESHTASTICD_HOST_ENV_VAR,
+                    host=host,
+                )
+            ) from exc
+        else:
+            # Full literal is a valid IPv6 host; treat it as host-only and
+            # use the default TCP port.
+            return host, DEFAULT_TCP_PORT
+
+    raw_port = _extract_port_component(host)
+    if raw_port == "":
+        raise ValueError(
+            INVALID_PORT_EMPTY.format(env_var=MESHTASTICD_HOST_ENV_VAR, host=host)
+        )
+
+    parsed = urlparse(f"//{host}")
+    if _has_extra_url_components(parsed):
+        raise ValueError(
+            EXPECTED_HOST_PORT_ONLY.format(
+                env_var=MESHTASTICD_HOST_ENV_VAR,
+                host=host,
+            )
+        )
+    try:
+        host_name = parsed.hostname
+        port = parsed.port
+    except ValueError as exc:
+        if raw_port is not None and not raw_port.isdigit():
+            raise ValueError(
+                INVALID_PORT_NONNUMERIC.format(
+                    env_var=MESHTASTICD_HOST_ENV_VAR,
+                    host=host,
+                    raw_port=raw_port,
+                )
+            ) from exc
+        raise ValueError(
+            INVALID_PORT_RANGE.format(env_var=MESHTASTICD_HOST_ENV_VAR, host=host)
+        ) from exc
+    if not host_name:
+        raise ValueError(
+            INVALID_HOST_EMPTY.format(env_var=MESHTASTICD_HOST_ENV_VAR, host=host)
+        )
+    if raw_port == "0" or port == 0:
+        raise ValueError(
+            INVALID_PORT_RANGE.format(env_var=MESHTASTICD_HOST_ENV_VAR, host=host)
+        )
+    if raw_port is None:
+        return host_name, DEFAULT_TCP_PORT
+    assert port is not None
+    return host_name, port
+
+@gemini-code-assist
+gemini-code-assist bot
+21 minutes ago
+medium
+
+This new test file introduces a very thorough _parse_host_and_port function for validating the MESHTASTICD_HOST environment variable. This logic is quite robust, handling various IPv4/IPv6 formats and port specifications.
+
+To improve code reuse and maintainability, consider extracting this function into a shared utility module (e.g., meshtastic/util.py). This would allow other parts of the codebase that deal with host/port strings to leverage this validation, and it would centralize the logic to prevent potential drift if similar parsers are needed in the future.
+
+@jeremiah-k	Reply...
+coderabbitai[bot]
+coderabbitai bot reviewed 8 minutes ago
+coderabbitai bot
+left a comment
+Actionable comments posted: 9
+
+Caution
+
+Some comments are outside the diff and can’t be posted inline due to platform limitations.
+
+⚠️ Outside diff range comments (1)
+tests/test_ble_interface_fixtures.py (1)
+690-722: ⚠️ Potential issue | 🟡 Minor
+
+Type the _self parameter as BLEInterface instead of Any.
+
+The _self: Any annotation violates the guideline "Add type hints to all new code". BLEInterface is already imported under TYPE_CHECKING at the top of the file. Other similar stubs in this file (_stub_start_config, _stub_start_receive_thread) use "BLEInterface" without issue; apply the same pattern here:
+
+def _stub_connect(
+    _self: "BLEInterface",
+    _address: str | None = None,
+    *args: object,
+    **kwargs: object,
+) -> "DummyClient":
+No cast or variable renaming is necessary—simply update the parameter annotation.
+
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@tests/test_ble_interface_fixtures.py` around lines 690 - 722, The
+_stub_connect function currently types its first parameter as _self: Any; change
+this to use the forward-declared type used elsewhere by annotating it as _self:
+"BLEInterface" (match the pattern used in _stub_start_config and
+_stub_start_receive_thread) so the parameter has a proper BLEInterface type hint
+while leaving the rest of the signature and body unchanged.
+♻️ Duplicate comments (4)
+meshtastic/tunnel.py (1)
+190-193: ⚠️ Potential issue | 🟡 Minor
+
+Move the privilege notice into the TapDevice path.
+
+This log is still inaccurate on the noProto path: Lines 190-193 mention CAP_NET_ADMIN/root before the later branch decides whether a TapDevice will be created at all.
+
+💡 Suggested change
+-        logger.info(
+-            "Starting IP to mesh tunnel (CAP_NET_ADMIN or root is typically "
+-            "required). Mesh members:"
+-        )
++        logger.info("Starting IP to mesh tunnel. Mesh members:")
+@@
+             else:
++                logger.info(
++                    "Creating TapDevice; CAP_NET_ADMIN or root is typically required."
++                )
+                 self.tun = TapDevice(name="mesh")
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@meshtastic/tunnel.py` around lines 190 - 193, The privilege notice logger
+currently runs unconditionally before the branch that creates a TapDevice,
+causing an inaccurate message on the noProto path; move the logger.info call
+into the TapDevice creation path (the branch that instantiates or configures
+TapDevice) so it only logs when TapDevice will actually be created, and remove
+or adjust the prior unconditional logger statement near the top of the tunnel
+setup; reference the existing logger.info message and the TapDevice creation
+code paths to locate and relocate the message.
+meshtastic/tests/test_powermon_power_supply.py (1)
+170-171: ⚠️ Potential issue | 🟠 Major
+
+Restore powermon exports after these tests.
+
+Both tests mutate powermon.__dict__, and Line 184 re-caches RidenPowerSupply as a placeholder class. That state survives the test run, so later tests can observe a different module surface depending on execution order. Snapshot the original exports and restore them in finally (or manage powermon.__dict__ through monkeypatch) so these tests stay isolated.
+
+Proposed fix
+ `@pytest.mark.unit`
+ def test_powermon_optional_backends_are_lazy_and_dependency_error_is_clear(
+     monkeypatch: pytest.MonkeyPatch,
+ ) -> None:
+     """Optional backend access should not require dependencies at package import time."""
+-    for backend_name in ("PPK2PowerSupply", "RidenPowerSupply"):
++    backend_names = ("PPK2PowerSupply", "RidenPowerSupply")
++    original_backends = {
++        backend_name: powermon.__dict__.get(backend_name)
++        for backend_name in backend_names
++    }
++    for backend_name in backend_names:
+         powermon.__dict__.pop(backend_name, None)
+@@
+-    backend_cls = getattr(powermon, "RidenPowerSupply")
+-    with pytest.raises(ImportError, match="optional dependency"):
+-        backend_cls(portName="/dev/null")
++    try:
++        backend_cls = powermon.RidenPowerSupply
++        with pytest.raises(ImportError, match="optional dependency"):
++            backend_cls(portName="/dev/null")
++    finally:
++        for backend_name, original_backend in original_backends.items():
++            if original_backend is None:
++                powermon.__dict__.pop(backend_name, None)
++            else:
++                powermon.__dict__[backend_name] = original_backend
+@@
+ `@pytest.mark.unit`
+ def test_powermon_optional_backend_lookup_re_raises_unrelated_missing_module(
+     monkeypatch: pytest.MonkeyPatch,
+ ) -> None:
+     """Optional backend shim should not mask backend-module import bugs."""
+-    powermon.__dict__.pop("RidenPowerSupply", None)
++    original_riden = powermon.__dict__.get("RidenPowerSupply")
++    powermon.__dict__.pop("RidenPowerSupply", None)
+@@
+-    with pytest.raises(ModuleNotFoundError, match="backend import bug"):
+-        getattr(powermon, "RidenPowerSupply")
++    try:
++        with pytest.raises(ModuleNotFoundError, match="backend import bug"):
++            _ = powermon.RidenPowerSupply
++    finally:
++        if original_riden is None:
++            powermon.__dict__.pop("RidenPowerSupply", None)
++        else:
++            powermon.__dict__["RidenPowerSupply"] = original_riden
+Also applies to: 184-207
+
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@meshtastic/tests/test_powermon_power_supply.py` around lines 170 - 171, Tests
+mutate the powermon module exports (removing PPK2PowerSupply and
+RidenPowerSupply and later re-caching a placeholder RidenPowerSupply), which
+leaks state to other tests; fix by snapshotting the original exports for those
+symbols before the loop (e.g., save original = {name:
+powermon.__dict__.get(name) for name in ("PPK2PowerSupply","RidenPowerSupply")})
+and then in a finally block restore them (set or del keys in powermon.__dict__
+to match the snapshot) so powermon.__dict__ is returned to its original state
+after the tests (alternatively use monkeypatch.setitem/monkeypatch.delenv for
+powermon to isolate changes).
+meshtastic/interfaces/ble/gating.py (1)
+304-309: 🧹 Nitpick | 🔵 Trivial
+
+Consider adding NumPy-style docstring sections.
+
+The summary is clear, but adding a Parameters section would align with the documented coding guidelines for new/edited docstrings. This is a minor improvement.
+
+♻️ Optional: Add NumPy-style docstring
+ def _remove_connecting_record_locked(key: str) -> None:
+-    """Remove all provisional connecting-state bookkeeping for the normalized key."""
++    """Remove all provisional connecting-state bookkeeping for the normalized key.
++
++    Parameters
++    ----------
++    key : str
++        Normalized address key whose provisional connecting-state records
++        should be removed.
++
++    Notes
++    -----
++    Must be called while holding the module-level ``_REGISTRY_LOCK``.
++    """
+     _CONNECTING_ADDRS.discard(key)
+As per coding guidelines: "Use NumPy-style docstrings for new and edited docstrings (Ruff pydocstyle convention)."
+
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@meshtastic/interfaces/ble/gating.py` around lines 304 - 309, Update the
+docstring for _remove_connecting_record_locked to NumPy-style: keep the one-line
+summary, then add a Parameters section documenting key : str (normalized key to
+remove) and a Returns section indicating None, and optionally a Notes or See
+also if needed; ensure formatting follows NumPy-style docstrings used in the
+repo.
+meshtastic/mesh_interface.py (1)
+98-125: ⚠️ Potential issue | 🟡 Minor
+
+Treat stderr-backed console handlers as visible too.
+
+This still suppresses the fallback print() only for stdout-bound handlers. The common logging.StreamHandler() case writes to stderr, and Rich console handlers often do the same, so _emit_response_summary() can still log and print the same summary.
+
+Suggested change
+#!/bin/bash
+python3 - <<'PY'
+import logging
+import sys
+
+handler = logging.StreamHandler()
+print("streamhandler_uses_stderr=", handler.stream in {sys.stderr, sys.__stderr__})
+
+try:
+    from rich.logging import RichHandler
+    print("richhandler_is_streamhandler=", issubclass(RichHandler, logging.StreamHandler))
+except Exception as exc:
+    print(f"rich_check_skipped={exc}")
+PY
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@meshtastic/mesh_interface.py` around lines 98 - 125, The current visibility
+check in _logger_has_visible_info_handler only treats stdout streams as
+"visible", causing stderr-backed handlers (e.g., logging.StreamHandler and many
+Rich handlers) to be ignored and _emit_response_summary to still print; update
+the visibility logic in _logger_has_visible_info_handler to consider stderr as
+visible as well by expanding the visible set to include sys.stderr and
+sys.__stderr__ (and keep sys.stdout/sys.__stdout__), and ensure both
+handler_stream and console_stream comparisons use that expanded set so
+stderr-backed handlers suppress the fallback print in _emit_response_summary.
+🤖 Prompt for all review comments with AI agents
+Verify each finding against the current code and only fix it if needed.
+
+Inline comments:
+In `@bin/run-smokevirt-with-meshtasticd.sh`:
+- Around line 86-100: When MESHTASTICD_HOST lacks an inline port the script must
+normalize it so meshtastic is called with the explicit port; detect absence of
+MESHTASTICD_HOST_PORT_DEC after validating MESHTASTICD_PORT and set
+MESHTASTICD_HOST to "${MESHTASTICD_HOST}:${MESHTASTICD_PORT}" (or set
+MESHTASTICD_HOST_PORT_DEC = MESHTASTICD_PORT_DEC and ensure downstream callers
+use MESHTASTICD_HOST with the appended port) so MESHTASTICD_HOST,
+MESHTASTICD_PORT, MESHTASTICD_HOST_PORT_DEC and MESHTASTICD_PORT_DEC remain
+consistent and meshtastic --host probes the intended port.
+
+In `@meshtastic/interfaces/ble/interface.py`:
+- Around line 2320-2335: The first with self._state_lock block that calls
+_get_connected_client_status_locked(connected_client) is redundant because its
+results are overwritten; remove that initial block and consolidate logic by
+holding self._state_lock once: inside the single lock call
+_get_connected_client_status_locked(connected_client), then compute
+lost_gate_ownership (call _has_lost_gate_ownership with connected_device_key and
+connection_alias_key) while still under the same lock, and finally set
+self._client_publish_pending = False and publish_connected = True only if
+still_owned and not lost_gate_ownership; keep references to _state_lock,
+_get_connected_client_status_locked, _has_lost_gate_ownership,
+_client_publish_pending, publish_connected, connected_client,
+connected_device_key, and connection_alias_key when making the change.
+- Around line 2351-2361: The reconnected_event is being fired even on the first
+connect because _emit_verified_connection_side_effects checks
+self._ever_connected after _establish_and_update_client has already set it to
+True; fix by capturing the prior state before that mutation (or introduce a
+separate boolean like _has_ever_connected_before) and use that previous value in
+_emit_verified_connection_side_effects to decide whether to call
+thread_coordinator._set_event("reconnected_event"); ensure the change references
+the existing methods/attributes _establish_and_update_client,
+_emit_verified_connection_side_effects, and _ever_connected and updates any
+logic in the receive loop that relies on the reconnection event accordingly.
+- Around line 2576-2577: The defensive getattr calls for _management_lock and
+_management_idle_condition are unnecessary because both are set in __init__;
+replace management_lock = getattr(self, "_management_lock", None) and
+management_idle_condition = getattr(self, "_management_idle_condition", None)
+with direct attribute access (e.g., management_lock = self._management_lock and
+management_idle_condition = self._management_idle_condition) so the code is
+simpler and avoids redundant None fallbacks while still using the same symbols.
+
+In `@meshtastic/mesh_interface.py`:
+- Around line 1182-1291: The current wait/ack implementation is single-flight
+because a single boolean self._acknowledgment.<attr> is shared across
+request_ids while _active_wait_request_ids only stores one id; fix by making ack
+state per-request keyed by (acknowledgment_attr, request_id): replace uses of
+the shared boolean with a per-request map (e.g. _acknowledgment_states or reuse
+_response_wait_errors keys) and update _clear_wait_error, _set_wait_error,
+_mark_wait_acknowledged, _raise_wait_error_if_present and _retire_wait_request
+to set/clear/check the per-request ack flag using (acknowledgment_attr,
+resolved_request_id) (fall back to UNSCOPED_WAIT_REQUEST_ID when no id), and
+ensure responseHandlers and _response_wait_errors are handled with the same
+keying; alternatively, if you prefer single-flight semantics implement an
+explicit overlap check when registering a new wait (using
+_active_wait_request_ids) and raise/fail-fast instead of stealing the slot.
+
+In `@meshtastic/ota.py`:
+- Around line 116-117: The update() method currently computes size/hash from
+self._filename via _refresh_firmware_metadata() then reopens the path later to
+stream the payload, opening a TOCTOU where the file can change between calls;
+change update() so the firmware file is opened once and that same file object is
+used both to compute size/hash (replace _refresh_firmware_metadata() call with
+computing metadata from the open file or refactor _refresh_firmware_metadata()
+to accept a file-like object) and to stream bytes to the device (seek back to
+start before upload), ensuring the header matches the exact bytes sent; apply
+the same single-open approach to the other occurrence mentioned around lines
+154-159 so no reopen by path happens.
+
+In `@meshtastic/tcp_interface.py`:
+- Around line 603-604: Update the _read_bytes() docstring to tighten the
+description of the length parameter (state it must be a positive int, explicitly
+excluding bool) and add a NumPy-style "Raises" section documenting that passing
+a non-int, a bool, or an int <= 0 will raise ValueError; keep the existing
+reconnect/transport behavior docs unchanged. Reference the _read_bytes function
+and the ValueError raised for invalid length so callers understand this is input
+validation, not a transport error.
+
+In `@tests/test_ble_interface_advanced.py`:
+- Around line 787-790: The current test only checks that the stub ran because
+_patched_connect() always records both "pair" and "connect_timeout", so update
+the assertions to validate the new per-connect kwargs path by asserting exact
+recorded dict contents (not just subset) from _get_connect_stub_kwargs(iface) or
+by invoking a reconnect with a non-default override and then comparing the
+recorded kwargs to the expected dict; specifically, replace the set-subset check
+with equality checks against expected dicts (e.g., {"pair": expected_pair,
+"connect_timeout": expected_timeout, ...}) for the entries returned by
+_get_connect_stub_kwargs and repeat the same stronger assertion for the other
+block around lines 838-841 to ensure values are neither dropped nor rewritten.
+- Around line 865-867: The multi-line except clause currently written as "except
+(\n    Exception\n) as exc:  # noqa: BLE001" causes Ruff to miss the noqa;
+collapse the handler to a single-line except Exception as exc:  # noqa: BLE001 -
+test records failure-path behavior (or, better, replace Exception with a
+narrower exception class if possible) so the noqa applies correctly; update the
+except clause where the test captures failures (the except ... as exc handler)
+accordingly.
+
+---
+
+Outside diff comments:
+In `@tests/test_ble_interface_fixtures.py`:
+- Around line 690-722: The _stub_connect function currently types its first
+parameter as _self: Any; change this to use the forward-declared type used
+elsewhere by annotating it as _self: "BLEInterface" (match the pattern used in
+_stub_start_config and _stub_start_receive_thread) so the parameter has a proper
+BLEInterface type hint while leaving the rest of the signature and body
+unchanged.
+
+---
+
+Duplicate comments:
+In `@meshtastic/interfaces/ble/gating.py`:
+- Around line 304-309: Update the docstring for _remove_connecting_record_locked
+to NumPy-style: keep the one-line summary, then add a Parameters section
+documenting key : str (normalized key to remove) and a Returns section
+indicating None, and optionally a Notes or See also if needed; ensure formatting
+follows NumPy-style docstrings used in the repo.
+
+In `@meshtastic/mesh_interface.py`:
+- Around line 98-125: The current visibility check in
+_logger_has_visible_info_handler only treats stdout streams as "visible",
+causing stderr-backed handlers (e.g., logging.StreamHandler and many Rich
+handlers) to be ignored and _emit_response_summary to still print; update the
+visibility logic in _logger_has_visible_info_handler to consider stderr as
+visible as well by expanding the visible set to include sys.stderr and
+sys.__stderr__ (and keep sys.stdout/sys.__stdout__), and ensure both
+handler_stream and console_stream comparisons use that expanded set so
+stderr-backed handlers suppress the fallback print in _emit_response_summary.
+
+In `@meshtastic/tests/test_powermon_power_supply.py`:
+- Around line 170-171: Tests mutate the powermon module exports (removing
+PPK2PowerSupply and RidenPowerSupply and later re-caching a placeholder
+RidenPowerSupply), which leaks state to other tests; fix by snapshotting the
+original exports for those symbols before the loop (e.g., save original = {name:
+powermon.__dict__.get(name) for name in ("PPK2PowerSupply","RidenPowerSupply")})
+and then in a finally block restore them (set or del keys in powermon.__dict__
+to match the snapshot) so powermon.__dict__ is returned to its original state
+after the tests (alternatively use monkeypatch.setitem/monkeypatch.delenv for
+powermon to isolate changes).
+
+In `@meshtastic/tunnel.py`:
+- Around line 190-193: The privilege notice logger currently runs
+unconditionally before the branch that creates a TapDevice, causing an
+inaccurate message on the noProto path; move the logger.info call into the
+TapDevice creation path (the branch that instantiates or configures TapDevice)
+so it only logs when TapDevice will actually be created, and remove or adjust
+the prior unconditional logger statement near the top of the tunnel setup;
+reference the existing logger.info message and the TapDevice creation code paths
+to locate and relocate the message.
+ℹ️ Review info
+bin/run-smokevirt-with-meshtasticd.sh
+Comment on lines +86 to +100
+require_regex "${MESHTASTICD_HOST}" '^(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9._-]+)(:[0-9]+)?$' "MESHTASTICD_HOST"
+if [[ ${MESHTASTICD_HOST} =~ :([0-9]+)$ ]]; then
+	MESHTASTICD_HOST_PORT_DEC=$((10#${BASH_REMATCH[1]}))
+	if ((MESHTASTICD_HOST_PORT_DEC < 1 || MESHTASTICD_HOST_PORT_DEC > 65535)); then
+		echo "MESHTASTICD_HOST port must be between 1 and 65535." >&2
+		exit 1
+	fi
+fi
+require_regex "${MESHTASTICD_PORT}" '^[0-9]+$' "MESHTASTICD_PORT"
+require_regex "${MESHTASTICD_READY_TIMEOUT_SECONDS}" '^[0-9]+$' "MESHTASTICD_READY_TIMEOUT_SECONDS"
+MESHTASTICD_PORT_DEC=$((10#${MESHTASTICD_PORT}))
+if [[ -n ${MESHTASTICD_HOST_PORT_DEC:-} ]] && ((MESHTASTICD_HOST_PORT_DEC != MESHTASTICD_PORT_DEC)); then
+	echo "MESHTASTICD_HOST port must match MESHTASTICD_PORT, or omit the inline port." >&2
+	exit 1
+fi
+@coderabbitai
+coderabbitai bot
+8 minutes ago
+⚠️ Potential issue | 🟠 Major
+
+Normalize MESHTASTICD_HOST when the inline port is omitted.
+
+This change now allows MESHTASTICD_HOST=localhost, but the script still passes that raw value to meshtastic --host. The CLI then falls back to its own default TCP port, so any non-default MESHTASTICD_PORT will probe the wrong endpoint unless the caller manually repeats :port in MESHTASTICD_HOST.
+
+Proposed fix
+ if [[ -n ${MESHTASTICD_HOST_PORT_DEC:-} ]] && ((MESHTASTICD_HOST_PORT_DEC != MESHTASTICD_PORT_DEC)); then
+ 	echo "MESHTASTICD_HOST port must match MESHTASTICD_PORT, or omit the inline port." >&2
+ 	exit 1
+ fi
++if [[ -z ${MESHTASTICD_HOST_PORT_DEC:-} ]]; then
++	MESHTASTICD_HOST="${MESHTASTICD_HOST}:${MESHTASTICD_PORT_DEC}"
++fi
+📝 Committable suggestion
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@bin/run-smokevirt-with-meshtasticd.sh` around lines 86 - 100, When
+MESHTASTICD_HOST lacks an inline port the script must normalize it so meshtastic
+is called with the explicit port; detect absence of MESHTASTICD_HOST_PORT_DEC
+after validating MESHTASTICD_PORT and set MESHTASTICD_HOST to
+"${MESHTASTICD_HOST}:${MESHTASTICD_PORT}" (or set MESHTASTICD_HOST_PORT_DEC =
+MESHTASTICD_PORT_DEC and ensure downstream callers use MESHTASTICD_HOST with the
+appended port) so MESHTASTICD_HOST, MESHTASTICD_PORT, MESHTASTICD_HOST_PORT_DEC
+and MESHTASTICD_PORT_DEC remain consistent and meshtastic --host probes the
+intended port.
+@jeremiah-k	Reply...
+meshtastic/interfaces/ble/interface.py
+Comment on lines +2320 to +2335
+        with self._state_lock:
+            still_owned, is_closing = self._get_connected_client_status_locked(
+                connected_client
+            )
+        lost_gate_ownership = self._has_lost_gate_ownership(
+            connected_device_key,
+            connection_alias_key,
+        )
+        publish_connected = False
+        with self._state_lock:
+            still_owned, is_closing = self._get_connected_client_status_locked(
+                connected_client
+            )
+            if still_owned and not lost_gate_ownership:
+                self._client_publish_pending = False
+                publish_connected = True
+@coderabbitai
+coderabbitai bot
+8 minutes ago
+⚠️ Potential issue | 🟡 Minor
+
+Remove unused first ownership check or consolidate logic.
+
+The still_owned, is_closing values from the first _get_connected_client_status_locked call (lines 2321-2322) are immediately overwritten by the second call at lines 2330-2332 without ever being used. This is unnecessary work.
+
+♻️ Proposed fix to remove redundant check
+     def _verify_and_publish_connected(
+         self,
+         connected_client: BLEClient,
+         connected_device_key: str | None,
+         connection_alias_key: str | None,
+         *,
+         restore_address: str | None,
+         restore_last_connection_request: str | None,
+     ) -> None:
+         """Publish `_connected()` only if ownership is still valid at publish time."""
+-        with self._state_lock:
+-            still_owned, is_closing = self._get_connected_client_status_locked(
+-                connected_client
+-            )
+         lost_gate_ownership = self._has_lost_gate_ownership(
+             connected_device_key,
+             connection_alias_key,
+         )
+         publish_connected = False
+         with self._state_lock:
+             still_owned, is_closing = self._get_connected_client_status_locked(
+                 connected_client
+             )
+             if still_owned and not lost_gate_ownership:
+                 self._client_publish_pending = False
+                 publish_connected = True
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@meshtastic/interfaces/ble/interface.py` around lines 2320 - 2335, The first
+with self._state_lock block that calls
+_get_connected_client_status_locked(connected_client) is redundant because its
+results are overwritten; remove that initial block and consolidate logic by
+holding self._state_lock once: inside the single lock call
+_get_connected_client_status_locked(connected_client), then compute
+lost_gate_ownership (call _has_lost_gate_ownership with connected_device_key and
+connection_alias_key) while still under the same lock, and finally set
+self._client_publish_pending = False and publish_connected = True only if
+still_owned and not lost_gate_ownership; keep references to _state_lock,
+_get_connected_client_status_locked, _has_lost_gate_ownership,
+_client_publish_pending, publish_connected, connected_client,
+connected_device_key, and connection_alias_key when making the change.
+@jeremiah-k	Reply...
+meshtastic/interfaces/ble/interface.py
+Comment on lines +2351 to +2361
+    def _emit_verified_connection_side_effects(self, connected_client: BLEClient) -> None:
+        """Emit reconnect signaling/logging only after verified connect publish."""
+        if self._ever_connected:
+            self.thread_coordinator._set_event("reconnected_event")
+        normalized_device_address = sanitize_address(
+            self._extract_client_address(connected_client)
+        )
+        logger.info(
+            "Connection successful to %s",
+            normalized_device_address or "unknown",
+        )
+@coderabbitai
+coderabbitai bot
+8 minutes ago
+⚠️ Potential issue | 🟡 Minor
+
+🧩 Analysis chain
+reconnected_event fires on first connect, not just reconnects.
+
+The condition at line 2353 checks if self._ever_connected after _establish_and_update_client has already set _ever_connected = True at line 2243. On the first connection, this causes reconnected_event to be set even though it's not a reconnection, leading the receive loop (lines 2719–2722) to log "Detected reconnection, resuming normal operation" incorrectly.
+
+Capture the previous state of _ever_connected before it's modified in _establish_and_update_client, or use a separate flag to distinguish first connect from reconnect.
+
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@meshtastic/interfaces/ble/interface.py` around lines 2351 - 2361, The
+reconnected_event is being fired even on the first connect because
+_emit_verified_connection_side_effects checks self._ever_connected after
+_establish_and_update_client has already set it to True; fix by capturing the
+prior state before that mutation (or introduce a separate boolean like
+_has_ever_connected_before) and use that previous value in
+_emit_verified_connection_side_effects to decide whether to call
+thread_coordinator._set_event("reconnected_event"); ensure the change references
+the existing methods/attributes _establish_and_update_client,
+_emit_verified_connection_side_effects, and _ever_connected and updates any
+logic in the receive loop that relies on the reconnection event accordingly.
+@jeremiah-k	Reply...
+meshtastic/interfaces/ble/interface.py
+Comment on lines +2576 to +2577
+            management_lock = getattr(self, "_management_lock", None)
+            management_idle_condition = getattr(self, "_management_idle_condition", None)
+@coderabbitai
+coderabbitai bot
+8 minutes ago
+🧹 Nitpick | 🔵 Trivial
+
+Defensive getattr is unnecessary.
+
+_management_lock and _management_idle_condition are always initialized in __init__, so the defensive getattr(..., None) checks are unnecessary. This adds minor cognitive overhead without practical benefit.
+
+♻️ Proposed simplification
+-            management_lock = getattr(self, "_management_lock", None)
+-            management_idle_condition = getattr(self, "_management_idle_condition", None)
++            management_lock = self._management_lock
++            management_idle_condition = self._management_idle_condition
+             management_wait_started = time.monotonic()
+             while True:
+                 # Management commands increment `_management_inflight` under
+                 # `_connect_lock` and then continue work outside interface
+                 # locks. Wait for current operations to settle, then re-check
+                 # once we have `_connect_lock` to avoid the handoff race.
+-                if (
+-                    management_lock is not None
+-                    and management_idle_condition is not None
+-                ):
+-                    with management_lock:
++                with management_lock:
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@meshtastic/interfaces/ble/interface.py` around lines 2576 - 2577, The
+defensive getattr calls for _management_lock and _management_idle_condition are
+unnecessary because both are set in __init__; replace management_lock =
+getattr(self, "_management_lock", None) and management_idle_condition =
+getattr(self, "_management_idle_condition", None) with direct attribute access
+(e.g., management_lock = self._management_lock and management_idle_condition =
+self._management_idle_condition) so the code is simpler and avoids redundant
+None fallbacks while still using the same symbols.
+@jeremiah-k	Reply...
+meshtastic/mesh_interface.py
+Comment on lines +1182 to +1291
+    def _clear_wait_error(
+        self, acknowledgment_attr: str, request_id: int | None = None
+    ) -> None:
+        """Clear wait error state for an attribute and optional request id."""
+        with self._response_handlers_lock:
+            if request_id is None:
+                for key in list(self._response_wait_errors):
+                    if key[0] == acknowledgment_attr:
+                        self._response_wait_errors.pop(key, None)
+                self._active_wait_request_ids.pop(acknowledgment_attr, None)
+            else:
+                for key in list(self._response_wait_errors):
+                    if key[0] == acknowledgment_attr:
+                        self._response_wait_errors.pop(key, None)
+                self._active_wait_request_ids[acknowledgment_attr] = request_id
+        setattr(self._acknowledgment, acknowledgment_attr, False)
+
+    def _set_wait_error(
+        self,
+        acknowledgment_attr: str,
+        message: str,
+        *,
+        request_id: int | None = None,
+    ) -> None:
+        """Record a wait error and wake the matching waiter."""
+        with self._response_handlers_lock:
+            active_request_id = self._active_wait_request_ids.get(acknowledgment_attr)
+            if request_id is not None:
+                if active_request_id is None or request_id != active_request_id:
+                    logger.debug(
+                        "Ignoring stale wait error for %s request_id=%s (active=%s)",
+                        acknowledgment_attr,
+                        request_id,
+                        active_request_id,
+                    )
+                    return
+                resolved_request_id = request_id
+            elif active_request_id is not None:
+                resolved_request_id = active_request_id
+            else:
+                resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
+            self._response_wait_errors[(acknowledgment_attr, resolved_request_id)] = (
+                message
+            )
+        setattr(self._acknowledgment, acknowledgment_attr, True)
+
+    def _mark_wait_acknowledged(
+        self, acknowledgment_attr: str, *, request_id: int | None = None
+    ) -> None:
+        """Set acknowledgment flag for the matching request scope."""
+        with self._response_handlers_lock:
+            active_request_id = self._active_wait_request_ids.get(acknowledgment_attr)
+            if request_id is not None and (
+                active_request_id is None or request_id != active_request_id
+            ):
+                logger.debug(
+                    "Ignoring stale acknowledgement for %s request_id=%s (active=%s)",
+                    acknowledgment_attr,
+                    request_id,
+                    active_request_id,
+                )
+                return
+        setattr(self._acknowledgment, acknowledgment_attr, True)
+
+    def _raise_wait_error_if_present(
+        self, acknowledgment_attr: str, request_id: int | None = None
+    ) -> None:
+        """Raise and clear any pending wait error for the given wait scope."""
+        with self._response_handlers_lock:
+            active_request_id = self._active_wait_request_ids.get(acknowledgment_attr)
+            if request_id is not None:
+                resolved_request_id = request_id
+            elif active_request_id is not None:
+                resolved_request_id = active_request_id
+            else:
+                resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
+            error_message = self._response_wait_errors.pop(
+                (acknowledgment_attr, resolved_request_id),
+                None,
+            )
+        if error_message is not None:
+            raise self.MeshInterfaceError(error_message)
+
+    def _retire_wait_request(
+        self, acknowledgment_attr: str, request_id: int | None = None
+    ) -> None:
+        """Retire response handler and wait bookkeeping for a completed wait."""
+        with self._response_handlers_lock:
+            active_request_id = self._active_wait_request_ids.get(acknowledgment_attr)
+            resolved_request_id = (
+                request_id if request_id is not None else active_request_id
+            )
+            if (
+                active_request_id is not None
+                and resolved_request_id == active_request_id
+            ):
+                self._active_wait_request_ids.pop(acknowledgment_attr, None)
+            if resolved_request_id is not None:
+                self.responseHandlers.pop(resolved_request_id, None)
+                self._response_wait_errors.pop(
+                    (acknowledgment_attr, resolved_request_id),
+                    None,
+                )
+            else:
+                self._response_wait_errors.pop(
+                    (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID),
+                    None,
+                )
+        setattr(self._acknowledgment, acknowledgment_attr, False)
+
+@coderabbitai
+coderabbitai bot
+8 minutes ago
+⚠️ Potential issue | 🟠 Major
+
+This wait-state implementation is still single-flight per response type.
+
+_active_wait_request_ids stores only one active request id per acknowledgment attribute, while the actual wait/ack path still uses one shared self._acknowledgment.<attr> flag. A second in-flight sendTelemetry()/sendPosition()/sendWaypoint()/sendTraceRoute() for the same attr will steal the slot from the first one, causing the first callback to be treated as stale in _mark_wait_acknowledged() and letting _retire_wait_request() clear the shared flag under the other waiter.
+
+Either make these APIs explicitly single-flight and fail fast on overlap, or move the wait/ack state to per-request objects keyed by (acknowledgment_attr, request_id).
+
+Also applies to: 2134-2236
+
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@meshtastic/mesh_interface.py` around lines 1182 - 1291, The current wait/ack
+implementation is single-flight because a single boolean
+self._acknowledgment.<attr> is shared across request_ids while
+_active_wait_request_ids only stores one id; fix by making ack state per-request
+keyed by (acknowledgment_attr, request_id): replace uses of the shared boolean
+with a per-request map (e.g. _acknowledgment_states or reuse
+_response_wait_errors keys) and update _clear_wait_error, _set_wait_error,
+_mark_wait_acknowledged, _raise_wait_error_if_present and _retire_wait_request
+to set/clear/check the per-request ack flag using (acknowledgment_attr,
+resolved_request_id) (fall back to UNSCOPED_WAIT_REQUEST_ID when no id), and
+ensure responseHandlers and _response_wait_errors are handled with the same
+keying; alternatively, if you prefer single-flight semantics implement an
+explicit overlap check when registering a new wait (using
+_active_wait_request_ids) and raise/fail-fast instead of stealing the slot.
+@jeremiah-k	Reply...
+meshtastic/ota.py
+Comment on lines +116 to +117
+        size, file_hash = self._refresh_firmware_metadata()
+        if OTA_PROGRESS_LOG_PERCENT_STEP <= 0:
+@coderabbitai
+coderabbitai bot
+8 minutes ago
+⚠️ Potential issue | 🟠 Major
+
+Avoid hashing one firmware image and streaming another.
+
+update() now refreshes size/hash from self._filename, but it still reopens the path later to send the payload. If the file is replaced between those two steps, the announced header can diverge from the bytes actually uploaded. For OTA, that is a real TOCTOU bug: the device can reject the transfer or validate the wrong image.
+
+Proposed fix
+-        size, file_hash = self._refresh_firmware_metadata()
++        with open(self._filename, "rb") as firmware:
++            size = os.fstat(firmware.fileno()).st_size
++            if size == 0:
++                raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
++            file_hash = hashlib.sha256()
++            for block in iter(
++                lambda: firmware.read(FILE_HASH_READ_CHUNK_SIZE_BYTES), b""
++            ):
++                file_hash.update(block)
++            self._size = size
++            self._file_hash = file_hash
++            firmware.seek(0)
+...
+-            with open(self._filename, "rb") as f:
+-                while True:
+-                    chunk = f.read(OTA_CHUNK_SIZE_BYTES)
++            while True:
++                chunk = firmware.read(OTA_CHUNK_SIZE_BYTES)
+                     if not chunk:
+                         break
+                     self._socket.sendall(chunk)
+Also applies to: 154-159
+
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@meshtastic/ota.py` around lines 116 - 117, The update() method currently
+computes size/hash from self._filename via _refresh_firmware_metadata() then
+reopens the path later to stream the payload, opening a TOCTOU where the file
+can change between calls; change update() so the firmware file is opened once
+and that same file object is used both to compute size/hash (replace
+_refresh_firmware_metadata() call with computing metadata from the open file or
+refactor _refresh_firmware_metadata() to accept a file-like object) and to
+stream bytes to the device (seek back to start before upload), ensuring the
+header matches the exact bytes sent; apply the same single-open approach to the
+other occurrence mentioned around lines 154-159 so no reopen by path happens.
+@jeremiah-k	Reply...
+meshtastic/tcp_interface.py
+Comment on lines +603 to +604
+        if isinstance(length, bool) or not isinstance(length, int) or length <= 0:
+            raise ValueError(f"length must be a positive int, got {length!r}")
+@coderabbitai
+coderabbitai bot
+8 minutes ago
+⚠️ Potential issue | 🟡 Minor
+
+Document the new ValueError contract in _read_bytes().
+
+This guard now rejects bool, non-int, and <= 0 values up front, but _read_bytes()'s docstring still only describes the reconnect/return behavior. Please add a NumPy-style Raises entry (and tighten the parameter contract text) so callers know this is an input-validation failure, not a transport error.
+
+📝 Suggested docstring update
+     Parameters
+     ----------
+     length : int
+-        Maximum number of bytes to read.
++        Maximum number of bytes to read. Must be a positive integer;
++        bool values are not accepted.
+ 
+     Returns
+     -------
+     bytes
+         The received bytes, or `b""` if no data was returned
+         because the socket is absent, a reconnect was started, or shutdown was requested.
++
++    Raises
++    ------
++    ValueError
++        If `length` is not a positive integer.
+As per coding guidelines, "Use NumPy-style docstrings for new and edited docstrings."
+
+🧰 Tools
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@meshtastic/tcp_interface.py` around lines 603 - 604, Update the _read_bytes()
+docstring to tighten the description of the length parameter (state it must be a
+positive int, explicitly excluding bool) and add a NumPy-style "Raises" section
+documenting that passing a non-int, a bool, or an int <= 0 will raise
+ValueError; keep the existing reconnect/transport behavior docs unchanged.
+Reference the _read_bytes function and the ValueError raised for invalid length
+so callers understand this is input validation, not a transport error.
+@jeremiah-k	Reply...
+tests/test_ble_interface_advanced.py
+Comment on lines +787 to +790
+        assert all(
+            {"pair", "connect_timeout"} <= set(kwargs)
+            for kwargs in _get_connect_stub_kwargs(iface)
+        )
+@coderabbitai
+coderabbitai bot
+8 minutes ago
+⚠️ Potential issue | 🟡 Minor
+
+These assertions don't validate the new per-connect kwargs path.
+
+_patched_connect() always records both pair and connect_timeout keys, so this only proves the stub ran. A reconnect that silently drops or rewrites those values still passes here. Assert the expected dict contents for this scenario, or drive one reconnect through a non-default override and compare the recorded kwargs.
+
+Also applies to: 838-841
+
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@tests/test_ble_interface_advanced.py` around lines 787 - 790, The current
+test only checks that the stub ran because _patched_connect() always records
+both "pair" and "connect_timeout", so update the assertions to validate the new
+per-connect kwargs path by asserting exact recorded dict contents (not just
+subset) from _get_connect_stub_kwargs(iface) or by invoking a reconnect with a
+non-default override and then comparing the recorded kwargs to the expected
+dict; specifically, replace the set-subset check with equality checks against
+expected dicts (e.g., {"pair": expected_pair, "connect_timeout":
+expected_timeout, ...}) for the entries returned by _get_connect_stub_kwargs and
+repeat the same stronger assertion for the other block around lines 838-841 to
+ensure values are neither dropped nor rewritten.
+@jeremiah-k	Reply...
+tests/test_ble_interface_advanced.py
+Comment on lines +865 to +867
+            except (
+                Exception
+            ) as exc:  # noqa: BLE001 - test records failure-path behavior
+@coderabbitai
+coderabbitai bot
+8 minutes ago
+⚠️ Potential issue | 🟡 Minor
+
+The BLE001 suppression is attached to the wrong physical line.
+
+Ruff reports the Exception token on the middle line here, so the trailing # noqa: BLE001 is ignored and this still shows up as a lint failure. Collapse the handler to a single-line except Exception as exc:  # noqa: BLE001 ..., or narrow the caught types.
+
+Minimal fix
+-            except (
+-                Exception
+-            ) as exc:  # noqa: BLE001 - test records failure-path behavior
++            except Exception as exc:  # noqa: BLE001 - test records failure-path behavior
+                 failure_errors.append(exc)
+🧰 Tools
+🤖 Prompt for AI Agents
+Verify each finding against the current code and only fix it if needed.
+
+In `@tests/test_ble_interface_advanced.py` around lines 865 - 867, The multi-line
+except clause currently written as "except (\n    Exception\n) as exc:  # noqa:
+BLE001" causes Ruff to miss the noqa; collapse the handler to a single-line
+except Exception as exc:  # noqa: BLE001 - test records failure-path behavior
+(or, better, replace Exception with a narrower exception class if possible) so
+the noqa applies correctly; update the except clause where the test captures
+failures (the except ... as exc handler) accordingly.

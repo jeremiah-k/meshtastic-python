@@ -304,6 +304,26 @@ class TestMarkDisconnected:
 
 
 @pytest.mark.usefixtures("clear_registry")
+class TestClearConnecting:
+    """Test cases for _clear_connecting helper behavior."""
+
+    def test_clear_connecting_prunes_dead_owner_weakref_without_id_fallback(
+        self,
+    ) -> None:
+        """Owner-scoped clear should prune dead weakref claims immediately."""
+        key = _addr_key("aabbccddeeff")
+        assert key is not None
+        owner = _ConnectedOwner()
+        _mark_connecting("aabbccddeeff", owner=owner)
+        del owner
+        gc.collect()
+
+        _clear_connecting("aabbccddeeff", owner=object())
+
+        assert key not in _CONNECTING_ADDRS
+
+
+@pytest.mark.usefixtures("clear_registry")
 class TestIsCurrentlyConnectedElsewhere:
     """Test cases for _is_currently_connected_elsewhere function."""
 
@@ -384,20 +404,29 @@ class TestIsCurrentlyConnectedElsewhere:
         assert not _is_currently_connected_elsewhere("aabbccddeeff")
         assert key not in _CONNECTING_ADDRS
 
-    def test_clear_connecting_prunes_dead_owner_weakref_without_id_fallback(
-        self,
+    def test_phase2_recheck_observes_provisional_claim_after_connected_drop(
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Owner-scoped clear should prune dead weakref claims immediately."""
-        key = _addr_key("aabbccddeeff")
+        """Phase-2 TOCTOU recheck should still block on fresh provisional claims."""
+        address = "aabbccddeeff"
+        key = _addr_key(address)
         assert key is not None
-        owner = _ConnectedOwner()
-        _mark_connecting("aabbccddeeff", owner=owner)
-        del owner
-        gc.collect()
+        connected_owner = _ConnectedOwner()
+        provisional_owner = _ConnectedOwner()
+        _mark_connected(address, owner=connected_owner)
 
-        _clear_connecting("aabbccddeeff", owner=object())
+        def _owner_state_probe(_owner: object) -> bool:
+            _mark_disconnected(address)
+            _mark_connecting(address, owner=provisional_owner)
+            return True
 
-        assert key not in _CONNECTING_ADDRS
+        monkeypatch.setattr(
+            "meshtastic.interfaces.ble.gating._owner_connected_state",
+            _owner_state_probe,
+        )
+
+        assert _is_currently_connected_elsewhere(address, owner=object())
+        assert key in _CONNECTING_ADDRS
 
     def test_prunes_owner_claim_when_owner_not_connected(self) -> None:
         """Claims from owners no longer connected should be pruned."""

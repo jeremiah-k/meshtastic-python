@@ -368,9 +368,49 @@ def _prune_stale_connecting_claim_locked(key: str) -> bool:
             BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS,
         )
         _remove_connecting_record_locked(key)
-        _cleanup_addr_lock(key)
+        _maybe_remove_addr_lock_entry(key)
         return True
     return False
+
+
+def _is_connecting_claim_elsewhere_locked(key: str, owner: Any | None) -> bool | None:
+    """Return whether a provisional claim currently blocks `owner` for `key`.
+
+    Must be called while holding `_REGISTRY_LOCK`.
+
+    Parameters
+    ----------
+    key : str
+        Normalized address key to evaluate.
+    owner : Any | None
+        Optional owner object requesting the check.
+
+    Returns
+    -------
+    bool | None
+        `True` when a different owner currently holds a provisional claim,
+        `False` when the key has a provisional record but should not block this
+        owner, and `None` when no provisional claim exists for `key`.
+    """
+    owner_ref = _CONNECTING_OWNERS.get(key)
+    current_owner = owner_ref() if owner_ref is not None else None
+    current_owner_id = _CONNECTING_OWNER_IDS.get(key)
+    if key not in _CONNECTING_ADDRS:
+        return None
+    if owner is not None and (
+        current_owner is owner
+        or (current_owner_id is not None and current_owner_id == id(owner))
+    ):
+        return False
+    if owner_ref is not None and current_owner is None:
+        _remove_connecting_record_locked(key)
+        _cleanup_addr_lock(key)
+        return False
+    if current_owner is None:
+        if _prune_stale_connecting_claim_locked(key):
+            return False
+        return True
+    return True
 
 
 def _mark_connecting(addr: str | None, owner: object | None = None) -> None:
@@ -577,25 +617,8 @@ def _is_currently_connected_elsewhere(
     # Phase 1: Check under registry lock.
     with _REGISTRY_LOCK:
         if key not in _CONNECTED_ADDRS:
-            owner_ref = _CONNECTING_OWNERS.get(key)
-            current_owner = owner_ref() if owner_ref is not None else None
-            current_owner_id = _CONNECTING_OWNER_IDS.get(key)
-            if key not in _CONNECTING_ADDRS:
-                return False
-            if owner is not None and (
-                current_owner is owner
-                or (current_owner_id is not None and current_owner_id == id(owner))
-            ):
-                return False
-            if owner_ref is not None and current_owner is None:
-                _remove_connecting_record_locked(key)
-                _cleanup_addr_lock(key)
-                return False
-            if current_owner is None:
-                if _prune_stale_connecting_claim_locked(key):
-                    return False
-                return True
-            return True
+            provisional_elsewhere = _is_connecting_claim_elsewhere_locked(key, owner)
+            return False if provisional_elsewhere is None else provisional_elsewhere
 
         owner_ref = _CONNECTED_OWNERS.get(key)
         current_owner = owner_ref() if owner_ref is not None else None
@@ -637,7 +660,8 @@ def _is_currently_connected_elsewhere(
     # Phase 2: Verify owner connection state; re-check under registry lock to close the TOCTOU window.
     with _REGISTRY_LOCK:
         if key not in _CONNECTED_ADDRS:
-            return False
+            provisional_elsewhere = _is_connecting_claim_elsewhere_locked(key, owner)
+            return False if provisional_elsewhere is None else provisional_elsewhere
 
         owner_ref = _CONNECTED_OWNERS.get(key)
         current_owner = owner_ref() if owner_ref is not None else None

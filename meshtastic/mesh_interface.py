@@ -96,11 +96,16 @@ def _format_missing_node_num_error(destination_id: int | str) -> str:
 
 
 def _logger_has_visible_info_handler(target_logger: logging.Logger) -> bool:
-    """Return whether INFO logs from `target_logger` are currently visible on stdout."""
+    """Return whether INFO logs from `target_logger` are visible on console streams."""
     if target_logger.disabled or target_logger.getEffectiveLevel() > logging.INFO:
         return False
 
-    visible_stdout_streams = {sys.stdout, sys.__stdout__}
+    visible_console_streams = {
+        sys.stdout,
+        sys.__stdout__,
+        sys.stderr,
+        sys.__stderr__,
+    }
     current_logger: logging.Logger | None = target_logger
     while current_logger is not None:
         for handler in current_logger.handlers:
@@ -108,8 +113,8 @@ def _logger_has_visible_info_handler(target_logger: logging.Logger) -> bool:
             console = getattr(handler, "console", None)
             console_stream = getattr(console, "file", None)
             if handler.level <= logging.INFO and (
-                handler_stream in visible_stdout_streams
-                or console_stream in visible_stdout_streams
+                handler_stream in visible_console_streams
+                or console_stream in visible_console_streams
             ):
                 return True
         if not current_logger.propagate:
@@ -259,7 +264,8 @@ class MeshInterface:  # pylint: disable=R0902
             {}
         )  # A map from request ID to the handler
         self._response_wait_errors: dict[tuple[str, int], str] = {}
-        self._active_wait_request_ids: dict[str, int] = {}
+        self._response_wait_acks: set[tuple[str, int]] = set()
+        self._active_wait_request_ids: dict[str, set[int]] = {}
         self.failure: BaseException | None = (
             None  # If we've encountered a fatal exception it will be kept here
         )
@@ -324,9 +330,17 @@ class MeshInterface:  # pylint: disable=R0902
                         heartbeat_idle_condition.wait()
             try:
                 self._send_disconnect()
-            except (OSError, TypeError, MeshInterface.MeshInterfaceError):
+            except (OSError, MeshInterface.MeshInterfaceError):
                 logger.debug(
                     "Failed to send disconnect during close(); continuing shutdown.",
+                    exc_info=True,
+                )
+            except TypeError:
+                is_finalizing = getattr(sys, "is_finalizing", None)
+                if not (callable(is_finalizing) and is_finalizing()):
+                    raise
+                logger.debug(
+                    "Failed to send disconnect during interpreter finalization; continuing shutdown.",
                     exc_info=True,
                 )
         # debugOut is caller-owned (often shared via outer context managers);
@@ -1069,15 +1083,25 @@ class MeshInterface:  # pylint: disable=R0902
             self._add_response_handler(
                 meshPacket.id, onResponse, ackPermitted=onResponseAckPermitted
             )
-        p = self._send_packet(
-            meshPacket,
-            destinationId,
-            wantAck=wantAck,
-            hopLimit=hopLimit,
-            pkiEncrypted=pkiEncrypted,
-            publicKey=publicKey,
-        )
-        return p
+        try:
+            return self._send_packet(
+                meshPacket,
+                destinationId,
+                wantAck=wantAck,
+                hopLimit=hopLimit,
+                pkiEncrypted=pkiEncrypted,
+                publicKey=publicKey,
+            )
+        except Exception:
+            if response_wait_attr is not None:
+                self._retire_wait_request(
+                    response_wait_attr,
+                    request_id=meshPacket.id,
+                )
+            elif onResponse is not None:
+                with self._response_handlers_lock:
+                    self.responseHandlers.pop(meshPacket.id, None)
+            raise
 
     def sendPosition(
         self,
@@ -1188,12 +1212,17 @@ class MeshInterface:  # pylint: disable=R0902
                 for key in list(self._response_wait_errors):
                     if key[0] == acknowledgment_attr:
                         self._response_wait_errors.pop(key, None)
+                for key in list(self._response_wait_acks):
+                    if key[0] == acknowledgment_attr:
+                        self._response_wait_acks.discard(key)
                 self._active_wait_request_ids.pop(acknowledgment_attr, None)
             else:
-                for key in list(self._response_wait_errors):
-                    if key[0] == acknowledgment_attr:
-                        self._response_wait_errors.pop(key, None)
-                self._active_wait_request_ids[acknowledgment_attr] = request_id
+                active_ids = self._active_wait_request_ids.setdefault(
+                    acknowledgment_attr, set()
+                )
+                active_ids.add(request_id)
+                self._response_wait_errors.pop((acknowledgment_attr, request_id), None)
+                self._response_wait_acks.discard((acknowledgment_attr, request_id))
         setattr(self._acknowledgment, acknowledgment_attr, False)
 
     def _set_wait_error(
@@ -1205,19 +1234,21 @@ class MeshInterface:  # pylint: disable=R0902
     ) -> None:
         """Record a wait error and wake the matching waiter."""
         with self._response_handlers_lock:
-            active_request_id = self._active_wait_request_ids.get(acknowledgment_attr)
+            active_request_ids = self._active_wait_request_ids.get(
+                acknowledgment_attr, set()
+            )
             if request_id is not None:
-                if active_request_id is None or request_id != active_request_id:
+                if request_id not in active_request_ids:
                     logger.debug(
                         "Ignoring stale wait error for %s request_id=%s (active=%s)",
                         acknowledgment_attr,
                         request_id,
-                        active_request_id,
+                        sorted(active_request_ids),
                     )
                     return
                 resolved_request_id = request_id
-            elif active_request_id is not None:
-                resolved_request_id = active_request_id
+            elif len(active_request_ids) == 1:
+                resolved_request_id = next(iter(active_request_ids))
             else:
                 resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
             self._response_wait_errors[(acknowledgment_attr, resolved_request_id)] = (
@@ -1230,17 +1261,24 @@ class MeshInterface:  # pylint: disable=R0902
     ) -> None:
         """Set acknowledgment flag for the matching request scope."""
         with self._response_handlers_lock:
-            active_request_id = self._active_wait_request_ids.get(acknowledgment_attr)
+            active_request_ids = self._active_wait_request_ids.get(
+                acknowledgment_attr, set()
+            )
             if request_id is not None and (
-                active_request_id is None or request_id != active_request_id
+                request_id not in active_request_ids
             ):
                 logger.debug(
                     "Ignoring stale acknowledgement for %s request_id=%s (active=%s)",
                     acknowledgment_attr,
                     request_id,
-                    active_request_id,
+                    sorted(active_request_ids),
                 )
                 return
+            if request_id is not None:
+                self._response_wait_acks.add((acknowledgment_attr, request_id))
+            elif len(active_request_ids) == 1:
+                active_request_id = next(iter(active_request_ids))
+                self._response_wait_acks.add((acknowledgment_attr, active_request_id))
         setattr(self._acknowledgment, acknowledgment_attr, True)
 
     def _raise_wait_error_if_present(
@@ -1248,11 +1286,13 @@ class MeshInterface:  # pylint: disable=R0902
     ) -> None:
         """Raise and clear any pending wait error for the given wait scope."""
         with self._response_handlers_lock:
-            active_request_id = self._active_wait_request_ids.get(acknowledgment_attr)
+            active_request_ids = self._active_wait_request_ids.get(
+                acknowledgment_attr, set()
+            )
             if request_id is not None:
                 resolved_request_id = request_id
-            elif active_request_id is not None:
-                resolved_request_id = active_request_id
+            elif len(active_request_ids) == 1:
+                resolved_request_id = next(iter(active_request_ids))
             else:
                 resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
             error_message = self._response_wait_errors.pop(
@@ -1267,27 +1307,75 @@ class MeshInterface:  # pylint: disable=R0902
     ) -> None:
         """Retire response handler and wait bookkeeping for a completed wait."""
         with self._response_handlers_lock:
-            active_request_id = self._active_wait_request_ids.get(acknowledgment_attr)
-            resolved_request_id = (
-                request_id if request_id is not None else active_request_id
+            active_request_ids = self._active_wait_request_ids.get(
+                acknowledgment_attr, set()
             )
-            if (
-                active_request_id is not None
-                and resolved_request_id == active_request_id
-            ):
-                self._active_wait_request_ids.pop(acknowledgment_attr, None)
-            if resolved_request_id is not None:
-                self.responseHandlers.pop(resolved_request_id, None)
-                self._response_wait_errors.pop(
-                    (acknowledgment_attr, resolved_request_id),
-                    None,
-                )
+            if request_id is not None:
+                if request_id in active_request_ids:
+                    active_request_ids.discard(request_id)
+                    if not active_request_ids:
+                        self._active_wait_request_ids.pop(acknowledgment_attr, None)
+                    else:
+                        self._active_wait_request_ids[acknowledgment_attr] = (
+                            active_request_ids
+                        )
+                self.responseHandlers.pop(request_id, None)
+                self._response_wait_errors.pop((acknowledgment_attr, request_id), None)
+                self._response_wait_acks.discard((acknowledgment_attr, request_id))
             else:
+                for active_request_id in active_request_ids:
+                    self.responseHandlers.pop(active_request_id, None)
+                    self._response_wait_errors.pop(
+                        (acknowledgment_attr, active_request_id),
+                        None,
+                    )
+                    self._response_wait_acks.discard(
+                        (acknowledgment_attr, active_request_id)
+                    )
+                self._active_wait_request_ids.pop(acknowledgment_attr, None)
                 self._response_wait_errors.pop(
                     (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID),
                     None,
                 )
+                self._response_wait_acks.discard(
+                    (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID)
+                )
         setattr(self._acknowledgment, acknowledgment_attr, False)
+
+    def _wait_for_request_ack(
+        self,
+        acknowledgment_attr: str,
+        request_id: int,
+        *,
+        timeout_seconds: float,
+    ) -> bool:
+        """Wait for a request-scoped acknowledgment flag.
+
+        Parameters
+        ----------
+        acknowledgment_attr : str
+            Acknowledgment attribute namespace (for example, "receivedTelemetry").
+        request_id : int
+            Packet request id that must acknowledge before timeout.
+        timeout_seconds : float
+            Maximum seconds to wait.
+
+        Returns
+        -------
+        bool
+            `True` when the scoped acknowledgment was observed before timeout,
+            otherwise `False`.
+        """
+        deadline = time.monotonic() + timeout_seconds
+        sleep_interval = max(0.01, float(getattr(self._timeout, "sleepInterval", 0.1)))
+        while time.monotonic() < deadline:
+            with self._response_handlers_lock:
+                key = (acknowledgment_attr, request_id)
+                if key in self._response_wait_acks:
+                    self._response_wait_acks.discard(key)
+                    return True
+            time.sleep(sleep_interval)
+        return False
 
     def _record_routing_wait_error(
         self,
@@ -2152,7 +2240,16 @@ class MeshInterface:  # pylint: disable=R0902
             If the wait times out before a traceroute response is received.
         """
         try:
-            success = self._timeout.waitForTraceRoute(waitFactor, self._acknowledgment)
+            if request_id is None:
+                success = self._timeout.waitForTraceRoute(
+                    waitFactor, self._acknowledgment
+                )
+            else:
+                success = self._wait_for_request_ack(
+                    "receivedTraceRoute",
+                    request_id,
+                    timeout_seconds=self._timeout.expireTimeout * waitFactor,
+                )
             self._raise_wait_error_if_present("receivedTraceRoute", request_id=request_id)
             if not success:
                 raise MeshInterface.MeshInterfaceError(
@@ -2176,7 +2273,14 @@ class MeshInterface:  # pylint: disable=R0902
             If a telemetry response is not received before the configured timeout.
         """
         try:
-            success = self._timeout.waitForTelemetry(self._acknowledgment)
+            if request_id is None:
+                success = self._timeout.waitForTelemetry(self._acknowledgment)
+            else:
+                success = self._wait_for_request_ack(
+                    "receivedTelemetry",
+                    request_id,
+                    timeout_seconds=self._timeout.expireTimeout,
+                )
             self._raise_wait_error_if_present("receivedTelemetry", request_id=request_id)
             if not success:
                 raise MeshInterface.MeshInterfaceError(
@@ -2200,7 +2304,14 @@ class MeshInterface:  # pylint: disable=R0902
             If waiting for the position times out.
         """
         try:
-            success = self._timeout.waitForPosition(self._acknowledgment)
+            if request_id is None:
+                success = self._timeout.waitForPosition(self._acknowledgment)
+            else:
+                success = self._wait_for_request_ack(
+                    "receivedPosition",
+                    request_id,
+                    timeout_seconds=self._timeout.expireTimeout,
+                )
             self._raise_wait_error_if_present("receivedPosition", request_id=request_id)
             if not success:
                 raise MeshInterface.MeshInterfaceError(
@@ -2226,7 +2337,14 @@ class MeshInterface:  # pylint: disable=R0902
             If the wait times out before a waypoint acknowledgment is received.
         """
         try:
-            success = self._timeout.waitForWaypoint(self._acknowledgment)
+            if request_id is None:
+                success = self._timeout.waitForWaypoint(self._acknowledgment)
+            else:
+                success = self._wait_for_request_ack(
+                    "receivedWaypoint",
+                    request_id,
+                    timeout_seconds=self._timeout.expireTimeout,
+                )
             self._raise_wait_error_if_present("receivedWaypoint", request_id=request_id)
             if not success:
                 raise MeshInterface.MeshInterfaceError(

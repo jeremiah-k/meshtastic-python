@@ -587,13 +587,13 @@ def test_rapid_connect_disconnect_stress_test(
 
         def _delegate_to_bleak(
             self, method_name: str, *args: object, **kwargs: object
-        ) -> Any:
+        ) -> object:
             """Invoke a method on the backing mock bleak client."""
             bleak_client = cast(Any, self.bleak_client)
             method = getattr(bleak_client, method_name)
             return method(*args, **kwargs)
 
-        def connect(self, *_args: object, **_kwargs: object) -> Any:
+        def connect(self, *_args: object, **_kwargs: object) -> object:
             """Delegate connection behavior to the shared bleak client stub."""
             bleak_client = cast(Any, self.bleak_client)
             bleak_client._should_fail_connect = self._should_fail_connect
@@ -657,9 +657,7 @@ def test_rapid_connect_disconnect_stress_test(
         def _patched_connect(
             self: BLEInterface,
             address: str | None = None,
-            *,
-            pair: bool | None = None,
-            connect_timeout: float | None = None,
+            **kwargs: object,
         ) -> "StressTestClient":
             """Attach a fresh StressTestClient to this BLEInterface for testing and record the connection address.
 
@@ -685,10 +683,9 @@ def test_rapid_connect_disconnect_stress_test(
                 getattr(self, "_stress_test_should_fail_connect", False),
             )
             connect_calls.append(address)
-            connect_kwargs.append(
-                {"pair": pair, "connect_timeout": connect_timeout}
-            )
-            attempted_clients.append(new_client)
+            connect_kwargs.append(dict(kwargs))
+            with self._state_lock:
+                attempted_clients.append(new_client)
             new_client.connect()
             with self._state_lock:
                 cast(Any, self).client = new_client
@@ -731,32 +728,41 @@ def test_rapid_connect_disconnect_stress_test(
         iface: BLEInterface, *, timeout: float = 2.0
     ) -> tuple[list["StressTestClient"], list["StressTestClient"]]:
         """Wait until latest successful reconnect attempt owns iface.client."""
+        def _snapshot_stress_state() -> tuple[
+            object | None, list["StressTestClient"], list["StressTestClient"]
+        ]:
+            with iface._state_lock:
+                current_client = cast(object | None, iface.client)
+                attempts = list(cast(list["StressTestClient"], _get_stress_test_attempts(iface)))
+                clients = list(cast(list["StressTestClient"], _get_stress_test_clients(iface)))
+            return current_client, attempts, clients
+
         deadline = time.monotonic() + timeout
-        observed_attempts = _get_stress_test_attempts(iface)
-        observed_clients = _get_stress_test_clients(iface)
+        observed_client, observed_attempts, observed_clients = _snapshot_stress_state()
         while time.monotonic() < deadline:
-            observed_attempts = _get_stress_test_attempts(iface)
-            observed_clients = _get_stress_test_clients(iface)
+            observed_client, observed_attempts, observed_clients = _snapshot_stress_state()
             latest_successful_attempt = _latest_successful_stress_attempt(
                 observed_attempts, observed_clients
             )
             if (
                 len(observed_clients) >= 2
                 and latest_successful_attempt is not None
-                and cast(object, iface.client) is latest_successful_attempt
+                and observed_client is latest_successful_attempt
             ):
                 return (
                     cast(list["StressTestClient"], observed_attempts),
                     cast(list["StressTestClient"], observed_clients),
                 )
             time.sleep(0.01)
+        _, final_attempts, final_clients = _snapshot_stress_state()
         return (
-            cast(list["StressTestClient"], _get_stress_test_attempts(iface)),
-            cast(list["StressTestClient"], _get_stress_test_clients(iface)),
+            cast(list["StressTestClient"], final_attempts),
+            cast(list["StressTestClient"], final_clients),
         )
 
     # Test 1: Rapid disconnect callbacks
     with create_interface_with_auto_reconnect() as (iface, client):
+        iface.connect(mock_device.address, pair=True, connect_timeout=3.5)
 
         def simulate_rapid_disconnects() -> None:
             """Simulate a burst of rapid BLE disconnect events against the test interface.
@@ -784,10 +790,9 @@ def test_rapid_connect_disconnect_stress_test(
         assert (
             len(_get_connect_stub_calls(iface)) >= 2
         ), "Auto-reconnect should continue scheduling during rapid disconnects"
-        assert all(
-            {"pair", "connect_timeout"} <= set(kwargs)
-            for kwargs in _get_connect_stub_kwargs(iface)
-        )
+        stub_kwargs = _get_connect_stub_kwargs(iface)
+        assert {"pair": True, "connect_timeout": 3.5} in stub_kwargs
+        assert any(kwargs == {} for kwargs in stub_kwargs)
         attempted_clients, republished_clients = _wait_for_latest_stress_client(iface)
         assert len(republished_clients) >= 2
         latest_successful_attempt = _latest_successful_stress_attempt(
@@ -799,6 +804,7 @@ def test_rapid_connect_disconnect_stress_test(
 
     # Test 2: Concurrent connect/disconnect operations
     with create_interface_with_auto_reconnect() as (iface2, client2):
+        iface2.connect(mock_device.address, pair=False, connect_timeout=7.0)
         worker_errors: Queue[Exception] = Queue()
 
         def _stress_test_disconnects() -> None:
@@ -835,10 +841,9 @@ def test_rapid_connect_disconnect_stress_test(
         assert collected_worker_errors == []
         assert client2.bleak_client is not None
         assert cast(Any, client2.bleak_client).disconnect_count >= 0
-        assert all(
-            {"pair", "connect_timeout"} <= set(kwargs)
-            for kwargs in _get_connect_stub_kwargs(iface2)
-        )
+        stub_kwargs = _get_connect_stub_kwargs(iface2)
+        assert {"pair": False, "connect_timeout": 7.0} in stub_kwargs
+        assert any(kwargs == {} for kwargs in stub_kwargs)
         attempted_clients, republished_clients = _wait_for_latest_stress_client(iface2)
         assert len(republished_clients) >= 2
         latest_successful_attempt = _latest_successful_stress_attempt(
@@ -862,9 +867,7 @@ def test_rapid_connect_disconnect_stress_test(
                     continue
                 iface3._on_ble_disconnect(cast(Any, current_client.bleak_client))
                 time.sleep(0.01)
-            except (
-                Exception
-            ) as exc:  # noqa: BLE001 - test records failure-path behavior
+            except Exception as exc:  # noqa: BLE001 - test records failure-path behavior
                 failure_errors.append(exc)
 
         assert failure_errors == []

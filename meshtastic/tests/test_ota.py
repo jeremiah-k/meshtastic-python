@@ -234,36 +234,26 @@ def test_esp32_wifi_ota_update_success(mock_socket_class: MagicMock) -> None:
 
 @pytest.mark.unit
 @patch("meshtastic.ota.socket.socket")
-def test_esp32_wifi_ota_update_refreshes_file_metadata_before_send(
+def test_esp32_wifi_ota_update_rejects_firmware_changed_after_init(
     mock_socket_class: MagicMock,
 ) -> None:
-    """update() should use on-disk metadata at send time, not stale constructor cache."""
+    """update() should fail if firmware bytes drift after OTA session initialization."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
         f.write(b"A" * 32)
         temp_file = f.name
 
     try:
         ota = ESP32WiFiOTA(temp_file, "192.168.1.1")
+        assert ota._size == 32
+        assert ota.hash_hex() == hashlib.sha256(b"A" * 32).hexdigest()
         replacement_data = b"B" * 64
         with open(temp_file, "wb") as fw:
             fw.write(replacement_data)
 
-        mock_socket = MagicMock()
-        mock_socket_class.return_value = mock_socket
-        with patch.object(ota, "_read_line") as mock_read_line:
-            mock_read_line.side_effect = [
-                "OK",  # Device ready
-                "OK",  # Device finished
-            ]
+        with pytest.raises(OTAError, match="changed after OTA session initialization"):
             ota.update()
 
-        expected_hash = hashlib.sha256(replacement_data).hexdigest()
-        expected_start = f"OTA {len(replacement_data)} {expected_hash}\n".encode(
-            "utf-8"
-        )
-        mock_socket.sendall.assert_any_call(expected_start)
-        assert ota._size == len(replacement_data)
-        assert ota.hash_hex() == expected_hash
+        mock_socket_class.assert_not_called()
     finally:
         os.unlink(temp_file)
 

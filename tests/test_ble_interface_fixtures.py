@@ -688,7 +688,7 @@ def _build_interface(
     connect_call_kwargs: list[dict[str, object]] = []
 
     def _stub_connect(
-        _self: Any,
+        _self: "BLEInterface",
         _address: str | None = None,
         *args: object,
         **kwargs: object,
@@ -699,7 +699,7 @@ def _build_interface(
 
         Parameters
         ----------
-        _self : Any
+        _self : BLEInterface
             BLEInterface-like instance being patched.
         _address : str | None
             Address passed to connect; recorded in the module-level `connect_calls`.

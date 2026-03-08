@@ -275,7 +275,7 @@ Platform notes:
 
 - `pair()` depends on backend/platform support and may be unavailable on some hosts.
 - `unpair()` depends on backend/platform support (typically Linux/Windows).
-- `trust(address)` is Linux-only and requires `bluetoothctl` in `PATH`.
+- `trust(address=None)` is Linux-only and requires `bluetoothctl` in `PATH`.
 - On macOS, pairing is OS-managed and explicit `pair()`/`unpair()` are not exposed by the backend.
 
 CLI opt-in:

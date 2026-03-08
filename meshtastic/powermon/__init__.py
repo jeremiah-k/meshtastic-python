@@ -51,10 +51,11 @@ def __getattr__(name: str) -> Any:
         module = importlib.import_module(module_name, __name__)
         value = getattr(module, name)
     except ModuleNotFoundError as exc:
-        missing_name = getattr(exc, "name", "")
-        if missing_name not in (dependency_name, f"{dependency_name}."):
-            if not missing_name.startswith(f"{dependency_name}."):
-                raise
+        missing_name = getattr(exc, "name", "") or ""
+        if missing_name != dependency_name and not missing_name.startswith(
+            f"{dependency_name}."
+        ):
+            raise
         value = _missing_optional_backend_class(name, dependency_name, exc)
     globals()[name] = value
     return value

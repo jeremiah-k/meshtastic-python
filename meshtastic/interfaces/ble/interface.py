@@ -2538,6 +2538,8 @@ class BLEInterface(MeshInterface):
 
         requested_identifier = address if address is not None else self.address
         normalized_request = sanitize_address(requested_identifier)
+        if pair is not None and not isinstance(pair, bool):
+            raise self.BLEError("pair must be a bool when provided.")
         pair_on_connect = self.pair_on_connect if pair is None else pair
         self._validate_connect_timeout_override(
             connect_timeout,
@@ -2735,7 +2737,17 @@ class BLEInterface(MeshInterface):
                             self._state_manager._current_state
                             == ConnectionState.CONNECTING
                         )
+                        publish_pending = self._client_publish_pending
                         is_closing = self._state_manager._is_closing or self._closed
+                    if publish_pending:
+                        logger.debug(
+                            "Skipping BLE read while connect publication is pending verification."
+                        )
+                        coordinator._wait_for_event(
+                            "reconnected_event",
+                            timeout=wait_timeout,
+                        )
+                        break
                     if client is None:
                         if self.auto_reconnect or is_connecting:
                             wait_reason = (

@@ -12,6 +12,9 @@ OTA_CHUNK_SIZE_BYTES = 1024
 FILE_HASH_READ_CHUNK_SIZE_BYTES = 4096
 OTA_PROGRESS_LOG_PERCENT_STEP: float = 5.0
 EMPTY_FIRMWARE_ERROR: str = "Firmware file {filename} is empty"
+FIRMWARE_CHANGED_ERROR: str = (
+    "Firmware file {filename} changed after OTA session initialization."
+)
 
 
 class _SHA256Digest(Protocol):
@@ -59,7 +62,13 @@ class ESP32WiFiOTA:
         self._refresh_firmware_metadata()
 
     def _refresh_firmware_metadata(self) -> tuple[int, _SHA256Digest]:
-        """Refresh cached firmware size/hash from disk and validate non-empty file."""
+        """Refresh cached firmware size/hash from disk and validate non-empty file.
+
+        Returns
+        -------
+        tuple[int, _SHA256Digest]
+            The firmware size in bytes and corresponding SHA-256 digest.
+        """
         size = os.path.getsize(self._filename)
         if size == 0:
             raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
@@ -67,6 +76,15 @@ class ESP32WiFiOTA:
         self._size = size
         self._file_hash = file_hash
         return size, file_hash
+
+    def _assert_session_firmware_unchanged(self) -> None:
+        """Ensure OTA session metadata still matches the firmware on disk."""
+        current_size = os.path.getsize(self._filename)
+        if current_size == 0:
+            raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
+        current_hash = _file_sha256(self._filename)
+        if current_size != self._size or current_hash.digest() != self._file_hash.digest():
+            raise OTAError(FIRMWARE_CHANGED_ERROR.format(filename=self._filename))
 
     def _read_line(self) -> str:
         """Read a line from the socket."""
@@ -113,7 +131,9 @@ class ESP32WiFiOTA:
             Callback invoked with ``(bytes_sent, total_bytes)`` during transfer.
             When not provided, progress is logged at INFO in coarse increments.
         """
-        size, file_hash = self._refresh_firmware_metadata()
+        self._assert_session_firmware_unchanged()
+        size = self._size
+        file_hash = self._file_hash
         if OTA_PROGRESS_LOG_PERCENT_STEP <= 0:
             raise ValueError("OTA_PROGRESS_LOG_PERCENT_STEP must be > 0")
         next_progress_log_percent = OTA_PROGRESS_LOG_PERCENT_STEP

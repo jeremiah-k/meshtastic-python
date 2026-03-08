@@ -1111,6 +1111,7 @@ def test_connection_orchestrator_skips_scan_after_direct_device_not_found_for_ex
         "AA:BB:CC:DD:EE:FF",
         ANY,
         ANY,
+        emit_connected_side_effects=True,
     )
 
 
@@ -1179,6 +1180,7 @@ def test_connection_orchestrator_uses_discovery_for_non_address_identifier_after
         "11:22:33:44:55:66",
         ANY,
         ANY,
+        emit_connected_side_effects=True,
     )
 
 
@@ -1258,6 +1260,7 @@ def test_connection_orchestrator_falls_back_to_scan_when_direct_retry_still_devi
         "AA:BB:CC:DD:EE:FF",
         ANY,
         ANY,
+        emit_connected_side_effects=True,
     )
 
 

@@ -592,13 +592,20 @@ class TCPInterface(StreamInterface):
         Parameters
         ----------
         length : int
-            Maximum number of bytes to read.
+            Maximum number of bytes to read. Must be a positive integer
+            (booleans are rejected).
 
         Returns
         -------
         bytes
             The received bytes, or `b""` if no data was returned
             because the socket is absent, a reconnect was started, or shutdown was requested.
+
+        Raises
+        ------
+        ValueError
+            If `length` is not a positive integer (for example, bool,
+            non-int, or `<= 0`).
         """
         if isinstance(length, bool) or not isinstance(length, int) or length <= 0:
             raise ValueError(f"length must be a positive int, got {length!r}")

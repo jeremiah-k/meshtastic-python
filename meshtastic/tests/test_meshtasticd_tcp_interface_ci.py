@@ -300,6 +300,7 @@ def test_tcp_interface_meshtasticd_recovers_after_socket_drop() -> None:
         except OSError:
             pass
         original_socket.close()
+        time.sleep(0.1)
 
         recovered = False
         last_error: Exception | None = None

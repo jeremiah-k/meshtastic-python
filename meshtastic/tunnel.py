@@ -187,10 +187,9 @@ class Tunnel:
         self.tcpBlacklist = self.TCP_BLACKLIST
         self.protocolBlacklist = self.PROTOCOL_BLACKLIST
 
-        # Linux tunnel setup typically needs CAP_NET_ADMIN or root privileges.
         logger.info(
-            "Starting IP to mesh tunnel (CAP_NET_ADMIN or root is typically "
-            "required). Mesh members:"
+            "Starting IP to mesh tunnel. Creating a TapDevice typically needs "
+            "CAP_NET_ADMIN or root. Mesh members:"
         )
 
         pub.subscribe(onTunnelReceive, TUNNEL_TOPIC)

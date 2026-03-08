@@ -2150,6 +2150,14 @@ def test_connect_wraps_invalid_connect_timeout_as_ble_error(
 
 
 @pytest.mark.unit
+def test_connect_rejects_non_bool_pair_override() -> None:
+    """connect() should fail fast when `pair` is not explicitly bool/None."""
+    iface = _build_minimal_connect_test_interface()
+    with pytest.raises(BLEInterface.BLEError, match="pair must be a bool"):
+        iface.connect("AA:BB:CC:DD:EE:10", pair=cast(Any, "false"))
+
+
+@pytest.mark.unit
 def test_connect_waits_for_inflight_management_before_establishing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2909,23 +2917,27 @@ def test_connect_name_target_reserves_requested_and_resolved_keys(
         raising=True,
     )
 
-    result = iface.connect(target_identifier)
+    try:
+        result = iface.connect(target_identifier)
 
-    assert cast(object, result) is connected_client
-    requested_key = _addr_key(target_identifier)
-    resolved_key = _addr_key(resolved_address)
-    assert requested_key is not None and resolved_key is not None
-    assert duplicate_checks.count(requested_key) >= 2
-    assert duplicate_checks.count(resolved_key) >= 2
-    assert requested_key in addr_lock_keys
-    assert resolved_key in addr_lock_keys
-    assert established_args == [
-        (
-            resolved_address,
-            iface._sanitize_address(target_identifier),
-            requested_key,
-        )
-    ]
+        assert cast(object, result) is connected_client
+        requested_key = _addr_key(target_identifier)
+        resolved_key = _addr_key(resolved_address)
+        assert requested_key is not None and resolved_key is not None
+        assert duplicate_checks.count(requested_key) >= 2
+        assert duplicate_checks.count(resolved_key) >= 2
+        assert requested_key in addr_lock_keys
+        assert resolved_key in addr_lock_keys
+        assert established_args == [
+            (
+                resolved_address,
+                iface._sanitize_address(target_identifier),
+                requested_key,
+            )
+        ]
+    finally:
+        if hasattr(iface, "_management_lock"):
+            iface.close()
 
 
 def test_connect_raises_when_client_becomes_stale_after_gate_finalization(

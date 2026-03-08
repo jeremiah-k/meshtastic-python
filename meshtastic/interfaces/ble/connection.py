@@ -676,21 +676,13 @@ class ConnectionOrchestrator:
                     client = None
                 else:
                     self._raise_if_interface_closing()
-                    if emit_connected_side_effects:
-                        self._finalize_connection(
-                            client,
-                            target_address,
-                            register_notifications_func,
-                            on_connected_func,
-                        )
-                    else:
-                        self._finalize_connection(
-                            client,
-                            target_address,
-                            register_notifications_func,
-                            on_connected_func,
-                            emit_connected_side_effects=False,
-                        )
+                    self._finalize_connection(
+                        client,
+                        target_address,
+                        register_notifications_func,
+                        on_connected_func,
+                        emit_connected_side_effects=emit_connected_side_effects,
+                    )
                     return client
 
             if skip_discovery_scan and target_address is not None:
@@ -752,21 +744,13 @@ class ConnectionOrchestrator:
                 )
 
             self._raise_if_interface_closing()
-            if emit_connected_side_effects:
-                self._finalize_connection(
-                    client,
-                    resolved_address,
-                    register_notifications_func,
-                    on_connected_func,
-                )
-            else:
-                self._finalize_connection(
-                    client,
-                    resolved_address,
-                    register_notifications_func,
-                    on_connected_func,
-                    emit_connected_side_effects=False,
-                )
+            self._finalize_connection(
+                client,
+                resolved_address,
+                register_notifications_func,
+                on_connected_func,
+                emit_connected_side_effects=emit_connected_side_effects,
+            )
             return client
         except BleakDBusError:
             if client:

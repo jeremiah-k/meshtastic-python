@@ -3,8 +3,8 @@
 This module intentionally splits coverage into two lanes:
 - `smoke1`: single-device smoke checks.
 - `smoke1_destructive`: reboot/reset and heavy config mutation checks that are
-  opt-in and may temporarily leave hardware in a modified state. The stable
-  default lane uses `smoke1 and not smoke1_destructive`.
+  opt-in and may temporarily leave hardware in a modified state. Destructive
+  tests are intentionally excluded from the generic `smoke1` marker lane.
 """
 
 import contextlib
@@ -156,8 +156,8 @@ def test_find_channel_index_by_name_handles_multiline_channel_blocks() -> None:
 
 
 @pytest.mark.unit
-def test_destructive_test_marks_smoke1_and_smoke1_destructive() -> None:
-    """Destructive smoke helpers should only carry the destructive lane marker."""
+def test_destructive_test_marks_only_smoke1_destructive() -> None:
+    """Destructive smoke helpers should carry destructive-only marker semantics."""
 
     def _sample() -> None:
         return None
