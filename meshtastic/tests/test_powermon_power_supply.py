@@ -6,6 +6,7 @@ import sys
 import types
 import typing
 import warnings
+from typing import Any, cast
 
 import pytest
 
@@ -231,8 +232,8 @@ def test_powermon_type_checking_import_branch(
     original_type_checking = typing.TYPE_CHECKING
     stub_ppk2 = types.ModuleType("meshtastic.powermon.ppk2")
     stub_riden = types.ModuleType("meshtastic.powermon.riden")
-    stub_ppk2.PPK2PowerSupply = type("PPK2PowerSupply", (), {})
-    stub_riden.RidenPowerSupply = type("RidenPowerSupply", (), {})
+    cast(Any, stub_ppk2).PPK2PowerSupply = type("PPK2PowerSupply", (), {})
+    cast(Any, stub_riden).RidenPowerSupply = type("RidenPowerSupply", (), {})
 
     try:
         monkeypatch.setitem(sys.modules, "meshtastic.powermon.ppk2", stub_ppk2)

@@ -81,7 +81,10 @@ class ESP32WiFiOTA:
         self, *, current_size: int, current_hash: _SHA256Digest
     ) -> None:
         """Ensure OTA session metadata still matches the file snapshot being uploaded."""
-        if current_size != self._size or current_hash.digest() != self._file_hash.digest():
+        if (
+            current_size != self._size
+            or current_hash.digest() != self._file_hash.digest()
+        ):
             raise OTAError(FIRMWARE_CHANGED_ERROR.format(filename=self._filename))
 
     def _read_line(self) -> str:
@@ -129,98 +132,93 @@ class ESP32WiFiOTA:
             Callback invoked with ``(bytes_sent, total_bytes)`` during transfer.
             When not provided, progress is logged at INFO in coarse increments.
         """
+        image = bytearray()
+        file_hash = hashlib.sha256()
         with open(self._filename, "rb") as firmware:
-            size = os.fstat(firmware.fileno()).st_size
-            if size == 0:
-                raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
-
-            file_hash = hashlib.sha256()
             for block in iter(
                 lambda: firmware.read(FILE_HASH_READ_CHUNK_SIZE_BYTES), b""
             ):
+                image.extend(block)
                 file_hash.update(block)
-            self._assert_session_firmware_unchanged(
-                current_size=size, current_hash=file_hash
-            )
-            firmware.seek(0)
 
-            if OTA_PROGRESS_LOG_PERCENT_STEP <= 0:
-                raise ValueError("OTA_PROGRESS_LOG_PERCENT_STEP must be > 0")
-            next_progress_log_percent = OTA_PROGRESS_LOG_PERCENT_STEP
+        firmware_image = bytes(image)
+        size = len(firmware_image)
+        if size == 0:
+            raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
+        self._assert_session_firmware_unchanged(
+            current_size=size, current_hash=file_hash
+        )
 
-            logger.info(
-                "Starting OTA update with %s (%d bytes, hash %s)",
-                self._filename,
-                size,
-                file_hash.hexdigest(),
-            )
+        if OTA_PROGRESS_LOG_PERCENT_STEP <= 0:
+            raise ValueError("OTA_PROGRESS_LOG_PERCENT_STEP must be > 0")
+        next_progress_log_percent = OTA_PROGRESS_LOG_PERCENT_STEP
 
-            self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self._socket.settimeout(OTA_SOCKET_TIMEOUT_SECONDS)
-            try:
-                self._socket.connect((self._hostname, self._port))
-                logger.debug("Connected to %s:%d", self._hostname, self._port)
+        logger.info(
+            "Starting OTA update with %s (%d bytes, hash %s)",
+            self._filename,
+            size,
+            file_hash.hexdigest(),
+        )
 
-                # Send start command
-                self._socket.sendall(
-                    f"OTA {size} {file_hash.hexdigest()}\n".encode("utf-8")
-                )
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._socket.settimeout(OTA_SOCKET_TIMEOUT_SECONDS)
+        try:
+            self._socket.connect((self._hostname, self._port))
+            logger.debug("Connected to %s:%d", self._hostname, self._port)
 
-                # Wait for OK from the device
-                while True:
-                    response = self._read_line()
-                    if response == "OK":
-                        break
+            # Send start command
+            self._socket.sendall(f"OTA {size} {file_hash.hexdigest()}\n".encode())
 
-                    if response == "ERASING":
-                        logger.info("Device is erasing flash...")
-                    elif response.startswith("ERR "):
-                        raise OTAError(f"Device reported error: {response}")
-                    else:
-                        logger.warning("Unexpected response: %s", response)
+            # Wait for OK from the device
+            while True:
+                response = self._read_line()
+                if response == "OK":
+                    break
 
-                # Stream firmware from the same validated snapshot handle.
-                sent_bytes = 0
-                while True:
-                    chunk = firmware.read(OTA_CHUNK_SIZE_BYTES)
-                    if not chunk:
-                        break
-                    self._socket.sendall(chunk)
-                    sent_bytes += len(chunk)
+                if response == "ERASING":
+                    logger.info("Device is erasing flash...")
+                elif response.startswith("ERR "):
+                    raise OTAError(f"Device reported error: {response}")
+                else:
+                    logger.warning("Unexpected response: %s", response)
 
-                    if progress_callback:
-                        progress_callback(sent_bytes, size)
-                    else:
-                        progress_percent = sent_bytes / size * 100
-                        if (
-                            sent_bytes == size
-                            or progress_percent >= next_progress_log_percent
-                        ):
-                            logger.info(
-                                "OTA progress: %.1f%% (%d/%d bytes)",
-                                progress_percent,
-                                sent_bytes,
-                                size,
-                            )
-                            while next_progress_log_percent <= progress_percent:
-                                next_progress_log_percent += (
-                                    OTA_PROGRESS_LOG_PERCENT_STEP
-                                )
+            sent_bytes = 0
+            for offset in range(0, size, OTA_CHUNK_SIZE_BYTES):
+                chunk = firmware_image[offset : offset + OTA_CHUNK_SIZE_BYTES]
+                self._socket.sendall(chunk)
+                sent_bytes += len(chunk)
 
-                # Wait for OK from device
-                logger.info("Firmware sent, waiting for verification...")
-                while True:
-                    response = self._read_line()
-                    if response == "OK":
-                        logger.info("OTA update completed successfully!")
-                        break
+                if progress_callback:
+                    progress_callback(sent_bytes, size)
+                else:
+                    progress_percent = sent_bytes / size * 100
+                    if (
+                        sent_bytes == size
+                        or progress_percent >= next_progress_log_percent
+                    ):
+                        logger.info(
+                            "OTA progress: %.1f%% (%d/%d bytes)",
+                            progress_percent,
+                            sent_bytes,
+                            size,
+                        )
+                        while next_progress_log_percent <= progress_percent:
+                            next_progress_log_percent += OTA_PROGRESS_LOG_PERCENT_STEP
 
-                    if response.startswith("ERR "):
-                        raise OTAError(f"OTA update failed: {response}")
-                    elif response != "ACK":
-                        logger.warning("Unexpected final response: %s", response)
+            # Wait for OK from device
+            logger.info("Firmware sent, waiting for verification...")
+            while True:
+                response = self._read_line()
+                if response == "OK":
+                    logger.info("OTA update completed successfully!")
+                    break
 
-            finally:
-                if self._socket:
-                    self._socket.close()
-                    self._socket = None
+                if response.startswith("ERR "):
+                    raise OTAError(f"OTA update failed: {response}")
+                elif response != "ACK":
+                    logger.warning("Unexpected final response: %s", response)
+
+        finally:
+            if self._socket:
+                self._socket.close()
+                self._socket = None

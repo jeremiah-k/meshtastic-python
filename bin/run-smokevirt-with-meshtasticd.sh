@@ -98,36 +98,44 @@ case "${MESHTASTICD_HOST}" in
 	;;
 *) ;;
 esac
-MESHTASTICD_HOST_BARE_IPV6=false
-if [[ ${MESHTASTICD_HOST} == *:*:* && ${MESHTASTICD_HOST} != \[* ]]; then
-	if ! python3 -c 'import ipaddress, sys; ipaddress.IPv6Address(sys.argv[1])' "${MESHTASTICD_HOST}" >/dev/null 2>&1; then
-		echo "MESHTASTICD_HOST must be HOST[:PORT] or a valid IPv6 literal." >&2
-		exit 1
-	fi
-	MESHTASTICD_HOST_BARE_IPV6=true
-else
-	require_regex "${MESHTASTICD_HOST}" '^(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9._-]+)(:[0-9]+)?$' "MESHTASTICD_HOST"
-fi
-if [[ ${MESHTASTICD_HOST_BARE_IPV6} == false ]] && [[ ${MESHTASTICD_HOST} =~ :([0-9]+)$ ]]; then
-	MESHTASTICD_HOST_PORT_DEC=$((10#${BASH_REMATCH[1]}))
-	if ((MESHTASTICD_HOST_PORT_DEC < 1 || MESHTASTICD_HOST_PORT_DEC > 65535)); then
-		echo "MESHTASTICD_HOST port must be between 1 and 65535." >&2
-		exit 1
-	fi
-fi
 require_regex "${MESHTASTICD_PORT}" '^[0-9]+$' "MESHTASTICD_PORT"
 require_regex "${MESHTASTICD_READY_TIMEOUT_SECONDS}" '^[0-9]+$' "MESHTASTICD_READY_TIMEOUT_SECONDS"
 MESHTASTICD_PORT_DEC=$((10#${MESHTASTICD_PORT}))
-if [[ -n ${MESHTASTICD_HOST_PORT_DEC:-} ]] && ((MESHTASTICD_HOST_PORT_DEC != MESHTASTICD_PORT_DEC)); then
+
+MESHTASTICD_PARSED_HOST_AND_PORT="$(
+	python3 - "${MESHTASTICD_HOST}" "${MESHTASTICD_PORT_DEC}" <<'PY'
+import sys
+
+from meshtastic.host_port import parse_host_and_port
+
+host = sys.argv[1]
+default_port = int(sys.argv[2])
+try:
+    parsed_host, parsed_port = parse_host_and_port(
+        host,
+        default_port=default_port,
+        env_var="MESHTASTICD_HOST",
+    )
+except ValueError as exc:
+    print(str(exc), file=sys.stderr)
+    raise SystemExit(1) from exc
+
+print(f"{parsed_host}\t{parsed_port}")
+PY
+)"
+IFS=$'\t' read -r MESHTASTICD_PARSED_HOST MESHTASTICD_HOST_PORT_DEC <<<"${MESHTASTICD_PARSED_HOST_AND_PORT}"
+if [[ -z ${MESHTASTICD_PARSED_HOST-} || -z ${MESHTASTICD_HOST_PORT_DEC-} ]]; then
+	echo "Invalid MESHTASTICD_HOST: ${MESHTASTICD_HOST}" >&2
+	exit 1
+fi
+if ((MESHTASTICD_HOST_PORT_DEC != MESHTASTICD_PORT_DEC)); then
 	echo "MESHTASTICD_HOST port must match MESHTASTICD_PORT, or omit the inline port." >&2
 	exit 1
 fi
-if [[ -z ${MESHTASTICD_HOST_PORT_DEC:-} ]]; then
-	if [[ ${MESHTASTICD_HOST_BARE_IPV6} == true ]]; then
-		MESHTASTICD_HOST="[${MESHTASTICD_HOST}]:${MESHTASTICD_PORT_DEC}"
-	else
-		MESHTASTICD_HOST="${MESHTASTICD_HOST}:${MESHTASTICD_PORT_DEC}"
-	fi
+if [[ ${MESHTASTICD_PARSED_HOST} == *:* ]]; then
+	MESHTASTICD_HOST="[${MESHTASTICD_PARSED_HOST}]:${MESHTASTICD_HOST_PORT_DEC}"
+else
+	MESHTASTICD_HOST="${MESHTASTICD_PARSED_HOST}:${MESHTASTICD_HOST_PORT_DEC}"
 fi
 if [[ -z ${READY_LOG_FILE} ]]; then
 	if [[ -n ${MESHTASTICD_LOG_DIR} ]]; then
@@ -218,12 +226,16 @@ fi
 HAS_SMOKEVIRT_TARGET=false
 for target in "${PYTEST_TARGETS[@]}"; do
 	normalized_target="${target%%::*}"
-	if [[ ${normalized_target} == *test_smokevirt.py ]]; then
+	normalized_target="${normalized_target#./}"
+	normalized_basename="${normalized_target##*/}"
+	if [[ ${normalized_basename} == "test_smokevirt.py" ]]; then
 		HAS_SMOKEVIRT_TARGET=true
 		SMOKEVIRT_TARGETS+=("${target}")
 	fi
 	for default_target in "${DEFAULT_PYTEST_TARGETS[@]}"; do
-		if [[ ${normalized_target} == "${default_target}" ]]; then
+		normalized_default_target="${default_target#./}"
+		normalized_default_basename="${normalized_default_target##*/}"
+		if [[ ${normalized_target} == "${normalized_default_target}" || ${normalized_basename} == "${normalized_default_basename}" ]]; then
 			MESHTASTICD_CI_TARGETS+=("${target}")
 			break
 		fi

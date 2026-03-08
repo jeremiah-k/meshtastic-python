@@ -1067,6 +1067,8 @@ class MeshInterface:  # pylint: disable=R0902
         meshPacket.decoded.portnum = portNum
         meshPacket.decoded.want_response = wantResponse
         meshPacket.id = self._generate_packet_id()
+        while meshPacket.id == 0:
+            meshPacket.id = self._generate_packet_id()
         if replyId is not None:
             meshPacket.decoded.reply_id = replyId
         if priority is not None:
@@ -1244,13 +1246,24 @@ class MeshInterface:  # pylint: disable=R0902
                     )
                     return
                 resolved_request_id = request_id
+                self._response_wait_errors[
+                    (acknowledgment_attr, resolved_request_id)
+                ] = message
             elif len(active_request_ids) == 1:
                 resolved_request_id = next(iter(active_request_ids))
+                self._response_wait_errors[
+                    (acknowledgment_attr, resolved_request_id)
+                ] = message
+            elif len(active_request_ids) > 1:
+                for active_request_id in active_request_ids:
+                    self._response_wait_errors[
+                        (acknowledgment_attr, active_request_id)
+                    ] = message
             else:
                 resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
-            self._response_wait_errors[(acknowledgment_attr, resolved_request_id)] = (
-                message
-            )
+                self._response_wait_errors[
+                    (acknowledgment_attr, resolved_request_id)
+                ] = message
         setattr(self._acknowledgment, acknowledgment_attr, True)
 
     def _mark_wait_acknowledged(
@@ -1261,9 +1274,7 @@ class MeshInterface:  # pylint: disable=R0902
             active_request_ids = self._active_wait_request_ids.get(
                 acknowledgment_attr, set()
             )
-            if request_id is not None and (
-                request_id not in active_request_ids
-            ):
+            if request_id is not None and (request_id not in active_request_ids):
                 logger.debug(
                     "Ignoring stale acknowledgement for %s request_id=%s (active=%s)",
                     acknowledgment_attr,
@@ -1387,7 +1398,8 @@ class MeshInterface:  # pylint: disable=R0902
                 if key in self._response_wait_errors:
                     return True
                 if (
-                    request_id in active_request_ids
+                    len(active_request_ids) == 1
+                    and request_id in active_request_ids
                     and unscoped_key in self._response_wait_errors
                 ):
                     return True
@@ -1395,7 +1407,8 @@ class MeshInterface:  # pylint: disable=R0902
                     self._response_wait_acks.discard(key)
                     return True
                 if (
-                    request_id in active_request_ids
+                    len(active_request_ids) == 1
+                    and request_id in active_request_ids
                     and unscoped_key in self._response_wait_acks
                 ):
                     self._response_wait_acks.discard(unscoped_key)
@@ -1484,9 +1497,7 @@ class MeshInterface:  # pylint: disable=R0902
         ):
             self._record_routing_wait_error(
                 acknowledgment_attr="receivedPosition",
-                routing_error_reason=p["decoded"]
-                .get("routing", {})
-                .get("errorReason"),
+                routing_error_reason=p["decoded"].get("routing", {}).get("errorReason"),
                 request_id=request_id,
             )
 
@@ -1793,57 +1804,65 @@ class MeshInterface:  # pylint: disable=R0902
                     request_id=request_id,
                 )
                 return
+            try:
+                _emit_response_summary("Telemetry received:")
+                # Check if the telemetry message has the device_metrics field
+                # This is the original code that was the default for --request-telemetry and is kept for compatibility
+                if telemetry.HasField("device_metrics"):
+                    device_metrics_fields = {
+                        field.name for field, _ in telemetry.device_metrics.ListFields()
+                    }
+                    if "battery_level" in device_metrics_fields:
+                        _emit_response_summary(
+                            f"Battery level: {telemetry.device_metrics.battery_level:.2f}%"
+                        )
+                    if "voltage" in device_metrics_fields:
+                        _emit_response_summary(
+                            f"Voltage: {telemetry.device_metrics.voltage:.2f} V"
+                        )
+                    if "channel_utilization" in device_metrics_fields:
+                        _emit_response_summary(
+                            "Total channel utilization: "
+                            f"{telemetry.device_metrics.channel_utilization:.2f}%"
+                        )
+                    if "air_util_tx" in device_metrics_fields:
+                        _emit_response_summary(
+                            f"Transmit air utilization: {telemetry.device_metrics.air_util_tx:.2f}%"
+                        )
+                    if "uptime_seconds" in device_metrics_fields:
+                        _emit_response_summary(
+                            f"Uptime: {telemetry.device_metrics.uptime_seconds} s"
+                        )
+                else:
+                    # this is the new code if --request-telemetry <type> is used.
+                    telemetry_dict = google.protobuf.json_format.MessageToDict(
+                        telemetry
+                    )
+                    for key, value in telemetry_dict.items():
+                        if (
+                            key != "time"
+                        ):  # protobuf includes a time field that we don't emit for device_metrics.
+                            _emit_response_summary(f"{key}:")
+                            for sub_key, sub_value in value.items():
+                                _emit_response_summary(f"  {sub_key}: {sub_value}")
+            except Exception as exc:  # noqa: BLE001
+                self._set_wait_error(
+                    "receivedTelemetry",
+                    f"Failed to format telemetry response: {exc}",
+                    request_id=request_id,
+                )
+                return
             self._mark_wait_acknowledged(
                 "receivedTelemetry",
                 request_id=request_id,
             )
-            _emit_response_summary("Telemetry received:")
-            # Check if the telemetry message has the device_metrics field
-            # This is the original code that was the default for --request-telemetry and is kept for compatibility
-            if telemetry.HasField("device_metrics"):
-                device_metrics_fields = {
-                    field.name for field, _ in telemetry.device_metrics.ListFields()
-                }
-                if "battery_level" in device_metrics_fields:
-                    _emit_response_summary(
-                        f"Battery level: {telemetry.device_metrics.battery_level:.2f}%"
-                    )
-                if "voltage" in device_metrics_fields:
-                    _emit_response_summary(
-                        f"Voltage: {telemetry.device_metrics.voltage:.2f} V"
-                    )
-                if "channel_utilization" in device_metrics_fields:
-                    _emit_response_summary(
-                        "Total channel utilization: "
-                        f"{telemetry.device_metrics.channel_utilization:.2f}%"
-                    )
-                if "air_util_tx" in device_metrics_fields:
-                    _emit_response_summary(
-                        f"Transmit air utilization: {telemetry.device_metrics.air_util_tx:.2f}%"
-                    )
-                if "uptime_seconds" in device_metrics_fields:
-                    _emit_response_summary(
-                        f"Uptime: {telemetry.device_metrics.uptime_seconds} s"
-                    )
-            else:
-                # this is the new code if --request-telemetry <type> is used.
-                telemetry_dict = google.protobuf.json_format.MessageToDict(telemetry)
-                for key, value in telemetry_dict.items():
-                    if (
-                        key != "time"
-                    ):  # protobuf includes a time field that we don't emit for device_metrics.
-                        _emit_response_summary(f"{key}:")
-                        for sub_key, sub_value in value.items():
-                            _emit_response_summary(f"  {sub_key}: {sub_value}")
 
         elif p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.ROUTING_APP
         ):
             self._record_routing_wait_error(
                 acknowledgment_attr="receivedTelemetry",
-                routing_error_reason=p["decoded"]
-                .get("routing", {})
-                .get("errorReason"),
+                routing_error_reason=p["decoded"].get("routing", {}).get("errorReason"),
                 request_id=request_id,
             )
 
@@ -1888,9 +1907,7 @@ class MeshInterface:  # pylint: disable=R0902
         ):
             self._record_routing_wait_error(
                 acknowledgment_attr="receivedWaypoint",
-                routing_error_reason=p["decoded"]
-                .get("routing", {})
-                .get("errorReason"),
+                routing_error_reason=p["decoded"].get("routing", {}).get("errorReason"),
                 request_id=request_id,
             )
 
@@ -2276,7 +2293,9 @@ class MeshInterface:  # pylint: disable=R0902
                     request_id,
                     timeout_seconds=self._timeout.expireTimeout * waitFactor,
                 )
-            self._raise_wait_error_if_present("receivedTraceRoute", request_id=request_id)
+            self._raise_wait_error_if_present(
+                "receivedTraceRoute", request_id=request_id
+            )
             if not success:
                 raise MeshInterface.MeshInterfaceError(
                     "Timed out waiting for traceroute"
@@ -2307,7 +2326,9 @@ class MeshInterface:  # pylint: disable=R0902
                     request_id,
                     timeout_seconds=self._timeout.expireTimeout,
                 )
-            self._raise_wait_error_if_present("receivedTelemetry", request_id=request_id)
+            self._raise_wait_error_if_present(
+                "receivedTelemetry", request_id=request_id
+            )
             if not success:
                 raise MeshInterface.MeshInterfaceError(
                     "Timed out waiting for telemetry"
@@ -2340,9 +2361,7 @@ class MeshInterface:  # pylint: disable=R0902
                 )
             self._raise_wait_error_if_present("receivedPosition", request_id=request_id)
             if not success:
-                raise MeshInterface.MeshInterfaceError(
-                    "Timed out waiting for position"
-                )
+                raise MeshInterface.MeshInterfaceError("Timed out waiting for position")
         finally:
             self._retire_wait_request("receivedPosition", request_id=request_id)
 
@@ -2373,9 +2392,7 @@ class MeshInterface:  # pylint: disable=R0902
                 )
             self._raise_wait_error_if_present("receivedWaypoint", request_id=request_id)
             if not success:
-                raise MeshInterface.MeshInterfaceError(
-                    "Timed out waiting for waypoint"
-                )
+                raise MeshInterface.MeshInterfaceError("Timed out waiting for waypoint")
         finally:
             self._retire_wait_request("receivedWaypoint", request_id=request_id)
 

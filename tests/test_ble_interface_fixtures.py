@@ -1,6 +1,7 @@
 """Common fixtures for BLE interface tests."""
 
 import logging
+import math
 import sys
 import types
 from collections.abc import Callable, Generator
@@ -13,6 +14,7 @@ from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED,
     BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED,
     BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+    ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - import only for typing
@@ -519,7 +521,7 @@ class DummyClient:
         bool
             True if the client is connected, False otherwise.
         """
-        return True
+        return self._initialized and self.bleak_client is not None
 
     def is_connected(self) -> bool:
         """Backward-compatible snake_case alias for isConnected.
@@ -552,6 +554,15 @@ class DummyClient:
         **_kwargs: object,
     ) -> None:
         """Record a pair invocation."""
+        if (
+            isinstance(await_timeout, bool)
+            or not isinstance(await_timeout, (int, float))
+            or not math.isfinite(await_timeout)
+            or await_timeout <= 0
+        ):
+            raise _get_ble_module().BLEClient.BLEError(
+                ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID
+            )
         if not self._initialized or self.bleak_client is None:
             raise _get_ble_module().BLEClient.BLEError(
                 BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED
@@ -567,6 +578,15 @@ class DummyClient:
         **_kwargs: object,
     ) -> None:
         """Record an unpair invocation."""
+        if (
+            isinstance(await_timeout, bool)
+            or not isinstance(await_timeout, (int, float))
+            or not math.isfinite(await_timeout)
+            or await_timeout <= 0
+        ):
+            raise _get_ble_module().BLEClient.BLEError(
+                ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID
+            )
         if not self._initialized or self.bleak_client is None:
             raise _get_ble_module().BLEClient.BLEError(
                 BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import importlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 
 from .power_supply import PowerError, PowerMeter, PowerSupply
 from .sim import SimPowerSupply
@@ -27,9 +27,7 @@ def _missing_optional_backend_class(
     """Return a placeholder backend class that raises a clear dependency error."""
 
     class _MissingOptionalBackend(PowerSupply):
-        def __new__(
-            cls, *args: object, **kwargs: object
-        ) -> "_MissingOptionalBackend":
+        def __new__(cls, *args: object, **kwargs: object) -> Self:
             _ = (cls, args, kwargs)
             raise ImportError(
                 f"{backend_name} requires optional dependency {dependency_name!r}. "

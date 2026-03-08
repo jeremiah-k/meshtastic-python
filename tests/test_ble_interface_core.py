@@ -10,14 +10,7 @@ import time
 from collections.abc import Iterator
 from queue import Queue
 from types import SimpleNamespace, TracebackType
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Literal,
-    Protocol,
-    cast,
-)
+from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, cast
 
 import pytest
 from bleak.backends.device import BLEDevice
@@ -26,42 +19,27 @@ from bleak.exc import BleakDBusError, BleakError
 # Import meshtastic modules for use in tests
 import meshtastic.interfaces.ble as ble_mod
 import meshtastic.interfaces.ble.discovery as discovery_mod
-from meshtastic.interfaces.ble import (
-    FROMNUM_UUID,
-    LEGACY_LOGRADIO_UUID,
-    LOGRADIO_UUID,
-    SERVICE_UUID,
-    BLEClient,
-    BLEInterface,
-)
+from meshtastic.interfaces.ble import (FROMNUM_UUID, LEGACY_LOGRADIO_UUID,
+                                       LOGRADIO_UUID, SERVICE_UUID, BLEClient,
+                                       BLEInterface)
 from meshtastic.interfaces.ble.connection import ConnectionValidator
 from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED,
     BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED,
-    CONNECTION_ERROR_LOST_OWNERSHIP,
-    ERROR_CONNECTION_SUPPRESSED,
-    ERROR_INTERFACE_CLOSING,
-    ERROR_MANAGEMENT_ADDRESS_REQUIRED,
-    ERROR_MANAGEMENT_ADDRESS_EMPTY,
-    ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID,
-    ERROR_MANAGEMENT_CONNECTING,
-    ERROR_MANAGEMENT_TARGET_CHANGED,
-    ERROR_TRUST_ADDRESS_NOT_RESOLVED,
-    ERROR_TRUST_BLUETOOTHCTL_MISSING,
-    ERROR_TRUST_COMMAND_TIMEOUT,
-    ERROR_TRUST_INVALID_TIMEOUT,
-)
+    CONNECTION_ERROR_LOST_OWNERSHIP, ERROR_CONNECTION_SUPPRESSED,
+    ERROR_INTERFACE_CLOSING, ERROR_MANAGEMENT_ADDRESS_EMPTY,
+    ERROR_MANAGEMENT_ADDRESS_REQUIRED, ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID,
+    ERROR_MANAGEMENT_CONNECTING, ERROR_MANAGEMENT_TARGET_CHANGED,
+    ERROR_TRUST_ADDRESS_NOT_RESOLVED, ERROR_TRUST_BLUETOOTHCTL_MISSING,
+    ERROR_TRUST_COMMAND_FAILED, ERROR_TRUST_COMMAND_TIMEOUT,
+    ERROR_TRUST_INVALID_TIMEOUT)
 from meshtastic.interfaces.ble.discovery import (
-    DiscoveryClientError,
-    DiscoveryManager,
-    _close_discovery_client_best_effort,
-    _filter_devices_for_target_identifier,
-    _looks_like_ble_address,
-    _parse_scan_response,
-)
-from meshtastic.interfaces.ble.reconnection import ReconnectScheduler, ReconnectWorker
+    DiscoveryClientError, DiscoveryManager,
+    _close_discovery_client_best_effort, _filter_devices_for_target_identifier,
+    _looks_like_ble_address, _parse_scan_response)
+from meshtastic.interfaces.ble.reconnection import (ReconnectScheduler,
+                                                    ReconnectWorker)
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
-
 # Import common fixtures
 from tests.test_ble_interface_fixtures import DummyClient, _build_interface
 
@@ -155,11 +133,15 @@ def _build_minimal_connect_test_interface() -> BLEInterface:
     iface._state_manager = BLEStateManager()
     iface._state_lock = threading.RLock()
     iface._connect_lock = threading.RLock()
+    iface._management_lock = threading.RLock()
+    iface._management_idle_condition = threading.Condition(iface._management_lock)
+    iface._management_inflight = 0
     iface._disconnect_lock = threading.Lock()
     iface._closed = False
     iface.address = None
     iface.client = None
     iface._disconnect_notified = False
+    iface._client_publish_pending = False
     iface._last_connection_request = None
     iface.pair_on_connect = False
     iface._connection_alias_key = None
@@ -1640,6 +1622,39 @@ def test_ble_interface_trust_translates_subprocess_timeout(
     iface.close()
 
 
+def test_ble_interface_trust_translates_spawn_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """trust() should translate subprocess spawn failures into BLEError."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "linux")
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.shutil.which",
+        lambda _name: "/usr/bin/bluetoothctl",
+    )
+
+    def _raise_os_error(*_args: object, **_kwargs: object) -> SimpleNamespace:
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.subprocess.run",
+        _raise_os_error,
+    )
+
+    with pytest.raises(
+        BLEInterface.BLEError,
+        match=re.escape(
+            ERROR_TRUST_COMMAND_FAILED.format(
+                address="AA:BB:CC:DD:EE:FF",
+                detail="/usr/bin/bluetoothctl: permission denied",
+            )
+        ),
+    ):
+        iface.trust("AA:BB:CC:DD:EE:FF", timeout=2.5)
+
+    iface.close()
+
+
 def test_ble_interface_trust_rejects_closing_interface(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2846,7 +2861,9 @@ def test_finalize_connection_gates_logs_when_result_is_already_stale(
     iface.close()
 
 
-def test_is_owned_connected_client_reads_status_tuple(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_is_owned_connected_client_reads_status_tuple(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Owned-client helper should return the first element of status tuple."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     client = cast(BLEClient, DummyClient())
@@ -3253,7 +3270,8 @@ def test_connect_marks_provisional_claims_before_gate_release(
 ) -> None:
     """connect() should publish provisional ownership before releasing the address gate."""
     _ = clear_registry
-    from meshtastic.interfaces.ble.gating import _is_currently_connected_elsewhere
+    from meshtastic.interfaces.ble.gating import \
+        _is_currently_connected_elsewhere
 
     target_identifier = "mesh-node"
     device_key = "aabbccddee30"
@@ -3337,7 +3355,9 @@ def test_connect_name_target_reserves_requested_and_resolved_keys(
     monkeypatch.setattr(
         iface,
         "findDevice",
-        lambda _identifier: BLEDevice(address=resolved_address, name="Mesh", details={}),
+        lambda _identifier: BLEDevice(
+            address=resolved_address, name="Mesh", details={}
+        ),
         raising=True,
     )
     monkeypatch.setattr(
@@ -3379,7 +3399,11 @@ def test_connect_name_target_reserves_requested_and_resolved_keys(
             iface._state_manager._reset_to_disconnected()
             assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
             assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
-        return connected_client, _addr_key(resolved_address), _addr_key(target_identifier)
+        return (
+            connected_client,
+            _addr_key(resolved_address),
+            _addr_key(target_identifier),
+        )
 
     monkeypatch.setattr(
         iface,
@@ -3407,7 +3431,7 @@ def test_connect_name_target_reserves_requested_and_resolved_keys(
             )
         ]
     finally:
-        if hasattr(iface, "_management_lock"):
+        if hasattr(iface, "_shutdown_event"):
             iface.close()
 
 
@@ -4070,7 +4094,9 @@ def test_receive_loop_waits_while_publish_pending(
     monkeypatch.setattr(
         iface,
         "_read_from_radio_with_retries",
-        lambda *_args, **_kwargs: pytest.fail("read should be skipped while publish pending"),
+        lambda *_args, **_kwargs: pytest.fail(
+            "read should be skipped while publish pending"
+        ),
         raising=True,
     )
 

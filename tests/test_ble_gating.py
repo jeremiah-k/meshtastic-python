@@ -11,14 +11,14 @@ from meshtastic.interfaces.ble.gating import (
     _ADDR_LOCKS,
     _CONNECTED_ADDRS,
     _CONNECTED_MARKED_AT,
-    _CONNECTING_MARKED_AT,
     _CONNECTING_ADDRS,
-    _clear_connecting,
+    _CONNECTING_MARKED_AT,
     _LOCK_HOLDERS,
     _REGISTRY_LOCK,
     _addr_key,
     _addr_lock_context,
     _cleanup_addr_lock,
+    _clear_connecting,
     _get_addr_lock,
     _is_currently_connected_elsewhere,
     _mark_connected,
@@ -40,6 +40,16 @@ class _DisconnectedOwner:
     """Owner stub that reports an inactive connection."""
 
     _is_connection_connected = False
+
+
+def _distinct_owner_token(stale_id: int) -> object:
+    """Return an owner token whose id does not match a stale reclaimed owner id."""
+    keepalive: list[object] = []
+    token = object()
+    while id(token) == stale_id:
+        keepalive.append(token)
+        token = object()
+    return token
 
 
 class TestAddrKey:
@@ -303,10 +313,11 @@ class TestMarkDisconnected:
         _mark_disconnected("aabbccddeeff")
         owner = _ConnectedOwner()
         _mark_connecting("aabbccddeeff", owner=owner)
+        stale_id = id(owner)
         del owner
         gc.collect()
 
-        _mark_disconnected("aabbccddeeff", owner=object())
+        _mark_disconnected("aabbccddeeff", owner=_distinct_owner_token(stale_id))
 
         assert key not in _CONNECTING_ADDRS
 
@@ -336,10 +347,11 @@ class TestClearConnecting:
         assert key is not None
         owner = _ConnectedOwner()
         _mark_connecting("aabbccddeeff", owner=owner)
+        stale_id = id(owner)
         del owner
         gc.collect()
 
-        _clear_connecting("aabbccddeeff", owner=object())
+        _clear_connecting("aabbccddeeff", owner=_distinct_owner_token(stale_id))
 
         assert key not in _CONNECTING_ADDRS
 
@@ -458,7 +470,9 @@ class TestIsCurrentlyConnectedElsewhere:
         assert _is_currently_connected_elsewhere("aabbccddeeff")
         assert key in _CONNECTING_ADDRS
 
-    def test_prunes_dead_provisional_owner_weakref_in_connecting_claim_check(self) -> None:
+    def test_prunes_dead_provisional_owner_weakref_in_connecting_claim_check(
+        self,
+    ) -> None:
         """Dead provisional owner weakrefs should be pruned before same-owner fallback checks."""
         key = _addr_key("aabbccddeeff")
         assert key is not None

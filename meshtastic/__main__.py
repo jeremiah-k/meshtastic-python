@@ -24,7 +24,7 @@ import meshtastic.ota
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
-from meshtastic import BROADCAST_ADDR, mt_config, remote_hardware
+from meshtastic import BROADCAST_ADDR, LOCAL_ADDR, mt_config, remote_hardware
 from meshtastic.interfaces.ble import BLEInterface
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import (
@@ -813,7 +813,7 @@ def onConnected(interface: MeshInterface) -> None:
                 _cli_exit(
                     "Error: OTA update currently requires a TCP connection to the node (use --host)."
                 )
-            if args.dest != BROADCAST_ADDR:
+            if args.dest not in {BROADCAST_ADDR, LOCAL_ADDR}:
                 _cli_exit(
                     "Error: OTA update only supports the directly connected local node; omit --dest."
                 )

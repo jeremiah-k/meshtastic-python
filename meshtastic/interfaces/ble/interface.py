@@ -37,14 +37,7 @@ import threading
 import time
 from queue import Empty
 from threading import Event
-from typing import (
-    IO,
-    Any,
-    Awaitable,
-    Callable,
-    TypeVar,
-    cast,
-)
+from typing import IO, Any, Awaitable, Callable, TypeVar, cast
 
 from bleak import BleakClient as BleakRootClient
 from bleak.backends.device import BLEDevice
@@ -136,6 +129,8 @@ _MANAGEMENT_CONNECT_WAIT_TIMEOUT_SECONDS: float = 30.0
 _TRUST_COMMAND_OUTPUT_MAX_CHARS: int = 200
 _TRUST_HEX_BLOB_RE = re.compile(r"\b[0-9A-Fa-f]{16,}\b")
 _TRUST_TOKEN_RE = re.compile(r"\b[A-Za-z0-9+/=_-]{40,}\b")
+ERROR_PAIR_ON_CONNECT_BOOL: str = "pair_on_connect must be a bool."
+ERROR_PAIR_BOOL: str = "pair must be a bool when provided."
 
 
 class BLEInterface(MeshInterface):
@@ -258,7 +253,7 @@ class BLEInterface(MeshInterface):
         self._last_connection_request: str | None = sanitize_address(address)
         self.auto_reconnect = auto_reconnect
         if not isinstance(pair_on_connect, bool):
-            raise TypeError("pair_on_connect must be a bool.")
+            raise TypeError(ERROR_PAIR_ON_CONNECT_BOOL)
         self.pair_on_connect = pair_on_connect
         self._disconnect_notified = False  # Prevents duplicate disconnect events
         self._client_publish_pending = False  # Hide provisional clients.
@@ -1610,7 +1605,10 @@ class BLEInterface(MeshInterface):
                 existing_client is not None and target_address is None
             )
         try:
-            if target_address is None and not use_existing_client_without_resolved_address:
+            if (
+                target_address is None
+                and not use_existing_client_without_resolved_address
+            ):
                 target_address = self._resolve_target_address_for_management(address)
 
             if use_existing_client_without_resolved_address:
@@ -1867,6 +1865,18 @@ class BLEInterface(MeshInterface):
             raise self.BLEError(
                 ERROR_TRUST_COMMAND_TIMEOUT.format(
                     timeout=validated_timeout, address=canonical_address
+                )
+            ) from exc
+        except OSError as exc:
+            detail = _sanitize_trust_command_output(str(exc))
+            raise self.BLEError(
+                ERROR_TRUST_COMMAND_FAILED.format(
+                    address=canonical_address,
+                    detail=(
+                        f"{bluetoothctl_path}: {detail}"
+                        if detail
+                        else f"{bluetoothctl_path}: unable to execute bluetoothctl"
+                    ),
                 )
             ) from exc
         if result.returncode != 0:
@@ -2321,26 +2331,24 @@ class BLEInterface(MeshInterface):
         restore_last_connection_request: str | None,
     ) -> None:
         """Publish `_connected()` only if ownership is still valid at publish time."""
-        with self._state_lock:
-            still_owned, is_closing = self._get_connected_client_status_locked(
-                connected_client
-            )
         lost_gate_ownership = self._has_lost_gate_ownership(
             connected_device_key,
             connection_alias_key,
         )
         publish_connected = False
         prior_ever_connected = False
+        is_closing = False
         with self._state_lock:
             still_owned, is_closing = self._get_connected_client_status_locked(
                 connected_client
             )
             if still_owned and not lost_gate_ownership:
-                self._client_publish_pending = False
                 prior_ever_connected = self._ever_connected
                 publish_connected = True
         if publish_connected:
-            still_owned, is_closing = self._get_connected_client_status(connected_client)
+            still_owned, is_closing = self._get_connected_client_status(
+                connected_client
+            )
             if still_owned:
                 lost_gate_ownership = self._has_lost_gate_ownership(
                     connected_device_key,
@@ -2353,6 +2361,12 @@ class BLEInterface(MeshInterface):
                             self._get_connected_client_status_locked(connected_client)
                         )
                         if still_owned:
+                            lost_gate_ownership = self._has_lost_gate_ownership(
+                                connected_device_key,
+                                connection_alias_key,
+                            )
+                        if still_owned and not lost_gate_ownership:
+                            self._client_publish_pending = False
                             self._ever_connected = True
                             self._prior_publish_was_reconnect = prior_ever_connected
                             publish_now = True
@@ -2371,7 +2385,9 @@ class BLEInterface(MeshInterface):
             restore_last_connection_request=restore_last_connection_request,
         )
 
-    def _emit_verified_connection_side_effects(self, connected_client: BLEClient) -> None:
+    def _emit_verified_connection_side_effects(
+        self, connected_client: BLEClient
+    ) -> None:
         """Emit reconnect signaling/logging only after verified connect publish."""
         coordinator = getattr(self, "thread_coordinator", None)
         if self._prior_publish_was_reconnect and coordinator is not None:
@@ -2564,7 +2580,7 @@ class BLEInterface(MeshInterface):
         requested_identifier = address if address is not None else self.address
         normalized_request = sanitize_address(requested_identifier)
         if pair is not None and not isinstance(pair, bool):
-            raise self.BLEError("pair must be a bool when provided.")
+            raise self.BLEError(ERROR_PAIR_BOOL)
         pair_on_connect = self.pair_on_connect if pair is None else pair
         self._validate_connect_timeout_override(
             connect_timeout,
@@ -2603,31 +2619,27 @@ class BLEInterface(MeshInterface):
         provisional_keys: list[str] = []
 
         try:
-            management_lock = getattr(self, "_management_lock", None)
-            management_idle_condition = getattr(self, "_management_idle_condition", None)
+            management_lock = self._management_lock
+            management_idle_condition = self._management_idle_condition
             management_wait_started = time.monotonic()
             while True:
                 # Management commands increment `_management_inflight` under
                 # `_connect_lock` and then continue work outside interface
                 # locks. Wait for current operations to settle, then re-check
                 # once we have `_connect_lock` to avoid the handoff race.
-                if (
-                    management_lock is not None
-                    and management_idle_condition is not None
-                ):
-                    with management_lock:
-                        while getattr(self, "_management_inflight", 0) > 0:
-                            if not management_idle_condition.wait(
-                                timeout=_MANAGEMENT_CONNECT_WAIT_POLL_SECONDS
-                            ):
-                                elapsed = time.monotonic() - management_wait_started
-                                if elapsed >= _MANAGEMENT_CONNECT_WAIT_TIMEOUT_SECONDS:
-                                    logger.warning(
-                                        "Timed out waiting %.1fs for %d inflight management operation(s) before connect()",
-                                        elapsed,
-                                        getattr(self, "_management_inflight", 0),
-                                    )
-                                    raise self.BLEError(ERROR_MANAGEMENT_CONNECTING)
+                with management_lock:
+                    while self._management_inflight > 0:
+                        if not management_idle_condition.wait(
+                            timeout=_MANAGEMENT_CONNECT_WAIT_POLL_SECONDS
+                        ):
+                            elapsed = time.monotonic() - management_wait_started
+                            if elapsed >= _MANAGEMENT_CONNECT_WAIT_TIMEOUT_SECONDS:
+                                logger.warning(
+                                    "Timed out waiting %.1fs for %d inflight management operation(s) before connect()",
+                                    elapsed,
+                                    self._management_inflight,
+                                )
+                                raise self.BLEError(ERROR_MANAGEMENT_CONNECTING)
 
                 with contextlib.ExitStack() as stack:
                     for reservation_key in reservation_keys:

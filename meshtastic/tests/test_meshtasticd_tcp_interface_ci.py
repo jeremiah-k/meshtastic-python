@@ -1,14 +1,13 @@
 """TCPInterface integration checks against a live meshtasticd daemon."""
 
-import ipaddress
 import os
 import socket
 import time
 from typing import cast
-from urllib.parse import ParseResult, urlparse
 
 import pytest
 
+from meshtastic.host_port import parse_host_and_port
 from meshtastic.tcp_interface import DEFAULT_TCP_PORT, TCPInterface
 
 MESHTASTICD_HOST_ENV_VAR: str = "MESHTASTICD_HOST"
@@ -16,26 +15,6 @@ CONNECT_TIMEOUT_SECONDS: float = 5.0
 WAIT_CONNECTED_TIMEOUT_SECONDS: float = 10.0
 RECONNECT_RECOVERY_TIMEOUT_SECONDS: float = 25.0
 RECONNECT_RETRY_INTERVAL_SECONDS: float = 0.5
-
-INVALID_HOST_EMPTY: str = "Invalid {env_var}={host!r}: host component is empty."
-EXPECTED_HOST_PORT_ONLY: str = (
-    "Invalid {env_var}={host!r}: expected HOST[:PORT] only."
-)
-INVALID_IPV6_BRACKETED_PORT: str = (
-    "Invalid {env_var}={host!r}: raw IPv6 literals "
-    "with explicit ports must use bracket form like [::1]:4401."
-)
-INVALID_PORT_EMPTY: str = (
-    "Invalid {env_var}={host!r}: invalid TCP port ''. Expected HOST[:PORT] "
-    "with numeric PORT."
-)
-INVALID_PORT_NONNUMERIC: str = (
-    "Invalid {env_var}={host!r}: invalid TCP port {raw_port!r}. Expected "
-    "HOST[:PORT] with numeric PORT."
-)
-INVALID_PORT_RANGE: str = (
-    "Invalid {env_var}={host!r}: port must be in range 1..65535."
-)
 
 
 def _require_meshtasticd_host() -> str:
@@ -48,116 +27,13 @@ def _require_meshtasticd_host() -> str:
     return host
 
 
-def _extract_port_component(host: str) -> str | None:
-    """Extract the textual port component from a HOST[:PORT] string when present."""
-    if host.startswith("[") and "]:" in host:
-        return host.rsplit("]:", 1)[1]
-    if host.count(":") == 1:
-        return host.rsplit(":", 1)[1]
-    return None
-
-
-def _has_extra_url_components(parsed: ParseResult) -> bool:
-    """Return True when a parsed HOST value includes unsupported URL components."""
-    return any(
-        (
-            parsed.path,
-            parsed.params,
-            parsed.query,
-            parsed.fragment,
-            parsed.username is not None,
-            parsed.password is not None,
-        )
-    )
-
-
 def _parse_host_and_port(host: str) -> tuple[str, int]:
-    """Parse ``HOST[:PORT]`` into a hostname and TCP port."""
-    if not host:
-        raise ValueError(
-            INVALID_HOST_EMPTY.format(env_var=MESHTASTICD_HOST_ENV_VAR, host=host)
-        )
-    if any(separator in host for separator in ("@", "/", "?", "#", ";")):
-        raise ValueError(
-            EXPECTED_HOST_PORT_ONLY.format(
-                env_var=MESHTASTICD_HOST_ENV_VAR,
-                host=host,
-            )
-        )
-    if host.count(":") >= 2 and not host.startswith("["):
-        # First check if the full host string is a valid IPv6 address.
-        try:
-            ipaddress.IPv6Address(host)
-        except ipaddress.AddressValueError as exc:
-            # Not a valid IPv6 address as-is. Check if it might be an
-            # unbracketed IPv6:PORT combination (which is ambiguous and
-            # must be rejected with a helpful error message).
-            host_part, separator, possible_port = host.rpartition(":")
-            if separator and possible_port.isdigit():
-                try:
-                    ipaddress.IPv6Address(host_part)
-                except ipaddress.AddressValueError:
-                    pass
-                else:
-                    raise ValueError(
-                        INVALID_IPV6_BRACKETED_PORT.format(
-                            env_var=MESHTASTICD_HOST_ENV_VAR,
-                            host=host,
-                        )
-                    ) from exc
-            # Neither a valid IPv6 address nor a valid IPv6:PORT form
-            raise ValueError(
-                INVALID_IPV6_BRACKETED_PORT.format(
-                    env_var=MESHTASTICD_HOST_ENV_VAR,
-                    host=host,
-                )
-            ) from exc
-        else:
-            # Full literal is a valid IPv6 host; treat it as host-only and
-            # use the default TCP port.
-            return host, DEFAULT_TCP_PORT
-
-    raw_port = _extract_port_component(host)
-    if raw_port == "":
-        raise ValueError(
-            INVALID_PORT_EMPTY.format(env_var=MESHTASTICD_HOST_ENV_VAR, host=host)
-        )
-
-    parsed = urlparse(f"//{host}")
-    if _has_extra_url_components(parsed):
-        raise ValueError(
-            EXPECTED_HOST_PORT_ONLY.format(
-                env_var=MESHTASTICD_HOST_ENV_VAR,
-                host=host,
-            )
-        )
-    try:
-        host_name = parsed.hostname
-        port = parsed.port
-    except ValueError as exc:
-        if raw_port is not None and not raw_port.isdigit():
-            raise ValueError(
-                INVALID_PORT_NONNUMERIC.format(
-                    env_var=MESHTASTICD_HOST_ENV_VAR,
-                    host=host,
-                    raw_port=raw_port,
-                )
-            ) from exc
-        raise ValueError(
-            INVALID_PORT_RANGE.format(env_var=MESHTASTICD_HOST_ENV_VAR, host=host)
-        ) from exc
-    if not host_name:
-        raise ValueError(
-            INVALID_HOST_EMPTY.format(env_var=MESHTASTICD_HOST_ENV_VAR, host=host)
-        )
-    if raw_port == "0" or port == 0:
-        raise ValueError(
-            INVALID_PORT_RANGE.format(env_var=MESHTASTICD_HOST_ENV_VAR, host=host)
-        )
-    if raw_port is None:
-        return host_name, DEFAULT_TCP_PORT
-    assert port is not None
-    return host_name, port
+    """Parse ``HOST[:PORT]`` into a hostname and TCP port via shared runtime helper."""
+    return parse_host_and_port(
+        host,
+        default_port=DEFAULT_TCP_PORT,
+        env_var=MESHTASTICD_HOST_ENV_VAR,
+    )
 
 
 @pytest.mark.unit
@@ -204,6 +80,13 @@ def test_parse_host_and_port_rejects_zero_port() -> None:
 def test_parse_host_and_port_accepts_bracketed_ipv6_with_port() -> None:
     """_parse_host_and_port should accept bracketed IPv6 addresses with ports."""
     assert _parse_host_and_port("[::1]:4401") == ("::1", 4401)
+
+
+@pytest.mark.unit
+def test_parse_host_and_port_rejects_malformed_bracketed_ipv6() -> None:
+    """Malformed bracketed IPv6 literals should raise a clear parse error."""
+    with pytest.raises(ValueError, match=r"raw IPv6 literals"):
+        _parse_host_and_port("[]")
 
 
 @pytest.mark.unit

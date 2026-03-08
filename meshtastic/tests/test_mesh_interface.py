@@ -22,11 +22,12 @@ from hypothesis import strategies as st
 
 import meshtastic.mesh_interface as mesh_interface_module
 
-from .. import BROADCAST_ADDR, LOCAL_ADDR, NODELESS_WANT_CONFIG_ID, ResponseHandler
+from .. import (BROADCAST_ADDR, LOCAL_ADDR, NODELESS_WANT_CONFIG_ID,
+                ResponseHandler)
 from ..mesh_interface import MeshInterface, _timeago
 from ..node import Node
-from ..protobuf import channel_pb2, config_pb2, mesh_pb2, portnums_pb2, telemetry_pb2
-
+from ..protobuf import (channel_pb2, config_pb2, mesh_pb2, portnums_pb2,
+                        telemetry_pb2)
 # TODO
 # from ..config import Config
 from ..util import Timeout
@@ -1836,6 +1837,7 @@ def test_on_response_position_success_and_routing_error(
             )
         assert "position disabled" in caplog.text
 
+    with MeshInterface(noProto=True) as iface:
         iface.onResponsePosition(
             {
                 "decoded": {
@@ -1845,11 +1847,6 @@ def test_on_response_position_success_and_routing_error(
                     "routing": {"errorReason": "NO_RESPONSE"},
                 }
             }
-        )
-        iface._clear_wait_error("receivedPosition")
-        iface._record_routing_wait_error(
-            acknowledgment_attr="receivedPosition",
-            routing_error_reason="NO_RESPONSE",
         )
         with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
             iface.waitForPosition()
@@ -1958,11 +1955,16 @@ def test_logger_visible_info_handler_only_counts_stdout_handlers() -> None:
 @pytest.mark.unit
 def test_logger_visible_info_handler_returns_false_for_disabled_or_high_level() -> None:
     """Visibility helper should short-circuit when logger is disabled or filtered above INFO."""
-    disabled_logger = logging.getLogger("meshtastic.tests.visible-info-handler.disabled")
+    disabled_logger = logging.getLogger(
+        "meshtastic.tests.visible-info-handler.disabled"
+    )
     previous_disabled = disabled_logger.disabled
     try:
         disabled_logger.disabled = True
-        assert mesh_interface_module._logger_has_visible_info_handler(disabled_logger) is False
+        assert (
+            mesh_interface_module._logger_has_visible_info_handler(disabled_logger)
+            is False
+        )
     finally:
         disabled_logger.disabled = previous_disabled
 
@@ -1970,7 +1972,10 @@ def test_logger_visible_info_handler_returns_false_for_disabled_or_high_level() 
     previous_level = quiet_logger.level
     try:
         quiet_logger.setLevel(logging.WARNING)
-        assert mesh_interface_module._logger_has_visible_info_handler(quiet_logger) is False
+        assert (
+            mesh_interface_module._logger_has_visible_info_handler(quiet_logger)
+            is False
+        )
     finally:
         quiet_logger.setLevel(previous_level)
 
@@ -1987,10 +1992,14 @@ def test_normalize_json_serializable_handles_sequences_and_unknown_values() -> N
         {"items": ("a", 1, {3, 4})}
     )
     assert isinstance(normalized, dict)
-    assert normalized["items"][0] == "a"
-    assert normalized["items"][1] == 1
-    assert sorted(cast(list[int], normalized["items"][2])) == [3, 4]
-    assert mesh_interface_module._normalize_json_serializable(_Unknown()) == "unknown-value"
+    normalized_items = cast(list[object], normalized["items"])
+    assert normalized_items[0] == "a"
+    assert normalized_items[1] == 1
+    assert sorted(cast(list[int], normalized_items[2])) == [3, 4]
+    assert (
+        mesh_interface_module._normalize_json_serializable(_Unknown())
+        == "unknown-value"
+    )
 
 
 @pytest.mark.unit
@@ -2161,6 +2170,7 @@ def test_on_response_telemetry_paths(
             )
         assert "environmentMetrics:" in caplog.text
 
+    with MeshInterface(noProto=True) as iface:
         iface.onResponseTelemetry(
             {
                 "decoded": {
@@ -2170,11 +2180,6 @@ def test_on_response_telemetry_paths(
                     "routing": {"errorReason": "NO_RESPONSE"},
                 }
             }
-        )
-        iface._clear_wait_error("receivedTelemetry")
-        iface._record_routing_wait_error(
-            acknowledgment_attr="receivedTelemetry",
-            routing_error_reason="NO_RESPONSE",
         )
         with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
             iface.waitForTelemetry()
@@ -2188,11 +2193,6 @@ def test_on_response_telemetry_paths(
                     "routing": {"errorReason": "NO_ROUTE"},
                 }
             }
-        )
-        iface._clear_wait_error("receivedTelemetry")
-        iface._record_routing_wait_error(
-            acknowledgment_attr="receivedTelemetry",
-            routing_error_reason="NO_ROUTE",
         )
         with pytest.raises(
             MeshInterface.MeshInterfaceError,
@@ -2221,6 +2221,7 @@ def test_on_response_waypoint_paths(caplog: pytest.LogCaptureFixture) -> None:
         assert "Waypoint received:" in caplog.text
         assert iface._acknowledgment.receivedWaypoint is True
 
+    with MeshInterface(noProto=True) as iface:
         iface.onResponseWaypoint(
             {
                 "decoded": {
@@ -2230,11 +2231,6 @@ def test_on_response_waypoint_paths(caplog: pytest.LogCaptureFixture) -> None:
                     "routing": {"errorReason": "NO_RESPONSE"},
                 }
             }
-        )
-        iface._clear_wait_error("receivedWaypoint")
-        iface._record_routing_wait_error(
-            acknowledgment_attr="receivedWaypoint",
-            routing_error_reason="NO_RESPONSE",
         )
         with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
             iface.waitForWaypoint()
@@ -2512,6 +2508,35 @@ def test_send_data_rolls_back_wait_state_when_send_packet_raises(
             assert ("receivedTelemetry", request_id) not in iface._response_wait_errors
             assert ("receivedTelemetry", request_id) not in iface._response_wait_acks
             assert "receivedTelemetry" not in iface._active_wait_request_ids
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_send_data_finalizes_non_zero_packet_id_before_registration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """sendData() should keep generating packet ids until a non-zero id is assigned."""
+    with MeshInterface(noProto=True) as iface:
+        generated_ids = iter((0, 0, 123456))
+
+        def _generate_packet_id() -> int:
+            return next(generated_ids)
+
+        monkeypatch.setattr(iface, "_generate_packet_id", _generate_packet_id)
+        monkeypatch.setattr(
+            iface,
+            "_send_packet",
+            lambda packet, *_args, **_kwargs: packet,
+        )
+
+        packet = iface.sendData(
+            b"ping",
+            wantResponse=True,
+            response_wait_attr="receivedTelemetry",
+        )
+        assert packet.id == 123456
+        with iface._response_handlers_lock:
+            assert 123456 in iface._active_wait_request_ids["receivedTelemetry"]
 
 
 @pytest.mark.unit
@@ -2807,7 +2832,9 @@ def test_request_scoped_wait_wakes_immediately_on_recorded_error() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_request_scoped_wait_raises_for_unscoped_error_across_overlapping_waits() -> None:
+def test_request_scoped_wait_raises_for_unscoped_error_across_overlapping_waits() -> (
+    None
+):
     """Overlapping request-scoped waits should surface one unscoped routing error."""
     with MeshInterface(noProto=True) as iface:
         iface._timeout = Timeout(maxSecs=1.0)
@@ -2833,9 +2860,7 @@ def test_request_scoped_wait_raises_for_unscoped_error_across_overlapping_waits(
             iface.waitForTelemetry(request_id=request_b)
 
         with iface._response_handlers_lock:
-            assert (
-                "receivedTelemetry" not in iface._active_wait_request_ids
-            )
+            assert "receivedTelemetry" not in iface._active_wait_request_ids
             assert (
                 "receivedTelemetry",
                 mesh_interface_module.UNSCOPED_WAIT_REQUEST_ID,
