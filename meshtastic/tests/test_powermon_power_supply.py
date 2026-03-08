@@ -216,8 +216,12 @@ def test_powermon_optional_backend_lookup_re_raises_unrelated_missing_module(
 
 
 @pytest.mark.unit
-def test_powermon_module_dir_lists_optional_backends() -> None:
+def test_powermon_module_dir_lists_optional_backends(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """__dir__ should advertise lazy optional backend symbols before first access."""
+    for backend_name in ("PPK2PowerSupply", "RidenPowerSupply"):
+        monkeypatch.delitem(powermon.__dict__, backend_name, raising=False)
     exported = powermon.__dir__()
     assert "PPK2PowerSupply" in exported
     assert "RidenPowerSupply" in exported
@@ -234,6 +238,9 @@ def test_powermon_type_checking_import_branch(
     cast(Any, stub_ppk2).PPK2PowerSupply = type("PPK2PowerSupply", (), {})
     cast(Any, stub_riden).RidenPowerSupply = type("RidenPowerSupply", (), {})
 
+    # importlib.reload mutates the live meshtastic.powermon module object in
+    # sys.modules. Clearing cached backend attributes before the final reload
+    # intentionally restores lazy-loading behavior after TYPE_CHECKING=True.
     for backend_name in ("PPK2PowerSupply", "RidenPowerSupply"):
         monkeypatch.delitem(powermon_module.__dict__, backend_name, raising=False)
 

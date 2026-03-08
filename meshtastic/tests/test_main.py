@@ -4636,7 +4636,17 @@ def test_main_ota_update_allows_explicit_local_dest(
     ota.update.assert_called_once()
     assert get_node.call_args_list
     assert any(
-        recorded_call.args[:2] == (MAIN_BROADCAST_ADDR, False)
+        (
+            recorded_call.args
+            and recorded_call.args[0] == MAIN_BROADCAST_ADDR
+            and (
+                (
+                    len(recorded_call.args) >= 2
+                    and recorded_call.args[1] is False
+                )
+                or recorded_call.kwargs.get("requestChannels") is False
+            )
+        )
         for recorded_call in get_node.call_args_list
     )
 

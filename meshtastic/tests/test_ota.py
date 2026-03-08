@@ -53,8 +53,8 @@ def test_file_sha256_large_file() -> None:
 
 @pytest.mark.unit
 def test_esp32_wifi_ota_init_file_not_found() -> None:
-    """Test ESP32WiFiOTA raises FileNotFoundError for non-existent file."""
-    with pytest.raises(FileNotFoundError, match="does not exist"):
+    """Test ESP32WiFiOTA raises OTAError for non-existent file."""
+    with pytest.raises(OTAError, match="does not exist"):
         ESP32WiFiOTA("/nonexistent/firmware.bin", "192.168.1.1")
 
 

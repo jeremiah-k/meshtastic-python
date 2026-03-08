@@ -752,23 +752,31 @@ def test_rapid_connect_disconnect_stress_test(
                 attempted_clients.append(new_client)
             new_client.connect()
             with self._state_lock:
-                cast(Any, self).client = new_client
-                created_clients.append(new_client)
-                self._client_publish_pending = False
-                self._state_manager._transition_to(
+                if (
+                    self._state_manager._current_state
+                    == cast(Any, ble_mod).ConnectionState.DISCONNECTED
+                ):
+                    self._state_manager._transition_to(
+                        cast(Any, ble_mod).ConnectionState.CONNECTING
+                    )
+                transitioned = self._state_manager._transition_to(
                     cast(Any, ble_mod).ConnectionState.CONNECTED
                 )
-                if "pair" in kwargs:
-                    self._last_connect_pair_override = cast(
-                        bool | None, kwargs.get("pair")
-                    )
-                if "connect_timeout" in kwargs:
-                    self._last_connect_timeout_override = cast(
-                        float | None, kwargs.get("connect_timeout")
-                    )
-                self._disconnect_notified = False
-                if hasattr(self, "_reconnected_event"):
-                    self._reconnected_event.set()
+                if transitioned:
+                    cast(Any, self).client = new_client
+                    created_clients.append(new_client)
+                    self._client_publish_pending = False
+                    if "pair" in kwargs:
+                        self._last_connect_pair_override = cast(
+                            bool | None, kwargs.get("pair")
+                        )
+                    if "connect_timeout" in kwargs:
+                        self._last_connect_timeout_override = cast(
+                            float | None, kwargs.get("connect_timeout")
+                        )
+                    self._disconnect_notified = False
+                    if hasattr(self, "_reconnected_event"):
+                        self._reconnected_event.set()
             return new_client
 
         stack.enter_context(patch.object(BLEInterface, "connect", _patched_connect))

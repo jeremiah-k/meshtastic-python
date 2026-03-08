@@ -85,8 +85,12 @@ def parseHostAndPort(
     ValueError
         If `host` is malformed or the port is invalid.
     """
+    host = host.strip()
     if not host:
         raise ValueError(_INVALID_HOST_EMPTY.format(env_var=env_var, host=host))
+
+    if any(char.isspace() for char in host):
+        raise ValueError(_EXPECTED_HOST_PORT_ONLY.format(env_var=env_var, host=host))
 
     if any(separator in host for separator in _FORBIDDEN_HOST_SEPARATORS):
         raise ValueError(_EXPECTED_HOST_PORT_ONLY.format(env_var=env_var, host=host))

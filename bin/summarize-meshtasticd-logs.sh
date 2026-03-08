@@ -17,17 +17,17 @@ NO_LOGS=false
 if [[ ${4-} == "--no-logs" ]]; then
 	MODE="single"
 	NO_LOGS=true
-	if [[ -n ${5-} ]]; then
-		echo "Unexpected additional argument: ${5}. No further arguments are allowed after --no-logs." >&2
+	if (( $# > 4 )); then
+		echo "Too many arguments. No further arguments are allowed after --no-logs." >&2
 		exit 1
 	fi
 elif [[ ${5-} == "--no-logs" ]]; then
 	NO_LOGS=true
-	if [[ -n ${6-} ]]; then
-		echo "Invalid argument: ${6}. No arguments allowed after --no-logs." >&2
+	if (( $# > 5 )); then
+		echo "Too many arguments. No arguments are allowed after --no-logs." >&2
 		exit 1
 	fi
-elif [[ -n ${5-} ]]; then
+elif (( $# > 4 )); then
 	echo "Unexpected argument: ${5}. Expected '--no-logs' or no additional arguments." >&2
 	exit 1
 fi
@@ -76,5 +76,6 @@ elif [[ -d ${LOG_DIR} ]]; then
 		echo "${summary}"
 	done
 else
-	echo "- Log directory not found: \`${LOG_DIR}\`"
+	echo "- Log directory not found: \`${LOG_DIR}\`" >&2
+	exit 1
 fi

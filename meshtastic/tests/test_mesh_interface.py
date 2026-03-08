@@ -2034,12 +2034,14 @@ def test_send_traceroute_and_response_rendering(
             "!2": {"num": 2},
             "!3": {"num": 3},
         }
-        send_data = MagicMock()
+        response_packet = mesh_pb2.MeshPacket()
+        response_packet.id = 88
+        send_data = MagicMock(return_value=response_packet)
         wait_for_traceroute = MagicMock()
         monkeypatch.setattr(iface, "_send_data_with_wait", send_data)
         monkeypatch.setattr(iface, "waitForTraceRoute", wait_for_traceroute)
         iface.sendTraceRoute(dest=123, hopLimit=3, channelIndex=1)
-        wait_for_traceroute.assert_called_once_with(2)
+        wait_for_traceroute.assert_called_once_with(2, request_id=88)
 
         route = mesh_pb2.RouteDiscovery()
         route.route.extend([11])
@@ -2120,11 +2122,13 @@ def test_send_telemetry_supported_and_fallback_paths(
                 }
             }
         }
-        monkeypatch.setattr(
-            iface,
-            "_send_data_with_wait",
-            lambda payload, *_args, **kwargs: telemetry_calls.append((payload, kwargs)),
-        )
+        def _capture_telemetry_send(
+            payload: telemetry_pb2.Telemetry, *_args: object, **kwargs: object
+        ) -> mesh_pb2.MeshPacket:
+            telemetry_calls.append((payload, kwargs))
+            return mesh_pb2.MeshPacket(id=len(telemetry_calls))
+
+        monkeypatch.setattr(iface, "_send_data_with_wait", _capture_telemetry_send)
         wait_for_telemetry = MagicMock()
         monkeypatch.setattr(iface, "waitForTelemetry", wait_for_telemetry)
 
@@ -2147,7 +2151,7 @@ def test_send_telemetry_supported_and_fallback_paths(
     assert telemetry_calls[6][0].HasField("device_metrics")
     assert caplog.text.count("Unsupported telemetryType") == 2
     assert telemetry_calls[7][1]["onResponse"] is not None
-    wait_for_telemetry.assert_called_once()
+    wait_for_telemetry.assert_called_once_with(request_id=8)
 
 
 @pytest.mark.unit

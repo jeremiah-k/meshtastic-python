@@ -1258,6 +1258,13 @@ class MeshInterface:  # pylint: disable=R0902
                 active_ids = self._active_wait_request_ids.setdefault(
                     acknowledgment_attr, set()
                 )
+                self._response_wait_errors.pop(
+                    (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID),
+                    None,
+                )
+                self._response_wait_acks.discard(
+                    (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID)
+                )
                 active_ids.add(request_id)
                 self._response_wait_errors.pop((acknowledgment_attr, request_id), None)
                 self._response_wait_acks.discard((acknowledgment_attr, request_id))
@@ -3361,7 +3368,7 @@ class MeshInterface:  # pylint: disable=R0902
                     handler.onReceive(self, asDict)
 
             # Is this message in response to a request, if so, look for a handler
-            requestId = decoded.get("requestId")
+            requestId = self._extract_request_id_from_packet(asDict)
             if requestId is not None:
                 logger.debug("Got a response for requestId %s", requestId)
                 # We ignore ACK packets unless the callback is named `onAckNak`

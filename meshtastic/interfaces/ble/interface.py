@@ -2370,20 +2370,23 @@ class BLEInterface(MeshInterface):
                     connection_alias_key,
                 )
                 if not lost_gate_ownership:
-                    publish_now = False
                     with self._state_lock:
                         still_owned, is_closing = (
                             self._get_connected_client_status_locked(connected_client)
+                        )
+                        lost_gate_ownership = self._has_lost_gate_ownership(
+                            connected_device_key,
+                            connection_alias_key,
                         )
                         if still_owned and not lost_gate_ownership:
                             self._client_publish_pending = False
                             self._ever_connected = True
                             self._prior_publish_was_reconnect = prior_ever_connected
-                            publish_now = True
-                    if publish_now:
-                        self._connected()
-                        self._emit_verified_connection_side_effects(connected_client)
-                        return
+                            self._connected()
+                            self._emit_verified_connection_side_effects(
+                                connected_client
+                            )
+                            return
 
         self._raise_for_invalidated_connect_result(
             connected_client,
@@ -2465,7 +2468,6 @@ class BLEInterface(MeshInterface):
                     self.address = restored_address
                     self._last_connection_request = restore_last_connection_request
                     self._connection_alias_key = None
-                    self._disconnect_notified = False
                     should_reset_state = True
                 else:
                     self._last_connection_request = None
@@ -2692,6 +2694,9 @@ class BLEInterface(MeshInterface):
                         if existing_client:
                             logger.debug("Already connected, skipping connect call.")
                             return existing_client
+                        with self._state_lock:
+                            if self._client_publish_pending:
+                                raise self.BLEError(ERROR_MANAGEMENT_CONNECTING)
 
                         # Establish new connection and update state
                         (
@@ -3236,7 +3241,10 @@ class BLEInterface(MeshInterface):
             # Send disconnected indicator if not already notified
             notify = False
             with self._state_lock:
-                if not self._disconnect_notified:
+                if self._client_publish_pending:
+                    self._client_publish_pending = False
+                    self._disconnect_notified = True
+                elif not self._disconnect_notified:
                     self._disconnect_notified = True
                     notify = True
 

@@ -545,6 +545,7 @@ def _mark_disconnected(addr: str | None, owner: Any | None = None) -> None:
             current_owner = owner_ref() if owner_ref is not None else None
             if owner_ref is not None and current_owner is None:
                 _CONNECTED_OWNERS.pop(key, None)
+                _CONNECTED_OWNER_IDS.pop(key, None)
             if current_owner is not None and current_owner is not owner:
                 logger.debug(
                     "Ignoring disconnect mark for %s from non-owner instance.",

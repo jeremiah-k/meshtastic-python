@@ -9,6 +9,7 @@ This module intentionally splits coverage into two lanes:
 """
 
 import contextlib
+import os
 import platform
 import re
 import tempfile
@@ -36,6 +37,7 @@ RESTORE_RETRY_DELAY_SECONDS: int = 2
 RESTORE_CONFIGURE_TIMEOUT_SECONDS: int = 30
 RESTORE_TOTAL_TIMEOUT_SECONDS: int = 120
 DISCONNECT_PROBE_TIMEOUT_SECONDS: float = 1.0
+KEEP_BACKUP_ON_RESTORE_FAILURE_ENV_VAR: str = "MESH_TEST_KEEP_BACKUP"
 DEFAULT_URL_FRAGMENT: str = "CgUYAyIBAQ"
 _MUTATION_SETTLE_FAILURE_MSG: str = (
     "Device never reached the expected post-mutation state:\n{output}"
@@ -465,8 +467,14 @@ def restore_smoke1_module_config() -> Iterator[None]:
         _assert_connected(ready_output)
         restore_succeeded = True
     finally:
-        # Keep the exported backup only when restore failed after a successful export.
-        if not export_succeeded or restore_succeeded:
+        keep_backup_on_restore_failure = (
+            os.getenv(KEEP_BACKUP_ON_RESTORE_FAILURE_ENV_VAR, "").strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
+        should_keep_backup = (
+            keep_backup_on_restore_failure and export_succeeded and not restore_succeeded
+        )
+        if not should_keep_backup:
             with contextlib.suppress(FileNotFoundError):
                 backup_path.unlink()
 

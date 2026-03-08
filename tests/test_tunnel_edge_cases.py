@@ -1,4 +1,10 @@
-"""Edge coverage tests for tunnel initialization branches."""
+"""Edge coverage tests for tunnel initialization branches.
+
+This module intentionally lives under ``tests/`` (not ``meshtastic/tests``)
+because it isolates import-time tunnel behavior with temporary ``sys.modules``
+patching used by
+``test_tunnel_initialization_creates_tap_device_when_proto_enabled``.
+"""
 
 import importlib
 import sys

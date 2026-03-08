@@ -478,10 +478,14 @@ class TestIsCurrentlyConnectedElsewhere:
         assert key is not None
         owner = _ConnectedOwner()
         _mark_connecting("aabbccddeeff", owner=owner)
+        stale_id = id(owner)
         del owner
         gc.collect()
 
-        assert not _is_currently_connected_elsewhere("aabbccddeeff", owner=object())
+        assert not _is_currently_connected_elsewhere(
+            "aabbccddeeff",
+            owner=_distinct_owner_token(stale_id),
+        )
         assert key not in _CONNECTING_ADDRS
 
     def test_phase2_recheck_observes_provisional_claim_after_connected_drop(

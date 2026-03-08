@@ -225,12 +225,19 @@ fi
 
 HAS_SMOKEVIRT_TARGET=false
 for target in "${PYTEST_TARGETS[@]}"; do
+	is_explicit_selector=false
+	if [[ ${target} == *"::"* ]]; then
+		is_explicit_selector=true
+	fi
 	normalized_target="${target%%::*}"
 	normalized_target="${normalized_target#./}"
 	normalized_basename="${normalized_target##*/}"
 	if [[ ${normalized_basename} == "test_smokevirt.py" ]]; then
 		HAS_SMOKEVIRT_TARGET=true
 		SMOKEVIRT_TARGETS+=("${target}")
+	fi
+	if [[ ${is_explicit_selector} == true ]]; then
+		continue
 	fi
 	for default_target in "${DEFAULT_PYTEST_TARGETS[@]}"; do
 		normalized_default_target="${default_target#./}"

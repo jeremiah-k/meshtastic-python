@@ -31,7 +31,7 @@ def _require_int_strict(value: object, *, label: str) -> int:
     """Assert that `value` is an int (excluding bool) and return it."""
     assert isinstance(value, int), f"{label} should be an int, got {type(value).__name__}"
     assert not isinstance(value, bool), f"{label} must not be a bool"
-    return value
+    return cast(int, value)
 
 
 def _run_hello_world_serial(monkeypatch: pytest.MonkeyPatch, *args: str) -> None:
@@ -105,6 +105,7 @@ def test_examples_example_config_yaml_is_valid() -> None:
         config_section.get("bluetooth"), label="config.bluetooth"
     )
     assert isinstance(bluetooth_cfg.get("enabled"), bool)
+    assert "fixed_pin" not in bluetooth_cfg
     assert "fixedPin" not in bluetooth_cfg
 
     device_cfg = _require_mapping(config_section.get("device"), label="config.device")
