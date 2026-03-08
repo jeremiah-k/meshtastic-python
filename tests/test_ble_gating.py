@@ -93,6 +93,7 @@ class TestAddrLock:
         lock = _get_addr_lock(None)
         assert lock is not None
         assert lock is _REGISTRY_LOCK
+        _cleanup_addr_lock(None)
 
     def test_same_address_returns_same_lock(self) -> None:
         """Test that the same address returns the same lock."""
@@ -181,6 +182,11 @@ class TestMarkConnected:
 
         _mark_disconnected("aabbccddeeff")
         assert key not in _ADDR_LOCKS
+
+    def test_mark_connecting_with_none_address_is_no_op(self) -> None:
+        """Marking connecting state with None address should not create registry claims."""
+        _mark_connecting(None, owner=_ConnectedOwner())
+        assert len(_CONNECTING_ADDRS) == 0
 
 
 class TestMarkDisconnected:
@@ -304,6 +310,19 @@ class TestMarkDisconnected:
 
         assert key not in _CONNECTING_ADDRS
 
+    def test_mark_disconnected_keeps_unowned_provisional_claim_for_owner_scoped_call(
+        self,
+    ) -> None:
+        """Owner-scoped disconnect should preserve unowned provisional claims without owner id."""
+        key = _addr_key("aabbccddeeff")
+        assert key is not None
+
+        _mark_disconnected("aabbccddeeff")
+        _mark_connecting("aabbccddeeff", owner=None)
+        _mark_disconnected("aabbccddeeff", owner=object())
+
+        assert key in _CONNECTING_ADDRS
+
 
 @pytest.mark.usefixtures("clear_registry")
 class TestClearConnecting:
@@ -323,6 +342,23 @@ class TestClearConnecting:
         _clear_connecting("aabbccddeeff", owner=object())
 
         assert key not in _CONNECTING_ADDRS
+
+    def test_clear_connecting_ignores_non_owner(self) -> None:
+        """Owner-scoped clear should preserve provisional claims owned by another object."""
+        key = _addr_key("aabbccddeeff")
+        assert key is not None
+        owner_a = _ConnectedOwner()
+        owner_b = _ConnectedOwner()
+        _mark_connecting("aabbccddeeff", owner=owner_a)
+
+        _clear_connecting("aabbccddeeff", owner=owner_b)
+
+        assert key in _CONNECTING_ADDRS
+
+    def test_clear_connecting_with_none_address_is_no_op(self) -> None:
+        """Clearing provisional state with None address should not mutate connecting claims."""
+        _clear_connecting(None, owner=_ConnectedOwner())
+        assert len(_CONNECTING_ADDRS) == 0
 
 
 @pytest.mark.usefixtures("clear_registry")
@@ -404,6 +440,34 @@ class TestIsCurrentlyConnectedElsewhere:
         )
 
         assert not _is_currently_connected_elsewhere("aabbccddeeff")
+        assert key not in _CONNECTING_ADDRS
+
+    def test_unowned_provisional_claim_blocks_while_fresh(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Fresh unowned provisional claims should still block duplicate connections."""
+        key = _addr_key("aabbccddeeff")
+        assert key is not None
+        _mark_connecting("aabbccddeeff")
+        marked_at = _CONNECTING_MARKED_AT[key]
+        monkeypatch.setattr(
+            "meshtastic.interfaces.ble.gating.time.monotonic",
+            lambda: marked_at,
+        )
+
+        assert _is_currently_connected_elsewhere("aabbccddeeff")
+        assert key in _CONNECTING_ADDRS
+
+    def test_prunes_dead_provisional_owner_weakref_in_connecting_claim_check(self) -> None:
+        """Dead provisional owner weakrefs should be pruned before same-owner fallback checks."""
+        key = _addr_key("aabbccddeeff")
+        assert key is not None
+        owner = _ConnectedOwner()
+        _mark_connecting("aabbccddeeff", owner=owner)
+        del owner
+        gc.collect()
+
+        assert not _is_currently_connected_elsewhere("aabbccddeeff", owner=object())
         assert key not in _CONNECTING_ADDRS
 
     def test_phase2_recheck_observes_provisional_claim_after_connected_drop(

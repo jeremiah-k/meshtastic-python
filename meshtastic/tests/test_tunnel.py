@@ -93,6 +93,70 @@ def test_Tunnel_with_interface(
     assert re.search(r"Not starting TUN reader", caplog.text, re.MULTILINE)
 
 
+@pytest.mark.unit
+def test_tunnel_creates_tap_device_when_proto_enabled(
+    platform_socket_mocks: tuple[MagicMock, MagicMock],
+    iface_with_nodes: MeshInterface,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tunnel should create and configure TapDevice when protocol handling is enabled."""
+    mock_platform_system, _ = platform_socket_mocks
+    mock_platform_system.return_value = "Linux"
+    iface = iface_with_nodes
+    assert iface.myInfo is not None
+    iface.myInfo.my_node_num = 2475227164
+    iface.noProto = False
+    events: list[tuple[object, ...]] = []
+
+    class _FakeTapDevice:
+        def __init__(self, *, name: str) -> None:
+            """Record TapDevice construction."""
+            events.append(("init", name))
+
+        def up(self) -> None:
+            """Record interface bring-up."""
+            events.append(("up",))
+
+        def ifconfig(self, *, address: str, netmask: str, mtu: int) -> None:
+            """Record interface configuration arguments."""
+            events.append(("ifconfig", address, netmask, mtu))
+
+        def close(self) -> None:
+            """Record interface close calls."""
+            events.append(("close",))
+
+    class _FakeThread:
+        def start(self) -> None:
+            """Record thread start without launching target code."""
+            events.append(("thread-start",))
+
+        def join(self, timeout: float | None = None) -> None:
+            """Accept join calls from tunnel shutdown."""
+            _ = timeout
+
+        def is_alive(self) -> bool:
+            """Report the fake thread as already stopped."""
+            return False
+
+    monkeypatch.setattr("meshtastic.tunnel.TapDevice", _FakeTapDevice)
+    monkeypatch.setattr(
+        "meshtastic.tunnel.threading.Thread",
+        lambda *_args, **_kwargs: _FakeThread(),
+    )
+    monkeypatch.setattr(
+        "meshtastic.tunnel.pub.unsubscribe",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr("meshtastic.tunnel.pub.subscribe", lambda *_args, **_kwargs: None)
+
+    with _managed_tunnel(iface) as tun:
+        assert tun.tun is not None
+
+    assert ("init", "mesh") in events
+    assert ("up",) in events
+    assert any(event[0] == "ifconfig" for event in events)
+
+
 @pytest.mark.unitslow
 def test_onTunnelReceive_from_ourselves(
     caplog: pytest.LogCaptureFixture,

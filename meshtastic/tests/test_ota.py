@@ -260,6 +260,29 @@ def test_esp32_wifi_ota_update_rejects_firmware_changed_after_init(
 
 @pytest.mark.unit
 @patch("meshtastic.ota.socket.socket")
+def test_esp32_wifi_ota_update_rejects_firmware_truncated_to_empty_after_init(
+    mock_socket_class: MagicMock,
+) -> None:
+    """update() should fail fast when firmware becomes empty after object construction."""
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
+        f.write(b"A" * 32)
+        temp_file = f.name
+
+    try:
+        ota = ESP32WiFiOTA(temp_file, "192.168.1.1")
+        with open(temp_file, "wb") as fw:
+            fw.write(b"")
+
+        with pytest.raises(OTAError, match="is empty"):
+            ota.update()
+
+        mock_socket_class.assert_not_called()
+    finally:
+        os.unlink(temp_file)
+
+
+@pytest.mark.unit
+@patch("meshtastic.ota.socket.socket")
 def test_esp32_wifi_ota_update_logs_progress_without_callback(
     mock_socket_class: MagicMock,
     caplog: pytest.LogCaptureFixture,

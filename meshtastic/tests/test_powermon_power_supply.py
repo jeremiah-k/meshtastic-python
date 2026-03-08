@@ -2,7 +2,9 @@
 
 import importlib
 import math
+import sys
 import types
+import typing
 import warnings
 
 import pytest
@@ -210,3 +212,35 @@ def test_powermon_optional_backend_lookup_re_raises_unrelated_missing_module(
 
     with pytest.raises(ModuleNotFoundError, match="backend import bug"):
         _ = powermon.RidenPowerSupply
+
+
+@pytest.mark.unit
+def test_powermon_module_dir_lists_optional_backends() -> None:
+    """__dir__ should advertise lazy optional backend symbols before first access."""
+    exported = powermon.__dir__()
+    assert "PPK2PowerSupply" in exported
+    assert "RidenPowerSupply" in exported
+
+
+@pytest.mark.unit
+def test_powermon_type_checking_import_branch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reload powermon with TYPE_CHECKING enabled to execute typing-only backend imports."""
+    powermon_module = importlib.import_module("meshtastic.powermon")
+    original_type_checking = typing.TYPE_CHECKING
+    stub_ppk2 = types.ModuleType("meshtastic.powermon.ppk2")
+    stub_riden = types.ModuleType("meshtastic.powermon.riden")
+    stub_ppk2.PPK2PowerSupply = type("PPK2PowerSupply", (), {})
+    stub_riden.RidenPowerSupply = type("RidenPowerSupply", (), {})
+
+    try:
+        monkeypatch.setitem(sys.modules, "meshtastic.powermon.ppk2", stub_ppk2)
+        monkeypatch.setitem(sys.modules, "meshtastic.powermon.riden", stub_riden)
+        monkeypatch.setattr(typing, "TYPE_CHECKING", True)
+        reloaded = importlib.reload(powermon_module)
+        assert "PPK2PowerSupply" in reloaded.__all__
+        assert "RidenPowerSupply" in reloaded.__all__
+    finally:
+        monkeypatch.setattr(typing, "TYPE_CHECKING", original_type_checking)
+        importlib.reload(powermon_module)

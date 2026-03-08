@@ -5,6 +5,7 @@ import re
 import threading
 from collections.abc import Awaitable, Callable, Coroutine
 from functools import partial
+from types import SimpleNamespace
 from typing import Any, NoReturn, cast
 
 import pytest
@@ -189,6 +190,63 @@ def test_bleclient_stop_notify_alias(ble_client: BLEClient) -> None:
         match=BLECLIENT_ERROR_CANNOT_STOP_NOTIFY_NOT_INITIALIZED,
     ):
         ble_client.stop_notify("uuid")
+
+
+@pytest.mark.unit
+def test_bleclient_init_with_address_syncs_from_bleak(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BLEClient should create bleak client and sync canonical address from backend."""
+
+    class _BleakStub:
+        def __init__(self, _address: object, **_kwargs: object) -> None:
+            self.address = "AA:BB:CC:DD:EE:FF"
+
+    monkeypatch.setattr("meshtastic.interfaces.ble.client.BleakRootClient", _BleakStub)
+
+    client = BLEClient("11:22:33:44:55:66")
+    assert client.bleak_client is not None
+    assert client.address == "AA:BB:CC:DD:EE:FF"
+    client.close()
+
+
+@pytest.mark.unit
+def test_bleclient_sync_address_noops_without_bleak_client(ble_client: BLEClient) -> None:
+    """Address sync should return early when the backend client is not initialized."""
+    ble_client.address = "11:22:33:44:55:66"
+    ble_client.bleak_client = None
+    ble_client._sync_address_from_bleak()
+    assert ble_client.address == "11:22:33:44:55:66"
+
+
+@pytest.mark.unit
+def test_bleclient_management_call_reraises_non_notimplemented_bleerror() -> None:
+    """_run_management_call should re-raise BLEError unless caused by NotImplementedError."""
+    client = BLEClient(address=None)
+    client.bleak_client = cast(Any, SimpleNamespace())
+
+    async def _noop_operation() -> None:
+        return None
+
+    def _raise_bleerror(awaitable: Awaitable[object], timeout: float | None = None) -> NoReturn:
+        _ = timeout
+        close_awaitable = getattr(awaitable, "close", None)
+        if callable(close_awaitable):
+            close_awaitable()
+        try:
+            raise ValueError("backend failure")
+        except ValueError as exc:
+            raise BLEClient.BLEError("wrapped failure") from exc
+
+    client._async_await = _raise_bleerror  # type: ignore[method-assign]
+
+    with pytest.raises(BLEClient.BLEError, match="wrapped failure"):
+        client._run_management_call(
+            lambda: _noop_operation(),
+            await_timeout=BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+            not_initialized_error=BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED,
+            unsupported_error=BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED,
+        )
 
 
 @pytest.mark.unit

@@ -14,7 +14,7 @@ import types
 from collections import OrderedDict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn, cast
-from unittest.mock import MagicMock, create_autospec, patch
+from unittest.mock import MagicMock, call, create_autospec, patch
 
 import pytest
 from hypothesis import given
@@ -1956,6 +1956,44 @@ def test_logger_visible_info_handler_only_counts_stdout_handlers() -> None:
 
 
 @pytest.mark.unit
+def test_logger_visible_info_handler_returns_false_for_disabled_or_high_level() -> None:
+    """Visibility helper should short-circuit when logger is disabled or filtered above INFO."""
+    disabled_logger = logging.getLogger("meshtastic.tests.visible-info-handler.disabled")
+    previous_disabled = disabled_logger.disabled
+    try:
+        disabled_logger.disabled = True
+        assert mesh_interface_module._logger_has_visible_info_handler(disabled_logger) is False
+    finally:
+        disabled_logger.disabled = previous_disabled
+
+    quiet_logger = logging.getLogger("meshtastic.tests.visible-info-handler.quiet")
+    previous_level = quiet_logger.level
+    try:
+        quiet_logger.setLevel(logging.WARNING)
+        assert mesh_interface_module._logger_has_visible_info_handler(quiet_logger) is False
+    finally:
+        quiet_logger.setLevel(previous_level)
+
+
+@pytest.mark.unit
+def test_normalize_json_serializable_handles_sequences_and_unknown_values() -> None:
+    """JSON normalization should recurse through sequences and stringify unknown objects."""
+
+    class _Unknown:
+        def __str__(self) -> str:
+            return "unknown-value"
+
+    normalized = mesh_interface_module._normalize_json_serializable(
+        {"items": ("a", 1, {3, 4})}
+    )
+    assert isinstance(normalized, dict)
+    assert normalized["items"][0] == "a"
+    assert normalized["items"][1] == 1
+    assert sorted(cast(list[int], normalized["items"][2])) == [3, 4]
+    assert mesh_interface_module._normalize_json_serializable(_Unknown()) == "unknown-value"
+
+
+@pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_send_traceroute_and_response_rendering(
     monkeypatch: pytest.MonkeyPatch,
@@ -2474,6 +2512,239 @@ def test_send_data_rolls_back_wait_state_when_send_packet_raises(
             assert ("receivedTelemetry", request_id) not in iface._response_wait_errors
             assert ("receivedTelemetry", request_id) not in iface._response_wait_acks
             assert "receivedTelemetry" not in iface._active_wait_request_ids
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_send_data_removes_response_handler_when_send_fails_without_wait_attr(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """sendData() should pop responseHandlers on send failure even without wait-attr tracking."""
+    with MeshInterface(noProto=True) as iface:
+        observed_request_ids: list[int] = []
+
+        def _fail_send(
+            packet: mesh_pb2.MeshPacket, *_args: object, **_kwargs: object
+        ) -> NoReturn:
+            observed_request_ids.append(packet.id)
+            raise OSError("send failure")
+
+        monkeypatch.setattr(iface, "_send_packet", _fail_send)
+
+        with pytest.raises(OSError, match="send failure"):
+            iface.sendData(
+                b"payload",
+                onResponse=lambda _packet: None,
+            )
+
+        assert len(observed_request_ids) == 1
+        request_id = observed_request_ids[0]
+        with iface._response_handlers_lock:
+            assert request_id not in iface.responseHandlers
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_extract_request_id_from_packet_edge_cases() -> None:
+    """Request-id extraction should reject invalid forms and parse positive numeric strings."""
+    assert MeshInterface._extract_request_id_from_packet({"decoded": "invalid"}) is None
+    assert (
+        MeshInterface._extract_request_id_from_packet({"decoded": {"requestId": True}})
+        is None
+    )
+    assert (
+        MeshInterface._extract_request_id_from_packet({"decoded": {"requestId": "0"}})
+        is None
+    )
+    assert (
+        MeshInterface._extract_request_id_from_packet({"decoded": {"requestId": "17"}})
+        == 17
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_send_methods_pass_request_id_to_wait_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """send* response paths should forward request-scoped packet ids to wait helpers."""
+    with MeshInterface(noProto=True) as iface:
+        iface.nodes = {"!1": {"num": 1}, "!2": {"num": 2}, "!3": {"num": 3}}
+        wait_for_position = MagicMock()
+        wait_for_traceroute = MagicMock()
+        wait_for_telemetry = MagicMock()
+        wait_for_waypoint = MagicMock()
+        monkeypatch.setattr(
+            iface,
+            "sendData",
+            MagicMock(
+                side_effect=[
+                    mesh_pb2.MeshPacket(id=77),
+                    mesh_pb2.MeshPacket(id=88),
+                    mesh_pb2.MeshPacket(id=99),
+                    mesh_pb2.MeshPacket(id=111),
+                    mesh_pb2.MeshPacket(id=222),
+                ]
+            ),
+        )
+        monkeypatch.setattr(iface, "waitForPosition", wait_for_position)
+        monkeypatch.setattr(iface, "waitForTraceRoute", wait_for_traceroute)
+        monkeypatch.setattr(iface, "waitForTelemetry", wait_for_telemetry)
+        monkeypatch.setattr(iface, "waitForWaypoint", wait_for_waypoint)
+
+        iface.sendPosition(wantResponse=True)
+        iface.sendTraceRoute(dest=123, hopLimit=3)
+        iface.sendTelemetry(wantResponse=True)
+        iface.sendWaypoint(
+            name="A",
+            description="B",
+            icon=1,
+            expire=60,
+            wantResponse=True,
+        )
+        iface.deleteWaypoint(7, wantResponse=True)
+
+        wait_for_position.assert_called_once_with(request_id=77)
+        wait_for_traceroute.assert_called_once_with(2, request_id=88)
+        wait_for_telemetry.assert_called_once_with(request_id=99)
+        assert wait_for_waypoint.call_args_list == [
+            call(request_id=111),
+            call(request_id=222),
+        ]
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_wait_state_helpers_cover_request_resolution_branches() -> None:
+    """Wait-state helpers should resolve scoped/unscoped request bookkeeping correctly."""
+    with MeshInterface(noProto=True) as iface:
+        iface._clear_wait_error("receivedTelemetry", request_id=501)
+        iface._set_wait_error("receivedTelemetry", "scoped-error")
+        with pytest.raises(MeshInterface.MeshInterfaceError, match="scoped-error"):
+            iface._raise_wait_error_if_present("receivedTelemetry")
+
+        iface._clear_wait_error("receivedTelemetry", request_id=501)
+        iface._mark_wait_acknowledged("receivedTelemetry")
+        with iface._response_handlers_lock:
+            assert ("receivedTelemetry", 501) in iface._response_wait_acks
+
+        iface._mark_wait_acknowledged("receivedTelemetry", request_id=999)
+        with iface._response_handlers_lock:
+            assert ("receivedTelemetry", 999) not in iface._response_wait_acks
+
+        iface._clear_wait_error("receivedTelemetry", request_id=601)
+        iface._clear_wait_error("receivedTelemetry", request_id=602)
+        with iface._response_handlers_lock:
+            iface.responseHandlers[601] = ResponseHandler(
+                callback=lambda _packet: None, ackPermitted=False
+            )
+            iface.responseHandlers[602] = ResponseHandler(
+                callback=lambda _packet: None, ackPermitted=False
+            )
+            iface._response_wait_errors[("receivedTelemetry", 601)] = "err-a"
+            iface._response_wait_errors[("receivedTelemetry", 602)] = "err-b"
+            iface._response_wait_acks.add(("receivedTelemetry", 601))
+            iface._response_wait_acks.add(("receivedTelemetry", 602))
+        iface._retire_wait_request("receivedTelemetry")
+        with iface._response_handlers_lock:
+            assert 601 not in iface.responseHandlers
+            assert 602 not in iface.responseHandlers
+            assert ("receivedTelemetry", 601) not in iface._response_wait_errors
+            assert ("receivedTelemetry", 602) not in iface._response_wait_errors
+            assert ("receivedTelemetry", 601) not in iface._response_wait_acks
+            assert ("receivedTelemetry", 602) not in iface._response_wait_acks
+
+        iface._clear_wait_error("receivedPosition", request_id=700)
+        with iface._response_handlers_lock:
+            iface._response_wait_acks.add(
+                ("receivedPosition", mesh_interface_module.UNSCOPED_WAIT_REQUEST_ID)
+            )
+        assert iface._wait_for_request_ack(
+            "receivedPosition", 700, timeout_seconds=0.05
+        )
+        with iface._response_handlers_lock:
+            assert (
+                "receivedPosition",
+                mesh_interface_module.UNSCOPED_WAIT_REQUEST_ID,
+            ) not in iface._response_wait_acks
+
+        with iface._response_handlers_lock:
+            iface._response_wait_acks.add(("receivedPosition", 1))
+            iface._response_wait_acks.add(("otherAttr", 2))
+        iface._clear_wait_error("receivedPosition")
+        with iface._response_handlers_lock:
+            assert ("receivedPosition", 1) not in iface._response_wait_acks
+            assert ("otherAttr", 2) in iface._response_wait_acks
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_record_routing_wait_error_ignores_none_like_reason() -> None:
+    """Routing wait-error recorder should no-op for None/NONE reasons."""
+    with MeshInterface(noProto=True) as iface:
+        iface._clear_wait_error("receivedTelemetry", request_id=801)
+        iface._record_routing_wait_error(
+            acknowledgment_attr="receivedTelemetry",
+            routing_error_reason="NONE",
+            request_id=801,
+        )
+        iface._raise_wait_error_if_present("receivedTelemetry", request_id=801)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_on_response_telemetry_logs_all_device_metric_fields(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Telemetry response logging should include optional device-metric fields when present."""
+    with MeshInterface(noProto=True) as iface:
+        telemetry = telemetry_pb2.Telemetry()
+        telemetry.device_metrics.channel_utilization = 12.5
+        telemetry.device_metrics.air_util_tx = 4.5
+        telemetry.device_metrics.uptime_seconds = 321
+        with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
+            iface.onResponseTelemetry(
+                {
+                    "decoded": {
+                        "portnum": portnums_pb2.PortNum.Name(
+                            portnums_pb2.PortNum.TELEMETRY_APP
+                        ),
+                        "payload": telemetry.SerializeToString(),
+                    }
+                }
+            )
+    assert "Total channel utilization:" in caplog.text
+    assert "Transmit air utilization:" in caplog.text
+    assert "Uptime: 321 s" in caplog.text
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_wait_helpers_use_request_scoped_waiter_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Request-scoped waitFor* helpers should call _wait_for_request_ack with attr-specific keys."""
+    with MeshInterface(noProto=True) as iface:
+        wait_calls: list[tuple[str, int, float]] = []
+
+        def _wait_for_request_ack(
+            acknowledgment_attr: str,
+            request_id: int,
+            *,
+            timeout_seconds: float,
+        ) -> bool:
+            wait_calls.append((acknowledgment_attr, request_id, timeout_seconds))
+            return True
+
+        monkeypatch.setattr(iface, "_wait_for_request_ack", _wait_for_request_ack)
+
+        iface.waitForTraceRoute(1.5, request_id=11)
+        iface.waitForPosition(request_id=22)
+        iface.waitForWaypoint(request_id=33)
+
+        assert wait_calls[0][0:2] == ("receivedTraceRoute", 11)
+        assert wait_calls[1][0:2] == ("receivedPosition", 22)
+        assert wait_calls[2][0:2] == ("receivedWaypoint", 33)
 
 
 @pytest.mark.unit

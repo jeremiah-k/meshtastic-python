@@ -1,6 +1,10 @@
 """Edge case tests for BLE connection management."""
 
+import importlib
 import logging
+import sys
+import types
+import typing
 from threading import Event, RLock
 from types import SimpleNamespace
 from typing import Any, cast
@@ -47,6 +51,31 @@ def test_is_device_not_found_error_matches_device_context_messages() -> None:
     assert _is_device_not_found_error(Exception("Service not found")) is False
     assert _is_device_not_found_error(Exception("Peripheral service not found")) is False
     assert _is_device_not_found_error(Exception("Peripheral: service not found")) is False
+
+
+@pytest.mark.unit
+def test_connection_module_type_checking_import_branch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reloading with TYPE_CHECKING=True should execute typing-only BLEInterface import."""
+    connection_module = importlib.import_module("meshtastic.interfaces.ble.connection")
+    original_type_checking = typing.TYPE_CHECKING
+    stub_interface_module = types.ModuleType("meshtastic.interfaces.ble.interface")
+    stub_ble_interface = type("BLEInterface", (), {})
+    stub_interface_module.BLEInterface = stub_ble_interface
+
+    try:
+        monkeypatch.setitem(
+            sys.modules,
+            "meshtastic.interfaces.ble.interface",
+            stub_interface_module,
+        )
+        monkeypatch.setattr(typing, "TYPE_CHECKING", True)
+        reloaded = importlib.reload(connection_module)
+        assert getattr(reloaded, "BLEInterface", None) is stub_ble_interface
+    finally:
+        monkeypatch.setattr(typing, "TYPE_CHECKING", original_type_checking)
+        importlib.reload(connection_module)
 
 
 @pytest.mark.unit
@@ -655,6 +684,91 @@ def test_connection_orchestrator_rejects_direct_connect_when_interface_already_c
     client_manager._create_client.assert_not_called()
     client_manager._connect_client.assert_not_called()
     interface.findDevice.assert_not_called()
+
+
+@pytest.mark.unit
+def test_connection_orchestrator_raises_when_connect_state_transition_fails() -> None:
+    """_establish_connection should reject when state cannot transition into CONNECTING."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    assert state_manager._transition_to(ConnectionState.CONNECTING)
+    assert state_manager._transition_to(ConnectionState.CONNECTED)
+    validator = MagicMock()
+    client_manager = MagicMock()
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = False
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+
+    with pytest.raises(MockBLEError, match="Already connected or connection in progress"):
+        orchestrator._establish_connection(
+            address="AA:BB:CC:DD:EE:FF",
+            current_address=None,
+            register_notifications_func=lambda _client: None,
+            on_connected_func=lambda: None,
+            on_disconnect_func=lambda _client: None,
+        )
+
+    validator._validate_connection_request.assert_called_once()
+    client_manager._create_client.assert_not_called()
+
+
+@pytest.mark.unit
+def test_connection_orchestrator_reraises_retry_ble_dbus_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retry-path BleakDBusError should propagate after best-effort client cleanup."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = MagicMock()
+    direct_client = MagicMock()
+    retry_client = MagicMock()
+    client_manager._create_client.side_effect = [direct_client, retry_client]
+    client_manager._connect_client.side_effect = [
+        OSError("direct connect failed"),
+        BleakDBusError("org.bluez.Error.Failed", ["retry dbus failure"]),
+    ]
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = False
+    interface.findDevice.return_value = BLEDevice(
+        "AA:BB:CC:DD:EE:FF", "Meshtastic", details=None
+    )
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.connection.logger.debug",
+        lambda *_args, **_kwargs: None,
+    )
+
+    with pytest.raises(BleakDBusError):
+        orchestrator._establish_connection(
+            address="AA:BB:CC:DD:EE:FF",
+            current_address=None,
+            register_notifications_func=lambda _client: None,
+            on_connected_func=lambda: None,
+            on_disconnect_func=lambda _client: None,
+        )
+
+    client_manager._safe_close_client.assert_any_call(direct_client)
+    client_manager._safe_close_client.assert_any_call(retry_client)
 
 
 @pytest.mark.unit
