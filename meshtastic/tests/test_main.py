@@ -18,17 +18,29 @@ import yaml
 
 import meshtastic.__main__ as main_module
 from meshtastic import mt_config
-from meshtastic.__main__ import (_create_power_meter, _normalize_pref_name,
-                                 _parse_host_port, _prefix_base64_key,
-                                 _set_missing_flags_false, export_config,
-                                 initParser, main, onConnection, onNode,
-                                 onReceive, printConfig, support_info,
-                                 traverseConfig, tunnelMain)
+from meshtastic.__main__ import (
+    _create_power_meter,
+    _normalize_pref_name,
+    _parse_host_port,
+    _prefix_base64_key,
+    _set_missing_flags_false,
+    export_config,
+    initParser,
+    main,
+    onConnection,
+    onNode,
+    onReceive,
+    printConfig,
+    support_info,
+    traverseConfig,
+    tunnelMain,
+)
 
 # from ..ble_interface import BLEInterface
 from ..node import Node
 from ..protobuf import config_pb2, localonly_pb2
 from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
+
 # from ..radioconfig_pb2 import UserPreferences
 # import meshtastic.config_pb2
 from ..ota import OTAError, OTATransportError
@@ -1614,9 +1626,7 @@ def test_main_set_valid_wifi_psk(
             main()
             out, err = capsys.readouterr()
             assert re.search(r"Connected to radio", out, re.MULTILINE)
-            assert re.search(
-                r"Set network\.wifi_psk to <redacted>", out, re.MULTILINE
-            )
+            assert re.search(r"Set network\.wifi_psk to <redacted>", out, re.MULTILINE)
             assert "123456789" not in out
             assert err == ""
             mo.assert_called()
@@ -4545,7 +4555,6 @@ def _make_fake_tcp_interface(
 
         def __exit__(self, *_args: object) -> None:
             self.close()
-            return None
 
         def close(self) -> None:
             """Provide TCPInterface-compatible cleanup hook for test patches."""
