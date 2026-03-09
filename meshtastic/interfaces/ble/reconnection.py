@@ -424,17 +424,7 @@ class ReconnectWorker:
                             "Cannot attempt auto-reconnect: interface address is not set."
                         )
                         return
-                    reconnect_pair_override = getattr(
-                        interface, "_last_connect_pair_override", None
-                    )
-                    reconnect_timeout_override = getattr(
-                        interface, "_last_connect_timeout_override", None
-                    )
-                    interface.connect(
-                        interface.address,
-                        pair=reconnect_pair_override,
-                        connect_timeout=reconnect_timeout_override,
-                    )
+                    interface.connect(interface.address)
                 except ReconnectPolicyMissingMethodError as err:
                     logger.exception(
                         "Reconnect policy missing required method '%s'",

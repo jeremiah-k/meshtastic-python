@@ -171,7 +171,13 @@ def test_powermon_optional_backends_are_lazy_and_dependency_error_is_clear(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Optional backend access should not require dependencies at package import time."""
-    for backend_name in ("PPK2PowerSupply", "RidenPowerSupply"):
+    backend_names = ("PPK2PowerSupply", "RidenPowerSupply")
+    _missing = object()
+    original_backends = {
+        backend_name: powermon.__dict__.get(backend_name, _missing)
+        for backend_name in backend_names
+    }
+    for backend_name in backend_names:
         monkeypatch.delitem(powermon.__dict__, backend_name, raising=False)
 
     real_import_module = importlib.import_module
@@ -187,9 +193,16 @@ def test_powermon_optional_backends_are_lazy_and_dependency_error_is_clear(
 
     monkeypatch.setattr(importlib, "import_module", _fake_import_module)
 
-    backend_cls = powermon.RidenPowerSupply
-    with pytest.raises(ImportError, match="optional dependency"):
-        backend_cls(portName="/dev/null")
+    try:
+        backend_cls = powermon.RidenPowerSupply
+        with pytest.raises(ImportError, match="optional dependency"):
+            backend_cls(portName="/dev/null")
+    finally:
+        for backend_name, original_backend in original_backends.items():
+            if original_backend is _missing:
+                powermon.__dict__.pop(backend_name, None)
+            else:
+                powermon.__dict__[backend_name] = original_backend
 
 
 @pytest.mark.unit

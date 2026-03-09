@@ -417,6 +417,7 @@ def test_close_waits_for_inflight_heartbeat_send(
     [
         OSError("bad fd"),
         MeshInterface.MeshInterfaceError("ble write failed"),
+        TypeError("boom"),
     ],
 )
 def test_close_suppresses_disconnect_send_failures(
@@ -440,55 +441,6 @@ def test_close_suppresses_disconnect_send_failures(
 
     assert (
         "Failed to send disconnect during close(); continuing shutdown." in caplog.text
-    )
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_close_raises_disconnect_type_error_outside_finalization(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """close() should raise TypeError from disconnect send unless interpreter is finalizing."""
-    iface = MeshInterface(noProto=True)
-    try:
-        iface.debugOut = io.StringIO()
-        with caplog.at_level(logging.DEBUG), pytest.raises(TypeError, match="boom"):
-            with patch.object(iface, "_send_disconnect", side_effect=TypeError("boom")):
-                iface.close()
-        assert iface._closing is True
-    finally:
-        if not getattr(iface, "_closing", False):
-            iface.close()
-        if iface.debugOut is not None:
-            iface.debugOut = None
-    assert "Failed to send disconnect during close(); continuing shutdown." not in caplog.text
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_close_suppresses_disconnect_type_error_during_finalization(
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """close() should still suppress TypeError during interpreter finalization cleanup."""
-    iface = MeshInterface(noProto=True)
-    try:
-        iface.debugOut = io.StringIO()
-        monkeypatch.setattr("meshtastic.mesh_interface.sys.is_finalizing", lambda: True)
-        with (
-            patch.object(iface, "_send_disconnect", side_effect=TypeError("boom")),
-            caplog.at_level(logging.DEBUG),
-        ):
-            iface.close()
-        assert iface._closing is True
-        assert iface.debugOut is None
-    finally:
-        if not getattr(iface, "_closing", False):
-            iface.close()
-
-    assert (
-        "Failed to send disconnect during interpreter finalization; continuing shutdown."
-        in caplog.text
     )
 
 
@@ -1764,7 +1716,9 @@ def test_send_position_waits_when_response_requested(
 ) -> None:
     """sendPosition(wantResponse=True) should wire response callback and wait for position."""
     with MeshInterface(noProto=True) as iface:
-        send_data = MagicMock(return_value=mesh_pb2.MeshPacket())
+        response_packet = mesh_pb2.MeshPacket()
+        response_packet.id = 77
+        send_data = MagicMock(return_value=response_packet)
         wait_for_position = MagicMock()
         monkeypatch.setattr(iface, "_send_data_with_wait", send_data)
         monkeypatch.setattr(iface, "waitForPosition", wait_for_position)
@@ -1781,7 +1735,7 @@ def test_send_position_waits_when_response_requested(
         assert (
             getattr(on_response, "__func__", None) is MeshInterface.onResponsePosition
         )
-        wait_for_position.assert_called_once()
+        wait_for_position.assert_called_once_with(request_id=77)
 
 
 @pytest.mark.unit
@@ -1932,7 +1886,7 @@ def test_logger_visible_info_handler_prefers_stdout_visibility_for_print_fallbac
         handler_logger.addHandler(stderr_handler)
         assert (
             mesh_interface_module._logger_has_visible_info_handler(handler_logger)
-            is False
+            is True
         )
 
         handler_logger.removeHandler(stderr_handler)
@@ -1950,7 +1904,7 @@ def test_logger_visible_info_handler_prefers_stdout_visibility_for_print_fallbac
         handler_logger.addHandler(rich_stderr_handler)
         assert (
             mesh_interface_module._logger_has_visible_info_handler(handler_logger)
-            is False
+            is True
         )
 
         handler_logger.removeHandler(rich_stderr_handler)

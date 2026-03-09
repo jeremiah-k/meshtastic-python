@@ -72,21 +72,21 @@ def test_connection_module_type_checking_import_branch(
     stub_ble_interface = type("BLEInterface", (), {})
     stub_interface_module.BLEInterface = stub_ble_interface
 
-    with monkeypatch.context() as patch_context:
-        patch_context.setitem(
-            sys.modules,
-            "meshtastic.interfaces.ble.interface",
-            stub_interface_module,
-        )
-        patch_context.setattr(typing, "TYPE_CHECKING", True)
+    try:
+        with monkeypatch.context() as patch_context:
+            patch_context.setitem(
+                sys.modules,
+                "meshtastic.interfaces.ble.interface",
+                stub_interface_module,
+            )
+            patch_context.setattr(typing, "TYPE_CHECKING", True)
+            reloaded = importlib.reload(connection_module)
+            assert getattr(reloaded, "BLEInterface", None) is stub_ble_interface
+    finally:
+        for leaked_name in ("BLEInterface", "DiscoveryManager", "BleakRootClient"):
+            connection_module.__dict__.pop(leaked_name, None)
         reloaded = importlib.reload(connection_module)
-        assert getattr(reloaded, "BLEInterface", None) is stub_ble_interface
 
-    for leaked_name in ("BLEInterface", "DiscoveryManager", "BleakRootClient"):
-        if hasattr(connection_module, leaked_name):
-            delattr(connection_module, leaked_name)
-
-    reloaded = importlib.reload(connection_module)
     assert not hasattr(reloaded, "BLEInterface")
 
 

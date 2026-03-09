@@ -12,6 +12,7 @@ FILE_HASH_READ_CHUNK_SIZE_BYTES = 4096
 OTA_PROGRESS_LOG_PERCENT_STEP: float = 5.0
 MISSING_FIRMWARE_ERROR: str = "Firmware file {filename} does not exist"
 EMPTY_FIRMWARE_ERROR: str = "Firmware file {filename} is empty"
+READ_FIRMWARE_ERROR: str = "Unable to read firmware file {filename}: {error}"
 FIRMWARE_CHANGED_ERROR: str = (
     "Firmware file {filename} changed after OTA session initialization."
 )
@@ -79,6 +80,10 @@ class ESP32WiFiOTA:
                     file_hash.update(block)
         except FileNotFoundError as exc:
             raise OTAError(MISSING_FIRMWARE_ERROR.format(filename=self._filename)) from exc
+        except OSError as exc:
+            raise OTAError(
+                READ_FIRMWARE_ERROR.format(filename=self._filename, error=exc)
+            ) from exc
         if size == 0:
             raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
         self._size = size
@@ -151,6 +156,10 @@ class ESP32WiFiOTA:
                     file_hash.update(block)
         except FileNotFoundError as exc:
             raise OTAError(MISSING_FIRMWARE_ERROR.format(filename=self._filename)) from exc
+        except OSError as exc:
+            raise OTAError(
+                READ_FIRMWARE_ERROR.format(filename=self._filename, error=exc)
+            ) from exc
 
         firmware_image = memoryview(image)
         size = len(firmware_image)
@@ -171,10 +180,11 @@ class ESP32WiFiOTA:
             file_hash.hexdigest(),
         )
 
-        self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._socket.settimeout(OTA_SOCKET_TIMEOUT_SECONDS)
         try:
-            self._socket.connect((self._hostname, self._port))
+            self._socket = socket.create_connection(
+                (self._hostname, self._port),
+                timeout=OTA_SOCKET_TIMEOUT_SECONDS,
+            )
             logger.debug("Connected to %s:%d", self._hostname, self._port)
 
             # Send start command

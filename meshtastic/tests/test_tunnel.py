@@ -154,7 +154,8 @@ def test_tunnel_creates_tap_device_when_proto_enabled(
 
     assert ("init", "mesh") in events
     assert ("up",) in events
-    assert any(event[0] == "ifconfig" for event in events)
+    assert ("ifconfig", "10.115.248.28", "255.255.0.0", 200) in events
+    assert ("thread-start",) in events
     assert ("close",) in events
 
 

@@ -417,6 +417,11 @@ This section tracks the post-refactor stabilization pass focused on merging
 cleanly to the target maintenance branch with race/concurrency/state behavior
 explicitly validated.
 
+Lifecycle note: this section is intentionally time-bound. After merge
+stabilization completes, detailed per-cycle checklist execution moves to
+`CODERABBIT_SWEEP_CHECKLIST.md`, and this document keeps only durable design
+rationale.
+
 ### 17.1 Objectives for this cycle
 
 - Remove remaining race windows in BLE connect/ownership publication.

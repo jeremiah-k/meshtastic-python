@@ -103,7 +103,9 @@ def _logger_has_visible_info_handler(target_logger: logging.Logger) -> bool:
 
     visible_console_streams = {
         sys.stdout,
+        sys.stderr,
         sys.__stdout__,
+        sys.__stderr__,
     }
     current_logger: logging.Logger | None = target_logger
     while current_logger is not None:
@@ -329,17 +331,9 @@ class MeshInterface:  # pylint: disable=R0902
                         heartbeat_idle_condition.wait()
             try:
                 self._send_disconnect()
-            except (OSError, MeshInterface.MeshInterfaceError):
+            except (OSError, TypeError, MeshInterface.MeshInterfaceError):
                 logger.debug(
                     "Failed to send disconnect during close(); continuing shutdown.",
-                    exc_info=True,
-                )
-            except TypeError:
-                is_finalizing = getattr(sys, "is_finalizing", None)
-                if not (callable(is_finalizing) and is_finalizing()):
-                    raise
-                logger.debug(
-                    "Failed to send disconnect during interpreter finalization; continuing shutdown.",
                     exc_info=True,
                 )
         # debugOut is caller-owned (often shared via outer context managers);
@@ -1786,10 +1780,13 @@ class MeshInterface:  # pylint: disable=R0902
         if telemetry_type not in VALID_TELEMETRY_TYPE_SET:
             # Backwards compatibility: unknown types fall back to device_metrics with deprecation warning
             logger.warning(
-                f"Unsupported telemetryType '{telemetry_type}' is deprecated. "
-                f"Supported values: {sorted(VALID_TELEMETRY_TYPES)}. "
-                f"Falling back to '{DEFAULT_TELEMETRY_TYPE}'. "
+                "Unsupported telemetryType '%s' is deprecated. "
+                "Supported values: %s. "
+                "Falling back to '%s'. "
                 "This will raise an error in a future version.",
+                telemetry_type,
+                sorted(VALID_TELEMETRY_TYPES),
+                DEFAULT_TELEMETRY_TYPE,
                 stacklevel=2,
             )
             telemetry_type = DEFAULT_TELEMETRY_TYPE
@@ -1925,9 +1922,12 @@ class MeshInterface:  # pylint: disable=R0902
                         if (
                             key != "time"
                         ):  # protobuf includes a time field that we don't emit for device_metrics.
-                            _emit_response_summary(f"{key}:")
-                            for sub_key, sub_value in value.items():
-                                _emit_response_summary(f"  {sub_key}: {sub_value}")
+                            if isinstance(value, dict):
+                                _emit_response_summary(f"{key}:")
+                                for sub_key, sub_value in value.items():
+                                    _emit_response_summary(f"  {sub_key}: {sub_value}")
+                            else:
+                                _emit_response_summary(f"{key}: {value}")
             except Exception as exc:  # noqa: BLE001
                 self._set_wait_error(
                     "receivedTelemetry",

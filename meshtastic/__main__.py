@@ -628,6 +628,7 @@ def onConnected(interface: MeshInterface) -> None:
     waitForAckNak = (
         False  # Should we wait for an acknowledgment if we send to a remote node?
     )
+    skip_ack_wait = False  # OTA reboots the node before an ACK can be observed.
     try:
         args = mt_config.args
         if args is None:
@@ -809,6 +810,7 @@ def onConnected(interface: MeshInterface) -> None:
         if args.ota_update:
             closeNow = True
             waitForAckNak = True
+            skip_ack_wait = True
 
             if not isinstance(interface, meshtastic.tcp_interface.TCPInterface):
                 _cli_exit(
@@ -819,7 +821,7 @@ def onConnected(interface: MeshInterface) -> None:
                     "Error: OTA update only supports the directly connected local node; omit --dest or use --dest ^local."
                 )
             ota_dest = BROADCAST_ADDR if args.dest == LOCAL_ADDR else args.dest
-            waitForAckNak = ota_dest != BROADCAST_ADDR
+            waitForAckNak = False
 
             ota = meshtastic.ota.ESP32WiFiOTA(args.ota_update, interface.hostname)
 
@@ -1603,7 +1605,9 @@ def onConnected(interface: MeshInterface) -> None:
                 else:
                     tunnel.Tunnel(interface)
 
-        if args.ack or (args.dest != BROADCAST_ADDR and waitForAckNak):
+        if not skip_ack_wait and (
+            args.ack or (args.dest != BROADCAST_ADDR and waitForAckNak)
+        ):
             print(
                 "Waiting for an acknowledgment from remote node (this could take a while)"
             )
@@ -2140,10 +2144,9 @@ def common() -> None:
                     tcp_hostname: str = args.host
                     tcp_port: int = meshtastic.tcp_interface.DEFAULT_TCP_PORT
                     try:
-                        tcp_hostname, tcp_port = parseHostAndPort(
+                        tcp_hostname, tcp_port = _parse_host_port(
                             args.host,
-                            default_port=meshtastic.tcp_interface.DEFAULT_TCP_PORT,
-                            env_var="--host",
+                            meshtastic.tcp_interface.DEFAULT_TCP_PORT,
                         )
                         client = stack.enter_context(
                             meshtastic.tcp_interface.TCPInterface(
@@ -2155,8 +2158,6 @@ def common() -> None:
                                 timeout=args.timeout,
                             )
                         )
-                    except ValueError as ex:
-                        _cli_exit(f"Error: {ex}", 1)
                     except MeshInterface.MeshInterfaceError as ex:
                         _cli_exit(
                             f"Error connecting to {tcp_hostname}:{tcp_port}: {ex}", 1

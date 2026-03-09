@@ -753,6 +753,7 @@ def _build_interface(
             _self._disconnect_notified = False
             _self._client_publish_pending = False
             _self._state_manager._transition_to(ble_mod.ConnectionState.CONNECTED)
+            _self._ever_connected = True
             if was_disconnected and hasattr(_self, "_reconnected_event"):
                 _self._reconnected_event.set()
         return client

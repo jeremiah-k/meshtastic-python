@@ -867,6 +867,7 @@ def test_rapid_connect_disconnect_stress_test(
         baseline_client_objects = list(
             cast(list["StressTestClient"], _get_stress_test_clients(iface))
         )
+        worker_errors: Queue[Exception] = Queue()
 
         def simulate_rapid_disconnects() -> None:
             """Simulate a burst of rapid BLE disconnect events against the test interface.
@@ -880,15 +881,22 @@ def test_rapid_connect_disconnect_stress_test(
                     continue
                 bleak_client = cast(Any, current_client.bleak_client)
                 bleak_client.is_connected_result = False
-                iface._on_ble_disconnect(bleak_client)
+                try:
+                    iface._on_ble_disconnect(bleak_client)
+                except Exception as exc:  # noqa: BLE001 - test collects worker failures
+                    worker_errors.put(exc)
+                    return
                 time.sleep(0.01)  # Very short delay between disconnects
 
         # Start rapid disconnect simulation in a separate thread
-        disconnect_thread = threading.Thread(
-            target=simulate_rapid_disconnects, daemon=True
-        )
+        disconnect_thread = threading.Thread(target=simulate_rapid_disconnects)
         disconnect_thread.start()
         disconnect_thread.join()
+
+        collected_worker_errors: list[Exception] = []
+        while not worker_errors.empty():
+            collected_worker_errors.append(worker_errors.get_nowait())
+        assert collected_worker_errors == []
 
         # Verify that the interface handled rapid disconnects gracefully
         assert client.bleak_client is not None
@@ -899,10 +907,7 @@ def test_rapid_connect_disconnect_stress_test(
         ), "Auto-reconnect should continue scheduling during rapid disconnects"
         reconnect_kwargs = stub_kwargs[baseline_connects:]
         assert reconnect_kwargs
-        assert all(
-            kwargs == {"pair": True, "connect_timeout": 3.5}
-            for kwargs in reconnect_kwargs
-        )
+        assert all(kwargs == {} for kwargs in reconnect_kwargs)
         attempted_clients, republished_clients = _wait_for_latest_stress_client(
             iface,
             baseline_attempts=baseline_attempts,
@@ -970,10 +975,7 @@ def test_rapid_connect_disconnect_stress_test(
         assert len(connect_call_snapshot) >= baseline_connects + 1
         reconnect_kwargs = stub_kwargs[baseline_connects:]
         assert reconnect_kwargs
-        assert all(
-            kwargs == {"pair": False, "connect_timeout": 7.0}
-            for kwargs in reconnect_kwargs
-        )
+        assert all(kwargs == {} for kwargs in reconnect_kwargs)
         attempted_clients, republished_clients = _wait_for_latest_stress_client(
             iface2,
             baseline_attempts=baseline_attempts,

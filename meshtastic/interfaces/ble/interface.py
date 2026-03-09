@@ -53,6 +53,7 @@ from meshtastic.interfaces.ble.connection import (
 )
 from meshtastic.interfaces.ble.constants import (
     BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+    CONNECTION_ERROR_EMPTY_ADDRESS,
     CONNECTION_ERROR_LOST_OWNERSHIP,
     DISCONNECT_TIMEOUT_SECONDS,
     ERROR_ADDRESS_RESOLUTION_FAILED,
@@ -2351,6 +2352,7 @@ class BLEInterface(MeshInterface):
             connection_alias_key,
         )
         publish_connected = False
+        publish_now = False
         prior_ever_connected = False
         is_closing = False
         with self._state_lock:
@@ -2371,22 +2373,18 @@ class BLEInterface(MeshInterface):
                 )
                 if not lost_gate_ownership:
                     with self._state_lock:
-                        still_owned, is_closing = (
-                            self._get_connected_client_status_locked(connected_client)
+                        still_owned, is_closing = self._get_connected_client_status_locked(
+                            connected_client
                         )
-                        lost_gate_ownership = self._has_lost_gate_ownership(
-                            connected_device_key,
-                            connection_alias_key,
-                        )
-                        if still_owned and not lost_gate_ownership:
+                        if still_owned:
                             self._client_publish_pending = False
                             self._ever_connected = True
                             self._prior_publish_was_reconnect = prior_ever_connected
-                            self._connected()
-                            self._emit_verified_connection_side_effects(
-                                connected_client
-                            )
-                            return
+                            publish_now = True
+        if publish_now:
+            self._connected()
+            self._emit_verified_connection_side_effects(connected_client)
+            return
 
         self._raise_for_invalidated_connect_result(
             connected_client,
@@ -2600,6 +2598,8 @@ class BLEInterface(MeshInterface):
 
         requested_identifier = address if address is not None else self.address
         normalized_request = sanitize_address(requested_identifier)
+        if address is not None and normalized_request is None:
+            raise self.BLEError(CONNECTION_ERROR_EMPTY_ADDRESS)
         if pair is not None and not isinstance(pair, bool):
             raise self.BLEError(ERROR_PAIR_BOOL)
         pair_on_connect = self.pair_on_connect if pair is None else pair

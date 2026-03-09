@@ -9,6 +9,7 @@ This module intentionally splits coverage into two lanes:
 """
 
 import contextlib
+import math
 import os
 import platform
 import re
@@ -41,6 +42,12 @@ KEEP_BACKUP_ON_RESTORE_FAILURE_ENV_VAR: str = "MESH_TEST_KEEP_BACKUP"
 DEFAULT_URL_FRAGMENT: str = "CgUYAyIBAQ"
 _MUTATION_SETTLE_FAILURE_MSG: str = (
     "Device never reached the expected post-mutation state:\n{output}"
+)
+_CLI_READBACK_FAILURE_MSG: str = (
+    "CLI readback never reached the expected state:\n{output}"
+)
+_DISCONNECT_WAIT_FAILURE_MSG: str = (
+    "Device never disappeared during {action_name}.\nlast_probe={output}"
 )
 _DISCONNECT_SIGNAL_PATTERNS: tuple[str, ...] = (
     "serial disconnected",
@@ -346,9 +353,21 @@ def _wait_for_mutation_to_settle(
     """
     if settle_timeout > 0:
         time.sleep(settle_timeout)
+    poll_interval = max(float(INFO_READY_POLL_INTERVAL_SECONDS), 0.001)
+    max_iterations = (
+        math.ceil(
+            (max(0.0, float(settle_timeout)) + INFO_READY_TIMEOUT_SECONDS)
+            / poll_interval
+        )
+        + 2
+    )
+    iterations = 0
     deadline = time.monotonic() + INFO_READY_TIMEOUT_SECONDS
     last_output = ""
     while True:
+        iterations += 1
+        if iterations > max_iterations:
+            break
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
@@ -388,9 +407,7 @@ def _wait_for_get_readback(*fields: str, predicate: Callable[[str], bool]) -> st
         if remaining <= 0:
             break
         time.sleep(min(INFO_READY_POLL_INTERVAL_SECONDS, remaining))
-    raise AssertionError(
-        f"CLI readback never reached the expected state:\n{last_output}"
-    )
+    raise AssertionError(_CLI_READBACK_FAILURE_MSG.format(output=last_output))
 
 
 def _wait_for_disconnect_then_ready(action_name: str) -> str:
@@ -420,7 +437,10 @@ def _wait_for_disconnect_then_ready(action_name: str) -> str:
             break
         time.sleep(min(INFO_READY_POLL_INTERVAL_SECONDS, remaining))
     raise AssertionError(
-        f"Device never disappeared during {action_name}.\nlast_probe={last_output}"
+        _DISCONNECT_WAIT_FAILURE_MSG.format(
+            action_name=action_name,
+            output=last_output,
+        )
     )
 
 

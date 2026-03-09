@@ -202,13 +202,13 @@ class Tunnel:
                     ip = self._node_num_to_ip(node["num"])
                     logger.info("Node %s has IP address %s", nodeId, ip)
 
-            logger.debug("creating TUN device with MTU=200")
             # FIXME - figure out real max MTU, it should be 240 - the overhead bytes for SubPacket and Data
             if self.iface.noProto:
                 logger.warning(
                     "Not creating a TapDevice() because it is disabled by noProto"
                 )
             else:
+                logger.debug("creating TUN device with MTU=200")
                 logger.info(
                     "Creating TapDevice; CAP_NET_ADMIN or root is typically required."
                 )

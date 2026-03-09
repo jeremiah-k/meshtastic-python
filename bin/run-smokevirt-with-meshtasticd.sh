@@ -224,20 +224,19 @@ if [[ ${#PYTEST_TARGETS[@]} -eq 0 ]]; then
 fi
 
 HAS_SMOKEVIRT_TARGET=false
+HAS_EXPLICIT_SELECTOR=false
 for target in "${PYTEST_TARGETS[@]}"; do
 	is_explicit_selector=false
 	if [[ ${target} == *"::"* ]]; then
 		is_explicit_selector=true
+		HAS_EXPLICIT_SELECTOR=true
 	fi
 	normalized_target="${target%%::*}"
 	normalized_target="${normalized_target#./}"
 	normalized_basename="${normalized_target##*/}"
-	if [[ ${normalized_basename} == "test_smokevirt.py" ]]; then
+	if [[ ${is_explicit_selector} == false ]] && [[ ${normalized_basename} == "test_smokevirt.py" ]]; then
 		HAS_SMOKEVIRT_TARGET=true
 		SMOKEVIRT_TARGETS+=("${target}")
-	fi
-	if [[ ${is_explicit_selector} == true ]]; then
-		continue
 	fi
 	for default_target in "${DEFAULT_PYTEST_TARGETS[@]}"; do
 		normalized_default_target="${default_target#./}"
@@ -250,6 +249,10 @@ for target in "${PYTEST_TARGETS[@]}"; do
 done
 
 if [[ -z ${MESHTASTICD_PYTEST_MARK_EXPR} ]]; then
+	if [[ ${HAS_EXPLICIT_SELECTOR} == true ]]; then
+		echo "MESHTASTICD_PYTEST_TARGETS contains explicit node selectors; set MESHTASTICD_PYTEST_MARK_EXPR explicitly." >&2
+		exit 1
+	fi
 	if [[ ${HAS_SMOKEVIRT_TARGET} == true ]] && [[ ${#MESHTASTICD_CI_TARGETS[@]} -gt 0 ]]; then
 		echo "MESHTASTICD_PYTEST_TARGETS includes both smokevirt and meshtasticd-ci targets; set MESHTASTICD_PYTEST_MARK_EXPR explicitly." >&2
 		exit 1

@@ -543,17 +543,22 @@ def _mark_disconnected(addr: str | None, owner: Any | None = None) -> None:
         if owner is not None and has_connected_claim:
             owner_ref = _CONNECTED_OWNERS.get(key)
             current_owner = owner_ref() if owner_ref is not None else None
+            pruned_dead_connected_owner = False
             if owner_ref is not None and current_owner is None:
-                _CONNECTED_OWNERS.pop(key, None)
-                _CONNECTED_OWNER_IDS.pop(key, None)
-            if current_owner is not None and current_owner is not owner:
+                _remove_connected_record_locked(key)
+                pruned_dead_connected_owner = True
+            if (
+                not pruned_dead_connected_owner
+                and current_owner is not None
+                and current_owner is not owner
+            ):
                 logger.debug(
                     "Ignoring disconnect mark for %s from non-owner instance.",
                     key,
                 )
                 return
             # Also check owner ID when weakref is unavailable (non-weakrefable objects)
-            if current_owner is None:
+            if not pruned_dead_connected_owner and current_owner is None:
                 stored_id = _CONNECTED_OWNER_IDS.get(key)
                 # CPython can reuse ids after GC; this _mark_disconnected fallback is
                 # best-effort when _CONNECTED_OWNER_IDS must compare id(owner).
