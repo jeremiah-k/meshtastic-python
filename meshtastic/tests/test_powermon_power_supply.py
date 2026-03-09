@@ -191,9 +191,7 @@ def test_powermon_optional_backends_are_lazy_and_dependency_error_is_clear(
 
     real_import_module = importlib.import_module
 
-    def _fake_import_module(
-        name: str, package: str | None = None
-    ) -> types.ModuleType:
+    def _fake_import_module(name: str, package: str | None = None) -> types.ModuleType:
         if package == "meshtastic.powermon" and name in (".ppk2", ".riden"):
             missing = ModuleNotFoundError("optional backend missing")
             missing.name = "riden" if name == ".riden" else "ppk2_api"
@@ -205,7 +203,7 @@ def test_powermon_optional_backends_are_lazy_and_dependency_error_is_clear(
     try:
         backend_cls = cast(type[PowerSupply], getattr(powermon, backend_name))
         with pytest.raises(ImportError, match=expected_dependency_name):
-            backend_cls(portName="/dev/null")
+            backend_cls(portName="/dev/null")  # type: ignore[call-arg]
     finally:
         for restore_name, original_backend in original_backends.items():
             if original_backend is missing:
@@ -224,9 +222,7 @@ def test_powermon_optional_backend_lookup_re_raises_unrelated_missing_module(
     powermon.__dict__.pop("RidenPowerSupply", None)
     real_import_module = importlib.import_module
 
-    def _fake_import_module(
-        name: str, package: str | None = None
-    ) -> types.ModuleType:
+    def _fake_import_module(name: str, package: str | None = None) -> types.ModuleType:
         if package == "meshtastic.powermon" and name == ".riden":
             missing = ModuleNotFoundError("backend import bug")
             missing.name = "meshtastic.powermon.riden_internal"
