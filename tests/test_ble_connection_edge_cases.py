@@ -331,6 +331,28 @@ def test_connection_validator_check_existing_client_matching_address() -> None:
 
 
 @pytest.mark.unit
+def test_connection_validator_check_existing_client_uses_cached_client_address() -> (
+    None
+):
+    """check_existing_client should match when only client.address is populated."""
+    state_manager = BLEStateManager()
+    lock = RLock()
+
+    validator = ConnectionValidator(state_manager, lock, MockBLEError)
+
+    mock_client = MagicMock()
+    mock_client.isConnected.return_value = True
+    mock_client.address = "AA:BB:CC:DD:EE:FF"
+    mock_client.bleak_client = SimpleNamespace(address=None)
+
+    assert validator._check_existing_client(
+        mock_client,
+        "aabbccddeeff",
+        None,
+    )
+
+
+@pytest.mark.unit
 def test_client_manager_safe_close_client_already_closed() -> None:
     """_safe_close_client should return cleanly for an already-closed client."""
 

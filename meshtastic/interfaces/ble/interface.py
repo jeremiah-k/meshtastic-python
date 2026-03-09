@@ -1393,6 +1393,7 @@ class BLEInterface(MeshInterface):
         if requested_identifier and _looks_like_ble_address(requested_identifier):
             return requested_identifier
         return self.findDevice(requested_identifier).address
+
     def _resolve_target_address_for_connect(
         self, requested_identifier: str | None
     ) -> str | None:
@@ -2383,20 +2384,28 @@ class BLEInterface(MeshInterface):
                         if still_owned:
                             publish_candidate = True
         if publish_candidate:
+            can_attempt_publish = False
             with self._state_lock:
                 still_owned, is_closing = self._get_connected_client_status_locked(
                     connected_client
                 )
                 if still_owned and not is_closing:
-                    lost_gate_ownership = self._has_lost_gate_ownership(
-                        connected_device_key,
-                        connection_alias_key,
-                    )
-                    if not lost_gate_ownership:
-                        self._client_publish_pending = False
-                        self._ever_connected = True
-                        self._prior_publish_was_reconnect = prior_ever_connected
-                        publish_now = True
+                    can_attempt_publish = True
+            if can_attempt_publish:
+                lost_gate_ownership = self._has_lost_gate_ownership(
+                    connected_device_key,
+                    connection_alias_key,
+                )
+                if not lost_gate_ownership:
+                    with self._state_lock:
+                        still_owned, is_closing = (
+                            self._get_connected_client_status_locked(connected_client)
+                        )
+                        if still_owned and not is_closing:
+                            self._client_publish_pending = False
+                            self._ever_connected = True
+                            self._prior_publish_was_reconnect = prior_ever_connected
+                            publish_now = True
         if publish_now:
             self._connected()
             self._emit_verified_connection_side_effects(connected_client)

@@ -109,9 +109,9 @@ class ConnectionValidator:
     ) -> bool:
         """Return whether the given BLE client corresponds to the requested or a known device address.
 
-        Considers the provided normalized_request, last_connection_request, and the
-        client's bleak address. If `normalized_request` is `None`, any connected
-        client is treated as acceptable.
+        Considers the provided normalized_request, last_connection_request, the
+        client object's cached address, and the client's bleak address. If
+        `normalized_request` is `None`, any connected client is treated as acceptable.
 
         Parameters
         ----------
@@ -132,12 +132,14 @@ class ConnectionValidator:
         if not client or not client.isConnected():
             return False
         normalized_request_key = sanitize_address(normalized_request)
+        client_address = sanitize_address(getattr(client, "address", None))
         bleak_client = getattr(client, "bleak_client", None)
         bleak_address = getattr(bleak_client, "address", None)
         normalized_known_targets = {
             t
             for t in (
                 sanitize_address(last_connection_request),
+                client_address,
                 sanitize_address(bleak_address),
             )
             if t is not None

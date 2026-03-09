@@ -748,10 +748,17 @@ def _build_interface(
         _ = args
         connect_calls.append(_address)
         connect_call_kwargs.append(dict(kwargs))
+        # Rehydrate reused test clients so reconnect paths mirror production:
+        # disconnect()/close() clear these fields.
+        client._initialized = True
+        updated_address = False
         if _address is not None and _address != _self.address:
             client.address = _address
-            if client.bleak_client is not None:
-                client.bleak_client.address = _address
+            updated_address = True
+        if client.bleak_client is None:
+            client.bleak_client = SimpleNamespace(address=client.address)
+        elif updated_address:
+            client.bleak_client.address = client.address
         with _self._state_lock:
             was_disconnected = _self._disconnect_notified
             _self.address = client.address

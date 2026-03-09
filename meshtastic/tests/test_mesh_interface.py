@@ -416,6 +416,7 @@ def test_close_waits_for_inflight_heartbeat_send(
     "disconnect_error",
     [
         OSError("bad fd"),
+        TypeError("boom"),
         MeshInterface.MeshInterfaceError("ble write failed"),
     ],
 )
@@ -445,23 +446,6 @@ def test_close_suppresses_disconnect_send_failures(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_close_reraises_disconnect_type_error_when_not_finalizing() -> None:
-    """close() should re-raise TypeError disconnect failures outside finalization."""
-    iface = MeshInterface(noProto=True)
-    try:
-        iface.debugOut = io.StringIO()
-        with (
-            patch.object(iface, "_send_disconnect", side_effect=TypeError("boom")),
-            patch.object(sys, "is_finalizing", lambda: False),
-            pytest.raises(TypeError, match="boom"),
-        ):
-            iface.close()
-    finally:
-        iface.debugOut = None
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
 def test_close_suppresses_disconnect_type_error_during_finalization(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -481,7 +465,7 @@ def test_close_suppresses_disconnect_type_error_during_finalization(
         if not getattr(iface, "_closing", False):
             iface.close()
 
-    assert "during interpreter finalization" in caplog.text
+    assert "Failed to send disconnect during close(); continuing shutdown." in caplog.text
 
 
 @pytest.mark.unit
@@ -2758,6 +2742,34 @@ def test_wait_state_helpers_cover_request_resolution_branches() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_retired_scoped_wait_ids_do_not_clobber_unscoped_wait_state() -> None:
+    """Late callbacks for retired scoped waits should not write into unscoped state."""
+    with MeshInterface(noProto=True) as iface:
+        iface._clear_wait_error("receivedTelemetry", request_id=321)
+        iface._retire_wait_request("receivedTelemetry", request_id=321)
+
+        iface._mark_wait_acknowledged("receivedTelemetry", request_id=321)
+        iface._set_wait_error(
+            "receivedTelemetry",
+            "stale-scoped-error",
+            request_id=321,
+        )
+        with iface._response_handlers_lock:
+            assert (
+                "receivedTelemetry",
+                mesh_interface_module.UNSCOPED_WAIT_REQUEST_ID,
+            ) not in iface._response_wait_acks
+            assert (
+                "receivedTelemetry",
+                mesh_interface_module.UNSCOPED_WAIT_REQUEST_ID,
+            ) not in iface._response_wait_errors
+
+        iface._mark_wait_acknowledged("receivedTelemetry")
+        assert getattr(iface._acknowledgment, "receivedTelemetry") is True
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_record_routing_wait_error_ignores_none_like_reason() -> None:
     """Routing wait-error recorder should no-op for None/NONE reasons."""
     with MeshInterface(noProto=True) as iface:
@@ -2836,9 +2848,13 @@ def test_wait_for_request_ack_supports_overlapping_same_type_waits() -> None:
         iface._clear_wait_error("receivedTelemetry", request_id=11)
         iface._clear_wait_error("receivedTelemetry", request_id=22)
         errors: list[BaseException] = []
+        wait_started = {11: threading.Event(), 22: threading.Event()}
+        release_waits = threading.Event()
 
         def _wait_for(req_id: int) -> None:
             try:
+                wait_started[req_id].set()
+                assert release_waits.wait(timeout=1.0)
                 iface.waitForTelemetry(request_id=req_id)
             except Exception as exc:  # noqa: BLE001 - assertion below
                 errors.append(exc)
@@ -2847,9 +2863,10 @@ def test_wait_for_request_ack_supports_overlapping_same_type_waits() -> None:
         wait_22 = threading.Thread(target=_wait_for, args=(22,), daemon=True)
         wait_11.start()
         wait_22.start()
-        time.sleep(0.02)
+        assert wait_started[11].wait(timeout=1.0)
+        assert wait_started[22].wait(timeout=1.0)
+        release_waits.set()
         iface._mark_wait_acknowledged("receivedTelemetry", request_id=11)
-        time.sleep(0.02)
         iface._mark_wait_acknowledged("receivedTelemetry", request_id=22)
         wait_11.join(timeout=1.0)
         wait_22.join(timeout=1.0)

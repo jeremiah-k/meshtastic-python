@@ -3,9 +3,7 @@
 This module intentionally splits coverage into two lanes:
 - `smoke1`: single-device smoke checks.
 - `smoke1_destructive`: reboot/reset and heavy config mutation checks that are
-  opt-in and may temporarily leave hardware in a modified state. Destructive
-  tests carry both markers; select non-destructive runs with
-  `smoke1 and not smoke1_destructive`.
+  opt-in and may temporarily leave hardware in a modified state.
 """
 
 import contextlib
@@ -93,7 +91,7 @@ def _destructive_test(func: Callable[..., object]) -> Callable[..., object]:
     return cast(
         Callable[..., object],
         pytest.mark.usefixtures("restore_smoke1_module_config")(
-            pytest.mark.smoke1(pytest.mark.smoke1_destructive(func))
+            pytest.mark.smoke1_destructive(func)
         ),
     )
 
@@ -166,8 +164,8 @@ def test_find_channel_index_by_name_handles_multiline_channel_blocks() -> None:
 
 
 @pytest.mark.unit
-def test_destructive_test_marks_smoke1_and_smoke1_destructive() -> None:
-    """Destructive smoke helpers should carry both smoke marker classifications."""
+def test_destructive_test_marks_only_smoke1_destructive() -> None:
+    """Destructive smoke helpers should stay out of the generic smoke1 lane."""
 
     def _sample() -> None:
         return None
@@ -175,7 +173,7 @@ def test_destructive_test_marks_smoke1_and_smoke1_destructive() -> None:
     wrapped = _destructive_test(_sample)
     marker_names = {mark.name for mark in getattr(wrapped, "pytestmark", [])}
 
-    assert "smoke1" in marker_names
+    assert "smoke1" not in marker_names
     assert "smoke1_destructive" in marker_names
     assert "usefixtures" in marker_names
 
@@ -251,8 +249,8 @@ def test_wait_for_disconnect_then_ready_requires_disconnect_signal(
     assert recovered == "Connected to radio\nrecovered"
     assert ready_calls == 1
     assert sleep_calls == [
-        INFO_READY_POLL_INTERVAL_SECONDS,
-        INFO_READY_POLL_INTERVAL_SECONDS,
+        DISCONNECT_PROBE_TIMEOUT_SECONDS / 2.0,
+        DISCONNECT_PROBE_TIMEOUT_SECONDS / 2.0,
     ]
 
 
@@ -435,7 +433,7 @@ def _wait_for_disconnect_then_ready(action_name: str) -> str:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
-        time.sleep(min(INFO_READY_POLL_INTERVAL_SECONDS, remaining))
+        time.sleep(min(DISCONNECT_PROBE_TIMEOUT_SECONDS / 2.0, remaining))
     raise AssertionError(
         _DISCONNECT_WAIT_FAILURE_MSG.format(
             action_name=action_name,
@@ -972,7 +970,7 @@ def test_smoke1_attempt_to_delete_primary_channel() -> None:
 def test_smoke1_attempt_to_disable_primary_channel() -> None:
     """Disabling PRIMARY should be rejected."""
     return_value, out = _run("meshtastic", "--ch-disable", "--ch-index", "0")
-    assert re.search(r"Warning:\s+Cannot disable primary channel", out)
+    assert re.search(r"Warning:\s+Cannot enable/disable PRIMARY channel\.", out)
     assert return_value == 1
 
 
@@ -980,7 +978,7 @@ def test_smoke1_attempt_to_disable_primary_channel() -> None:
 def test_smoke1_attempt_to_enable_primary_channel() -> None:
     """Enabling PRIMARY should be rejected."""
     return_value, out = _run("meshtastic", "--ch-enable", "--ch-index", "0")
-    assert re.search(r"Warning:\s+Cannot enable primary channel", out)
+    assert re.search(r"Warning:\s+Cannot enable/disable PRIMARY channel\.", out)
     assert return_value == 1
 
 

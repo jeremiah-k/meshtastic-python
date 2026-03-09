@@ -53,6 +53,7 @@ MIN_TRANSPORT_HEADER_LEN = 4
 IP_PROTOCOL_OFFSET = 9
 IP_SRC_ADDR_OFFSET = 12
 IP_DEST_ADDR_OFFSET = 16
+TUN_MTU = 200
 
 
 def onTunnelReceive(packet: dict[str, Any], interface: Any) -> None:
@@ -208,13 +209,13 @@ class Tunnel:
                     "Not creating a TapDevice() because it is disabled by noProto"
                 )
             else:
-                logger.debug("creating TUN device with MTU=200")
+                logger.debug("creating TUN device with MTU=%d", TUN_MTU)
                 logger.info(
                     "Creating TapDevice; CAP_NET_ADMIN or root is typically required."
                 )
                 self.tun = TapDevice(name="mesh")
                 self.tun.up()
-                self.tun.ifconfig(address=myAddr, netmask=netmask, mtu=200)
+                self.tun.ifconfig(address=myAddr, netmask=netmask, mtu=TUN_MTU)
 
             if self.iface.noProto:
                 logger.warning(

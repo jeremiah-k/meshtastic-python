@@ -598,7 +598,8 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
         return True
 
     prefix = f"{'.'.join(name[0:-1])}." if config_type.message_type is not None else ""
-    print(f"Set {prefix}{uni_name} to {raw_val}")
+    display_value = "<redacted>" if snake_name == "wifi_psk" else raw_val
+    print(f"Set {prefix}{uni_name} to {display_value}")
 
     return True
 

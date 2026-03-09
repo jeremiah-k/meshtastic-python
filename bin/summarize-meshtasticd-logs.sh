@@ -27,13 +27,15 @@ elif [[ ${5-} == "--no-logs" ]]; then
 		echo "Too many arguments. No arguments are allowed after --no-logs." >&2
 		exit 1
 	fi
-elif (( $# > 4 )); then
-	echo "Unexpected argument: ${5}. Expected '--no-logs' or no additional arguments." >&2
-	exit 1
 fi
 
 if [[ ${MODE} != "single" && ${MODE} != "multinode" ]]; then
 	echo "Invalid mode: ${MODE}. Expected 'single' or 'multinode'." >&2
+	exit 1
+fi
+
+if (( $# > 4 )) && [[ ${5-} != "--no-logs" ]]; then
+	echo "Unexpected argument: ${5}. Expected '--no-logs' or no additional arguments." >&2
 	exit 1
 fi
 

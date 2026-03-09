@@ -244,6 +244,7 @@ class MeshInterface:  # pylint: disable=R0902
         # Shared mutable state is intentionally split by concern:
         # - _response_handlers_lock: responseHandlers map + response wait errors
         #   + _response_wait_acks + _active_wait_request_ids
+        #   + _retired_wait_request_ids
         # - _heartbeat_lock: _closing, heartbeatTimer, _heartbeat_inflight,
         #   isConnected
         # - _packet_id_lock: currentPacketId generation
@@ -270,6 +271,7 @@ class MeshInterface:  # pylint: disable=R0902
         self._response_wait_errors: dict[tuple[str, int], str] = {}
         self._response_wait_acks: set[tuple[str, int]] = set()
         self._active_wait_request_ids: dict[str, set[int]] = {}
+        self._retired_wait_request_ids: dict[str, set[int]] = {}
         self.failure: BaseException | None = (
             None  # If we've encountered a fatal exception it will be kept here
         )
@@ -334,17 +336,9 @@ class MeshInterface:  # pylint: disable=R0902
                         heartbeat_idle_condition.wait()
             try:
                 self._send_disconnect()
-            except (OSError, MeshInterface.MeshInterfaceError):
+            except (OSError, TypeError, MeshInterface.MeshInterfaceError):
                 logger.debug(
                     "Failed to send disconnect during close(); continuing shutdown.",
-                    exc_info=True,
-                )
-            except TypeError:
-                is_finalizing = getattr(sys, "is_finalizing", None)
-                if not (callable(is_finalizing) and is_finalizing()):
-                    raise
-                logger.debug(
-                    "Failed to send disconnect during interpreter finalization; continuing shutdown.",
                     exc_info=True,
                 )
         # debugOut is caller-owned (often shared via outer context managers);
@@ -1299,6 +1293,7 @@ class MeshInterface:  # pylint: disable=R0902
                     if key[0] == acknowledgment_attr:
                         self._response_wait_acks.discard(key)
                 self._active_wait_request_ids.pop(acknowledgment_attr, None)
+                self._retired_wait_request_ids.pop(acknowledgment_attr, None)
             else:
                 active_ids = self._active_wait_request_ids.setdefault(
                     acknowledgment_attr, set()
@@ -1311,6 +1306,11 @@ class MeshInterface:  # pylint: disable=R0902
                     (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID)
                 )
                 active_ids.add(request_id)
+                retired_ids = self._retired_wait_request_ids.get(acknowledgment_attr)
+                if retired_ids is not None:
+                    retired_ids.discard(request_id)
+                    if not retired_ids:
+                        self._retired_wait_request_ids.pop(acknowledgment_attr, None)
                 self._response_wait_errors.pop((acknowledgment_attr, request_id), None)
                 self._response_wait_acks.discard((acknowledgment_attr, request_id))
         if request_id is None:
@@ -1343,6 +1343,16 @@ class MeshInterface:  # pylint: disable=R0902
                     )
                     return
                 else:
+                    retired_request_ids = self._retired_wait_request_ids.get(
+                        acknowledgment_attr, set()
+                    )
+                    if request_id in retired_request_ids:
+                        logger.debug(
+                            "Ignoring retired scoped wait error for %s request_id=%s",
+                            acknowledgment_attr,
+                            request_id,
+                        )
+                        return
                     resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
                 self._response_wait_errors[
                     (acknowledgment_attr, resolved_request_id)
@@ -1388,6 +1398,16 @@ class MeshInterface:  # pylint: disable=R0902
                     )
                     return
                 else:
+                    retired_request_ids = self._retired_wait_request_ids.get(
+                        acknowledgment_attr, set()
+                    )
+                    if request_id in retired_request_ids:
+                        logger.debug(
+                            "Ignoring retired scoped acknowledgement for %s request_id=%s",
+                            acknowledgment_attr,
+                            request_id,
+                        )
+                        return
                     resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
                 self._response_wait_acks.add(
                     (acknowledgment_attr, resolved_request_id)
@@ -1442,10 +1462,12 @@ class MeshInterface:  # pylint: disable=R0902
             if request_id is not None:
                 if request_id in active_request_ids:
                     active_request_ids.discard(request_id)
+                    retired_request_ids = self._retired_wait_request_ids.setdefault(
+                        acknowledgment_attr, set()
+                    )
+                    retired_request_ids.add(request_id)
                     if not active_request_ids:
-                        # Preserve an empty scoped namespace so late callbacks
-                        # cannot fall back into the legacy unscoped wait slot.
-                        self._active_wait_request_ids[acknowledgment_attr] = set()
+                        self._active_wait_request_ids.pop(acknowledgment_attr, None)
                         self._response_wait_errors.pop(
                             (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID),
                             None,
@@ -1472,6 +1494,7 @@ class MeshInterface:  # pylint: disable=R0902
                             (acknowledgment_attr, active_request_id)
                         )
                     self._active_wait_request_ids.pop(acknowledgment_attr, None)
+                self._retired_wait_request_ids.pop(acknowledgment_attr, None)
                 self._response_wait_errors.pop(
                     (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID),
                     None,

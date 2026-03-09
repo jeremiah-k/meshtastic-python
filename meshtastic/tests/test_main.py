@@ -1588,7 +1588,10 @@ def test_main_set_valid_wifi_psk(
             main()
             out, err = capsys.readouterr()
             assert re.search(r"Connected to radio", out, re.MULTILINE)
-            assert re.search(r"Set network.wifi_psk to 123456789", out, re.MULTILINE)
+            assert re.search(
+                r"Set network\.wifi_psk to <redacted>", out, re.MULTILINE
+            )
+            assert "123456789" not in out
             assert err == ""
             mo.assert_called()
 
@@ -4634,8 +4637,13 @@ def test_main_ota_update_allows_explicit_local_dest(
     local_node = MagicMock(autospec=Node)
     other_node = MagicMock(autospec=Node)
 
-    def _get_node(dest: object, requestChannels: bool = True, **_kwargs: object) -> Any:
-        if dest == MAIN_LOCAL_ADDR and requestChannels is False:
+    def _get_node(dest: object, *args: object, **kwargs: object) -> Any:
+        request_channels = (
+            kwargs.get("requestChannels", True)
+            if "requestChannels" in kwargs
+            else (args[0] if args else True)
+        )
+        if dest == MAIN_LOCAL_ADDR and request_channels is False:
             return local_node
         return other_node
 

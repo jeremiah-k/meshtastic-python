@@ -12,6 +12,7 @@ from meshtastic.ota import (
     OTA_CHUNK_SIZE_BYTES,
     ESP32WiFiOTA,
     OTAError,
+    OTATransportError,
     _file_sha256,
 )
 
@@ -500,7 +501,10 @@ def test_esp32_wifi_ota_update_socket_cleanup_on_error(
         # Simulate transport error during send after connection creation.
         mock_socket.sendall.side_effect = ConnectionRefusedError("Connection refused")
 
-        with pytest.raises(OTAError, match=r"OTA transport to 192\.168\.1\.1:3232 failed"):
+        with pytest.raises(
+            OTATransportError,
+            match=r"OTA transport to 192\.168\.1\.1:3232 failed",
+        ):
             ota.update()
 
         # Verify socket was closed even on error
