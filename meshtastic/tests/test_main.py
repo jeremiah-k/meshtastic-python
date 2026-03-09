@@ -4633,7 +4633,12 @@ def test_main_ota_update_allows_explicit_local_dest(
     assert err == ""
     node.startOTA.assert_called_once()
     ota.update.assert_called_once()
-    assert get_node.call_args_list
+    assert any(
+        bool(recorded_call.args)
+        and recorded_call.args[0] == MAIN_LOCAL_ADDR
+        and recorded_call.kwargs.get("requestChannels") is False
+        for recorded_call in get_node.call_args_list
+    )
 
 
 @pytest.mark.unit

@@ -2352,6 +2352,7 @@ class BLEInterface(MeshInterface):
             connection_alias_key,
         )
         publish_connected = False
+        publish_candidate = False
         publish_now = False
         prior_ever_connected = False
         is_closing = False
@@ -2377,10 +2378,17 @@ class BLEInterface(MeshInterface):
                             connected_client
                         )
                         if still_owned:
-                            self._client_publish_pending = False
-                            self._ever_connected = True
-                            self._prior_publish_was_reconnect = prior_ever_connected
-                            publish_now = True
+                            publish_candidate = True
+        if publish_candidate:
+            with self._state_lock:
+                still_owned, is_closing = self._get_connected_client_status_locked(
+                    connected_client
+                )
+                if still_owned and not is_closing:
+                    self._client_publish_pending = False
+                    self._ever_connected = True
+                    self._prior_publish_was_reconnect = prior_ever_connected
+                    publish_now = True
         if publish_now:
             self._connected()
             self._emit_verified_connection_side_effects(connected_client)
@@ -2652,9 +2660,11 @@ class BLEInterface(MeshInterface):
                 # once we have `_connect_lock` to avoid the handoff race.
                 with management_lock:
                     while self._management_inflight > 0:
+                        self._validate_connection_preconditions()
                         if not management_idle_condition.wait(
                             timeout=_MANAGEMENT_CONNECT_WAIT_POLL_SECONDS
                         ):
+                            self._validate_connection_preconditions()
                             elapsed = time.monotonic() - management_wait_started
                             if elapsed >= _MANAGEMENT_CONNECT_WAIT_TIMEOUT_SECONDS:
                                 logger.warning(

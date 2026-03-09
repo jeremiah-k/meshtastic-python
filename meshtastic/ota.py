@@ -1,5 +1,6 @@
 """Meshtastic ESP32 Unified OTA."""
 
+import os
 import hashlib
 import logging
 import socket
@@ -16,6 +17,7 @@ READ_FIRMWARE_ERROR: str = "Unable to read firmware file {filename}: {error}"
 FIRMWARE_CHANGED_ERROR: str = (
     "Firmware file {filename} changed after OTA session initialization."
 )
+OTA_TRANSPORT_ERROR: str = "OTA transport to {host}:{port} failed: {error}"
 
 
 class _SHA256Digest(Protocol):
@@ -149,11 +151,25 @@ class ESP32WiFiOTA:
         file_hash = hashlib.sha256()
         try:
             with open(self._filename, "rb") as firmware:
-                for block in iter(
-                    lambda: firmware.read(FILE_HASH_READ_CHUNK_SIZE_BYTES), b""
-                ):
+                disk_size = os.fstat(firmware.fileno()).st_size
+                if disk_size == 0:
+                    raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
+                if disk_size != self._size:
+                    raise OTAError(FIRMWARE_CHANGED_ERROR.format(filename=self._filename))
+
+                bytes_remaining = self._size
+                while bytes_remaining > 0:
+                    block = firmware.read(
+                        min(FILE_HASH_READ_CHUNK_SIZE_BYTES, bytes_remaining)
+                    )
+                    if not block:
+                        break
                     image.extend(block)
                     file_hash.update(block)
+                    bytes_remaining -= len(block)
+
+                if firmware.read(1):
+                    raise OTAError(FIRMWARE_CHANGED_ERROR.format(filename=self._filename))
         except FileNotFoundError as exc:
             raise OTAError(MISSING_FIRMWARE_ERROR.format(filename=self._filename)) from exc
         except OSError as exc:
@@ -238,7 +254,14 @@ class ESP32WiFiOTA:
                     raise OTAError(f"OTA update failed: {response}")
                 elif response != "ACK":
                     logger.warning("Unexpected final response: %s", response)
-
+        except (ConnectionError, OSError) as exc:
+            raise OTAError(
+                OTA_TRANSPORT_ERROR.format(
+                    host=self._hostname,
+                    port=self._port,
+                    error=exc,
+                )
+            ) from exc
         finally:
             if self._socket:
                 self._socket.close()

@@ -413,134 +413,27 @@ Still intentionally pending as follow-up work:
 
 ## 17) Maintenance Merge Hardening Checklist (Current Cycle)
 
-This section tracks the post-refactor stabilization pass focused on merging
-cleanly to the target maintenance branch with race/concurrency/state behavior
-explicitly validated.
+This section now keeps only durable rationale from the hardening stream:
 
-Lifecycle note: this section is intentionally time-bound. After merge
-stabilization completes, detailed per-cycle checklist execution moves to
-`CODERABBIT_SWEEP_CHECKLIST.md`, and this document keeps only durable design
-rationale.
+- BLE connection publication remains lock-order aware, with final ownership
+  verification before connected-state publication.
+- OTA hardening emphasizes deterministic firmware/session validation and
+  transport error normalization through `OTAError`.
+- Host/port parser and smoke-runner validation continue to fail fast on invalid
+  operator input.
+- Optional backend loading stays lazy to keep base import/test paths
+  deterministic without optional hardware dependencies.
 
-### 17.1 Objectives for this cycle
-
-- Remove remaining race windows in BLE connect/ownership publication.
-- Keep shutdown semantics deterministic under transport failure and callback
-  interleavings.
-- Tighten parser/test correctness where edge-case inputs were over/under
-  validated.
-- Eliminate optional dependency import friction that blocks local/CI test
-  bring-up.
-- Keep behavior changes tied to concrete regression tests.
-
-### 17.2 Checklist and rationale
-
-- [x] **BLE publish-side ownership verification tightened**
-  - What changed:
-    - `_verify_and_publish_connected()` now computes gate-ownership probing
-      outside `_state_lock`, then re-checks ownership under `_state_lock`
-      before clearing `_client_publish_pending` and publishing connected state.
-  - Why:
-    - Reduces lock-order risk and narrows stale-state publication windows during
-      concurrent close/disconnect races.
-
-- [x] **Invalidated provisional connect restores caller target binding**
-  - What changed:
-    - Invalidated connect cleanup now restores non-empty original requested
-      identifiers (including name-based targets), not only BLE-address-shaped
-      values.
-    - Connect verification now passes `requested_identifier` as the restore
-      binding target for invalidation cleanup.
-  - Why:
-    - Prevents name/implicit targets from being rebound to resolved MAC or
-      dropped to `None` when ownership is lost before publish.
-
-- [x] **`emit_connected_side_effects` now gates callback publication**
-  - What changed:
-    - `_finalize_connection()` now invokes `on_connected_func()` only when
-      `emit_connected_side_effects` is true.
-  - Why:
-    - Ensures deferred-ownership flows do not accidentally trigger premature or
-      duplicate connected side effects.
-
-- [x] **Rapid disconnect stress test now disconnects active client each loop**
-  - What changed:
-    - `simulate_rapid_disconnects()` fetches `iface.client` each iteration
-      before firing `_on_ble_disconnect`.
-  - Why:
-    - Keeps stress behavior aligned with reconnect churn and avoids stale-client
-      callback no-ops after the first reconnect.
-
-- [x] **OTA retry policy test assertions now track constants**
-  - What changed:
-    - `test_main_ota_update_retries_then_exits()` now derives call counts and
-      retry-delay sleeps from `OTA_MAX_RETRIES`.
-  - Why:
-    - Prevents brittle tests when retry budget constants evolve.
-
-- [x] **OTA progress log-step misconfiguration guard added**
-  - What changed:
-    - `ESP32WiFiOTA.update()` now rejects non-positive
-      `OTA_PROGRESS_LOG_PERCENT_STEP`.
-    - Regression test added for fail-fast behavior before socket creation.
-  - Why:
-    - Prevents infinite-loop risk in progress catch-up logic.
-
-- [x] **meshtasticd host parser accepts valid full IPv6 literals**
-  - What changed:
-    - `_parse_host_and_port()` now returns early for any fully valid IPv6
-      literal, including numeric-tail forms like `::1:4401`.
-    - Ambiguous/invalid unbracketed IPv6:port-like forms are still rejected
-      when full-literal validation fails.
-    - Module constants now carry explicit type annotations.
-  - Why:
-    - Avoids rejecting standards-valid host-only IPv6 addresses.
-
-- [x] **Smokevirt host validation now enforces embedded port range**
-  - What changed:
-    - `bin/run-smokevirt-with-meshtasticd.sh` now validates inline
-      `MESHTASTICD_HOST` port suffix is in `1..65535`.
-  - Why:
-    - Fails fast on misconfiguration instead of surfacing later in readiness
-      probes.
-
-- [x] **Powermon optional backends now load lazily**
-  - What changed:
-    - `meshtastic.powermon` no longer eagerly imports `ppk2`/`riden` at package
-      import time.
-    - Optional backends are resolved via lazy `__getattr__`, with clear
-      placeholder classes when dependencies are missing.
-    - Regression test added to confirm lazy behavior and clear dependency error.
-  - Why:
-    - Removes unrelated test-environment failures caused by missing optional
-      hardware dependencies and keeps base test bring-up deterministic.
-
-### 17.3 Completed follow-up items (post-draft)
-
-The following items were initially deferred when this section was first drafted,
-then completed in the same stabilization cycle:
-
-- Request-scoped wait-error correlation by packet/request-id in
-  `MeshInterface` (`_response_wait_errors` + `_active_wait_request_ids`
-  request-scoped handling).
-- Concrete device-key reservation before long name/discovery connect waits in
-  BLE multi-interface coordination (alias + resolved-key reservation before
-  long-running connect windows).
+Detailed cycle checklists and per-PR execution notes live in
+`CODERABBIT_SWEEP_CHECKLIST.md`.
 
 ## 18) Validation Notes for This Cycle
 
-Validation for this cycle should continue to include:
-
-- lint (`ruff`, `shellcheck`) on touched files,
-- targeted BLE and mesh interface suites for race-sensitive paths,
-- OTA retry/progress behavior tests,
-- meshtasticd host parser tests for IPv6/port edge cases,
-- powermon import/lazy-backend tests in environments without optional backends.
+Cycle-specific validation run history is tracked in
+`CODERABBIT_SWEEP_CHECKLIST.md`. Keep this document focused on durable behavior
+contracts and policy.
 
 ## 19) Review Execution Tracking
 
-PR-local review triage and execution checklists are intentionally tracked in a
-separate artifact to keep this program document focused on durable architecture
-and policy.
-
-- Current detailed triage/checklist: `CODERABBIT_SWEEP_CHECKLIST.md`
+Review triage and execution tracking are maintained in
+`CODERABBIT_SWEEP_CHECKLIST.md`.

@@ -439,9 +439,6 @@ def _is_connecting_claim_elsewhere_locked(
         if _prune_stale_connecting_claim_locked(key):
             return False
         return True
-    if _prune_stale_connecting_claim_locked(key):
-        _cleanup_addr_lock(key)
-        return False
     return True
 
 

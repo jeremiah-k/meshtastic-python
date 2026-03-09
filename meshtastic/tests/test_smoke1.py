@@ -4,8 +4,8 @@ This module intentionally splits coverage into two lanes:
 - `smoke1`: single-device smoke checks.
 - `smoke1_destructive`: reboot/reset and heavy config mutation checks that are
   opt-in and may temporarily leave hardware in a modified state. Destructive
-  tests carry both markers so dedicated lanes can select `smoke1_destructive`
-  while mixed lanes can still select all `smoke1` tests.
+  tests use `smoke1_destructive` only so they stay out of the generic
+  `smoke1` selector.
 """
 
 import contextlib
@@ -93,7 +93,7 @@ def _destructive_test(func: Callable[..., object]) -> Callable[..., object]:
     return cast(
         Callable[..., object],
         pytest.mark.usefixtures("restore_smoke1_module_config")(
-            pytest.mark.smoke1(pytest.mark.smoke1_destructive(func))
+            pytest.mark.smoke1_destructive(func)
         ),
     )
 
@@ -166,8 +166,8 @@ def test_find_channel_index_by_name_handles_multiline_channel_blocks() -> None:
 
 
 @pytest.mark.unit
-def test_destructive_test_marks_smoke1_and_smoke1_destructive() -> None:
-    """Destructive smoke helpers should carry both smoke1 markers."""
+def test_destructive_test_marks_only_smoke1_destructive() -> None:
+    """Destructive smoke helpers should stay out of the generic smoke1 lane."""
 
     def _sample() -> None:
         return None
@@ -175,7 +175,7 @@ def test_destructive_test_marks_smoke1_and_smoke1_destructive() -> None:
     wrapped = _destructive_test(_sample)
     marker_names = {mark.name for mark in getattr(wrapped, "pytestmark", [])}
 
-    assert "smoke1" in marker_names
+    assert "smoke1" not in marker_names
     assert "smoke1_destructive" in marker_names
     assert "usefixtures" in marker_names
 
@@ -467,7 +467,7 @@ def restore_smoke1_module_config() -> Iterator[None]:
             timeout=180,
         )
         if return_value != 0:
-            pytest.skip(f"Unable to export baseline smoke1 config:\n{out}")
+            pytest.fail(f"Unable to export baseline smoke1 config:\n{out}")
         export_succeeded = True
 
         yield
@@ -1070,18 +1070,21 @@ def test_smoke1_ensure_ch_del_third_of_three_channels() -> None:
 @_destructive_test
 def test_smoke1_seturl_default() -> None:
     """`--seturl` with the default URL should restore the default URL token."""
+    channel_name = _unique_channel_name("url")
     return_value, out = _run(
         "meshtastic",
         "--ch-set",
         "name",
-        "foo",
+        channel_name,
         "--ch-index",
         "0",
     )
     assert return_value == 0
     info_out = _wait_for_mutation_to_settle(
-        predicate=lambda output: DEFAULT_URL_FRAGMENT not in output
+        predicate=lambda output: channel_name in output
+        and DEFAULT_URL_FRAGMENT not in output
     )
+    assert channel_name in info_out
     assert DEFAULT_URL_FRAGMENT not in info_out
 
     url = "https://www.meshtastic.org/d/#CgUYAyIBAQ"

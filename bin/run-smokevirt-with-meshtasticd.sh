@@ -13,10 +13,11 @@ MESHTASTICD_LOG_ON_SUCCESS="${MESHTASTICD_LOG_ON_SUCCESS:-false}"
 SMOKEVIRT_PYTEST_ARGS="${SMOKEVIRT_PYTEST_ARGS-}"
 MESHTASTICD_DEFAULT_PYTEST_TARGETS="meshtastic/tests/test_meshtasticd_ci.py meshtastic/tests/test_meshtasticd_tcp_interface_ci.py"
 MESHTASTICD_PYTEST_TARGETS="${MESHTASTICD_PYTEST_TARGETS:-${MESHTASTICD_DEFAULT_PYTEST_TARGETS}}"
+MESHTASTICD_AUTO_INT_TARGETS="${MESHTASTICD_AUTO_INT_TARGETS:-meshtastic/tests/test_meshtasticd_ci.py}"
 MESHTASTICD_PYTEST_MARK_EXPR="${MESHTASTICD_PYTEST_MARK_EXPR-}"
 EXTRA_PYTEST_ARGS=()
 PYTEST_TARGETS=()
-DEFAULT_PYTEST_TARGETS=()
+AUTO_INT_TARGETS=()
 MESHTASTICD_CI_TARGETS=()
 SMOKEVIRT_TARGETS=()
 LOGS_PRINTED=false
@@ -101,6 +102,10 @@ esac
 require_regex "${MESHTASTICD_PORT}" '^[0-9]+$' "MESHTASTICD_PORT"
 require_regex "${MESHTASTICD_READY_TIMEOUT_SECONDS}" '^[0-9]+$' "MESHTASTICD_READY_TIMEOUT_SECONDS"
 MESHTASTICD_PORT_DEC=$((10#${MESHTASTICD_PORT}))
+if ((MESHTASTICD_PORT_DEC < 1 || MESHTASTICD_PORT_DEC > 65535)); then
+	echo "MESHTASTICD_PORT must be between 1 and 65535." >&2
+	exit 1
+fi
 
 MESHTASTICD_PARSED_HOST_AND_PORT="$(
 	poetry run python - "${MESHTASTICD_HOST}" "${MESHTASTICD_PORT_DEC}" <<'PY'
@@ -155,10 +160,6 @@ if [[ -n ${MESHTASTICD_LOG_DIR} ]] && [[ ${MESHTASTICD_LOG_DIR} == *$'\n'* ]]; t
 fi
 if ((10#${MESHTASTICD_READY_TIMEOUT_SECONDS} <= 0)); then
 	echo "MESHTASTICD_READY_TIMEOUT_SECONDS must be greater than zero." >&2
-	exit 1
-fi
-if ((MESHTASTICD_PORT_DEC < 1 || MESHTASTICD_PORT_DEC > 65535)); then
-	echo "MESHTASTICD_PORT must be between 1 and 65535." >&2
 	exit 1
 fi
 if [[ -n ${MESHTASTICD_LOG_DIR} ]]; then
@@ -216,7 +217,7 @@ if [[ -n ${SMOKEVIRT_PYTEST_ARGS} ]]; then
 fi
 
 read -r -a PYTEST_TARGETS <<<"${MESHTASTICD_PYTEST_TARGETS}"
-read -r -a DEFAULT_PYTEST_TARGETS <<<"${MESHTASTICD_DEFAULT_PYTEST_TARGETS}"
+read -r -a AUTO_INT_TARGETS <<<"${MESHTASTICD_AUTO_INT_TARGETS}"
 
 if [[ ${#PYTEST_TARGETS[@]} -eq 0 ]]; then
 	echo "MESHTASTICD_PYTEST_TARGETS must not be empty." >&2
@@ -238,7 +239,7 @@ for target in "${PYTEST_TARGETS[@]}"; do
 		HAS_SMOKEVIRT_TARGET=true
 		SMOKEVIRT_TARGETS+=("${target}")
 	fi
-	for default_target in "${DEFAULT_PYTEST_TARGETS[@]}"; do
+	for default_target in "${AUTO_INT_TARGETS[@]}"; do
 		normalized_default_target="${default_target#./}"
 		normalized_default_basename="${normalized_default_target##*/}"
 		if [[ ${normalized_target} == "${normalized_default_target}" || ${normalized_basename} == "${normalized_default_basename}" ]]; then
@@ -262,7 +263,7 @@ if [[ -z ${MESHTASTICD_PYTEST_MARK_EXPR} ]]; then
 		echo "MESHTASTICD_PYTEST_TARGETS mixes smokevirt with non-smokevirt targets; set MESHTASTICD_PYTEST_MARK_EXPR explicitly." >&2
 		exit 1
 	# Auto-apply "int" when every selected target is one of the dedicated
-	# meshtasticd CI files, including subsets of the default target list.
+	# auto-int eligible files.
 	elif [[ ${#MESHTASTICD_CI_TARGETS[@]} -eq ${#PYTEST_TARGETS[@]} ]]; then
 		MESHTASTICD_PYTEST_MARK_EXPR="int"
 	fi

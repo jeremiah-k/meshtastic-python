@@ -89,6 +89,10 @@ JSONValue: TypeAlias = (
     None | bool | int | float | str | list["JSONValue"] | dict[str, "JSONValue"]
 )
 UNSCOPED_WAIT_REQUEST_ID: int = -1
+WAIT_ATTR_POSITION: str = "receivedPosition"
+WAIT_ATTR_TELEMETRY: str = "receivedTelemetry"
+WAIT_ATTR_TRACEROUTE: str = "receivedTraceRoute"
+WAIT_ATTR_WAYPOINT: str = "receivedWaypoint"
 
 
 def _format_missing_node_num_error(destination_id: int | str) -> str:
@@ -1012,6 +1016,7 @@ class MeshInterface:  # pylint: disable=R0902
         data: Any,
         destinationId: int | str = BROADCAST_ADDR,
         portNum: portnums_pb2.PortNum.ValueType = portnums_pb2.PortNum.PRIVATE_APP,
+        *,
         wantAck: bool = False,
         wantResponse: bool = False,
         onResponse: Callable[[dict[str, Any]], Any] | None = None,
@@ -1100,6 +1105,7 @@ class MeshInterface:  # pylint: disable=R0902
         meshPacket.decoded.portnum = portNum
         meshPacket.decoded.want_response = wantResponse
         meshPacket.id = self._generate_packet_id()
+        # Packet id 0 is reserved as an unset/unknown sentinel in wait paths.
         while meshPacket.id == 0:
             meshPacket.id = self._generate_packet_id()
         if replyId is not None:
@@ -1187,7 +1193,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         if wantResponse:
             onResponse = self.onResponsePosition
-            response_wait_attr = "receivedPosition"
+            response_wait_attr = WAIT_ATTR_POSITION
         else:
             onResponse = None
             response_wait_attr = None
@@ -1404,7 +1410,9 @@ class MeshInterface:  # pylint: disable=R0902
                 if request_id in active_request_ids:
                     active_request_ids.discard(request_id)
                     if not active_request_ids:
-                        self._active_wait_request_ids.pop(acknowledgment_attr, None)
+                        # Preserve an empty scoped namespace so late callbacks
+                        # cannot fall back into the legacy unscoped wait slot.
+                        self._active_wait_request_ids[acknowledgment_attr] = set()
                         self._response_wait_errors.pop(
                             (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID),
                             None,
@@ -1541,13 +1549,13 @@ class MeshInterface:  # pylint: disable=R0902
                 position.ParseFromString(p["decoded"]["payload"])
             except (KeyError, TypeError, protobuf_message.DecodeError) as exc:
                 self._set_wait_error(
-                    "receivedPosition",
+                    WAIT_ATTR_POSITION,
                     f"Failed to parse position response payload: {exc}",
                     request_id=request_id,
                 )
                 return
             self._mark_wait_acknowledged(
-                "receivedPosition",
+                WAIT_ATTR_POSITION,
                 request_id=request_id,
             )
 
@@ -1574,7 +1582,7 @@ class MeshInterface:  # pylint: disable=R0902
             portnums_pb2.PortNum.ROUTING_APP
         ):
             self._record_routing_wait_error(
-                acknowledgment_attr="receivedPosition",
+                acknowledgment_attr=WAIT_ATTR_POSITION,
                 routing_error_reason=p["decoded"].get("routing", {}).get("errorReason"),
                 request_id=request_id,
             )
@@ -1611,7 +1619,7 @@ class MeshInterface:  # pylint: disable=R0902
             onResponse=self.onResponseTraceRoute,
             channelIndex=channelIndex,
             hopLimit=hopLimit,
-            response_wait_attr="receivedTraceRoute",
+            response_wait_attr=WAIT_ATTR_TRACEROUTE,
         )
         # extend timeout based on number of nodes, limit by configured hopLimit
         with self._node_db_lock:
@@ -1648,7 +1656,7 @@ class MeshInterface:  # pylint: disable=R0902
             portnums_pb2.PortNum.ROUTING_APP
         ):
             self._record_routing_wait_error(
-                acknowledgment_attr="receivedTraceRoute",
+                acknowledgment_attr=WAIT_ATTR_TRACEROUTE,
                 routing_error_reason=decoded.get("routing", {}).get("errorReason"),
                 request_id=request_id,
             )
@@ -1660,7 +1668,7 @@ class MeshInterface:  # pylint: disable=R0902
             asDict = google.protobuf.json_format.MessageToDict(routeDiscovery)
         except (protobuf_message.DecodeError, KeyError, TypeError) as exc:
             self._set_wait_error(
-                "receivedTraceRoute",
+                WAIT_ATTR_TRACEROUTE,
                 f"Failed to parse traceroute response payload: {exc}",
                 request_id=request_id,
             )
@@ -1747,7 +1755,7 @@ class MeshInterface:  # pylint: disable=R0902
             _emit_response_summary(routeStr)
 
         self._mark_wait_acknowledged(
-            "receivedTraceRoute",
+            WAIT_ATTR_TRACEROUTE,
             request_id=request_id,
         )
 
@@ -1828,7 +1836,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         if wantResponse:
             onResponse = self.onResponseTelemetry
-            response_wait_attr = "receivedTelemetry"
+            response_wait_attr = WAIT_ATTR_TELEMETRY
         else:
             onResponse = None
             response_wait_attr = None
@@ -1879,7 +1887,7 @@ class MeshInterface:  # pylint: disable=R0902
                 telemetry.ParseFromString(p["decoded"]["payload"])
             except (KeyError, TypeError, protobuf_message.DecodeError) as exc:
                 self._set_wait_error(
-                    "receivedTelemetry",
+                    WAIT_ATTR_TELEMETRY,
                     f"Failed to parse telemetry response payload: {exc}",
                     request_id=request_id,
                 )
@@ -1930,13 +1938,13 @@ class MeshInterface:  # pylint: disable=R0902
                                 _emit_response_summary(f"{key}: {value}")
             except Exception as exc:  # noqa: BLE001
                 self._set_wait_error(
-                    "receivedTelemetry",
+                    WAIT_ATTR_TELEMETRY,
                     f"Failed to format telemetry response: {exc}",
                     request_id=request_id,
                 )
                 return
             self._mark_wait_acknowledged(
-                "receivedTelemetry",
+                WAIT_ATTR_TELEMETRY,
                 request_id=request_id,
             )
 
@@ -1944,7 +1952,7 @@ class MeshInterface:  # pylint: disable=R0902
             portnums_pb2.PortNum.ROUTING_APP
         ):
             self._record_routing_wait_error(
-                acknowledgment_attr="receivedTelemetry",
+                acknowledgment_attr=WAIT_ATTR_TELEMETRY,
                 routing_error_reason=p["decoded"].get("routing", {}).get("errorReason"),
                 request_id=request_id,
             )
@@ -1975,13 +1983,13 @@ class MeshInterface:  # pylint: disable=R0902
                 w.ParseFromString(p["decoded"]["payload"])
             except (KeyError, TypeError, protobuf_message.DecodeError) as exc:
                 self._set_wait_error(
-                    "receivedWaypoint",
+                    WAIT_ATTR_WAYPOINT,
                     f"Failed to parse waypoint response payload: {exc}",
                     request_id=request_id,
                 )
                 return
             self._mark_wait_acknowledged(
-                "receivedWaypoint",
+                WAIT_ATTR_WAYPOINT,
                 request_id=request_id,
             )
             _emit_response_summary(f"Waypoint received: {w}")
@@ -1989,7 +1997,7 @@ class MeshInterface:  # pylint: disable=R0902
             portnums_pb2.PortNum.ROUTING_APP
         ):
             self._record_routing_wait_error(
-                acknowledgment_attr="receivedWaypoint",
+                acknowledgment_attr=WAIT_ATTR_WAYPOINT,
                 routing_error_reason=p["decoded"].get("routing", {}).get("errorReason"),
                 request_id=request_id,
             )
@@ -2065,7 +2073,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         if wantResponse:
             onResponse = self.onResponseWaypoint
-            response_wait_attr = "receivedWaypoint"
+            response_wait_attr = WAIT_ATTR_WAYPOINT
         else:
             onResponse = None
             response_wait_attr = None
@@ -2126,7 +2134,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         if wantResponse:
             onResponse = self.onResponseWaypoint
-            response_wait_attr = "receivedWaypoint"
+            response_wait_attr = WAIT_ATTR_WAYPOINT
         else:
             onResponse = None
             response_wait_attr = None
@@ -2372,19 +2380,19 @@ class MeshInterface:  # pylint: disable=R0902
                 )
             else:
                 success = self._wait_for_request_ack(
-                    "receivedTraceRoute",
+                    WAIT_ATTR_TRACEROUTE,
                     request_id,
                     timeout_seconds=self._timeout.expireTimeout * waitFactor,
                 )
             self._raise_wait_error_if_present(
-                "receivedTraceRoute", request_id=request_id
+                WAIT_ATTR_TRACEROUTE, request_id=request_id
             )
             if not success:
                 raise MeshInterface.MeshInterfaceError(
                     "Timed out waiting for traceroute"
                 )
         finally:
-            self._retire_wait_request("receivedTraceRoute", request_id=request_id)
+            self._retire_wait_request(WAIT_ATTR_TRACEROUTE, request_id=request_id)
 
     def waitForTelemetry(self, request_id: int | None = None) -> None:
         """Wait for a telemetry response or until the configured timeout elapses.
@@ -2405,19 +2413,19 @@ class MeshInterface:  # pylint: disable=R0902
                 success = self._timeout.waitForTelemetry(self._acknowledgment)
             else:
                 success = self._wait_for_request_ack(
-                    "receivedTelemetry",
+                    WAIT_ATTR_TELEMETRY,
                     request_id,
                     timeout_seconds=self._timeout.expireTimeout,
                 )
             self._raise_wait_error_if_present(
-                "receivedTelemetry", request_id=request_id
+                WAIT_ATTR_TELEMETRY, request_id=request_id
             )
             if not success:
                 raise MeshInterface.MeshInterfaceError(
                     "Timed out waiting for telemetry"
                 )
         finally:
-            self._retire_wait_request("receivedTelemetry", request_id=request_id)
+            self._retire_wait_request(WAIT_ATTR_TELEMETRY, request_id=request_id)
 
     def waitForPosition(self, request_id: int | None = None) -> None:
         """Block until a position acknowledgment is received.
@@ -2438,15 +2446,17 @@ class MeshInterface:  # pylint: disable=R0902
                 success = self._timeout.waitForPosition(self._acknowledgment)
             else:
                 success = self._wait_for_request_ack(
-                    "receivedPosition",
+                    WAIT_ATTR_POSITION,
                     request_id,
                     timeout_seconds=self._timeout.expireTimeout,
                 )
-            self._raise_wait_error_if_present("receivedPosition", request_id=request_id)
+            self._raise_wait_error_if_present(
+                WAIT_ATTR_POSITION, request_id=request_id
+            )
             if not success:
                 raise MeshInterface.MeshInterfaceError("Timed out waiting for position")
         finally:
-            self._retire_wait_request("receivedPosition", request_id=request_id)
+            self._retire_wait_request(WAIT_ATTR_POSITION, request_id=request_id)
 
     def waitForWaypoint(self, request_id: int | None = None) -> None:
         """Block until a waypoint acknowledgment is received.
@@ -2469,15 +2479,17 @@ class MeshInterface:  # pylint: disable=R0902
                 success = self._timeout.waitForWaypoint(self._acknowledgment)
             else:
                 success = self._wait_for_request_ack(
-                    "receivedWaypoint",
+                    WAIT_ATTR_WAYPOINT,
                     request_id,
                     timeout_seconds=self._timeout.expireTimeout,
                 )
-            self._raise_wait_error_if_present("receivedWaypoint", request_id=request_id)
+            self._raise_wait_error_if_present(
+                WAIT_ATTR_WAYPOINT, request_id=request_id
+            )
             if not success:
                 raise MeshInterface.MeshInterfaceError("Timed out waiting for waypoint")
         finally:
-            self._retire_wait_request("receivedWaypoint", request_id=request_id)
+            self._retire_wait_request(WAIT_ATTR_WAYPOINT, request_id=request_id)
 
     def getMyNodeInfo(self) -> dict[str, Any] | None:
         """Get the stored node-info dictionary for the local node.

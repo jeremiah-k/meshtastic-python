@@ -820,7 +820,7 @@ def onConnected(interface: MeshInterface) -> None:
                 _cli_exit(
                     "Error: OTA update only supports the directly connected local node; omit --dest or use --dest ^local."
                 )
-            ota_dest = BROADCAST_ADDR if args.dest == LOCAL_ADDR else args.dest
+            ota_dest = args.dest
             waitForAckNak = False
 
             ota = meshtastic.ota.ESP32WiFiOTA(args.ota_update, interface.hostname)
@@ -849,6 +849,7 @@ def onConnected(interface: MeshInterface) -> None:
                     time.sleep(OTA_RETRY_DELAY_SECONDS)
 
             print("\nOTA update completed successfully!")
+            return
 
         if args.enter_dfu:
             closeNow = True

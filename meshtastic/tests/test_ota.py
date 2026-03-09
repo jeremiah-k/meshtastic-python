@@ -243,7 +243,7 @@ def test_esp32_wifi_ota_update_rejects_firmware_changed_after_init(
         ota = ESP32WiFiOTA(temp_file, "192.168.1.1")
         assert ota._size == 32
         assert ota.hash_hex() == hashlib.sha256(b"A" * 32).hexdigest()
-        replacement_data = b"B" * 64
+        replacement_data = b"B" * ota._size
         with open(temp_file, "wb") as fw:
             fw.write(replacement_data)
 
@@ -500,7 +500,7 @@ def test_esp32_wifi_ota_update_socket_cleanup_on_error(
         # Simulate transport error during send after connection creation.
         mock_socket.sendall.side_effect = ConnectionRefusedError("Connection refused")
 
-        with pytest.raises(ConnectionRefusedError):
+        with pytest.raises(OTAError, match=r"OTA transport to 192\.168\.1\.1:3232 failed"):
             ota.update()
 
         # Verify socket was closed even on error
@@ -543,9 +543,16 @@ def test_esp32_wifi_ota_update_large_firmware(mock_socket_class: MagicMock) -> N
                 if call[0][0]
                 != f"OTA {len(test_data)} {ota.hash_hex()}\n".encode("utf-8")
             ]
-            # Calculate total data sent (excluding the start command)
-            total_sent = sum(len(call[0][0]) for call in sendall_calls)
-            assert total_sent == len(test_data)
+            expected_chunk_count = (
+                len(test_data) + OTA_CHUNK_SIZE_BYTES - 1
+            ) // OTA_CHUNK_SIZE_BYTES
+            expected_last_size = len(test_data) % OTA_CHUNK_SIZE_BYTES
+            if expected_last_size == 0:
+                expected_last_size = OTA_CHUNK_SIZE_BYTES
+            assert len(sendall_calls) == expected_chunk_count
+            for send_call in sendall_calls[:-1]:
+                assert len(send_call.args[0]) == OTA_CHUNK_SIZE_BYTES
+            assert len(sendall_calls[-1].args[0]) == expected_last_size
 
     finally:
         os.unlink(temp_file)

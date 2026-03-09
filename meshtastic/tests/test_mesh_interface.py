@@ -1846,10 +1846,10 @@ def test_on_response_position_prints_when_info_logging_not_visible(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_logger_visible_info_handler_prefers_stdout_visibility_for_print_fallback() -> (
+def test_logger_visible_info_handler_treats_stdout_and_stderr_as_visible() -> (
     None
 ):
-    """Only stdout-backed handlers should suppress the legacy stdout print fallback."""
+    """Stdout/stderr-backed handlers should suppress the legacy stdout print fallback."""
     handler_logger = logging.getLogger("meshtastic.tests.visible-info-handler")
     original_handlers = list(handler_logger.handlers)
     original_propagate = handler_logger.propagate
@@ -2011,10 +2011,10 @@ def test_send_traceroute_and_response_rendering(
                     "hopStart": 1,
                 }
             )
+        iface.waitForTraceRoute(1.0)
 
     assert "Route traced towards destination:" in caplog.text
     assert "Route traced back to us:" in caplog.text
-    assert iface._acknowledgment.receivedTraceRoute is True
 
 
 @pytest.mark.unit
@@ -2196,8 +2196,8 @@ def test_on_response_waypoint_paths(caplog: pytest.LogCaptureFixture) -> None:
                     }
                 }
             )
+        iface.waitForWaypoint()
         assert "Waypoint received:" in caplog.text
-        assert iface._acknowledgment.receivedWaypoint is True
 
     with MeshInterface(noProto=True) as iface:
         iface.onResponseWaypoint(
@@ -2486,7 +2486,7 @@ def test_send_data_rolls_back_wait_state_when_send_packet_raises(
             assert request_id not in iface.responseHandlers
             assert ("receivedTelemetry", request_id) not in iface._response_wait_errors
             assert ("receivedTelemetry", request_id) not in iface._response_wait_acks
-            assert "receivedTelemetry" not in iface._active_wait_request_ids
+            assert not iface._active_wait_request_ids.get("receivedTelemetry")
 
 
 @pytest.mark.unit
@@ -2808,7 +2808,7 @@ def test_wait_for_request_ack_supports_overlapping_same_type_waits() -> None:
         assert not wait_11.is_alive()
         assert not wait_22.is_alive()
         with iface._response_handlers_lock:
-            assert "receivedTelemetry" not in iface._active_wait_request_ids
+            assert not iface._active_wait_request_ids.get("receivedTelemetry")
 
 
 @pytest.mark.unit
@@ -2864,7 +2864,7 @@ def test_request_scoped_wait_raises_for_unscoped_error_across_overlapping_waits(
             iface.waitForTelemetry(request_id=request_b)
 
         with iface._response_handlers_lock:
-            assert "receivedTelemetry" not in iface._active_wait_request_ids
+            assert not iface._active_wait_request_ids.get("receivedTelemetry")
             assert (
                 "receivedTelemetry",
                 mesh_interface_module.UNSCOPED_WAIT_REQUEST_ID,
