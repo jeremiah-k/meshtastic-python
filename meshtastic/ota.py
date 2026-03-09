@@ -50,6 +50,10 @@ class OTAError(Exception):
     """Exception for OTA errors."""
 
 
+class OTATransportError(OTAError):
+    """Retryable OTA transport exception (connect/send/read socket failures)."""
+
+
 class ESP32WiFiOTA:
     """ESP32 WiFi Unified OTA updates."""
 
@@ -255,7 +259,7 @@ class ESP32WiFiOTA:
                 elif response != "ACK":
                     logger.warning("Unexpected final response: %s", response)
         except (ConnectionError, OSError) as exc:
-            raise OTAError(
+            raise OTATransportError(
                 OTA_TRANSPORT_ERROR.format(
                     host=self._hostname,
                     port=self._port,

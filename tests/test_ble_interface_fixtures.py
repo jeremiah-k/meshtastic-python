@@ -451,7 +451,9 @@ class DummyClient:
         unpair_await_timeouts : list[float | None]
             Timeout arguments captured for each unpair() invocation.
         unpair_kwargs : list[dict[str, object]]
-            Backend keyword arguments captured for each unpair() invocation.
+            Placeholder kwargs entries for each unpair() invocation. Values are
+            always empty dicts because production `BLEClient.unpair()` does not
+            accept backend-specific kwargs.
         address : str
             Client address identifier, set to "dummy".
         disconnect_exception : Exception | None
@@ -746,8 +748,14 @@ def _build_interface(
         _ = args
         connect_calls.append(_address)
         connect_call_kwargs.append(dict(kwargs))
+        if _address is not None and _address != _self.address:
+            client.address = _address
+            if client.bleak_client is not None:
+                client.bleak_client.address = _address
         with _self._state_lock:
             was_disconnected = _self._disconnect_notified
+            _self.address = client.address
+            _self._last_connection_request = ble_mod.sanitize_address(client.address)
             _self.client = client
             _self._disconnect_notified = False
             _self._client_publish_pending = False

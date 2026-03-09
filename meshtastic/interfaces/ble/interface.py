@@ -1370,8 +1370,12 @@ class BLEInterface(MeshInterface):
             explicit target cannot be resolved to a concrete BLE address.
         """
         requested_identifier = address if address is not None else self.address
-        if requested_identifier is not None and not requested_identifier.strip():
+        if address is not None and sanitize_address(address) is None:
             raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
+        if address is None and requested_identifier is not None:
+            normalized_bound_identifier = sanitize_address(requested_identifier)
+            if normalized_bound_identifier is None:
+                raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
         if address is None:
             with self._state_lock:
                 current_client = self.client
@@ -1389,7 +1393,6 @@ class BLEInterface(MeshInterface):
         if requested_identifier and _looks_like_ble_address(requested_identifier):
             return requested_identifier
         return self.findDevice(requested_identifier).address
-
     def _resolve_target_address_for_connect(
         self, requested_identifier: str | None
     ) -> str | None:
@@ -1594,7 +1597,7 @@ class BLEInterface(MeshInterface):
         T
             Command return value.
         """
-        if address is not None and not address.strip():
+        if address is not None and sanitize_address(address) is None:
             raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
 
         # Snapshot preconditions/current client under interface locks, then
@@ -1943,7 +1946,7 @@ class BLEInterface(MeshInterface):
         - This helper is Linux-only and requires `bluetoothctl` on PATH.
         - Pairing PIN/passkey handling remains OS-agent managed.
         """
-        if address is not None and not address.strip():
+        if address is not None and sanitize_address(address) is None:
             raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
 
         with self._connect_lock, self._management_lock:
@@ -2385,10 +2388,15 @@ class BLEInterface(MeshInterface):
                     connected_client
                 )
                 if still_owned and not is_closing:
-                    self._client_publish_pending = False
-                    self._ever_connected = True
-                    self._prior_publish_was_reconnect = prior_ever_connected
-                    publish_now = True
+                    lost_gate_ownership = self._has_lost_gate_ownership(
+                        connected_device_key,
+                        connection_alias_key,
+                    )
+                    if not lost_gate_ownership:
+                        self._client_publish_pending = False
+                        self._ever_connected = True
+                        self._prior_publish_was_reconnect = prior_ever_connected
+                        publish_now = True
         if publish_now:
             self._connected()
             self._emit_verified_connection_side_effects(connected_client)
@@ -2619,31 +2627,6 @@ class BLEInterface(MeshInterface):
             self._last_connect_pair_override = pair
             self._last_connect_timeout_override = connect_timeout
 
-        # Keep alias tracking for the requested identifier while optionally
-        # reserving the resolved concrete address key for name/discovery
-        # connects before the long connect attempt.
-        requested_registry_key = (
-            _addr_key(requested_identifier) if requested_identifier else None
-        )
-        preexisting_client = self._get_existing_client_if_valid(normalized_request)
-        if preexisting_client:
-            logger.debug("Already connected, skipping connect call.")
-            return preexisting_client
-        resolved_connect_target = self._resolve_target_address_for_connect(
-            requested_identifier
-        )
-        concrete_registry_key = (
-            _addr_key(resolved_connect_target) if resolved_connect_target else None
-        )
-        connect_target_identifier = (
-            resolved_connect_target
-            if resolved_connect_target is not None
-            else requested_identifier
-        )
-        reservation_keys = self._sorted_address_keys(
-            requested_registry_key,
-            concrete_registry_key,
-        )
         connected_client: BLEClient | None = None
         connected_device_key: str | None = None
         connection_alias_key: str | None = None
@@ -2673,6 +2656,36 @@ class BLEInterface(MeshInterface):
                                     self._management_inflight,
                                 )
                                 raise self.BLEError(ERROR_MANAGEMENT_CONNECTING)
+
+                # Recompute potentially discovery-backed target state after
+                # waiting for inflight management operations so retries do not
+                # reuse stale resolution results.
+                requested_registry_key = (
+                    _addr_key(requested_identifier) if requested_identifier else None
+                )
+                preexisting_client = self._get_existing_client_if_valid(
+                    normalized_request
+                )
+                if preexisting_client:
+                    logger.debug("Already connected, skipping connect call.")
+                    return preexisting_client
+                resolved_connect_target = self._resolve_target_address_for_connect(
+                    requested_identifier
+                )
+                concrete_registry_key = (
+                    _addr_key(resolved_connect_target)
+                    if resolved_connect_target
+                    else None
+                )
+                connect_target_identifier = (
+                    resolved_connect_target
+                    if resolved_connect_target is not None
+                    else requested_identifier
+                )
+                reservation_keys = self._sorted_address_keys(
+                    requested_registry_key,
+                    concrete_registry_key,
+                )
 
                 with contextlib.ExitStack() as stack:
                     for reservation_key in reservation_keys:

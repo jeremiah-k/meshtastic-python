@@ -101,15 +101,13 @@ def _format_missing_node_num_error(destination_id: int | str) -> str:
 
 
 def _logger_has_visible_info_handler(target_logger: logging.Logger) -> bool:
-    """Return whether INFO logs from `target_logger` are visible on console streams."""
+    """Return whether INFO logs from `target_logger` are visible on stdout streams."""
     if target_logger.disabled or target_logger.getEffectiveLevel() > logging.INFO:
         return False
 
-    visible_console_streams = {
+    visible_stdout_streams = {
         sys.stdout,
-        sys.stderr,
         sys.__stdout__,
-        sys.__stderr__,
     }
     current_logger: logging.Logger | None = target_logger
     while current_logger is not None:
@@ -118,8 +116,8 @@ def _logger_has_visible_info_handler(target_logger: logging.Logger) -> bool:
             console = getattr(handler, "console", None)
             console_stream = getattr(console, "file", None)
             if handler.level <= logging.INFO and (
-                handler_stream in visible_console_streams
-                or console_stream in visible_console_streams
+                handler_stream in visible_stdout_streams
+                or console_stream in visible_stdout_streams
             ):
                 return True
         if not current_logger.propagate:
@@ -245,6 +243,7 @@ class MeshInterface:  # pylint: disable=R0902
         #
         # Shared mutable state is intentionally split by concern:
         # - _response_handlers_lock: responseHandlers map + response wait errors
+        #   + _response_wait_acks + _active_wait_request_ids
         # - _heartbeat_lock: _closing, heartbeatTimer, _heartbeat_inflight,
         #   isConnected
         # - _packet_id_lock: currentPacketId generation
@@ -335,9 +334,17 @@ class MeshInterface:  # pylint: disable=R0902
                         heartbeat_idle_condition.wait()
             try:
                 self._send_disconnect()
-            except (OSError, TypeError, MeshInterface.MeshInterfaceError):
+            except (OSError, MeshInterface.MeshInterfaceError):
                 logger.debug(
                     "Failed to send disconnect during close(); continuing shutdown.",
+                    exc_info=True,
+                )
+            except TypeError:
+                is_finalizing = getattr(sys, "is_finalizing", None)
+                if not (callable(is_finalizing) and is_finalizing()):
+                    raise
+                logger.debug(
+                    "Failed to send disconnect during interpreter finalization; continuing shutdown.",
                     exc_info=True,
                 )
         # debugOut is caller-owned (often shared via outer context managers);
@@ -991,8 +998,46 @@ class MeshInterface:  # pylint: disable=R0902
     ) -> mesh_pb2.MeshPacket:
         """Send a payload to a mesh node.
 
-        This public API intentionally excludes request-scoped wait wiring;
-        request-scoped wait bookkeeping lives in `_send_data_with_wait()`.
+        Parameters
+        ----------
+        data : Any
+            Payload to send; protobuf messages are serialized to bytes.
+        destinationId : int | str
+            Destination node identifier (node id string, numeric node number,
+            `BROADCAST_ADDR`, or `LOCAL_ADDR`).
+        portNum : portnums_pb2.PortNum.ValueType
+            Application port number for the payload.
+        wantAck : bool
+            Request link-layer ACK for this packet.
+        wantResponse : bool
+            Register a response handler for this packet.
+        onResponse : Callable[[dict[str, Any]], Any] | None
+            Optional callback invoked for matching responses.
+        onResponseAckPermitted : bool
+            Whether ACK-only responses should trigger `onResponse`.
+        channelIndex : int
+            Channel index used to transmit the packet.
+        hopLimit : int | None
+            Optional hop-limit override for the packet.
+        pkiEncrypted : bool
+            Whether to request PKI encryption for this payload.
+        publicKey : bytes | None
+            Optional destination public key used for PKI encryption.
+        priority : mesh_pb2.MeshPacket.Priority.ValueType
+            Mesh packet priority for retransmission behavior.
+        replyId : int | None
+            Optional mesh packet id to set in `reply_id`.
+
+        Returns
+        -------
+        mesh_pb2.MeshPacket
+            The packet object that was enqueued for transmission.
+
+        Notes
+        -----
+        Request-scoped wait/error bookkeeping is intentionally implemented in
+        `_send_data_with_wait()` and is not part of the public `sendData()`
+        contract.
         """
         return self._send_data_with_wait(
             data,
@@ -1302,20 +1347,11 @@ class MeshInterface:  # pylint: disable=R0902
                 self._response_wait_errors[
                     (acknowledgment_attr, resolved_request_id)
                 ] = message
-            elif len(active_request_ids) == 1:
-                resolved_request_id = next(iter(active_request_ids))
-                self._response_wait_errors[
-                    (acknowledgment_attr, resolved_request_id)
-                ] = message
-            elif len(active_request_ids) > 1:
-                for active_request_id in active_request_ids:
-                    self._response_wait_errors[
-                        (acknowledgment_attr, active_request_id)
-                    ] = message
             elif has_request_scope:
                 logger.debug(
-                    "Ignoring stale unscoped wait error for %s; no active request ids remain.",
+                    "Ignoring stale unscoped wait error for %s while scoped waits are active: %s",
                     acknowledgment_attr,
+                    sorted(active_request_ids),
                 )
                 return
             else:
@@ -1356,13 +1392,11 @@ class MeshInterface:  # pylint: disable=R0902
                 self._response_wait_acks.add(
                     (acknowledgment_attr, resolved_request_id)
                 )
-            elif len(active_request_ids) == 1:
-                active_request_id = next(iter(active_request_ids))
-                self._response_wait_acks.add((acknowledgment_attr, active_request_id))
             elif has_request_scope:
                 logger.debug(
-                    "Ignoring stale unscoped acknowledgement for %s; no active request ids remain.",
+                    "Ignoring stale unscoped acknowledgement for %s while scoped waits are active: %s",
                     acknowledgment_attr,
+                    sorted(active_request_ids),
                 )
                 return
             else:
@@ -1377,24 +1411,23 @@ class MeshInterface:  # pylint: disable=R0902
     ) -> None:
         """Raise and clear any pending wait error for the given wait scope."""
         with self._response_handlers_lock:
-            active_request_ids = self._active_wait_request_ids.get(
-                acknowledgment_attr, set()
-            )
             if request_id is not None:
                 resolved_request_id = request_id
-            elif len(active_request_ids) == 1:
-                resolved_request_id = next(iter(active_request_ids))
             else:
                 resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
             error_message = self._response_wait_errors.pop(
                 (acknowledgment_attr, resolved_request_id),
                 None,
             )
-            if error_message is None and request_id is not None:
-                unscoped_key = (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID)
-                error_message = self._response_wait_errors.get(unscoped_key)
-                if error_message is not None and len(active_request_ids) <= 1:
-                    self._response_wait_errors.pop(unscoped_key, None)
+            if (
+                error_message is None
+                and request_id is not None
+                and acknowledgment_attr not in self._active_wait_request_ids
+            ):
+                error_message = self._response_wait_errors.pop(
+                    (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID),
+                    None,
+                )
         if error_message is not None:
             raise self.MeshInterfaceError(error_message)
 
@@ -1428,16 +1461,17 @@ class MeshInterface:  # pylint: disable=R0902
                 self._response_wait_errors.pop((acknowledgment_attr, request_id), None)
                 self._response_wait_acks.discard((acknowledgment_attr, request_id))
             else:
-                for active_request_id in active_request_ids:
-                    self.responseHandlers.pop(active_request_id, None)
-                    self._response_wait_errors.pop(
-                        (acknowledgment_attr, active_request_id),
-                        None,
-                    )
-                    self._response_wait_acks.discard(
-                        (acknowledgment_attr, active_request_id)
-                    )
-                self._active_wait_request_ids.pop(acknowledgment_attr, None)
+                if acknowledgment_attr not in self._active_wait_request_ids:
+                    for active_request_id in active_request_ids:
+                        self.responseHandlers.pop(active_request_id, None)
+                        self._response_wait_errors.pop(
+                            (acknowledgment_attr, active_request_id),
+                            None,
+                        )
+                        self._response_wait_acks.discard(
+                            (acknowledgment_attr, active_request_id)
+                        )
+                    self._active_wait_request_ids.pop(acknowledgment_attr, None)
                 self._response_wait_errors.pop(
                     (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID),
                     None,
@@ -1476,28 +1510,11 @@ class MeshInterface:  # pylint: disable=R0902
         sleep_interval = max(0.01, float(getattr(self._timeout, "sleepInterval", 0.1)))
         while time.monotonic() < deadline:
             with self._response_handlers_lock:
-                active_request_ids = self._active_wait_request_ids.get(
-                    acknowledgment_attr, set()
-                )
                 key = (acknowledgment_attr, request_id)
-                unscoped_key = (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID)
                 if key in self._response_wait_errors:
-                    return True
-                if (
-                    len(active_request_ids) == 1
-                    and request_id in active_request_ids
-                    and unscoped_key in self._response_wait_errors
-                ):
                     return True
                 if key in self._response_wait_acks:
                     self._response_wait_acks.discard(key)
-                    return True
-                if (
-                    len(active_request_ids) == 1
-                    and request_id in active_request_ids
-                    and unscoped_key in self._response_wait_acks
-                ):
-                    self._response_wait_acks.discard(unscoped_key)
                     return True
             time.sleep(sleep_interval)
         return False

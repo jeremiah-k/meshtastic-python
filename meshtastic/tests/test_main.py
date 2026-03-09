@@ -31,6 +31,7 @@ from ..protobuf import config_pb2, localonly_pb2
 from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 # from ..radioconfig_pb2 import UserPreferences
 # import meshtastic.config_pb2
+from ..ota import OTAError, OTATransportError
 from ..serial_interface import SerialInterface
 from ..tcp_interface import TCPInterface
 
@@ -4447,6 +4448,33 @@ def test_main_ota_update_requires_tcp_interface(
     assert excinfo.value.code == 1
 
 
+def _make_fake_tcp_interface(
+    *,
+    get_node: Callable[..., Any] | None = None,
+    on_close: Callable[[], None] | None = None,
+) -> type[object]:
+    """Return a configurable TCPInterface test double with context-manager behavior."""
+
+    class _FakeTCPInterface:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            self.hostname = "localhost"
+            if get_node is not None:
+                self.getNode = get_node
+
+        def __enter__(self) -> "_FakeTCPInterface":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def close(self) -> None:
+            """Provide TCPInterface-compatible cleanup hook for test patches."""
+            if on_close is not None:
+                on_close()
+
+    return _FakeTCPInterface
+
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_ota_update_retries_then_exits(
@@ -4459,23 +4487,15 @@ def test_main_ota_update_retries_then_exits(
     node = MagicMock(autospec=Node)
     get_node = MagicMock(return_value=node)
 
-    class _FakeTCPInterface:
-        def __init__(self, *_args: object, **_kwargs: object) -> None:
-            self.hostname = "localhost"
-            self.getNode = get_node
-
-        def __enter__(self) -> "_FakeTCPInterface":
-            return self
-
-        def __exit__(self, *_args: object) -> None:
-            return None
-
     ota = MagicMock()
     ota.hash_bytes.return_value = b"\x01\x02"
-    ota.update.side_effect = RuntimeError("boom")
+    ota.update.side_effect = OTATransportError("boom")
 
     with (
-        patch("meshtastic.tcp_interface.TCPInterface", _FakeTCPInterface),
+        patch(
+            "meshtastic.tcp_interface.TCPInterface",
+            _make_fake_tcp_interface(get_node=get_node),
+        ),
         patch("meshtastic.ota.ESP32WiFiOTA", return_value=ota),
         patch("meshtastic.__main__.time.sleep") as sleep_mock,
         pytest.raises(SystemExit) as excinfo,
@@ -4495,6 +4515,40 @@ def test_main_ota_update_retries_then_exits(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_main_ota_update_fails_fast_on_non_transport_error(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--ota-update should not retry deterministic OTA errors."""
+    sys.argv = ["", "--host", "localhost", "--ota-update", "firmware.bin"]
+    mt_config.args = cast(Any, sys.argv)
+
+    node = MagicMock(autospec=Node)
+    get_node = MagicMock(return_value=node)
+
+    ota = MagicMock()
+    ota.hash_bytes.return_value = b"\x01\x02"
+    ota.update.side_effect = OTAError("deterministic")
+
+    with (
+        patch(
+            "meshtastic.tcp_interface.TCPInterface",
+            _make_fake_tcp_interface(get_node=get_node),
+        ),
+        patch("meshtastic.ota.ESP32WiFiOTA", return_value=ota),
+        patch("meshtastic.__main__.time.sleep") as sleep_mock,
+        pytest.raises(SystemExit) as excinfo,
+    ):
+        main()
+
+    _, err = capsys.readouterr()
+    assert "OTA update failed: deterministic" in err
+    assert excinfo.value.code == 1
+    ota.update.assert_called_once()
+    assert sleep_mock.call_args_list == [call(main_module.OTA_REBOOT_WAIT_SECONDS)]
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_main_ota_update_succeeds_and_prints_completion(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -4505,27 +4559,15 @@ def test_main_ota_update_succeeds_and_prints_completion(
     node = MagicMock(autospec=Node)
     get_node = MagicMock(return_value=node)
 
-    class _FakeTCPInterface:
-        def __init__(self, *_args: object, **_kwargs: object) -> None:
-            self.hostname = "localhost"
-            self.getNode = get_node
-
-        def __enter__(self) -> "_FakeTCPInterface":
-            return self
-
-        def __exit__(self, *_args: object) -> None:
-            return None
-
-        def close(self) -> None:
-            """No-op close used by onConnected cleanup path."""
-            return None
-
     ota = MagicMock()
     ota.hash_bytes.return_value = b"\x01\x02"
     ota.update.return_value = None
 
     with (
-        patch("meshtastic.tcp_interface.TCPInterface", _FakeTCPInterface),
+        patch(
+            "meshtastic.tcp_interface.TCPInterface",
+            _make_fake_tcp_interface(get_node=get_node),
+        ),
         patch("meshtastic.ota.ESP32WiFiOTA", return_value=ota),
         patch("meshtastic.__main__.time.sleep") as sleep_mock,
     ):
@@ -4556,18 +4598,8 @@ def test_main_ota_update_rejects_remote_dest(
     ]
     mt_config.args = cast(Any, sys.argv)
 
-    class _FakeTCPInterface:
-        def __init__(self, *_args: object, **_kwargs: object) -> None:
-            self.hostname = "localhost"
-
-        def __enter__(self) -> "_FakeTCPInterface":
-            return self
-
-        def __exit__(self, *_args: object) -> None:
-            return None
-
     with (
-        patch("meshtastic.tcp_interface.TCPInterface", _FakeTCPInterface),
+        patch("meshtastic.tcp_interface.TCPInterface", _make_fake_tcp_interface()),
         patch("meshtastic.ota.ESP32WiFiOTA") as ota_cls,
         pytest.raises(SystemExit) as excinfo,
     ):
@@ -4599,30 +4631,25 @@ def test_main_ota_update_allows_explicit_local_dest(
     ]
     mt_config.args = cast(Any, sys.argv)
 
-    node = MagicMock(autospec=Node)
-    get_node = MagicMock(return_value=node)
+    local_node = MagicMock(autospec=Node)
+    other_node = MagicMock(autospec=Node)
 
-    class _FakeTCPInterface:
-        def __init__(self, *_args: object, **_kwargs: object) -> None:
-            self.hostname = "localhost"
-            self.getNode = get_node
+    def _get_node(dest: object, requestChannels: bool = True, **_kwargs: object) -> Any:
+        if dest == MAIN_LOCAL_ADDR and requestChannels is False:
+            return local_node
+        return other_node
 
-        def __enter__(self) -> "_FakeTCPInterface":
-            return self
-
-        def __exit__(self, *_args: object) -> None:
-            return None
-
-        def close(self) -> None:
-            """No-op close used by onConnected cleanup path."""
-            return None
+    get_node = MagicMock(side_effect=_get_node)
 
     ota = MagicMock()
     ota.hash_bytes.return_value = b"\x01\x02"
     ota.update.return_value = None
 
     with (
-        patch("meshtastic.tcp_interface.TCPInterface", _FakeTCPInterface),
+        patch(
+            "meshtastic.tcp_interface.TCPInterface",
+            _make_fake_tcp_interface(get_node=get_node),
+        ),
         patch("meshtastic.ota.ESP32WiFiOTA", return_value=ota),
         patch("meshtastic.__main__.time.sleep"),
     ):
@@ -4631,12 +4658,15 @@ def test_main_ota_update_allows_explicit_local_dest(
     out, err = capsys.readouterr()
     assert "OTA update completed successfully!" in out
     assert err == ""
-    node.startOTA.assert_called_once()
+    local_node.startOTA.assert_called_once()
+    other_node.startOTA.assert_not_called()
     ota.update.assert_called_once()
     assert any(
-        bool(recorded_call.args)
-        and recorded_call.args[0] == MAIN_LOCAL_ADDR
-        and recorded_call.kwargs.get("requestChannels") is False
+        recorded_call.args[:2] == (MAIN_LOCAL_ADDR, False)
+        or (
+            recorded_call.args[:1] == (MAIN_LOCAL_ADDR,)
+            and recorded_call.kwargs.get("requestChannels") is False
+        )
         for recorded_call in get_node.call_args_list
     )
 

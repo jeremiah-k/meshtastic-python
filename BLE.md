@@ -231,7 +231,7 @@ iface = BLEInterface(
 # Use the interface normally after connect/pair completes.
 iface.sendText("hello from a paired session")
 
-# One-time trust setup remains explicit and Linux-only.
+# Linux-only (requires bluetoothctl): one-time trust setup remains explicit.
 iface.trust("AA:BB:CC:DD:EE:FF")
 iface.close()
 ```
@@ -247,6 +247,7 @@ iface_manual = BLEInterface(
 # Later, after the link drops and you want to reconnect with pairing:
 iface_manual.connect(pair=True)   # request pairing for this call
 iface_manual.sendText("hello after manual reconnect")
+# Linux-only (requires bluetoothctl):
 iface_manual.trust("AA:BB:CC:DD:EE:FF")
 iface_manual.close()
 ```
@@ -262,13 +263,13 @@ iface.pair()
 # Backend unpair (Linux/Windows backends where supported by Bleak).
 iface.unpair()
 
-# Linux-only trust helper. When connected, you can omit the address to trust
+# Linux-only (requires bluetoothctl) trust helper. When connected, you can omit the address to trust
 # the current device. If disconnected, omit the address only when the
 # interface already has that device's concrete BLE address bound as its target;
 # if the target came from a name lookup or you are unsure, pass the address
 # explicitly (no active connection required).
-iface.trust()
-iface.trust("AA:BB:CC:DD:EE:FF")
+iface.trust()  # Linux-only (requires bluetoothctl)
+iface.trust("AA:BB:CC:DD:EE:FF")  # Linux-only (requires bluetoothctl)
 ```
 
 Platform notes:

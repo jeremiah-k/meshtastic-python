@@ -84,7 +84,8 @@ def test_tunnel_initialization_creates_tap_device_when_proto_enabled(
         tunnel = tunnel_module.Tunnel(iface)
         assert ("init", "mesh") in tap_events
         assert ("up",) in tap_events
-        assert any(event[0] == "ifconfig" for event in tap_events)
+        assert ("ifconfig", "10.115.248.28", "255.255.0.0", 200) in tap_events
+        assert ("thread-start",) in tap_events
     finally:
         if tunnel is not None:
             tunnel.close()

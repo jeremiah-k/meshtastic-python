@@ -4,8 +4,8 @@ This module intentionally splits coverage into two lanes:
 - `smoke1`: single-device smoke checks.
 - `smoke1_destructive`: reboot/reset and heavy config mutation checks that are
   opt-in and may temporarily leave hardware in a modified state. Destructive
-  tests use `smoke1_destructive` only so they stay out of the generic
-  `smoke1` selector.
+  tests carry both markers; select non-destructive runs with
+  `smoke1 and not smoke1_destructive`.
 """
 
 import contextlib
@@ -93,7 +93,7 @@ def _destructive_test(func: Callable[..., object]) -> Callable[..., object]:
     return cast(
         Callable[..., object],
         pytest.mark.usefixtures("restore_smoke1_module_config")(
-            pytest.mark.smoke1_destructive(func)
+            pytest.mark.smoke1(pytest.mark.smoke1_destructive(func))
         ),
     )
 
@@ -166,8 +166,8 @@ def test_find_channel_index_by_name_handles_multiline_channel_blocks() -> None:
 
 
 @pytest.mark.unit
-def test_destructive_test_marks_only_smoke1_destructive() -> None:
-    """Destructive smoke helpers should stay out of the generic smoke1 lane."""
+def test_destructive_test_marks_smoke1_and_smoke1_destructive() -> None:
+    """Destructive smoke helpers should carry both smoke marker classifications."""
 
     def _sample() -> None:
         return None
@@ -175,7 +175,7 @@ def test_destructive_test_marks_only_smoke1_destructive() -> None:
     wrapped = _destructive_test(_sample)
     marker_names = {mark.name for mark in getattr(wrapped, "pytestmark", [])}
 
-    assert "smoke1" not in marker_names
+    assert "smoke1" in marker_names
     assert "smoke1_destructive" in marker_names
     assert "usefixtures" in marker_names
 
@@ -622,16 +622,17 @@ def test_smoke1_port() -> None:
 @_destructive_test
 def test_smoke1_mutating_command_exits_cleanly() -> None:
     """A successful mutating command must not fail during close/disconnect cleanup."""
+    channel_name = _unique_channel_name("exit")
     return_value, out = _run(
         "meshtastic",
         "--ch-set",
         "name",
-        "ExitClean",
+        channel_name,
         "--ch-index",
         "0",
     )
     _assert_connected(out)
-    assert "Set name to ExitClean" in out
+    assert f"Set name to {channel_name}" in out
     assert "Writing modified channels to device" in out
     assert "Bad file descriptor" not in out
     assert "Aborting due to" not in out

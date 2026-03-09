@@ -83,7 +83,7 @@ def _snapshot_connect_stub_state(
         )
 
 
-def _get_stress_test_clients(iface: BLEInterface) -> list[Any]:
+def _get_stress_test_clients(iface: BLEInterface) -> list[object]:
     """Retrieve the stress-test clients created by the patched connect stub.
 
     Parameters
@@ -93,13 +93,13 @@ def _get_stress_test_clients(iface: BLEInterface) -> list[Any]:
 
     Returns
     -------
-    list[Any]
+    list[object]
         Created stress-test client objects in creation order. Returns an empty list if the attribute is not present.
     """
-    return cast(list[Any], getattr(iface, "_stress_test_clients", []))
+    return cast(list[object], getattr(iface, "_stress_test_clients", []))
 
 
-def _get_stress_test_attempts(iface: BLEInterface) -> list[Any]:
+def _get_stress_test_attempts(iface: BLEInterface) -> list[object]:
     """Retrieve reconnect attempts recorded before connect completion.
 
     Parameters
@@ -109,10 +109,10 @@ def _get_stress_test_attempts(iface: BLEInterface) -> list[Any]:
 
     Returns
     -------
-    list[Any]
+    list[object]
         Attempt objects recorded before connect completion. Returns an empty list if the attribute is not present.
     """
-    return cast(list[Any], getattr(iface, "_stress_test_attempts", []))
+    return cast(list[object], getattr(iface, "_stress_test_attempts", []))
 
 
 def _latest_successful_stress_attempt(

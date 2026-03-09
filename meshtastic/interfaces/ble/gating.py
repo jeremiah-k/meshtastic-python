@@ -443,7 +443,25 @@ def _is_connecting_claim_elsewhere_locked(
 
 
 def _mark_connecting(addr: str | None, owner: object | None = None) -> None:
-    """Record a provisional per-address ownership claim for an in-flight connect."""
+    """Record a provisional per-address ownership claim for an in-flight connect.
+
+    Parameters
+    ----------
+    addr : str | None
+        Address whose provisional connecting claim should be recorded.
+    owner : object | None
+        Optional owner identity associated with the provisional claim.
+
+    Returns
+    -------
+    None
+
+    Notes
+    -----
+    Stores a concrete per-address lock and updates provisional ownership maps
+    (`_ADDR_LOCKS`, `_CONNECTING_ADDRS`, `_CONNECTING_OWNERS`,
+    `_CONNECTING_OWNER_IDS`, `_CONNECTING_MARKED_AT`).
+    """
     key = _addr_key(addr)
     if key is None:
         return
@@ -458,7 +476,23 @@ def _mark_connecting(addr: str | None, owner: object | None = None) -> None:
 
 
 def _clear_connecting(addr: str | None, owner: object | None = None) -> None:
-    """Clear a provisional connecting claim, optionally requiring owner match."""
+    """Clear a provisional connecting claim, optionally requiring owner match.
+
+    Parameters
+    ----------
+    addr : str | None
+        Address whose provisional connecting claim should be cleared.
+    owner : object | None
+        Optional owner identity to require before removing the claim.
+
+    Returns
+    -------
+    None
+
+    Notes
+    -----
+    When `owner` is provided, clearing occurs only if the stored owner matches.
+    """
     key = _addr_key(addr)
     if key is None:
         return

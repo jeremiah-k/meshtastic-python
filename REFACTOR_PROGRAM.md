@@ -424,16 +424,12 @@ This section now keeps only durable rationale from the hardening stream:
 - Optional backend loading stays lazy to keep base import/test paths
   deterministic without optional hardware dependencies.
 
-Detailed cycle checklists and per-PR execution notes live in
-`CODERABBIT_SWEEP_CHECKLIST.md`.
-
 ## 18) Validation Notes for This Cycle
 
-Cycle-specific validation run history is tracked in
-`CODERABBIT_SWEEP_CHECKLIST.md`. Keep this document focused on durable behavior
-contracts and policy.
+Keep this document focused on durable validation policy and behavior contracts.
+Time-bound run history belongs in the PR discussion and CI artifacts.
 
 ## 19) Review Execution Tracking
 
-Review triage and execution tracking are maintained in
-`CODERABBIT_SWEEP_CHECKLIST.md`.
+Keep review-execution process guidance durable in this document; track
+cycle-specific triage details in the corresponding PR discussion.

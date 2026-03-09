@@ -841,12 +841,14 @@ def onConnected(interface: MeshInterface) -> None:
                     ota.update()
                     break
 
-                except Exception as e:
+                except meshtastic.ota.OTATransportError as e:
                     retries -= 1
                     if retries == 0:
                         _cli_exit(f"OTA update failed: {e}")
 
                     time.sleep(OTA_RETRY_DELAY_SECONDS)
+                except meshtastic.ota.OTAError as e:
+                    _cli_exit(f"OTA update failed: {e}")
 
             print("\nOTA update completed successfully!")
             return

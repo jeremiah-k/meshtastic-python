@@ -249,11 +249,7 @@ for target in "${PYTEST_TARGETS[@]}"; do
 	done
 done
 
-if [[ -z ${MESHTASTICD_PYTEST_MARK_EXPR} ]]; then
-	if [[ ${HAS_EXPLICIT_SELECTOR} == true ]]; then
-		echo "MESHTASTICD_PYTEST_TARGETS contains explicit node selectors; set MESHTASTICD_PYTEST_MARK_EXPR explicitly." >&2
-		exit 1
-	fi
+if [[ -z ${MESHTASTICD_PYTEST_MARK_EXPR} ]] && [[ ${HAS_EXPLICIT_SELECTOR} == false ]]; then
 	if [[ ${HAS_SMOKEVIRT_TARGET} == true ]] && [[ ${#MESHTASTICD_CI_TARGETS[@]} -gt 0 ]]; then
 		echo "MESHTASTICD_PYTEST_TARGETS includes both smokevirt and meshtasticd-ci targets; set MESHTASTICD_PYTEST_MARK_EXPR explicitly." >&2
 		exit 1

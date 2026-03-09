@@ -112,7 +112,7 @@ def parseHostAndPort(
                         _INVALID_IPV6_BRACKETED_PORT.format(env_var=env_var, host=host)
                     ) from exc
             raise ValueError(
-                _INVALID_IPV6_BRACKETED_PORT.format(env_var=env_var, host=host)
+                _EXPECTED_HOST_PORT_ONLY.format(env_var=env_var, host=host)
             ) from exc
         else:
             return host, default_port

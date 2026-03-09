@@ -172,11 +172,6 @@ def test_powermon_optional_backends_are_lazy_and_dependency_error_is_clear(
 ) -> None:
     """Optional backend access should not require dependencies at package import time."""
     backend_names = ("PPK2PowerSupply", "RidenPowerSupply")
-    _missing = object()
-    original_backends = {
-        backend_name: powermon.__dict__.get(backend_name, _missing)
-        for backend_name in backend_names
-    }
     for backend_name in backend_names:
         monkeypatch.delitem(powermon.__dict__, backend_name, raising=False)
 
@@ -193,16 +188,9 @@ def test_powermon_optional_backends_are_lazy_and_dependency_error_is_clear(
 
     monkeypatch.setattr(importlib, "import_module", _fake_import_module)
 
-    try:
-        backend_cls = powermon.RidenPowerSupply
-        with pytest.raises(ImportError, match="optional dependency"):
-            backend_cls(portName="/dev/null")
-    finally:
-        for backend_name, original_backend in original_backends.items():
-            if original_backend is _missing:
-                powermon.__dict__.pop(backend_name, None)
-            else:
-                powermon.__dict__[backend_name] = original_backend
+    backend_cls = powermon.RidenPowerSupply
+    with pytest.raises(ImportError, match="optional dependency"):
+        backend_cls(portName="/dev/null")
 
 
 @pytest.mark.unit
@@ -210,8 +198,6 @@ def test_powermon_optional_backend_lookup_re_raises_unrelated_missing_module(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Optional backend shim should not mask backend-module import bugs."""
-    _missing = object()
-    original_riden_backend = powermon.__dict__.get("RidenPowerSupply", _missing)
     monkeypatch.delitem(powermon.__dict__, "RidenPowerSupply", raising=False)
     real_import_module = importlib.import_module
 
@@ -226,14 +212,8 @@ def test_powermon_optional_backend_lookup_re_raises_unrelated_missing_module(
 
     monkeypatch.setattr(importlib, "import_module", _fake_import_module)
 
-    try:
-        with pytest.raises(ModuleNotFoundError, match="backend import bug"):
-            _ = powermon.RidenPowerSupply
-    finally:
-        if original_riden_backend is _missing:
-            powermon.__dict__.pop("RidenPowerSupply", None)
-        else:
-            powermon.__dict__["RidenPowerSupply"] = original_riden_backend
+    with pytest.raises(ModuleNotFoundError, match="backend import bug"):
+        _ = powermon.RidenPowerSupply
 
 
 @pytest.mark.unit

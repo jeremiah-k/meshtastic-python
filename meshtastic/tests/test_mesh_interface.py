@@ -417,7 +417,6 @@ def test_close_waits_for_inflight_heartbeat_send(
     [
         OSError("bad fd"),
         MeshInterface.MeshInterfaceError("ble write failed"),
-        TypeError("boom"),
     ],
 )
 def test_close_suppresses_disconnect_send_failures(
@@ -442,6 +441,47 @@ def test_close_suppresses_disconnect_send_failures(
     assert (
         "Failed to send disconnect during close(); continuing shutdown." in caplog.text
     )
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_close_reraises_disconnect_type_error_when_not_finalizing() -> None:
+    """close() should re-raise TypeError disconnect failures outside finalization."""
+    iface = MeshInterface(noProto=True)
+    try:
+        iface.debugOut = io.StringIO()
+        with (
+            patch.object(iface, "_send_disconnect", side_effect=TypeError("boom")),
+            patch.object(sys, "is_finalizing", lambda: False),
+            pytest.raises(TypeError, match="boom"),
+        ):
+            iface.close()
+    finally:
+        iface.debugOut = None
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_close_suppresses_disconnect_type_error_during_finalization(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """close() should swallow TypeError disconnect failures during finalization."""
+    iface = MeshInterface(noProto=True)
+    try:
+        iface.debugOut = io.StringIO()
+        with (
+            patch.object(iface, "_send_disconnect", side_effect=TypeError("boom")),
+            patch.object(sys, "is_finalizing", lambda: True),
+            caplog.at_level(logging.DEBUG),
+        ):
+            iface.close()
+        assert iface._closing is True
+        assert iface.debugOut is None
+    finally:
+        if not getattr(iface, "_closing", False):
+            iface.close()
+
+    assert "during interpreter finalization" in caplog.text
 
 
 @pytest.mark.unit
@@ -1846,10 +1886,10 @@ def test_on_response_position_prints_when_info_logging_not_visible(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_logger_visible_info_handler_treats_stdout_and_stderr_as_visible() -> (
+def test_logger_visible_info_handler_treats_stdout_as_visible() -> (
     None
 ):
-    """Stdout/stderr-backed handlers should suppress the legacy stdout print fallback."""
+    """Only stdout-backed handlers should suppress the legacy stdout print fallback."""
     handler_logger = logging.getLogger("meshtastic.tests.visible-info-handler")
     original_handlers = list(handler_logger.handlers)
     original_propagate = handler_logger.propagate
@@ -1886,7 +1926,7 @@ def test_logger_visible_info_handler_treats_stdout_and_stderr_as_visible() -> (
         handler_logger.addHandler(stderr_handler)
         assert (
             mesh_interface_module._logger_has_visible_info_handler(handler_logger)
-            is True
+            is False
         )
 
         handler_logger.removeHandler(stderr_handler)
@@ -1904,7 +1944,7 @@ def test_logger_visible_info_handler_treats_stdout_and_stderr_as_visible() -> (
         handler_logger.addHandler(rich_stderr_handler)
         assert (
             mesh_interface_module._logger_has_visible_info_handler(handler_logger)
-            is True
+            is False
         )
 
         handler_logger.removeHandler(rich_stderr_handler)
@@ -1992,10 +2032,12 @@ def test_send_traceroute_and_response_rendering(
         response_packet.id = 88
         send_data = MagicMock(return_value=response_packet)
         wait_for_traceroute = MagicMock()
+        real_wait_for_traceroute = iface.waitForTraceRoute
         monkeypatch.setattr(iface, "_send_data_with_wait", send_data)
         monkeypatch.setattr(iface, "waitForTraceRoute", wait_for_traceroute)
         iface.sendTraceRoute(dest=123, hopLimit=3, channelIndex=1)
         wait_for_traceroute.assert_called_once_with(2, request_id=88)
+        monkeypatch.setattr(iface, "waitForTraceRoute", real_wait_for_traceroute)
 
         route = mesh_pb2.RouteDiscovery()
         route.route.extend([11])
@@ -2630,13 +2672,12 @@ def test_wait_state_helpers_cover_request_resolution_branches() -> None:
     with MeshInterface(noProto=True) as iface:
         iface._clear_wait_error("receivedTelemetry", request_id=501)
         iface._set_wait_error("receivedTelemetry", "scoped-error")
-        with pytest.raises(MeshInterface.MeshInterfaceError, match="scoped-error"):
-            iface._raise_wait_error_if_present("receivedTelemetry")
+        iface._raise_wait_error_if_present("receivedTelemetry")
 
         iface._clear_wait_error("receivedTelemetry", request_id=501)
         iface._mark_wait_acknowledged("receivedTelemetry")
         with iface._response_handlers_lock:
-            assert ("receivedTelemetry", 501) in iface._response_wait_acks
+            assert ("receivedTelemetry", 501) not in iface._response_wait_acks
 
         iface._mark_wait_acknowledged("receivedTelemetry", request_id=999)
         with iface._response_handlers_lock:
@@ -2676,6 +2717,15 @@ def test_wait_state_helpers_cover_request_resolution_branches() -> None:
             iface._response_wait_acks.add(("receivedTelemetry", 602))
         iface._retire_wait_request("receivedTelemetry")
         with iface._response_handlers_lock:
+            assert 601 in iface.responseHandlers
+            assert 602 in iface.responseHandlers
+            assert ("receivedTelemetry", 601) in iface._response_wait_errors
+            assert ("receivedTelemetry", 602) in iface._response_wait_errors
+            assert ("receivedTelemetry", 601) in iface._response_wait_acks
+            assert ("receivedTelemetry", 602) in iface._response_wait_acks
+        iface._retire_wait_request("receivedTelemetry", request_id=601)
+        iface._retire_wait_request("receivedTelemetry", request_id=602)
+        with iface._response_handlers_lock:
             assert 601 not in iface.responseHandlers
             assert 602 not in iface.responseHandlers
             assert ("receivedTelemetry", 601) not in iface._response_wait_errors
@@ -2688,14 +2738,14 @@ def test_wait_state_helpers_cover_request_resolution_branches() -> None:
             iface._response_wait_acks.add(
                 ("receivedPosition", mesh_interface_module.UNSCOPED_WAIT_REQUEST_ID)
             )
-        assert iface._wait_for_request_ack(
+        assert not iface._wait_for_request_ack(
             "receivedPosition", 700, timeout_seconds=0.05
         )
         with iface._response_handlers_lock:
             assert (
                 "receivedPosition",
                 mesh_interface_module.UNSCOPED_WAIT_REQUEST_ID,
-            ) not in iface._response_wait_acks
+            ) in iface._response_wait_acks
 
         with iface._response_handlers_lock:
             iface._response_wait_acks.add(("receivedPosition", 1))
@@ -2836,12 +2886,12 @@ def test_request_scoped_wait_wakes_immediately_on_recorded_error() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_request_scoped_wait_raises_for_unscoped_error_across_overlapping_waits() -> (
+def test_request_scoped_wait_times_out_for_unscoped_error_across_overlapping_waits() -> (
     None
 ):
-    """Overlapping request-scoped waits should surface one unscoped routing error."""
+    """Overlapping request-scoped waits should ignore unscoped routing errors."""
     with MeshInterface(noProto=True) as iface:
-        iface._timeout = Timeout(maxSecs=1.0)
+        iface._timeout = Timeout(maxSecs=0.05)
         iface._timeout.sleepInterval = 0.001
         request_a = 411
         request_b = 422
@@ -2854,12 +2904,12 @@ def test_request_scoped_wait_raises_for_unscoped_error_across_overlapping_waits(
 
         with pytest.raises(
             MeshInterface.MeshInterfaceError,
-            match="Routing error on response: NO_ROUTE",
+            match="Timed out waiting for telemetry",
         ):
             iface.waitForTelemetry(request_id=request_a)
         with pytest.raises(
             MeshInterface.MeshInterfaceError,
-            match="Routing error on response: NO_ROUTE",
+            match="Timed out waiting for telemetry",
         ):
             iface.waitForTelemetry(request_id=request_b)
 
