@@ -12,8 +12,9 @@ import threading
 import time
 import types
 from collections import OrderedDict
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, NoReturn, cast
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 from unittest.mock import MagicMock, call, create_autospec, patch
 
 import pytest
@@ -69,7 +70,7 @@ def _wait_for_scoped_wait_registration(
             ):
                 return
         time.sleep(0.001)
-    raise AssertionError(
+    pytest.fail(
         f"Timed out waiting for scoped waiter registration: {acknowledgment_attr}#{request_id}"
     )
 
@@ -483,18 +484,25 @@ def test_close_suppresses_disconnect_send_failures(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_close_reraises_disconnect_type_error_when_not_finalizing() -> None:
-    """close() should re-raise TypeError disconnect failures during normal runtime."""
+def test_close_suppresses_disconnect_type_error_when_not_finalizing(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """close() should swallow TypeError disconnect failures during normal runtime."""
     iface = MeshInterface(noProto=True)
     try:
         iface.debugOut = io.StringIO()
-        with patch.object(iface, "_send_disconnect", side_effect=TypeError("boom")):
-            with pytest.raises(TypeError, match="boom"):
-                iface.close()
+        with (
+            patch.object(iface, "_send_disconnect", side_effect=TypeError("boom")),
+            caplog.at_level(logging.DEBUG),
+        ):
+            iface.close()
         assert iface._closing is True
+        assert iface.debugOut is None
     finally:
         if not getattr(iface, "_closing", False):
             iface.close()
+
+    assert "Failed to send disconnect during close(); continuing shutdown." in caplog.text
 
 
 @pytest.mark.unit
@@ -518,10 +526,7 @@ def test_close_suppresses_disconnect_type_error_during_finalization(
         if not getattr(iface, "_closing", False):
             iface.close()
 
-    assert (
-        "Failed to send disconnect during interpreter finalization; continuing shutdown."
-        in caplog.text
-    )
+    assert "Failed to send disconnect during close(); continuing shutdown." in caplog.text
 
 
 @pytest.mark.unit

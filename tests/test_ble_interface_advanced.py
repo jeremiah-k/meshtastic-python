@@ -764,18 +764,16 @@ def test_rapid_connect_disconnect_stress_test(
                 transitioned = self._state_manager._transition_to(
                     cast(Any, ble_mod).ConnectionState.CONNECTED
                 )
+                self._last_connect_pair_override = cast(
+                    bool | None, kwargs.get("pair")
+                )
+                self._last_connect_timeout_override = cast(
+                    float | None, kwargs.get("connect_timeout")
+                )
                 if transitioned:
                     cast(Any, self).client = new_client
                     created_clients.append(new_client)
                     self._client_publish_pending = False
-                    if "pair" in kwargs:
-                        self._last_connect_pair_override = cast(
-                            bool | None, kwargs.get("pair")
-                        )
-                    if "connect_timeout" in kwargs:
-                        self._last_connect_timeout_override = cast(
-                            float | None, kwargs.get("connect_timeout")
-                        )
                     self._disconnect_notified = False
                     if hasattr(self, "_reconnected_event"):
                         self._reconnected_event.set()
@@ -1188,7 +1186,10 @@ def test_wait_for_disconnect_notifications_exceptions(
             """
             raise RuntimeError("thread error in queueWork")  # noqa: TRY003
 
-    monkeypatch.setattr(ble_mod, "publishingThread", MockPublishingThread())
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.publishingThread",
+        MockPublishingThread(),
+    )
 
     # Should handle RuntimeError gracefully
     iface._wait_for_disconnect_notifications()
@@ -1216,7 +1217,10 @@ def test_wait_for_disconnect_notifications_exceptions(
             """
             raise ValueError("invalid state")  # noqa: TRY003
 
-    monkeypatch.setattr(ble_mod, "publishingThread", MockPublishingThread2())
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.publishingThread",
+        MockPublishingThread2(),
+    )
 
     # Should handle ValueError gracefully
     iface._wait_for_disconnect_notifications()
@@ -1284,7 +1288,10 @@ def test_drain_publish_queue_exceptions(
                 return _callback()
             return None
 
-    monkeypatch.setattr(ble_mod, "publishingThread", MockPublishingThread())
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.publishingThread",
+        MockPublishingThread(),
+    )
 
     # Should handle ValueError gracefully
     flush_event = threading.Event()

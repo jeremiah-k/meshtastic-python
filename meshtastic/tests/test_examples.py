@@ -105,6 +105,7 @@ def test_examples_example_config_yaml_is_valid() -> None:
         config_section.get("bluetooth"), label="config.bluetooth"
     )
     assert isinstance(bluetooth_cfg.get("enabled"), bool)
+    assert "fixed_pin" not in bluetooth_cfg
     assert "fixedPin" not in bluetooth_cfg
 
     device_cfg = _require_mapping(config_section.get("device"), label="config.device")

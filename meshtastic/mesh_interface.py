@@ -16,7 +16,7 @@ import time
 import traceback
 from datetime import datetime
 from types import TracebackType
-from typing import IO, Any, Callable, Literal, TypeAlias, cast
+from typing import IO, Any, Callable, Literal, Protocol, TypeAlias, cast
 
 import google.protobuf.json_format
 from google.protobuf import message as protobuf_message
@@ -97,6 +97,16 @@ RETIRED_WAIT_REQUEST_ID_TTL_SECONDS: float = 60.0
 RESPONSE_WAIT_REQID_ERROR: str = (
     "Internal error: response wait requires a positive packet id."
 )
+
+
+class _SerializablePayload(Protocol):
+    """Protocol for payloads that can serialize to bytes."""
+
+    def SerializeToString(self) -> bytes:
+        """Return serialized payload bytes."""
+
+
+PayloadData: TypeAlias = bytes | bytearray | memoryview | _SerializablePayload
 
 
 def _format_missing_node_num_error(destination_id: int | str) -> str:
@@ -340,17 +350,9 @@ class MeshInterface:  # pylint: disable=R0902
                         heartbeat_idle_condition.wait()
             try:
                 self._send_disconnect()
-            except (OSError, MeshInterface.MeshInterfaceError):
+            except (OSError, TypeError, MeshInterface.MeshInterfaceError):
                 logger.debug(
                     "Failed to send disconnect during close(); continuing shutdown.",
-                    exc_info=True,
-                )
-            except TypeError:
-                is_finalizing = getattr(sys, "is_finalizing", None)
-                if not (callable(is_finalizing) and is_finalizing()):
-                    raise
-                logger.debug(
-                    "Failed to send disconnect during interpreter finalization; continuing shutdown.",
                     exc_info=True,
                 )
         # debugOut is caller-owned (often shared via outer context managers);
@@ -988,7 +990,7 @@ class MeshInterface:  # pylint: disable=R0902
 
     def sendData(  # pylint: disable=R0913
         self,
-        data: Any,
+        data: PayloadData,
         destinationId: int | str = BROADCAST_ADDR,
         portNum: portnums_pb2.PortNum.ValueType = portnums_pb2.PortNum.PRIVATE_APP,
         wantAck: bool = False,
@@ -1045,6 +1047,13 @@ class MeshInterface:  # pylint: disable=R0902
         `_send_data_with_wait()` and is not part of the public `sendData()`
         contract.
         """
+        for wait_attr in (
+            WAIT_ATTR_POSITION,
+            WAIT_ATTR_TRACEROUTE,
+            WAIT_ATTR_TELEMETRY,
+            WAIT_ATTR_WAYPOINT,
+        ):
+            self._clear_wait_error(wait_attr, request_id=None)
         return self._send_data_with_wait(
             data,
             destinationId=destinationId,
@@ -1064,7 +1073,7 @@ class MeshInterface:  # pylint: disable=R0902
 
     def _send_data_with_wait(  # pylint: disable=R0913
         self,
-        data: Any,
+        data: PayloadData,
         destinationId: int | str = BROADCAST_ADDR,
         portNum: portnums_pb2.PortNum.ValueType = portnums_pb2.PortNum.PRIVATE_APP,
         *,
@@ -1131,16 +1140,23 @@ class MeshInterface:  # pylint: disable=R0902
             packet id cannot be generated, or if an invalid port number is supplied.
         """
         serializer = getattr(data, "SerializeToString", None)
+        payload: bytes | bytearray | memoryview
         if callable(serializer):
             logger.debug("Serializing protobuf as data: %s", stripnl(data))
-            data = serializer()
+            payload = serializer()
+        else:
+            payload = cast(bytes | bytearray | memoryview, data)
+        if isinstance(payload, memoryview):
+            payload = payload.tobytes()
+        elif isinstance(payload, bytearray):
+            payload = bytes(payload)
 
-        logger.debug("len(data): %s", len(data))
+        logger.debug("len(data): %s", len(payload))
         logger.debug(
             "mesh_pb2.Constants.DATA_PAYLOAD_LEN: %s",
             mesh_pb2.Constants.DATA_PAYLOAD_LEN,
         )
-        if len(data) > mesh_pb2.Constants.DATA_PAYLOAD_LEN:
+        if len(payload) > mesh_pb2.Constants.DATA_PAYLOAD_LEN:
             raise MeshInterface.MeshInterfaceError("Data payload too big")
 
         if (
@@ -1152,7 +1168,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         meshPacket = mesh_pb2.MeshPacket()
         meshPacket.channel = channelIndex
-        meshPacket.decoded.payload = data
+        meshPacket.decoded.payload = payload
         meshPacket.decoded.portnum = portNum
         meshPacket.decoded.want_response = wantResponse
         meshPacket.id = self._generate_packet_id()

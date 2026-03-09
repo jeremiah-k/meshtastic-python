@@ -14,7 +14,7 @@ import platform
 import sys
 import time
 from types import ModuleType
-from typing import Any, NoReturn
+from typing import Any, NoReturn, Protocol
 
 import yaml
 from google.protobuf.json_format import MessageToDict
@@ -318,7 +318,13 @@ _SECRET_PREF_NAMES: frozenset[str] = frozenset(
 )
 
 
-def _redact_pref_value(name: str, value: Any) -> Any:
+class _NamedConfigType(Protocol):
+    """Protocol for config section objects exposing a `name` attribute."""
+
+    name: str
+
+
+def _redact_pref_value(name: str, value: str) -> str:
     """Return a redacted placeholder for secret-bearing pref names."""
     return "<redacted>" if name in _SECRET_PREF_NAMES else value
 
@@ -349,9 +355,9 @@ def getPref(node: Any, comp_name: str) -> bool:
     """
 
     def _print_setting(
-        config_type: Any,
+        config_type: _NamedConfigType,
         uni_name: str,
-        pref_value: Any,
+        pref_value: str | list[str],
         *,
         repeated: bool,
         secret_name: str,
@@ -364,11 +370,11 @@ def getPref(node: Any, comp_name: str) -> bool:
 
         Parameters
         ----------
-        config_type : Any
+        config_type : _NamedConfigType
             Object with a `name` attribute identifying the configuration section.
         uni_name : str
             The preference name within the configuration section.
-        pref_value : Any
+        pref_value : str | list[str]
             The preference value to print; an iterable when `repeated` is True.
         repeated : bool
             If True, treat `pref_value` as a sequence and print the list of stringified values.
@@ -584,7 +590,7 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
         val = meshtastic.util.fromStr(raw_val)
     else:
         val = raw_val
-    logger.debug("val:%s", _redact_pref_value(snake_name, val))
+    logger.debug("val:%s", _redact_pref_value(snake_name, meshtastic.util.toStr(val)))
 
     if snake_name == "wifi_psk" and len(str(raw_val)) < 8:
         print("Warning: network.wifi_psk must be 8 or more characters.")
@@ -632,7 +638,9 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
             print(f"Clearing {pref.name} list")
             del getattr(config_values, pref.name)[:]
         else:
-            display_value = _redact_pref_value(snake_name, raw_val)
+            display_value = _redact_pref_value(
+                snake_name, meshtastic.util.toStr(raw_val)
+            )
             print(f"Adding '{display_value}' to the {pref.name} list")
             cur_vals = [
                 x for x in getattr(config_values, pref.name) if x not in [0, "", b""]
@@ -643,7 +651,7 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
         return True
 
     prefix = f"{'.'.join(name[0:-1])}." if config_type.message_type is not None else ""
-    display_value = _redact_pref_value(snake_name, raw_val)
+    display_value = _redact_pref_value(snake_name, meshtastic.util.toStr(raw_val))
     print(f"Set {prefix}{uni_name} to {display_value}")
 
     return True

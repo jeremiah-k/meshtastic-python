@@ -285,6 +285,7 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
             """No-op unpair hook for compatibility with BLEClient.unpair()."""
             return None
 
+        @property
         def is_connected(self) -> bool:
             """Report whether the client is connected.
 
@@ -586,7 +587,6 @@ class DummyClient:
         self,
         *,
         await_timeout: float = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
-        **_kwargs: object,
     ) -> None:
         """Record an unpair invocation."""
         await_timeout = _validate_await_timeout(await_timeout)
@@ -596,7 +596,7 @@ class DummyClient:
             )
         self.unpair_calls += 1
         self.unpair_await_timeouts.append(await_timeout)
-        self.unpair_kwargs.append(dict(_kwargs))
+        self.unpair_kwargs.append({})
         if self.on_unpair is not None:
             self.on_unpair()
 

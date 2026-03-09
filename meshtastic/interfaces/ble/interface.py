@@ -259,6 +259,7 @@ class BLEInterface(MeshInterface):
         self.pair_on_connect = pair_on_connect
         self._disconnect_notified = False  # Prevents duplicate disconnect events
         self._client_publish_pending = False  # Hide provisional clients.
+        self._client_replacement_pending = False
         self._last_disconnect_source: str = (
             ""  # Set by _handle_disconnect on each disconnect
         )
@@ -611,6 +612,7 @@ class BLEInterface(MeshInterface):
         should_reconnect = False
         should_schedule_reconnect = False
         was_publish_pending = False
+        was_replacement_pending = False
         address = "unknown"
         disconnect_keys: list[str] = []
         try:
@@ -624,6 +626,7 @@ class BLEInterface(MeshInterface):
                 current_client = self.client
                 is_closing = self._state_manager._is_closing or self._closed
                 was_publish_pending = self._client_publish_pending
+                was_replacement_pending = self._client_replacement_pending
 
                 if current_state == ConnectionState.CONNECTING:
                     logger.debug(
@@ -668,6 +671,8 @@ class BLEInterface(MeshInterface):
                 client_at_start = current_client
                 alias_key = self._connection_alias_key
                 self.client = None
+                self._client_publish_pending = False
+                self._client_replacement_pending = False
                 self._disconnect_notified = True
                 self._connection_alias_key = None
                 self._state_manager._transition_to(ConnectionState.DISCONNECTED)
@@ -763,7 +768,7 @@ class BLEInterface(MeshInterface):
             self._mark_address_keys_disconnected(*disconnect_keys)
 
         _close_previous_client_async()
-        if not was_publish_pending:
+        if not was_publish_pending or was_replacement_pending:
             self._disconnected()
         else:
             logger.debug(
@@ -2224,6 +2229,9 @@ class BLEInterface(MeshInterface):
         with self._state_lock:
             # Claim a provisional session before orchestration moves shared
             # state to CONNECTED so disconnect callbacks stay publication-safe.
+            self._client_replacement_pending = (
+                self.client is not None and not self._client_publish_pending
+            )
             self._client_publish_pending = True
 
         try:
@@ -2243,6 +2251,7 @@ class BLEInterface(MeshInterface):
         except Exception:
             with self._state_lock:
                 self._client_publish_pending = False
+                self._client_replacement_pending = False
             raise
 
         device_address = getattr(
@@ -2254,6 +2263,7 @@ class BLEInterface(MeshInterface):
             if self._closed or self._state_manager._is_closing:
                 abort_connect = True
                 self._client_publish_pending = False
+                self._client_replacement_pending = False
             else:
                 previous_client = self.client
                 self.address = device_address
@@ -2416,6 +2426,7 @@ class BLEInterface(MeshInterface):
                         if still_owned and not is_closing:
                             publish_now = True
         if publish_now:
+            should_publish_connected = False
             with self._state_lock:
                 still_owned, is_closing = self._get_connected_client_status_locked(
                     connected_client
@@ -2425,13 +2436,30 @@ class BLEInterface(MeshInterface):
                         # Some direct test harnesses stub connection setup
                         # without setting provisional publish state.
                         self._client_publish_pending = True
-                    self._ever_connected = True
-                    self._prior_publish_was_reconnect = prior_ever_connected
-                    # Keep the session provisional until _connected()
-                    # publication is committed to avoid disconnect races.
+                        self._client_replacement_pending = False
+                    should_publish_connected = True
+            if should_publish_connected:
+                try:
                     self._connected()
-                    self._client_publish_pending = False
-                    publish_committed = True
+                except Exception:
+                    with self._state_lock:
+                        if self.client is connected_client:
+                            self._client_publish_pending = False
+                            self._client_replacement_pending = False
+                    raise
+                with self._state_lock:
+                    still_owned, is_closing = self._get_connected_client_status_locked(
+                        connected_client
+                    )
+                    if still_owned and not is_closing:
+                        self._ever_connected = True
+                        self._prior_publish_was_reconnect = prior_ever_connected
+                        self._client_publish_pending = False
+                        self._client_replacement_pending = False
+                        publish_committed = True
+                    elif self.client is connected_client:
+                        self._client_publish_pending = False
+                        self._client_replacement_pending = False
             if publish_committed:
                 self._emit_verified_connection_side_effects(connected_client)
                 return
@@ -2495,6 +2523,7 @@ class BLEInterface(MeshInterface):
                 is_closing = self._state_manager._is_closing or self._closed
                 self.client = None
                 self._client_publish_pending = False
+                self._client_replacement_pending = False
                 # The disconnect callback remains registered on `client` until
                 # best-effort close completes, so mark this interface as already
                 # notified before close() can trigger a stale callback.
@@ -2511,6 +2540,7 @@ class BLEInterface(MeshInterface):
                 # disconnect path before this cleanup runs; ensure callers do
                 # not remain stuck in ERROR_MANAGEMENT_CONNECTING.
                 self._client_publish_pending = False
+                self._client_replacement_pending = False
                 is_closing = self._state_manager._is_closing or self._closed
                 if not is_closing:
                     self.address = restored_address
@@ -3276,6 +3306,7 @@ class BLEInterface(MeshInterface):
             # Use unified state lock
             with self._state_lock:
                 client = self.client
+                publish_pending = self._client_publish_pending
                 # Don't close client if it was already replaced (race condition)
                 # Only close if it's still the current client
                 if client is not None:
@@ -3286,7 +3317,9 @@ class BLEInterface(MeshInterface):
             if client is not None:
                 gate_context = (
                     self._management_target_gate(client_address)
-                    if client_address is not None and not management_wait_timed_out
+                    if client_address is not None
+                    and not management_wait_timed_out
+                    and not publish_pending
                     else contextlib.nullcontext()
                 )
                 with gate_context:
@@ -3301,8 +3334,19 @@ class BLEInterface(MeshInterface):
             notify = False
             with self._state_lock:
                 if self._client_publish_pending:
+                    replacement_pending = self._client_replacement_pending
                     self._client_publish_pending = False
-                    self._disconnect_notified = True
+                    self._client_replacement_pending = False
+                    if replacement_pending and not self._disconnect_notified:
+                        self._disconnect_notified = True
+                        notify = True
+                    else:
+                        self._disconnect_notified = True
+                elif self._client_replacement_pending:
+                    self._client_replacement_pending = False
+                    if not self._disconnect_notified:
+                        self._disconnect_notified = True
+                        notify = True
                 elif not self._disconnect_notified:
                     self._disconnect_notified = True
                     notify = True

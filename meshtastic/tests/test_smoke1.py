@@ -91,7 +91,7 @@ def _destructive_test(func: Callable[..., object]) -> Callable[..., object]:
     return cast(
         Callable[..., object],
         pytest.mark.usefixtures("restore_smoke1_module_config")(
-            pytest.mark.smoke1_destructive(func)
+            pytest.mark.smoke1(pytest.mark.smoke1_destructive(func))
         ),
     )
 
@@ -164,8 +164,8 @@ def test_find_channel_index_by_name_handles_multiline_channel_blocks() -> None:
 
 
 @pytest.mark.unit
-def test_destructive_test_marks_only_smoke1_destructive() -> None:
-    """Destructive smoke helpers should stay out of the generic smoke1 lane."""
+def test_destructive_test_marks_smoke1_and_smoke1_destructive() -> None:
+    """Destructive smoke helpers should carry both smoke1 and smoke1_destructive."""
 
     def _sample() -> None:
         return None
@@ -173,7 +173,7 @@ def test_destructive_test_marks_only_smoke1_destructive() -> None:
     wrapped = _destructive_test(_sample)
     marker_names = {mark.name for mark in getattr(wrapped, "pytestmark", [])}
 
-    assert "smoke1" not in marker_names
+    assert "smoke1" in marker_names
     assert "smoke1_destructive" in marker_names
     assert "usefixtures" in marker_names
 

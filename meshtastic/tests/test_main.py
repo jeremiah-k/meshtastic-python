@@ -4544,6 +4544,7 @@ def _make_fake_tcp_interface(
             return self
 
         def __exit__(self, *_args: object) -> None:
+            self.close()
             return None
 
         def close(self) -> None:
