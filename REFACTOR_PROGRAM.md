@@ -411,7 +411,7 @@ Still intentionally pending as follow-up work:
 
 - full dependency refresh and advisory remediation workstream described above.
 
-## 17) Maintenance Merge Hardening Checklist
+## 17) Hardening Design Decisions
 
 This section now keeps only durable rationale from the hardening stream:
 
@@ -424,12 +424,5 @@ This section now keeps only durable rationale from the hardening stream:
 - Optional backend loading stays lazy to keep base import/test paths
   deterministic without optional hardware dependencies.
 
-## 18) Validation Notes
-
-Keep this document focused on durable validation policy and behavior contracts.
-Time-bound run history belongs in the PR discussion and CI artifacts.
-
-## 19) Review Execution Tracking
-
-Keep review-execution process guidance durable in this document; track
-cycle-specific triage details in the corresponding PR discussion.
+Validation and review-execution policy in this document should remain durable.
+Time-bound run history and per-cycle triage belong in PR discussion and CI artifacts.

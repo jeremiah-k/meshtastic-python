@@ -825,10 +825,16 @@ def test_rapid_connect_disconnect_stress_test(
             with iface._state_lock:
                 current_client = cast(object | None, iface.client)
                 attempts = list(
-                    cast(list["StressTestClient"], _get_stress_test_attempts(iface))
+                    cast(
+                        list["StressTestClient"],
+                        getattr(iface, "_stress_test_attempts", []),
+                    )
                 )
                 clients = list(
-                    cast(list["StressTestClient"], _get_stress_test_clients(iface))
+                    cast(
+                        list["StressTestClient"],
+                        getattr(iface, "_stress_test_clients", []),
+                    )
                 )
             return current_client, attempts, clients
 

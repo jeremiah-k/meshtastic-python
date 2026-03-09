@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
 
 logger = logging.getLogger("meshtastic.ble")
-_DEVICE_NOT_FOUND_MESSAGE_RE = re.compile(
+_DEVICE_NOT_FOUND_MESSAGE_RE: re.Pattern[str] = re.compile(
     r"(?:"
     r"\bcould not find (?:the )?(?:device|peripheral)\b"
     r"(?!\s+(?:service|characteristic)\b)(?:\W|$)|"
@@ -46,10 +46,10 @@ _DEVICE_NOT_FOUND_MESSAGE_RE = re.compile(
     r"(?:(?!\b(?:service|characteristic)\b).){0,40}\bnot found\b"
     r")"
 )
-_CONNECT_TIMEOUT_INVALID_MSG = (
+_CONNECT_TIMEOUT_INVALID_MSG: str = (
     "connect_timeout must be a finite positive number of seconds."
 )
-_CONNECT_TIMEOUT_FALLBACK_SECONDS = 10.0
+_CONNECT_TIMEOUT_FALLBACK_SECONDS: float = 10.0
 
 
 def _is_device_not_found_error(err: Exception) -> bool:
@@ -657,7 +657,7 @@ class ConnectionOrchestrator:
         discovery_connect_timeout = (
             direct_connect_timeout
             if connect_timeout is not None or pair_on_connect
-            else BLEConfig.CONNECTION_TIMEOUT
+            else self._get_connect_timeout(pair_on_connect=True)
         )
 
         with self.state_lock:

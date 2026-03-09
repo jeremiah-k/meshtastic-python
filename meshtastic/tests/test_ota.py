@@ -269,7 +269,8 @@ def test_esp32_wifi_ota_update_succeeds_when_source_file_truncated_after_init(
 ) -> None:
     """update() should still use the frozen snapshot when source file is truncated."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
-        f.write(b"A" * 32)
+        original_data = b"A" * 32
+        f.write(original_data)
         temp_file = f.name
 
     try:
@@ -284,6 +285,9 @@ def test_esp32_wifi_ota_update_succeeds_when_source_file_truncated_after_init(
             ota.update()
 
         mock_socket_class.assert_called_once()
+        start_cmd = f"OTA {len(original_data)} {ota.hash_hex()}\n".encode("utf-8")
+        assert mock_socket.sendall.call_args_list[0].args[0] == start_cmd
+        assert mock_socket.sendall.call_args_list[1].args[0] == original_data
     finally:
         os.unlink(temp_file)
 
@@ -295,7 +299,8 @@ def test_esp32_wifi_ota_update_succeeds_when_source_file_removed_after_init(
 ) -> None:
     """update() should still upload the frozen snapshot when source file is removed."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
-        f.write(b"A" * 32)
+        original_data = b"A" * 32
+        f.write(original_data)
         temp_file = f.name
 
     try:
@@ -309,6 +314,9 @@ def test_esp32_wifi_ota_update_succeeds_when_source_file_removed_after_init(
             ota.update()
 
         mock_socket_class.assert_called_once()
+        start_cmd = f"OTA {len(original_data)} {ota.hash_hex()}\n".encode("utf-8")
+        assert mock_socket.sendall.call_args_list[0].args[0] == start_cmd
+        assert mock_socket.sendall.call_args_list[1].args[0] == original_data
     finally:
         if os.path.exists(temp_file):
             os.unlink(temp_file)

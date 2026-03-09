@@ -352,8 +352,8 @@ def getPref(node: Any, comp_name: str) -> bool:
         config_type: Any,
         uni_name: str,
         pref_value: Any,
-        repeated: bool,
         *,
+        repeated: bool,
         secret_name: str,
     ) -> None:
         """Print a configuration preference and its value to stdout and the debug log.
@@ -438,7 +438,7 @@ def getPref(node: Any, comp_name: str) -> bool:
                 config_type,
                 uni_name,
                 pref_value,
-                repeated,
+                repeated=repeated,
                 secret_name=snake_name,
             )
         else:
@@ -448,7 +448,7 @@ def getPref(node: Any, comp_name: str) -> bool:
                     config_type,
                     field[0].name,
                     field[1],
-                    repeated,
+                    repeated=repeated,
                     secret_name=field[0].name,
                 )
     else:

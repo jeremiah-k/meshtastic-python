@@ -13,7 +13,7 @@ import time
 import types
 from collections import OrderedDict
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NoReturn, cast
+from typing import TYPE_CHECKING, Any, Callable, NoReturn, cast
 from unittest.mock import MagicMock, call, create_autospec, patch
 
 import pytest
@@ -34,6 +34,44 @@ from ..util import Timeout
 
 if TYPE_CHECKING:
     from .conftest import FakeTimer
+
+
+def _start_wait_thread(
+    wait_call: Callable[[], None],
+) -> tuple[threading.Thread, list[BaseException]]:
+    """Start a waiter in a background thread and capture any raised exception."""
+    errors: list[BaseException] = []
+
+    def _run_wait() -> None:
+        try:
+            wait_call()
+        except Exception as exc:  # noqa: BLE001 - asserted by caller
+            errors.append(exc)
+
+    thread = threading.Thread(target=_run_wait, daemon=True)
+    thread.start()
+    return thread, errors
+
+
+def _wait_for_scoped_wait_registration(
+    iface: MeshInterface,
+    *,
+    acknowledgment_attr: str,
+    request_id: int,
+    timeout_seconds: float = 1.0,
+) -> None:
+    """Wait until a request-scoped waiter is registered for `acknowledgment_attr`."""
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        with iface._response_handlers_lock:
+            if request_id in iface._active_wait_request_ids.get(
+                acknowledgment_attr, set()
+            ):
+                return
+        time.sleep(0.001)
+    raise AssertionError(
+        f"Timed out waiting for scoped waiter registration: {acknowledgment_attr}#{request_id}"
+    )
 
 
 @pytest.mark.unit
@@ -416,7 +454,6 @@ def test_close_waits_for_inflight_heartbeat_send(
     "disconnect_error",
     [
         OSError("bad fd"),
-        TypeError("boom"),
         MeshInterface.MeshInterfaceError("ble write failed"),
     ],
 )
@@ -446,6 +483,22 @@ def test_close_suppresses_disconnect_send_failures(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_close_reraises_disconnect_type_error_when_not_finalizing() -> None:
+    """close() should re-raise TypeError disconnect failures during normal runtime."""
+    iface = MeshInterface(noProto=True)
+    try:
+        iface.debugOut = io.StringIO()
+        with patch.object(iface, "_send_disconnect", side_effect=TypeError("boom")):
+            with pytest.raises(TypeError, match="boom"):
+                iface.close()
+        assert iface._closing is True
+    finally:
+        if not getattr(iface, "_closing", False):
+            iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_close_suppresses_disconnect_type_error_during_finalization(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -465,7 +518,10 @@ def test_close_suppresses_disconnect_type_error_during_finalization(
         if not getattr(iface, "_closing", False):
             iface.close()
 
-    assert "Failed to send disconnect during close(); continuing shutdown." in caplog.text
+    assert (
+        "Failed to send disconnect during interpreter finalization; continuing shutdown."
+        in caplog.text
+    )
 
 
 @pytest.mark.unit
@@ -1774,6 +1830,15 @@ def test_on_response_position_success_and_routing_error(
         position.longitude_i = -971234567
         position.altitude = 250
         position.precision_bits = 32
+        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_POSITION, request_id=1001)
+        wait_thread, wait_errors = _start_wait_thread(
+            lambda: iface.waitForPosition(request_id=1001)
+        )
+        _wait_for_scoped_wait_registration(
+            iface,
+            acknowledgment_attr=mesh_interface_module.WAIT_ATTR_POSITION,
+            request_id=1001,
+        )
         with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
             iface.onResponsePosition(
                 {
@@ -1786,12 +1851,23 @@ def test_on_response_position_success_and_routing_error(
                     }
                 }
             )
-            iface.waitForPosition(request_id=1001)
+        wait_thread.join(timeout=1.0)
+        assert not wait_errors
+        assert not wait_thread.is_alive()
         assert "Position received:" in caplog.text
         assert "full precision" in caplog.text
 
         unknown_position = mesh_pb2.Position()
         unknown_position.precision_bits = 5
+        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_POSITION, request_id=1002)
+        wait_thread, wait_errors = _start_wait_thread(
+            lambda: iface.waitForPosition(request_id=1002)
+        )
+        _wait_for_scoped_wait_registration(
+            iface,
+            acknowledgment_attr=mesh_interface_module.WAIT_ATTR_POSITION,
+            request_id=1002,
+        )
         caplog.clear()
         with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
             iface.onResponsePosition(
@@ -1805,12 +1881,23 @@ def test_on_response_position_success_and_routing_error(
                     }
                 }
             )
-            iface.waitForPosition(request_id=1002)
+        wait_thread.join(timeout=1.0)
+        assert not wait_errors
+        assert not wait_thread.is_alive()
         assert "(unknown)" in caplog.text
         assert "precision:5" in caplog.text
 
         disabled_position = mesh_pb2.Position()
         disabled_position.precision_bits = 0
+        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_POSITION, request_id=1003)
+        wait_thread, wait_errors = _start_wait_thread(
+            lambda: iface.waitForPosition(request_id=1003)
+        )
+        _wait_for_scoped_wait_registration(
+            iface,
+            acknowledgment_attr=mesh_interface_module.WAIT_ATTR_POSITION,
+            request_id=1003,
+        )
         caplog.clear()
         with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
             iface.onResponsePosition(
@@ -1824,13 +1911,25 @@ def test_on_response_position_success_and_routing_error(
                     }
                 }
             )
-            iface.waitForPosition(request_id=1003)
+        wait_thread.join(timeout=1.0)
+        assert not wait_errors
+        assert not wait_thread.is_alive()
         assert "position disabled" in caplog.text
 
     with MeshInterface(noProto=True) as iface:
+        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_POSITION, request_id=1004)
+        wait_thread, wait_errors = _start_wait_thread(
+            lambda: iface.waitForPosition(request_id=1004)
+        )
+        _wait_for_scoped_wait_registration(
+            iface,
+            acknowledgment_attr=mesh_interface_module.WAIT_ATTR_POSITION,
+            request_id=1004,
+        )
         iface.onResponsePosition(
             {
                 "decoded": {
+                    "requestId": 1004,
                     "portnum": portnums_pb2.PortNum.Name(
                         portnums_pb2.PortNum.ROUTING_APP
                     ),
@@ -1838,8 +1937,11 @@ def test_on_response_position_success_and_routing_error(
                 }
             }
         )
-        with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
-            iface.waitForPosition()
+        wait_thread.join(timeout=1.0)
+        assert not wait_thread.is_alive()
+        assert len(wait_errors) == 1
+        assert isinstance(wait_errors[0], MeshInterface.MeshInterfaceError)
+        assert "No response" in str(wait_errors[0])
 
 
 @pytest.mark.unit
@@ -1879,7 +1981,7 @@ def test_on_response_position_prints_when_info_logging_not_visible(
 def test_logger_visible_info_handler_treats_console_streams_as_visible() -> (
     None
 ):
-    """Stdout/stderr-backed console handlers should suppress stdout fallback."""
+    """Only stdout-backed console handlers should suppress stdout fallback."""
     handler_logger = logging.getLogger("meshtastic.tests.visible-info-handler")
     original_handlers = list(handler_logger.handlers)
     original_propagate = handler_logger.propagate
@@ -1916,7 +2018,7 @@ def test_logger_visible_info_handler_treats_console_streams_as_visible() -> (
         handler_logger.addHandler(stderr_handler)
         assert (
             mesh_interface_module._logger_has_visible_info_handler(handler_logger)
-            is True
+            is False
         )
 
         handler_logger.removeHandler(stderr_handler)
@@ -1934,7 +2036,7 @@ def test_logger_visible_info_handler_treats_console_streams_as_visible() -> (
         handler_logger.addHandler(rich_stderr_handler)
         assert (
             mesh_interface_module._logger_has_visible_info_handler(handler_logger)
-            is True
+            is False
         )
 
         handler_logger.removeHandler(rich_stderr_handler)
@@ -2034,6 +2136,15 @@ def test_send_traceroute_and_response_rendering(
         route.snr_towards.extend([8, 12])
         route.route_back.extend([12])
         route.snr_back.extend([16, 20])
+        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_TRACEROUTE, request_id=88)
+        wait_thread, wait_errors = _start_wait_thread(
+            lambda: iface.waitForTraceRoute(1.0, request_id=88)
+        )
+        _wait_for_scoped_wait_registration(
+            iface,
+            acknowledgment_attr=mesh_interface_module.WAIT_ATTR_TRACEROUTE,
+            request_id=88,
+        )
         with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
             iface.onResponseTraceRoute(
                 {
@@ -2043,7 +2154,9 @@ def test_send_traceroute_and_response_rendering(
                     "hopStart": 1,
                 }
             )
-        iface.waitForTraceRoute(1.0, request_id=88)
+        wait_thread.join(timeout=1.0)
+        assert not wait_errors
+        assert not wait_thread.is_alive()
 
     assert "Route traced towards destination:" in caplog.text
     assert "Route traced back to us:" in caplog.text
@@ -2054,9 +2167,19 @@ def test_send_traceroute_and_response_rendering(
 def test_on_response_traceroute_routing_no_response_raises() -> None:
     """Traceroute routing NO_RESPONSE replies should be surfaced by waitForTraceRoute()."""
     with MeshInterface(noProto=True) as iface:
+        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_TRACEROUTE, request_id=9101)
+        wait_thread, wait_errors = _start_wait_thread(
+            lambda: iface.waitForTraceRoute(1.0, request_id=9101)
+        )
+        _wait_for_scoped_wait_registration(
+            iface,
+            acknowledgment_attr=mesh_interface_module.WAIT_ATTR_TRACEROUTE,
+            request_id=9101,
+        )
         iface.onResponseTraceRoute(
             {
                 "decoded": {
+                    "requestId": 9101,
                     "portnum": portnums_pb2.PortNum.Name(
                         portnums_pb2.PortNum.ROUTING_APP
                     ),
@@ -2064,8 +2187,11 @@ def test_on_response_traceroute_routing_no_response_raises() -> None:
                 }
             }
         )
-        with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
-            iface.waitForTraceRoute(1.0)
+        wait_thread.join(timeout=1.0)
+        assert not wait_thread.is_alive()
+        assert len(wait_errors) == 1
+        assert isinstance(wait_errors[0], MeshInterface.MeshInterfaceError)
+        assert "No response" in str(wait_errors[0])
 
 
 @pytest.mark.unit
@@ -2073,18 +2199,28 @@ def test_on_response_traceroute_routing_no_response_raises() -> None:
 def test_on_response_traceroute_parse_failures_surface_to_waiters() -> None:
     """Traceroute parse errors should be recorded and raised by waitForTraceRoute()."""
     with MeshInterface(noProto=True) as iface:
+        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_TRACEROUTE, request_id=9102)
+        wait_thread, wait_errors = _start_wait_thread(
+            lambda: iface.waitForTraceRoute(1.0, request_id=9102)
+        )
+        _wait_for_scoped_wait_registration(
+            iface,
+            acknowledgment_attr=mesh_interface_module.WAIT_ATTR_TRACEROUTE,
+            request_id=9102,
+        )
         iface.onResponseTraceRoute(
             {
                 "decoded": {
+                    "requestId": 9102,
                     "payload": 123,  # Invalid payload type for ParseFromString
                 }
             }
         )
-        with pytest.raises(
-            MeshInterface.MeshInterfaceError,
-            match="Failed to parse traceroute response payload",
-        ):
-            iface.waitForTraceRoute(1.0)
+        wait_thread.join(timeout=1.0)
+        assert not wait_thread.is_alive()
+        assert len(wait_errors) == 1
+        assert isinstance(wait_errors[0], MeshInterface.MeshInterfaceError)
+        assert "Failed to parse traceroute response payload" in str(wait_errors[0])
 
 
 @pytest.mark.unit
@@ -2150,6 +2286,15 @@ def test_on_response_telemetry_paths(
         device_t = telemetry_pb2.Telemetry()
         device_t.device_metrics.battery_level = 95
         device_t.device_metrics.voltage = 4.23
+        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_TELEMETRY, request_id=2001)
+        wait_thread, wait_errors = _start_wait_thread(
+            lambda: iface.waitForTelemetry(request_id=2001)
+        )
+        _wait_for_scoped_wait_registration(
+            iface,
+            acknowledgment_attr=mesh_interface_module.WAIT_ATTR_TELEMETRY,
+            request_id=2001,
+        )
         with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
             iface.onResponseTelemetry(
                 {
@@ -2162,12 +2307,23 @@ def test_on_response_telemetry_paths(
                     }
                 }
             )
-            iface.waitForTelemetry(request_id=2001)
+        wait_thread.join(timeout=1.0)
+        assert not wait_errors
+        assert not wait_thread.is_alive()
         assert "Telemetry received:" in caplog.text
         assert "Battery level:" in caplog.text
 
         env_t = telemetry_pb2.Telemetry()
         env_t.environment_metrics.temperature = 21.5
+        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_TELEMETRY, request_id=2002)
+        wait_thread, wait_errors = _start_wait_thread(
+            lambda: iface.waitForTelemetry(request_id=2002)
+        )
+        _wait_for_scoped_wait_registration(
+            iface,
+            acknowledgment_attr=mesh_interface_module.WAIT_ATTR_TELEMETRY,
+            request_id=2002,
+        )
         caplog.clear()
         with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
             iface.onResponseTelemetry(
@@ -2181,13 +2337,25 @@ def test_on_response_telemetry_paths(
                     }
                 }
             )
-            iface.waitForTelemetry(request_id=2002)
+        wait_thread.join(timeout=1.0)
+        assert not wait_errors
+        assert not wait_thread.is_alive()
         assert "environmentMetrics:" in caplog.text
 
     with MeshInterface(noProto=True) as iface:
+        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_TELEMETRY, request_id=2003)
+        wait_thread, wait_errors = _start_wait_thread(
+            lambda: iface.waitForTelemetry(request_id=2003)
+        )
+        _wait_for_scoped_wait_registration(
+            iface,
+            acknowledgment_attr=mesh_interface_module.WAIT_ATTR_TELEMETRY,
+            request_id=2003,
+        )
         iface.onResponseTelemetry(
             {
                 "decoded": {
+                    "requestId": 2003,
                     "portnum": portnums_pb2.PortNum.Name(
                         portnums_pb2.PortNum.ROUTING_APP
                     ),
@@ -2195,12 +2363,25 @@ def test_on_response_telemetry_paths(
                 }
             }
         )
-        with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
-            iface.waitForTelemetry()
+        wait_thread.join(timeout=1.0)
+        assert not wait_thread.is_alive()
+        assert len(wait_errors) == 1
+        assert isinstance(wait_errors[0], MeshInterface.MeshInterfaceError)
+        assert "No response" in str(wait_errors[0])
 
+        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_TELEMETRY, request_id=2004)
+        wait_thread, wait_errors = _start_wait_thread(
+            lambda: iface.waitForTelemetry(request_id=2004)
+        )
+        _wait_for_scoped_wait_registration(
+            iface,
+            acknowledgment_attr=mesh_interface_module.WAIT_ATTR_TELEMETRY,
+            request_id=2004,
+        )
         iface.onResponseTelemetry(
             {
                 "decoded": {
+                    "requestId": 2004,
                     "portnum": portnums_pb2.PortNum.Name(
                         portnums_pb2.PortNum.ROUTING_APP
                     ),
@@ -2208,11 +2389,11 @@ def test_on_response_telemetry_paths(
                 }
             }
         )
-        with pytest.raises(
-            MeshInterface.MeshInterfaceError,
-            match="Routing error on response: NO_ROUTE",
-        ):
-            iface.waitForTelemetry()
+        wait_thread.join(timeout=1.0)
+        assert not wait_thread.is_alive()
+        assert len(wait_errors) == 1
+        assert isinstance(wait_errors[0], MeshInterface.MeshInterfaceError)
+        assert "Routing error on response: NO_ROUTE" in str(wait_errors[0])
 
 
 @pytest.mark.unit
@@ -2221,6 +2402,15 @@ def test_on_response_waypoint_paths(caplog: pytest.LogCaptureFixture) -> None:
     """onResponseWaypoint() should log waypoint payloads and route errors to waiters."""
     with MeshInterface(noProto=True) as iface:
         waypoint = mesh_pb2.Waypoint(name="WPT", id=5)
+        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_WAYPOINT, request_id=3001)
+        wait_thread, wait_errors = _start_wait_thread(
+            lambda: iface.waitForWaypoint(request_id=3001)
+        )
+        _wait_for_scoped_wait_registration(
+            iface,
+            acknowledgment_attr=mesh_interface_module.WAIT_ATTR_WAYPOINT,
+            request_id=3001,
+        )
         with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
             iface.onResponseWaypoint(
                 {
@@ -2233,13 +2423,25 @@ def test_on_response_waypoint_paths(caplog: pytest.LogCaptureFixture) -> None:
                     }
                 }
             )
-        iface.waitForWaypoint(request_id=3001)
+        wait_thread.join(timeout=1.0)
+        assert not wait_errors
+        assert not wait_thread.is_alive()
         assert "Waypoint received:" in caplog.text
 
     with MeshInterface(noProto=True) as iface:
+        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_WAYPOINT, request_id=3002)
+        wait_thread, wait_errors = _start_wait_thread(
+            lambda: iface.waitForWaypoint(request_id=3002)
+        )
+        _wait_for_scoped_wait_registration(
+            iface,
+            acknowledgment_attr=mesh_interface_module.WAIT_ATTR_WAYPOINT,
+            request_id=3002,
+        )
         iface.onResponseWaypoint(
             {
                 "decoded": {
+                    "requestId": 3002,
                     "portnum": portnums_pb2.PortNum.Name(
                         portnums_pb2.PortNum.ROUTING_APP
                     ),
@@ -2247,8 +2449,11 @@ def test_on_response_waypoint_paths(caplog: pytest.LogCaptureFixture) -> None:
                 }
             }
         )
-        with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
-            iface.waitForWaypoint()
+        wait_thread.join(timeout=1.0)
+        assert not wait_thread.is_alive()
+        assert len(wait_errors) == 1
+        assert isinstance(wait_errors[0], MeshInterface.MeshInterfaceError)
+        assert "No response" in str(wait_errors[0])
 
 
 @pytest.mark.unit
@@ -2286,12 +2491,28 @@ def test_on_response_parse_failures_set_wait_errors(
     error_prefix: str,
 ) -> None:
     """Malformed response payloads should fail via wait-state errors, not false success."""
+    wait_attr_by_waiter = {
+        "waitForPosition": mesh_interface_module.WAIT_ATTR_POSITION,
+        "waitForTelemetry": mesh_interface_module.WAIT_ATTR_TELEMETRY,
+        "waitForWaypoint": mesh_interface_module.WAIT_ATTR_WAYPOINT,
+    }
+    request_id = 4200
     with MeshInterface(noProto=True) as iface:
         handler = cast(Any, getattr(iface, handler_name))
         waiter = cast(Any, getattr(iface, waiter_name))
+        iface._clear_wait_error(wait_attr_by_waiter[waiter_name], request_id=request_id)
+        wait_thread, wait_errors = _start_wait_thread(
+            lambda: waiter(request_id=request_id)
+        )
+        _wait_for_scoped_wait_registration(
+            iface,
+            acknowledgment_attr=wait_attr_by_waiter[waiter_name],
+            request_id=request_id,
+        )
         handler(
             {
                 "decoded": {
+                    "requestId": request_id,
                     "portnum": portnums_pb2.PortNum.Name(
                         getattr(portnums_pb2.PortNum, port_name)
                     ),
@@ -2299,8 +2520,11 @@ def test_on_response_parse_failures_set_wait_errors(
                 }
             }
         )
-        with pytest.raises(MeshInterface.MeshInterfaceError, match=error_prefix):
-            waiter()
+        wait_thread.join(timeout=1.0)
+        assert not wait_thread.is_alive()
+        assert len(wait_errors) == 1
+        assert isinstance(wait_errors[0], MeshInterface.MeshInterfaceError)
+        assert error_prefix in str(wait_errors[0])
 
 
 @pytest.mark.unit
@@ -2776,7 +3000,7 @@ def test_retired_scoped_wait_ids_do_not_clobber_unscoped_wait_state() -> None:
             ) not in iface._response_wait_errors
 
         iface._mark_wait_acknowledged("receivedTelemetry")
-        assert getattr(iface._acknowledgment, "receivedTelemetry") is True
+        assert iface._acknowledgment.receivedTelemetry is True
 
 
 @pytest.mark.unit
@@ -2864,8 +3088,8 @@ def test_wait_for_request_ack_supports_overlapping_same_type_waits() -> None:
 
         def _wait_for(req_id: int) -> None:
             try:
-                wait_started[req_id].set()
                 assert release_waits.wait(timeout=1.0)
+                wait_started[req_id].set()
                 iface.waitForTelemetry(request_id=req_id)
             except Exception as exc:  # noqa: BLE001 - assertion below
                 errors.append(exc)
@@ -2874,9 +3098,19 @@ def test_wait_for_request_ack_supports_overlapping_same_type_waits() -> None:
         wait_22 = threading.Thread(target=_wait_for, args=(22,), daemon=True)
         wait_11.start()
         wait_22.start()
+        release_waits.set()
         assert wait_started[11].wait(timeout=1.0)
         assert wait_started[22].wait(timeout=1.0)
-        release_waits.set()
+        _wait_for_scoped_wait_registration(
+            iface,
+            acknowledgment_attr=mesh_interface_module.WAIT_ATTR_TELEMETRY,
+            request_id=11,
+        )
+        _wait_for_scoped_wait_registration(
+            iface,
+            acknowledgment_attr=mesh_interface_module.WAIT_ATTR_TELEMETRY,
+            request_id=22,
+        )
         iface._mark_wait_acknowledged("receivedTelemetry", request_id=11)
         iface._mark_wait_acknowledged("receivedTelemetry", request_id=22)
         wait_11.join(timeout=1.0)

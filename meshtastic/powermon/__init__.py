@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 else:
     for _backend_name in _OPTIONAL_POWERMON_BACKENDS:
         globals().pop(_backend_name, None)
+    globals().pop("_backend_name", None)
 
 
 def _missing_optional_backend_class(

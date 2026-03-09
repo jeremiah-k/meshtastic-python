@@ -94,6 +94,9 @@ WAIT_ATTR_TELEMETRY: str = "receivedTelemetry"
 WAIT_ATTR_TRACEROUTE: str = "receivedTraceRoute"
 WAIT_ATTR_WAYPOINT: str = "receivedWaypoint"
 RETIRED_WAIT_REQUEST_ID_TTL_SECONDS: float = 60.0
+RESPONSE_WAIT_REQID_ERROR: str = (
+    "Internal error: response wait requires a positive packet id."
+)
 
 
 def _format_missing_node_num_error(destination_id: int | str) -> str:
@@ -102,15 +105,13 @@ def _format_missing_node_num_error(destination_id: int | str) -> str:
 
 
 def _logger_has_visible_info_handler(target_logger: logging.Logger) -> bool:
-    """Return whether INFO logs from `target_logger` are visible on console streams."""
+    """Return whether INFO logs from `target_logger` are visible on stdout streams."""
     if target_logger.disabled or target_logger.getEffectiveLevel() > logging.INFO:
         return False
 
     visible_console_streams = {
         sys.stdout,
-        sys.stderr,
         sys.__stdout__,
-        sys.__stderr__,
     }
     current_logger: logging.Logger | None = target_logger
     while current_logger is not None:
@@ -339,9 +340,17 @@ class MeshInterface:  # pylint: disable=R0902
                         heartbeat_idle_condition.wait()
             try:
                 self._send_disconnect()
-            except (OSError, TypeError, MeshInterface.MeshInterfaceError):
+            except (OSError, MeshInterface.MeshInterfaceError):
                 logger.debug(
                     "Failed to send disconnect during close(); continuing shutdown.",
+                    exc_info=True,
+                )
+            except TypeError:
+                is_finalizing = getattr(sys, "is_finalizing", None)
+                if not (callable(is_finalizing) and is_finalizing()):
+                    raise
+                logger.debug(
+                    "Failed to send disconnect during interpreter finalization; continuing shutdown.",
                     exc_info=True,
                 )
         # debugOut is caller-owned (often shared via outer context managers);
@@ -1254,9 +1263,7 @@ class MeshInterface:  # pylint: disable=R0902
         if wantResponse:
             request_id = self._extract_request_id_from_sent_packet(d)
             if request_id is None:
-                raise self.MeshInterfaceError(
-                    "Internal error: response wait requires a positive packet id."
-                )
+                raise self.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
             self.waitForPosition(request_id=request_id)
         return d
 
@@ -1692,9 +1699,7 @@ class MeshInterface:  # pylint: disable=R0902
         waitFactor = max(1, min(nodes_based_factor, hopLimit + 1))
         request_id = self._extract_request_id_from_sent_packet(packet)
         if request_id is None:
-            raise self.MeshInterfaceError(
-                "Internal error: response wait requires a positive packet id."
-            )
+            raise self.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
         self.waitForTraceRoute(waitFactor, request_id=request_id)
 
     def onResponseTraceRoute(self, p: dict[str, Any]) -> None:
@@ -1922,9 +1927,7 @@ class MeshInterface:  # pylint: disable=R0902
         if wantResponse:
             request_id = self._extract_request_id_from_sent_packet(packet)
             if request_id is None:
-                raise self.MeshInterfaceError(
-                    "Internal error: response wait requires a positive packet id."
-                )
+                raise self.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
             self.waitForTelemetry(request_id=request_id)
 
     def onResponseTelemetry(self, p: dict[str, Any]) -> None:
@@ -2161,9 +2164,7 @@ class MeshInterface:  # pylint: disable=R0902
         if wantResponse:
             request_id = self._extract_request_id_from_sent_packet(d)
             if request_id is None:
-                raise self.MeshInterfaceError(
-                    "Internal error: response wait requires a positive packet id."
-                )
+                raise self.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
             self.waitForWaypoint(request_id=request_id)
         return d
 
@@ -2223,9 +2224,7 @@ class MeshInterface:  # pylint: disable=R0902
         if wantResponse:
             request_id = self._extract_request_id_from_sent_packet(d)
             if request_id is None:
-                raise self.MeshInterfaceError(
-                    "Internal error: response wait requires a positive packet id."
-                )
+                raise self.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
             self.waitForWaypoint(request_id=request_id)
         return d
 

@@ -1340,6 +1340,11 @@ def test_main_removeposition_local_dest_skips_implicit_ack_wait(
         assert "Waiting for an acknowledgment from remote node" not in out
         assert err == ""
     iface.getNode.return_value.iface.waitForAckNak.assert_not_called()
+    assert any(
+        (call_args.args and call_args.args[0] == MAIN_LOCAL_ADDR)
+        or call_args.kwargs.get("dest") == MAIN_LOCAL_ADDR
+        for call_args in iface.getNode.call_args_list
+    )
 
 
 @pytest.mark.unit
@@ -1722,15 +1727,19 @@ def test_get_pref_redacts_security_section_values(
     )
     private_key = bytes(range(32))
     public_key = bytes(range(32, 64))
+    admin_key = bytes(range(64, 96))
     node.localConfig.security.private_key = private_key
     node.localConfig.security.public_key = public_key
+    node.localConfig.security.admin_key.append(admin_key)
 
     assert main_module.getPref(node, "security") is True
     out, err = capsys.readouterr()
     assert "security.private_key: <redacted>" in out
     assert "security.public_key: <redacted>" in out
+    assert re.search(r"security\.admin_key:.*<redacted>", out)
     assert base64.b64encode(private_key).decode("utf-8") not in out
     assert base64.b64encode(public_key).decode("utf-8") not in out
+    assert base64.b64encode(admin_key).decode("utf-8") not in out
     assert err == ""
 
 

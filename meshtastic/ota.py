@@ -62,7 +62,7 @@ class ESP32WiFiOTA:
         self._port = port
         self._socket: socket.socket | None = None
 
-        self._file_bytes: bytearray = bytearray()
+        self._file_bytes: bytes = b""
         self._size = 0
         self._file_hash: _SHA256Digest = hashlib.sha256()
         self._refresh_firmware_metadata()
@@ -93,7 +93,7 @@ class ESP32WiFiOTA:
         size = len(image)
         if size == 0:
             raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
-        self._file_bytes = image
+        self._file_bytes = bytes(image)
         self._size = size
         self._file_hash = file_hash
         return size, file_hash

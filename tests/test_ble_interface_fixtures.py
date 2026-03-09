@@ -719,7 +719,11 @@ def _build_interface(
         `connect`, and `_connect_stub_kwargs` recording keyword arguments.
     """
     ble_mod = _get_ble_module()
-    BleInterfaceClass = cast(type["BLEInterface"], ble_mod.BLEInterface)
+    BaseBleInterfaceClass = cast(type["BLEInterface"], ble_mod.BLEInterface)
+
+    class _TestBLEInterface(BaseBleInterfaceClass):
+        """Per-build BLEInterface subclass to isolate monkeypatched methods."""
+
     connect_calls: list[str | None] = []
     connect_call_kwargs: list[dict[str, object]] = []
 
@@ -809,13 +813,13 @@ def _build_interface(
         _ = (_self, name, reset_recovery)
         return None
 
-    monkeypatch.setattr(BleInterfaceClass, "connect", _stub_connect)
-    monkeypatch.setattr(BleInterfaceClass, "_start_config", _stub_start_config)
+    monkeypatch.setattr(_TestBLEInterface, "connect", _stub_connect)
+    monkeypatch.setattr(_TestBLEInterface, "_start_config", _stub_start_config)
     if not start_receive_thread:
         monkeypatch.setattr(
-            BleInterfaceClass, "_start_receive_thread", _stub_start_receive_thread
+            _TestBLEInterface, "_start_receive_thread", _stub_start_receive_thread
         )
-    iface = BleInterfaceClass(address="dummy", noProto=True)
+    iface = _TestBLEInterface(address="dummy", noProto=True)
     cast(Any, iface)._connect_stub_calls = connect_calls
     cast(Any, iface)._connect_stub_kwargs = connect_call_kwargs
     return iface

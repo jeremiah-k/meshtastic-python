@@ -417,11 +417,13 @@ def _is_connecting_claim_elsewhere_locked(
         `False` when the key has a provisional record but should not block this
         owner, and `None` when no provisional claim exists for `key`.
     """
+    if key not in _CONNECTING_ADDRS:
+        return None
+    if _prune_stale_connecting_claim_locked(key):
+        return False
     owner_ref = _CONNECTING_OWNERS.get(key)
     current_owner = owner_ref() if owner_ref is not None else None
     current_owner_id = _CONNECTING_OWNER_IDS.get(key)
-    if key not in _CONNECTING_ADDRS:
-        return None
     if owner_ref is not None and current_owner is None:
         _remove_connecting_record_locked(key)
         _cleanup_addr_lock(key)
@@ -436,8 +438,6 @@ def _is_connecting_claim_elsewhere_locked(
     ):
         return False
     if current_owner is None:
-        if _prune_stale_connecting_claim_locked(key):
-            return False
         return True
     return True
 

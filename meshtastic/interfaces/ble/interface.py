@@ -2221,19 +2221,29 @@ class BLEInterface(MeshInterface):
         -----
         Must be called while holding _connect_lock.
         """
-        client = self._connection_orchestrator._establish_connection(
-            address,
-            self.address,
-            self._register_notifications,
-            # Defer _connected() publication until this interface has committed
-            # ownership of the new client and the post-connect stale/closing
-            # checks have passed.
-            lambda: None,
-            self._on_ble_disconnect,
-            pair_on_connect=pair_on_connect,
-            connect_timeout=connect_timeout,
-            emit_connected_side_effects=False,
-        )
+        with self._state_lock:
+            # Claim a provisional session before orchestration moves shared
+            # state to CONNECTED so disconnect callbacks stay publication-safe.
+            self._client_publish_pending = True
+
+        try:
+            client = self._connection_orchestrator._establish_connection(
+                address,
+                self.address,
+                self._register_notifications,
+                # Defer _connected() publication until this interface has committed
+                # ownership of the new client and the post-connect stale/closing
+                # checks have passed.
+                lambda: None,
+                self._on_ble_disconnect,
+                pair_on_connect=pair_on_connect,
+                connect_timeout=connect_timeout,
+                emit_connected_side_effects=False,
+            )
+        except Exception:
+            with self._state_lock:
+                self._client_publish_pending = False
+            raise
 
         device_address = getattr(
             getattr(client, "bleak_client", None), "address", None
@@ -2243,6 +2253,7 @@ class BLEInterface(MeshInterface):
         with self._state_lock:
             if self._closed or self._state_manager._is_closing:
                 abort_connect = True
+                self._client_publish_pending = False
             else:
                 previous_client = self.client
                 self.address = device_address
@@ -2358,6 +2369,7 @@ class BLEInterface(MeshInterface):
         publish_connected = False
         publish_candidate = False
         publish_now = False
+        publish_committed = False
         prior_ever_connected = False
         is_closing = False
         with self._state_lock:
@@ -2402,14 +2414,27 @@ class BLEInterface(MeshInterface):
                             self._get_connected_client_status_locked(connected_client)
                         )
                         if still_owned and not is_closing:
-                            self._client_publish_pending = False
-                            self._ever_connected = True
-                            self._prior_publish_was_reconnect = prior_ever_connected
                             publish_now = True
         if publish_now:
-            self._connected()
-            self._emit_verified_connection_side_effects(connected_client)
-            return
+            with self._state_lock:
+                still_owned, is_closing = self._get_connected_client_status_locked(
+                    connected_client
+                )
+                if still_owned and not is_closing:
+                    if not self._client_publish_pending:
+                        # Some direct test harnesses stub connection setup
+                        # without setting provisional publish state.
+                        self._client_publish_pending = True
+                    self._ever_connected = True
+                    self._prior_publish_was_reconnect = prior_ever_connected
+                    # Keep the session provisional until _connected()
+                    # publication is committed to avoid disconnect races.
+                    self._connected()
+                    self._client_publish_pending = False
+                    publish_committed = True
+            if publish_committed:
+                self._emit_verified_connection_side_effects(connected_client)
+                return
 
         self._raise_for_invalidated_connect_result(
             connected_client,
@@ -2621,10 +2646,8 @@ class BLEInterface(MeshInterface):
         # Fail fast if interface is closing before acquiring any locks
         self._validate_connection_preconditions()
 
-        requested_identifier = address if address is not None else self.address
-        normalized_request = sanitize_address(requested_identifier)
-        if address is not None and normalized_request is None:
-            raise self.BLEError(CONNECTION_ERROR_EMPTY_ADDRESS)
+        requested_identifier: str | None = None
+        normalized_request: str | None = None
         if pair is not None and not isinstance(pair, bool):
             raise self.BLEError(ERROR_PAIR_BOOL)
         pair_on_connect = self.pair_on_connect if pair is None else pair
@@ -2646,6 +2669,10 @@ class BLEInterface(MeshInterface):
             management_idle_condition = self._management_idle_condition
             management_wait_started = time.monotonic()
             while True:
+                requested_identifier = address if address is not None else self.address
+                normalized_request = sanitize_address(requested_identifier)
+                if address is not None and normalized_request is None:
+                    raise self.BLEError(CONNECTION_ERROR_EMPTY_ADDRESS)
                 # Management commands increment `_management_inflight` under
                 # `_connect_lock` and then continue work outside interface
                 # locks. Wait for current operations to settle, then re-check

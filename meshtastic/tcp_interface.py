@@ -26,6 +26,20 @@ TCP_IO_EXCEPTIONS: tuple[type[BaseException], ...] = (
     TypeError,
 )
 logger = logging.getLogger(__name__)
+_TRANSPORT_FD_STATE_VALUEERROR_MARKERS: tuple[str, ...] = (
+    "fd is none",
+    "file descriptor cannot be a negative integer",
+    "invalid file descriptor",
+    "negative file descriptor",
+    "bad file descriptor",
+    "closed file",
+)
+
+
+def _is_transport_fd_state_value_error(exc: ValueError) -> bool:
+    """Return whether a ValueError indicates a transient fd/state race."""
+    message = str(exc).casefold()
+    return any(marker in message for marker in _TRANSPORT_FD_STATE_VALUEERROR_MARKERS)
 
 
 class TCPInterface(StreamInterface):
@@ -396,7 +410,7 @@ class TCPInterface(StreamInterface):
                     "Reconnect deferred to reader/reconnect path for %s",
                     self.hostname,
                 )
-            if isinstance(ex, (ValueError, TypeError)):
+            if isinstance(ex, TypeError):
                 # Socket backends can surface fd-state races here (for example
                 # TypeError("fd is None")) after a descriptor is invalidated
                 # during close/reconnect. These cases are intentional,
@@ -404,6 +418,10 @@ class TCPInterface(StreamInterface):
                 # the reconnect path as OSError, not be treated as programmer
                 # bugs or silently ignored.
                 raise OSError(str(ex)) from ex
+            if isinstance(ex, ValueError):
+                if _is_transport_fd_state_value_error(ex):
+                    raise OSError(str(ex)) from ex
+                raise
             raise
 
     def _compute_reconnect_delay(self) -> float:

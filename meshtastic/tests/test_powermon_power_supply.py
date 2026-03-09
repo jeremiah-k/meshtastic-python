@@ -167,18 +167,27 @@ def test_powermon_public_exports_remain_available() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("backend_name", "expected_dependency_name"),
+    [
+        ("PPK2PowerSupply", "ppk2_api"),
+        ("RidenPowerSupply", "riden"),
+    ],
+)
 def test_powermon_optional_backends_are_lazy_and_dependency_error_is_clear(
     monkeypatch: pytest.MonkeyPatch,
+    backend_name: str,
+    expected_dependency_name: str,
 ) -> None:
     """Optional backend access should not require dependencies at package import time."""
     backend_names = ("PPK2PowerSupply", "RidenPowerSupply")
     missing = object()
     original_backends = {
-        backend_name: powermon.__dict__.get(backend_name, missing)
-        for backend_name in backend_names
+        candidate_backend: powermon.__dict__.get(candidate_backend, missing)
+        for candidate_backend in backend_names
     }
-    for backend_name in backend_names:
-        powermon.__dict__.pop(backend_name, None)
+    for candidate_backend in backend_names:
+        powermon.__dict__.pop(candidate_backend, None)
 
     real_import_module = importlib.import_module
 
@@ -194,15 +203,15 @@ def test_powermon_optional_backends_are_lazy_and_dependency_error_is_clear(
     monkeypatch.setattr(importlib, "import_module", _fake_import_module)
 
     try:
-        backend_cls = powermon.RidenPowerSupply
-        with pytest.raises(ImportError, match="optional dependency"):
+        backend_cls = cast(type[PowerSupply], getattr(powermon, backend_name))
+        with pytest.raises(ImportError, match=expected_dependency_name):
             backend_cls(portName="/dev/null")
     finally:
-        for backend_name, original_backend in original_backends.items():
+        for restore_name, original_backend in original_backends.items():
             if original_backend is missing:
-                powermon.__dict__.pop(backend_name, None)
+                powermon.__dict__.pop(restore_name, None)
             else:
-                powermon.__dict__[backend_name] = original_backend
+                powermon.__dict__[restore_name] = original_backend
 
 
 @pytest.mark.unit
