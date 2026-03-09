@@ -255,7 +255,7 @@ class BLEInterface(MeshInterface):
         self._last_connection_request: str | None = sanitize_address(address)
         self.auto_reconnect = auto_reconnect
         if not isinstance(pair_on_connect, bool):
-            raise TypeError(ERROR_PAIR_ON_CONNECT_BOOL)
+            raise self.BLEError(ERROR_PAIR_ON_CONNECT_BOOL)
         self.pair_on_connect = pair_on_connect
         self._disconnect_notified = False  # Prevents duplicate disconnect events
         self._client_publish_pending = False  # Hide provisional clients.

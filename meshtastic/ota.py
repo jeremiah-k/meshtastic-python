@@ -1,6 +1,5 @@
 """Meshtastic ESP32 Unified OTA."""
 
-import os
 import hashlib
 import logging
 import socket
@@ -63,6 +62,7 @@ class ESP32WiFiOTA:
         self._port = port
         self._socket: socket.socket | None = None
 
+        self._file_bytes = b""
         self._size = 0
         self._file_hash: _SHA256Digest = hashlib.sha256()
         self._refresh_firmware_metadata()
@@ -75,14 +75,14 @@ class ESP32WiFiOTA:
         tuple[int, _SHA256Digest]
             The firmware size in bytes and corresponding SHA-256 digest.
         """
+        image = bytearray()
         file_hash = hashlib.sha256()
-        size = 0
         try:
             with open(self._filename, "rb") as firmware:
                 for block in iter(
                     lambda: firmware.read(FILE_HASH_READ_CHUNK_SIZE_BYTES), b""
                 ):
-                    size += len(block)
+                    image.extend(block)
                     file_hash.update(block)
         except FileNotFoundError as exc:
             raise OTAError(MISSING_FIRMWARE_ERROR.format(filename=self._filename)) from exc
@@ -90,21 +90,13 @@ class ESP32WiFiOTA:
             raise OTAError(
                 READ_FIRMWARE_ERROR.format(filename=self._filename, error=exc)
             ) from exc
+        size = len(image)
         if size == 0:
             raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
+        self._file_bytes = bytes(image)
         self._size = size
         self._file_hash = file_hash
         return size, file_hash
-
-    def _assert_session_firmware_unchanged(
-        self, *, current_size: int, current_hash: _SHA256Digest
-    ) -> None:
-        """Ensure OTA session metadata still matches the file snapshot being uploaded."""
-        if (
-            current_size != self._size
-            or current_hash.digest() != self._file_hash.digest()
-        ):
-            raise OTAError(FIRMWARE_CHANGED_ERROR.format(filename=self._filename))
 
     def _read_line(self) -> str:
         """Read a line from the socket."""
@@ -151,43 +143,11 @@ class ESP32WiFiOTA:
             Callback invoked with ``(bytes_sent, total_bytes)`` during transfer.
             When not provided, progress is logged at INFO in coarse increments.
         """
-        image = bytearray()
-        file_hash = hashlib.sha256()
-        try:
-            with open(self._filename, "rb") as firmware:
-                disk_size = os.fstat(firmware.fileno()).st_size
-                if disk_size == 0:
-                    raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
-                if disk_size != self._size:
-                    raise OTAError(FIRMWARE_CHANGED_ERROR.format(filename=self._filename))
-
-                bytes_remaining = self._size
-                while bytes_remaining > 0:
-                    block = firmware.read(
-                        min(FILE_HASH_READ_CHUNK_SIZE_BYTES, bytes_remaining)
-                    )
-                    if not block:
-                        break
-                    image.extend(block)
-                    file_hash.update(block)
-                    bytes_remaining -= len(block)
-
-                if firmware.read(1):
-                    raise OTAError(FIRMWARE_CHANGED_ERROR.format(filename=self._filename))
-        except FileNotFoundError as exc:
-            raise OTAError(MISSING_FIRMWARE_ERROR.format(filename=self._filename)) from exc
-        except OSError as exc:
-            raise OTAError(
-                READ_FIRMWARE_ERROR.format(filename=self._filename, error=exc)
-            ) from exc
-
-        firmware_image = memoryview(image)
-        size = len(firmware_image)
+        firmware_image = memoryview(self._file_bytes)
+        size = self._size
+        file_hash = self._file_hash
         if size == 0:
             raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
-        self._assert_session_firmware_unchanged(
-            current_size=size, current_hash=file_hash
-        )
 
         if OTA_PROGRESS_LOG_PERCENT_STEP <= 0:
             raise ValueError("OTA_PROGRESS_LOG_PERCENT_STEP must be > 0")

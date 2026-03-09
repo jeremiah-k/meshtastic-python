@@ -4637,7 +4637,7 @@ def test_main_ota_update_allows_explicit_local_dest(
     local_node = MagicMock(autospec=Node)
     other_node = MagicMock(autospec=Node)
 
-    def _get_node(dest: object, *args: object, **kwargs: object) -> Any:
+    def _get_node(dest: object, *args: object, **kwargs: object) -> object:
         request_channels = (
             kwargs.get("requestChannels", True)
             if "requestChannels" in kwargs

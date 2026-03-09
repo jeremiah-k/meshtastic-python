@@ -232,71 +232,83 @@ def test_esp32_wifi_ota_update_success(mock_socket_class: MagicMock) -> None:
 
 @pytest.mark.unit
 @patch("meshtastic.ota.socket.create_connection")
-def test_esp32_wifi_ota_update_rejects_firmware_changed_after_init(
+def test_esp32_wifi_ota_update_uses_frozen_snapshot_when_source_changes(
     mock_socket_class: MagicMock,
 ) -> None:
-    """update() should fail if firmware bytes drift after OTA session initialization."""
+    """update() should upload constructor snapshot bytes even if source file changes."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
-        f.write(b"A" * 32)
+        original_data = b"A" * 32
+        f.write(original_data)
         temp_file = f.name
 
     try:
+        mock_socket = MagicMock()
+        mock_socket_class.return_value = mock_socket
         ota = ESP32WiFiOTA(temp_file, "192.168.1.1")
-        assert ota._size == 32
-        assert ota.hash_hex() == hashlib.sha256(b"A" * 32).hexdigest()
+        assert ota._size == len(original_data)
+        assert ota.hash_hex() == hashlib.sha256(original_data).hexdigest()
         replacement_data = b"B" * ota._size
         with open(temp_file, "wb") as fw:
             fw.write(replacement_data)
 
-        with pytest.raises(OTAError, match="changed after OTA session initialization"):
+        with patch.object(ota, "_read_line") as mock_read_line:
+            mock_read_line.side_effect = ["OK", "OK"]
             ota.update()
 
-        mock_socket_class.assert_not_called()
+        start_cmd = f"OTA {len(original_data)} {ota.hash_hex()}\n".encode("utf-8")
+        assert mock_socket.sendall.call_args_list[0].args[0] == start_cmd
+        assert mock_socket.sendall.call_args_list[1].args[0] == original_data
     finally:
         os.unlink(temp_file)
 
 
 @pytest.mark.unit
 @patch("meshtastic.ota.socket.create_connection")
-def test_esp32_wifi_ota_update_rejects_firmware_truncated_to_empty_after_init(
+def test_esp32_wifi_ota_update_succeeds_when_source_file_truncated_after_init(
     mock_socket_class: MagicMock,
 ) -> None:
-    """update() should fail fast when firmware becomes empty after object construction."""
+    """update() should still use the frozen snapshot when source file is truncated."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
         f.write(b"A" * 32)
         temp_file = f.name
 
     try:
+        mock_socket = MagicMock()
+        mock_socket_class.return_value = mock_socket
         ota = ESP32WiFiOTA(temp_file, "192.168.1.1")
         with open(temp_file, "wb") as fw:
             fw.write(b"")
 
-        with pytest.raises(OTAError, match="is empty"):
+        with patch.object(ota, "_read_line") as mock_read_line:
+            mock_read_line.side_effect = ["OK", "OK"]
             ota.update()
 
-        mock_socket_class.assert_not_called()
+        mock_socket_class.assert_called_once()
     finally:
         os.unlink(temp_file)
 
 
 @pytest.mark.unit
 @patch("meshtastic.ota.socket.create_connection")
-def test_esp32_wifi_ota_update_wraps_missing_file_after_init(
+def test_esp32_wifi_ota_update_succeeds_when_source_file_removed_after_init(
     mock_socket_class: MagicMock,
 ) -> None:
-    """update() should wrap firmware deletion after init in an OTA-specific error."""
+    """update() should still upload the frozen snapshot when source file is removed."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
         f.write(b"A" * 32)
         temp_file = f.name
 
     try:
+        mock_socket = MagicMock()
+        mock_socket_class.return_value = mock_socket
         ota = ESP32WiFiOTA(temp_file, "192.168.1.1")
         os.unlink(temp_file)
 
-        with pytest.raises(OTAError, match=r"Firmware file .* does not exist"):
+        with patch.object(ota, "_read_line") as mock_read_line:
+            mock_read_line.side_effect = ["OK", "OK"]
             ota.update()
 
-        mock_socket_class.assert_not_called()
+        mock_socket_class.assert_called_once()
     finally:
         if os.path.exists(temp_file):
             os.unlink(temp_file)

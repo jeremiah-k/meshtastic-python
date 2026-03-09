@@ -483,7 +483,7 @@ def test_ble_interface_defaults_auto_reconnect_disabled(
 
 def test_ble_interface_init_rejects_non_bool_pair_on_connect() -> None:
     """Constructor should reject non-bool pair_on_connect values."""
-    with pytest.raises(TypeError, match="pair_on_connect must be a bool"):
+    with pytest.raises(BLEInterface.BLEError, match="pair_on_connect must be a bool"):
         BLEInterface(
             address=None,
             noProto=True,

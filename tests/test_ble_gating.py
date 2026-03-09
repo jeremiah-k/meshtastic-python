@@ -502,7 +502,7 @@ class TestIsCurrentlyConnectedElsewhere:
         def _owner_state_probe(_owner: object) -> bool:
             _mark_disconnected(address)
             _mark_connecting(address, owner=provisional_owner)
-            return True
+            return False
 
         monkeypatch.setattr(
             "meshtastic.interfaces.ble.gating._owner_connected_state",

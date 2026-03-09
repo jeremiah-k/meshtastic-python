@@ -93,6 +93,7 @@ WAIT_ATTR_POSITION: str = "receivedPosition"
 WAIT_ATTR_TELEMETRY: str = "receivedTelemetry"
 WAIT_ATTR_TRACEROUTE: str = "receivedTraceRoute"
 WAIT_ATTR_WAYPOINT: str = "receivedWaypoint"
+RETIRED_WAIT_REQUEST_ID_TTL_SECONDS: float = 60.0
 
 
 def _format_missing_node_num_error(destination_id: int | str) -> str:
@@ -101,13 +102,15 @@ def _format_missing_node_num_error(destination_id: int | str) -> str:
 
 
 def _logger_has_visible_info_handler(target_logger: logging.Logger) -> bool:
-    """Return whether INFO logs from `target_logger` are visible on stdout streams."""
+    """Return whether INFO logs from `target_logger` are visible on console streams."""
     if target_logger.disabled or target_logger.getEffectiveLevel() > logging.INFO:
         return False
 
-    visible_stdout_streams = {
+    visible_console_streams = {
         sys.stdout,
+        sys.stderr,
         sys.__stdout__,
+        sys.__stderr__,
     }
     current_logger: logging.Logger | None = target_logger
     while current_logger is not None:
@@ -116,8 +119,8 @@ def _logger_has_visible_info_handler(target_logger: logging.Logger) -> bool:
             console = getattr(handler, "console", None)
             console_stream = getattr(console, "file", None)
             if handler.level <= logging.INFO and (
-                handler_stream in visible_stdout_streams
-                or console_stream in visible_stdout_streams
+                handler_stream in visible_console_streams
+                or console_stream in visible_console_streams
             ):
                 return True
         if not current_logger.propagate:
@@ -271,7 +274,7 @@ class MeshInterface:  # pylint: disable=R0902
         self._response_wait_errors: dict[tuple[str, int], str] = {}
         self._response_wait_acks: set[tuple[str, int]] = set()
         self._active_wait_request_ids: dict[str, set[int]] = {}
-        self._retired_wait_request_ids: dict[str, set[int]] = {}
+        self._retired_wait_request_ids: dict[str, dict[int, float]] = {}
         self.failure: BaseException | None = (
             None  # If we've encountered a fatal exception it will be kept here
         )
@@ -1293,7 +1296,7 @@ class MeshInterface:  # pylint: disable=R0902
                     if key[0] == acknowledgment_attr:
                         self._response_wait_acks.discard(key)
                 self._active_wait_request_ids.pop(acknowledgment_attr, None)
-                self._retired_wait_request_ids.pop(acknowledgment_attr, None)
+                self._prune_retired_wait_request_ids_locked(acknowledgment_attr)
             else:
                 active_ids = self._active_wait_request_ids.setdefault(
                     acknowledgment_attr, set()
@@ -1306,15 +1309,35 @@ class MeshInterface:  # pylint: disable=R0902
                     (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID)
                 )
                 active_ids.add(request_id)
-                retired_ids = self._retired_wait_request_ids.get(acknowledgment_attr)
-                if retired_ids is not None:
-                    retired_ids.discard(request_id)
-                    if not retired_ids:
-                        self._retired_wait_request_ids.pop(acknowledgment_attr, None)
+                retired_ids = self._prune_retired_wait_request_ids_locked(
+                    acknowledgment_attr
+                )
+                retired_ids.pop(request_id, None)
                 self._response_wait_errors.pop((acknowledgment_attr, request_id), None)
                 self._response_wait_acks.discard((acknowledgment_attr, request_id))
         if request_id is None:
             setattr(self._acknowledgment, acknowledgment_attr, False)
+
+    def _prune_retired_wait_request_ids_locked(
+        self, acknowledgment_attr: str
+    ) -> dict[int, float]:
+        """Prune expired retired request ids for a wait attribute.
+
+        Notes
+        -----
+        Must be called while holding `_response_handlers_lock`.
+        """
+        retired_ids = self._retired_wait_request_ids.get(acknowledgment_attr)
+        if not retired_ids:
+            return {}
+        now = time.monotonic()
+        for retired_id, retired_at in list(retired_ids.items()):
+            if now - retired_at > RETIRED_WAIT_REQUEST_ID_TTL_SECONDS:
+                retired_ids.pop(retired_id, None)
+        if not retired_ids:
+            self._retired_wait_request_ids.pop(acknowledgment_attr, None)
+            return {}
+        return retired_ids
 
     def _set_wait_error(
         self,
@@ -1343,8 +1366,8 @@ class MeshInterface:  # pylint: disable=R0902
                     )
                     return
                 else:
-                    retired_request_ids = self._retired_wait_request_ids.get(
-                        acknowledgment_attr, set()
+                    retired_request_ids = self._prune_retired_wait_request_ids_locked(
+                        acknowledgment_attr
                     )
                     if request_id in retired_request_ids:
                         logger.debug(
@@ -1398,8 +1421,8 @@ class MeshInterface:  # pylint: disable=R0902
                     )
                     return
                 else:
-                    retired_request_ids = self._retired_wait_request_ids.get(
-                        acknowledgment_attr, set()
+                    retired_request_ids = self._prune_retired_wait_request_ids_locked(
+                        acknowledgment_attr
                     )
                     if request_id in retired_request_ids:
                         logger.debug(
@@ -1463,9 +1486,9 @@ class MeshInterface:  # pylint: disable=R0902
                 if request_id in active_request_ids:
                     active_request_ids.discard(request_id)
                     retired_request_ids = self._retired_wait_request_ids.setdefault(
-                        acknowledgment_attr, set()
+                        acknowledgment_attr, {}
                     )
-                    retired_request_ids.add(request_id)
+                    retired_request_ids[request_id] = time.monotonic()
                     if not active_request_ids:
                         self._active_wait_request_ids.pop(acknowledgment_attr, None)
                         self._response_wait_errors.pop(
@@ -1494,7 +1517,7 @@ class MeshInterface:  # pylint: disable=R0902
                             (acknowledgment_attr, active_request_id)
                         )
                     self._active_wait_request_ids.pop(acknowledgment_attr, None)
-                self._retired_wait_request_ids.pop(acknowledgment_attr, None)
+                self._prune_retired_wait_request_ids_locked(acknowledgment_attr)
                 self._response_wait_errors.pop(
                     (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID),
                     None,

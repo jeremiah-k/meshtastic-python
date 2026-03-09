@@ -1785,6 +1785,7 @@ def test_on_response_position_success_and_routing_error(
                     }
                 }
             )
+            iface.waitForPosition()
         assert "Position received:" in caplog.text
         assert "full precision" in caplog.text
 
@@ -1802,6 +1803,7 @@ def test_on_response_position_success_and_routing_error(
                     }
                 }
             )
+            iface.waitForPosition()
         assert "(unknown)" in caplog.text
         assert "precision:5" in caplog.text
 
@@ -1819,6 +1821,7 @@ def test_on_response_position_success_and_routing_error(
                     }
                 }
             )
+            iface.waitForPosition()
         assert "position disabled" in caplog.text
 
     with MeshInterface(noProto=True) as iface:
@@ -1870,10 +1873,10 @@ def test_on_response_position_prints_when_info_logging_not_visible(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_logger_visible_info_handler_treats_stdout_as_visible() -> (
+def test_logger_visible_info_handler_treats_console_streams_as_visible() -> (
     None
 ):
-    """Only stdout-backed handlers should suppress the legacy stdout print fallback."""
+    """Stdout/stderr-backed console handlers should suppress stdout fallback."""
     handler_logger = logging.getLogger("meshtastic.tests.visible-info-handler")
     original_handlers = list(handler_logger.handlers)
     original_propagate = handler_logger.propagate
@@ -1910,7 +1913,7 @@ def test_logger_visible_info_handler_treats_stdout_as_visible() -> (
         handler_logger.addHandler(stderr_handler)
         assert (
             mesh_interface_module._logger_has_visible_info_handler(handler_logger)
-            is False
+            is True
         )
 
         handler_logger.removeHandler(stderr_handler)
@@ -1928,7 +1931,7 @@ def test_logger_visible_info_handler_treats_stdout_as_visible() -> (
         handler_logger.addHandler(rich_stderr_handler)
         assert (
             mesh_interface_module._logger_has_visible_info_handler(handler_logger)
-            is False
+            is True
         )
 
         handler_logger.removeHandler(rich_stderr_handler)
@@ -2155,6 +2158,7 @@ def test_on_response_telemetry_paths(
                     }
                 }
             )
+            iface.waitForTelemetry()
         assert "Telemetry received:" in caplog.text
         assert "Battery level:" in caplog.text
 
@@ -2172,6 +2176,7 @@ def test_on_response_telemetry_paths(
                     }
                 }
             )
+            iface.waitForTelemetry()
         assert "environmentMetrics:" in caplog.text
 
     with MeshInterface(noProto=True) as iface:

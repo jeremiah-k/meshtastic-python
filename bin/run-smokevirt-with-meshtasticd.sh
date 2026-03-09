@@ -230,11 +230,13 @@ for target in "${PYTEST_TARGETS[@]}"; do
 	is_explicit_selector=false
 	if [[ ${target} == *"::"* ]]; then
 		is_explicit_selector=true
-		HAS_EXPLICIT_SELECTOR=true
 	fi
 	normalized_target="${target%%::*}"
 	normalized_target="${normalized_target#./}"
 	normalized_basename="${normalized_target##*/}"
+	if [[ ${is_explicit_selector} == true ]] && [[ ${normalized_basename} != "test_smokevirt.py" ]]; then
+		HAS_EXPLICIT_SELECTOR=true
+	fi
 	if [[ ${is_explicit_selector} == false ]] && [[ ${normalized_basename} == "test_smokevirt.py" ]]; then
 		HAS_SMOKEVIRT_TARGET=true
 		SMOKEVIRT_TARGETS+=("${target}")

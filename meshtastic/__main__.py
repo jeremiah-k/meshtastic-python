@@ -301,6 +301,28 @@ def _display_pref_name(comp_name: str) -> str:
     )
 
 
+_SECRET_PREF_NAMES: frozenset[str] = frozenset(
+    {
+        "wifi_psk",
+        "psk",
+        "channel_psk",
+        "security",
+        "private_key",
+        "public_key",
+        "admin_key",
+        "secret",
+        "key",
+        "api_key",
+        "auth_token",
+    }
+)
+
+
+def _redact_pref_value(name: str, value: Any) -> Any:
+    """Return a redacted placeholder for secret-bearing pref names."""
+    return "<redacted>" if name in _SECRET_PREF_NAMES else value
+
+
 def getPref(node: Any, comp_name: str) -> bool:
     """Retrieve and display a configuration preference or channel field for a node.
 
@@ -540,7 +562,7 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
         val = meshtastic.util.fromStr(raw_val)
     else:
         val = raw_val
-    logger.debug("valStr:%s val:%s", raw_val, val)
+    logger.debug("val:%s", _redact_pref_value(snake_name, val))
 
     if snake_name == "wifi_psk" and len(str(raw_val)) < 8:
         print("Warning: network.wifi_psk must be 8 or more characters.")
@@ -588,7 +610,8 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
             print(f"Clearing {pref.name} list")
             del getattr(config_values, pref.name)[:]
         else:
-            print(f"Adding '{raw_val}' to the {pref.name} list")
+            display_value = _redact_pref_value(snake_name, raw_val)
+            print(f"Adding '{display_value}' to the {pref.name} list")
             cur_vals = [
                 x for x in getattr(config_values, pref.name) if x not in [0, "", b""]
             ]
@@ -598,7 +621,7 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
         return True
 
     prefix = f"{'.'.join(name[0:-1])}." if config_type.message_type is not None else ""
-    display_value = "<redacted>" if snake_name == "wifi_psk" else raw_val
+    display_value = _redact_pref_value(snake_name, raw_val)
     print(f"Set {prefix}{uni_name} to {display_value}")
 
     return True

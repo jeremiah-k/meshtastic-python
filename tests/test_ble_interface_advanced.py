@@ -96,7 +96,8 @@ def _get_stress_test_clients(iface: BLEInterface) -> list[object]:
     list[object]
         Created stress-test client objects in creation order. Returns an empty list if the attribute is not present.
     """
-    return cast(list[object], getattr(iface, "_stress_test_clients", []))
+    with iface._state_lock:
+        return list(cast(list[object], getattr(iface, "_stress_test_clients", [])))
 
 
 def _get_stress_test_attempts(iface: BLEInterface) -> list[object]:
@@ -112,7 +113,8 @@ def _get_stress_test_attempts(iface: BLEInterface) -> list[object]:
     list[object]
         Attempt objects recorded before connect completion. Returns an empty list if the attribute is not present.
     """
-    return cast(list[object], getattr(iface, "_stress_test_attempts", []))
+    with iface._state_lock:
+        return list(cast(list[object], getattr(iface, "_stress_test_attempts", [])))
 
 
 def _latest_successful_stress_attempt(
