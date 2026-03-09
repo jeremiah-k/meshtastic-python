@@ -84,21 +84,6 @@ fi
 
 require_regex "${MESHTASTICD_CONTAINER}" '^[A-Za-z0-9][A-Za-z0-9_.-]*$' "MESHTASTICD_CONTAINER"
 require_regex "${MESHTASTICD_IMAGE}" '^[^[:space:]]+$' "MESHTASTICD_IMAGE"
-if [[ -z ${MESHTASTICD_HOST} || ${MESHTASTICD_HOST} == *[[:space:]]* ]]; then
-	echo "Invalid MESHTASTICD_HOST: ${MESHTASTICD_HOST}" >&2
-	exit 1
-fi
-if [[ ${MESHTASTICD_HOST} == *$'\n'* ]] || [[ ${MESHTASTICD_HOST} == *$'\r'* ]]; then
-	echo "Invalid MESHTASTICD_HOST: ${MESHTASTICD_HOST}" >&2
-	exit 1
-fi
-case "${MESHTASTICD_HOST}" in
-*"@"* | *"/"* | *"?"* | *"#"* | *";"*)
-	echo "Invalid MESHTASTICD_HOST: ${MESHTASTICD_HOST}" >&2
-	exit 1
-	;;
-*) ;;
-esac
 require_regex "${MESHTASTICD_PORT}" '^[0-9]+$' "MESHTASTICD_PORT"
 require_regex "${MESHTASTICD_READY_TIMEOUT_SECONDS}" '^[0-9]+$' "MESHTASTICD_READY_TIMEOUT_SECONDS"
 MESHTASTICD_PORT_DEC=$((10#${MESHTASTICD_PORT}))
@@ -251,18 +236,21 @@ for target in "${PYTEST_TARGETS[@]}"; do
 	done
 done
 
-if [[ -z ${MESHTASTICD_PYTEST_MARK_EXPR} ]] && [[ ${HAS_EXPLICIT_SELECTOR} == false ]]; then
-	if [[ ${HAS_SMOKEVIRT_TARGET} == true ]] && [[ ${#MESHTASTICD_CI_TARGETS[@]} -gt 0 ]]; then
+if [[ -z ${MESHTASTICD_PYTEST_MARK_EXPR} ]]; then
+	if [[ ${HAS_EXPLICIT_SELECTOR} == true ]] && [[ ${HAS_SMOKEVIRT_TARGET} == true ]]; then
+		echo "MESHTASTICD_PYTEST_TARGETS mixes bare smokevirt targets with explicit selectors; set MESHTASTICD_PYTEST_MARK_EXPR explicitly." >&2
+		exit 1
+	elif [[ ${HAS_EXPLICIT_SELECTOR} == false ]] && [[ ${HAS_SMOKEVIRT_TARGET} == true ]] && [[ ${#MESHTASTICD_CI_TARGETS[@]} -gt 0 ]]; then
 		echo "MESHTASTICD_PYTEST_TARGETS includes both smokevirt and meshtasticd-ci targets; set MESHTASTICD_PYTEST_MARK_EXPR explicitly." >&2
 		exit 1
-	elif [[ ${HAS_SMOKEVIRT_TARGET} == true ]] && [[ ${#SMOKEVIRT_TARGETS[@]} -eq ${#PYTEST_TARGETS[@]} ]]; then
+	elif [[ ${HAS_EXPLICIT_SELECTOR} == false ]] && [[ ${HAS_SMOKEVIRT_TARGET} == true ]] && [[ ${#SMOKEVIRT_TARGETS[@]} -eq ${#PYTEST_TARGETS[@]} ]]; then
 		MESHTASTICD_PYTEST_MARK_EXPR="smokevirt and not smoke1_destructive"
-	elif [[ ${HAS_SMOKEVIRT_TARGET} == true ]]; then
+	elif [[ ${HAS_EXPLICIT_SELECTOR} == false ]] && [[ ${HAS_SMOKEVIRT_TARGET} == true ]]; then
 		echo "MESHTASTICD_PYTEST_TARGETS mixes smokevirt with non-smokevirt targets; set MESHTASTICD_PYTEST_MARK_EXPR explicitly." >&2
 		exit 1
 	# Auto-apply "int" when every selected target is one of the dedicated
 	# auto-int eligible files.
-	elif [[ ${#MESHTASTICD_CI_TARGETS[@]} -eq ${#PYTEST_TARGETS[@]} ]]; then
+	elif [[ ${HAS_EXPLICIT_SELECTOR} == false ]] && [[ ${#MESHTASTICD_CI_TARGETS[@]} -eq ${#PYTEST_TARGETS[@]} ]]; then
 		MESHTASTICD_PYTEST_MARK_EXPR="int"
 	fi
 fi

@@ -411,7 +411,7 @@ Still intentionally pending as follow-up work:
 
 - full dependency refresh and advisory remediation workstream described above.
 
-## 17) Maintenance Merge Hardening Checklist (Current Cycle)
+## 17) Maintenance Merge Hardening Checklist
 
 This section now keeps only durable rationale from the hardening stream:
 
@@ -424,7 +424,7 @@ This section now keeps only durable rationale from the hardening stream:
 - Optional backend loading stays lazy to keep base import/test paths
   deterministic without optional hardware dependencies.
 
-## 18) Validation Notes for This Cycle
+## 18) Validation Notes
 
 Keep this document focused on durable validation policy and behavior contracts.
 Time-bound run history belongs in the PR discussion and CI artifacts.

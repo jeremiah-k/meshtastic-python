@@ -349,7 +349,12 @@ def getPref(node: Any, comp_name: str) -> bool:
     """
 
     def _print_setting(
-        config_type: Any, uni_name: str, pref_value: Any, repeated: bool
+        config_type: Any,
+        uni_name: str,
+        pref_value: Any,
+        repeated: bool,
+        *,
+        secret_name: str,
     ) -> None:
         """Print a configuration preference and its value to stdout and the debug log.
 
@@ -367,11 +372,16 @@ def getPref(node: Any, comp_name: str) -> bool:
             The preference value to print; an iterable when `repeated` is True.
         repeated : bool
             If True, treat `pref_value` as a sequence and print the list of stringified values.
+        secret_name : str
+            Canonical snake_case field name used to determine whether to redact.
         """
         if repeated:
-            pref_value = [meshtastic.util.toStr(v) for v in pref_value]
+            pref_value = [
+                _redact_pref_value(secret_name, meshtastic.util.toStr(v))
+                for v in pref_value
+            ]
         else:
-            pref_value = meshtastic.util.toStr(pref_value)
+            pref_value = _redact_pref_value(secret_name, meshtastic.util.toStr(pref_value))
         print(f"{str(config_type.name)}.{uni_name}: {str(pref_value)}")
         logger.debug("%s.%s: %s", config_type.name, uni_name, pref_value)
 
@@ -424,11 +434,23 @@ def getPref(node: Any, comp_name: str) -> bool:
                 return False
             pref_value = getattr(config_values, pref.name)
             repeated = _is_repeated_field(pref)
-            _print_setting(config_type, uni_name, pref_value, repeated)
+            _print_setting(
+                config_type,
+                uni_name,
+                pref_value,
+                repeated,
+                secret_name=snake_name,
+            )
         else:
             for field in config_values.ListFields():
                 repeated = _is_repeated_field(field[0])
-                _print_setting(config_type, field[0].name, field[1], repeated)
+                _print_setting(
+                    config_type,
+                    field[0].name,
+                    field[1],
+                    repeated,
+                    secret_name=field[0].name,
+                )
     else:
         # Always show whole field for remote node
         node.requestConfig(config_type)
@@ -1633,7 +1655,12 @@ def onConnected(interface: MeshInterface) -> None:
                     tunnel.Tunnel(interface)
 
         if not skip_ack_wait and (
-            args.ack or (args.dest != BROADCAST_ADDR and waitForAckNak)
+            args.ack
+            or (
+                args.dest != BROADCAST_ADDR
+                and args.dest != LOCAL_ADDR
+                and waitForAckNak
+            )
         ):
             print(
                 "Waiting for an acknowledgment from remote node (this could take a while)"

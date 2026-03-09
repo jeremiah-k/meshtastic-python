@@ -1323,6 +1323,27 @@ def test_main_removeposition_remote(capsys: pytest.CaptureFixture[str]) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_main_removeposition_local_dest_skips_implicit_ack_wait(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Implicit ACK waiting should be skipped for ^local destinations."""
+    sys.argv = ["", "--remove-position", "--dest", MAIN_LOCAL_ADDR]
+    mt_config.args = sys.argv  # type: ignore[assignment]
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        main()
+        out, err = capsys.readouterr()
+        assert "Connected to radio" in out
+        assert "Removing fixed position and disabling fixed position setting" in out
+        assert "Waiting for an acknowledgment from remote node" not in out
+        assert err == ""
+    iface.getNode.return_value.iface.waitForAckNak.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_main_setlat_remote(capsys: pytest.CaptureFixture[str]) -> None:
     """Test --setlat with a remote dest."""
     sys.argv = ["", "--setlat", "37.5", "--dest", "!12345678"]
@@ -1665,6 +1686,52 @@ def test_main_set_invalid_wifi_psk(
             )
             assert err == ""
             mo.assert_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_get_pref_redacts_security_private_key(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """getPref() should redact secret-bearing security values in field reads."""
+    node = SimpleNamespace(
+        localConfig=localonly_pb2.LocalConfig(),
+        moduleConfig=localonly_pb2.LocalModuleConfig(),
+        requestConfig=MagicMock(),
+    )
+    private_key = bytes(range(32))
+    node.localConfig.security.private_key = private_key
+
+    assert main_module.getPref(node, "security.private_key") is True
+    out, err = capsys.readouterr()
+    assert "security.private_key: <redacted>" in out
+    assert base64.b64encode(private_key).decode("utf-8") not in out
+    assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_get_pref_redacts_security_section_values(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Whole-field getPref() reads should redact secret values in each printed field."""
+    node = SimpleNamespace(
+        localConfig=localonly_pb2.LocalConfig(),
+        moduleConfig=localonly_pb2.LocalModuleConfig(),
+        requestConfig=MagicMock(),
+    )
+    private_key = bytes(range(32))
+    public_key = bytes(range(32, 64))
+    node.localConfig.security.private_key = private_key
+    node.localConfig.security.public_key = public_key
+
+    assert main_module.getPref(node, "security") is True
+    out, err = capsys.readouterr()
+    assert "security.private_key: <redacted>" in out
+    assert "security.public_key: <redacted>" in out
+    assert base64.b64encode(private_key).decode("utf-8") not in out
+    assert base64.b64encode(public_key).decode("utf-8") not in out
+    assert err == ""
 
 
 @pytest.mark.unit

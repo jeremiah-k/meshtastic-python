@@ -49,7 +49,9 @@ def test_tunnel_initialization_creates_tap_device_when_proto_enabled(
     imported_with_fake_pytap2 = False
     try:
         tunnel_module = importlib.import_module("meshtastic.tunnel")
-    except ModuleNotFoundError:
+    except ModuleNotFoundError as exc:
+        if exc.name != "pytap2":
+            raise
         fake_pytap2 = types.ModuleType("pytap2")
         fake_pytap2.TapDevice = _FakeTapDevice
         monkeypatch.setitem(sys.modules, "pytap2", fake_pytap2)

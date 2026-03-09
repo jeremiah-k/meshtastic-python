@@ -49,6 +49,7 @@ _DEVICE_NOT_FOUND_MESSAGE_RE = re.compile(
 _CONNECT_TIMEOUT_INVALID_MSG = (
     "connect_timeout must be a finite positive number of seconds."
 )
+_CONNECT_TIMEOUT_FALLBACK_SECONDS = 10.0
 
 
 def _is_device_not_found_error(err: Exception) -> bool:
@@ -374,12 +375,41 @@ class ConnectionOrchestrator:
         float
             Timeout in seconds for the current connect attempt.
         """
+        connection_timeout = BLEConfig.CONNECTION_TIMEOUT
+        if (
+            isinstance(connection_timeout, bool)
+            or not isinstance(connection_timeout, numbers.Real)
+            or not math.isfinite(connection_timeout)
+            or connection_timeout <= 0
+        ):
+            logger.warning(
+                "Invalid BLEConfig.CONNECTION_TIMEOUT=%r; using fallback %.1fs.",
+                connection_timeout,
+                _CONNECT_TIMEOUT_FALLBACK_SECONDS,
+            )
+            safe_connection_timeout = _CONNECT_TIMEOUT_FALLBACK_SECONDS
+        else:
+            safe_connection_timeout = float(connection_timeout)
+
+        direct_connect_timeout = BLEConfig.DIRECT_CONNECT_TIMEOUT_SECONDS
+        if (
+            isinstance(direct_connect_timeout, bool)
+            or not isinstance(direct_connect_timeout, numbers.Real)
+            or not math.isfinite(direct_connect_timeout)
+            or direct_connect_timeout <= 0
+        ):
+            logger.warning(
+                "Invalid BLEConfig.DIRECT_CONNECT_TIMEOUT_SECONDS=%r; using %.1fs.",
+                direct_connect_timeout,
+                safe_connection_timeout,
+            )
+            safe_direct_connect_timeout = safe_connection_timeout
+        else:
+            safe_direct_connect_timeout = float(direct_connect_timeout)
+
         if pair_on_connect:
-            return BLEConfig.CONNECTION_TIMEOUT
-        return min(
-            BLEConfig.DIRECT_CONNECT_TIMEOUT_SECONDS,
-            BLEConfig.CONNECTION_TIMEOUT,
-        )
+            return safe_connection_timeout
+        return min(safe_direct_connect_timeout, safe_connection_timeout)
 
     @classmethod
     def _resolve_connect_timeout(

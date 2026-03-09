@@ -1011,6 +1011,11 @@ def test_rapid_connect_disconnect_stress_test(
                 failure_errors.append(exc)
 
         assert failure_errors == []
+        reconnect_deadline = time.monotonic() + 1.0
+        while len(_get_connect_stub_calls(iface3)) <= baseline_connect_count:
+            if time.monotonic() >= reconnect_deadline:
+                break
+            time.sleep(0.01)
         assert (
             len(_get_connect_stub_calls(iface3)) >= baseline_connect_count + 1
         ), "Failure path should still schedule reconnect attempts"

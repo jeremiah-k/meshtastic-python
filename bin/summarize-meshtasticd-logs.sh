@@ -12,32 +12,31 @@ fi
 TITLE="$1"
 RUNNER_SCRIPT="$2"
 LOG_DIR="$3"
-MODE="${4:-single}"
+shift 3
+
+MODE="single"
 NO_LOGS=false
-if [[ ${4-} == "--no-logs" ]]; then
-	MODE="single"
-	NO_LOGS=true
-	if (( $# > 4 )); then
-		echo "Too many arguments. No further arguments are allowed after --no-logs." >&2
+mode_set=false
+while (($# > 0)); do
+	case "$1" in
+	single | multinode)
+		if [[ ${mode_set} == true ]]; then
+			echo "Mode provided multiple times. Use one of: single, multinode." >&2
+			exit 1
+		fi
+		MODE="$1"
+		mode_set=true
+		;;
+	--no-logs)
+		NO_LOGS=true
+		;;
+	*)
+		echo "Unexpected argument: $1. Expected optional mode (single|multinode) and/or --no-logs." >&2
 		exit 1
-	fi
-elif [[ ${5-} == "--no-logs" ]]; then
-	NO_LOGS=true
-	if (( $# > 5 )); then
-		echo "Too many arguments. No arguments are allowed after --no-logs." >&2
-		exit 1
-	fi
-fi
-
-if [[ ${MODE} != "single" && ${MODE} != "multinode" ]]; then
-	echo "Invalid mode: ${MODE}. Expected 'single' or 'multinode'." >&2
-	exit 1
-fi
-
-if (( $# > 4 )) && [[ ${5-} != "--no-logs" ]]; then
-	echo "Unexpected argument: ${5}. Expected '--no-logs' or no additional arguments." >&2
-	exit 1
-fi
+		;;
+	esac
+	shift
+done
 
 log_directory_message=""
 have_logs=false

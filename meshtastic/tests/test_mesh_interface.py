@@ -1778,6 +1778,7 @@ def test_on_response_position_success_and_routing_error(
             iface.onResponsePosition(
                 {
                     "decoded": {
+                        "requestId": 1001,
                         "portnum": portnums_pb2.PortNum.Name(
                             portnums_pb2.PortNum.POSITION_APP
                         ),
@@ -1785,7 +1786,7 @@ def test_on_response_position_success_and_routing_error(
                     }
                 }
             )
-            iface.waitForPosition()
+            iface.waitForPosition(request_id=1001)
         assert "Position received:" in caplog.text
         assert "full precision" in caplog.text
 
@@ -1796,6 +1797,7 @@ def test_on_response_position_success_and_routing_error(
             iface.onResponsePosition(
                 {
                     "decoded": {
+                        "requestId": 1002,
                         "portnum": portnums_pb2.PortNum.Name(
                             portnums_pb2.PortNum.POSITION_APP
                         ),
@@ -1803,7 +1805,7 @@ def test_on_response_position_success_and_routing_error(
                     }
                 }
             )
-            iface.waitForPosition()
+            iface.waitForPosition(request_id=1002)
         assert "(unknown)" in caplog.text
         assert "precision:5" in caplog.text
 
@@ -1814,6 +1816,7 @@ def test_on_response_position_success_and_routing_error(
             iface.onResponsePosition(
                 {
                     "decoded": {
+                        "requestId": 1003,
                         "portnum": portnums_pb2.PortNum.Name(
                             portnums_pb2.PortNum.POSITION_APP
                         ),
@@ -1821,7 +1824,7 @@ def test_on_response_position_success_and_routing_error(
                     }
                 }
             )
-            iface.waitForPosition()
+            iface.waitForPosition(request_id=1003)
         assert "position disabled" in caplog.text
 
     with MeshInterface(noProto=True) as iface:
@@ -2034,13 +2037,13 @@ def test_send_traceroute_and_response_rendering(
         with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
             iface.onResponseTraceRoute(
                 {
-                    "decoded": {"payload": route.SerializeToString()},
+                    "decoded": {"payload": route.SerializeToString(), "requestId": 88},
                     "to": 20,
                     "from": 21,
                     "hopStart": 1,
                 }
             )
-        iface.waitForTraceRoute(1.0)
+        iface.waitForTraceRoute(1.0, request_id=88)
 
     assert "Route traced towards destination:" in caplog.text
     assert "Route traced back to us:" in caplog.text
@@ -2151,6 +2154,7 @@ def test_on_response_telemetry_paths(
             iface.onResponseTelemetry(
                 {
                     "decoded": {
+                        "requestId": 2001,
                         "portnum": portnums_pb2.PortNum.Name(
                             portnums_pb2.PortNum.TELEMETRY_APP
                         ),
@@ -2158,7 +2162,7 @@ def test_on_response_telemetry_paths(
                     }
                 }
             )
-            iface.waitForTelemetry()
+            iface.waitForTelemetry(request_id=2001)
         assert "Telemetry received:" in caplog.text
         assert "Battery level:" in caplog.text
 
@@ -2169,6 +2173,7 @@ def test_on_response_telemetry_paths(
             iface.onResponseTelemetry(
                 {
                     "decoded": {
+                        "requestId": 2002,
                         "portnum": portnums_pb2.PortNum.Name(
                             portnums_pb2.PortNum.TELEMETRY_APP
                         ),
@@ -2176,7 +2181,7 @@ def test_on_response_telemetry_paths(
                     }
                 }
             )
-            iface.waitForTelemetry()
+            iface.waitForTelemetry(request_id=2002)
         assert "environmentMetrics:" in caplog.text
 
     with MeshInterface(noProto=True) as iface:
@@ -2220,6 +2225,7 @@ def test_on_response_waypoint_paths(caplog: pytest.LogCaptureFixture) -> None:
             iface.onResponseWaypoint(
                 {
                     "decoded": {
+                        "requestId": 3001,
                         "portnum": portnums_pb2.PortNum.Name(
                             portnums_pb2.PortNum.WAYPOINT_APP
                         ),
@@ -2227,7 +2233,7 @@ def test_on_response_waypoint_paths(caplog: pytest.LogCaptureFixture) -> None:
                     }
                 }
             )
-        iface.waitForWaypoint()
+        iface.waitForWaypoint(request_id=3001)
         assert "Waypoint received:" in caplog.text
 
     with MeshInterface(noProto=True) as iface:
@@ -2312,7 +2318,7 @@ def test_send_and_delete_waypoint_response_paths(
             payload: mesh_pb2.Waypoint, *_args: Any, **_kwargs: Any
         ) -> mesh_pb2.MeshPacket:
             sent_payloads.append(payload)
-            return mesh_pb2.MeshPacket()
+            return mesh_pb2.MeshPacket(id=len(sent_payloads))
 
         monkeypatch.setattr(iface, "_send_data_with_wait", _capture_send_data)
         monkeypatch.setattr(

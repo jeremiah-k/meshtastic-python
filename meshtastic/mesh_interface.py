@@ -1254,9 +1254,10 @@ class MeshInterface:  # pylint: disable=R0902
         if wantResponse:
             request_id = self._extract_request_id_from_sent_packet(d)
             if request_id is None:
-                self.waitForPosition()
-            else:
-                self.waitForPosition(request_id=request_id)
+                raise self.MeshInterfaceError(
+                    "Internal error: response wait requires a positive packet id."
+                )
+            self.waitForPosition(request_id=request_id)
         return d
 
     @staticmethod
@@ -1691,9 +1692,10 @@ class MeshInterface:  # pylint: disable=R0902
         waitFactor = max(1, min(nodes_based_factor, hopLimit + 1))
         request_id = self._extract_request_id_from_sent_packet(packet)
         if request_id is None:
-            self.waitForTraceRoute(waitFactor)
-        else:
-            self.waitForTraceRoute(waitFactor, request_id=request_id)
+            raise self.MeshInterfaceError(
+                "Internal error: response wait requires a positive packet id."
+            )
+        self.waitForTraceRoute(waitFactor, request_id=request_id)
 
     def onResponseTraceRoute(self, p: dict[str, Any]) -> None:
         """Emit human-readable traceroute results from a RouteDiscovery payload.
@@ -1711,7 +1713,10 @@ class MeshInterface:  # pylint: disable=R0902
 
         Notes
         -----
-        Emits formatted route strings and sets self._acknowledgment.receivedTraceRoute to True.
+        Emits formatted route strings and acknowledges waits via
+        `_mark_wait_acknowledged(WAIT_ATTR_TRACEROUTE, request_id=request_id)`.
+        For legacy unscoped callers, acknowledgement falls back to
+        `self._acknowledgment.receivedTraceRoute`.
         """
         decoded = p["decoded"]
         request_id = self._extract_request_id_from_packet(p)
@@ -1917,9 +1922,10 @@ class MeshInterface:  # pylint: disable=R0902
         if wantResponse:
             request_id = self._extract_request_id_from_sent_packet(packet)
             if request_id is None:
-                self.waitForTelemetry()
-            else:
-                self.waitForTelemetry(request_id=request_id)
+                raise self.MeshInterfaceError(
+                    "Internal error: response wait requires a positive packet id."
+                )
+            self.waitForTelemetry(request_id=request_id)
 
     def onResponseTelemetry(self, p: dict[str, Any]) -> None:
         """Handle an incoming telemetry response: mark telemetry as received and emit human-readable telemetry values.
@@ -2155,9 +2161,10 @@ class MeshInterface:  # pylint: disable=R0902
         if wantResponse:
             request_id = self._extract_request_id_from_sent_packet(d)
             if request_id is None:
-                self.waitForWaypoint()
-            else:
-                self.waitForWaypoint(request_id=request_id)
+                raise self.MeshInterfaceError(
+                    "Internal error: response wait requires a positive packet id."
+                )
+            self.waitForWaypoint(request_id=request_id)
         return d
 
     def deleteWaypoint(
@@ -2216,9 +2223,10 @@ class MeshInterface:  # pylint: disable=R0902
         if wantResponse:
             request_id = self._extract_request_id_from_sent_packet(d)
             if request_id is None:
-                self.waitForWaypoint()
-            else:
-                self.waitForWaypoint(request_id=request_id)
+                raise self.MeshInterfaceError(
+                    "Internal error: response wait requires a positive packet id."
+                )
+            self.waitForWaypoint(request_id=request_id)
         return d
 
     def _add_response_handler(

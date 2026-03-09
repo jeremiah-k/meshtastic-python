@@ -302,6 +302,21 @@ def test_direct_connect_timeout_is_reasonable() -> None:
 
 
 @pytest.mark.unit
+def test_connection_orchestrator_get_connect_timeout_sanitizes_invalid_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Config-derived timeouts should fall back to safe finite positive values."""
+    monkeypatch.setattr(BLEConfig, "CONNECTION_TIMEOUT", float("nan"))
+    monkeypatch.setattr(BLEConfig, "DIRECT_CONNECT_TIMEOUT_SECONDS", -1.0)
+    assert ConnectionOrchestrator._get_connect_timeout(pair_on_connect=True) == 10.0
+    assert ConnectionOrchestrator._get_connect_timeout(pair_on_connect=False) == 10.0
+
+    monkeypatch.setattr(BLEConfig, "CONNECTION_TIMEOUT", 30.0)
+    monkeypatch.setattr(BLEConfig, "DIRECT_CONNECT_TIMEOUT_SECONDS", 0.0)
+    assert ConnectionOrchestrator._get_connect_timeout(pair_on_connect=False) == 30.0
+
+
+@pytest.mark.unit
 def test_await_timeout_buffer_is_positive() -> None:
     """AWAIT_TIMEOUT_BUFFER_SECONDS should be positive to allow timeout margin."""
     assert AWAIT_TIMEOUT_BUFFER_SECONDS > 0

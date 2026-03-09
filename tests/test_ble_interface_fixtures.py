@@ -227,6 +227,7 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
             """
             self.address = cast(str | None, getattr(address, "address", address))
             self.services = SimpleNamespace(get_characteristic=lambda _specifier: None)
+            self._connected = False
 
         async def connect(self, **_kwargs: object) -> None:
             """Stub connect used in tests that ignores any keyword arguments.
@@ -243,10 +244,12 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
             None
                 Always returns None.
             """
+            self._connected = True
             return None
 
         async def disconnect(self, **_kwargs: object) -> None:
             """No-op disconnect that ignores any provided keyword arguments."""
+            self._connected = False
             return None
 
         async def start_notify(self, *_args: object, **_kwargs: object) -> None:
@@ -285,14 +288,12 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
         def is_connected(self) -> bool:
             """Report whether the client is connected.
 
-            This dummy implementation always reports the client as disconnected.
-
             Returns
             -------
             bool
-                Always `False` (simulates a disconnected client).
+                Current connection state of this test double.
             """
-            return False
+            return self._connected
 
     async def _stub_discover(**_kwargs: object) -> list[Any]:
         """Simulate BLE device discovery for tests when no devices are present.
@@ -585,6 +586,7 @@ class DummyClient:
         self,
         *,
         await_timeout: float = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+        **_kwargs: object,
     ) -> None:
         """Record an unpair invocation."""
         await_timeout = _validate_await_timeout(await_timeout)
@@ -594,7 +596,7 @@ class DummyClient:
             )
         self.unpair_calls += 1
         self.unpair_await_timeouts.append(await_timeout)
-        self.unpair_kwargs.append({})
+        self.unpair_kwargs.append(dict(_kwargs))
         if self.on_unpair is not None:
             self.on_unpair()
 
