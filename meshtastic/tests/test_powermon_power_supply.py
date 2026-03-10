@@ -194,6 +194,9 @@ def test_powermon_optional_backends_are_lazy_and_dependency_error_is_clear(
         return real_import_module(name, package)
 
     monkeypatch.setattr(importlib, "import_module", _fake_import_module)
+    importlib.reload(powermon)
+    for candidate_backend in backend_names:
+        monkeypatch.delitem(powermon.__dict__, candidate_backend, raising=False)
 
     backend_cls = cast(type[PowerSupply], getattr(powermon, backend_name))
     with pytest.raises(ImportError, match=expected_dependency_name):

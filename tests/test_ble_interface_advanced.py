@@ -665,13 +665,14 @@ def test_rapid_connect_disconnect_stress_test(
             bleak_client._should_fail_connect = self._should_fail_connect
             return self._delegate_to_bleak("connect", *_args, **_kwargs)
 
+        @property
         def is_connected(self) -> bool:
             """Delegate connection-state queries to the shared bleak client stub."""
             return cast(bool, self._delegate_to_bleak("is_connected"))
 
         def isConnected(self) -> bool:
             """Compatibility wrapper for the promoted camelCase BLE API."""
-            return self.is_connected()
+            return self.is_connected
 
         def disconnect(self, *_args: object, **_kwargs: object) -> None:
             """Delegate disconnect behavior to the shared bleak client stub."""

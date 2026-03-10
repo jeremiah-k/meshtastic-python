@@ -426,7 +426,7 @@ def _is_connecting_claim_elsewhere_locked(
         _remove_connecting_record_locked(key)
         _cleanup_addr_lock(key)
         return False
-    if current_owner is None and _prune_stale_connecting_claim_locked(key):
+    if _prune_stale_connecting_claim_locked(key):
         return False
     if owner is not None and (
         current_owner is owner

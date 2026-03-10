@@ -306,12 +306,10 @@ _SECRET_PREF_NAMES: frozenset[str] = frozenset(
         "wifi_psk",
         "psk",
         "channel_psk",
-        "security",
         "private_key",
         "public_key",
         "admin_key",
         "secret",
-        "key",
         "api_key",
         "auth_token",
     }

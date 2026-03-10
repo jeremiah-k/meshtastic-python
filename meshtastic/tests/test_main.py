@@ -1344,6 +1344,9 @@ def test_main_removeposition_local_dest_waits_for_ack_and_uses_local_dest(
     iface = MagicMock(autospec=SerialInterface)
     iface.__enter__ = MagicMock(return_value=iface)
     iface.__exit__ = MagicMock(return_value=None)
+    # Keep assertion anchored to the interface-level waiter contract.
+    iface.getNode.return_value.iface = iface
+    waiter = iface.waitForAckNak
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         main()
         out, err = capsys.readouterr()
@@ -1351,7 +1354,7 @@ def test_main_removeposition_local_dest_waits_for_ack_and_uses_local_dest(
         assert "Removing fixed position and disabling fixed position setting" in out
         assert "Waiting for an acknowledgment from remote node" in out
         assert err == ""
-    iface.getNode.return_value.iface.waitForAckNak.assert_called_once()
+    waiter.assert_called_once()
     assert any(
         (call_args.args and call_args.args[0] == MAIN_LOCAL_ADDR)
         or call_args.kwargs.get("dest") == MAIN_LOCAL_ADDR
@@ -4600,8 +4603,11 @@ def test_main_ota_update_retries_then_exits(
     assert excinfo.value.code == 1
     assert ota.update.call_count == main_module.OTA_MAX_RETRIES
     assert any(
-        (call_args.args == () and call_args.kwargs == {})
-        or (call_args.args and call_args.args[0] == MAIN_LOCAL_ADDR)
+        (
+            call_args.args
+            and call_args.args[0] == MAIN_LOCAL_ADDR
+            and call_args.kwargs.get("requestChannels") is False
+        )
         or call_args.kwargs.get("dest") == MAIN_LOCAL_ADDR
         for call_args in get_node.call_args_list
     )
@@ -4644,8 +4650,11 @@ def test_main_ota_update_fails_fast_on_non_transport_error(
     assert excinfo.value.code == 1
     ota.update.assert_called_once()
     assert any(
-        (call_args.args == () and call_args.kwargs == {})
-        or (call_args.args and call_args.args[0] == MAIN_LOCAL_ADDR)
+        (
+            call_args.args
+            and call_args.args[0] == MAIN_LOCAL_ADDR
+            and call_args.kwargs.get("requestChannels") is False
+        )
         or call_args.kwargs.get("dest") == MAIN_LOCAL_ADDR
         for call_args in get_node.call_args_list
     )
@@ -4683,8 +4692,11 @@ def test_main_ota_update_succeeds_and_prints_completion(
     assert err == ""
     assert ota.update.call_count == 1
     assert any(
-        (call_args.args == () and call_args.kwargs == {})
-        or (call_args.args and call_args.args[0] == MAIN_LOCAL_ADDR)
+        (
+            call_args.args
+            and call_args.args[0] == MAIN_LOCAL_ADDR
+            and call_args.kwargs.get("requestChannels") is False
+        )
         or call_args.kwargs.get("dest") == MAIN_LOCAL_ADDR
         for call_args in get_node.call_args_list
     )
