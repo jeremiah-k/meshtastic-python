@@ -44,6 +44,11 @@ recommended patterns for code that embeds `meshtastic-python`.
   `BLECoroutineRunner`: N clients share 1 background thread, which lowers
   resource usage and simplifies teardown.
 
+- **Optional pairing and Linux trust helper.** `BLEInterface` can request pairing
+  during connect (`pair_on_connect=True` or `connect(pair=True)`), and also
+  exposes an explicit Linux trust helper (`trust(address=None)`) that calls
+  `bluetoothctl trust <addr>`.
+
 ---
 
 ## Locking rules
@@ -51,12 +56,17 @@ recommended patterns for code that embeds `meshtastic-python`.
 When code paths must hold multiple BLE locks, always acquire in this order to
 prevent deadlocks:
 
-1. Global registry lock (`_REGISTRY_LOCK` in
+1. Per-address lock (`_addr_lock_context` in
    [`meshtastic/interfaces/ble/gating.py`](meshtastic/interfaces/ble/gating.py))
-2. Per-address lock (`_addr_lock_context` in the same module)
+2. Global registry lock (`_REGISTRY_LOCK` in the same module) only for short,
+   non-blocking registry updates
 3. Interface connect lock (`_connect_lock`)
-4. Interface state lock (`_state_lock`)
-5. Interface disconnect lock (`_disconnect_lock`)
+4. Interface management lock (`_management_lock`)
+5. Interface state lock (`_state_lock`)
+6. Interface disconnect lock (`_disconnect_lock`)
+
+Do not hold `_REGISTRY_LOCK` while blocking on `_addr_lock_context(...)`; the
+gating utilities are written to avoid that inversion.
 
 **Exception:** `_handle_disconnect()` acquires `_disconnect_lock` _first_ in
 non-blocking mode. If another disconnect handler is already active, the method
@@ -200,6 +210,75 @@ iface = BLEInterface(address="AA:BB:CC:DD:EE:FF", auto_reconnect=False)
 Do not layer both simultaneously — duplicate reconnect loops produce
 `suppressed duplicate connect` log entries and can interfere with the built-in
 recovery logic.
+
+### Pairing and trust workflows
+
+Pairing PIN/passkey entry remains OS-agent-driven (for example BlueZ agent /
+desktop prompt / platform dialog). Meshtastic can request pairing during
+connect, either persistently with `pair_on_connect=True` or for one specific
+manual reconnect with `connect(pair=True)`, but it does not replace OS pairing
+UX.
+
+```python
+from meshtastic.ble_interface import BLEInterface
+
+# Request pairing during every connect attempt.
+iface = BLEInterface(
+    address="AA:BB:CC:DD:EE:FF",
+    pair_on_connect=True,
+)
+
+# Use the interface normally after connect/pair completes.
+iface.sendText("hello from a paired session")
+
+# Linux-only (requires bluetoothctl): one-time trust setup remains explicit.
+iface.trust("AA:BB:CC:DD:EE:FF")
+iface.close()
+```
+
+```python
+# One-time pairing on a specific manual reconnect (with auto_reconnect=False):
+iface_manual = BLEInterface(
+    address="AA:BB:CC:DD:EE:FF",
+    auto_reconnect=False,
+)
+# Constructor connects immediately; auto_reconnect=False only disables later
+# automatic reconnect attempts.
+# Later, after the link drops and you want to reconnect with pairing:
+iface_manual.connect(pair=True)   # request pairing for this call
+iface_manual.sendText("hello after manual reconnect")
+# Linux-only (requires bluetoothctl):
+iface_manual.trust("AA:BB:CC:DD:EE:FF")
+iface_manual.close()
+```
+
+Programmatic helpers:
+
+```python
+# Pair against the currently connected device. If disconnected but the
+# interface already has a resolved target address, BLEInterface may create a
+# short-lived temporary client internally to perform the operation.
+iface.pair()
+
+# Backend unpair (Linux/Windows backends where supported by Bleak).
+iface.unpair()
+
+# Linux-only (requires bluetoothctl) trust helper. When connected, you can omit the address to trust
+# the current device. If disconnected, omit the address only when the
+# interface already has that device's concrete BLE address bound as its target;
+# if the target came from a name lookup or you are unsure, pass the address
+# explicitly (no active connection required).
+iface.trust()  # Linux-only (requires bluetoothctl)
+iface.trust("AA:BB:CC:DD:EE:FF")  # Linux-only (requires bluetoothctl)
+```
+
+Platform notes:
+
+- `pair()` and `connect(pair=True)` can trigger OS PIN/passkey prompts; do not assume headless flow.
+- `pair()` depends on backend/platform support and may be unavailable on some hosts.
+- `unpair()` depends on backend/platform support (typically Linux/Windows).
+- `trust(address=None)` is Linux-only and requires `bluetoothctl` in `PATH`.
+- On macOS, pairing is OS-managed and explicit `pair()`/`unpair()` are not exposed by the backend.
 
 CLI opt-in:
 

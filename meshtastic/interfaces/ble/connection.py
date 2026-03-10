@@ -1,10 +1,15 @@
 """BLE connection management and validation."""
 
 import logging
+import math
+import numbers
+import re
 import sys
+from collections.abc import Callable
 from threading import Event, RLock
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
+from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
 from meshtastic.interfaces.ble.client import BLEClient
@@ -16,8 +21,8 @@ from meshtastic.interfaces.ble.constants import (
     CONNECTION_ERROR_EMPTY_ADDRESS,
     CONNECTION_ERROR_INVALIDATED_BY_CONCURRENT_DISCONNECT,
     CONNECTION_ERROR_STATE_TRANSITION_INVALIDATED,
-    DIRECT_CONNECT_TIMEOUT_SECONDS,
     DISCONNECT_TIMEOUT_SECONDS,
+    ERROR_INVALID_CONNECT_TIMEOUT,
     BLEConfig,
 )
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator
@@ -33,14 +38,26 @@ if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
 
 logger = logging.getLogger("meshtastic.ble")
-_DEVICE_NOT_FOUND_FRAGMENT = "not found"
+_DEVICE_NOT_FOUND_MESSAGE_RE: re.Pattern[str] = re.compile(
+    r"(?:"
+    r"\bcould not find (?:the )?(?:device|peripheral)\b"
+    r"(?!\s+(?:service|characteristic)\b)(?:\W|$)|"
+    r"\b(?:device|peripheral)\b"
+    r"(?:(?!\b(?:service|characteristic)\b).){0,40}\bnot found\b"
+    r")"
+)
+_CONNECT_TIMEOUT_INVALID_MSG: str = (
+    "connect_timeout must be a finite positive number of seconds."
+)
+_CONNECT_TIMEOUT_FALLBACK_SECONDS: float = 10.0
 
 
 def _is_device_not_found_error(err: Exception) -> bool:
     """Return True when an exception indicates the target BLE device was not found."""
     if isinstance(err, BleakDeviceNotFoundError):
         return True
-    return _DEVICE_NOT_FOUND_FRAGMENT in str(err).casefold()
+    message = str(err).casefold()
+    return bool(message) and _DEVICE_NOT_FOUND_MESSAGE_RE.search(message) is not None
 
 
 class ConnectionValidator:
@@ -93,9 +110,9 @@ class ConnectionValidator:
     ) -> bool:
         """Return whether the given BLE client corresponds to the requested or a known device address.
 
-        Considers the provided normalized_request, last_connection_request, and the
-        client's bleak address. If `normalized_request` is `None`, any connected
-        client is treated as acceptable.
+        Considers the provided normalized_request, last_connection_request, the
+        client object's cached address, and the client's bleak address. If
+        `normalized_request` is `None`, any connected client is treated as acceptable.
 
         Parameters
         ----------
@@ -116,12 +133,14 @@ class ConnectionValidator:
         if not client or not client.isConnected():
             return False
         normalized_request_key = sanitize_address(normalized_request)
+        client_address = sanitize_address(getattr(client, "address", None))
         bleak_client = getattr(client, "bleak_client", None)
         bleak_address = getattr(bleak_client, "address", None)
         normalized_known_targets = {
             t
             for t in (
                 sanitize_address(last_connection_request),
+                client_address,
                 sanitize_address(bleak_address),
             )
             if t is not None
@@ -162,24 +181,42 @@ class ClientManager:
 
     def _create_client(
         self,
-        device_address: str,
+        device: BLEDevice | str,
         disconnect_callback: Callable[["BleakRootClient"], None],
+        *,
+        pair_on_connect: bool = False,
+        connect_timeout: float | None = None,
     ) -> BLEClient:
-        """Create a BLEClient bound to the given device address and register a disconnect callback.
+        """Create a BLEClient bound to the given device target and register a disconnect callback.
 
         Parameters
         ----------
-        device_address : str
-            Target BLE device address to bind the client to.
+        device : BLEDevice | str
+            Target BLE device object or address to bind the client to.
         disconnect_callback : 'Callable'
             Callable invoked when the client disconnects.
+        pair_on_connect : bool
+            If True, initialize the underlying Bleak client with pairing enabled so
+            connect attempts request pairing as part of connection setup. (Default value = False)
+        connect_timeout : float | None
+            Timeout in seconds forwarded to the underlying Bleak client
+            constructor. If None, BLEConfig.CONNECTION_TIMEOUT is used.
 
         Returns
         -------
         'BLEClient'
-            A BLEClient instance bound to device_address with the disconnect callback configured.
+            A BLEClient instance bound to `device` with the disconnect callback configured.
         """
-        return BLEClient(device_address, disconnected_callback=disconnect_callback)
+        return BLEClient(
+            device,
+            disconnected_callback=disconnect_callback,
+            timeout=(
+                connect_timeout
+                if connect_timeout is not None
+                else BLEConfig.CONNECTION_TIMEOUT
+            ),
+            pair=pair_on_connect,
+        )
 
     def _connect_client(self, client: BLEClient, timeout: float | None = None) -> None:
         """Connect the provided BLEClient and ensure its GATT services are populated.
@@ -322,12 +359,103 @@ class ConnectionOrchestrator:
         self.state_lock = state_lock
         self.thread_coordinator = thread_coordinator
 
+    @staticmethod
+    def _get_connect_timeout(*, pair_on_connect: bool) -> float:
+        """Return the appropriate connect timeout for the requested pairing mode.
+
+        Parameters
+        ----------
+        pair_on_connect : bool
+            When True, use the full BLE connection timeout to allow time for
+            OS-mediated pairing prompts. When False, use the shorter direct
+            connect timeout capped by the full connection timeout.
+
+        Returns
+        -------
+        float
+            Timeout in seconds for the current connect attempt.
+        """
+        connection_timeout = BLEConfig.CONNECTION_TIMEOUT
+        if (
+            isinstance(connection_timeout, bool)
+            or not isinstance(connection_timeout, numbers.Real)
+            or not math.isfinite(connection_timeout)
+            or connection_timeout <= 0
+        ):
+            logger.warning(
+                "Invalid BLEConfig.CONNECTION_TIMEOUT=%r; using fallback %.1fs.",
+                connection_timeout,
+                _CONNECT_TIMEOUT_FALLBACK_SECONDS,
+            )
+            safe_connection_timeout = _CONNECT_TIMEOUT_FALLBACK_SECONDS
+        else:
+            safe_connection_timeout = float(connection_timeout)
+
+        direct_connect_timeout = BLEConfig.DIRECT_CONNECT_TIMEOUT_SECONDS
+        if (
+            isinstance(direct_connect_timeout, bool)
+            or not isinstance(direct_connect_timeout, numbers.Real)
+            or not math.isfinite(direct_connect_timeout)
+            or direct_connect_timeout <= 0
+        ):
+            logger.warning(
+                "Invalid BLEConfig.DIRECT_CONNECT_TIMEOUT_SECONDS=%r; using %.1fs.",
+                direct_connect_timeout,
+                safe_connection_timeout,
+            )
+            safe_direct_connect_timeout = safe_connection_timeout
+        else:
+            safe_direct_connect_timeout = float(direct_connect_timeout)
+
+        if pair_on_connect:
+            return safe_connection_timeout
+        return min(safe_direct_connect_timeout, safe_connection_timeout)
+
+    @classmethod
+    def _resolve_connect_timeout(
+        cls,
+        *,
+        pair_on_connect: bool,
+        connect_timeout: float | None,
+    ) -> float:
+        """Return the effective connect timeout for the current attempt.
+
+        Parameters
+        ----------
+        pair_on_connect : bool
+            Whether pairing is being requested during this connect attempt.
+        connect_timeout : float | None
+            Optional caller-supplied timeout override. When `None`, the
+            pairing-aware default from `_get_connect_timeout()` is used.
+
+        Returns
+        -------
+        float
+            Effective timeout for BLE client construction and connection.
+
+        Raises
+        ------
+        ValueError
+            If `connect_timeout` is non-finite or not strictly positive.
+        """
+        if connect_timeout is not None:
+            if isinstance(connect_timeout, bool) or not isinstance(
+                connect_timeout, numbers.Real
+            ):
+                raise ValueError(_CONNECT_TIMEOUT_INVALID_MSG)
+            if not math.isfinite(connect_timeout) or connect_timeout <= 0:
+                raise ValueError(_CONNECT_TIMEOUT_INVALID_MSG)
+            return float(connect_timeout)
+        return cls._get_connect_timeout(pair_on_connect=pair_on_connect)
+
     def _finalize_connection(
         self,
         client: BLEClient,
         device_address: str,
         register_notifications_func: Callable[[BLEClient], None],
         on_connected_func: Callable[[], None],
+        *,
+        emit_connected_side_effects: bool = True,
     ) -> None:
         """Finalize a successful BLE connection by registering notification handlers, validating the client and orchestrator state, transitioning to CONNECTED, and invoking post-connection callbacks.
 
@@ -340,7 +468,12 @@ class ConnectionOrchestrator:
         register_notifications_func : Callable
             Callable that registers notification handlers on `client`.
         on_connected_func : Callable
-            Callback invoked after the connection state transitions to CONNECTED.
+            Callback invoked after the connection state transitions to CONNECTED
+            when `emit_connected_side_effects` is True.
+        emit_connected_side_effects : bool
+            When True, emit reconnect wake signaling and success logging during
+            finalization. Callers that defer "connected" publication can set this
+            to False and emit those side effects later.
 
         Raises
         ------
@@ -392,14 +525,15 @@ class ConnectionOrchestrator:
                     CONNECTION_ERROR_STATE_TRANSITION_INVALIDATED
                 )
 
-        on_connected_func()
-        if getattr(self.interface, "_ever_connected", False):
-            self.thread_coordinator._set_event("reconnected_event")
-        normalized_device_address = sanitize_address(device_address)
-        logger.info(
-            "Connection successful to %s",
-            normalized_device_address or "unknown",
-        )
+        if emit_connected_side_effects:
+            on_connected_func()
+            if getattr(self.interface, "_ever_connected", False):
+                self.thread_coordinator._set_event("reconnected_event")
+            normalized_device_address = sanitize_address(device_address)
+            logger.info(
+                "Connection successful to %s",
+                normalized_device_address or "unknown",
+            )
 
     def _transition_failure_to_disconnected(self, error_context: str) -> None:
         """Perform a best-effort state correction after a connection failure.
@@ -443,6 +577,10 @@ class ConnectionOrchestrator:
         register_notifications_func: Callable[[BLEClient], None],
         on_connected_func: Callable[[], None],
         on_disconnect_func: Callable[["BleakRootClient"], None],
+        *,
+        pair_on_connect: bool = False,
+        connect_timeout: float | None = None,
+        emit_connected_side_effects: bool = True,
     ) -> BLEClient:
         """Establish a BLE connection to a device, attempting a direct connect when an explicit address is provided and falling back to discovery when needed, then finalize notification registration and lifecycle callbacks.
 
@@ -458,6 +596,16 @@ class ConnectionOrchestrator:
             Callback invoked after the connection has been finalized and state updated to CONNECTED.
         on_disconnect_func : Callable
             Callback passed to the `BLEClient` to be invoked when the client disconnects.
+        pair_on_connect : bool
+            If True, initialize per-attempt BLE clients with pairing enabled so
+            connection attempts request pairing while connecting. (Default value = False)
+        connect_timeout : float | None
+            Optional timeout override for BLE client construction and connect
+            attempts. When `None`, the pairing-aware default is used.
+        emit_connected_side_effects : bool
+            When True, emit reconnect wake signaling and success logging during
+            finalization. Set False when connected publication is deferred until
+            a later ownership verification step.
 
         Returns
         -------
@@ -477,9 +625,11 @@ class ConnectionOrchestrator:
         self._raise_if_interface_closing()
 
         target_address = address if address is not None else current_address
+        if target_address is not None:
+            target_address = target_address.strip()
         # Allow None target_address for discovery mode - findDevice() handles this
         # Only reject empty/whitespace-only strings that are explicitly provided
-        if target_address is not None and not target_address.strip():
+        if target_address is not None and not target_address:
             raise self.interface.BLEError(CONNECTION_ERROR_EMPTY_ADDRESS)
 
         normalized_target = sanitize_address(target_address)
@@ -490,6 +640,25 @@ class ConnectionOrchestrator:
             logger.info("Attempting to connect to %s", target_address)
         else:
             logger.info("Attempting discovery-mode connection (no address specified)")
+
+        try:
+            direct_connect_timeout = self._resolve_connect_timeout(
+                pair_on_connect=pair_on_connect,
+                connect_timeout=connect_timeout,
+            )
+        except ValueError as exc:
+            raise self.interface.BLEError(
+                ERROR_INVALID_CONNECT_TIMEOUT.format(exc=exc)
+            ) from exc
+        # Preserve the historical connection cadence: use the shorter timeout
+        # for direct address attempts, but allow full connection time once a
+        # device has been resolved via discovery unless the caller explicitly
+        # overrode the timeout.
+        discovery_connect_timeout = (
+            direct_connect_timeout
+            if connect_timeout is not None or pair_on_connect
+            else self._get_connect_timeout(pair_on_connect=True)
+        )
 
         with self.state_lock:
             if not self.state_manager._transition_to(ConnectionState.CONNECTING):
@@ -503,15 +672,19 @@ class ConnectionOrchestrator:
             if target_address:
                 self._raise_if_interface_closing()
                 client = self.client_manager._create_client(
-                    target_address, on_disconnect_func
+                    target_address,
+                    on_disconnect_func,
+                    pair_on_connect=pair_on_connect,
+                    connect_timeout=direct_connect_timeout,
                 )
                 try:
-                    direct_timeout = min(
-                        DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT
-                    )
                     self._raise_if_interface_closing()
-                    self.client_manager._connect_client(client, timeout=direct_timeout)
+                    self.client_manager._connect_client(
+                        client, timeout=direct_connect_timeout
+                    )
                 except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
+                    raise
+                except BleakDBusError:
                     raise
                 except (
                     BleakError,
@@ -543,26 +716,34 @@ class ConnectionOrchestrator:
                         target_address,
                         register_notifications_func,
                         on_connected_func,
+                        emit_connected_side_effects=emit_connected_side_effects,
                     )
                     return client
 
-            fallback_timeout: float | None = None
             if skip_discovery_scan and target_address is not None:
                 resolved_address = target_address
-                fallback_timeout = min(
-                    DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT
-                )
+                connection_target: BLEDevice | str = target_address
+                retry_connect_timeout = direct_connect_timeout
             else:
                 self._raise_if_interface_closing()
                 device = self.interface.findDevice(target_address)
                 resolved_address = device.address
+                connection_target = device
+                retry_connect_timeout = discovery_connect_timeout
 
             self._raise_if_interface_closing()
             client = self.client_manager._create_client(
-                resolved_address, on_disconnect_func
+                connection_target,
+                on_disconnect_func,
+                pair_on_connect=pair_on_connect,
+                connect_timeout=retry_connect_timeout,
             )
             try:
-                self.client_manager._connect_client(client, timeout=fallback_timeout)
+                self.client_manager._connect_client(
+                    client, timeout=retry_connect_timeout
+                )
+            except BleakDBusError:
+                raise
             except (
                 BleakError,
                 BLEClient.BLEError,
@@ -587,13 +768,23 @@ class ConnectionOrchestrator:
                 self._raise_if_interface_closing()
                 resolved_address = device.address
                 client = self.client_manager._create_client(
-                    resolved_address, on_disconnect_func
+                    device,
+                    on_disconnect_func,
+                    pair_on_connect=pair_on_connect,
+                    connect_timeout=discovery_connect_timeout,
                 )
-                self.client_manager._connect_client(client)
+                self.client_manager._connect_client(
+                    client,
+                    timeout=discovery_connect_timeout,
+                )
 
             self._raise_if_interface_closing()
             self._finalize_connection(
-                client, resolved_address, register_notifications_func, on_connected_func
+                client,
+                resolved_address,
+                register_notifications_func,
+                on_connected_func,
+                emit_connected_side_effects=emit_connected_side_effects,
             )
             return client
         except BleakDBusError:

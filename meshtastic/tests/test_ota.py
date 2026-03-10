@@ -3,15 +3,16 @@
 import hashlib
 import logging
 import os
-import socket
 import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from meshtastic.ota import (
+    OTA_CHUNK_SIZE_BYTES,
     ESP32WiFiOTA,
     OTAError,
+    OTATransportError,
     _file_sha256,
 )
 
@@ -52,8 +53,8 @@ def test_file_sha256_large_file() -> None:
 
 @pytest.mark.unit
 def test_esp32_wifi_ota_init_file_not_found() -> None:
-    """Test ESP32WiFiOTA raises FileNotFoundError for non-existent file."""
-    with pytest.raises(FileNotFoundError, match="does not exist"):
+    """Test ESP32WiFiOTA raises OTAError for non-existent file."""
+    with pytest.raises(OTAError, match="does not exist"):
         ESP32WiFiOTA("/nonexistent/firmware.bin", "192.168.1.1")
 
 
@@ -69,6 +70,7 @@ def test_esp32_wifi_ota_init_success() -> None:
         assert ota._filename == temp_file
         assert ota._hostname == "192.168.1.1"
         assert ota._port == 3232
+        assert ota._size == len(b"fake firmware data")
         assert ota._socket is None
         # Verify hash is calculated
         assert ota._file_hash is not None
@@ -183,7 +185,7 @@ def test_esp32_wifi_ota_read_line_success() -> None:
 
 
 @pytest.mark.unit
-@patch("meshtastic.ota.socket.socket")
+@patch("meshtastic.ota.socket.create_connection")
 def test_esp32_wifi_ota_update_success(mock_socket_class: MagicMock) -> None:
     """Test update() with successful OTA."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
@@ -209,12 +211,10 @@ def test_esp32_wifi_ota_update_success(mock_socket_class: MagicMock) -> None:
 
             ota.update()
 
-            # Verify socket was created and connected
+            # Verify socket connection was created.
             mock_socket_class.assert_called_once_with(
-                socket.AF_INET, socket.SOCK_STREAM
+                ("192.168.1.1", 3232), timeout=15
             )
-            mock_socket.settimeout.assert_called_once_with(15)
-            mock_socket.connect.assert_called_once_with(("192.168.1.1", 3232))
 
             # Verify start command was sent
             start_cmd = f"OTA {len(test_data)} {ota.hash_hex()}\n".encode("utf-8")
@@ -231,7 +231,178 @@ def test_esp32_wifi_ota_update_success(mock_socket_class: MagicMock) -> None:
 
 
 @pytest.mark.unit
-@patch("meshtastic.ota.socket.socket")
+@patch("meshtastic.ota.socket.create_connection")
+def test_esp32_wifi_ota_update_uses_frozen_snapshot_when_source_changes(
+    mock_socket_class: MagicMock,
+) -> None:
+    """update() should upload constructor snapshot bytes even if source file changes."""
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
+        original_data = b"A" * 32
+        f.write(original_data)
+        temp_file = f.name
+
+    try:
+        mock_socket = MagicMock()
+        mock_socket_class.return_value = mock_socket
+        ota = ESP32WiFiOTA(temp_file, "192.168.1.1")
+        assert ota._size == len(original_data)
+        assert ota.hash_hex() == hashlib.sha256(original_data).hexdigest()
+        replacement_data = b"B" * ota._size
+        with open(temp_file, "wb") as fw:
+            fw.write(replacement_data)
+
+        with patch.object(ota, "_read_line") as mock_read_line:
+            mock_read_line.side_effect = ["OK", "OK"]
+            ota.update()
+
+        start_cmd = f"OTA {len(original_data)} {ota.hash_hex()}\n".encode("utf-8")
+        assert mock_socket.sendall.call_args_list[0].args[0] == start_cmd
+        assert mock_socket.sendall.call_args_list[1].args[0] == original_data
+    finally:
+        os.unlink(temp_file)
+
+
+@pytest.mark.unit
+@patch("meshtastic.ota.socket.create_connection")
+def test_esp32_wifi_ota_update_succeeds_when_source_file_truncated_after_init(
+    mock_socket_class: MagicMock,
+) -> None:
+    """update() should still use the frozen snapshot when source file is truncated."""
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
+        original_data = b"A" * 32
+        f.write(original_data)
+        temp_file = f.name
+
+    try:
+        mock_socket = MagicMock()
+        mock_socket_class.return_value = mock_socket
+        ota = ESP32WiFiOTA(temp_file, "192.168.1.1")
+        with open(temp_file, "wb") as fw:
+            fw.write(b"")
+
+        with patch.object(ota, "_read_line") as mock_read_line:
+            mock_read_line.side_effect = ["OK", "OK"]
+            ota.update()
+
+        mock_socket_class.assert_called_once()
+        start_cmd = f"OTA {len(original_data)} {ota.hash_hex()}\n".encode("utf-8")
+        assert mock_socket.sendall.call_args_list[0].args[0] == start_cmd
+        assert mock_socket.sendall.call_args_list[1].args[0] == original_data
+    finally:
+        os.unlink(temp_file)
+
+
+@pytest.mark.unit
+@patch("meshtastic.ota.socket.create_connection")
+def test_esp32_wifi_ota_update_succeeds_when_source_file_removed_after_init(
+    mock_socket_class: MagicMock,
+) -> None:
+    """update() should still upload the frozen snapshot when source file is removed."""
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
+        original_data = b"A" * 32
+        f.write(original_data)
+        temp_file = f.name
+
+    try:
+        mock_socket = MagicMock()
+        mock_socket_class.return_value = mock_socket
+        ota = ESP32WiFiOTA(temp_file, "192.168.1.1")
+        os.unlink(temp_file)
+
+        with patch.object(ota, "_read_line") as mock_read_line:
+            mock_read_line.side_effect = ["OK", "OK"]
+            ota.update()
+
+        mock_socket_class.assert_called_once()
+        start_cmd = f"OTA {len(original_data)} {ota.hash_hex()}\n".encode("utf-8")
+        assert mock_socket.sendall.call_args_list[0].args[0] == start_cmd
+        assert mock_socket.sendall.call_args_list[1].args[0] == original_data
+    finally:
+        if os.path.exists(temp_file):
+            os.unlink(temp_file)
+
+
+@pytest.mark.unit
+@patch("meshtastic.ota.socket.create_connection")
+def test_esp32_wifi_ota_update_logs_progress_without_callback(
+    mock_socket_class: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test update() logs coarse progress when no progress callback is provided."""
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
+        test_data = b"A" * (OTA_CHUNK_SIZE_BYTES * 10)
+        f.write(test_data)
+        temp_file = f.name
+
+    try:
+        mock_socket = MagicMock()
+        mock_socket_class.return_value = mock_socket
+
+        ota = ESP32WiFiOTA(temp_file, "192.168.1.1")
+
+        with (
+            patch.object(ota, "_read_line") as mock_read_line,
+            patch("meshtastic.ota.OTA_PROGRESS_LOG_PERCENT_STEP", 50.0),
+        ):
+            mock_read_line.side_effect = [
+                "OK",  # Device ready
+                "OK",  # Device finished
+            ]
+
+            with caplog.at_level(logging.INFO):
+                ota.update()
+                progress_messages = [
+                    record.message
+                    for record in caplog.records
+                    if "OTA progress:" in record.message
+                ]
+                total_bytes = len(test_data)
+                half_bytes = min(OTA_CHUNK_SIZE_BYTES * 5, total_bytes)
+                assert progress_messages == [
+                    f"OTA progress: 50.0% ({half_bytes}/{total_bytes} bytes)",
+                    f"OTA progress: 100.0% ({total_bytes}/{total_bytes} bytes)",
+                ]
+    finally:
+        os.unlink(temp_file)
+
+
+@pytest.mark.unit
+@patch("meshtastic.ota.socket.create_connection")
+def test_esp32_wifi_ota_update_rejects_non_positive_progress_step(
+    mock_socket_class: MagicMock,
+) -> None:
+    """update() should fail fast when OTA progress step is misconfigured."""
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
+        f.write(b"A" * 1024)
+        temp_file = f.name
+
+    try:
+        ota = ESP32WiFiOTA(temp_file, "192.168.1.1")
+        with patch("meshtastic.ota.OTA_PROGRESS_LOG_PERCENT_STEP", 0.0):
+            with pytest.raises(
+                ValueError, match="OTA_PROGRESS_LOG_PERCENT_STEP must be > 0"
+            ):
+                ota.update()
+        mock_socket_class.assert_not_called()
+    finally:
+        os.unlink(temp_file)
+
+
+@pytest.mark.unit
+def test_esp32_wifi_ota_init_rejects_empty_firmware() -> None:
+    """Constructor should fail fast for zero-byte firmware before OTA mode begins."""
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
+        temp_file = f.name
+
+    try:
+        with pytest.raises(OTAError, match="is empty"):
+            ESP32WiFiOTA(temp_file, "192.168.1.1")
+    finally:
+        os.unlink(temp_file)
+
+
+@pytest.mark.unit
+@patch("meshtastic.ota.socket.create_connection")
 def test_esp32_wifi_ota_update_with_progress_callback(
     mock_socket_class: MagicMock,
 ) -> None:
@@ -277,7 +448,7 @@ def test_esp32_wifi_ota_update_with_progress_callback(
 
 
 @pytest.mark.unit
-@patch("meshtastic.ota.socket.socket")
+@patch("meshtastic.ota.socket.create_connection")
 def test_esp32_wifi_ota_update_device_error_on_start(
     mock_socket_class: MagicMock,
 ) -> None:
@@ -303,7 +474,7 @@ def test_esp32_wifi_ota_update_device_error_on_start(
 
 
 @pytest.mark.unit
-@patch("meshtastic.ota.socket.socket")
+@patch("meshtastic.ota.socket.create_connection")
 def test_esp32_wifi_ota_update_device_error_on_finish(
     mock_socket_class: MagicMock,
 ) -> None:
@@ -332,7 +503,7 @@ def test_esp32_wifi_ota_update_device_error_on_finish(
 
 
 @pytest.mark.unit
-@patch("meshtastic.ota.socket.socket")
+@patch("meshtastic.ota.socket.create_connection")
 def test_esp32_wifi_ota_update_socket_cleanup_on_error(
     mock_socket_class: MagicMock,
 ) -> None:
@@ -347,10 +518,13 @@ def test_esp32_wifi_ota_update_socket_cleanup_on_error(
 
         ota = ESP32WiFiOTA(temp_file, "192.168.1.1")
 
-        # Simulate connection error
-        mock_socket.connect.side_effect = ConnectionRefusedError("Connection refused")
+        # Simulate transport error during send after connection creation.
+        mock_socket.sendall.side_effect = ConnectionRefusedError("Connection refused")
 
-        with pytest.raises(ConnectionRefusedError):
+        with pytest.raises(
+            OTATransportError,
+            match=r"OTA transport to 192\.168\.1\.1:3232 failed",
+        ):
             ota.update()
 
         # Verify socket was closed even on error
@@ -362,12 +536,12 @@ def test_esp32_wifi_ota_update_socket_cleanup_on_error(
 
 
 @pytest.mark.unit
-@patch("meshtastic.ota.socket.socket")
+@patch("meshtastic.ota.socket.create_connection")
 def test_esp32_wifi_ota_update_large_firmware(mock_socket_class: MagicMock) -> None:
     """Test update() correctly chunks large firmware files."""
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
-        # Create a file larger than chunk_size (1024)
-        test_data = b"B" * 3000
+        # Create a payload that always spans multiple OTA chunks.
+        test_data = b"B" * (OTA_CHUNK_SIZE_BYTES * 3 + 17)
         f.write(test_data)
         temp_file = f.name
 
@@ -386,23 +560,30 @@ def test_esp32_wifi_ota_update_large_firmware(mock_socket_class: MagicMock) -> N
             ota.update()
 
             # Verify that all data was sent in chunks
-            # 3000 bytes should be sent in ~3 chunks of 1024 bytes
+            # Payload should be split across multiple OTA-sized chunks.
             sendall_calls = [
                 call
                 for call in mock_socket.sendall.call_args_list
                 if call[0][0]
                 != f"OTA {len(test_data)} {ota.hash_hex()}\n".encode("utf-8")
             ]
-            # Calculate total data sent (excluding the start command)
-            total_sent = sum(len(call[0][0]) for call in sendall_calls)
-            assert total_sent == len(test_data)
+            expected_chunk_count = (
+                len(test_data) + OTA_CHUNK_SIZE_BYTES - 1
+            ) // OTA_CHUNK_SIZE_BYTES
+            expected_last_size = len(test_data) % OTA_CHUNK_SIZE_BYTES
+            if expected_last_size == 0:
+                expected_last_size = OTA_CHUNK_SIZE_BYTES
+            assert len(sendall_calls) == expected_chunk_count
+            for send_call in sendall_calls[:-1]:
+                assert len(send_call.args[0]) == OTA_CHUNK_SIZE_BYTES
+            assert len(sendall_calls[-1].args[0]) == expected_last_size
 
     finally:
         os.unlink(temp_file)
 
 
 @pytest.mark.unit
-@patch("meshtastic.ota.socket.socket")
+@patch("meshtastic.ota.socket.create_connection")
 def test_esp32_wifi_ota_update_unexpected_response_warning(
     mock_socket_class: MagicMock, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -435,7 +616,7 @@ def test_esp32_wifi_ota_update_unexpected_response_warning(
 
 
 @pytest.mark.unit
-@patch("meshtastic.ota.socket.socket")
+@patch("meshtastic.ota.socket.create_connection")
 def test_esp32_wifi_ota_update_unexpected_final_response(
     mock_socket_class: MagicMock, caplog: pytest.LogCaptureFixture
 ) -> None:

@@ -2,7 +2,7 @@
 
 import re
 import threading
-from typing import cast
+from typing import Any, cast
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -192,8 +192,11 @@ def test_TCPInterface_write_reraises_socket_errors() -> None:
 
 
 @pytest.mark.unit
-def test_TCPInterface_write_normalizes_select_value_error_to_oserror() -> None:
-    """_write_bytes should normalize select ValueError into OSError after cleanup."""
+@pytest.mark.parametrize("select_error", [ValueError, TypeError])
+def test_TCPInterface_write_normalizes_select_error_to_oserror(
+    select_error: type[Exception],
+) -> None:
+    """_write_bytes should normalize select readiness errors into OSError after cleanup."""
     with patch("socket.socket"):
         iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
         try:
@@ -203,13 +206,36 @@ def test_TCPInterface_write_normalizes_select_value_error_to_oserror() -> None:
             with (
                 patch(
                     "meshtastic.tcp_interface.select.select",
-                    side_effect=ValueError("bad file descriptor"),
+                    side_effect=select_error("bad file descriptor"),
                 ),
                 pytest.raises(OSError, match="bad file descriptor"),
             ):
                 iface._write_bytes(b"abc")
 
+            mock_socket.close.assert_called_once()
             assert iface.socket is None
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+def test_TCPInterface_write_propagates_invalid_payload_type() -> None:
+    """_write_bytes should not treat caller payload type errors as socket failures."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            mock_socket = MagicMock()
+            iface.socket = mock_socket
+
+            with (
+                patch("meshtastic.tcp_interface.select.select") as select_mock,
+                pytest.raises(TypeError, match="a bytes-like object is required"),
+            ):
+                iface._write_bytes(cast(Any, "abc"))
+
+            select_mock.assert_not_called()
+            mock_socket.close.assert_not_called()
+            assert iface.socket is mock_socket
         finally:
             iface.close()
 
@@ -259,6 +285,134 @@ def test_TCPInterface_read_empty_does_not_reconnect_when_closing() -> None:
             mock_start_config.assert_not_called()
             mock_sleep.assert_not_called()
             mock_socket.close.assert_called_once()
+            assert iface.socket is None
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("recv_error", [OSError, ConnectionResetError])
+def test_TCPInterface_read_error_triggers_reconnect_cleanup(
+    recv_error: type[OSError],
+) -> None:
+    """_read_bytes should treat recv errors as a dead socket and attempt reconnect."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            mock_socket = MagicMock()
+            mock_socket.recv.side_effect = recv_error("bad file descriptor")
+            iface.socket = mock_socket
+
+            with patch.object(iface, "_attempt_reconnect") as reconnect_mock:
+                data = iface._read_bytes(1)
+
+            assert data == b""
+            reconnect_mock.assert_called_once_with()
+            mock_socket.close.assert_called_once()
+            assert iface.socket is None
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("recv_error_type", "message"),
+    [
+        pytest.param(TypeError, "fd is None", id="type-error"),
+        pytest.param(
+            ValueError,
+            "file descriptor cannot be a negative integer (-1)",
+            id="value-error",
+        ),
+    ],
+)
+def test_TCPInterface_read_fd_race_errors_trigger_reconnect_cleanup(
+    recv_error_type: type[Exception],
+    message: str,
+) -> None:
+    """Valid read requests should treat fd-state race errors as dead sockets."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            mock_socket = MagicMock()
+            mock_socket.recv.side_effect = recv_error_type(message)
+            iface.socket = mock_socket
+
+            with patch.object(iface, "_attempt_reconnect") as reconnect_mock:
+                data = iface._read_bytes(1)
+
+            assert data == b""
+            reconnect_mock.assert_called_once_with()
+            mock_socket.close.assert_called_once()
+            assert iface.socket is None
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+def test_TCPInterface_read_propagates_invalid_length_type() -> None:
+    """_read_bytes should reject caller length-type errors before socket recv."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            mock_socket = MagicMock()
+            iface.socket = mock_socket
+
+            with (
+                patch.object(iface, "_attempt_reconnect") as reconnect_mock,
+                pytest.raises(ValueError, match="length must be a positive int"),
+            ):
+                iface._read_bytes(cast(Any, "1"))
+
+            reconnect_mock.assert_not_called()
+            mock_socket.recv.assert_not_called()
+            mock_socket.close.assert_not_called()
+            assert iface.socket is mock_socket
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("invalid_length", [0, -1])
+def test_TCPInterface_read_rejects_non_positive_length(invalid_length: int) -> None:
+    """_read_bytes should fail fast for zero/negative lengths."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            mock_socket = MagicMock()
+            iface.socket = mock_socket
+
+            with (
+                patch.object(iface, "_attempt_reconnect") as reconnect_mock,
+                pytest.raises(ValueError, match="length must be a positive int"),
+            ):
+                iface._read_bytes(invalid_length)
+
+            reconnect_mock.assert_not_called()
+            mock_socket.recv.assert_not_called()
+            mock_socket.close.assert_not_called()
+            assert iface.socket is mock_socket
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("invalid_length", [0, -1, True])
+def test_TCPInterface_read_rejects_invalid_length_when_socket_missing(
+    invalid_length: object,
+) -> None:
+    """Invalid lengths should raise before reconnect logic even when socket is missing."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            iface.socket = None
+            with (
+                patch.object(iface, "_attempt_reconnect") as reconnect_mock,
+                pytest.raises(ValueError, match="length must be a positive int"),
+            ):
+                iface._read_bytes(cast(Any, invalid_length))
+
+            reconnect_mock.assert_not_called()
             assert iface.socket is None
         finally:
             iface.close()

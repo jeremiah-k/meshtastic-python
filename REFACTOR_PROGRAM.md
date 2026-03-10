@@ -410,3 +410,19 @@ The following items are complete in this PR branch:
 Still intentionally pending as follow-up work:
 
 - full dependency refresh and advisory remediation workstream described above.
+
+## 17) Hardening Design Decisions
+
+This section now keeps only durable rationale from the hardening stream:
+
+- BLE connection publication remains lock-order aware, with final ownership
+  verification before connected-state publication.
+- OTA hardening emphasizes deterministic firmware/session validation and
+  transport error normalization through `OTAError`.
+- Host/port parser and smoke-runner validation continue to fail fast on invalid
+  operator input.
+- Optional backend loading stays lazy to keep base import/test paths
+  deterministic without optional hardware dependencies.
+
+Validation and review-execution policy in this document should remain durable.
+Time-bound run history and per-cycle triage belong in PR discussion and CI artifacts.

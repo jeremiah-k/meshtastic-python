@@ -115,7 +115,9 @@ To run the `meshtasticd` simulator integration lane locally (same flow as CI):
 ```
 
 This requires Docker and runs stable daemon-focused integration tests in
-`meshtastic/tests/test_meshtasticd_ci.py` against a simulated localhost daemon.
+`meshtastic/tests/test_meshtasticd_ci.py` and
+`meshtastic/tests/test_meshtasticd_tcp_interface_ci.py` against a simulated
+localhost daemon.
 
 To run the dual-daemon integration lane locally (Linux only; channel
 blueprint/export reuse and admin checks across two simulator instances):
@@ -137,6 +139,28 @@ MESHTASTICD_PYTEST_TARGETS="meshtastic/tests/test_smokevirt.py" \
 MESHTASTICD_PYTEST_MARK_EXPR="smokevirt and not smoke1_destructive" \
 ./bin/run-smokevirt-with-meshtasticd.sh
 ```
+
+For hardware-backed serial smoke tests (`meshtastic/tests/test_smoke1.py`):
+
+```bash
+make smoke1
+```
+
+This runs only the stable non-destructive smoke1 lane (`smoke1 and not
+smoke1_destructive`).
+
+To run the destructive lane (reboot/factory reset/config mutation checks):
+
+> Warning: `make smoke1-destructive` reboots the attached device, mutates
+> configuration, and can factory-reset the node. Run this only on disposable
+> test hardware, or export/backup the device configuration first.
+
+```bash
+make smoke1-destructive
+```
+
+See [smoke1 firmware compatibility matrix](SMOKE1_FIRMWARE_COMPATIBILITY_MATRIX.md)
+for current firmware/CLI expectations and known behavior differences.
 
 For stricter type checking (optional, not required by CI):
 

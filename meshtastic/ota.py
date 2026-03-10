@@ -2,7 +2,6 @@
 
 import hashlib
 import logging
-import os
 import socket
 from typing import Callable, Protocol
 
@@ -10,6 +9,14 @@ logger = logging.getLogger(__name__)
 OTA_SOCKET_TIMEOUT_SECONDS = 15
 OTA_CHUNK_SIZE_BYTES = 1024
 FILE_HASH_READ_CHUNK_SIZE_BYTES = 4096
+OTA_PROGRESS_LOG_PERCENT_STEP: float = 5.0
+MISSING_FIRMWARE_ERROR: str = "Firmware file {filename} does not exist"
+EMPTY_FIRMWARE_ERROR: str = "Firmware file {filename} is empty"
+READ_FIRMWARE_ERROR: str = "Unable to read firmware file {filename}: {error}"
+FIRMWARE_CHANGED_ERROR: str = (
+    "Firmware file {filename} changed after OTA session initialization."
+)
+OTA_TRANSPORT_ERROR: str = "OTA transport to {host}:{port} failed: {error}"
 
 
 class _SHA256Digest(Protocol):
@@ -29,8 +36,10 @@ def _file_sha256(filename: str) -> _SHA256Digest:
     """Calculate SHA256 hash of a file."""
     sha256_hash = hashlib.sha256()
 
-    with open(filename, "rb") as f:
-        for byte_block in iter(lambda: f.read(FILE_HASH_READ_CHUNK_SIZE_BYTES), b""):
+    with open(filename, "rb") as firmware:
+        for byte_block in iter(
+            lambda: firmware.read(FILE_HASH_READ_CHUNK_SIZE_BYTES), b""
+        ):
             sha256_hash.update(byte_block)
 
     return sha256_hash
@@ -38,6 +47,10 @@ def _file_sha256(filename: str) -> _SHA256Digest:
 
 class OTAError(Exception):
     """Exception for OTA errors."""
+
+
+class OTATransportError(OTAError):
+    """Retryable OTA transport exception (connect/send/read socket failures)."""
 
 
 class ESP32WiFiOTA:
@@ -49,10 +62,41 @@ class ESP32WiFiOTA:
         self._port = port
         self._socket: socket.socket | None = None
 
-        if not os.path.exists(self._filename):
-            raise FileNotFoundError(f"File {self._filename} does not exist")
+        self._file_bytes: bytes = b""
+        self._size = 0
+        self._file_hash: _SHA256Digest = hashlib.sha256()
+        self._refresh_firmware_metadata()
 
-        self._file_hash: _SHA256Digest = _file_sha256(self._filename)
+    def _refresh_firmware_metadata(self) -> tuple[int, _SHA256Digest]:
+        """Refresh cached firmware size/hash from disk and validate non-empty file.
+
+        Returns
+        -------
+        tuple[int, _SHA256Digest]
+            The firmware size in bytes and corresponding SHA-256 digest.
+        """
+        image = bytearray()
+        file_hash = hashlib.sha256()
+        try:
+            with open(self._filename, "rb") as firmware:
+                for block in iter(
+                    lambda: firmware.read(FILE_HASH_READ_CHUNK_SIZE_BYTES), b""
+                ):
+                    image.extend(block)
+                    file_hash.update(block)
+        except FileNotFoundError as exc:
+            raise OTAError(MISSING_FIRMWARE_ERROR.format(filename=self._filename)) from exc
+        except OSError as exc:
+            raise OTAError(
+                READ_FIRMWARE_ERROR.format(filename=self._filename, error=exc)
+            ) from exc
+        size = len(image)
+        if size == 0:
+            raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
+        self._file_bytes = bytes(image)
+        self._size = size
+        self._file_hash = file_hash
+        return size, file_hash
 
     def _read_line(self) -> str:
         """Read a line from the socket."""
@@ -97,25 +141,34 @@ class ESP32WiFiOTA:
         ----------
         progress_callback : Callable[[int, int], None] | None, optional
             Callback invoked with ``(bytes_sent, total_bytes)`` during transfer.
-            When not provided, progress is printed to stdout.
+            When not provided, progress is logged at INFO in coarse increments.
         """
-        size = os.path.getsize(self._filename)
+        firmware_image = memoryview(self._file_bytes)
+        size = self._size
+        file_hash = self._file_hash
+        if size == 0:
+            raise OTAError(EMPTY_FIRMWARE_ERROR.format(filename=self._filename))
+
+        if OTA_PROGRESS_LOG_PERCENT_STEP <= 0:
+            raise ValueError("OTA_PROGRESS_LOG_PERCENT_STEP must be > 0")
+        next_progress_log_percent = OTA_PROGRESS_LOG_PERCENT_STEP
 
         logger.info(
             "Starting OTA update with %s (%d bytes, hash %s)",
             self._filename,
             size,
-            self.hashHex(),
+            file_hash.hexdigest(),
         )
 
-        self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._socket.settimeout(OTA_SOCKET_TIMEOUT_SECONDS)
         try:
-            self._socket.connect((self._hostname, self._port))
+            self._socket = socket.create_connection(
+                (self._hostname, self._port),
+                timeout=OTA_SOCKET_TIMEOUT_SECONDS,
+            )
             logger.debug("Connected to %s:%d", self._hostname, self._port)
 
             # Send start command
-            self._socket.sendall(f"OTA {size} {self.hashHex()}\n".encode("utf-8"))
+            self._socket.sendall(f"OTA {size} {file_hash.hexdigest()}\n".encode())
 
             # Wait for OK from the device
             while True:
@@ -130,26 +183,28 @@ class ESP32WiFiOTA:
                 else:
                     logger.warning("Unexpected response: %s", response)
 
-            # Stream firmware
             sent_bytes = 0
-            with open(self._filename, "rb") as f:
-                while True:
-                    chunk = f.read(OTA_CHUNK_SIZE_BYTES)
-                    if not chunk:
-                        break
-                    self._socket.sendall(chunk)
-                    sent_bytes += len(chunk)
+            for offset in range(0, size, OTA_CHUNK_SIZE_BYTES):
+                chunk = firmware_image[offset : offset + OTA_CHUNK_SIZE_BYTES]
+                self._socket.sendall(chunk)
+                sent_bytes += len(chunk)
 
-                    if progress_callback:
-                        progress_callback(sent_bytes, size)
-                    else:
-                        print(
-                            f"[{sent_bytes / size * 100:5.1f}%] Sent {sent_bytes} of {size} bytes...",
-                            end="\r",
+                if progress_callback is not None:
+                    progress_callback(sent_bytes, size)
+                else:
+                    progress_percent = sent_bytes / size * 100
+                    if (
+                        sent_bytes == size
+                        or progress_percent >= next_progress_log_percent
+                    ):
+                        logger.info(
+                            "OTA progress: %.1f%% (%d/%d bytes)",
+                            progress_percent,
+                            sent_bytes,
+                            size,
                         )
-
-            if not progress_callback:
-                print()
+                        while next_progress_log_percent <= progress_percent:
+                            next_progress_log_percent += OTA_PROGRESS_LOG_PERCENT_STEP
 
             # Wait for OK from device
             logger.info("Firmware sent, waiting for verification...")
@@ -163,7 +218,14 @@ class ESP32WiFiOTA:
                     raise OTAError(f"OTA update failed: {response}")
                 elif response != "ACK":
                     logger.warning("Unexpected final response: %s", response)
-
+        except (ConnectionError, OSError) as exc:
+            raise OTATransportError(
+                OTA_TRANSPORT_ERROR.format(
+                    host=self._hostname,
+                    port=self._port,
+                    error=exc,
+                )
+            ) from exc
         finally:
             if self._socket:
                 self._socket.close()

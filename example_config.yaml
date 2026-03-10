@@ -2,7 +2,7 @@
 owner: Bob TBeam
 owner_short: BOB
 
-channel_url: https://www.meshtastic.org/e/#CgMSAQESCDgBQANIAVAe
+channel_url: https://meshtastic.org/e/#CgMSAQESCDgBQANIAVAe
 
 canned_messages: Hi|Bye|Yes|No|Ok
 ringtone: 24:d=32,o=5,b=565:f6,p,f6,4p,p,f6,p,f6,2p,p,b6,p,b6,p,b6,p,b6,p,b,p,b,p,b,p,b,p,b,p,b,p,b,p,b,1p.,2p.,p
@@ -15,32 +15,31 @@ location:
 config:
   bluetooth:
     enabled: true
-    fixedPin: 123456
   device:
-    serialEnabled: true
+    serial_enabled: true
   display:
-    screenOnSecs: 600
+    screen_on_secs: 600
   lora:
     region: US
-    hopLimit: 3
-    txEnabled: true
-    txPower: 30
+    hop_limit: 3
+    tx_enabled: true
+    tx_power: 30
   network:
-    ntpServer: 0.pool.ntp.org
+    ntp_server: 0.pool.ntp.org
   position:
-    gpsAttemptTime: 900
-    gpsEnabled: true
-    gpsUpdateInterval: 120
-    positionBroadcastSecs: 900
-    positionBroadcastSmartEnabled: true
-    positionFlags: 3
+    gps_attempt_time: 900
+    gps_enabled: true
+    gps_update_interval: 120
+    position_broadcast_secs: 900
+    position_broadcast_smart_enabled: true
+    position_flags: 3
   power:
-    lsSecs: 300
-    meshSdsTimeoutSecs: 7200
-    minWakeSecs: 10
-    sdsSecs: 4294967295
+    wait_bluetooth_secs: 60
+    ls_secs: 300
+    min_wake_secs: 10
+    sds_secs: 4294967295 # UINT32_MAX disables super deep sleep
 
 module_config:
   telemetry:
-    deviceUpdateInterval: 900
-    environmentUpdateInterval: 900
+    device_update_interval: 900
+    environment_update_interval: 900

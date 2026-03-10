@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, cast
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, call, mock_open, patch
 
 import pytest
 import yaml
@@ -43,11 +43,15 @@ from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 
 # from ..radioconfig_pb2 import UserPreferences
 # import meshtastic.config_pb2
+from ..ota import OTAError, OTATransportError
 from ..serial_interface import SerialInterface
 from ..tcp_interface import TCPInterface
 
 # from ..remote_hardware import onGPIOreceive
 # from ..config_pb2 import Config
+
+SDS_DISABLED_SENTINEL: int = 4_294_967_295
+MAIN_LOCAL_ADDR: str = cast(str, main_module.__dict__["LOCAL_ADDR"])
 
 
 def _mock_sendText_helper(
@@ -1331,6 +1335,35 @@ def test_main_removeposition_remote(capsys: pytest.CaptureFixture[str]) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_main_removeposition_local_dest_waits_for_ack_and_uses_local_dest(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Explicit ^local destinations should still use the normal ACK wait flow."""
+    sys.argv = ["", "--remove-position", "--dest", MAIN_LOCAL_ADDR]
+    mt_config.args = sys.argv  # type: ignore[assignment]
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    # Keep assertion anchored to the interface-level waiter contract.
+    iface.getNode.return_value.iface = iface
+    waiter = iface.waitForAckNak
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        main()
+        out, err = capsys.readouterr()
+        assert "Connected to radio" in out
+        assert "Removing fixed position and disabling fixed position setting" in out
+        assert "Waiting for an acknowledgment from remote node" in out
+        assert err == ""
+    waiter.assert_called_once()
+    assert any(
+        (call_args.args and call_args.args[0] == MAIN_LOCAL_ADDR)
+        or call_args.kwargs.get("dest") == MAIN_LOCAL_ADDR
+        for call_args in iface.getNode.call_args_list
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_main_setlat_remote(capsys: pytest.CaptureFixture[str]) -> None:
     """Test --setlat with a remote dest."""
     sys.argv = ["", "--setlat", "37.5", "--dest", "!12345678"]
@@ -1581,6 +1614,7 @@ def test_main_set_valid_wifi_psk(
     _mocked_open: Any,
     _mocked_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Test --set with valid field."""
     sys.argv = ["", "--set", "network.wifi_psk", "123456789"]
@@ -1590,13 +1624,17 @@ def test_main_set_valid_wifi_psk(
         anode = Node(serialInterface, 1234567890, noProto=True)
         serialInterface.localNode = anode
 
-        with patch(
-            "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
-        ) as mo:
-            main()
+        with caplog.at_level(logging.INFO):
+            with patch(
+                "meshtastic.serial_interface.SerialInterface",
+                return_value=serialInterface,
+            ) as mo:
+                main()
             out, err = capsys.readouterr()
             assert re.search(r"Connected to radio", out, re.MULTILINE)
-            assert re.search(r"Set network.wifi_psk to 123456789", out, re.MULTILINE)
+            assert re.search(r"Set network\.wifi_psk to <redacted>", out, re.MULTILINE)
+            assert "123456789" not in out
+            assert "123456789" not in caplog.text
             assert err == ""
             mo.assert_called()
 
@@ -1670,6 +1708,56 @@ def test_main_set_invalid_wifi_psk(
             )
             assert err == ""
             mo.assert_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_get_pref_redacts_security_private_key(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """getPref() should redact secret-bearing security values in field reads."""
+    node = SimpleNamespace(
+        localConfig=localonly_pb2.LocalConfig(),
+        moduleConfig=localonly_pb2.LocalModuleConfig(),
+        requestConfig=MagicMock(),
+    )
+    private_key = bytes(range(32))
+    node.localConfig.security.private_key = private_key
+
+    assert main_module.getPref(node, "security.private_key") is True
+    out, err = capsys.readouterr()
+    assert "security.private_key: <redacted>" in out
+    assert base64.b64encode(private_key).decode("utf-8") not in out
+    assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_get_pref_redacts_security_section_values(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Whole-field getPref() reads should redact secret values in each printed field."""
+    node = SimpleNamespace(
+        localConfig=localonly_pb2.LocalConfig(),
+        moduleConfig=localonly_pb2.LocalModuleConfig(),
+        requestConfig=MagicMock(),
+    )
+    private_key = bytes(range(32))
+    public_key = bytes(range(32, 64))
+    admin_key = bytes(range(64, 96))
+    node.localConfig.security.private_key = private_key
+    node.localConfig.security.public_key = public_key
+    node.localConfig.security.admin_key.append(admin_key)
+
+    assert main_module.getPref(node, "security") is True
+    out, err = capsys.readouterr()
+    assert "security.private_key: <redacted>" in out
+    assert "security.public_key: <redacted>" in out
+    assert re.search(r"security\.admin_key:.*<redacted>", out)
+    assert base64.b64encode(private_key).decode("utf-8") not in out
+    assert base64.b64encode(public_key).decode("utf-8") not in out
+    assert base64.b64encode(admin_key).decode("utf-8") not in out
+    assert err == ""
 
 
 @pytest.mark.unit
@@ -1963,7 +2051,12 @@ def test_main_configure_applies_mixed_case_and_security_encodings(
                         "use12HClock": True,
                         "screenOnSecs": 66,
                     },
-                    "power": {"lsSecs": 222},
+                    "power": {
+                        "lsSecs": 222,
+                        "waitBluetoothSecs": 77,
+                        "minWakeSecs": 11,
+                        "sdsSecs": SDS_DISABLED_SENTINEL,
+                    },
                     "security": {
                         "privateKey": f"base64:{base64.b64encode(private_key).decode()}",
                         "public_key": "0x" + public_key.hex(),
@@ -1995,6 +2088,9 @@ def test_main_configure_applies_mixed_case_and_security_encodings(
     assert target_local.display.use_12h_clock is True
     assert target_local.display.screen_on_secs == 66
     assert target_local.power.ls_secs == 222
+    assert target_local.power.wait_bluetooth_secs == 77
+    assert target_local.power.min_wake_secs == 11
+    assert target_local.power.sds_secs == SDS_DISABLED_SENTINEL
     assert target_local.security.private_key == private_key
     assert target_local.security.public_key == public_key
     assert list(target_local.security.admin_key) == [admin_key_1, admin_key_2]
@@ -2004,6 +2100,46 @@ def test_main_configure_applies_mixed_case_and_security_encodings(
     write_sections = [call.args[0] for call in target_node.writeConfig.call_args_list]
     for required in ("bluetooth", "display", "power", "security", "telemetry"):
         assert required in write_sections
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_applies_power_snake_case_keys(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test --configure applies canonical snake_case power keys directly."""
+    config_path = tmp_path / "power-snake-case.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "config": {
+                    "power": {
+                        "ls_secs": 222,
+                        "wait_bluetooth_secs": 77,
+                        "min_wake_secs": 11,
+                        "sds_secs": SDS_DISABLED_SENTINEL,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    target_local = localonly_pb2.LocalConfig()
+    iface, target_node = _build_configure_interface(
+        target_local, localonly_pb2.LocalModuleConfig()
+    )
+    _run_main_configure_file(config_path, iface, monkeypatch)
+
+    assert target_local.power.ls_secs == 222
+    assert target_local.power.wait_bluetooth_secs == 77
+    assert target_local.power.min_wake_secs == 11
+    assert target_local.power.sds_secs == SDS_DISABLED_SENTINEL
+    target_node.writeConfig.assert_called_once_with("power")
+    target_node.commitSettingsTransaction.assert_called_once_with()
+    assert target_node.method_calls.index(call.writeConfig("power")) < (
+        target_node.method_calls.index(call.commitSettingsTransaction())
+    )
 
 
 @pytest.mark.unit
@@ -4408,6 +4544,33 @@ def test_main_ota_update_requires_tcp_interface(
     assert excinfo.value.code == 1
 
 
+def _make_fake_tcp_interface(
+    *,
+    get_node: Callable[..., Any] | None = None,
+    on_close: Callable[[], None] | None = None,
+) -> type[object]:
+    """Return a configurable TCPInterface test double with context-manager behavior."""
+
+    class _FakeTCPInterface:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            self.hostname = "localhost"
+            if get_node is not None:
+                self.getNode = get_node
+
+        def __enter__(self) -> "_FakeTCPInterface":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            self.close()
+
+        def close(self) -> None:
+            """Provide TCPInterface-compatible cleanup hook for test patches."""
+            if on_close is not None:
+                on_close()
+
+    return _FakeTCPInterface
+
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_ota_update_retries_then_exits(
@@ -4418,28 +4581,17 @@ def test_main_ota_update_retries_then_exits(
     mt_config.args = cast(Any, sys.argv)
 
     node = MagicMock(autospec=Node)
-
-    class _FakeTCPInterface:
-        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
-            self.hostname = "localhost"
-
-        def __enter__(self) -> "_FakeTCPInterface":
-            return self
-
-        def __exit__(self, *_args: Any) -> None:
-            return None
-
-        @staticmethod
-        def getNode(*_args: Any, **_kwargs: Any) -> MagicMock:
-            """Return the mocked node used by this OTA retry test."""
-            return node
+    get_node = MagicMock(return_value=node)
 
     ota = MagicMock()
     ota.hash_bytes.return_value = b"\x01\x02"
-    ota.update.side_effect = RuntimeError("boom")
+    ota.update.side_effect = OTATransportError("boom")
 
     with (
-        patch("meshtastic.tcp_interface.TCPInterface", _FakeTCPInterface),
+        patch(
+            "meshtastic.tcp_interface.TCPInterface",
+            _make_fake_tcp_interface(get_node=get_node),
+        ),
         patch("meshtastic.ota.ESP32WiFiOTA", return_value=ota),
         patch("meshtastic.__main__.time.sleep") as sleep_mock,
         pytest.raises(SystemExit) as excinfo,
@@ -4449,8 +4601,64 @@ def test_main_ota_update_retries_then_exits(
     _, err = capsys.readouterr()
     assert "OTA update failed: boom" in err
     assert excinfo.value.code == 1
-    assert ota.update.call_count == 5
-    assert any(call.args == (2,) for call in sleep_mock.call_args_list)
+    assert ota.update.call_count == main_module.OTA_MAX_RETRIES
+    assert any(
+        (
+            call_args.args
+            and call_args.args[0] == MAIN_LOCAL_ADDR
+            and call_args.kwargs.get("requestChannels") is False
+        )
+        or call_args.kwargs.get("dest") == MAIN_LOCAL_ADDR
+        for call_args in get_node.call_args_list
+    )
+    assert sleep_mock.call_args_list == [
+        call(main_module.OTA_REBOOT_WAIT_SECONDS),
+        *[call(main_module.OTA_RETRY_DELAY_SECONDS)]
+        * (main_module.OTA_MAX_RETRIES - 1),
+    ]
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_ota_update_fails_fast_on_non_transport_error(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--ota-update should not retry deterministic OTA errors."""
+    sys.argv = ["", "--host", "localhost", "--ota-update", "firmware.bin"]
+    mt_config.args = cast(Any, sys.argv)
+
+    node = MagicMock(autospec=Node)
+    get_node = MagicMock(return_value=node)
+
+    ota = MagicMock()
+    ota.hash_bytes.return_value = b"\x01\x02"
+    ota.update.side_effect = OTAError("deterministic")
+
+    with (
+        patch(
+            "meshtastic.tcp_interface.TCPInterface",
+            _make_fake_tcp_interface(get_node=get_node),
+        ),
+        patch("meshtastic.ota.ESP32WiFiOTA", return_value=ota),
+        patch("meshtastic.__main__.time.sleep") as sleep_mock,
+        pytest.raises(SystemExit) as excinfo,
+    ):
+        main()
+
+    _, err = capsys.readouterr()
+    assert "OTA update failed: deterministic" in err
+    assert excinfo.value.code == 1
+    ota.update.assert_called_once()
+    assert any(
+        (
+            call_args.args
+            and call_args.args[0] == MAIN_LOCAL_ADDR
+            and call_args.kwargs.get("requestChannels") is False
+        )
+        or call_args.kwargs.get("dest") == MAIN_LOCAL_ADDR
+        for call_args in get_node.call_args_list
+    )
+    assert sleep_mock.call_args_list == [call(main_module.OTA_REBOOT_WAIT_SECONDS)]
 
 
 @pytest.mark.unit
@@ -4463,32 +4671,17 @@ def test_main_ota_update_succeeds_and_prints_completion(
     mt_config.args = cast(Any, sys.argv)
 
     node = MagicMock(autospec=Node)
-
-    class _FakeTCPInterface:
-        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
-            self.hostname = "localhost"
-
-        def __enter__(self) -> "_FakeTCPInterface":
-            return self
-
-        def __exit__(self, *_args: Any) -> None:
-            return None
-
-        def close(self) -> None:
-            """No-op close used by onConnected cleanup path."""
-            return None
-
-        @staticmethod
-        def getNode(*_args: Any, **_kwargs: Any) -> MagicMock:
-            """Return the mocked node used by this OTA success test."""
-            return node
+    get_node = MagicMock(return_value=node)
 
     ota = MagicMock()
     ota.hash_bytes.return_value = b"\x01\x02"
     ota.update.return_value = None
 
     with (
-        patch("meshtastic.tcp_interface.TCPInterface", _FakeTCPInterface),
+        patch(
+            "meshtastic.tcp_interface.TCPInterface",
+            _make_fake_tcp_interface(get_node=get_node),
+        ),
         patch("meshtastic.ota.ESP32WiFiOTA", return_value=ota),
         patch("meshtastic.__main__.time.sleep") as sleep_mock,
     ):
@@ -4498,8 +4691,112 @@ def test_main_ota_update_succeeds_and_prints_completion(
     assert "OTA update completed successfully!" in out
     assert err == ""
     assert ota.update.call_count == 1
+    assert any(
+        (
+            call_args.args
+            and call_args.args[0] == MAIN_LOCAL_ADDR
+            and call_args.kwargs.get("requestChannels") is False
+        )
+        or call_args.kwargs.get("dest") == MAIN_LOCAL_ADDR
+        for call_args in get_node.call_args_list
+    )
     node.startOTA.assert_called_once()
-    assert any(call.args == (5,) for call in sleep_mock.call_args_list)
+    assert sleep_mock.call_args_list == [call(main_module.OTA_REBOOT_WAIT_SECONDS)]
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_ota_update_rejects_remote_dest(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--ota-update should fail fast when --dest targets a non-local node."""
+    sys.argv = [
+        "",
+        "--host",
+        "localhost",
+        "--dest",
+        "!abcd1234",
+        "--ota-update",
+        "firmware.bin",
+    ]
+    mt_config.args = cast(Any, sys.argv)
+
+    with (
+        patch("meshtastic.tcp_interface.TCPInterface", _make_fake_tcp_interface()),
+        patch("meshtastic.ota.ESP32WiFiOTA") as ota_cls,
+        pytest.raises(SystemExit) as excinfo,
+    ):
+        main()
+
+    _, err = capsys.readouterr()
+    assert (
+        "OTA update only supports the directly connected local node; omit --dest or use --dest ^local."
+        in err
+    )
+    assert excinfo.value.code == 1
+    ota_cls.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_ota_update_allows_explicit_local_dest(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--ota-update should allow explicit local destination targeting."""
+    sys.argv = [
+        "",
+        "--host",
+        "localhost",
+        "--dest",
+        MAIN_LOCAL_ADDR,
+        "--ota-update",
+        "firmware.bin",
+    ]
+    mt_config.args = cast(Any, sys.argv)
+
+    local_node = MagicMock(autospec=Node)
+    other_node = MagicMock(autospec=Node)
+
+    def _get_node(dest: object, *args: object, **kwargs: object) -> object:
+        request_channels = (
+            kwargs.get("requestChannels", True)
+            if "requestChannels" in kwargs
+            else (args[0] if args else True)
+        )
+        if dest == MAIN_LOCAL_ADDR and request_channels is False:
+            return local_node
+        return other_node
+
+    get_node = MagicMock(side_effect=_get_node)
+
+    ota = MagicMock()
+    ota.hash_bytes.return_value = b"\x01\x02"
+    ota.update.return_value = None
+
+    with (
+        patch(
+            "meshtastic.tcp_interface.TCPInterface",
+            _make_fake_tcp_interface(get_node=get_node),
+        ),
+        patch("meshtastic.ota.ESP32WiFiOTA", return_value=ota),
+        patch("meshtastic.__main__.time.sleep"),
+    ):
+        main()
+
+    out, err = capsys.readouterr()
+    assert "OTA update completed successfully!" in out
+    assert err == ""
+    local_node.startOTA.assert_called_once()
+    other_node.startOTA.assert_not_called()
+    ota.update.assert_called_once()
+    assert any(
+        recorded_call.args[:2] == (MAIN_LOCAL_ADDR, False)
+        or (
+            recorded_call.args[:1] == (MAIN_LOCAL_ADDR,)
+            and recorded_call.kwargs.get("requestChannels") is False
+        )
+        for recorded_call in get_node.call_args_list
+    )
 
 
 @pytest.mark.unit

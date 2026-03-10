@@ -6,12 +6,12 @@ import re
 logger = logging.getLogger("meshtastic.ble")
 
 # BLE Service and Characteristic UUIDs
-SERVICE_UUID = "6ba1b218-15a8-461f-9fa8-5dcae273eafd"
-TORADIO_UUID = "f75c76d2-129e-4dad-a1dd-7866124401e7"
-FROMRADIO_UUID = "2c55e69e-4993-11ed-b878-0242ac120002"
-FROMNUM_UUID = "ed9da18c-a800-4f66-a670-aa7547e34453"
-LEGACY_LOGRADIO_UUID = "6c6fd238-78fa-436b-aacf-15c5be1ef2e2"
-LOGRADIO_UUID = "5a3d6e49-06e6-4423-9944-e9de8cdf9547"
+SERVICE_UUID: str = "6ba1b218-15a8-461f-9fa8-5dcae273eafd"
+TORADIO_UUID: str = "f75c76d2-129e-4dad-a1dd-7866124401e7"
+FROMRADIO_UUID: str = "2c55e69e-4993-11ed-b878-0242ac120002"
+FROMNUM_UUID: str = "ed9da18c-a800-4f66-a670-aa7547e34453"
+LEGACY_LOGRADIO_UUID: str = "6c6fd238-78fa-436b-aacf-15c5be1ef2e2"
+LOGRADIO_UUID: str = "5a3d6e49-06e6-4423-9944-e9de8cdf9547"
 
 # Timeout constants
 DISCONNECT_TIMEOUT_SECONDS = 5.0
@@ -38,6 +38,7 @@ class BLEConfig:
     GATT_IO_TIMEOUT = 10.0
     NOTIFICATION_START_TIMEOUT: float | None = 10.0
     CONNECTION_TIMEOUT = 60.0
+    MANAGEMENT_AWAIT_TIMEOUT: float = 60.0
     EMPTY_READ_WARNING_COOLDOWN = 10.0
     AUTO_RECONNECT_INITIAL_DELAY = 1.0
     AUTO_RECONNECT_MAX_DELAY = 30.0
@@ -82,6 +83,7 @@ SERVICE_CHARACTERISTIC_RETRY_DELAY = BLEConfig.SERVICE_CHARACTERISTIC_RETRY_DELA
 GATT_IO_TIMEOUT = BLEConfig.GATT_IO_TIMEOUT
 NOTIFICATION_START_TIMEOUT = BLEConfig.NOTIFICATION_START_TIMEOUT
 CONNECTION_TIMEOUT = BLEConfig.CONNECTION_TIMEOUT
+MANAGEMENT_AWAIT_TIMEOUT: float = BLEConfig.MANAGEMENT_AWAIT_TIMEOUT
 EMPTY_READ_WARNING_COOLDOWN = BLEConfig.EMPTY_READ_WARNING_COOLDOWN
 AUTO_RECONNECT_INITIAL_DELAY = BLEConfig.AUTO_RECONNECT_INITIAL_DELAY
 AUTO_RECONNECT_MAX_DELAY = BLEConfig.AUTO_RECONNECT_MAX_DELAY
@@ -101,93 +103,140 @@ RECEIVE_RECOVERY_MAX_BACKOFF_SEC = BLEConfig.RECEIVE_RECOVERY_MAX_BACKOFF_SEC
 RECEIVE_RECOVERY_STABILITY_RESET_SEC = BLEConfig.RECEIVE_RECOVERY_STABILITY_RESET_SEC
 
 # Error message constants
-ERROR_TIMEOUT = "{0} timed out after {1:.1f} seconds"
-ERROR_MULTIPLE_DEVICES = (
+ERROR_TIMEOUT: str = "{0} timed out after {1:.1f} seconds"
+ERROR_MULTIPLE_DEVICES: str = (
     "Multiple Meshtastic BLE peripherals found matching '{0}'. Please specify one:\n{1}"
 )
-ERROR_MULTIPLE_DEVICES_DISCOVERY = (
+ERROR_MULTIPLE_DEVICES_DISCOVERY: str = (
     "Multiple Meshtastic BLE peripherals found. Please specify one:\n{0}"
 )
-ERROR_READING_BLE = "Error reading BLE"
-ERROR_NO_PERIPHERAL_FOUND = "No Meshtastic BLE peripheral with identifier or address '{0}' found. Try --ble-scan to find it."
+ERROR_READING_BLE: str = "Error reading BLE"
+ERROR_NO_PERIPHERAL_FOUND: str = (
+    "No Meshtastic BLE peripheral with identifier or address '{0}' found. Try --ble-scan to find it."
+)
 
-ERROR_WRITING_BLE = (
+ERROR_WRITING_BLE: str = (
     "Error writing BLE. This is often caused by missing Bluetooth "
     "permissions (e.g. not being in the 'bluetooth' group) or pairing issues "
     "(did you enter the pairing PIN on your computer?)."
 )
-ERROR_CONNECTION_FAILED = "Connection failed: {0}"
-ERROR_NO_PERIPHERALS_FOUND = (
+ERROR_CONNECTION_FAILED: str = "Connection failed: {0}"
+ERROR_NO_PERIPHERALS_FOUND: str = (
     "No Meshtastic BLE peripherals found. Try --ble-scan to find them."
 )
-ERROR_DISCOVERY_MANAGER_UNAVAILABLE = "Discovery manager not available"
-ERROR_ADDRESS_RESOLUTION_FAILED = "Address resolution failed, cannot create device"
-ERROR_INTERFACE_CLOSING = "Cannot connect while interface is closing"
-ERROR_CONNECTION_SUPPRESSED = "Connection suppressed: recently connected elsewhere"
-ERROR_NO_CLIENT_ESTABLISHED = "Connection failed: no BLE client established"
-CONNECTION_ERROR_EMPTY_ADDRESS = "Cannot connect: empty address provided"
-CONNECTION_ERROR_INVALIDATED_BY_CONCURRENT_DISCONNECT = (
+ERROR_DISCOVERY_MANAGER_UNAVAILABLE: str = "Discovery manager not available"
+ERROR_ADDRESS_RESOLUTION_FAILED: str = "Address resolution failed, cannot create device"
+ERROR_INTERFACE_CLOSING: str = "Cannot connect while interface is closing"
+ERROR_CONNECTION_SUPPRESSED: str = "Connection suppressed: recently connected elsewhere"
+ERROR_NO_CLIENT_ESTABLISHED: str = "Connection failed: no BLE client established"
+ERROR_MANAGEMENT_ADDRESS_EMPTY: str = "Management operations require a non-empty address."
+ERROR_MANAGEMENT_ADDRESS_REQUIRED: str = (
+    "Management operations require an explicit address when no device is connected."
+)
+ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID: str = (
+    "pair()/unpair() require a finite positive await_timeout to avoid blocking shutdown."
+)
+ERROR_MANAGEMENT_TARGET_CHANGED: str = (
+    "Management target changed while the operation was pending; retry with an explicit address."
+)
+ERROR_MANAGEMENT_CONNECTING: str = (
+    "Management operations are unavailable while a connection is in progress."
+)
+ERROR_INVALID_CONNECT_TIMEOUT: str = "invalid connect_timeout: {exc}"
+ERROR_TRUST_ADDRESS_NOT_RESOLVED: str = (
+    "Cannot trust device: {address!r} did not resolve to a BLE address."
+)
+ERROR_TRUST_INVALID_TIMEOUT: str = "Trust timeout must be a positive number of seconds."
+ERROR_TRUST_LINUX_ONLY: str = (
+    "trust() is only supported on Linux hosts via bluetoothctl."
+)
+ERROR_TRUST_BLUETOOTHCTL_MISSING: str = (
+    "Cannot trust device: bluetoothctl was not found."
+)
+ERROR_TRUST_COMMAND_TIMEOUT: str = (
+    "bluetoothctl trust timed out after {timeout:.1f}s for {address}"
+)
+ERROR_TRUST_COMMAND_FAILED: str = "bluetoothctl trust failed for {address}: {detail}"
+CONNECTION_ERROR_EMPTY_ADDRESS: str = "Cannot connect: empty address provided"
+CONNECTION_ERROR_INVALIDATED_BY_CONCURRENT_DISCONNECT: str = (
     "Connection invalidated by concurrent disconnect"
 )
-CONNECTION_ERROR_CLIENT_DISCONNECTED_DURING_FINALIZATION = (
+CONNECTION_ERROR_CLIENT_DISCONNECTED_DURING_FINALIZATION: str = (
     "Connection invalidated: client disconnected during finalization"
 )
-CONNECTION_ERROR_STATE_TRANSITION_INVALIDATED = (
+CONNECTION_ERROR_STATE_TRANSITION_INVALIDATED: str = (
     "Connection invalidated during state transition to connected"
 )
-UNREACHABLE_ADDRESSED_DEVICES_MSG = (
+CONNECTION_ERROR_LOST_OWNERSHIP: str = (
+    "Connection invalidated: interface lost ownership of connected client"
+)
+UNREACHABLE_ADDRESSED_DEVICES_MSG: str = (
     "Unreachable: all addressed_devices length cases are handled"
 )
 
 # BLEClient-specific constants
 # Alias preserves legacy access while sourcing value from BLEConfig
-BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT = BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT
-BLECLIENT_ERROR_ASYNC_TIMEOUT = "Async operation timed out"
-BLECLIENT_ERROR_CANCELLED = "Async operation was cancelled"
-BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED = "Cannot pair: BLE client not initialized"
-BLECLIENT_ERROR_CANNOT_CONNECT_NOT_INITIALIZED = (
+BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT: float = BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT
+BLECLIENT_ERROR_ASYNC_TIMEOUT: str = "Async operation timed out"
+BLECLIENT_ERROR_CANCELLED: str = "Async operation was cancelled"
+BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED: str = (
+    "Cannot pair: BLE client not initialized"
+)
+BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED: str = (
+    "Cannot pair: BLE backend does not support pairing on this platform"
+)
+BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT: float = BLEConfig.MANAGEMENT_AWAIT_TIMEOUT
+BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED: str = (
+    "Cannot unpair: BLE client not initialized"
+)
+BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED: str = (
+    "Cannot unpair: BLE backend does not support unpair on this platform"
+)
+BLECLIENT_ERROR_CANNOT_CONNECT_NOT_INITIALIZED: str = (
     "Cannot connect: BLE client not initialized"
 )
-BLECLIENT_ERROR_CANNOT_DISCONNECT_NOT_INITIALIZED = (
+BLECLIENT_ERROR_CANNOT_DISCONNECT_NOT_INITIALIZED: str = (
     "Cannot disconnect: BLE client not initialized"
 )
-BLECLIENT_ERROR_CANNOT_READ_NOT_INITIALIZED = "Cannot read: BLE client not initialized"
-BLECLIENT_ERROR_CANNOT_WRITE_NOT_INITIALIZED = (
+BLECLIENT_ERROR_CANNOT_READ_NOT_INITIALIZED: str = (
+    "Cannot read: BLE client not initialized"
+)
+BLECLIENT_ERROR_CANNOT_WRITE_NOT_INITIALIZED: str = (
     "Cannot write: BLE client not initialized"
 )
-BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_INITIALIZED = (
+BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_INITIALIZED: str = (
     "Cannot get services: BLE client not initialized"
 )
-BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_DISCOVERED = (
+BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_DISCOVERED: str = (
     "Cannot get services: service discovery not completed"
 )
-BLECLIENT_ERROR_CANNOT_START_NOTIFY_NOT_INITIALIZED = (
+BLECLIENT_ERROR_CANNOT_START_NOTIFY_NOT_INITIALIZED: str = (
     "Cannot start notify: BLE client not initialized"
 )
-BLECLIENT_ERROR_CANNOT_STOP_NOTIFY_NOT_INITIALIZED = (
+BLECLIENT_ERROR_CANNOT_STOP_NOTIFY_NOT_INITIALIZED: str = (
     "Cannot stop notify: BLE client not initialized"
 )
-BLECLIENT_ERROR_CANNOT_SCHEDULE_CLOSED = (
+BLECLIENT_ERROR_CANNOT_SCHEDULE_CLOSED: str = (
     "Cannot schedule operation: BLE client is closed"
 )
-BLECLIENT_ERROR_RUNNER_THREAD_WAIT = (
+BLECLIENT_ERROR_RUNNER_THREAD_WAIT: str = (
     "Cannot wait on async operation from the runner thread"
 )
-BLECLIENT_ERROR_ASYNC_OPERATION_FAILED = "Async operation failed: {0}"
-BLECLIENT_ERROR_FAILED_TO_SCHEDULE = "Failed to schedule operation: {0}"
-BLECLIENT_ERROR_LOOP_START_FAILED = "BLE event loop failed to start"
-BLECLIENT_ERROR_LOOP_NOT_AVAILABLE = "BLECoroutineRunner loop is not available"
-BLECLIENT_ERROR_LOOP_RESTART_FAILED = "BLE event loop failed to restart"
-BLECLIENT_ERROR_TIMEOUT_PARAM_CONFLICT = (
+BLECLIENT_ERROR_ASYNC_OPERATION_FAILED: str = "Async operation failed: {0}"
+BLECLIENT_ERROR_FAILED_TO_SCHEDULE: str = "Failed to schedule operation: {0}"
+BLECLIENT_ERROR_LOOP_START_FAILED: str = "BLE event loop failed to start"
+BLECLIENT_ERROR_LOOP_NOT_AVAILABLE: str = "BLECoroutineRunner loop is not available"
+BLECLIENT_ERROR_LOOP_RESTART_FAILED: str = "BLE event loop failed to restart"
+BLECLIENT_ERROR_TIMEOUT_PARAM_CONFLICT: str = (
     "Specify only one of timeout or startup_timeout"
 )
-BLECLIENT_ERROR_SUBSCRIPTION_TOKEN_EXHAUSTED = (
+BLECLIENT_ERROR_SUBSCRIPTION_TOKEN_EXHAUSTED: str = (
     "Subscription token space exhausted."  # noqa: S105
 )
-BLECLIENT_ERROR_CANNOT_CONNECT_WHILE_CLOSING = (
+BLECLIENT_ERROR_CANNOT_CONNECT_WHILE_CLOSING: str = (
     "Cannot connect while interface is closing"
 )
-BLECLIENT_ERROR_ALREADY_CONNECTED = "Already connected or connection in progress"
+BLECLIENT_ERROR_ALREADY_CONNECTED: str = "Already connected or connection in progress"
 
 
 _MISSING_ATTR_MSG = "module {!r} has no attribute {!r}"

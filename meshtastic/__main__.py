@@ -14,17 +14,18 @@ import platform
 import sys
 import time
 from types import ModuleType
-from typing import Any, NoReturn
+from typing import Any, NoReturn, Protocol
 
 import yaml
 from google.protobuf.json_format import MessageToDict
-from pubsub import pub  # type: ignore[import-untyped,unused-ignore]
+from pubsub import pub
 
 import meshtastic.ota
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
-from meshtastic import BROADCAST_ADDR, mt_config, remote_hardware
+from meshtastic import BROADCAST_ADDR, LOCAL_ADDR, mt_config, remote_hardware
+from meshtastic.host_port import parseHostAndPort
 from meshtastic.interfaces.ble import BLEInterface
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import (
@@ -102,6 +103,11 @@ GPIO_READ_MAX_POLLS = 10
 
 # Time to wait for device boot after power-on
 POWER_ON_BOOT_DELAY_SECONDS = 5.0
+
+# OTA CLI timing and retry delay
+OTA_REBOOT_WAIT_SECONDS: float = 5.0
+OTA_RETRY_DELAY_SECONDS: float = 2.0
+OTA_MAX_RETRIES: int = 5
 
 # Keep-alive sleep interval for main loop (effectively infinite wait)
 MAIN_LOOP_IDLE_SLEEP_SECONDS = 1000
@@ -295,6 +301,32 @@ def _display_pref_name(comp_name: str) -> str:
     )
 
 
+_SECRET_PREF_NAMES: frozenset[str] = frozenset(
+    {
+        "wifi_psk",
+        "psk",
+        "channel_psk",
+        "private_key",
+        "public_key",
+        "admin_key",
+        "secret",
+        "api_key",
+        "auth_token",
+    }
+)
+
+
+class _NamedConfigType(Protocol):
+    """Protocol for config section objects exposing a `name` attribute."""
+
+    name: str
+
+
+def _redact_pref_value(name: str, value: str) -> str:
+    """Return a redacted placeholder for secret-bearing pref names."""
+    return "<redacted>" if name in _SECRET_PREF_NAMES else value
+
+
 def getPref(node: Any, comp_name: str) -> bool:
     """Retrieve and display a configuration preference or channel field for a node.
 
@@ -321,7 +353,12 @@ def getPref(node: Any, comp_name: str) -> bool:
     """
 
     def _print_setting(
-        config_type: Any, uni_name: str, pref_value: Any, repeated: bool
+        config_type: _NamedConfigType,
+        uni_name: str,
+        pref_value: str | list[str],
+        *,
+        repeated: bool,
+        secret_name: str,
     ) -> None:
         """Print a configuration preference and its value to stdout and the debug log.
 
@@ -331,19 +368,24 @@ def getPref(node: Any, comp_name: str) -> bool:
 
         Parameters
         ----------
-        config_type : Any
+        config_type : _NamedConfigType
             Object with a `name` attribute identifying the configuration section.
         uni_name : str
             The preference name within the configuration section.
-        pref_value : Any
+        pref_value : str | list[str]
             The preference value to print; an iterable when `repeated` is True.
         repeated : bool
             If True, treat `pref_value` as a sequence and print the list of stringified values.
+        secret_name : str
+            Canonical snake_case field name used to determine whether to redact.
         """
         if repeated:
-            pref_value = [meshtastic.util.toStr(v) for v in pref_value]
+            pref_value = [
+                _redact_pref_value(secret_name, meshtastic.util.toStr(v))
+                for v in pref_value
+            ]
         else:
-            pref_value = meshtastic.util.toStr(pref_value)
+            pref_value = _redact_pref_value(secret_name, meshtastic.util.toStr(pref_value))
         print(f"{str(config_type.name)}.{uni_name}: {str(pref_value)}")
         logger.debug("%s.%s: %s", config_type.name, uni_name, pref_value)
 
@@ -396,11 +438,23 @@ def getPref(node: Any, comp_name: str) -> bool:
                 return False
             pref_value = getattr(config_values, pref.name)
             repeated = _is_repeated_field(pref)
-            _print_setting(config_type, uni_name, pref_value, repeated)
+            _print_setting(
+                config_type,
+                uni_name,
+                pref_value,
+                repeated=repeated,
+                secret_name=snake_name,
+            )
         else:
             for field in config_values.ListFields():
                 repeated = _is_repeated_field(field[0])
-                _print_setting(config_type, field[0].name, field[1], repeated)
+                _print_setting(
+                    config_type,
+                    field[0].name,
+                    field[1],
+                    repeated=repeated,
+                    secret_name=field[0].name,
+                )
     else:
         # Always show whole field for remote node
         node.requestConfig(config_type)
@@ -534,7 +588,7 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
         val = meshtastic.util.fromStr(raw_val)
     else:
         val = raw_val
-    logger.debug("valStr:%s val:%s", raw_val, val)
+    logger.debug("val:%s", _redact_pref_value(snake_name, meshtastic.util.toStr(val)))
 
     if snake_name == "wifi_psk" and len(str(raw_val)) < 8:
         print("Warning: network.wifi_psk must be 8 or more characters.")
@@ -582,7 +636,10 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
             print(f"Clearing {pref.name} list")
             del getattr(config_values, pref.name)[:]
         else:
-            print(f"Adding '{raw_val}' to the {pref.name} list")
+            display_value = _redact_pref_value(
+                snake_name, meshtastic.util.toStr(raw_val)
+            )
+            print(f"Adding '{display_value}' to the {pref.name} list")
             cur_vals = [
                 x for x in getattr(config_values, pref.name) if x not in [0, "", b""]
             ]
@@ -592,7 +649,8 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
         return True
 
     prefix = f"{'.'.join(name[0:-1])}." if config_type.message_type is not None else ""
-    print(f"Set {prefix}{uni_name} to {raw_val}")
+    display_value = _redact_pref_value(snake_name, meshtastic.util.toStr(raw_val))
+    print(f"Set {prefix}{uni_name} to {display_value}")
 
     return True
 
@@ -622,6 +680,7 @@ def onConnected(interface: MeshInterface) -> None:
     waitForAckNak = (
         False  # Should we wait for an acknowledgment if we send to a remote node?
     )
+    skip_ack_wait = False  # OTA reboots the node before an ACK can be observed.
     try:
         args = mt_config.args
         if args is None:
@@ -803,36 +862,48 @@ def onConnected(interface: MeshInterface) -> None:
         if args.ota_update:
             closeNow = True
             waitForAckNak = True
+            skip_ack_wait = True
 
             if not isinstance(interface, meshtastic.tcp_interface.TCPInterface):
                 _cli_exit(
                     "Error: OTA update currently requires a TCP connection to the node (use --host)."
                 )
+            if args.dest not in {BROADCAST_ADDR, LOCAL_ADDR}:
+                _cli_exit(
+                    "Error: OTA update only supports the directly connected local node; omit --dest or use --dest ^local."
+                )
+            ota_dest = LOCAL_ADDR if args.dest == BROADCAST_ADDR else args.dest
+            waitForAckNak = False
 
             ota = meshtastic.ota.ESP32WiFiOTA(args.ota_update, interface.hostname)
 
             print(f"Triggering OTA update on {interface.hostname}...")
-            interface.getNode(args.dest, False, **getNode_kwargs).startOTA(
+            interface.getNode(
+                ota_dest, requestChannels=False, **getNode_kwargs
+            ).startOTA(
                 ota_mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=ota.hash_bytes()
             )
 
             print("Waiting for device to reboot into OTA mode...")
-            time.sleep(5)
+            time.sleep(OTA_REBOOT_WAIT_SECONDS)
 
-            retries = 5
+            retries = OTA_MAX_RETRIES
             while retries > 0:
                 try:
                     ota.update()
                     break
 
-                except Exception as e:
+                except meshtastic.ota.OTATransportError as e:
                     retries -= 1
                     if retries == 0:
                         _cli_exit(f"OTA update failed: {e}")
 
-                    time.sleep(2)
+                    time.sleep(OTA_RETRY_DELAY_SECONDS)
+                except meshtastic.ota.OTAError as e:
+                    _cli_exit(f"OTA update failed: {e}")
 
             print("\nOTA update completed successfully!")
+            return
 
         if args.enter_dfu:
             closeNow = True
@@ -1589,7 +1660,13 @@ def onConnected(interface: MeshInterface) -> None:
                 else:
                     tunnel.Tunnel(interface)
 
-        if args.ack or (args.dest != BROADCAST_ADDR and waitForAckNak):
+        if not skip_ack_wait and (
+            args.ack
+            or (
+                args.dest != BROADCAST_ADDR
+                and waitForAckNak
+            )
+        ):
             print(
                 "Waiting for an acknowledgment from remote node (this could take a while)"
             )
@@ -1950,20 +2027,10 @@ create_power_meter = _create_power_meter
 
 
 def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
-    """Parse a host string into a TCP hostname and port.
+    """Compatibility wrapper for shared host/port parsing in CLI code paths.
 
-    Supports:
-
-    - Bracketed IPv6 with optional port: `[addr]` or `[addr]:port`
-    - Bare IPv6 address: treated as hostname with the default port (no explicit port allowed)
-    - IPv4 or hostname with optional port: `host` or `host:port`
-
-    For IPv6 addresses that need an explicit port, bracket syntax (`[addr]:port`) is
-    required. Bare IPv6 addresses (with colons but no brackets) are treated as hostnames
-    and use the default port.
-
-    Port-range and malformed IPv6/bracket syntax errors exit via `_cli_exit` with
-    existing CLI messages.
+    Delegates parsing to `parseHostAndPort()` and preserves historical CLI
+    behavior by converting validation failures into `_cli_exit(..., 1)`.
 
     Parameters
     ----------
@@ -1977,77 +2044,14 @@ def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
     tuple[str, int]
         Parsed hostname/address and resolved TCP port.
     """
-    tcp_hostname = host_str
-    tcp_port = default_port
-
-    if host_str.startswith("["):
-        # Bracketed IPv6: [addr] or [addr]:port
-        bracket_end = host_str.find("]")
-        if bracket_end == -1:
-            _cli_exit(
-                f"Error: malformed IPv6 address in --host '{host_str}'.",
-                1,
-            )
-        else:
-            tcp_hostname = host_str[1:bracket_end]
-            if not tcp_hostname:
-                _cli_exit(
-                    f"Error: missing hostname in --host '{host_str}'.",
-                    1,
-                )
-            remainder = host_str[bracket_end + 1 :]
-            if remainder:
-                if not remainder.startswith(":"):
-                    _cli_exit(
-                        f"Error: unexpected characters after IPv6 address in --host '{host_str}'.",
-                        1,
-                    )
-                else:
-                    tcp_port_str = remainder[1:]
-                    try:
-                        parsed_port = int(tcp_port_str)
-                    except ValueError:
-                        _cli_exit(
-                            f"Error: invalid TCP port in --host '{host_str}'.",
-                            1,
-                        )
-                    else:
-                        if 1 <= parsed_port <= 65535:
-                            tcp_port = parsed_port
-                        else:
-                            _cli_exit(
-                                f"Error: invalid TCP port in --host '{host_str}'.",
-                                1,
-                            )
-
-        return tcp_hostname, tcp_port
-
-    if ":" in host_str and host_str.count(":") == 1:
-        # Exactly one colon -> host:port
-        candidate_host, tcp_port_str = host_str.rsplit(":", 1)
-        if not candidate_host:
-            _cli_exit(
-                f"Error: missing hostname in --host '{host_str}'.",
-                1,
-            )
-        try:
-            parsed_port = int(tcp_port_str)
-        except ValueError:
-            _cli_exit(
-                f"Error: invalid TCP port in --host '{host_str}'.",
-                1,
-            )
-
-        tcp_hostname = candidate_host
-        if not 1 <= parsed_port <= 65535:
-            _cli_exit(
-                f"Error: invalid TCP port in --host '{host_str}'.",
-                1,
-            )
-        else:
-            tcp_port = parsed_port
-
-    return tcp_hostname, tcp_port
+    try:
+        return parseHostAndPort(
+            host_str,
+            default_port=default_port,
+            env_var="--host",
+        )
+    except ValueError as exc:
+        _cli_exit(f"Error: {exc}", 1)
 
 
 def common() -> None:

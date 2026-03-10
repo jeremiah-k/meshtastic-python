@@ -1,7 +1,12 @@
 """Unit tests for PowerSupply voltage validation."""
 
+import importlib
 import math
+import sys
+import types
+import typing
 import warnings
+from typing import Any, cast
 
 import pytest
 
@@ -159,3 +164,108 @@ def test_powermon_public_exports_remain_available() -> None:
     assert expected_exports.issubset(set(powermon.__all__))
     for export_name in expected_exports:
         assert hasattr(powermon, export_name)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("backend_name", "expected_dependency_name"),
+    [
+        ("PPK2PowerSupply", "ppk2_api"),
+        ("RidenPowerSupply", "riden"),
+    ],
+)
+def test_powermon_optional_backends_are_lazy_and_dependency_error_is_clear(
+    monkeypatch: pytest.MonkeyPatch,
+    backend_name: str,
+    expected_dependency_name: str,
+) -> None:
+    """Optional backend access should not require dependencies at package import time."""
+    backend_names = ("PPK2PowerSupply", "RidenPowerSupply")
+    for candidate_backend in backend_names:
+        monkeypatch.delitem(powermon.__dict__, candidate_backend, raising=False)
+
+    real_import_module = importlib.import_module
+
+    def _fake_import_module(name: str, package: str | None = None) -> types.ModuleType:
+        if package == "meshtastic.powermon" and name in (".ppk2", ".riden"):
+            missing = ModuleNotFoundError("optional backend missing")
+            missing.name = "riden" if name == ".riden" else "ppk2_api"
+            raise missing
+        return real_import_module(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", _fake_import_module)
+    importlib.reload(powermon)
+    for candidate_backend in backend_names:
+        monkeypatch.delitem(powermon.__dict__, candidate_backend, raising=False)
+
+    backend_cls = cast(type[PowerSupply], getattr(powermon, backend_name))
+    with pytest.raises(ImportError, match=expected_dependency_name):
+        backend_cls()
+
+
+@pytest.mark.unit
+def test_powermon_optional_backend_lookup_re_raises_unrelated_missing_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Optional backend shim should not mask backend-module import bugs."""
+    monkeypatch.delitem(powermon.__dict__, "RidenPowerSupply", raising=False)
+    real_import_module = importlib.import_module
+
+    def _fake_import_module(name: str, package: str | None = None) -> types.ModuleType:
+        if package == "meshtastic.powermon" and name == ".riden":
+            missing = ModuleNotFoundError("backend import bug")
+            missing.name = "meshtastic.powermon.riden_internal"
+            raise missing
+        return real_import_module(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", _fake_import_module)
+
+    with pytest.raises(ModuleNotFoundError, match="backend import bug"):
+        _ = powermon.RidenPowerSupply
+
+
+@pytest.mark.unit
+def test_powermon_module_dir_lists_optional_backends(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """__dir__ should advertise lazy optional backend symbols before first access."""
+    for backend_name in ("PPK2PowerSupply", "RidenPowerSupply"):
+        monkeypatch.delitem(powermon.__dict__, backend_name, raising=False)
+    exported = dir(powermon)
+    assert "PPK2PowerSupply" in exported
+    assert "RidenPowerSupply" in exported
+
+
+@pytest.mark.unit
+def test_powermon_type_checking_import_branch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reload powermon with TYPE_CHECKING enabled to execute typing-only backend imports."""
+    powermon_module = importlib.import_module("meshtastic.powermon")
+    stub_ppk2 = types.ModuleType("meshtastic.powermon.ppk2")
+    stub_riden = types.ModuleType("meshtastic.powermon.riden")
+    cast(Any, stub_ppk2).PPK2PowerSupply = type("PPK2PowerSupply", (), {})
+    cast(Any, stub_riden).RidenPowerSupply = type("RidenPowerSupply", (), {})
+
+    # importlib.reload mutates the live meshtastic.powermon module object in
+    # sys.modules. Clearing cached backend attributes before the final reload
+    # intentionally restores lazy-loading behavior after TYPE_CHECKING=True.
+    for backend_name in ("PPK2PowerSupply", "RidenPowerSupply"):
+        powermon_module.__dict__.pop(backend_name, None)
+
+    try:
+        with monkeypatch.context() as patch_context:
+            patch_context.setitem(sys.modules, "meshtastic.powermon.ppk2", stub_ppk2)
+            patch_context.setitem(sys.modules, "meshtastic.powermon.riden", stub_riden)
+            patch_context.setattr(typing, "TYPE_CHECKING", True)
+            reloaded = importlib.reload(powermon_module)
+            assert "PPK2PowerSupply" in reloaded.__all__
+            assert "RidenPowerSupply" in reloaded.__all__
+            assert reloaded.PPK2PowerSupply is cast(Any, stub_ppk2).PPK2PowerSupply
+            assert reloaded.RidenPowerSupply is cast(Any, stub_riden).RidenPowerSupply
+    finally:
+        for backend_name in ("PPK2PowerSupply", "RidenPowerSupply"):
+            powermon_module.__dict__.pop(backend_name, None)
+        reloaded = importlib.reload(powermon_module)
+    assert "PPK2PowerSupply" not in reloaded.__dict__
+    assert "RidenPowerSupply" not in reloaded.__dict__

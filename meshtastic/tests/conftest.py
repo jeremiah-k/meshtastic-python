@@ -212,7 +212,7 @@ def cli_exit_capture(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     try:
         analysis_main = importlib.import_module("meshtastic.analysis.__main__")
     except ModuleNotFoundError as exc:
-        missing = (exc.name or "").split(".")[0]
+        missing = (exc.name or "").split(".", maxsplit=1)[0]
         if missing in _OPTIONAL_ANALYSIS_DEPS:
             pytest.skip("Can't import meshtastic.analysis")
         raise

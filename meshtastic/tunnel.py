@@ -21,7 +21,7 @@ import threading
 from contextlib import suppress
 from typing import Any
 
-from pubsub import pub  # type: ignore[import-untyped,unused-ignore]
+from pubsub import pub
 from pytap2 import TapDevice
 
 from meshtastic import mt_config
@@ -53,6 +53,7 @@ MIN_TRANSPORT_HEADER_LEN = 4
 IP_PROTOCOL_OFFSET = 9
 IP_SRC_ADDR_OFFSET = 12
 IP_DEST_ADDR_OFFSET = 16
+TUN_MTU = 200
 
 
 def onTunnelReceive(packet: dict[str, Any], interface: Any) -> None:
@@ -187,11 +188,7 @@ class Tunnel:
         self.tcpBlacklist = self.TCP_BLACKLIST
         self.protocolBlacklist = self.PROTOCOL_BLACKLIST
 
-        # TODO: check if root?
-        logger.info(
-            "Starting IP to mesh tunnel (you must be root for this *pre-alpha* "
-            "feature to work).  Mesh members:"
-        )
+        logger.info("Starting IP to mesh tunnel. Mesh members:")
 
         pub.subscribe(onTunnelReceive, TUNNEL_TOPIC)
         self._subscribed = True
@@ -206,16 +203,19 @@ class Tunnel:
                     ip = self._node_num_to_ip(node["num"])
                     logger.info("Node %s has IP address %s", nodeId, ip)
 
-            logger.debug("creating TUN device with MTU=200")
             # FIXME - figure out real max MTU, it should be 240 - the overhead bytes for SubPacket and Data
             if self.iface.noProto:
                 logger.warning(
                     "Not creating a TapDevice() because it is disabled by noProto"
                 )
             else:
+                logger.debug("creating TUN device with MTU=%d", TUN_MTU)
+                logger.info(
+                    "Creating TapDevice; CAP_NET_ADMIN or root is typically required."
+                )
                 self.tun = TapDevice(name="mesh")
                 self.tun.up()
-                self.tun.ifconfig(address=myAddr, netmask=netmask, mtu=200)
+                self.tun.ifconfig(address=myAddr, netmask=netmask, mtu=TUN_MTU)
 
             if self.iface.noProto:
                 logger.warning(

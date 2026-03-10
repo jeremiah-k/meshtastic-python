@@ -11,10 +11,15 @@ READY_LOG_FILE="${READY_LOG_FILE-}"
 MESHTASTICD_LOG_DIR="${MESHTASTICD_LOG_DIR-}"
 MESHTASTICD_LOG_ON_SUCCESS="${MESHTASTICD_LOG_ON_SUCCESS:-false}"
 SMOKEVIRT_PYTEST_ARGS="${SMOKEVIRT_PYTEST_ARGS-}"
-MESHTASTICD_PYTEST_TARGETS="${MESHTASTICD_PYTEST_TARGETS:-meshtastic/tests/test_meshtasticd_ci.py}"
+MESHTASTICD_DEFAULT_PYTEST_TARGETS="meshtastic/tests/test_meshtasticd_ci.py meshtastic/tests/test_meshtasticd_tcp_interface_ci.py"
+MESHTASTICD_PYTEST_TARGETS="${MESHTASTICD_PYTEST_TARGETS:-${MESHTASTICD_DEFAULT_PYTEST_TARGETS}}"
+MESHTASTICD_AUTO_INT_TARGETS="${MESHTASTICD_AUTO_INT_TARGETS:-meshtastic/tests/test_meshtasticd_ci.py}"
 MESHTASTICD_PYTEST_MARK_EXPR="${MESHTASTICD_PYTEST_MARK_EXPR-}"
 EXTRA_PYTEST_ARGS=()
 PYTEST_TARGETS=()
+AUTO_INT_TARGETS=()
+MESHTASTICD_CI_TARGETS=()
+SMOKEVIRT_TARGETS=()
 LOGS_PRINTED=false
 READY_LOG_FILE_IS_TEMP=false
 
@@ -79,10 +84,49 @@ fi
 
 require_regex "${MESHTASTICD_CONTAINER}" '^[A-Za-z0-9][A-Za-z0-9_.-]*$' "MESHTASTICD_CONTAINER"
 require_regex "${MESHTASTICD_IMAGE}" '^[^[:space:]]+$' "MESHTASTICD_IMAGE"
-require_regex "${MESHTASTICD_HOST}" '^[A-Za-z0-9._:-]+$' "MESHTASTICD_HOST"
 require_regex "${MESHTASTICD_PORT}" '^[0-9]+$' "MESHTASTICD_PORT"
 require_regex "${MESHTASTICD_READY_TIMEOUT_SECONDS}" '^[0-9]+$' "MESHTASTICD_READY_TIMEOUT_SECONDS"
 MESHTASTICD_PORT_DEC=$((10#${MESHTASTICD_PORT}))
+if ((MESHTASTICD_PORT_DEC < 1 || MESHTASTICD_PORT_DEC > 65535)); then
+	echo "MESHTASTICD_PORT must be between 1 and 65535." >&2
+	exit 1
+fi
+
+MESHTASTICD_PARSED_HOST_AND_PORT="$(
+	poetry run python - "${MESHTASTICD_HOST}" "${MESHTASTICD_PORT_DEC}" <<'PY'
+import sys
+
+from meshtastic.host_port import parseHostAndPort
+
+host = sys.argv[1]
+default_port = int(sys.argv[2])
+try:
+    parsed_host, parsed_port = parseHostAndPort(
+        host,
+        default_port=default_port,
+        env_var="MESHTASTICD_HOST",
+    )
+except ValueError as exc:
+    print(str(exc), file=sys.stderr)
+    raise SystemExit(1) from exc
+
+print(f"{parsed_host}\t{parsed_port}")
+PY
+)"
+IFS=$'\t' read -r MESHTASTICD_PARSED_HOST MESHTASTICD_HOST_PORT_DEC <<<"${MESHTASTICD_PARSED_HOST_AND_PORT}"
+if [[ -z ${MESHTASTICD_PARSED_HOST-} || -z ${MESHTASTICD_HOST_PORT_DEC-} ]]; then
+	echo "Invalid MESHTASTICD_HOST: ${MESHTASTICD_HOST}" >&2
+	exit 1
+fi
+if ((MESHTASTICD_HOST_PORT_DEC != MESHTASTICD_PORT_DEC)); then
+	echo "MESHTASTICD_HOST port must match MESHTASTICD_PORT, or omit the inline port." >&2
+	exit 1
+fi
+if [[ ${MESHTASTICD_PARSED_HOST} == *:* ]]; then
+	MESHTASTICD_HOST="[${MESHTASTICD_PARSED_HOST}]:${MESHTASTICD_HOST_PORT_DEC}"
+else
+	MESHTASTICD_HOST="${MESHTASTICD_PARSED_HOST}:${MESHTASTICD_HOST_PORT_DEC}"
+fi
 if [[ -z ${READY_LOG_FILE} ]]; then
 	if [[ -n ${MESHTASTICD_LOG_DIR} ]]; then
 		READY_LOG_FILE="${MESHTASTICD_LOG_DIR}/meshtasticd-smokevirt-ready.log"
@@ -101,10 +145,6 @@ if [[ -n ${MESHTASTICD_LOG_DIR} ]] && [[ ${MESHTASTICD_LOG_DIR} == *$'\n'* ]]; t
 fi
 if ((10#${MESHTASTICD_READY_TIMEOUT_SECONDS} <= 0)); then
 	echo "MESHTASTICD_READY_TIMEOUT_SECONDS must be greater than zero." >&2
-	exit 1
-fi
-if ((MESHTASTICD_PORT_DEC < 1 || MESHTASTICD_PORT_DEC > 65535)); then
-	echo "MESHTASTICD_PORT must be between 1 and 65535." >&2
 	exit 1
 fi
 if [[ -n ${MESHTASTICD_LOG_DIR} ]]; then
@@ -162,19 +202,55 @@ if [[ -n ${SMOKEVIRT_PYTEST_ARGS} ]]; then
 fi
 
 read -r -a PYTEST_TARGETS <<<"${MESHTASTICD_PYTEST_TARGETS}"
+read -r -a AUTO_INT_TARGETS <<<"${MESHTASTICD_AUTO_INT_TARGETS}"
 
 if [[ ${#PYTEST_TARGETS[@]} -eq 0 ]]; then
 	echo "MESHTASTICD_PYTEST_TARGETS must not be empty." >&2
 	exit 1
 fi
 
+HAS_SMOKEVIRT_TARGET=false
+HAS_EXPLICIT_SELECTOR=false
+for target in "${PYTEST_TARGETS[@]}"; do
+	is_explicit_selector=false
+	if [[ ${target} == *"::"* ]]; then
+		is_explicit_selector=true
+	fi
+	normalized_target="${target%%::*}"
+	normalized_target="${normalized_target#./}"
+	normalized_basename="${normalized_target##*/}"
+	if [[ ${is_explicit_selector} == true ]] && [[ ${normalized_basename} != "test_smokevirt.py" ]]; then
+		HAS_EXPLICIT_SELECTOR=true
+	fi
+	if [[ ${normalized_basename} == "test_smokevirt.py" ]]; then
+		HAS_SMOKEVIRT_TARGET=true
+		SMOKEVIRT_TARGETS+=("${target}")
+	fi
+	for default_target in "${AUTO_INT_TARGETS[@]}"; do
+		normalized_default_target="${default_target#./}"
+		normalized_default_basename="${normalized_default_target##*/}"
+		if [[ ${normalized_target} == "${normalized_default_target}" || ${normalized_basename} == "${normalized_default_basename}" ]]; then
+			MESHTASTICD_CI_TARGETS+=("${target}")
+			break
+		fi
+	done
+done
+
 if [[ -z ${MESHTASTICD_PYTEST_MARK_EXPR} ]]; then
-	if [[ ${MESHTASTICD_PYTEST_TARGETS} =~ test_smokevirt\.py ]] && [[ ${MESHTASTICD_PYTEST_TARGETS} =~ test_meshtasticd_ci\.py ]]; then
+	if [[ ${HAS_EXPLICIT_SELECTOR} == true ]] && [[ ${HAS_SMOKEVIRT_TARGET} == true ]]; then
+		echo "MESHTASTICD_PYTEST_TARGETS mixes bare smokevirt targets with explicit selectors; set MESHTASTICD_PYTEST_MARK_EXPR explicitly." >&2
+		exit 1
+	elif [[ ${HAS_EXPLICIT_SELECTOR} == false ]] && [[ ${HAS_SMOKEVIRT_TARGET} == true ]] && [[ ${#MESHTASTICD_CI_TARGETS[@]} -gt 0 ]]; then
 		echo "MESHTASTICD_PYTEST_TARGETS includes both smokevirt and meshtasticd-ci targets; set MESHTASTICD_PYTEST_MARK_EXPR explicitly." >&2
 		exit 1
-	elif [[ ${MESHTASTICD_PYTEST_TARGETS} =~ test_smokevirt\.py ]]; then
+	elif [[ ${HAS_EXPLICIT_SELECTOR} == false ]] && [[ ${HAS_SMOKEVIRT_TARGET} == true ]] && [[ ${#SMOKEVIRT_TARGETS[@]} -eq ${#PYTEST_TARGETS[@]} ]]; then
 		MESHTASTICD_PYTEST_MARK_EXPR="smokevirt and not smoke1_destructive"
-	elif [[ ${MESHTASTICD_PYTEST_TARGETS} =~ test_meshtasticd_ci\.py ]]; then
+	elif [[ ${HAS_EXPLICIT_SELECTOR} == false ]] && [[ ${HAS_SMOKEVIRT_TARGET} == true ]]; then
+		echo "MESHTASTICD_PYTEST_TARGETS mixes smokevirt with non-smokevirt targets; set MESHTASTICD_PYTEST_MARK_EXPR explicitly." >&2
+		exit 1
+	# Auto-apply "int" when every selected target is one of the dedicated
+	# auto-int eligible files.
+	elif [[ ${HAS_EXPLICIT_SELECTOR} == false ]] && [[ ${#MESHTASTICD_CI_TARGETS[@]} -eq ${#PYTEST_TARGETS[@]} ]]; then
 		MESHTASTICD_PYTEST_MARK_EXPR="int"
 	fi
 fi

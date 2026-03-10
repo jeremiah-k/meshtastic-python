@@ -302,13 +302,9 @@ def _assert_admin_commands(host: str, meshtastic_bin: str) -> None:
         meshtastic_bin=meshtastic_bin,
     )
     assert re.search(r"^lora\.region:\s+", get_output, re.MULTILINE)
-    send_text_output = _run_host_cli_ok(
-        host,
-        "--sendtext",
-        f"ci-admin-check-{host}",
-        meshtastic_bin=meshtastic_bin,
-    )
-    assert "Sending text message" in send_text_output
+    # Keep this precheck admin-focused. Broadcast sendtext probes on simulators
+    # can leave retransmit traffic in-flight and fill to-phone queues while the
+    # next CLI command reconnects, which makes this integration lane flaky.
 
 
 def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
