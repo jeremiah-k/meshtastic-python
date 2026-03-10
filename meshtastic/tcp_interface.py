@@ -632,7 +632,15 @@ class TCPInterface(StreamInterface):
         if sock is not None:
             try:
                 data = sock.recv(length)
-            except TCP_IO_EXCEPTIONS as ex:
+            except OSError as ex:
+                logger.debug(self.SOCKET_READ_DEAD_ERROR_LOG, ex)
+                data = b""
+            except ValueError as ex:
+                if not _is_transport_fd_state_value_error(ex):
+                    raise
+                logger.debug(self.SOCKET_READ_DEAD_ERROR_LOG, ex)
+                data = b""
+            except TypeError as ex:
                 logger.debug(self.SOCKET_READ_DEAD_ERROR_LOG, ex)
                 data = b""
             # empty byte indicates a disconnected socket,

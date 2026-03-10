@@ -248,7 +248,7 @@ def test_powermon_type_checking_import_branch(
     # sys.modules. Clearing cached backend attributes before the final reload
     # intentionally restores lazy-loading behavior after TYPE_CHECKING=True.
     for backend_name in ("PPK2PowerSupply", "RidenPowerSupply"):
-        monkeypatch.delitem(powermon_module.__dict__, backend_name, raising=False)
+        powermon_module.__dict__.pop(backend_name, None)
 
     try:
         with monkeypatch.context() as patch_context:
@@ -262,7 +262,7 @@ def test_powermon_type_checking_import_branch(
             assert reloaded.RidenPowerSupply is cast(Any, stub_riden).RidenPowerSupply
     finally:
         for backend_name in ("PPK2PowerSupply", "RidenPowerSupply"):
-            monkeypatch.delitem(powermon_module.__dict__, backend_name, raising=False)
+            powermon_module.__dict__.pop(backend_name, None)
         reloaded = importlib.reload(powermon_module)
     assert "PPK2PowerSupply" not in reloaded.__dict__
     assert "RidenPowerSupply" not in reloaded.__dict__

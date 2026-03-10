@@ -17,7 +17,7 @@ from ..tcp_interface import TCPInterface
 
 try:
     # Depends upon pytap2, not installed by default
-    from ..tunnel import Tunnel, onTunnelReceive
+    from ..tunnel import TUN_MTU, Tunnel, onTunnelReceive
 except ImportError:
     pytest.skip("Can't import Tunnel or onTunnelReceive", allow_module_level=True)
 
@@ -154,7 +154,7 @@ def test_tunnel_creates_tap_device_when_proto_enabled(
 
     assert ("init", "mesh") in events
     assert ("up",) in events
-    assert ("ifconfig", "10.115.248.28", "255.255.0.0", 200) in events
+    assert ("ifconfig", "10.115.248.28", "255.255.0.0", TUN_MTU) in events
     assert ("thread-start",) in events
     assert ("close",) in events
 

@@ -484,25 +484,27 @@ def test_close_suppresses_disconnect_send_failures(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_close_suppresses_disconnect_type_error_when_not_finalizing(
+def test_close_raises_disconnect_type_error_when_not_finalizing(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """close() should swallow TypeError disconnect failures during normal runtime."""
+    """close() should surface TypeError disconnect failures during normal runtime."""
     iface = MeshInterface(noProto=True)
     try:
         iface.debugOut = io.StringIO()
         with (
             patch.object(iface, "_send_disconnect", side_effect=TypeError("boom")),
             caplog.at_level(logging.DEBUG),
+            pytest.raises(TypeError, match="boom"),
         ):
             iface.close()
-        assert iface._closing is True
-        assert iface.debugOut is None
     finally:
         if not getattr(iface, "_closing", False):
             iface.close()
 
-    assert "Failed to send disconnect during close(); continuing shutdown." in caplog.text
+    assert (
+        "Failed to send disconnect during close(); continuing shutdown."
+        not in caplog.text
+    )
 
 
 @pytest.mark.unit
@@ -526,7 +528,10 @@ def test_close_suppresses_disconnect_type_error_during_finalization(
         if not getattr(iface, "_closing", False):
             iface.close()
 
-    assert "Failed to send disconnect during close(); continuing shutdown." in caplog.text
+    assert (
+        "Failed to send disconnect during interpreter finalization; continuing shutdown."
+        in caplog.text
+    )
 
 
 @pytest.mark.unit

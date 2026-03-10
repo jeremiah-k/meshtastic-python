@@ -1335,10 +1335,10 @@ def test_main_removeposition_remote(capsys: pytest.CaptureFixture[str]) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_removeposition_local_dest_skips_implicit_ack_wait(
+def test_main_removeposition_local_dest_waits_for_ack_and_uses_local_dest(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Implicit ACK waiting should be skipped for ^local destinations."""
+    """Explicit ^local destinations should still use the normal ACK wait flow."""
     sys.argv = ["", "--remove-position", "--dest", MAIN_LOCAL_ADDR]
     mt_config.args = sys.argv  # type: ignore[assignment]
     iface = MagicMock(autospec=SerialInterface)
@@ -1349,9 +1349,9 @@ def test_main_removeposition_local_dest_skips_implicit_ack_wait(
         out, err = capsys.readouterr()
         assert "Connected to radio" in out
         assert "Removing fixed position and disabling fixed position setting" in out
-        assert "Waiting for an acknowledgment from remote node" not in out
+        assert "Waiting for an acknowledgment from remote node" in out
         assert err == ""
-    iface.getNode.return_value.iface.waitForAckNak.assert_not_called()
+    iface.getNode.return_value.iface.waitForAckNak.assert_called_once()
     assert any(
         (call_args.args and call_args.args[0] == MAIN_LOCAL_ADDR)
         or call_args.kwargs.get("dest") == MAIN_LOCAL_ADDR
@@ -1611,6 +1611,7 @@ def test_main_set_valid_wifi_psk(
     _mocked_open: Any,
     _mocked_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Test --set with valid field."""
     sys.argv = ["", "--set", "network.wifi_psk", "123456789"]
@@ -1620,14 +1621,17 @@ def test_main_set_valid_wifi_psk(
         anode = Node(serialInterface, 1234567890, noProto=True)
         serialInterface.localNode = anode
 
-        with patch(
-            "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
-        ) as mo:
-            main()
+        with caplog.at_level(logging.INFO):
+            with patch(
+                "meshtastic.serial_interface.SerialInterface",
+                return_value=serialInterface,
+            ) as mo:
+                main()
             out, err = capsys.readouterr()
             assert re.search(r"Connected to radio", out, re.MULTILINE)
             assert re.search(r"Set network\.wifi_psk to <redacted>", out, re.MULTILINE)
             assert "123456789" not in out
+            assert "123456789" not in caplog.text
             assert err == ""
             mo.assert_called()
 
@@ -4595,6 +4599,12 @@ def test_main_ota_update_retries_then_exits(
     assert "OTA update failed: boom" in err
     assert excinfo.value.code == 1
     assert ota.update.call_count == main_module.OTA_MAX_RETRIES
+    assert any(
+        (call_args.args == () and call_args.kwargs == {})
+        or (call_args.args and call_args.args[0] == MAIN_LOCAL_ADDR)
+        or call_args.kwargs.get("dest") == MAIN_LOCAL_ADDR
+        for call_args in get_node.call_args_list
+    )
     assert sleep_mock.call_args_list == [
         call(main_module.OTA_REBOOT_WAIT_SECONDS),
         *[call(main_module.OTA_RETRY_DELAY_SECONDS)]
@@ -4633,6 +4643,12 @@ def test_main_ota_update_fails_fast_on_non_transport_error(
     assert "OTA update failed: deterministic" in err
     assert excinfo.value.code == 1
     ota.update.assert_called_once()
+    assert any(
+        (call_args.args == () and call_args.kwargs == {})
+        or (call_args.args and call_args.args[0] == MAIN_LOCAL_ADDR)
+        or call_args.kwargs.get("dest") == MAIN_LOCAL_ADDR
+        for call_args in get_node.call_args_list
+    )
     assert sleep_mock.call_args_list == [call(main_module.OTA_REBOOT_WAIT_SECONDS)]
 
 
@@ -4666,6 +4682,12 @@ def test_main_ota_update_succeeds_and_prints_completion(
     assert "OTA update completed successfully!" in out
     assert err == ""
     assert ota.update.call_count == 1
+    assert any(
+        (call_args.args == () and call_args.kwargs == {})
+        or (call_args.args and call_args.args[0] == MAIN_LOCAL_ADDR)
+        or call_args.kwargs.get("dest") == MAIN_LOCAL_ADDR
+        for call_args in get_node.call_args_list
+    )
     node.startOTA.assert_called_once()
     assert sleep_mock.call_args_list == [call(main_module.OTA_REBOOT_WAIT_SECONDS)]
 

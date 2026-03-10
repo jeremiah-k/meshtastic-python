@@ -437,8 +437,6 @@ def _is_connecting_claim_elsewhere_locked(
         )
     ):
         return False
-    if current_owner is None:
-        return True
     return True
 
 
@@ -600,6 +598,7 @@ def _mark_disconnected(addr: str | None, owner: Any | None = None) -> None:
                         key,
                     )
                     return
+        clear_connecting_claim = True
         if owner is not None and has_connecting_claim:
             provisional_owner_ref = _CONNECTING_OWNERS.get(key)
             provisional_owner = (
@@ -617,7 +616,7 @@ def _mark_disconnected(addr: str | None, owner: Any | None = None) -> None:
                         "Ignoring provisional disconnect mark for %s from non-owner instance.",
                         key,
                     )
-                    return
+                    clear_connecting_claim = False
                 if provisional_owner is None:
                     provisional_owner_id = _CONNECTING_OWNER_IDS.get(key)
                     if provisional_owner_id is None or provisional_owner_id != id(owner):
@@ -625,9 +624,10 @@ def _mark_disconnected(addr: str | None, owner: Any | None = None) -> None:
                             "Ignoring provisional disconnect mark for %s from non-owner instance.",
                             key,
                         )
-                        return
+                        clear_connecting_claim = False
         _remove_connected_record_locked(key)
-        _remove_connecting_record_locked(key)
+        if clear_connecting_claim:
+            _remove_connecting_record_locked(key)
         _cleanup_addr_lock(key)
 
 

@@ -31,7 +31,7 @@ def _require_int_strict(value: object, *, label: str) -> int:
     """Assert that `value` is an int (excluding bool) and return it."""
     assert isinstance(value, int), f"{label} should be an int, got {type(value).__name__}"
     assert not isinstance(value, bool), f"{label} must not be a bool"
-    return value
+    return cast(int, value)
 
 
 def _run_hello_world_serial(monkeypatch: pytest.MonkeyPatch, *args: str) -> None:

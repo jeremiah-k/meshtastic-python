@@ -754,11 +754,16 @@ def _build_interface(
         _ = args
         connect_calls.append(_address)
         connect_call_kwargs.append(dict(kwargs))
+        requested_identifier = _address if _address is not None else _self.address
         # Rehydrate reused test clients so reconnect paths mirror production:
         # disconnect()/close() clear these fields.
         client._initialized = True
         updated_address = False
-        if _address is not None and _address != _self.address:
+        if (
+            _address is not None
+            and _address != _self.address
+            and ble_mod._looks_like_ble_address(_address)
+        ):
             client.address = _address
             updated_address = True
         if client.bleak_client is None:
@@ -768,7 +773,9 @@ def _build_interface(
         with _self._state_lock:
             was_disconnected = _self._disconnect_notified
             _self.address = client.address
-            _self._last_connection_request = ble_mod.sanitize_address(client.address)
+            _self._last_connection_request = ble_mod.sanitize_address(
+                requested_identifier
+            )
             _self.client = client
             _self._disconnect_notified = False
             _self._client_publish_pending = False

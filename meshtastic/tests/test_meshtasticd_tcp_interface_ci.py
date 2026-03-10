@@ -177,6 +177,23 @@ def test_parse_host_and_port_rejects_invalid_default_port(
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("default_port", [0, 70000])
+def test_parse_host_and_port_skips_default_port_validation_with_explicit_port(
+    default_port: int,
+) -> None:
+    """Explicit host:port inputs should not validate the unused default port."""
+    from meshtastic.host_port import (  # pylint: disable=import-outside-toplevel
+        parseHostAndPort,
+    )
+
+    assert parseHostAndPort(
+        "localhost:4401",
+        default_port=default_port,
+        env_var=MESHTASTICD_HOST_ENV_VAR,
+    ) == ("localhost", 4401)
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     "host",
     [

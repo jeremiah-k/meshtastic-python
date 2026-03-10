@@ -749,10 +749,26 @@ def test_rapid_connect_disconnect_stress_test(
                 getattr(self, "_stress_test_should_fail_connect", False),
             )
             with self._state_lock:
+                effective_pair = cast(
+                    bool | None,
+                    kwargs.get("pair", self._last_connect_pair_override),
+                )
+                effective_connect_timeout = cast(
+                    float | None,
+                    kwargs.get("connect_timeout", self._last_connect_timeout_override),
+                )
                 connect_calls.append(address)
-                connect_kwargs.append(dict(kwargs))
+                connect_kwargs.append(
+                    {
+                        "pair": effective_pair,
+                        "connect_timeout": effective_connect_timeout,
+                    }
+                )
                 attempted_clients.append(new_client)
-            new_client.connect()
+            new_client.connect(
+                pair=effective_pair,
+                connect_timeout=effective_connect_timeout,
+            )
             with self._state_lock:
                 if (
                     self._state_manager._current_state
@@ -764,12 +780,8 @@ def test_rapid_connect_disconnect_stress_test(
                 transitioned = self._state_manager._transition_to(
                     cast(Any, ble_mod).ConnectionState.CONNECTED
                 )
-                self._last_connect_pair_override = cast(
-                    bool | None, kwargs.get("pair")
-                )
-                self._last_connect_timeout_override = cast(
-                    float | None, kwargs.get("connect_timeout")
-                )
+                self._last_connect_pair_override = effective_pair
+                self._last_connect_timeout_override = effective_connect_timeout
                 if transitioned:
                     cast(Any, self).client = new_client
                     created_clients.append(new_client)
@@ -913,7 +925,10 @@ def test_rapid_connect_disconnect_stress_test(
         ), "Auto-reconnect should continue scheduling during rapid disconnects"
         reconnect_kwargs = stub_kwargs[baseline_connects:]
         assert reconnect_kwargs
-        assert all(kwargs == {} for kwargs in reconnect_kwargs)
+        assert all(
+            kwargs == {"pair": True, "connect_timeout": 3.5}
+            for kwargs in reconnect_kwargs
+        )
         attempted_clients, republished_clients = _wait_for_latest_stress_client(
             iface,
             baseline_attempts=baseline_attempts,
@@ -981,7 +996,10 @@ def test_rapid_connect_disconnect_stress_test(
         assert len(connect_call_snapshot) >= baseline_connects + 1
         reconnect_kwargs = stub_kwargs[baseline_connects:]
         assert reconnect_kwargs
-        assert all(kwargs == {} for kwargs in reconnect_kwargs)
+        assert all(
+            kwargs == {"pair": False, "connect_timeout": 7.0}
+            for kwargs in reconnect_kwargs
+        )
         attempted_clients, republished_clients = _wait_for_latest_stress_client(
             iface2,
             baseline_attempts=baseline_attempts,

@@ -93,6 +93,12 @@ WAIT_ATTR_POSITION: str = "receivedPosition"
 WAIT_ATTR_TELEMETRY: str = "receivedTelemetry"
 WAIT_ATTR_TRACEROUTE: str = "receivedTraceRoute"
 WAIT_ATTR_WAYPOINT: str = "receivedWaypoint"
+LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM: dict[int, str] = {
+    portnums_pb2.PortNum.POSITION_APP: WAIT_ATTR_POSITION,
+    portnums_pb2.PortNum.TRACEROUTE_APP: WAIT_ATTR_TRACEROUTE,
+    portnums_pb2.PortNum.TELEMETRY_APP: WAIT_ATTR_TELEMETRY,
+    portnums_pb2.PortNum.WAYPOINT_APP: WAIT_ATTR_WAYPOINT,
+}
 RETIRED_WAIT_REQUEST_ID_TTL_SECONDS: float = 60.0
 RESPONSE_WAIT_REQID_ERROR: str = (
     "Internal error: response wait requires a positive packet id."
@@ -350,9 +356,17 @@ class MeshInterface:  # pylint: disable=R0902
                         heartbeat_idle_condition.wait()
             try:
                 self._send_disconnect()
-            except (OSError, TypeError, MeshInterface.MeshInterfaceError):
+            except (OSError, MeshInterface.MeshInterfaceError):
                 logger.debug(
                     "Failed to send disconnect during close(); continuing shutdown.",
+                    exc_info=True,
+                )
+            except TypeError:
+                is_finalizing = getattr(sys, "is_finalizing", None)
+                if not (callable(is_finalizing) and is_finalizing()):
+                    raise
+                logger.debug(
+                    "Failed to send disconnect during interpreter finalization; continuing shutdown.",
                     exc_info=True,
                 )
         # debugOut is caller-owned (often shared via outer context managers);
@@ -1047,13 +1061,13 @@ class MeshInterface:  # pylint: disable=R0902
         `_send_data_with_wait()` and is not part of the public `sendData()`
         contract.
         """
-        for wait_attr in (
-            WAIT_ATTR_POSITION,
-            WAIT_ATTR_TRACEROUTE,
-            WAIT_ATTR_TELEMETRY,
-            WAIT_ATTR_WAYPOINT,
-        ):
-            self._clear_wait_error(wait_attr, request_id=None)
+        legacy_wait_attr = LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM.get(portNum)
+        if legacy_wait_attr is not None:
+            self._clear_wait_error(
+                legacy_wait_attr,
+                request_id=None,
+                clear_scoped=False,
+            )
         return self._send_data_with_wait(
             data,
             destinationId=destinationId,
@@ -1308,18 +1322,31 @@ class MeshInterface:  # pylint: disable=R0902
         return raw_packet_id if raw_packet_id > 0 else None
 
     def _clear_wait_error(
-        self, acknowledgment_attr: str, request_id: int | None = None
+        self,
+        acknowledgment_attr: str,
+        request_id: int | None = None,
+        *,
+        clear_scoped: bool = True,
     ) -> None:
         """Clear wait error state for an attribute and optional request id."""
         with self._response_handlers_lock:
             if request_id is None:
-                for key in list(self._response_wait_errors):
-                    if key[0] == acknowledgment_attr:
-                        self._response_wait_errors.pop(key, None)
-                for key in list(self._response_wait_acks):
-                    if key[0] == acknowledgment_attr:
-                        self._response_wait_acks.discard(key)
-                self._active_wait_request_ids.pop(acknowledgment_attr, None)
+                if clear_scoped:
+                    for key in list(self._response_wait_errors):
+                        if key[0] == acknowledgment_attr:
+                            self._response_wait_errors.pop(key, None)
+                    for key in list(self._response_wait_acks):
+                        if key[0] == acknowledgment_attr:
+                            self._response_wait_acks.discard(key)
+                    self._active_wait_request_ids.pop(acknowledgment_attr, None)
+                else:
+                    self._response_wait_errors.pop(
+                        (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID),
+                        None,
+                    )
+                    self._response_wait_acks.discard(
+                        (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID)
+                    )
                 self._prune_retired_wait_request_ids_locked(acknowledgment_attr)
             else:
                 active_ids = self._active_wait_request_ids.setdefault(
@@ -1641,10 +1668,6 @@ class MeshInterface:  # pylint: disable=R0902
                     request_id=request_id,
                 )
                 return
-            self._mark_wait_acknowledged(
-                WAIT_ATTR_POSITION,
-                request_id=request_id,
-            )
 
             ret = "Position received: "
             if position.latitude_i != 0 and position.longitude_i != 0:
@@ -1664,6 +1687,10 @@ class MeshInterface:  # pylint: disable=R0902
                 ret += " position disabled"
 
             _emit_response_summary(ret)
+            self._mark_wait_acknowledged(
+                WAIT_ATTR_POSITION,
+                request_id=request_id,
+            )
 
         elif p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.ROUTING_APP
@@ -2076,11 +2103,11 @@ class MeshInterface:  # pylint: disable=R0902
                     request_id=request_id,
                 )
                 return
+            _emit_response_summary(f"Waypoint received: {w}")
             self._mark_wait_acknowledged(
                 WAIT_ATTR_WAYPOINT,
                 request_id=request_id,
             )
-            _emit_response_summary(f"Waypoint received: {w}")
         elif p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.ROUTING_APP
         ):

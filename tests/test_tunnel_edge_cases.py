@@ -50,7 +50,8 @@ def test_tunnel_initialization_creates_tap_device_when_proto_enabled(
     try:
         tunnel_module = importlib.import_module("meshtastic.tunnel")
     except ModuleNotFoundError as exc:
-        if exc.name != "pytap2":
+        missing_name = getattr(exc, "name", "") or ""
+        if missing_name != "pytap2" and "pytap2" not in str(exc):
             raise
         fake_pytap2 = types.ModuleType("pytap2")
         fake_pytap2.TapDevice = _FakeTapDevice
@@ -84,7 +85,12 @@ def test_tunnel_initialization_creates_tap_device_when_proto_enabled(
         tunnel = tunnel_module.Tunnel(iface)
         assert ("init", "mesh") in tap_events
         assert ("up",) in tap_events
-        assert ("ifconfig", "10.115.248.28", "255.255.0.0", 200) in tap_events
+        assert (
+            "ifconfig",
+            "10.115.248.28",
+            "255.255.0.0",
+            tunnel_module.TUN_MTU,
+        ) in tap_events
         assert ("thread-start",) in tap_events
     finally:
         if tunnel is not None:

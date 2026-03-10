@@ -61,7 +61,11 @@ elif [[ -d ${LOG_DIR} ]]; then
 		have_logs=true
 	fi
 else
-	echo "- Log directory not found: \`${LOG_DIR}\`" >&2
+	if [[ -e ${LOG_DIR} ]]; then
+		echo "- Log path is not a directory: \`${LOG_DIR}\`" >&2
+	else
+		echo "- Log directory not found: \`${LOG_DIR}\`" >&2
+	fi
 	exit 1
 fi
 

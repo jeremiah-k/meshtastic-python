@@ -95,8 +95,6 @@ def parseHostAndPort(
     if any(separator in host for separator in _FORBIDDEN_HOST_SEPARATORS):
         raise ValueError(_EXPECTED_HOST_PORT_ONLY.format(env_var=env_var, host=host))
 
-    default_port = _validate_port(default_port, host=host, env_var=env_var)
-
     if host.count(":") >= 2 and not host.startswith("["):
         try:
             ipaddress.IPv6Address(host)
@@ -115,7 +113,7 @@ def parseHostAndPort(
                 _EXPECTED_HOST_PORT_ONLY.format(env_var=env_var, host=host)
             ) from exc
         else:
-            return host, default_port
+            return host, _validate_port(default_port, host=host, env_var=env_var)
 
     raw_port = _extract_port_component(host)
     if raw_port == "":
@@ -165,7 +163,7 @@ def parseHostAndPort(
         raise ValueError(_INVALID_PORT_RANGE.format(env_var=env_var, host=host))
 
     if raw_port is None:
-        return host_name, default_port
+        return host_name, _validate_port(default_port, host=host, env_var=env_var)
 
     assert port is not None
     return host_name, _validate_port(port, host=host, env_var=env_var)

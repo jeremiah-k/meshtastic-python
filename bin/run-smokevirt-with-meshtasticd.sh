@@ -222,7 +222,7 @@ for target in "${PYTEST_TARGETS[@]}"; do
 	if [[ ${is_explicit_selector} == true ]] && [[ ${normalized_basename} != "test_smokevirt.py" ]]; then
 		HAS_EXPLICIT_SELECTOR=true
 	fi
-	if [[ ${is_explicit_selector} == false ]] && [[ ${normalized_basename} == "test_smokevirt.py" ]]; then
+	if [[ ${normalized_basename} == "test_smokevirt.py" ]]; then
 		HAS_SMOKEVIRT_TARGET=true
 		SMOKEVIRT_TARGETS+=("${target}")
 	fi
