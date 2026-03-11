@@ -17,6 +17,7 @@ from typing import (
     Callable,
     NoReturn,
     Sequence,
+    TypeVar,
     cast,
 )
 
@@ -70,6 +71,7 @@ FACTORY_RESET_REQUEST_VALUE: int = 1
 # Extra wait used only when getMetadata() runs under redirected stdout for
 # historical callers that parse printed metadata lines.
 METADATA_STDOUT_COMPAT_WAIT_SECONDS = 1.0
+_LockedCallResult = TypeVar("_LockedCallResult")
 
 
 class Node:
@@ -195,36 +197,38 @@ class Node:
         if metadata_stdout_event is not None:
             metadata_stdout_event.set()
 
-    def _get_metadata_snapshot(self) -> Any:
-        """Return a stable snapshot of ``iface.metadata`` under the node DB lock when available."""
+    def _execute_with_node_db_lock(
+        self, func: Callable[[], _LockedCallResult]
+    ) -> _LockedCallResult:
+        """Execute ``func`` while holding ``iface._node_db_lock`` when available."""
         node_db_lock = getattr(self.iface, "_node_db_lock", None)
         if (
             node_db_lock is None
             or not hasattr(node_db_lock, "__enter__")
             or not hasattr(node_db_lock, "__exit__")
         ):
+            return func()
+        with node_db_lock:
+            return func()
+
+    def _get_metadata_snapshot(self) -> mesh_pb2.DeviceMetadata | None:
+        """Return a stable snapshot of ``iface.metadata`` under the node DB lock when available."""
+        def _read_and_copy() -> mesh_pb2.DeviceMetadata | None:
             metadata = getattr(self.iface, "metadata", None)
-        else:
-            with node_db_lock:
-                metadata = getattr(self.iface, "metadata", None)
-        if isinstance(metadata, mesh_pb2.DeviceMetadata):
+            if not isinstance(metadata, mesh_pb2.DeviceMetadata):
+                return None
             metadata_snapshot = mesh_pb2.DeviceMetadata()
             metadata_snapshot.CopyFrom(metadata)
             return metadata_snapshot
-        return metadata
+
+        return self._execute_with_node_db_lock(_read_and_copy)
 
     def _set_metadata_snapshot(self, metadata_snapshot: mesh_pb2.DeviceMetadata) -> None:
         """Persist a metadata snapshot to ``iface.metadata`` under the node DB lock when available."""
-        node_db_lock = getattr(self.iface, "_node_db_lock", None)
-        if (
-            node_db_lock is None
-            or not hasattr(node_db_lock, "__enter__")
-            or not hasattr(node_db_lock, "__exit__")
-        ):
+        def _write() -> None:
             self.iface.metadata = metadata_snapshot
-            return
-        with node_db_lock:
-            self.iface.metadata = metadata_snapshot
+
+        self._execute_with_node_db_lock(_write)
 
     def _emit_cached_metadata_for_stdout(self) -> bool:
         """Emit metadata lines from ``self.iface.metadata`` for stdout parser compatibility."""

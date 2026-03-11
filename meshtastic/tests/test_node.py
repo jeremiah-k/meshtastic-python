@@ -64,8 +64,9 @@ class _DropChannelsOnEnterCountLock:
 class _TrackingLock:
     """Lock stub that records how many times it was acquired."""
 
-    def __init__(self) -> None:
+    def __init__(self, on_exit: Callable[[], None] | None = None) -> None:
         self.enter_count = 0
+        self._on_exit = on_exit
 
     def __enter__(self) -> "_TrackingLock":
         self.enter_count += 1
@@ -73,6 +74,8 @@ class _TrackingLock:
 
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> Literal[False]:
         _ = (exc_type, exc, tb)
+        if self._on_exit is not None:
+            self._on_exit()
         return False
 
 
@@ -1824,9 +1827,8 @@ def test_emit_cached_metadata_reads_metadata_under_node_db_lock(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """_emit_cached_metadata_for_stdout should snapshot iface.metadata under iface._node_db_lock."""
+    """_emit_cached_metadata_for_stdout should snapshot metadata before lock release."""
     iface = autospec_local_node_iface(MeshInterface)
-    iface._node_db_lock = _TrackingLock()
     iface.metadata = mesh_pb2.DeviceMetadata(
         firmware_version="2.7.18",
         device_state_version=24,
@@ -1835,6 +1837,18 @@ def test_emit_cached_metadata_reads_metadata_under_node_db_lock(
         hw_model=mesh_pb2.HardwareModel.PORTDUINO,
         hasPKC=True,
     )
+
+    def _mutate_metadata_after_unlock() -> None:
+        iface.metadata = mesh_pb2.DeviceMetadata(
+            firmware_version="mutated-after-unlock",
+            device_state_version=99,
+            role=config_pb2.Config.DeviceConfig.Role.CLIENT_HIDDEN,
+            position_flags=0,
+            hw_model=mesh_pb2.HardwareModel.UNSET,
+            hasPKC=False,
+        )
+
+    iface._node_db_lock = _TrackingLock(on_exit=_mutate_metadata_after_unlock)
     anode = Node(iface, "!12345678", noProto=True)
     emitted: list[str] = []
     monkeypatch.setattr(anode, "_emit_metadata_line", emitted.append)
@@ -1842,6 +1856,20 @@ def test_emit_cached_metadata_reads_metadata_under_node_db_lock(
     assert anode._emit_cached_metadata_for_stdout() is True
     assert iface._node_db_lock.enter_count == 1
     assert any("firmware_version: 2.7.18" in line for line in emitted)
+    assert not any("firmware_version: mutated-after-unlock" in line for line in emitted)
+
+
+@pytest.mark.unit
+def test_get_metadata_snapshot_returns_none_for_non_proto_metadata(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """_get_metadata_snapshot should return None when iface.metadata is not DeviceMetadata."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface._node_db_lock = _TrackingLock()
+    iface.metadata = {"firmware_version": "not-a-protobuf"}
+    anode = Node(iface, "!12345678", noProto=True)
+
+    assert anode._get_metadata_snapshot() is None
 
 
 @pytest.mark.unit
