@@ -61,6 +61,21 @@ class _DropChannelsOnEnterCountLock:
         return False
 
 
+class _TrackingLock:
+    """Lock stub that records how many times it was acquired."""
+
+    def __init__(self) -> None:
+        self.enter_count = 0
+
+    def __enter__(self) -> "_TrackingLock":
+        self.enter_count += 1
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> Literal[False]:
+        _ = (exc_type, exc, tb)
+        return False
+
+
 def _make_fake_send_admin(
     *,
     sent_messages: list[admin_pb2.AdminMessage] | None = None,
@@ -1711,6 +1726,34 @@ def test_onRequestGetMetadata_logs_valid_and_fallback_enum_values(
 
 
 @pytest.mark.unit
+def test_onRequestGetMetadata_updates_metadata_under_node_db_lock(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """onRequestGetMetadata should update iface.metadata while holding iface._node_db_lock."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface._acknowledgment = Acknowledgment()
+    iface._node_db_lock = _TrackingLock()
+    anode = Node(iface, "!12345678", noProto=True)
+    anode._timeout = MagicMock()
+
+    raw = admin_pb2.AdminMessage()
+    response = raw.get_device_metadata_response
+    response.firmware_version = "2.7.19"
+    response.device_state_version = 25
+    response.role = config_pb2.Config.DeviceConfig.Role.CLIENT
+    response.position_flags = 0
+    response.hw_model = mesh_pb2.HardwareModel.PORTDUINO
+    response.hasPKC = True
+
+    anode.onRequestGetMetadata(
+        {"decoded": {"portnum": "ADMIN_APP", "admin": {"raw": raw}}}
+    )
+
+    assert iface._node_db_lock.enter_count == 1
+    assert iface.metadata.firmware_version == "2.7.19"
+
+
+@pytest.mark.unit
 def test_onRequestGetMetadata_emits_stdout_when_redirected(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
     capsys: CaptureFixture[str],
@@ -1774,6 +1817,31 @@ def test_emit_cached_metadata_uses_fallback_values_for_unknown_enums(
     assert "role: 999" in emitted
     assert "hw_model: 999" in emitted
     assert any(line.startswith("excluded_modules:") for line in emitted)
+
+
+@pytest.mark.unit
+def test_emit_cached_metadata_reads_metadata_under_node_db_lock(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_emit_cached_metadata_for_stdout should snapshot iface.metadata under iface._node_db_lock."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface._node_db_lock = _TrackingLock()
+    iface.metadata = mesh_pb2.DeviceMetadata(
+        firmware_version="2.7.18",
+        device_state_version=24,
+        role=config_pb2.Config.DeviceConfig.Role.CLIENT,
+        position_flags=0,
+        hw_model=mesh_pb2.HardwareModel.PORTDUINO,
+        hasPKC=True,
+    )
+    anode = Node(iface, "!12345678", noProto=True)
+    emitted: list[str] = []
+    monkeypatch.setattr(anode, "_emit_metadata_line", emitted.append)
+
+    assert anode._emit_cached_metadata_for_stdout() is True
+    assert iface._node_db_lock.enter_count == 1
+    assert any("firmware_version: 2.7.18" in line for line in emitted)
 
 
 @pytest.mark.unit

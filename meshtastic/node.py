@@ -195,9 +195,40 @@ class Node:
         if metadata_stdout_event is not None:
             metadata_stdout_event.set()
 
+    def _get_metadata_snapshot(self) -> Any:
+        """Return a stable snapshot of ``iface.metadata`` under the node DB lock when available."""
+        node_db_lock = getattr(self.iface, "_node_db_lock", None)
+        if (
+            node_db_lock is None
+            or not hasattr(node_db_lock, "__enter__")
+            or not hasattr(node_db_lock, "__exit__")
+        ):
+            metadata = getattr(self.iface, "metadata", None)
+        else:
+            with node_db_lock:
+                metadata = getattr(self.iface, "metadata", None)
+        if isinstance(metadata, mesh_pb2.DeviceMetadata):
+            metadata_snapshot = mesh_pb2.DeviceMetadata()
+            metadata_snapshot.CopyFrom(metadata)
+            return metadata_snapshot
+        return metadata
+
+    def _set_metadata_snapshot(self, metadata_snapshot: mesh_pb2.DeviceMetadata) -> None:
+        """Persist a metadata snapshot to ``iface.metadata`` under the node DB lock when available."""
+        node_db_lock = getattr(self.iface, "_node_db_lock", None)
+        if (
+            node_db_lock is None
+            or not hasattr(node_db_lock, "__enter__")
+            or not hasattr(node_db_lock, "__exit__")
+        ):
+            self.iface.metadata = metadata_snapshot
+            return
+        with node_db_lock:
+            self.iface.metadata = metadata_snapshot
+
     def _emit_cached_metadata_for_stdout(self) -> bool:
         """Emit metadata lines from ``self.iface.metadata`` for stdout parser compatibility."""
-        metadata = getattr(self.iface, "metadata", None)
+        metadata = self._get_metadata_snapshot()
         firmware_version = getattr(metadata, "firmware_version", "")
         if not isinstance(firmware_version, str) or not firmware_version:
             return False
@@ -2116,7 +2147,7 @@ class Node:
         c = decoded["admin"]["raw"].get_device_metadata_response
         metadata_snapshot = mesh_pb2.DeviceMetadata()
         metadata_snapshot.CopyFrom(c)
-        self.iface.metadata = metadata_snapshot
+        self._set_metadata_snapshot(metadata_snapshot)
         self._timeout.reset()  # We made forward progress
         logger.debug("Received metadata %s", stripnl(c))
         self._emit_metadata_line(f"\nfirmware_version: {c.firmware_version}")
