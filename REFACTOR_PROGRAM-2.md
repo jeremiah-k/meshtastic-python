@@ -93,7 +93,7 @@ This preserves the historical public API.
 
 ---
 
-#### Networking Interface Improvements
+#### MeshInterface Runtime Improvements
 
 Major improvements include:
 
@@ -153,7 +153,7 @@ The architecture is improved, but lifecycle correctness must be stabilized.
 
 ---
 
-### Networking Interface Async Correctness
+### MeshInterface Runtime Correctness
 
 The mesh interface now includes sophisticated request tracking and callbacks.
 
@@ -244,12 +244,12 @@ Testing improvements
 
 ---
 
-# Phase 2: Networking / Interface Async Stabilization
+# Phase 2: MeshInterface Runtime Stabilization
 
 Branch name suggestion:
 
 ```
-networking-interface-stabilization
+meshinterface-runtime-stabilization
 ```
 
 This phase focuses on correctness of the core networking behavior.
@@ -391,7 +391,7 @@ The final merge into `master` will occur **after phases 1–3 are completed**.
 This allows:
 
 - stabilization of BLE
-- stabilization of networking interface behavior
+- stabilization of MeshInterface runtime behavior
 - stabilization of runtime behavior
 
 Once these subsystems are stable, the refactor can be safely promoted to production.
@@ -453,7 +453,7 @@ The next work should not expand scope further.
 Instead, the project should proceed through **large stabilization passes**:
 
 1. BLE stabilization
-2. Networking interface async stabilization
+2. MeshInterface runtime stabilization
 3. Runtime boundary cleanup
 4. CLI modularization (future)
 
