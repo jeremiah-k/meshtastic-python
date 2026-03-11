@@ -1698,7 +1698,7 @@ class BLEInterface(MeshInterface):
     def _finish_management_operation(self) -> None:
         """
         Mark completion of an in-flight management operation and notify any waiters when no operations remain.
-        
+
         If the internal in-flight counter is already zero or negative, reset it to zero, notify waiters, and log a warning; otherwise decrement the counter and notify waiters when it reaches zero.
         """
         with self._management_lock:
@@ -2411,8 +2411,8 @@ class BLEInterface(MeshInterface):
                 )
                 if not lost_gate_ownership:
                     with self._state_lock:
-                        still_owned, is_closing = self._get_connected_client_status_locked(
-                            connected_client
+                        still_owned, is_closing = (
+                            self._get_connected_client_status_locked(connected_client)
                         )
                         if still_owned:
                             publish_candidate = True
@@ -2733,7 +2733,9 @@ class BLEInterface(MeshInterface):
                             raise self.BLEError(ERROR_MANAGEMENT_CONNECTING)
                         remaining = _MANAGEMENT_CONNECT_WAIT_TIMEOUT_SECONDS - elapsed
                         management_idle_condition.wait(
-                            timeout=min(_MANAGEMENT_CONNECT_WAIT_POLL_SECONDS, remaining)
+                            timeout=min(
+                                _MANAGEMENT_CONNECT_WAIT_POLL_SECONDS, remaining
+                            )
                         )
                     # Reset timeout accounting once we are no longer blocked by
                     # in-flight management operations so future waits start fresh.

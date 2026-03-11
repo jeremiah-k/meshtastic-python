@@ -830,9 +830,9 @@ def test_rapid_connect_disconnect_stress_test(
     ) -> tuple[list["StressTestClient"], list["StressTestClient"]]:
         """Wait until latest successful reconnect attempt owns iface.client."""
 
-        def _snapshot_stress_state() -> tuple[
-            object | None, list["StressTestClient"], list["StressTestClient"]
-        ]:
+        def _snapshot_stress_state() -> (
+            tuple[object | None, list["StressTestClient"], list["StressTestClient"]]
+        ):
             with iface._state_lock:
                 current_client = cast(object | None, iface.client)
                 attempts = list(
@@ -1030,7 +1030,9 @@ def test_rapid_connect_disconnect_stress_test(
                 bleak_client.is_connected_result = False
                 iface3._on_ble_disconnect(bleak_client)
                 time.sleep(0.01)
-            except Exception as exc:  # noqa: BLE001 - test records failure-path behavior
+            except (
+                Exception
+            ) as exc:  # noqa: BLE001 - test records failure-path behavior
                 failure_errors.append(exc)
 
         assert failure_errors == []

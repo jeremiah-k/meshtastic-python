@@ -1,4 +1,5 @@
 # REFACTOR_PROGRAM-2.md
+
 ### Meshtastic Python Refactor – Phase 2 Program Plan
 
 Date: 2026-03-11  
@@ -49,7 +50,7 @@ Going forward we will keep the advantages of automation but shift toward **inten
 
 • dozens of tiny PRs  
 • style-only churn mixed with behavior changes  
-• interleaving multiple subsystem refactors  
+• interleaving multiple subsystem refactors
 
 Each branch should represent **one engineering theme**.
 

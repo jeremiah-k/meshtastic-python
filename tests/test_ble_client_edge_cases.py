@@ -210,7 +210,9 @@ def test_bleclient_init_with_address_syncs_from_bleak(
 
 
 @pytest.mark.unit
-def test_bleclient_sync_address_noops_without_bleak_client(ble_client: BLEClient) -> None:
+def test_bleclient_sync_address_noops_without_bleak_client(
+    ble_client: BLEClient,
+) -> None:
     """Address sync should return early when the backend client is not initialized."""
     ble_client.address = "11:22:33:44:55:66"
     ble_client.bleak_client = None
@@ -227,7 +229,9 @@ def test_bleclient_management_call_reraises_non_notimplemented_bleerror() -> Non
     async def _noop_operation() -> None:
         return None
 
-    def _raise_bleerror(awaitable: Awaitable[object], timeout: float | None = None) -> NoReturn:
+    def _raise_bleerror(
+        awaitable: Awaitable[object], timeout: float | None = None
+    ) -> NoReturn:
         _ = timeout
         close_awaitable = getattr(awaitable, "close", None)
         if callable(close_awaitable):

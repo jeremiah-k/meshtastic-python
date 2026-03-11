@@ -58,8 +58,12 @@ def test_is_device_not_found_error_matches_device_context_messages() -> None:
         is False
     )
     assert _is_device_not_found_error(Exception("Service not found")) is False
-    assert _is_device_not_found_error(Exception("Peripheral service not found")) is False
-    assert _is_device_not_found_error(Exception("Peripheral: service not found")) is False
+    assert (
+        _is_device_not_found_error(Exception("Peripheral service not found")) is False
+    )
+    assert (
+        _is_device_not_found_error(Exception("Peripheral: service not found")) is False
+    )
 
 
 @pytest.mark.unit
@@ -757,7 +761,9 @@ def test_connection_orchestrator_raises_when_connect_state_transition_fails() ->
         thread_coordinator=MagicMock(),
     )
 
-    with pytest.raises(MockBLEError, match="Already connected or connection in progress"):
+    with pytest.raises(
+        MockBLEError, match="Already connected or connection in progress"
+    ):
         orchestrator._establish_connection(
             address="AA:BB:CC:DD:EE:FF",
             current_address=None,

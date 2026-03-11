@@ -129,7 +129,9 @@ ERROR_ADDRESS_RESOLUTION_FAILED: str = "Address resolution failed, cannot create
 ERROR_INTERFACE_CLOSING: str = "Cannot connect while interface is closing"
 ERROR_CONNECTION_SUPPRESSED: str = "Connection suppressed: recently connected elsewhere"
 ERROR_NO_CLIENT_ESTABLISHED: str = "Connection failed: no BLE client established"
-ERROR_MANAGEMENT_ADDRESS_EMPTY: str = "Management operations require a non-empty address."
+ERROR_MANAGEMENT_ADDRESS_EMPTY: str = (
+    "Management operations require a non-empty address."
+)
 ERROR_MANAGEMENT_ADDRESS_REQUIRED: str = (
     "Management operations require an explicit address when no device is connected."
 )
@@ -176,7 +178,9 @@ UNREACHABLE_ADDRESSED_DEVICES_MSG: str = (
 
 # BLEClient-specific constants
 # Alias preserves legacy access while sourcing value from BLEConfig
-BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT: float = BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT
+BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT: float = (
+    BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT
+)
 BLECLIENT_ERROR_ASYNC_TIMEOUT: str = "Async operation timed out"
 BLECLIENT_ERROR_CANCELLED: str = "Async operation was cancelled"
 BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED: str = (

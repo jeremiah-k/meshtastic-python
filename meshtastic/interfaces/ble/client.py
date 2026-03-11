@@ -380,7 +380,9 @@ class BLEClient:
         bleak_client = self.bleak_client
         if bleak_client is None:
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_CONNECT_NOT_INITIALIZED)
-        result = self._async_await(bleak_client.connect(**kwargs), timeout=await_timeout)
+        result = self._async_await(
+            bleak_client.connect(**kwargs), timeout=await_timeout
+        )
         self._sync_address_from_bleak()
         return result
 
