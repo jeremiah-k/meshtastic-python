@@ -29,7 +29,9 @@ def _require_mapping(value: object, *, label: str) -> dict[str, object]:
 
 def _require_int_strict(value: object, *, label: str) -> int:
     """Assert that `value` is an int (excluding bool) and return it."""
-    assert isinstance(value, int), f"{label} should be an int, got {type(value).__name__}"
+    assert isinstance(
+        value, int
+    ), f"{label} should be an int, got {type(value).__name__}"
     assert not isinstance(value, bool), f"{label} must not be a bool"
     return cast(int, value)
 
@@ -92,9 +94,9 @@ def test_examples_example_config_yaml_is_valid() -> None:
     assert isinstance(owner_short, str), "owner_short should be a string"
     assert owner_short.strip(), "owner_short should not be empty/whitespace"
     assert isinstance(channel_url, str), "channel_url should be a string"
-    assert channel_url.startswith("https://meshtastic.org/e/#"), (
-        f"channel_url should start with the Meshtastic share URL, got: {channel_url}"
-    )
+    assert channel_url.startswith(
+        "https://meshtastic.org/e/#"
+    ), f"channel_url should start with the Meshtastic share URL, got: {channel_url}"
     assert "ownerShort" not in config
     assert "channelUrl" not in config
 

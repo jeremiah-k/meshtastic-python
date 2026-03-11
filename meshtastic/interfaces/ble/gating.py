@@ -211,11 +211,7 @@ def _cleanup_addr_lock(key: str | None) -> None:
         return
     with _REGISTRY_LOCK:
         holder_count = _LOCK_HOLDERS.get(key, 0)
-        if (
-            holder_count > 0
-            or key in _CONNECTED_ADDRS
-            or key in _CONNECTING_ADDRS
-        ):
+        if holder_count > 0 or key in _CONNECTED_ADDRS or key in _CONNECTING_ADDRS:
             logger.debug(
                 "Skipping cleanup of address lock for %s (holders: %d)",
                 key,
@@ -619,7 +615,9 @@ def _mark_disconnected(addr: str | None, owner: Any | None = None) -> None:
                     clear_connecting_claim = False
                 if provisional_owner is None:
                     provisional_owner_id = _CONNECTING_OWNER_IDS.get(key)
-                    if provisional_owner_id is None or provisional_owner_id != id(owner):
+                    if provisional_owner_id is None or provisional_owner_id != id(
+                        owner
+                    ):
                         logger.debug(
                             "Ignoring provisional disconnect mark for %s from non-owner instance.",
                             key,

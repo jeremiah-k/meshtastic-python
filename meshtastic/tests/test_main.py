@@ -38,12 +38,12 @@ from meshtastic.__main__ import (
 
 # from ..ble_interface import BLEInterface
 from ..node import Node
-from ..protobuf import config_pb2, localonly_pb2
-from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 
 # from ..radioconfig_pb2 import UserPreferences
 # import meshtastic.config_pb2
 from ..ota import OTAError, OTATransportError
+from ..protobuf import config_pb2, localonly_pb2
+from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 from ..serial_interface import SerialInterface
 from ..tcp_interface import TCPInterface
 

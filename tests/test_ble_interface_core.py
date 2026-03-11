@@ -19,31 +19,50 @@ from bleak.exc import BleakDBusError, BleakError
 # Import meshtastic modules for use in tests
 import meshtastic.interfaces.ble as ble_mod
 import meshtastic.interfaces.ble.discovery as discovery_mod
-from meshtastic.interfaces.ble import (FROMNUM_UUID, LEGACY_LOGRADIO_UUID,
-                                       LOGRADIO_UUID, SERVICE_UUID, BLEClient,
-                                       BLEInterface)
+from meshtastic.interfaces.ble import (
+    FROMNUM_UUID,
+    LEGACY_LOGRADIO_UUID,
+    LOGRADIO_UUID,
+    SERVICE_UUID,
+    BLEClient,
+    BLEInterface,
+)
 from meshtastic.interfaces.ble.connection import ConnectionValidator
 from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED,
     BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED,
-    CONNECTION_ERROR_LOST_OWNERSHIP, ERROR_CONNECTION_SUPPRESSED,
-    ERROR_INTERFACE_CLOSING, ERROR_MANAGEMENT_ADDRESS_EMPTY,
-    ERROR_MANAGEMENT_ADDRESS_REQUIRED, ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID,
-    ERROR_MANAGEMENT_CONNECTING, ERROR_MANAGEMENT_TARGET_CHANGED,
-    ERROR_TRUST_ADDRESS_NOT_RESOLVED, ERROR_TRUST_BLUETOOTHCTL_MISSING,
-    ERROR_TRUST_COMMAND_FAILED, ERROR_TRUST_COMMAND_TIMEOUT,
-    ERROR_TRUST_INVALID_TIMEOUT)
+    CONNECTION_ERROR_LOST_OWNERSHIP,
+    ERROR_CONNECTION_SUPPRESSED,
+    ERROR_INTERFACE_CLOSING,
+    ERROR_MANAGEMENT_ADDRESS_EMPTY,
+    ERROR_MANAGEMENT_ADDRESS_REQUIRED,
+    ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID,
+    ERROR_MANAGEMENT_CONNECTING,
+    ERROR_MANAGEMENT_TARGET_CHANGED,
+    ERROR_TRUST_ADDRESS_NOT_RESOLVED,
+    ERROR_TRUST_BLUETOOTHCTL_MISSING,
+    ERROR_TRUST_COMMAND_FAILED,
+    ERROR_TRUST_COMMAND_TIMEOUT,
+    ERROR_TRUST_INVALID_TIMEOUT,
+)
 from meshtastic.interfaces.ble.discovery import (
-    DiscoveryClientError, DiscoveryManager,
-    _close_discovery_client_best_effort, _filter_devices_for_target_identifier,
-    _looks_like_ble_address, _parse_scan_response)
-from meshtastic.interfaces.ble.reconnection import (ReconnectScheduler,
-                                                    ReconnectWorker)
+    DiscoveryClientError,
+    DiscoveryManager,
+    _close_discovery_client_best_effort,
+    _filter_devices_for_target_identifier,
+    _looks_like_ble_address,
+    _parse_scan_response,
+)
+from meshtastic.interfaces.ble.reconnection import ReconnectScheduler, ReconnectWorker
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
+
 # Import common fixtures
 from tests.test_ble_interface_fixtures import DummyClient, _build_interface
 
 pytestmark = pytest.mark.unit
+
+_MAX_SPURIOUS_CONNECT_WAIT_CALLS_BEFORE_FAIL = 10
+_MAX_SPURIOUS_CLOSE_WAIT_CALLS_BEFORE_FAIL = 50
 
 
 def _pin_trust_environment(
@@ -51,7 +70,13 @@ def _pin_trust_environment(
     *,
     run: Callable[..., object] | None = None,
 ) -> None:
-    """Pin trust() host dependencies so guard-path tests stay hermetic."""
+    """
+    Configure host-specific dependencies so tests of trust() run in a controlled Linux-like environment.
+
+    Parameters:
+        monkeypatch (pytest.MonkeyPatch): Fixture used to apply attribute patches.
+        run (Callable[..., object] | None): Optional replacement for subprocess.run used by trust(); if None, a sentinel callable is installed that raises AssertionError if invoked.
+    """
     monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "linux")
     monkeypatch.setattr(
         "meshtastic.interfaces.ble.interface.shutil.which",
@@ -1899,6 +1924,135 @@ def test_ble_interface_close_skips_management_gate_after_wait_timeout(
     assert disconnect_calls == [client]
 
 
+def test_ble_interface_close_bounds_wait_on_spurious_management_wakeups(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """close() should enforce shutdown timeout despite spurious management wakeups."""
+    client = DummyClient()
+    client.address = "AA:BB:CC:DD:EE:31"
+    client.bleak_client = SimpleNamespace(address=client.address)
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    wait_calls: list[float | None] = []
+    gate_calls: list[str] = []
+    unsubscribe_calls: list[object] = []
+    disconnect_calls: list[object] = []
+    close_errors: list[Exception] = []
+    close_done = threading.Event()
+
+    with iface._management_lock:
+        iface._management_inflight = 1
+    with iface._state_lock:
+        iface._disconnect_notified = True
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface._MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS",
+        0.05,
+    )
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface._MANAGEMENT_CONNECT_WAIT_POLL_SECONDS",
+        0.005,
+    )
+
+    def _spurious_wait(timeout: float | None = None) -> bool:
+        """
+        Simulate a spurious wait for tests and track each requested timeout.
+
+        Parameters:
+            timeout (float | None): The requested wait duration in seconds; if greater than zero the function sleeps for that duration.
+
+        Returns:
+            bool: `True` to indicate the wait condition remains satisfied.
+
+        Raises:
+            AssertionError: If the number of invocations exceeds the allowed spurious-wait budget, signals that shutdown waited past its timeout.
+        """
+        wait_calls.append(timeout)
+        if timeout is not None and timeout > 0:
+            time.sleep(timeout)
+        if len(wait_calls) > _MAX_SPURIOUS_CLOSE_WAIT_CALLS_BEFORE_FAIL:
+            close_done.set()
+            raise AssertionError(
+                "close() kept waiting past the shutdown timeout budget"
+            )
+        return True
+
+    monkeypatch.setattr(
+        iface._management_idle_condition,
+        "wait",
+        _spurious_wait,
+        raising=True,
+    )
+
+    def _management_gate(
+        address: str,
+    ) -> contextlib.AbstractContextManager[None]:
+        """
+        Context manager used in tests to record a requested management address and provide a no-op gate.
+
+        Parameters:
+            address (str): The management address being requested; the address is recorded for test inspection.
+
+        Returns:
+            contextmanager: A context manager that performs no gating and yields `None`.
+        """
+        gate_calls.append(address)
+        return contextlib.nullcontext()
+
+    monkeypatch.setattr(
+        iface, "_management_target_gate", _management_gate, raising=True
+    )
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.MeshInterface.close",
+        lambda _self: None,
+    )
+    monkeypatch.setattr(
+        iface._notification_manager,
+        "_unsubscribe_all",
+        lambda active_client, timeout=None: unsubscribe_calls.append(active_client),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        iface,
+        "_disconnect_and_close_client",
+        lambda active_client: disconnect_calls.append(active_client),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        iface._notification_manager,
+        "_cleanup_all",
+        lambda: None,
+        raising=True,
+    )
+
+    def _run_close() -> None:
+        """
+        Attempt to close the interface and signal completion.
+
+        Calls iface.close(). If an exception is raised, appends it to the shared close_errors list. Always sets the close_done event when finished.
+        """
+        try:
+            iface.close()
+        except Exception as exc:  # pragma: no cover - captured for assertion
+            close_errors.append(exc)
+        finally:
+            close_done.set()
+
+    with caplog.at_level(logging.WARNING):
+        close_thread = threading.Thread(target=_run_close, daemon=True)
+        close_thread.start()
+        close_thread.join(timeout=1.0)
+
+    assert not close_thread.is_alive()
+    assert close_done.is_set() is True
+    assert close_errors == []
+    assert wait_calls
+    assert gate_calls == []
+    assert unsubscribe_calls == [client]
+    assert disconnect_calls == [client]
+    assert any("Timed out waiting" in record.message for record in caplog.records)
+
+
 def test_ble_interface_implicit_trust_holds_connect_lock_during_subprocess(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2305,6 +2459,75 @@ def test_validate_connect_timeout_override_rejects_non_numeric_values() -> None:
         )
 
 
+def test_finish_management_operation_clamps_underflow(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """_finish_management_operation() should clamp negative accounting to zero."""
+    iface = _build_minimal_connect_test_interface()
+    with iface._management_lock:
+        iface._management_inflight = -1
+    notify_calls: list[bool] = []
+    monkeypatch.setattr(
+        iface._management_idle_condition,
+        "notify_all",
+        lambda: notify_calls.append(True),
+        raising=True,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        iface._finish_management_operation()
+
+    with iface._management_lock:
+        assert iface._management_inflight == 0
+    assert notify_calls == [True]
+    assert any("underflow" in record.message.lower() for record in caplog.records)
+
+
+def test_finish_management_operation_notifies_when_count_reaches_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_finish_management_operation() should notify waiters on zero transition."""
+    iface = _build_minimal_connect_test_interface()
+    with iface._management_lock:
+        iface._management_inflight = 1
+    notify_calls: list[bool] = []
+    monkeypatch.setattr(
+        iface._management_idle_condition,
+        "notify_all",
+        lambda: notify_calls.append(True),
+        raising=True,
+    )
+
+    iface._finish_management_operation()
+
+    with iface._management_lock:
+        assert iface._management_inflight == 0
+    assert notify_calls == [True]
+
+
+def test_finish_management_operation_does_not_notify_above_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_finish_management_operation() should not notify while inflight remains positive."""
+    iface = _build_minimal_connect_test_interface()
+    with iface._management_lock:
+        iface._management_inflight = 2
+    notify_calls: list[bool] = []
+    monkeypatch.setattr(
+        iface._management_idle_condition,
+        "notify_all",
+        lambda: notify_calls.append(True),
+        raising=True,
+    )
+
+    iface._finish_management_operation()
+
+    with iface._management_lock:
+        assert iface._management_inflight == 1
+    assert notify_calls == []
+
+
 @pytest.mark.unit
 def test_connect_rejects_non_bool_pair_override() -> None:
     """connect() should fail fast when `pair` is not explicitly bool/None."""
@@ -2419,6 +2642,202 @@ def test_connect_times_out_waiting_for_management_operations(
 
     with pytest.raises(BLEInterface.BLEError, match=ERROR_MANAGEMENT_CONNECTING):
         iface.connect("AA:BB:CC:DD:EE:10")
+
+
+def test_connect_times_out_on_spurious_management_wakeups(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """connect() should enforce timeout even if management wait wakes spuriously."""
+    iface = _build_minimal_connect_test_interface()
+    iface._management_lock = threading.RLock()
+    iface._management_idle_condition = threading.Condition(iface._management_lock)
+    iface._management_inflight = 1
+    wait_calls: list[float | None] = []
+    fake_time = 0.0
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface._MANAGEMENT_CONNECT_WAIT_TIMEOUT_SECONDS",
+        0.03,
+    )
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface._MANAGEMENT_CONNECT_WAIT_POLL_SECONDS",
+        0.005,
+    )
+
+    def _monotonic() -> float:
+        """
+        Advance and return a test monotonic timestamp by 0.01 seconds.
+
+        Returns:
+            Current monotonic time in seconds; the returned value increases by 0.01 on each call.
+        """
+        nonlocal fake_time
+        fake_time += 0.01
+        return fake_time
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.time.monotonic", _monotonic
+    )
+
+    def _spurious_wait(timeout: float | None = None) -> bool:
+        """
+        Record a spurious wait invocation and signal a wakeup.
+
+        Parameters:
+            timeout (float | None): The timeout value passed to the wait; may be None.
+
+        Returns:
+            bool: `True` to indicate a spurious wakeup.
+
+        Raises:
+            AssertionError: If the number of recorded wait calls exceeds the configured budget.
+        """
+        wait_calls.append(timeout)
+        if len(wait_calls) > _MAX_SPURIOUS_CONNECT_WAIT_CALLS_BEFORE_FAIL:
+            raise AssertionError("connect() kept waiting past the timeout budget")
+        return True
+
+    monkeypatch.setattr(
+        iface._management_idle_condition,
+        "wait",
+        _spurious_wait,
+        raising=True,
+    )
+    monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
+    monkeypatch.setattr(iface, "_get_existing_client_if_valid", lambda _request: None)
+
+    with pytest.raises(BLEInterface.BLEError, match=ERROR_MANAGEMENT_CONNECTING):
+        iface.connect("AA:BB:CC:DD:EE:10")
+
+    assert wait_calls
+
+
+def test_connect_management_wait_timeout_resets_between_wait_cycles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """connect() should restart timeout accounting after management drains."""
+    iface = _build_minimal_connect_test_interface()
+    iface._management_lock = threading.RLock()
+    iface._management_idle_condition = threading.Condition(iface._management_lock)
+    iface._management_inflight = 1
+    wait_calls: list[float | None] = []
+    duplicate_checks = 0
+    monotonic_values = iter([0.0, 0.1, 100.0, 100.1])
+    last_time = 100.1
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface._MANAGEMENT_CONNECT_WAIT_TIMEOUT_SECONDS",
+        1.0,
+    )
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface._MANAGEMENT_CONNECT_WAIT_POLL_SECONDS",
+        0.1,
+    )
+
+    def _monotonic() -> float:
+        """
+        Provide a monotonic timestamp for tests, advancing through a preset sequence and falling back to incremental steps when the sequence is exhausted.
+
+        Returns:
+            float: The current monotonic time value and updates the captured `last_time` variable.
+        """
+        nonlocal last_time
+        try:
+            last_time = next(monotonic_values)
+        except StopIteration:
+            last_time += 0.1
+        return last_time
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.time.monotonic", _monotonic
+    )
+
+    def _wait_for_management(timeout: float | None = None) -> bool:
+        """
+        Simulate waiting for management operations to drain and record the requested timeout.
+
+        Parameters:
+            timeout (float | None): Maximum seconds to wait, or `None` to indicate an indefinite wait.
+
+        Behavior:
+            Appends the provided `timeout` value to the `wait_calls` list and sets
+            `iface._management_inflight` to 0 to indicate no inflight management operations.
+
+        Returns:
+            bool: `True` to indicate the wait condition was signaled.
+        """
+        wait_calls.append(timeout)
+        iface._management_inflight = 0
+        return True
+
+    def _raise_if_duplicate(_key: str | None) -> None:
+        """
+        Increment the duplicate-check counter and, on the second invocation, mark the interface as having one inflight management operation.
+
+        Parameters:
+            _key (str | None): Ignored; present to match the duplicate-check callback signature.
+        """
+        nonlocal duplicate_checks
+        duplicate_checks += 1
+        if duplicate_checks == 2:
+            iface._management_inflight = 1
+
+    monkeypatch.setattr(
+        iface._management_idle_condition,
+        "wait",
+        _wait_for_management,
+        raising=True,
+    )
+    monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
+    monkeypatch.setattr(iface, "_get_existing_client_if_valid", lambda _request: None)
+    monkeypatch.setattr(
+        iface,
+        "_resolve_target_address_for_connect",
+        lambda identifier: cast(str, identifier),
+    )
+    monkeypatch.setattr(iface, "_raise_if_duplicate_connect", _raise_if_duplicate)
+    monkeypatch.setattr(iface, "_finalize_connection_gates", lambda *_args: None)
+    monkeypatch.setattr(
+        iface,
+        "_verify_and_publish_connected",
+        lambda *_args, **_kwargs: None,
+    )
+
+    def _establish_stub(
+        _address: str | None,
+        _normalized_request: str | None,
+        _address_key: str | None,
+        *,
+        pair_on_connect: bool = False,
+        connect_timeout: float | None = None,
+    ) -> tuple[DummyClient, str | None, str | None]:
+        """
+        Create and attach a DummyClient to the test BLE interface and mark it as connected.
+
+        Parameters:
+            _address (str | None): Ignored; present to match the real establish signature.
+            _normalized_request (str | None): Ignored; present to match the real establish signature.
+            _address_key (str | None): Ignored; present to match the real establish signature.
+            pair_on_connect (bool): Accepted but ignored by this test stub.
+            connect_timeout (float | None): Accepted but ignored by this test stub.
+
+        Returns:
+            tuple[DummyClient, None, None]: The created DummyClient instance and two None placeholders (resolved address and resolved identifier).
+        """
+        _ = (pair_on_connect, connect_timeout)
+        client = DummyClient()
+        with iface._state_lock:
+            cast(Any, iface).client = client
+            iface.address = client.address
+            iface._state_manager._reset_to_disconnected()
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
+        return client, None, None
+
+    monkeypatch.setattr(iface, "_establish_and_update_client", _establish_stub)
+
+    assert isinstance(iface.connect("AA:BB:CC:DD:EE:10"), DummyClient)
+    assert len(wait_calls) == 2
 
 
 def test_connect_retries_when_management_becomes_inflight_inside_connect_lock(
@@ -3270,8 +3689,7 @@ def test_connect_marks_provisional_claims_before_gate_release(
 ) -> None:
     """connect() should publish provisional ownership before releasing the address gate."""
     _ = clear_registry
-    from meshtastic.interfaces.ble.gating import \
-        _is_currently_connected_elsewhere
+    from meshtastic.interfaces.ble.gating import _is_currently_connected_elsewhere
 
     target_identifier = "mesh-node"
     device_key = "aabbccddee30"

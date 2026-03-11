@@ -1696,8 +1696,19 @@ class BLEInterface(MeshInterface):
         self._management_inflight += 1
 
     def _finish_management_operation(self) -> None:
-        """Mark a management operation complete and wake shutdown waiters."""
+        """
+        Mark completion of an in-flight management operation and notify any waiters when no operations remain.
+
+        If the internal in-flight counter is already zero or negative, reset it to zero, notify waiters, and log a warning; otherwise decrement the counter and notify waiters when it reaches zero.
+        """
         with self._management_lock:
+            if self._management_inflight <= 0:
+                logger.warning(
+                    "Management operation accounting underflow detected during finish(); resetting inflight count to zero."
+                )
+                self._management_inflight = 0
+                self._management_idle_condition.notify_all()
+                return
             self._management_inflight -= 1
             if self._management_inflight == 0:
                 self._management_idle_condition.notify_all()
@@ -2400,8 +2411,8 @@ class BLEInterface(MeshInterface):
                 )
                 if not lost_gate_ownership:
                     with self._state_lock:
-                        still_owned, is_closing = self._get_connected_client_status_locked(
-                            connected_client
+                        still_owned, is_closing = (
+                            self._get_connected_client_status_locked(connected_client)
                         )
                         if still_owned:
                             publish_candidate = True
@@ -2697,7 +2708,7 @@ class BLEInterface(MeshInterface):
         try:
             management_lock = self._management_lock
             management_idle_condition = self._management_idle_condition
-            management_wait_started = time.monotonic()
+            management_wait_started: float | None = None
             while True:
                 requested_identifier = address if address is not None else self.address
                 normalized_request = sanitize_address(requested_identifier)
@@ -2710,18 +2721,25 @@ class BLEInterface(MeshInterface):
                 with management_lock:
                     while self._management_inflight > 0:
                         self._validate_connection_preconditions()
-                        if not management_idle_condition.wait(
-                            timeout=_MANAGEMENT_CONNECT_WAIT_POLL_SECONDS
-                        ):
-                            self._validate_connection_preconditions()
-                            elapsed = time.monotonic() - management_wait_started
-                            if elapsed >= _MANAGEMENT_CONNECT_WAIT_TIMEOUT_SECONDS:
-                                logger.warning(
-                                    "Timed out waiting %.1fs for %d inflight management operation(s) before connect()",
-                                    elapsed,
-                                    self._management_inflight,
-                                )
-                                raise self.BLEError(ERROR_MANAGEMENT_CONNECTING)
+                        if management_wait_started is None:
+                            management_wait_started = time.monotonic()
+                        elapsed = time.monotonic() - management_wait_started
+                        if elapsed >= _MANAGEMENT_CONNECT_WAIT_TIMEOUT_SECONDS:
+                            logger.warning(
+                                "Timed out waiting %.1fs for %d inflight management operation(s) before connect()",
+                                elapsed,
+                                self._management_inflight,
+                            )
+                            raise self.BLEError(ERROR_MANAGEMENT_CONNECTING)
+                        remaining = _MANAGEMENT_CONNECT_WAIT_TIMEOUT_SECONDS - elapsed
+                        management_idle_condition.wait(
+                            timeout=min(
+                                _MANAGEMENT_CONNECT_WAIT_POLL_SECONDS, remaining
+                            )
+                        )
+                    # Reset timeout accounting once we are no longer blocked by
+                    # in-flight management operations so future waits start fresh.
+                    management_wait_started = None
 
                 # Recompute potentially discovery-backed target state after
                 # waiting for inflight management operations so retries do not
@@ -3224,6 +3242,7 @@ class BLEInterface(MeshInterface):
         # can observe _closed/_is_closing and abort, rather than forcing close()
         # to wait behind a long BLE connect attempt.
         management_wait_timed_out = False
+        management_wait_started = time.monotonic()
         with self._management_lock:
             # Use unified state lock
             with self._state_lock:
@@ -3246,15 +3265,19 @@ class BLEInterface(MeshInterface):
                 ):
                     self._state_manager._transition_to(ConnectionState.DISCONNECTING)
             while self._management_inflight > 0:
-                if not self._management_idle_condition.wait(
-                    timeout=_MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS
-                ):
+                elapsed = time.monotonic() - management_wait_started
+                if elapsed >= _MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS:
                     management_wait_timed_out = True
                     logger.warning(
-                        "Timed out waiting for %d inflight management operation(s) during shutdown",
+                        "Timed out waiting %.1fs for %d inflight management operation(s) during shutdown",
+                        elapsed,
                         self._management_inflight,
                     )
                     break
+                remaining = _MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS - elapsed
+                self._management_idle_condition.wait(
+                    timeout=min(_MANAGEMENT_CONNECT_WAIT_POLL_SECONDS, remaining)
+                )
 
         try:
             # Release lock before calling MeshInterface.close() to avoid deadlock
