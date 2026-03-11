@@ -2434,6 +2434,50 @@ def test_finish_management_operation_clamps_underflow(
     assert any("underflow" in record.message.lower() for record in caplog.records)
 
 
+def test_finish_management_operation_notifies_when_count_reaches_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_finish_management_operation() should notify waiters on zero transition."""
+    iface = _build_minimal_connect_test_interface()
+    with iface._management_lock:
+        iface._management_inflight = 1
+    notify_calls: list[bool] = []
+    monkeypatch.setattr(
+        iface._management_idle_condition,
+        "notify_all",
+        lambda: notify_calls.append(True),
+        raising=True,
+    )
+
+    iface._finish_management_operation()
+
+    with iface._management_lock:
+        assert iface._management_inflight == 0
+    assert notify_calls == [True]
+
+
+def test_finish_management_operation_does_not_notify_above_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_finish_management_operation() should not notify while inflight remains positive."""
+    iface = _build_minimal_connect_test_interface()
+    with iface._management_lock:
+        iface._management_inflight = 2
+    notify_calls: list[bool] = []
+    monkeypatch.setattr(
+        iface._management_idle_condition,
+        "notify_all",
+        lambda: notify_calls.append(True),
+        raising=True,
+    )
+
+    iface._finish_management_operation()
+
+    with iface._management_lock:
+        assert iface._management_inflight == 1
+    assert notify_calls == []
+
+
 @pytest.mark.unit
 def test_connect_rejects_non_bool_pair_override() -> None:
     """connect() should fail fast when `pair` is not explicitly bool/None."""
