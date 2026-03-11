@@ -9,7 +9,7 @@ cli:
 plugins:
   sources:
     - id: trunk
-      ref: v1.7.5
+      ref: v1.7.6
       uri: https://github.com/trunk-io/plugins
 lint:
   disabled:
@@ -75,8 +75,8 @@ lint:
           stdin: false
   enabled:
     - actionlint@1.7.11
-    - black@26.1.0
-    - checkov@3.2.507
+    - black@26.3.0
+    - checkov@3.2.508
     - git-diff-check
     - gitleaks@8.30.0
     - isort@8.0.1
