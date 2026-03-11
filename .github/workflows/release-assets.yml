@@ -18,6 +18,10 @@ jobs:
         id: release_tag
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "${GITHUB_REF}" != refs/tags/* ]]; then
+              echo "::error::workflow_dispatch must be triggered from a tag, not '${GITHUB_REF}'."
+              exit 1
+            fi
             TAG="${GITHUB_REF_NAME}"
           else
             TAG="${{ github.event.release.tag_name }}"

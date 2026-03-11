@@ -244,7 +244,8 @@ Two workflows:
 - run `twine check`
 - publish via `pypa/gh-action-pypi-publish` with `id-token: write`
 
-1. `release-assets.yml`
+<!-- markdownlint-disable-next-line MD029 -->
+2. `release-assets.yml`
 
 - separate standalone/binary asset build and GitHub release upload
 - decoupled from PyPI publish success/failure
