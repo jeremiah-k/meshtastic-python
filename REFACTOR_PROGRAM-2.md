@@ -1,315 +1,471 @@
-# Meshtastic Python Refactor Program - Phase 2
+# REFACTOR_PROGRAM-2.md
+### Meshtastic Python Refactor – Phase 2 Program Plan
 
-Status: Active continuation plan (March 11, 2026)
+Date: 2026-03-11  
+Base Branch: `develop`  
+Comparison Baseline: `master` (eb964d78)
 
-This file is intentionally in the repository root (next to `REFACTOR_PROGRAM.md`)
-for side-by-side reviewer access.
+---
 
-## 1) Purpose
+# 1. Context
 
-`REFACTOR_PROGRAM.md` captures the rationale and outcomes of the large
-cross-cutting refactor pass. This document defines the continuation plan needed
-to finish stabilization safely.
+The current `develop` branch represents a large structural modernization of the Meshtastic Python codebase. It includes:
 
-The key change in approach is explicit: future work is split by subsystem, not
-as another repository-wide "refactor" pass.
+- Codebase modernization
+- BLE architecture rewrite
+- CLI cleanup
+- Compatibility shims
+- Major test expansion
+- CI pipeline improvements
+- Async / concurrency correctness improvements
 
-## 2) Inputs and Constraints
+`develop` is currently **two large commits ahead of `master`**, but those commits contain:
 
-This plan is built from two detailed review syntheses and the current repository
-state:
+- ~150 files changed
+- ~60k insertions
+- ~10k deletions
 
-- Branch size and risk profile are atypical for maintenance:
-  - ~150 files changed
-  - ~60k insertions / ~10k deletions
-  - broad impact across BLE, mesh, CLI, node, transport, tests, and workflows
-- Major implementation quality gains are real, but integration risk remains high
-  because multiple critical surfaces changed simultaneously.
-- Release workflow modernization is required:
-  - adopt Trusted Publisher (OIDC) for PyPI
-  - simplify publication flows
-  - separate PyPI publishing from standalone asset handling
+This is effectively a **platform-wide refactor**, not a typical incremental change.
 
-## 3) Program Principles
+Because of this, the next phase should **not** merge `develop → master` directly.
 
-1. One subsystem per branch and PR.
-2. One behavior-contract change family per branch.
-3. CI/docs workflow changes in dedicated branch unless required by a subsystem.
-4. No opportunistic "while here" changes outside scope fences.
-5. Regressions are attributed by subsystem branch, not by giant mixed batches.
+Instead, we will perform **a small number of large, deliberate stabilization passes** based on `develop`.
 
-## 4) Workstream Decomposition
+These passes will become the next branches and PRs.
 
-The next round is split into five tracked subsystems.
+---
 
-### 4.1 BLE internals only
+# 2. Refactor Philosophy Going Forward
 
-Scope:
+The original refactor proved that large-scale cleanup is possible. However:
 
-- `meshtastic/interfaces/ble/*`
-- BLE-specific tests under `tests/test_ble_*` and focused compatibility tests
+Small PRs created by automated agents introduced:
 
-Out of scope:
+- fragmentation
+- repetitive fixes
+- noisy commit history
+- cross-cutting changes
 
-- `mesh_interface.py` wait-state semantics
-- CLI behavior changes
-- non-BLE transport (TCP/stream/OTA) changes
+From this point forward:
 
-Exit criteria:
+### We will prefer
 
-- no behavior drift in documented BLE compatibility matrix
-- targeted BLE stress/reconnect suites stable
-- no cross-subsystem file churn
+• **Large thematic passes**  
+• **Clean branch histories**  
+• **Coherent PR scope**
 
-### 4.2 Mesh wait-state/callback model only
+### We will avoid
 
-Scope:
+• dozens of tiny PRs  
+• style-only churn mixed with behavior changes  
+• interleaving multiple subsystem refactors  
 
-- `meshtastic/mesh_interface.py` request-scoped wait/error/ack model
-- related tests in `meshtastic/tests/test_mesh_interface.py`
+Each branch should represent **one engineering theme**.
 
-Out of scope:
+---
 
-- BLE connection orchestration internals
-- CLI parsing or command behavior
-- transport reconnect policy
+# 3. Current Refactor State
 
-Exit criteria:
+The repository now contains significant architectural improvements.
 
-- scoped/unscoped wait lanes have explicit invariants and tests
-- callback timing paths (summary emit, ack, error) are deterministic under tests
-- no lock-order regressions in touched paths
+### Major Completed Work
 
-### 4.3 CLI/config only
+#### BLE Architecture Rewrite
 
-Scope:
+The BLE implementation has been modularized into:
 
-- `meshtastic/__main__.py`
-- config export/configure parity logic
-- CLI-focused tests in `meshtastic/tests/test_main.py` and related config tests
+```
+meshtastic/interfaces/ble/
+    client.py
+    connection.py
+    constants.py
+    coordination.py
+    discovery.py
+    errors.py
+    gating.py
+    interface.py
+    notifications.py
+    policies.py
+    reconnection.py
+    runner.py
+    state.py
+    utils.py
+```
 
-Out of scope:
+A compatibility shim remains at:
 
-- BLE core
-- transport reconnect implementation
-- mesh core wait/callback internals
+```
+meshtastic/ble_interface.py
+```
 
-Exit criteria:
+This preserves the historical public API.
 
-- explicit local vs broadcast ACK behavior tested and documented
-- export->configure->export parity remains stable
-- secret redaction behavior is precise and non-overbroad
+---
 
-### 4.4 Transport/reconnect only
+#### Mesh Core Improvements
 
-Scope:
+Major improvements include:
 
-- `meshtastic/tcp_interface.py`
-- `meshtastic/stream_interface.py`
-- `meshtastic/ota.py`
-- shared host parsing in `meshtastic/host_port.py`
+- request-scoped wait tracking
+- response handler locking
+- atomic send queue behavior
+- safer shutdown semantics
+- race-condition mitigation
 
-Out of scope:
+These changes significantly improve runtime correctness.
 
-- CLI command semantics
-- BLE lifecycle orchestration
-- mesh callback/wait model
+---
 
-Exit criteria:
+#### CLI Improvements
 
-- reconnect/error handling preserves deterministic semantics
-- fd-state vs non-fd-state error classification remains correct
-- host parser behavior covered for explicit-port and host-only paths
+The CLI code received cleanup and better separation of responsibilities.
 
-### 4.5 Docs/CI only
+However:
 
-Scope:
+```
+meshtastic/__main__.py
+```
 
-- policy docs and roadmap updates
-- CI/workflow modernization
-- release pipeline simplification and Trusted Publisher setup
+remains **very large (~3200 lines)** and will require future modularization.
 
-Out of scope:
+---
 
-- runtime behavior changes
+#### Testing Improvements
 
-Exit criteria:
+The refactor added:
 
-- release automation split into minimal workflows with clear responsibilities
-- OIDC Trusted Publisher flow tested in fork
-- roadmap reflects actual staged plan and status
+- BLE lifecycle tests
+- advanced BLE behavior tests
+- mesh interface correctness tests
+- CLI behavior tests
+- meshtasticd integration tests
 
-## 5) Branch and PR Operating Model
+This dramatically improves safety for future refactors.
 
-Recommended branch naming:
+---
 
-- `ble-int-*`
-- `mesh-wait-*`
-- `cli-config-*`
-- `transport-*`
-- `docs-ci-*`
+# 4. Key Remaining Risks
 
-PR requirements:
+Despite the progress, several areas remain high risk:
 
-- include explicit "in scope" and "out of scope" block
-- include subsystem-specific test command list
-- include risk notes for behavior-contract changes
-- reject mixed-subsystem changes unless required for unblocking and documented
+### BLE Lifecycle Behavior
 
-## 6) Validation Gates by Subsystem
+BLE is the most complex subsystem and includes:
 
-Common baseline for all workstreams:
+- async coordination
+- OS-specific behavior
+- reconnect logic
+- ownership / gating logic
+- management operations
 
-- `poetry run ruff check <touched files>`
-- `poetry run pytest <touched tests>`
+The architecture is improved, but lifecycle correctness must be stabilized.
 
-Additional gates:
+---
 
-- BLE internals:
-  - BLE core/advanced/gating/runner test suites
-  - reconnect stress coverage
-- Mesh wait-state:
-  - full `test_mesh_interface.py` pass
-  - scoped wait race coverage
-- CLI/config:
-  - full `test_main.py`
-  - config/export/configure tests
-- Transport/reconnect:
-  - TCP/stream/OTA targeted suites
-  - host parser tests
-- Docs/CI:
-  - workflow lint/sanity checks
-  - dry-run fork validation notes
+### Mesh Async Correctness
 
-## 7) Risk Register and Mitigations
+The mesh interface now includes sophisticated request tracking and callbacks.
 
-### 7.1 High risk: oversized core files
+While improvements were made, this area remains critical to stability.
 
-Risk:
+---
 
-- `meshtastic/interfaces/ble/interface.py`
-- `meshtastic/mesh_interface.py`
-- `meshtastic/__main__.py`
-- `meshtastic/node.py`
+### CLI Size and Maintainability
 
-Mitigation:
+`__main__.py` still contains too many responsibilities.
 
-- no broad rewrites now
-- isolate behavior changes by subsystem
-- perform decomposition only after stabilization gates pass
+Future work should split this module once runtime behavior is stable.
 
-### 7.2 High risk: compatibility drift while "cleaning up"
+---
 
-Risk:
+### Compatibility Surface
 
-- removing/altering historical shims in mixed refactors
+Compatibility shims exist but should be validated carefully to ensure:
 
-Mitigation:
+- historical imports still work
+- public API names remain stable
+- CLI behavior is preserved where expected
 
-- keep `COMPATIBILITY.md` + marker checks as contract
-- require explicit compatibility note in PR description
+---
 
-### 7.3 High risk: cross-subsystem regressions hidden by large batches
+# 5. Next Phase Refactor Strategy
 
-Mitigation:
+Instead of merging `develop → master`, the next steps will consist of **three large stabilization branches**.
 
-- strict scope fences and branch separation
-- subsystem-specific test matrices
-- avoid "drive-by" edits
+Each branch will be created from `develop`.
 
-### 7.4 Medium risk: release pipeline complexity and manual coupling
+---
 
-Mitigation:
+# Phase 1: BLE Stabilization Pass
 
-- split release concerns:
-  - PyPI trusted publish workflow
-  - standalone release-assets workflow
-- remove automated version bump/push from publish path
+Branch name suggestion:
 
-## 8) Release Workflow Modernization Plan
+```
+ble-stabilization-pass
+```
 
-### 8.1 Objective
+This will be the **largest and most important stabilization phase**.
 
-Simplify publishing and align with Trusted Publisher (OIDC) used in other
-maintainer projects.
+### Goals
 
-### 8.2 Implemented target shape
+- finalize BLE lifecycle behavior
+- stabilize connect / disconnect / reconnect logic
+- verify state machine transitions
+- ensure safe shutdown
+- ensure compatibility with legacy BLE APIs
 
-Two workflows:
+### Areas of Work
 
-1. `pypi-publish.yml`
+BLE lifecycle correctness
 
-- trigger: release published and optional manual dispatch
-- build sdist/wheel
-- run `twine check`
-- publish via `pypa/gh-action-pypi-publish` with `id-token: write`
+- connection ownership rules
+- pairing / trust support
+- management operation tracking
+- reconnect timing behavior
+- shutdown ordering
 
-<!-- markdownlint-disable-next-line MD029 -->
-2. `release-assets.yml`
+Concurrency review
 
-- separate standalone/binary asset build and GitHub release upload
-- decoupled from PyPI publish success/failure
+- locking order
+- race conditions
+- notification coordination
+- state synchronization
 
-### 8.3 Why split
+Compatibility verification
 
-- PyPI publication should be minimal, deterministic, and auditable.
-- Asset packaging has different dependencies and failure modes.
-- Decoupling improves triage and prevents unnecessary release coupling.
+- historical callbacks
+- legacy method names
+- BLE public API exports
 
-### 8.4 Trusted Publisher checklist
+Testing improvements
 
-For fork validation and upstream adoption:
+- lifecycle edge cases
+- reconnect scenarios
+- partial connection failures
+- shutdown reliability
 
-1. Configure PyPI Trusted Publisher:
-   - owner/repo
-   - workflow filename
-   - environment name
-2. Confirm environment protection rules in GitHub.
-3. Trigger release in fork and verify OIDC publish path.
-4. Mirror final tuple exactly in upstream configuration.
+### Explicitly Out of Scope
 
-## 9) Documentation Plan
+- CLI refactor
+- mesh core restructuring
+- style cleanup unrelated to BLE
+- unrelated test rewrites
 
-`REFACTOR_PROGRAM.md` remains the historical architecture/rationale record.
+---
 
-This `REFACTOR_PROGRAM-2.md` file is the active execution plan and tracking
-anchor for staged completion work.
+# Phase 2: Mesh / Core Async Stabilization
 
-When a stage completes:
+Branch name suggestion:
 
-- update this file with completion notes and residual risks
-- link to merged PR(s) by subsystem
-- keep status entries concise and factual
+```
+mesh-core-stabilization
+```
 
-## 10) Stage Sequence
+This phase focuses on correctness of the core networking behavior.
 
-### Stage A (current): docs/CI foundation
+### Goals
 
-- establish subsystem-split plan (this document)
-- split release workflows
-- set Trusted Publisher validation path
+- finalize request wait-state semantics
+- ensure deterministic callback handling
+- prevent late callback contamination
+- improve routing error propagation
 
-### Stage B: BLE internals stabilization
+### Areas of Work
 
-- resolve remaining BLE ownership/gating/reconnect edge issues in isolation
+```
+meshtastic/mesh_interface.py
+meshtastic/node.py
+```
 
-### Stage C: mesh wait-state/callback stabilization
+Key improvements
 
-- finish scoped wait/callback correctness work
+- request-scoped wait tracking
+- retired wait request handling
+- response handler locking validation
+- atomic queue send behavior
+- routing error timing cleanup
 
-### Stage D: CLI/config stabilization
+Testing
 
-- finish CLI behavior parity and config/export precision fixes
+```
+tests/test_mesh_interface.py
+```
 
-### Stage E: transport/reconnect stabilization
+Add or refine tests covering:
 
-- finish TCP/stream/OTA/host parser hardening and regression closure
+- multiple concurrent requests
+- late responses
+- cancellation behavior
+- transport error handling
 
-## 11) Definition of Done for Phase 2
+### Explicitly Out of Scope
 
-Phase 2 is considered complete when:
+- BLE architecture
+- CLI behavior
+- host parsing
+- OTA logic
 
-- each subsystem track has shipped independently with scoped PRs
-- release publishing is OIDC trusted-publisher based
-- remaining high-risk behavior deltas are documented and tested
-- no pending mixed-subsystem "catch-all refactor" PR remains
+---
+
+# Phase 3: Runtime Boundary Cleanup
+
+Branch name suggestion:
+
+```
+runtime-boundary-cleanup
+```
+
+This phase improves system boundaries and runtime behavior.
+
+### Goals
+
+- unify host/port parsing
+- improve runtime error surfaces
+- improve OTA error handling
+- improve configuration reliability
+
+### Areas of Work
+
+New module usage:
+
+```
+meshtastic/host_port.py
+```
+
+Responsibilities:
+
+- shared host/port parsing
+- IPv4 / IPv6 validation
+- CLI / runtime consistency
+
+OTA improvements
+
+```
+meshtastic/ota.py
+```
+
+Goals:
+
+- clearer transport errors
+- better destination validation
+- improved socket failure handling
+
+Security improvements
+
+- secret redaction
+- preference sanitization
+- validation of request IDs
+
+---
+
+# Phase 4: CLI Structural Refactor (Future)
+
+This phase should **not begin until runtime behavior is stable**.
+
+Branch name suggestion:
+
+```
+cli-modularization
+```
+
+Goals:
+
+Split `__main__.py` responsibilities into separate modules.
+
+Possible structure:
+
+```
+meshtastic/cli/
+    commands.py
+    connection.py
+    config.py
+    powermon.py
+    export.py
+```
+
+The CLI entry point should eventually become minimal:
+
+```
+main()
+  -> argument parsing
+  -> command dispatch
+```
+
+---
+
+# 6. Merge Strategy
+
+The final merge into `master` will occur **after phases 1–3 are completed**.
+
+This allows:
+
+- stabilization of BLE
+- stabilization of mesh core
+- stabilization of runtime behavior
+
+Once these subsystems are stable, the refactor can be safely promoted to production.
+
+---
+
+# 7. Development Rules For Next Phases
+
+To keep the refactor manageable:
+
+### Each branch must
+
+- focus on one subsystem
+- contain coherent changes
+- include tests validating behavior
+- avoid mixing unrelated improvements
+
+### Avoid
+
+- style-only commits
+- formatting churn
+- opportunistic refactors outside the branch theme
+
+### Prefer
+
+- squashable branch histories
+- logically grouped commits
+- tests that target real failure modes
+
+---
+
+# 8. Immediate Next Step
+
+Create the first stabilization branch from `develop`.
+
+```
+git checkout develop
+git checkout -b ble-stabilization-pass
+```
+
+Focus entirely on:
+
+- BLE lifecycle correctness
+- reconnect logic
+- shutdown reliability
+- compatibility verification
+- lifecycle test coverage
+
+This will produce the **next major PR** in the refactor program.
+
+---
+
+# 9. Summary
+
+The major architectural refactor is largely complete.
+
+The next work should not expand scope further.
+
+Instead, the project should proceed through **large stabilization passes**:
+
+1. BLE stabilization
+2. Mesh/core async stabilization
+3. Runtime boundary cleanup
+4. CLI modularization (future)
+
+Once these passes are complete, `develop` will be ready to merge into `master`.
+
+This staged approach preserves the benefits of the refactor while reducing integration risk.
