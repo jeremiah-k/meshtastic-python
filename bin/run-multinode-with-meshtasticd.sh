@@ -278,7 +278,9 @@ wait_for_log_pattern() {
 	local deadline=$((SECONDS + timeout_seconds))
 
 	while ((SECONDS < deadline)); do
-		if docker logs "${container}" 2>&1 | grep -Fq "${pattern}"; then
+		# Keep pipefail from treating docker's expected SIGPIPE (when grep -q
+		# exits early after a match) as a false-negative "pattern not found".
+		if (set +o pipefail; docker logs "${container}" 2>&1 | grep -Fq "${pattern}"); then
 			return 0
 		fi
 		if ! docker ps --format '{{.Names}}' | grep -Fxq "${container}"; then
