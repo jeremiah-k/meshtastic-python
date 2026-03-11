@@ -1698,6 +1698,13 @@ class BLEInterface(MeshInterface):
     def _finish_management_operation(self) -> None:
         """Mark a management operation complete and wake shutdown waiters."""
         with self._management_lock:
+            if self._management_inflight <= 0:
+                logger.warning(
+                    "Management operation accounting underflow detected during finish(); resetting inflight count to zero."
+                )
+                self._management_inflight = 0
+                self._management_idle_condition.notify_all()
+                return
             self._management_inflight -= 1
             if self._management_inflight == 0:
                 self._management_idle_condition.notify_all()
@@ -2710,18 +2717,18 @@ class BLEInterface(MeshInterface):
                 with management_lock:
                     while self._management_inflight > 0:
                         self._validate_connection_preconditions()
-                        if not management_idle_condition.wait(
-                            timeout=_MANAGEMENT_CONNECT_WAIT_POLL_SECONDS
-                        ):
-                            self._validate_connection_preconditions()
-                            elapsed = time.monotonic() - management_wait_started
-                            if elapsed >= _MANAGEMENT_CONNECT_WAIT_TIMEOUT_SECONDS:
-                                logger.warning(
-                                    "Timed out waiting %.1fs for %d inflight management operation(s) before connect()",
-                                    elapsed,
-                                    self._management_inflight,
-                                )
-                                raise self.BLEError(ERROR_MANAGEMENT_CONNECTING)
+                        elapsed = time.monotonic() - management_wait_started
+                        if elapsed >= _MANAGEMENT_CONNECT_WAIT_TIMEOUT_SECONDS:
+                            logger.warning(
+                                "Timed out waiting %.1fs for %d inflight management operation(s) before connect()",
+                                elapsed,
+                                self._management_inflight,
+                            )
+                            raise self.BLEError(ERROR_MANAGEMENT_CONNECTING)
+                        remaining = _MANAGEMENT_CONNECT_WAIT_TIMEOUT_SECONDS - elapsed
+                        management_idle_condition.wait(
+                            timeout=min(_MANAGEMENT_CONNECT_WAIT_POLL_SECONDS, remaining)
+                        )
 
                 # Recompute potentially discovery-backed target state after
                 # waiting for inflight management operations so retries do not

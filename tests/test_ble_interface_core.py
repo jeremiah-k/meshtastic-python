@@ -2399,6 +2399,31 @@ def test_validate_connect_timeout_override_rejects_non_numeric_values() -> None:
         )
 
 
+def test_finish_management_operation_clamps_underflow(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """_finish_management_operation() should clamp negative accounting to zero."""
+    iface = _build_minimal_connect_test_interface()
+    with iface._management_lock:
+        iface._management_inflight = 0
+    notify_calls: list[bool] = []
+    monkeypatch.setattr(
+        iface._management_idle_condition,
+        "notify_all",
+        lambda: notify_calls.append(True),
+        raising=True,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        iface._finish_management_operation()
+
+    with iface._management_lock:
+        assert iface._management_inflight == 0
+    assert notify_calls == [True]
+    assert any("underflow" in record.message.lower() for record in caplog.records)
+
+
 @pytest.mark.unit
 def test_connect_rejects_non_bool_pair_override() -> None:
     """connect() should fail fast when `pair` is not explicitly bool/None."""
@@ -2513,6 +2538,52 @@ def test_connect_times_out_waiting_for_management_operations(
 
     with pytest.raises(BLEInterface.BLEError, match=ERROR_MANAGEMENT_CONNECTING):
         iface.connect("AA:BB:CC:DD:EE:10")
+
+
+def test_connect_times_out_on_spurious_management_wakeups(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """connect() should enforce timeout even if management wait wakes spuriously."""
+    iface = _build_minimal_connect_test_interface()
+    iface._management_lock = threading.RLock()
+    iface._management_idle_condition = threading.Condition(iface._management_lock)
+    iface._management_inflight = 1
+    wait_calls: list[float | None] = []
+    fake_time = 0.0
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface._MANAGEMENT_CONNECT_WAIT_TIMEOUT_SECONDS",
+        0.03,
+    )
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface._MANAGEMENT_CONNECT_WAIT_POLL_SECONDS",
+        0.005,
+    )
+
+    def _monotonic() -> float:
+        nonlocal fake_time
+        fake_time += 0.01
+        return fake_time
+
+    monkeypatch.setattr("meshtastic.interfaces.ble.interface.time.monotonic", _monotonic)
+
+    def _spurious_wait(timeout: float | None = None) -> bool:
+        wait_calls.append(timeout)
+        return True
+
+    monkeypatch.setattr(
+        iface._management_idle_condition,
+        "wait",
+        _spurious_wait,
+        raising=True,
+    )
+    monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
+    monkeypatch.setattr(iface, "_get_existing_client_if_valid", lambda _request: None)
+
+    with pytest.raises(BLEInterface.BLEError, match=ERROR_MANAGEMENT_CONNECTING):
+        iface.connect("AA:BB:CC:DD:EE:10")
+
+    assert wait_calls
 
 
 def test_connect_retries_when_management_becomes_inflight_inside_connect_lock(
