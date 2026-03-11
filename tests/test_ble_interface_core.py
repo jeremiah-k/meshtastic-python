@@ -45,6 +45,9 @@ from tests.test_ble_interface_fixtures import DummyClient, _build_interface
 
 pytestmark = pytest.mark.unit
 
+_MAX_SPURIOUS_CONNECT_WAIT_CALLS_BEFORE_FAIL = 10
+_MAX_SPURIOUS_CLOSE_WAIT_CALLS_BEFORE_FAIL = 50
+
 
 def _pin_trust_environment(
     monkeypatch: pytest.MonkeyPatch,
@@ -1931,6 +1934,13 @@ def test_ble_interface_close_bounds_wait_on_spurious_management_wakeups(
 
     def _spurious_wait(timeout: float | None = None) -> bool:
         wait_calls.append(timeout)
+        if timeout is not None and timeout > 0:
+            time.sleep(timeout)
+        if len(wait_calls) > _MAX_SPURIOUS_CLOSE_WAIT_CALLS_BEFORE_FAIL:
+            close_done.set()
+            raise AssertionError(
+                "close() kept waiting past the shutdown timeout budget"
+            )
         return True
 
     monkeypatch.setattr(
@@ -2569,7 +2579,7 @@ def test_connect_times_out_on_spurious_management_wakeups(
 
     def _spurious_wait(timeout: float | None = None) -> bool:
         wait_calls.append(timeout)
-        if len(wait_calls) > 10:
+        if len(wait_calls) > _MAX_SPURIOUS_CONNECT_WAIT_CALLS_BEFORE_FAIL:
             raise AssertionError("connect() kept waiting past the timeout budget")
         return True
 
