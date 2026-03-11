@@ -54,7 +54,13 @@ def _pin_trust_environment(
     *,
     run: Callable[..., object] | None = None,
 ) -> None:
-    """Pin trust() host dependencies so guard-path tests stay hermetic."""
+    """
+    Configure host-specific dependencies so tests of trust() run in a controlled Linux-like environment.
+    
+    Parameters:
+        monkeypatch (pytest.MonkeyPatch): Fixture used to apply attribute patches.
+        run (Callable[..., object] | None): Optional replacement for subprocess.run used by trust(); if None, a sentinel callable is installed that raises AssertionError if invoked.
+    """
     monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "linux")
     monkeypatch.setattr(
         "meshtastic.interfaces.ble.interface.shutil.which",
@@ -1933,6 +1939,18 @@ def test_ble_interface_close_bounds_wait_on_spurious_management_wakeups(
     )
 
     def _spurious_wait(timeout: float | None = None) -> bool:
+        """
+        Simulate a spurious wait for tests and track each requested timeout.
+        
+        Parameters:
+            timeout (float | None): The requested wait duration in seconds; if greater than zero the function sleeps for that duration.
+        
+        Returns:
+            bool: `True` to indicate the wait condition remains satisfied.
+        
+        Raises:
+            AssertionError: If the number of invocations exceeds the allowed spurious-wait budget, signals that shutdown waited past its timeout.
+        """
         wait_calls.append(timeout)
         if timeout is not None and timeout > 0:
             time.sleep(timeout)
@@ -1953,6 +1971,15 @@ def test_ble_interface_close_bounds_wait_on_spurious_management_wakeups(
     def _management_gate(
         address: str,
     ) -> contextlib.AbstractContextManager[None]:
+        """
+        Context manager used in tests to record a requested management address and provide a no-op gate.
+        
+        Parameters:
+            address (str): The management address being requested; the address is recorded for test inspection.
+        
+        Returns:
+            contextmanager: A context manager that performs no gating and yields `None`.
+        """
         gate_calls.append(address)
         return contextlib.nullcontext()
 
@@ -1981,6 +2008,11 @@ def test_ble_interface_close_bounds_wait_on_spurious_management_wakeups(
     )
 
     def _run_close() -> None:
+        """
+        Attempt to close the interface and signal completion.
+        
+        Calls iface.close(). If an exception is raised, appends it to the shared close_errors list. Always sets the close_done event when finished.
+        """
         try:
             iface.close()
         except Exception as exc:  # pragma: no cover - captured for assertion
@@ -2615,6 +2647,12 @@ def test_connect_times_out_on_spurious_management_wakeups(
     )
 
     def _monotonic() -> float:
+        """
+        Advance and return a test monotonic timestamp by 0.01 seconds.
+        
+        Returns:
+            Current monotonic time in seconds; the returned value increases by 0.01 on each call.
+        """
         nonlocal fake_time
         fake_time += 0.01
         return fake_time
@@ -2622,6 +2660,18 @@ def test_connect_times_out_on_spurious_management_wakeups(
     monkeypatch.setattr("meshtastic.interfaces.ble.interface.time.monotonic", _monotonic)
 
     def _spurious_wait(timeout: float | None = None) -> bool:
+        """
+        Record a spurious wait invocation and signal a wakeup.
+        
+        Parameters:
+            timeout (float | None): The timeout value passed to the wait; may be None.
+        
+        Returns:
+            bool: `True` to indicate a spurious wakeup.
+        
+        Raises:
+            AssertionError: If the number of recorded wait calls exceeds the configured budget.
+        """
         wait_calls.append(timeout)
         if len(wait_calls) > _MAX_SPURIOUS_CONNECT_WAIT_CALLS_BEFORE_FAIL:
             raise AssertionError("connect() kept waiting past the timeout budget")
@@ -2665,6 +2715,12 @@ def test_connect_management_wait_timeout_resets_between_wait_cycles(
     )
 
     def _monotonic() -> float:
+        """
+        Provide a monotonic timestamp for tests, advancing through a preset sequence and falling back to incremental steps when the sequence is exhausted.
+        
+        Returns:
+            float: The current monotonic time value and updates the captured `last_time` variable.
+        """
         nonlocal last_time
         try:
             last_time = next(monotonic_values)
@@ -2675,11 +2731,30 @@ def test_connect_management_wait_timeout_resets_between_wait_cycles(
     monkeypatch.setattr("meshtastic.interfaces.ble.interface.time.monotonic", _monotonic)
 
     def _wait_for_management(timeout: float | None = None) -> bool:
+        """
+        Simulate waiting for management operations to drain and record the requested timeout.
+        
+        Parameters:
+            timeout (float | None): Maximum seconds to wait, or `None` to indicate an indefinite wait.
+        
+        Behavior:
+            Appends the provided `timeout` value to the `wait_calls` list and sets
+            `iface._management_inflight` to 0 to indicate no inflight management operations.
+        
+        Returns:
+            bool: `True` to indicate the wait condition was signaled.
+        """
         wait_calls.append(timeout)
         iface._management_inflight = 0
         return True
 
     def _raise_if_duplicate(_key: str | None) -> None:
+        """
+        Increment the duplicate-check counter and, on the second invocation, mark the interface as having one inflight management operation.
+        
+        Parameters:
+            _key (str | None): Ignored; present to match the duplicate-check callback signature.
+        """
         nonlocal duplicate_checks
         duplicate_checks += 1
         if duplicate_checks == 2:
@@ -2714,6 +2789,19 @@ def test_connect_management_wait_timeout_resets_between_wait_cycles(
         pair_on_connect: bool = False,
         connect_timeout: float | None = None,
     ) -> tuple[DummyClient, str | None, str | None]:
+        """
+        Create and attach a DummyClient to the test BLE interface and mark it as connected.
+        
+        Parameters:
+            _address (str | None): Ignored; present to match the real establish signature.
+            _normalized_request (str | None): Ignored; present to match the real establish signature.
+            _address_key (str | None): Ignored; present to match the real establish signature.
+            pair_on_connect (bool): Accepted but ignored by this test stub.
+            connect_timeout (float | None): Accepted but ignored by this test stub.
+        
+        Returns:
+            tuple[DummyClient, None, None]: The created DummyClient instance and two None placeholders (resolved address and resolved identifier).
+        """
         _ = (pair_on_connect, connect_timeout)
         client = DummyClient()
         with iface._state_lock:

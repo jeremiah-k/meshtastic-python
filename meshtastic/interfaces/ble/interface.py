@@ -1696,7 +1696,11 @@ class BLEInterface(MeshInterface):
         self._management_inflight += 1
 
     def _finish_management_operation(self) -> None:
-        """Mark a management operation complete and wake shutdown waiters."""
+        """
+        Mark completion of an in-flight management operation and notify any waiters when no operations remain.
+        
+        If the internal in-flight counter is already zero or negative, reset it to zero, notify waiters, and log a warning; otherwise decrement the counter and notify waiters when it reaches zero.
+        """
         with self._management_lock:
             if self._management_inflight <= 0:
                 logger.warning(
