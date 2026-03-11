@@ -1,0 +1,78 @@
+name: Build and Upload Release Assets
+
+on:
+  workflow_dispatch: {}
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-upload-assets:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Resolve release tag
+        id: release_tag
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "${GITHUB_REF}" != refs/tags/* ]]; then
+              echo "::error::workflow_dispatch must be triggered from a tag, not '${GITHUB_REF}'."
+              exit 1
+            fi
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="${{ github.event.release.tag_name }}"
+          fi
+          if [[ -z "${TAG}" ]]; then
+            echo "::error::Unable to resolve release tag."
+            exit 1
+          fi
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+
+      - name: Checkout tag
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ steps.release_tag.outputs.tag }}
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
+
+      - name: Install Poetry
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "poetry==2.3.2"
+
+      - name: Build standalone assets
+        run: bin/build-bin.sh
+
+      - name: Prepare release asset names
+        run: |
+          test -f dist/meshtastic || { echo "::error::Missing dist/meshtastic build artifact."; exit 1; }
+          test -f standalone_readme.txt || { echo "::error::Missing standalone_readme.txt artifact."; exit 1; }
+          cp dist/meshtastic dist/meshtastic_ubuntu
+          cp standalone_readme.txt dist/readme.txt
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        with:
+          name: standalone-release-assets-${{ steps.release_tag.outputs.tag }}
+          path: |
+            dist/meshtastic_ubuntu
+            dist/readme.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload assets to GitHub Release
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
+        with:
+          tag_name: ${{ steps.release_tag.outputs.tag }}
+          files: |
+            dist/meshtastic_ubuntu
+            dist/readme.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

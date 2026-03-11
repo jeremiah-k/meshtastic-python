@@ -1,5 +1,8 @@
 # Meshtastic Python Refactor Program
 
+> Note: `REFACTOR_PROGRAM-2.md` is the active staged continuation plan.
+> This file remains the Phase 1 rationale and decision record.
+
 ## 1) Purpose
 
 This document explains the full refactor program for the Meshtastic Python
