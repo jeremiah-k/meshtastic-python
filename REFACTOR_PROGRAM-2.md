@@ -37,24 +37,15 @@ These passes will become the next branches and PRs.
 
 # 2. Refactor Philosophy Going Forward
 
-The original refactor proved that large-scale cleanup is possible. However:
+Going forward we will keep the advantages of automation but shift toward **intentional large passes** that address a single subsystem at a time.
 
-Small PRs created by automated agents introduced:
-
-- fragmentation
-- repetitive fixes
-- noisy commit history
-- cross-cutting changes
-
-From this point forward:
-
-### We will prefer
+### Preferred approach
 
 • **Large thematic passes**  
 • **Clean branch histories**  
-• **Coherent PR scope**
+• **PRs that represent a coherent engineering change**
 
-### We will avoid
+### What we will avoid
 
 • dozens of tiny PRs  
 • style-only churn mixed with behavior changes  
@@ -102,7 +93,7 @@ This preserves the historical public API.
 
 ---
 
-#### Mesh Core Improvements
+#### Networking Interface Improvements
 
 Major improvements include:
 
@@ -162,7 +153,7 @@ The architecture is improved, but lifecycle correctness must be stabilized.
 
 ---
 
-### Mesh Async Correctness
+### Networking Interface Async Correctness
 
 The mesh interface now includes sophisticated request tracking and callbacks.
 
@@ -253,12 +244,12 @@ Testing improvements
 
 ---
 
-# Phase 2: Mesh / Core Async Stabilization
+# Phase 2: Networking / Interface Async Stabilization
 
 Branch name suggestion:
 
 ```
-mesh-core-stabilization
+networking-interface-stabilization
 ```
 
 This phase focuses on correctness of the core networking behavior.
@@ -400,7 +391,7 @@ The final merge into `master` will occur **after phases 1–3 are completed**.
 This allows:
 
 - stabilization of BLE
-- stabilization of mesh core
+- stabilization of networking interface behavior
 - stabilization of runtime behavior
 
 Once these subsystems are stable, the refactor can be safely promoted to production.
@@ -462,7 +453,7 @@ The next work should not expand scope further.
 Instead, the project should proceed through **large stabilization passes**:
 
 1. BLE stabilization
-2. Mesh/core async stabilization
+2. Networking interface async stabilization
 3. Runtime boundary cleanup
 4. CLI modularization (future)
 
