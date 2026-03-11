@@ -1899,6 +1899,100 @@ def test_ble_interface_close_skips_management_gate_after_wait_timeout(
     assert disconnect_calls == [client]
 
 
+def test_ble_interface_close_bounds_wait_on_spurious_management_wakeups(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """close() should enforce shutdown timeout despite spurious management wakeups."""
+    client = DummyClient()
+    client.address = "AA:BB:CC:DD:EE:31"
+    client.bleak_client = SimpleNamespace(address=client.address)
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    wait_calls: list[float | None] = []
+    gate_calls: list[str] = []
+    unsubscribe_calls: list[object] = []
+    disconnect_calls: list[object] = []
+    close_errors: list[Exception] = []
+    close_done = threading.Event()
+
+    with iface._management_lock:
+        iface._management_inflight = 1
+    with iface._state_lock:
+        iface._disconnect_notified = True
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface._MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS",
+        0.05,
+    )
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface._MANAGEMENT_CONNECT_WAIT_POLL_SECONDS",
+        0.005,
+    )
+
+    def _spurious_wait(timeout: float | None = None) -> bool:
+        wait_calls.append(timeout)
+        return True
+
+    monkeypatch.setattr(
+        iface._management_idle_condition,
+        "wait",
+        _spurious_wait,
+        raising=True,
+    )
+
+    def _management_gate(
+        address: str,
+    ) -> contextlib.AbstractContextManager[None]:
+        gate_calls.append(address)
+        return contextlib.nullcontext()
+
+    monkeypatch.setattr(iface, "_management_target_gate", _management_gate, raising=True)
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.MeshInterface.close",
+        lambda _self: None,
+    )
+    monkeypatch.setattr(
+        iface._notification_manager,
+        "_unsubscribe_all",
+        lambda active_client, timeout=None: unsubscribe_calls.append(active_client),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        iface,
+        "_disconnect_and_close_client",
+        lambda active_client: disconnect_calls.append(active_client),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        iface._notification_manager,
+        "_cleanup_all",
+        lambda: None,
+        raising=True,
+    )
+
+    def _run_close() -> None:
+        try:
+            iface.close()
+        except Exception as exc:  # pragma: no cover - captured for assertion
+            close_errors.append(exc)
+        finally:
+            close_done.set()
+
+    with caplog.at_level(logging.WARNING):
+        close_thread = threading.Thread(target=_run_close, daemon=True)
+        close_thread.start()
+        close_thread.join(timeout=1.0)
+
+    assert not close_thread.is_alive()
+    assert close_done.is_set() is True
+    assert close_errors == []
+    assert wait_calls
+    assert gate_calls == []
+    assert unsubscribe_calls == [client]
+    assert disconnect_calls == [client]
+    assert any("Timed out waiting" in record.message for record in caplog.records)
+
+
 def test_ble_interface_implicit_trust_holds_connect_lock_during_subprocess(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

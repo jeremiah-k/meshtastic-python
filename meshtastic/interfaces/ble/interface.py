@@ -3224,6 +3224,7 @@ class BLEInterface(MeshInterface):
         # can observe _closed/_is_closing and abort, rather than forcing close()
         # to wait behind a long BLE connect attempt.
         management_wait_timed_out = False
+        management_wait_started = time.monotonic()
         with self._management_lock:
             # Use unified state lock
             with self._state_lock:
@@ -3246,15 +3247,19 @@ class BLEInterface(MeshInterface):
                 ):
                     self._state_manager._transition_to(ConnectionState.DISCONNECTING)
             while self._management_inflight > 0:
-                if not self._management_idle_condition.wait(
-                    timeout=_MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS
-                ):
+                elapsed = time.monotonic() - management_wait_started
+                if elapsed >= _MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS:
                     management_wait_timed_out = True
                     logger.warning(
-                        "Timed out waiting for %d inflight management operation(s) during shutdown",
+                        "Timed out waiting %.1fs for %d inflight management operation(s) during shutdown",
+                        elapsed,
                         self._management_inflight,
                     )
                     break
+                remaining = _MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS - elapsed
+                self._management_idle_condition.wait(
+                    timeout=min(_MANAGEMENT_CONNECT_WAIT_POLL_SECONDS, remaining)
+                )
 
         try:
             # Release lock before calling MeshInterface.close() to avoid deadlock
