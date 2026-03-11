@@ -2704,7 +2704,7 @@ class BLEInterface(MeshInterface):
         try:
             management_lock = self._management_lock
             management_idle_condition = self._management_idle_condition
-            management_wait_started = time.monotonic()
+            management_wait_started: float | None = None
             while True:
                 requested_identifier = address if address is not None else self.address
                 normalized_request = sanitize_address(requested_identifier)
@@ -2717,6 +2717,8 @@ class BLEInterface(MeshInterface):
                 with management_lock:
                     while self._management_inflight > 0:
                         self._validate_connection_preconditions()
+                        if management_wait_started is None:
+                            management_wait_started = time.monotonic()
                         elapsed = time.monotonic() - management_wait_started
                         if elapsed >= _MANAGEMENT_CONNECT_WAIT_TIMEOUT_SECONDS:
                             logger.warning(
@@ -2729,6 +2731,9 @@ class BLEInterface(MeshInterface):
                         management_idle_condition.wait(
                             timeout=min(_MANAGEMENT_CONNECT_WAIT_POLL_SECONDS, remaining)
                         )
+                    # Reset timeout accounting once we are no longer blocked by
+                    # in-flight management operations so future waits start fresh.
+                    management_wait_started = None
 
                 # Recompute potentially discovery-backed target state after
                 # waiting for inflight management operations so retries do not
