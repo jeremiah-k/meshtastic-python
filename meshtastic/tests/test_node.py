@@ -1256,6 +1256,7 @@ def test_setURL_add_only_adds_unique_named_channels(
     primary.settings.name = "existing"
     disabled = Channel(index=1, role=Channel.Role.DISABLED)
     anode.channels = [primary, disabled]
+    anode.localConfig.lora.hop_limit = 3
     anode.writeChannel = MagicMock()  # type: ignore[method-assign]
 
     channel_set = apponly_pb2.ChannelSet()
@@ -1288,6 +1289,7 @@ def test_setURL_add_only_raises_when_no_disabled_slot_available(
     """setURL(addOnly=True) should fail if no DISABLED channels remain."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
     anode.channels = [Channel(index=i, role=Channel.Role.SECONDARY) for i in range(2)]
+    anode.localConfig.lora.hop_limit = 3
 
     channel_set = apponly_pb2.ChannelSet()
     new_channel = channel_set.settings.add()
@@ -1298,6 +1300,32 @@ def test_setURL_add_only_raises_when_no_disabled_slot_available(
 
     with pytest.raises(
         MeshInterface.MeshInterfaceError, match="No free channels were found"
+    ):
+        anode.setURL(url, addOnly=True)
+
+
+@pytest.mark.unit
+def test_setURL_add_only_requires_loaded_lora_config(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=True) should require cached LoRa config so rollback is possible."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    disabled = Channel(index=1, role=Channel.Role.DISABLED)
+    anode.channels = [primary, disabled]
+
+    channel_set = apponly_pb2.ChannelSet()
+    new_channel = channel_set.settings.add()
+    new_channel.name = "new-ch"
+    new_channel.psk = b"\x03"
+    channel_set.lora_config.hop_limit = 9
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match=re.escape("LoRa config must be loaded before setURL(addOnly=True)"),
     ):
         anode.setURL(url, addOnly=True)
 
@@ -1360,6 +1388,7 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
     disabled1 = Channel(index=1, role=Channel.Role.DISABLED)
     disabled2 = Channel(index=2, role=Channel.Role.DISABLED)
     anode.channels = [primary, disabled1, disabled2]
+    anode.localConfig.lora.hop_limit = 3
     before_snapshot = [channel.SerializeToString() for channel in anode.channels]
 
     write_calls: list[tuple[int, int]] = []
@@ -1395,7 +1424,7 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
 
     # Rollback should include the in-flight channel index as well, so both staged
     # channels are restored when writeChannel fails mid-send.
-    # No LoRa rollback is attempted because no verified local LoRa snapshot exists.
+    # No LoRa rollback is attempted because the LoRa write never started.
     rollback_calls = anode._send_admin.call_args_list
     assert len(rollback_calls) == 2
     rollback_channel_msg = rollback_calls[0].args[0]
@@ -1423,6 +1452,7 @@ def test_setURL_add_only_invalidates_channels_cache_on_partial_rollback_failure(
     disabled1 = Channel(index=1, role=Channel.Role.DISABLED)
     disabled2 = Channel(index=2, role=Channel.Role.DISABLED)
     anode.channels = [primary, disabled1, disabled2]
+    anode.localConfig.lora.hop_limit = 3
 
     write_calls = {"count": 0}
 
@@ -1877,6 +1907,7 @@ def test_setURL_add_only_rechecks_channels_before_addition(
     """SetURL(addOnly=True) should fail if channels disappear before add loop mutation."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
     anode.channels = [Channel(index=0, role=Channel.Role.DISABLED)]
+    anode.localConfig.lora.hop_limit = 3
     anode._channels_lock = _DropChannelsOnEnterCountLock(  # type: ignore[assignment]
         anode, trigger_enter=2
     )
@@ -2066,14 +2097,29 @@ def test_onRequestGetMetadata_updates_metadata_under_node_db_lock() -> None:
 
 
 @pytest.mark.unit
-def test_set_metadata_snapshot_stores_detached_copy_under_lock(
-    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
-) -> None:
+def test_set_metadata_snapshot_stores_detached_copy_under_lock() -> None:
     """_set_metadata_snapshot should store a detached metadata copy while holding node DB lock."""
-    iface = autospec_local_node_iface(MeshInterface)
     lock = _TrackingLock()
-    iface._node_db_lock = lock
-    anode = Node(iface, "!12345678", noProto=True)
+
+    class _MetadataSnapshotProbeIface:
+        """Minimal interface stub that records lock state during metadata assignment."""
+
+        def __init__(self, node_db_lock: _TrackingLock) -> None:
+            self._node_db_lock = node_db_lock
+            self._metadata: mesh_pb2.DeviceMetadata | None = None
+            self.metadata_assignment_lock_state: bool | None = None
+
+        @property
+        def metadata(self) -> mesh_pb2.DeviceMetadata | None:
+            return self._metadata
+
+        @metadata.setter
+        def metadata(self, value: mesh_pb2.DeviceMetadata | None) -> None:
+            self.metadata_assignment_lock_state = self._node_db_lock.is_held
+            self._metadata = value
+
+    iface = _MetadataSnapshotProbeIface(lock)
+    anode = Node(cast(Any, iface), "!12345678", noProto=True)
     metadata_snapshot = mesh_pb2.DeviceMetadata(
         firmware_version="2.7.19",
         device_state_version=25,
@@ -2082,11 +2128,14 @@ def test_set_metadata_snapshot_stores_detached_copy_under_lock(
     anode._set_metadata_snapshot(metadata_snapshot)
 
     assert lock.enter_count == 1
-    assert isinstance(iface.metadata, mesh_pb2.DeviceMetadata)
-    assert iface.metadata is not metadata_snapshot
-    assert iface.metadata.firmware_version == "2.7.19"
+    assert lock.is_held is False
+    assert iface.metadata_assignment_lock_state is True
+    metadata = iface.metadata
+    assert isinstance(metadata, mesh_pb2.DeviceMetadata)
+    assert metadata is not metadata_snapshot
+    assert metadata.firmware_version == "2.7.19"
     metadata_snapshot.firmware_version = "mutated-locally"
-    assert iface.metadata.firmware_version == "2.7.19"
+    assert metadata.firmware_version == "2.7.19"
 
 
 @pytest.mark.unit
@@ -2160,7 +2209,7 @@ def test_emit_cached_metadata_reads_metadata_under_node_db_lock(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """_emit_cached_metadata_for_stdout should snapshot metadata before lock release."""
+    """_emit_cached_metadata_for_stdout should emit snapshot lines after lock release."""
     iface = autospec_local_node_iface(MeshInterface)
     original_metadata = mesh_pb2.DeviceMetadata(
         firmware_version="2.7.18",
@@ -2181,13 +2230,21 @@ def test_emit_cached_metadata_reads_metadata_under_node_db_lock(
 
     iface._node_db_lock = _TrackingLock(on_exit=_mutate_metadata_after_unlock)
     anode = Node(iface, "!12345678", noProto=True)
-    emitted: list[str] = []
-    monkeypatch.setattr(anode, "_emit_metadata_line", emitted.append)
+    emitted: list[tuple[str, bool]] = []
+
+    def _record_emit(line: str) -> None:
+        emitted.append((line, iface._node_db_lock.is_held))
+
+    monkeypatch.setattr(anode, "_emit_metadata_line", _record_emit)
 
     assert anode._emit_cached_metadata_for_stdout() is True
+    assert emitted
     assert iface._node_db_lock.enter_count == 1
-    assert any("firmware_version: 2.7.18" in line for line in emitted)
-    assert not any("firmware_version: mutated-after-unlock" in line for line in emitted)
+    assert all(not is_held for _line, is_held in emitted)
+    assert any("firmware_version: 2.7.18" in line for line, _ in emitted)
+    assert not any(
+        "firmware_version: mutated-after-unlock" in line for line, _ in emitted
+    )
     assert iface.metadata is original_metadata
     assert iface.metadata.firmware_version == "mutated-after-unlock"
 

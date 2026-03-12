@@ -1043,13 +1043,15 @@ class Node:
                 if self.iface.localNode != self
                 else self._get_admin_channel_index()
             )
+            # Rollback must have a local LoRa snapshot before transactional apply.
+            if not self.localConfig.HasField("lora"):
+                self._raise_interface_error(
+                    "LoRa config must be loaded before setURL(addOnly=True)"
+                )
+            original_lora_config = config_pb2.Config.LoRaConfig()
+            original_lora_config.CopyFrom(self.localConfig.lora)
             # Bootstrap admin session using the snapshotted path before staging.
             self.ensureSessionKey(adminIndex=admin_index_for_write)
-            # Rollback should only use a verified local LoRa snapshot.
-            original_lora_config: config_pb2.Config.LoRaConfig | None = None
-            if self.localConfig.HasField("lora"):
-                original_lora_config = config_pb2.Config.LoRaConfig()
-                original_lora_config.CopyFrom(self.localConfig.lora)
             with self._channels_lock:
                 channels = self.channels
                 if channels is None:
@@ -1092,6 +1094,7 @@ class Node:
                     f'Ignoring existing or empty channel "{ignored_name}" from add URL'
                 )
             written_indices: list[int] = []
+            lora_write_started = False
             try:
                 for channel_index, channel_name in channels_to_write:
                     logger.info(f"Adding new channel '{channel_name}' to device")
@@ -1100,6 +1103,7 @@ class Node:
                 set_lora = admin_pb2.AdminMessage()
                 set_lora.set_config.lora.CopyFrom(channelSet.lora_config)
                 self.ensureSessionKey(adminIndex=admin_index_for_write)
+                lora_write_started = True
                 self._send_admin(set_lora, adminIndex=admin_index_for_write)
                 self.localConfig.lora.CopyFrom(channelSet.lora_config)
             # Intentionally broad: rollback should run for any send failure in this
@@ -1146,7 +1150,7 @@ class Node:
                             ) in original_channels_by_index.items():
                                 if 0 <= index < len(channels):
                                     channels[index].CopyFrom(previous_channel)
-                if original_lora_config is not None:
+                if lora_write_started:
                     rollback_lora = admin_pb2.AdminMessage()
                     rollback_lora.set_config.lora.CopyFrom(original_lora_config)
                     try:
