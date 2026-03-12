@@ -661,7 +661,7 @@ class Node:
         p = admin_pb2.AdminMessage()
         p.set_channel.CopyFrom(channel_to_write)
         self._send_admin(p, adminIndex=adminIndex)
-        logger.debug(f"Wrote channel {channel_to_write.index}")
+        logger.debug("Wrote channel %s", channel_to_write.index)
 
     def writeChannel(self, channelIndex: int, adminIndex: int | None = None) -> None:
         """Write the channel at the given index to the device.
@@ -1122,13 +1122,14 @@ class Node:
 
             for ignored_name in ignored_channel_names:
                 logger.info(
-                    f'Ignoring existing or empty channel "{ignored_name}" from add URL'
+                    'Ignoring existing or empty channel "%s" from add URL',
+                    ignored_name,
                 )
             written_indices: list[int] = []
             lora_write_started = False
             try:
                 for staged_channel, channel_name in channels_to_write:
-                    logger.info(f"Adding new channel '{channel_name}' to device")
+                    logger.info("Adding new channel '%s' to device", channel_name)
                     written_indices.append(staged_channel.index)
                     self._write_channel_snapshot(
                         staged_channel,
@@ -1262,7 +1263,11 @@ class Node:
                         and staged_channel.index == deferred_admin_channel.index
                     ):
                         continue
-                    logger.debug(f"Channel i:{staged_channel.index} ch:{staged_channel}")
+                    logger.debug(
+                        "Channel i:%s ch:%s",
+                        staged_channel.index,
+                        staged_channel,
+                    )
                     self._write_channel_snapshot(
                         staged_channel,
                         adminIndex=admin_index_for_write,
@@ -1282,7 +1287,9 @@ class Node:
 
                 if deferred_admin_channel is not None:
                     logger.debug(
-                        f"Channel i:{deferred_admin_channel.index} ch:{deferred_admin_channel}"
+                        "Channel i:%s ch:%s",
+                        deferred_admin_channel.index,
+                        deferred_admin_channel,
                     )
                     self._write_channel_snapshot(
                         deferred_admin_channel,

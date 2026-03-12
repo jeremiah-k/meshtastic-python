@@ -2053,7 +2053,7 @@ def test_ensureSessionKey_requests_only_when_missing(
         _get_mock_call_arg(
             request_config_call,
             name="adminIndex",
-            positional_index=2,
+            positional_index=1,
         )
         == 6
     )
