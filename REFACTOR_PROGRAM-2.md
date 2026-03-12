@@ -201,7 +201,7 @@ ble-stabilization-pass
 
 Delivered outcomes:
 
-- elapsed-time based management wait timeout accounting for connect/shutdown paths
+- elapsed-time-based management wait timeout accounting for connect/shutdown paths
 - hardened management operation accounting (underflow-safe behavior)
 - bounded spurious-wakeup regression tests to avoid suite hangs
 - compatibility-preserving fixes validated by expanded BLE lifecycle tests

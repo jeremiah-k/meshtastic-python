@@ -1072,7 +1072,7 @@ class Node:
                         f"(need {len(pending_new_settings)}, available {len(disabled_channels)})"
                     )
                 for disabled_channel, new_settings in zip(
-                    disabled_channels, pending_new_settings
+                    disabled_channels, pending_new_settings, strict=False
                 ):
                     previous_channel = channel_pb2.Channel()
                     previous_channel.CopyFrom(disabled_channel)

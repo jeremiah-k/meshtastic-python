@@ -2066,7 +2066,7 @@ def test_emit_cached_metadata_reads_metadata_under_node_db_lock(
 ) -> None:
     """_emit_cached_metadata_for_stdout should snapshot metadata before lock release."""
     iface = autospec_local_node_iface(MeshInterface)
-    iface.metadata = mesh_pb2.DeviceMetadata(
+    original_metadata = mesh_pb2.DeviceMetadata(
         firmware_version="2.7.18",
         device_state_version=24,
         role=config_pb2.Config.DeviceConfig.Role.CLIENT,
@@ -2074,16 +2074,14 @@ def test_emit_cached_metadata_reads_metadata_under_node_db_lock(
         hw_model=mesh_pb2.HardwareModel.PORTDUINO,
         hasPKC=True,
     )
+    iface.metadata = original_metadata
 
     def _mutate_metadata_after_unlock() -> None:
-        iface.metadata = mesh_pb2.DeviceMetadata(
-            firmware_version="mutated-after-unlock",
-            device_state_version=99,
-            role=config_pb2.Config.DeviceConfig.Role.CLIENT_HIDDEN,
-            position_flags=0,
-            hw_model=mesh_pb2.HardwareModel.UNSET,
-            hasPKC=False,
-        )
+        original_metadata.firmware_version = "mutated-after-unlock"
+        original_metadata.device_state_version = 99
+        original_metadata.role = config_pb2.Config.DeviceConfig.Role.CLIENT_HIDDEN
+        original_metadata.hw_model = mesh_pb2.HardwareModel.UNSET
+        original_metadata.hasPKC = False
 
     iface._node_db_lock = _TrackingLock(on_exit=_mutate_metadata_after_unlock)
     anode = Node(iface, "!12345678", noProto=True)
@@ -2094,6 +2092,8 @@ def test_emit_cached_metadata_reads_metadata_under_node_db_lock(
     assert iface._node_db_lock.enter_count == 1
     assert any("firmware_version: 2.7.18" in line for line in emitted)
     assert not any("firmware_version: mutated-after-unlock" in line for line in emitted)
+    assert iface.metadata is original_metadata
+    assert iface.metadata.firmware_version == "mutated-after-unlock"
 
 
 @pytest.mark.unit
