@@ -122,9 +122,13 @@ def _format_missing_node_num_error(destination_id: int | str) -> str:
 
 
 def _looks_like_hex_node_id_tail(destination_id: str) -> bool:
-    """Return True when the last 8 characters look like a hex node identifier."""
-    tail = destination_id[-8:]
-    return len(destination_id) >= 8 and all(ch in HEX_NODE_ID_TAIL_CHARS for ch in tail)
+    """Return True when the whole string is a supported compact hex node identifier."""
+    candidate = destination_id
+    if destination_id.startswith("!"):
+        candidate = destination_id[1:]
+    elif destination_id.startswith(("0x", "0X")):
+        candidate = destination_id[2:]
+    return len(candidate) == 8 and all(ch in HEX_NODE_ID_TAIL_CHARS for ch in candidate)
 
 
 def _logger_has_visible_info_handler(target_logger: logging.Logger) -> bool:

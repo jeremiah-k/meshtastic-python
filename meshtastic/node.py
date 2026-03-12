@@ -1031,6 +1031,8 @@ class Node:
                 if self.iface.localNode != self
                 else None
             )
+            original_lora_config = config_pb2.Config.LoRaConfig()
+            original_lora_config.CopyFrom(self.localConfig.lora)
             with self._channels_lock:
                 channels = self.channels
                 if channels is None:
@@ -1077,9 +1079,15 @@ class Node:
                     logger.info(f"Adding new channel '{channel_name}' to device")
                     self.writeChannel(channel_index, adminIndex=admin_index_for_write)
                     written_indices.append(channel_index)
+                set_lora = admin_pb2.AdminMessage()
+                set_lora.set_config.lora.CopyFrom(channelSet.lora_config)
+                self.ensureSessionKey()
+                self._send_admin(set_lora, adminIndex=admin_index_for_write)
+            # Intentionally broad: rollback should run for any send failure in this
+            # transactional block. The original exception is re-raised.
             except Exception:
                 logger.warning(
-                    "Failed while applying addOnly channel updates; restoring local channel state and attempting rollback for written channels.",
+                    "Failed while applying addOnly channel updates; restoring local channel state and attempting rollback for written channels and LoRa config.",
                     exc_info=True,
                 )
                 with self._channels_lock:
@@ -1099,12 +1107,26 @@ class Node:
                             rollback_admin,
                             adminIndex=admin_index_for_write,
                         )
+                    # Best-effort rollback path; keep attempting remaining steps.
                     except Exception:
                         logger.warning(
                             "Rollback of channel index %s failed after addOnly partial failure.",
                             index,
                             exc_info=True,
                         )
+                rollback_lora = admin_pb2.AdminMessage()
+                rollback_lora.set_config.lora.CopyFrom(original_lora_config)
+                try:
+                    self._send_admin(
+                        rollback_lora,
+                        adminIndex=admin_index_for_write,
+                    )
+                # Best-effort rollback path; keep original failure semantics.
+                except Exception:
+                    logger.warning(
+                        "Rollback of LoRa config failed after addOnly partial failure.",
+                        exc_info=True,
+                    )
                 raise
         else:
             with self._channels_lock:
@@ -1135,10 +1157,11 @@ class Node:
                 logger.debug(f"Channel i:{i} ch:{ch}")
                 self.writeChannel(ch.index)
 
-        p = admin_pb2.AdminMessage()
-        p.set_config.lora.CopyFrom(channelSet.lora_config)
-        self.ensureSessionKey()
-        self._send_admin(p)
+        if not addOnly:
+            p = admin_pb2.AdminMessage()
+            p.set_config.lora.CopyFrom(channelSet.lora_config)
+            self.ensureSessionKey()
+            self._send_admin(p)
 
     def onResponseRequestRingtone(self, p: dict[str, Any]) -> None:
         """Process an admin response containing a ringtone fragment and cache it on the Node.

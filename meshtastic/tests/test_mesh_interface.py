@@ -970,6 +970,21 @@ def test_sendPacket_with_non_hex_long_destination_falls_back_to_db_lookup(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_sendPacket_with_hex_suffix_only_string_still_uses_db_lookup(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """Arbitrary strings ending in hex should not be treated as direct node IDs."""
+    iface = iface_with_nodes
+    mesh_packet = mesh_pb2.MeshPacket()
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match=r"NodeId room-deadbeef not found in DB",
+    ):
+        iface._send_packet(mesh_packet, destinationId="room-deadbeef")
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_sendPacket_applies_explicit_hoplimit_and_pki_encrypted_flag() -> None:
     """_send_packet should honor explicit hopLimit and pkiEncrypted parameters."""
     with MeshInterface(noProto=True) as iface:

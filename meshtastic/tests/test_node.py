@@ -1366,15 +1366,81 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
     assert after_snapshot == before_snapshot
 
     # First channel write was considered sent; rollback path should attempt
-    # to restore it using the same snapshotted admin path.
-    assert anode._send_admin.call_count == 1
-    rollback_call = anode._send_admin.call_args
-    assert rollback_call is not None
-    rollback_msg = rollback_call.args[0]
-    assert isinstance(rollback_msg, admin_pb2.AdminMessage)
-    assert rollback_msg.set_channel.index == 1
-    assert rollback_msg.set_channel.role == Channel.Role.DISABLED
-    assert rollback_call.kwargs["adminIndex"] == 0
+    # to restore that channel and the previous LoRa config using the same
+    # snapshotted admin path.
+    rollback_calls = anode._send_admin.call_args_list
+    assert len(rollback_calls) == 2
+    rollback_channel_msg = rollback_calls[0].args[0]
+    rollback_lora_msg = rollback_calls[1].args[0]
+    assert isinstance(rollback_channel_msg, admin_pb2.AdminMessage)
+    assert rollback_channel_msg.set_channel.index == 1
+    assert rollback_channel_msg.set_channel.role == Channel.Role.DISABLED
+    assert rollback_calls[0].kwargs["adminIndex"] == 0
+    assert isinstance(rollback_lora_msg, admin_pb2.AdminMessage)
+    assert rollback_lora_msg.HasField("set_config")
+    assert rollback_lora_msg.set_config.HasField("lora")
+    assert rollback_calls[1].kwargs["adminIndex"] == 0
+
+
+@pytest.mark.unit
+def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=True) should rollback channels and LoRa when final LoRa write fails."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    primary.settings.psk = b"\x01"
+    disabled = Channel(index=1, role=Channel.Role.DISABLED)
+    anode.channels = [primary, disabled]
+    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    anode.localConfig.lora.hop_limit = 3
+    anode.writeChannel = MagicMock()  # type: ignore[method-assign]
+
+    failed_lora_send = {"seen": False}
+    rollback_messages: list[admin_pb2.AdminMessage] = []
+
+    def _send_admin_with_lora_failure(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int = 0,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse, adminIndex)
+        if msg.HasField("set_config") and msg.set_config.HasField("lora"):
+            if not failed_lora_send["seen"] and msg.set_config.lora.hop_limit == 9:
+                failed_lora_send["seen"] = True
+                raise OSError("LoRa write failed")
+        rollback_messages.append(msg)
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = _send_admin_with_lora_failure  # type: ignore[method-assign,assignment]
+
+    channel_set = apponly_pb2.ChannelSet()
+    added = channel_set.settings.add()
+    added.name = "new-channel"
+    added.psk = b"\x03"
+    channel_set.lora_config.hop_limit = 9
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+    with pytest.raises(OSError, match="LoRa write failed"):
+        anode.setURL(url, addOnly=True)
+
+    assert anode.channels is not None
+    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    assert after_snapshot == before_snapshot
+    anode.writeChannel.assert_called_once_with(1, adminIndex=0)
+
+    # Rollback should include channel restoration and prior LoRa config.
+    assert len(rollback_messages) == 2
+    assert rollback_messages[0].HasField("set_channel")
+    assert rollback_messages[0].set_channel.index == 1
+    assert rollback_messages[0].set_channel.role == Channel.Role.DISABLED
+    assert rollback_messages[1].HasField("set_config")
+    assert rollback_messages[1].set_config.HasField("lora")
+    assert rollback_messages[1].set_config.lora.hop_limit == 3
 
 
 @pytest.mark.unit
@@ -1841,15 +1907,30 @@ def test_onRequestGetMetadata_logs_valid_and_fallback_enum_values(
 
 
 @pytest.mark.unit
-def test_onRequestGetMetadata_updates_metadata_under_node_db_lock(
-    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
-) -> None:
+def test_onRequestGetMetadata_updates_metadata_under_node_db_lock() -> None:
     """onRequestGetMetadata should update iface.metadata while holding iface._node_db_lock."""
-    iface = autospec_local_node_iface(MeshInterface)
-    iface._acknowledgment = Acknowledgment()
     lock = _TrackingLock()
-    iface._node_db_lock = lock
-    anode = Node(iface, "!12345678", noProto=True)
+
+    class _MetadataAssignmentProbeIface:
+        """Minimal interface stub that asserts metadata writes happen while lock is held."""
+
+        def __init__(self, node_db_lock: _TrackingLock) -> None:
+            self._node_db_lock = node_db_lock
+            self._acknowledgment = Acknowledgment()
+            self._metadata: mesh_pb2.DeviceMetadata | None = None
+            self.metadata_assignment_lock_state: bool | None = None
+
+        @property
+        def metadata(self) -> mesh_pb2.DeviceMetadata | None:
+            return self._metadata
+
+        @metadata.setter
+        def metadata(self, value: mesh_pb2.DeviceMetadata | None) -> None:
+            self.metadata_assignment_lock_state = lock.is_held
+            self._metadata = value
+
+    iface = _MetadataAssignmentProbeIface(lock)
+    anode = Node(cast(Any, iface), "!12345678", noProto=True)
     anode._timeout = MagicMock()
 
     raw = admin_pb2.AdminMessage()
@@ -1861,20 +1942,13 @@ def test_onRequestGetMetadata_updates_metadata_under_node_db_lock(
     response.hw_model = mesh_pb2.HardwareModel.PORTDUINO
     response.hasPKC = True
 
-    def _assert_assignment_happened_while_locked() -> None:
-        assert lock.is_held
-        metadata = iface.metadata
-        assert isinstance(metadata, mesh_pb2.DeviceMetadata)
-        assert metadata.firmware_version == "2.7.19"
-
-    lock._on_exit = _assert_assignment_happened_while_locked
-
     anode.onRequestGetMetadata(
         {"decoded": {"portnum": "ADMIN_APP", "admin": {"raw": raw}}}
     )
 
     assert lock.enter_count == 1
     assert lock.is_held is False
+    assert iface.metadata_assignment_lock_state is True
     assert iface.metadata.firmware_version == "2.7.19"
 
 
