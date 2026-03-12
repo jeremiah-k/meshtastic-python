@@ -1444,7 +1444,11 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
 
     assert anode.channels is not None
     after_snapshot = [channel.SerializeToString() for channel in anode.channels]
-    assert after_snapshot == before_snapshot
+    # The staged addOnly transaction should not overwrite concurrent live-channel
+    # mutations when it fails and rolls back device writes.
+    assert after_snapshot[0] == before_snapshot[0]
+    assert after_snapshot[1] == before_snapshot[1]
+    assert anode.channels[2].settings.name == "raced-name"
 
     # Rollback should include the in-flight channel index as well, so both staged
     # channels are restored when writeChannel fails mid-send.

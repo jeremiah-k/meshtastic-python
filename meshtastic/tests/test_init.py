@@ -155,7 +155,7 @@ def test_init_on_node_info_receive_decode_error_updates_metadata_without_user_st
     baseline_node = iface._get_or_create_by_num(2468135790)
     with iface._node_db_lock:
         baseline_node["user"] = {"id": "baseline-user"}
-    packet = {
+    packet: dict[str, Any] = {
         "from": 2468135790,
         "decoded": {"user": {"error": "decode-failed: malformed"}},
     }

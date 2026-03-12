@@ -475,7 +475,8 @@ class Node:
             protobuf field descriptor indicating which config field to fetch.
         adminIndex : int | None
             Admin channel index to use for sending; when None the node's
-            configured admin channel is used. (Default value = None)
+            configured admin channel is used. Pass 0 to force channel 0.
+            (Default value = None)
         """
         if self == self.iface.localNode:
             onResponse = None
@@ -645,7 +646,17 @@ class Node:
         channel_to_write: channel_pb2.Channel,
         adminIndex: int | None = None,
     ) -> None:
-        """Write a pre-built channel snapshot to the device."""
+        """Write a pre-built channel snapshot to the device.
+
+        Parameters
+        ----------
+        channel_to_write : channel_pb2.Channel
+            Snapshot payload to send via `set_channel`.
+        adminIndex : int | None
+            Admin channel index to use for sending; when None the node's
+            configured admin channel is used. Pass 0 to force channel 0.
+            (Default value = None)
+        """
         self.ensureSessionKey(adminIndex=adminIndex)
         p = admin_pb2.AdminMessage()
         p.set_channel.CopyFrom(channel_to_write)
@@ -1091,10 +1102,10 @@ class Node:
                     original_channels_by_index[disabled_channel.index] = (
                         previous_channel
                     )
-                    disabled_channel.settings.CopyFrom(new_settings)
-                    disabled_channel.role = channel_pb2.Channel.Role.SECONDARY
                     staged_channel = channel_pb2.Channel()
                     staged_channel.CopyFrom(disabled_channel)
+                    staged_channel.settings.CopyFrom(new_settings)
+                    staged_channel.role = channel_pb2.Channel.Role.SECONDARY
                     channels_to_write.append(
                         (staged_channel, new_settings.name)
                     )
@@ -1118,13 +1129,25 @@ class Node:
                 self.ensureSessionKey(adminIndex=admin_index_for_write)
                 lora_write_started = True
                 self._send_admin(set_lora, adminIndex=admin_index_for_write)
+                with self._channels_lock:
+                    channels = self.channels
+                    if channels is None:
+                        self._raise_interface_error("Config or channels not loaded")
+                    for staged_channel, _channel_name in channels_to_write:
+                        if 0 <= staged_channel.index < len(channels):
+                            channels[staged_channel.index].CopyFrom(staged_channel)
+                        else:
+                            self._raise_interface_error(
+                                f"Channel index {staged_channel.index} out of range "
+                                f"(0-{len(channels) - 1})"
+                            )
                 self.localConfig.lora.CopyFrom(channelSet.lora_config)
             # Intentionally broad: rollback should run for any send failure in this
             # transactional block. The original exception is re-raised.
             except Exception:
                 logger.warning(
-                    "Failed while applying addOnly channel updates; restoring local channel state "
-                    "and attempting rollback for written channels and LoRa config.",
+                    "Failed while applying addOnly channel updates; attempting rollback "
+                    "for written channels and LoRa config.",
                     exc_info=True,
                 )
                 rollback_failed = False
@@ -1153,16 +1176,6 @@ class Node:
                     logger.warning(
                         "Channel rollback incomplete after addOnly failure; invalidated local channel cache."
                     )
-                else:
-                    with self._channels_lock:
-                        channels = self.channels
-                        if channels is not None:
-                            for (
-                                index,
-                                previous_channel,
-                            ) in original_channels_by_index.items():
-                                if 0 <= index < len(channels):
-                                    channels[index].CopyFrom(previous_channel)
                 if lora_write_started:
                     rollback_lora = admin_pb2.AdminMessage()
                     rollback_lora.set_config.lora.CopyFrom(original_lora_config)
@@ -2459,7 +2472,8 @@ class Node:
             Optional callback invoked with the received response packet. (Default value = None)
         adminIndex : int | None
             Channel index to use for the admin message; when None the node's
-            configured admin channel is used. (Default value = None)
+            configured admin channel is used. Pass 0 to force channel 0.
+            (Default value = None)
 
         Returns
         -------
@@ -2475,7 +2489,7 @@ class Node:
             return None
         if (
             adminIndex is None
-        ):  # unless a special channel index was used, we want to use the admin index
+        ):  # None means auto-detect; channel 0 remains an explicit valid index.
             adminIndex = self.iface.localNode._get_admin_channel_index()
         logger.debug(f"adminIndex:{adminIndex}")
         node_info = self.iface._get_or_create_by_num(self.nodeNum)
@@ -2503,7 +2517,8 @@ class Node:
         ----------
         adminIndex : int | None
             Admin channel index to use for the session key request; when None
-            the node's configured admin channel is used. (Default value = None)
+            the node's configured admin channel is used. Pass 0 to force
+            channel 0. (Default value = None)
         """
         if self.noProto:
             logger.warning(
