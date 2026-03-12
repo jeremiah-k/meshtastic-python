@@ -475,6 +475,7 @@ def test_setURL_ignores_channels_over_device_limit(
         settings = channel_set.settings.add()
         settings.name = f"ch{i}"
         settings.psk = b"\x01"
+    channel_set.lora_config.hop_limit = 7
 
     encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
     encoded = encoded.replace("=", "")
@@ -491,6 +492,7 @@ def test_setURL_ignores_channels_over_device_limit(
     assert len(anode.channels) == CHANNEL_LIMIT
     assert anode.channels[0].settings.name == "ch0"
     assert anode.channels[CHANNEL_LIMIT - 1].settings.name == f"ch{CHANNEL_LIMIT - 1}"
+    assert anode.localConfig.lora.hop_limit == 7
 
 
 @pytest.mark.unit
@@ -1266,6 +1268,7 @@ def test_setURL_add_only_adds_unique_named_channels(
     new_channel = channel_set.settings.add()
     new_channel.name = "new-ch"
     new_channel.psk = b"\x03"
+    channel_set.lora_config.hop_limit = 9
     encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
     url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
 
@@ -1274,6 +1277,7 @@ def test_setURL_add_only_adds_unique_named_channels(
     assert anode.channels is not None
     assert anode.channels[1].settings.name == "new-ch"
     assert anode.channels[1].role == Channel.Role.SECONDARY
+    assert anode.localConfig.lora.hop_limit == 9
     anode.writeChannel.assert_called_once_with(1, adminIndex=0)
 
 
@@ -1455,6 +1459,7 @@ def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
     assert rollback_messages[1].HasField("set_config")
     assert rollback_messages[1].set_config.HasField("lora")
     assert rollback_messages[1].set_config.lora.hop_limit == 3
+    assert anode.localConfig.lora.hop_limit == 3
 
 
 @pytest.mark.unit
@@ -1640,6 +1645,25 @@ def test_send_admin_uses_session_passkey_and_selected_admin_index(
     iface.sendData.assert_called_once()
     assert iface.sendData.call_args.kwargs["channelIndex"] == 3
     assert iface.sendData.call_args.kwargs["pkiEncrypted"] is True
+
+
+@pytest.mark.unit
+def test_send_admin_respects_explicit_channel_zero(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """_send_admin should treat channel 0 as explicit, not as auto-detect."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface.localNode._get_admin_channel_index.return_value = 3
+    iface._get_or_create_by_num.return_value = {"adminSessionPassKey": b"secret"}
+    packet = mesh_pb2.MeshPacket()
+    iface.sendData.return_value = packet
+    anode = Node(iface, 321, noProto=False)
+    msg = admin_pb2.AdminMessage()
+
+    result = anode._send_admin(msg, adminIndex=0)
+
+    assert result is packet
+    assert iface.sendData.call_args.kwargs["channelIndex"] == 0
 
 
 @pytest.mark.unit

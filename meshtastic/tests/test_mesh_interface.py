@@ -955,6 +955,28 @@ def test_sendPacket_uses_numeric_num_from_node_record(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@pytest.mark.parametrize(
+    ("destination_id", "expected_num"),
+    [
+        ("0x12345678", 0x12345678),
+        ("0X90ABCDEF", 0x90ABCDEF),
+        ("!89abcdef", 0x89ABCDEF),
+    ],
+)
+def test_sendPacket_parses_supported_hex_node_id_forms(
+    destination_id: str, expected_num: int
+) -> None:
+    """_send_packet should parse accepted compact hex destination ID forms."""
+    with MeshInterface(noProto=True) as iface:
+        mesh_packet = mesh_pb2.MeshPacket()
+
+        sent = iface._send_packet(mesh_packet, destinationId=destination_id)
+
+        assert sent.to == expected_num
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_sendPacket_with_non_hex_long_destination_falls_back_to_db_lookup(
     iface_with_nodes: MeshInterface,
 ) -> None:

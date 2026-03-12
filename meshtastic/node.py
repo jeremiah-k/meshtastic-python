@@ -455,7 +455,7 @@ class Node:
                 logger.info("%s:\n%s", camel_to_snake(field), config_values)
 
     def requestConfig(
-        self, configType: int | FieldDescriptor, adminIndex: int = 0
+        self, configType: int | FieldDescriptor, adminIndex: int | None = None
     ) -> None:
         """Request a configuration subset or the full configuration from this node.
 
@@ -471,9 +471,9 @@ class Node:
         configType : int | FieldDescriptor
             Numeric config index or a
             protobuf field descriptor indicating which config field to fetch.
-        adminIndex : int
-            Admin channel index to use for sending; when 0 the node's configured
-            admin channel is used. (Default value = 0)
+        adminIndex : int | None
+            Admin channel index to use for sending; when None the node's
+            configured admin channel is used. (Default value = None)
         """
         if self == self.iface.localNode:
             onResponse = None
@@ -638,7 +638,7 @@ class Node:
             onResponse = self.onAckNak
         self._send_admin(p, onResponse=onResponse)
 
-    def writeChannel(self, channelIndex: int, adminIndex: int = 0) -> None:
+    def writeChannel(self, channelIndex: int, adminIndex: int | None = None) -> None:
         """Write the channel at the given index to the device.
 
         Sends the specified channel configuration to the node and ensures an admin session key is present before sending.
@@ -647,8 +647,9 @@ class Node:
         ----------
         channelIndex : int
             Index of the channel to write.
-        adminIndex : int
-            Admin channel index to use for sending. (Default value = 0)
+        adminIndex : int | None
+            Admin channel index to use for sending; when None the node's
+            configured admin channel is used. (Default value = None)
 
         Raises
         ------
@@ -1098,6 +1099,7 @@ class Node:
                 set_lora.set_config.lora.CopyFrom(channelSet.lora_config)
                 self.ensureSessionKey(adminIndex=admin_index_for_write)
                 self._send_admin(set_lora, adminIndex=admin_index_for_write)
+                self.localConfig.lora.CopyFrom(channelSet.lora_config)
             # Intentionally broad: rollback should run for any send failure in this
             # transactional block. The original exception is re-raised.
             except Exception:
@@ -1141,6 +1143,7 @@ class Node:
                             rollback_lora,
                             adminIndex=admin_index_for_write,
                         )
+                        self.localConfig.lora.CopyFrom(original_lora_config)
                     # Best-effort rollback path; keep original failure semantics.
                     except Exception:
                         logger.warning(
@@ -1182,6 +1185,7 @@ class Node:
             p.set_config.lora.CopyFrom(channelSet.lora_config)
             self.ensureSessionKey()
             self._send_admin(p)
+            self.localConfig.lora.CopyFrom(channelSet.lora_config)
 
     def onResponseRequestRingtone(self, p: dict[str, Any]) -> None:
         """Process an admin response containing a ringtone fragment and cache it on the Node.
@@ -2409,7 +2413,7 @@ class Node:
         p: admin_pb2.AdminMessage,
         wantResponse: bool = False,
         onResponse: Callable[[dict[str, Any]], Any] | None = None,
-        adminIndex: int = 0,
+        adminIndex: int | None = None,
     ) -> mesh_pb2.MeshPacket | None:
         """Send an AdminMessage to this Node's admin channel.
 
@@ -2421,8 +2425,9 @@ class Node:
             Request a response from the recipient when True. (Default value = False)
         onResponse : Callable[[dict[str, Any]], Any] | None
             Optional callback invoked with the received response packet. (Default value = None)
-        adminIndex : int
-            Channel index to use for the admin message; when 0 the node's configured admin channel is used. (Default value = 0)
+        adminIndex : int | None
+            Channel index to use for the admin message; when None the node's
+            configured admin channel is used. (Default value = None)
 
         Returns
         -------
@@ -2437,7 +2442,7 @@ class Node:
             )
             return None
         if (
-            adminIndex == 0
+            adminIndex is None
         ):  # unless a special channel index was used, we want to use the admin index
             adminIndex = self.iface.localNode._get_admin_channel_index()
         logger.debug(f"adminIndex:{adminIndex}")
@@ -2456,7 +2461,7 @@ class Node:
             pkiEncrypted=True,
         )
 
-    def ensureSessionKey(self, adminIndex: int = 0) -> None:
+    def ensureSessionKey(self, adminIndex: int | None = None) -> None:
         """Ensure an admin session key exists for this node, requesting one if missing.
 
         If protocol use is disabled (`noProto`), no action is taken. Otherwise, if the node has no
@@ -2464,9 +2469,9 @@ class Node:
 
         Parameters
         ----------
-        adminIndex : int
-            Admin channel index to use for the session key request; when 0 the
-            node's configured admin channel is used. (Default value = 0)
+        adminIndex : int | None
+            Admin channel index to use for the session key request; when None
+            the node's configured admin channel is used. (Default value = None)
         """
         if self.noProto:
             logger.warning(

@@ -1,6 +1,6 @@
 # REFACTOR_PROGRAM-2.md
 
-### Meshtastic Python Refactor – Phase 2 Program Plan
+## Meshtastic Python Refactor – Phase 2 Program Plan
 
 Date: 2026-03-11  
 Base Branch: `develop`  
@@ -8,7 +8,7 @@ Comparison Baseline: `master` (eb964d78)
 
 ---
 
-# 1. Context
+## 1. Context
 
 The current `develop` branch represents a large structural modernization of the Meshtastic Python codebase. It includes:
 
@@ -36,7 +36,7 @@ Phase 1 (BLE stabilization) is now complete and merged into `develop` (`#63`), a
 
 ---
 
-# 2. Refactor Philosophy Going Forward
+## 2. Refactor Philosophy Going Forward
 
 Going forward we will keep the advantages of automation but shift toward **intentional large passes** that address a single subsystem at a time.
 
@@ -56,7 +56,7 @@ Each branch should represent **one engineering theme**.
 
 ---
 
-# 3. Current Refactor State
+## 3. Current Refactor State
 
 The repository now contains significant architectural improvements.
 
@@ -66,7 +66,7 @@ The repository now contains significant architectural improvements.
 
 The BLE implementation has been modularized into:
 
-```
+```text
 meshtastic/interfaces/ble/
     client.py
     connection.py
@@ -86,7 +86,7 @@ meshtastic/interfaces/ble/
 
 A compatibility shim remains at:
 
-```
+```text
 meshtastic/ble_interface.py
 ```
 
@@ -114,7 +114,7 @@ The CLI code received cleanup and better separation of responsibilities.
 
 However:
 
-```
+```text
 meshtastic/__main__.py
 ```
 
@@ -136,7 +136,7 @@ This dramatically improves safety for future refactors.
 
 ---
 
-# 4. Key Remaining Risks
+## 4. Key Remaining Risks
 
 Despite the progress, several areas remain high risk:
 
@@ -178,7 +178,7 @@ Compatibility shims exist but should be validated carefully to ensure:
 
 ---
 
-# 5. Execution Status and Next-Phase Strategy
+## 5. Execution Status and Next-Phase Strategy
 
 Instead of merging `develop → master` directly, the program continues through themed stabilization passes.
 
@@ -191,11 +191,11 @@ Instead of merging `develop → master` directly, the program continues through 
 
 ---
 
-# Phase 1: BLE Stabilization Pass (Completed)
+## Phase 1: BLE Stabilization Pass (Completed)
 
 Executed branch:
 
-```
+```text
 ble-stabilization-pass
 ```
 
@@ -208,17 +208,17 @@ Delivered outcomes:
 
 ---
 
-# Phase 2: MeshInterface Runtime Stabilization (Active)
+## Phase 2: MeshInterface Runtime Stabilization (Active)
 
 Active branch:
 
-```
+```text
 meshinterface-pass
 ```
 
 This phase focuses on runtime correctness of request/wait behavior, callback handling, queue behavior, and shared-state safety.
 
-### Goals
+### Phase 2 Goals
 
 - finalize request wait-state semantics
 - ensure deterministic callback handling
@@ -226,9 +226,9 @@ This phase focuses on runtime correctness of request/wait behavior, callback han
 - improve routing error propagation
 - enforce lock ownership discipline in mesh runtime paths
 
-### Areas of Work
+### Phase 2 Areas of Work
 
-```
+```text
 meshtastic/mesh_interface.py
 meshtastic/node.py
 meshtastic/tests/test_mesh_interface.py
@@ -251,28 +251,28 @@ Execution checklist for this phase:
 
 ---
 
-# Phase 3: Runtime Boundary Cleanup
+## Phase 3: Runtime Boundary Cleanup
 
 Branch name suggestion:
 
-```
+```text
 runtime-boundary-cleanup
 ```
 
 This phase improves system boundaries and runtime behavior.
 
-### Goals
+### Phase 3 Goals
 
 - unify host/port parsing
 - improve runtime error surfaces
 - improve OTA error handling
 - improve configuration reliability
 
-### Areas of Work
+### Phase 3 Areas of Work
 
 New module usage:
 
-```
+```text
 meshtastic/host_port.py
 ```
 
@@ -284,7 +284,7 @@ Responsibilities:
 
 OTA improvements
 
-```
+```text
 meshtastic/ota.py
 ```
 
@@ -302,13 +302,13 @@ Security improvements
 
 ---
 
-# Phase 4: CLI Structural Refactor (Future)
+## Phase 4: CLI Structural Refactor (Future)
 
 This phase should **not begin until runtime behavior is stable**.
 
 Branch name suggestion:
 
-```
+```text
 cli-modularization
 ```
 
@@ -318,7 +318,7 @@ Split `__main__.py` responsibilities into separate modules.
 
 Possible structure:
 
-```
+```text
 meshtastic/cli/
     commands.py
     connection.py
@@ -329,7 +329,7 @@ meshtastic/cli/
 
 The CLI entry point should eventually become minimal:
 
-```
+```text
 main()
   -> argument parsing
   -> command dispatch
@@ -337,7 +337,7 @@ main()
 
 ---
 
-# 6. Merge Strategy
+## 6. Merge Strategy
 
 The final merge into `master` will occur **after Phase 2 and Phase 3 are completed** (Phase 1 is already complete).
 
@@ -351,7 +351,7 @@ Once these subsystems are stable, the refactor can be safely promoted to product
 
 ---
 
-# 7. Development Rules For Next Phases
+## 7. Development Rules For Next Phases
 
 To keep the refactor manageable:
 
@@ -376,11 +376,11 @@ To keep the refactor manageable:
 
 ---
 
-# 8. Immediate Next Step
+## 8. Immediate Next Step
 
 Continue executing Phase 2 on the active branch:
 
-```
+```text
 git checkout meshinterface-pass
 ```
 
@@ -395,7 +395,7 @@ This work stream should produce the next major PRs for the refactor program.
 
 ---
 
-# 9. Summary
+## 9. Summary
 
 The major architectural refactor is largely complete.
 
