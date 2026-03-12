@@ -1922,6 +1922,7 @@ def test_onRequestGetMetadata_updates_metadata_under_node_db_lock() -> None:
 
         @property
         def metadata(self) -> mesh_pb2.DeviceMetadata | None:
+            """Metadata property for testing lock state during assignment."""
             return self._metadata
 
         @metadata.setter

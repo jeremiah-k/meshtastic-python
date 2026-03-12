@@ -213,6 +213,7 @@ class Node:
 
     def _get_metadata_snapshot(self) -> mesh_pb2.DeviceMetadata | None:
         """Return a stable snapshot of ``iface.metadata`` under the node DB lock when available."""
+
         def _read_and_copy() -> mesh_pb2.DeviceMetadata | None:
             metadata = getattr(self.iface, "metadata", None)
             if not isinstance(metadata, mesh_pb2.DeviceMetadata):
@@ -223,8 +224,11 @@ class Node:
 
         return self._execute_with_node_db_lock(_read_and_copy)
 
-    def _set_metadata_snapshot(self, metadata_snapshot: mesh_pb2.DeviceMetadata) -> None:
+    def _set_metadata_snapshot(
+        self, metadata_snapshot: mesh_pb2.DeviceMetadata
+    ) -> None:
         """Persist a metadata snapshot to ``iface.metadata`` under the node DB lock when available."""
+
         def _write() -> None:
             self.iface.metadata = metadata_snapshot
 
@@ -484,9 +488,7 @@ class Node:
                     f"{configType.name.upper()}_CONFIG"
                 )
             else:
-                p.get_module_config_request = (
-                    msg_index  # pyright: ignore[reportAttributeAccessIssue]
-                )
+                p.get_module_config_request = msg_index  # pyright: ignore[reportAttributeAccessIssue]
 
         self._send_admin(p, wantResponse=True, onResponse=onResponse)
         if onResponse:
@@ -1063,10 +1065,14 @@ class Node:
                 ):
                     previous_channel = channel_pb2.Channel()
                     previous_channel.CopyFrom(disabled_channel)
-                    original_channels_by_index[disabled_channel.index] = previous_channel
+                    original_channels_by_index[disabled_channel.index] = (
+                        previous_channel
+                    )
                     disabled_channel.settings.CopyFrom(new_settings)
                     disabled_channel.role = channel_pb2.Channel.Role.SECONDARY
-                    channels_to_write.append((disabled_channel.index, new_settings.name))
+                    channels_to_write.append(
+                        (disabled_channel.index, new_settings.name)
+                    )
 
             for ignored_name in ignored_channel_names:
                 logger.info(
@@ -1087,13 +1093,17 @@ class Node:
             # transactional block. The original exception is re-raised.
             except Exception:
                 logger.warning(
-                    "Failed while applying addOnly channel updates; restoring local channel state and attempting rollback for written channels and LoRa config.",
+                    "Failed while applying addOnly channel updates; restoring local channel state "
+                    "and attempting rollback for written channels and LoRa config.",
                     exc_info=True,
                 )
                 with self._channels_lock:
                     channels = self.channels
                     if channels is not None:
-                        for index, previous_channel in original_channels_by_index.items():
+                        for (
+                            index,
+                            previous_channel,
+                        ) in original_channels_by_index.items():
                             if 0 <= index < len(channels):
                                 channels[index].CopyFrom(previous_channel)
                 for index in written_indices:
