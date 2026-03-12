@@ -1266,6 +1266,46 @@ def test_setURL_add_only_raises_when_no_disabled_slot_available(
 
 
 @pytest.mark.unit
+def test_setURL_add_only_is_transactional_when_slots_are_insufficient(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=True) should not partially mutate channels when it fails for capacity."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    primary.settings.psk = b"\x01"
+    secondary = Channel(index=1, role=Channel.Role.SECONDARY)
+    secondary.settings.name = "existing"
+    secondary.settings.psk = b"\x02"
+    disabled = Channel(index=2, role=Channel.Role.DISABLED)
+    anode.channels = [primary, secondary, disabled]
+    anode.writeChannel = MagicMock()  # type: ignore[method-assign]
+
+    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "new-a"
+    first.psk = b"\x03"
+    second = channel_set.settings.add()
+    second.name = "new-b"
+    second.psk = b"\x04"
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="No free channels were found"
+    ):
+        anode.setURL(url, addOnly=True)
+
+    assert anode.channels is not None
+    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    assert after_snapshot == before_snapshot
+    anode.writeChannel.assert_not_called()
+
+
+@pytest.mark.unit
 def test_setURL_replace_raises_if_channels_disappear_during_assignment(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:

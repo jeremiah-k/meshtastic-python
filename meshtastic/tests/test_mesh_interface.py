@@ -955,6 +955,21 @@ def test_sendPacket_uses_numeric_num_from_node_record(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_sendPacket_with_non_hex_long_destination_falls_back_to_db_lookup(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """Non-hex destination strings of length >= 8 should not raise raw ValueError."""
+    iface = iface_with_nodes
+    mesh_packet = mesh_pb2.MeshPacket()
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match=r"NodeId nothexid1 not found in DB",
+    ):
+        iface._send_packet(mesh_packet, destinationId="nothexid1")
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_sendPacket_applies_explicit_hoplimit_and_pki_encrypted_flag() -> None:
     """_send_packet should honor explicit hopLimit and pkiEncrypted parameters."""
     with MeshInterface(noProto=True) as iface:
@@ -3658,3 +3673,53 @@ def test_handle_packet_from_radio_toid_warning_and_response_handler_paths(
     assert on_receive_calls == [1, 1, 1]
     assert on_ack_calls == [1]
     assert ack_permitted_calls == [1]
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_handle_packet_from_radio_decode_failure_does_not_raise(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Malformed known-protocol payloads should log and continue without crashing receive flow."""
+    monkeypatch.setattr(
+        mesh_interface_module.publishingThread,  # type: ignore[attr-defined]
+        "queueWork",
+        lambda callback: callback(),
+    )
+
+    with MeshInterface(noProto=True) as iface:
+        fake_on_receive = MagicMock()
+        fake_protocol = types.SimpleNamespace(
+            name="position",
+            protobufFactory=mesh_pb2.Position,
+            onReceive=fake_on_receive,
+        )
+        monkeypatch.setattr(
+            mesh_interface_module,
+            "protocols",
+            {portnums_pb2.PortNum.POSITION_APP: fake_protocol},
+        )
+
+        callback_calls: list[dict[str, Any]] = []
+
+        def _response_callback(packet: dict[str, Any]) -> None:
+            callback_calls.append(packet)
+
+        iface.responseHandlers[42] = ResponseHandler(
+            callback=_response_callback, ackPermitted=True
+        )
+
+        packet = mesh_pb2.MeshPacket()
+        setattr(packet, "from", 1)
+        packet.to = 2
+        packet.decoded.portnum = portnums_pb2.PortNum.POSITION_APP
+        packet.decoded.request_id = 42
+        packet.decoded.payload = b"\xff\x00\xff\x00"
+
+        with caplog.at_level(logging.WARNING):
+            iface._handle_packet_from_radio(packet, hack=True)
+
+        assert "Failed to decode position payload" in caplog.text
+        fake_on_receive.assert_not_called()
+        assert len(callback_calls) == 1

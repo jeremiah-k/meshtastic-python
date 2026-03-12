@@ -82,6 +82,7 @@ VALID_TELEMETRY_TYPES: tuple[TelemetryType, ...] = (
 VALID_TELEMETRY_TYPE_SET: frozenset[str] = frozenset(VALID_TELEMETRY_TYPES)
 UNKNOWN_SNR_QUARTER_DB = -128
 MISSING_NODE_NUM_ERROR_TEMPLATE = "NodeId {destination_id} has no numeric 'num' in DB"
+HEX_NODE_ID_TAIL_CHARS = frozenset("0123456789abcdefABCDEF")
 NO_RESPONSE_FIRMWARE_ERROR: str = (
     "No response from node. At least firmware 2.1.22 is required on the destination node."
 )
@@ -118,6 +119,12 @@ PayloadData: TypeAlias = bytes | bytearray | memoryview | _SerializablePayload
 def _format_missing_node_num_error(destination_id: int | str) -> str:
     """Return a consistent error message for nodes missing numeric IDs."""
     return MISSING_NODE_NUM_ERROR_TEMPLATE.format(destination_id=destination_id)
+
+
+def _looks_like_hex_node_id_tail(destination_id: str) -> bool:
+    """Return True when the last 8 characters look like a hex node identifier."""
+    tail = destination_id[-8:]
+    return len(destination_id) >= 8 and all(ch in HEX_NODE_ID_TAIL_CHARS for ch in tail)
 
 
 def _logger_has_visible_info_handler(target_logger: logging.Logger) -> bool:
@@ -2360,9 +2367,8 @@ class MeshInterface:  # pylint: disable=R0902
             else:
                 raise MeshInterface.MeshInterfaceError("No myInfo found.")
         # A simple hex style nodeid - we can parse this without needing the DB
-        elif isinstance(destinationId, str) and len(destinationId) >= 8:
-            # assuming some form of node id string such as !1234578 or 0x12345678
-            # always grab the last 8 items of the hexadecimal id str and parse to integer
+        elif isinstance(destinationId, str) and _looks_like_hex_node_id_tail(destinationId):
+            # Simple hex-style node id strings (for example !12345678 or 0x12345678).
             nodeNum = int(destinationId[-8:], 16)
         else:
             with self._node_db_lock:
@@ -3478,18 +3484,34 @@ class MeshInterface:  # pylint: disable=R0902
             p = None
             if handler is not None:
                 topic = f"meshtastic.receive.{handler.name}"
+                parse_failed = False
 
                 # Convert to protobuf if possible
                 if handler.protobufFactory is not None:
                     pb = handler.protobufFactory()
-                    pb.ParseFromString(meshPacket.decoded.payload)
-                    p = google.protobuf.json_format.MessageToDict(pb)
-                    asDict["decoded"][handler.name] = p
-                    # Also provide the protobuf raw
-                    asDict["decoded"][handler.name]["raw"] = pb
+                    try:
+                        pb.ParseFromString(meshPacket.decoded.payload)
+                    except (protobuf_message.DecodeError, TypeError, ValueError) as exc:
+                        parse_failed = True
+                        logger.warning(
+                            "Failed to decode %s payload for packet id=%s from=%s to=%s: %s",
+                            handler.name,
+                            getattr(meshPacket, "id", 0),
+                            asDict.get("from"),
+                            asDict.get("to"),
+                            exc,
+                        )
+                        asDict["decoded"][handler.name] = {
+                            "error": f"decode-failed: {exc}"
+                        }
+                    else:
+                        p = google.protobuf.json_format.MessageToDict(pb)
+                        asDict["decoded"][handler.name] = p
+                        # Also provide the protobuf raw
+                        asDict["decoded"][handler.name]["raw"] = pb
 
                 # Call specialized onReceive if necessary
-                if handler.onReceive is not None:
+                if handler.onReceive is not None and not parse_failed:
                     handler.onReceive(self, asDict)
 
             # Is this message in response to a request, if so, look for a handler

@@ -1022,7 +1022,7 @@ class Node:
             # Add new channels with names not already present
             # Don't change existing channels
             ignored_channel_names: list[str] = []
-            channels_to_write: list[tuple[int, str]] = []
+            channels_to_write: list[tuple[int, str, channel_pb2.ChannelSettings]] = []
             with self._channels_lock:
                 channels = self.channels
                 if channels is None:
@@ -1033,25 +1033,30 @@ class Node:
                 disabled_channels = [
                     c for c in channels if c.role == channel_pb2.Channel.Role.DISABLED
                 ]
-                disabled_channel_iter = iter(disabled_channels)
+                pending_new_settings: list[channel_pb2.ChannelSettings] = []
                 for chs in channelSet.settings:
                     channel_name = chs.name
                     if channel_name == "" or channel_name in existing_names:
                         ignored_channel_names.append(channel_name)
                         continue
-                    disabled_channel = next(disabled_channel_iter, None)
-                    if disabled_channel is None:
-                        self._raise_interface_error("No free channels were found")
-                    disabled_channel.settings.CopyFrom(chs)
-                    disabled_channel.role = channel_pb2.Channel.Role.SECONDARY
-                    channels_to_write.append((disabled_channel.index, channel_name))
+                    pending_new_settings.append(chs)
                     existing_names.add(channel_name)
+                if len(pending_new_settings) > len(disabled_channels):
+                    self._raise_interface_error("No free channels were found")
+                for disabled_channel, new_settings in zip(
+                    disabled_channels, pending_new_settings
+                ):
+                    disabled_channel.settings.CopyFrom(new_settings)
+                    disabled_channel.role = channel_pb2.Channel.Role.SECONDARY
+                    channels_to_write.append(
+                        (disabled_channel.index, new_settings.name, new_settings)
+                    )
 
             for ignored_name in ignored_channel_names:
                 logger.info(
                     f'Ignoring existing or empty channel "{ignored_name}" from add URL'
                 )
-            for channel_index, channel_name in channels_to_write:
+            for channel_index, channel_name, _ in channels_to_write:
                 logger.info(f"Adding new channel '{channel_name}' to device")
                 self.writeChannel(channel_index)
         else:
