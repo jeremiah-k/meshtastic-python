@@ -3493,7 +3493,6 @@ class MeshInterface:  # pylint: disable=R0902
             p = None
             if handler is not None:
                 topic = f"meshtastic.receive.{handler.name}"
-                parse_failed = False
 
                 # Convert to protobuf if possible
                 if handler.protobufFactory is not None:
@@ -3501,7 +3500,6 @@ class MeshInterface:  # pylint: disable=R0902
                     try:
                         pb.ParseFromString(meshPacket.decoded.payload)
                     except (protobuf_message.DecodeError, TypeError, ValueError) as exc:
-                        parse_failed = True
                         logger.warning(
                             "Failed to decode %s payload for packet id=%s from=%s to=%s: %s",
                             handler.name,
@@ -3520,7 +3518,7 @@ class MeshInterface:  # pylint: disable=R0902
                         asDict["decoded"][handler.name]["raw"] = pb
 
                 # Call specialized onReceive if necessary
-                if handler.onReceive is not None and not parse_failed:
+                if handler.onReceive is not None:
                     handler.onReceive(self, asDict)
 
             # Is this message in response to a request, if so, look for a handler

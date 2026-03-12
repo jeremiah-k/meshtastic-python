@@ -1317,9 +1317,11 @@ def test_setURL_add_only_is_transactional_when_slots_are_insufficient(
     secondary.settings.psk = b"\x02"
     disabled = Channel(index=2, role=Channel.Role.DISABLED)
     anode.channels = [primary, secondary, disabled]
+    anode.localConfig.lora.hop_limit = 3
     anode.writeChannel = MagicMock()  # type: ignore[method-assign]
 
     before_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    before_lora = anode.localConfig.lora.SerializeToString()
 
     channel_set = apponly_pb2.ChannelSet()
     first = channel_set.settings.add()
@@ -1328,6 +1330,7 @@ def test_setURL_add_only_is_transactional_when_slots_are_insufficient(
     second = channel_set.settings.add()
     second.name = "new-b"
     second.psk = b"\x04"
+    channel_set.lora_config.hop_limit = 9
     encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
     url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
 
@@ -1339,6 +1342,8 @@ def test_setURL_add_only_is_transactional_when_slots_are_insufficient(
     assert anode.channels is not None
     after_snapshot = [channel.SerializeToString() for channel in anode.channels]
     assert after_snapshot == before_snapshot
+    after_lora = anode.localConfig.lora.SerializeToString()
+    assert after_lora == before_lora
     anode.writeChannel.assert_not_called()
 
 
@@ -1478,16 +1483,22 @@ def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
 
     failed_lora_send = {"seen": False}
     rollback_messages: list[admin_pb2.AdminMessage] = []
+    admin_indexes: list[int | None] = []
 
     def _send_admin_with_lora_failure(
         msg: admin_pb2.AdminMessage,
         wantResponse: bool = False,
         onResponse: Callable[[dict[str, Any]], Any] | None = None,
-        adminIndex: int = 0,
+        adminIndex: int | None = None,
     ) -> mesh_pb2.MeshPacket:
-        _ = (wantResponse, onResponse, adminIndex)
+        _ = (wantResponse, onResponse)
+        admin_indexes.append(adminIndex)
         if msg.HasField("set_config") and msg.set_config.HasField("lora"):
-            if not failed_lora_send["seen"] and msg.set_config.lora.hop_limit == 9:
+            if (
+                not failed_lora_send["seen"]
+                and adminIndex == 0
+                and msg.set_config.lora.hop_limit == 9
+            ):
                 failed_lora_send["seen"] = True
                 raise OSError("LoRa write failed")
         rollback_messages.append(msg)
@@ -1497,7 +1508,7 @@ def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
 
     channel_set = apponly_pb2.ChannelSet()
     added = channel_set.settings.add()
-    added.name = "new-channel"
+    added.name = "admin"
     added.psk = b"\x03"
     channel_set.lora_config.hop_limit = 9
     encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
@@ -1519,6 +1530,7 @@ def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
     assert rollback_messages[1].HasField("set_config")
     assert rollback_messages[1].set_config.HasField("lora")
     assert rollback_messages[1].set_config.lora.hop_limit == 3
+    assert admin_indexes == [0, 0, 0]
     assert anode.localConfig.lora.hop_limit == 3
 
 

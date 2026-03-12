@@ -87,6 +87,33 @@ def test_init_on_position_receive_updates_node_position(
 
 
 @pytest.mark.unit
+def test_init_on_position_receive_decode_error_updates_metadata_without_position_state(
+    iface_with_nodes: MeshInterface,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Decode-error position payloads should update receive metadata but not overwrite position state."""
+    args = SimpleNamespace(camel_case=False)
+    monkeypatch.setattr(mt_config, "args", args)
+    iface = iface_with_nodes
+    baseline_node = iface._get_or_create_by_num(1234567890)
+    with iface._node_db_lock:
+        baseline_node["position"] = {"latitudeI": 111111, "longitudeI": 222222}
+    packet: dict[str, Any] = {
+        "from": 1234567890,
+        "decoded": {"position": {"error": "decode-failed: malformed"}},
+    }
+
+    _on_position_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(1234567890)
+    assert node["position"]["latitudeI"] == 111111
+    assert "error" not in node["position"]
+    assert node["lastReceived"]["decoded"]["position"]["error"].startswith(
+        "decode-failed:"
+    )
+
+
+@pytest.mark.unit
 def test_init_on_node_info_receive(
     caplog: pytest.LogCaptureFixture,
     iface_with_nodes: MeshInterface,
@@ -114,6 +141,33 @@ def test_init_on_node_info_receive(
     assert iface.nodes is not None
     assert iface.nodes["bar"] is node
     assert node["lastReceived"]["decoded"]["user"]["id"] == "bar"
+
+
+@pytest.mark.unit
+def test_init_on_node_info_receive_decode_error_updates_metadata_without_user_state(
+    iface_with_nodes: MeshInterface,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Decode-error user payloads should update receive metadata but not overwrite user state."""
+    args = SimpleNamespace(camel_case=False)
+    monkeypatch.setattr(mt_config, "args", args)
+    iface = iface_with_nodes
+    baseline_node = iface._get_or_create_by_num(2468135790)
+    with iface._node_db_lock:
+        baseline_node["user"] = {"id": "baseline-user"}
+    packet = {
+        "from": 2468135790,
+        "decoded": {"user": {"error": "decode-failed: malformed"}},
+    }
+
+    _on_node_info_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(2468135790)
+    assert node["user"]["id"] == "baseline-user"
+    assert "error" not in node["user"]
+    assert node["lastReceived"]["decoded"]["user"]["error"].startswith(
+        "decode-failed:"
+    )
 
 
 @pytest.mark.unit

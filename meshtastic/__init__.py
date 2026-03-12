@@ -373,6 +373,19 @@ def _on_position_receive(iface: Any, as_dict: dict[str, Any]) -> None:
     if "position" in decoded:
         _receive_info_update(iface, as_dict)
         p = decoded["position"]
+        if not isinstance(p, dict):
+            logger.debug(
+                "Skipping position update from=%s: unexpected payload type %s",
+                sender,
+                type(p).__name__,
+            )
+            return
+        if "error" in p:
+            logger.debug(
+                "Skipping position state update from=%s due to decode error payload",
+                sender,
+            )
+            return
         logger.debug("position payload received from=%s", sender)
         p = iface._fixup_position(p)
         logger.debug("position payload normalized from=%s", sender)
@@ -405,6 +418,19 @@ def _on_node_info_receive(iface: Any, as_dict: dict[str, Any]) -> None:
     if "user" in decoded:
         _receive_info_update(iface, as_dict)
         p = decoded["user"]
+        if not isinstance(p, dict):
+            logger.debug(
+                "Skipping user update from=%s: unexpected payload type %s",
+                sender,
+                type(p).__name__,
+            )
+            return
+        if "error" in p:
+            logger.debug(
+                "Skipping user state update from=%s due to decode error payload",
+                sender,
+            )
+            return
         # decode user protobufs and update nodedb, provide decoded version as "position" in the published msg
         # update node DB as needed
         n = iface._get_or_create_by_num(sender)
