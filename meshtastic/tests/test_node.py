@@ -39,7 +39,7 @@ class _FakeSendAdminProtocol(Protocol):
         msg: admin_pb2.AdminMessage,
         wantResponse: bool = False,
         onResponse: Callable[[dict[str, Any]], Any] | None = None,
-        adminIndex: int = 0,
+        adminIndex: int | None = None,
     ) -> mesh_pb2.MeshPacket | None: ...
 
 
@@ -87,9 +87,9 @@ class _TrackingLock:
         tb: TracebackType | None,
     ) -> Literal[False]:
         _ = (exc_type, exc, tb)
+        self.is_held = False
         if self._on_exit is not None:
             self._on_exit()
-        self.is_held = False
         return False
 
 
@@ -107,7 +107,7 @@ def _make_fake_send_admin(
         msg: admin_pb2.AdminMessage,
         wantResponse: bool = False,
         onResponse: Callable[[dict[str, Any]], Any] | None = None,
-        adminIndex: int = 0,
+        adminIndex: int | None = None,
     ) -> mesh_pb2.MeshPacket | None:
         if sent_messages is not None:
             sent_messages.append(msg)
@@ -221,7 +221,7 @@ def test_set_canned_message_sends_payload_and_invalidates_cache(
     anode.iface.localNode.nodeNum = 999
     on_response({"decoded": {"routing": {"errorReason": "NONE"}}, "from": 123})
     assert acknowledgment.receivedAck is True
-    assert captured["adminIndex"] == 0
+    assert captured["adminIndex"] is None
     assert anode.cannedPluginMessage is None
     assert anode.cannedPluginMessageMessages is None
 
@@ -1401,6 +1401,61 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
 
 
 @pytest.mark.unit
+def test_setURL_add_only_invalidates_channels_cache_on_partial_rollback_failure(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=True) should invalidate local channels if channel rollback is partial."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    primary.settings.psk = b"\x01"
+    disabled1 = Channel(index=1, role=Channel.Role.DISABLED)
+    disabled2 = Channel(index=2, role=Channel.Role.DISABLED)
+    anode.channels = [primary, disabled1, disabled2]
+
+    write_calls = {"count": 0}
+
+    def _write_then_fail(channel_index: int, adminIndex: int | None = None) -> None:  # noqa: N803
+        _ = (channel_index, adminIndex)
+        write_calls["count"] += 1
+        if write_calls["count"] == 2:
+            raise RuntimeError("write failed during addOnly batch")
+
+    send_calls = {"count": 0}
+
+    def _rollback_send_fails_once(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse, adminIndex)
+        send_calls["count"] += 1
+        if msg.HasField("set_channel") and send_calls["count"] == 1:
+            raise OSError("channel rollback failed")
+        return mesh_pb2.MeshPacket()
+
+    anode.writeChannel = MagicMock(side_effect=_write_then_fail)  # type: ignore[method-assign]
+    anode._send_admin = _rollback_send_fails_once  # type: ignore[method-assign,assignment]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "admin"
+    first.psk = b"\x03"
+    second = channel_set.settings.add()
+    second.name = "new-b"
+    second.psk = b"\x04"
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+    with pytest.raises(RuntimeError, match="write failed during addOnly batch"):
+        anode.setURL(url, addOnly=True)
+
+    assert anode.channels is None
+
+
+@pytest.mark.unit
 def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
@@ -1991,6 +2046,30 @@ def test_onRequestGetMetadata_updates_metadata_under_node_db_lock() -> None:
     metadata = iface.metadata
     assert metadata is not None
     assert metadata.firmware_version == "2.7.19"
+
+
+@pytest.mark.unit
+def test_set_metadata_snapshot_stores_detached_copy_under_lock(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """_set_metadata_snapshot should store a detached metadata copy while holding node DB lock."""
+    iface = autospec_local_node_iface(MeshInterface)
+    lock = _TrackingLock()
+    iface._node_db_lock = lock
+    anode = Node(iface, "!12345678", noProto=True)
+    metadata_snapshot = mesh_pb2.DeviceMetadata(
+        firmware_version="2.7.19",
+        device_state_version=25,
+    )
+
+    anode._set_metadata_snapshot(metadata_snapshot)
+
+    assert lock.enter_count == 1
+    assert isinstance(iface.metadata, mesh_pb2.DeviceMetadata)
+    assert iface.metadata is not metadata_snapshot
+    assert iface.metadata.firmware_version == "2.7.19"
+    metadata_snapshot.firmware_version = "mutated-locally"
+    assert iface.metadata.firmware_version == "2.7.19"
 
 
 @pytest.mark.unit

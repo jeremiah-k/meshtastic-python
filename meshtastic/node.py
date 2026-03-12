@@ -230,7 +230,9 @@ class Node:
         """Persist a metadata snapshot to ``iface.metadata`` under the node DB lock when available."""
 
         def _write() -> None:
-            self.iface.metadata = metadata_snapshot
+            stored_metadata = mesh_pb2.DeviceMetadata()
+            stored_metadata.CopyFrom(metadata_snapshot)
+            self.iface.metadata = stored_metadata
 
         self._execute_with_node_db_lock(_write)
 
@@ -1108,33 +1110,42 @@ class Node:
                     "and attempting rollback for written channels and LoRa config.",
                     exc_info=True,
                 )
-                with self._channels_lock:
-                    channels = self.channels
-                    if channels is not None:
-                        for (
-                            index,
-                            previous_channel,
-                        ) in original_channels_by_index.items():
-                            if 0 <= index < len(channels):
-                                channels[index].CopyFrom(previous_channel)
-                for index in written_indices:
-                    rollback_channel = original_channels_by_index.get(index)
-                    if rollback_channel is None:
-                        continue
-                    rollback_admin = admin_pb2.AdminMessage()
-                    rollback_admin.set_channel.CopyFrom(rollback_channel)
-                    try:
-                        self._send_admin(
-                            rollback_admin,
-                            adminIndex=admin_index_for_write,
-                        )
-                    # Best-effort rollback path; keep attempting remaining steps.
-                    except Exception:
-                        logger.warning(
-                            "Rollback of channel index %s failed after addOnly partial failure.",
-                            index,
-                            exc_info=True,
-                        )
+                rollback_failed = False
+                written_index_set = set(written_indices)
+                for index, rollback_channel in original_channels_by_index.items():
+                    if index in written_index_set:
+                        rollback_admin = admin_pb2.AdminMessage()
+                        rollback_admin.set_channel.CopyFrom(rollback_channel)
+                        try:
+                            self._send_admin(
+                                rollback_admin,
+                                adminIndex=admin_index_for_write,
+                            )
+                        # Best-effort rollback path; keep attempting remaining steps.
+                        except Exception:
+                            rollback_failed = True
+                            logger.warning(
+                                "Rollback of channel index %s failed after addOnly partial failure.",
+                                index,
+                                exc_info=True,
+                            )
+                if rollback_failed:
+                    with self._channels_lock:
+                        self.channels = None
+                        self.partialChannels = []
+                    logger.warning(
+                        "Channel rollback incomplete after addOnly failure; invalidated local channel cache."
+                    )
+                else:
+                    with self._channels_lock:
+                        channels = self.channels
+                        if channels is not None:
+                            for (
+                                index,
+                                previous_channel,
+                            ) in original_channels_by_index.items():
+                                if 0 <= index < len(channels):
+                                    channels[index].CopyFrom(previous_channel)
                 if original_lora_config is not None:
                     rollback_lora = admin_pb2.AdminMessage()
                     rollback_lora.set_config.lora.CopyFrom(original_lora_config)
@@ -1149,6 +1160,10 @@ class Node:
                         logger.warning(
                             "Rollback of LoRa config failed after addOnly partial failure.",
                             exc_info=True,
+                        )
+                        self.localConfig.ClearField("lora")
+                        logger.warning(
+                            "LoRa config cache cleared after rollback failure; reload config before using localConfig.lora."
                         )
                 raise
         else:

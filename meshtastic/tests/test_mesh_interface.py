@@ -977,17 +977,19 @@ def test_sendPacket_parses_supported_hex_node_id_forms(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@pytest.mark.parametrize("destination_id", ["nothexid", "nothexid1"])
 def test_sendPacket_with_non_hex_long_destination_falls_back_to_db_lookup(
     iface_with_nodes: MeshInterface,
+    destination_id: str,
 ) -> None:
     """Non-hex destination strings of length >= 8 should not raise raw ValueError."""
     iface = iface_with_nodes
     mesh_packet = mesh_pb2.MeshPacket()
     with pytest.raises(
         MeshInterface.MeshInterfaceError,
-        match=r"NodeId nothexid1 not found in DB",
+        match=rf"NodeId {destination_id} not found in DB",
     ):
-        iface._send_packet(mesh_packet, destinationId="nothexid1")
+        iface._send_packet(mesh_packet, destinationId=destination_id)
 
 
 @pytest.mark.unit
