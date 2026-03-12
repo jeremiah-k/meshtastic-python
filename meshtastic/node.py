@@ -1055,7 +1055,7 @@ class Node:
             self._raise_interface_error("There were no settings.")
         has_lora_update = channelSet.HasField("lora_config")
 
-        admin_write_node = self.iface.localNode if self.iface.localNode != self else self
+        admin_write_node = self.iface.localNode
         admin_index_for_write = admin_write_node._get_admin_channel_index()
         named_admin_index_for_write: int | None = None
         named_admin_getter = getattr(
@@ -1236,6 +1236,13 @@ class Node:
                 ch.index = i
                 ch.settings.CopyFrom(chs)
                 staged_channels.append(ch)
+            # Full-replace semantics: any channels not present in the URL should be
+            # explicitly disabled so stale secondaries/admin channels do not persist.
+            for i in range(len(staged_channels), max_channels):
+                disabled_channel = channel_pb2.Channel()
+                disabled_channel.index = i
+                disabled_channel.role = channel_pb2.Channel.Role.DISABLED
+                staged_channels.append(disabled_channel)
 
             deferred_admin_channel = None
             if named_admin_index_for_write is not None:
@@ -1248,41 +1255,55 @@ class Node:
                     None,
                 )
 
-            for staged_channel in staged_channels:
-                if (
-                    deferred_admin_channel is not None
-                    and staged_channel.index == deferred_admin_channel.index
-                ):
-                    continue
-                with self._channels_lock:
-                    channels = self.channels
-                    if channels is None:
-                        self._raise_interface_error("Config or channels not loaded")
-                    channels[staged_channel.index] = staged_channel
-                logger.debug(f"Channel i:{staged_channel.index} ch:{staged_channel}")
-                self.writeChannel(
-                    staged_channel.index, adminIndex=admin_index_for_write
-                )
+            try:
+                for staged_channel in staged_channels:
+                    if (
+                        deferred_admin_channel is not None
+                        and staged_channel.index == deferred_admin_channel.index
+                    ):
+                        continue
+                    logger.debug(f"Channel i:{staged_channel.index} ch:{staged_channel}")
+                    self._write_channel_snapshot(
+                        staged_channel,
+                        adminIndex=admin_index_for_write,
+                    )
+                    with self._channels_lock:
+                        channels = self.channels
+                        if channels is None:
+                            self._raise_interface_error("Config or channels not loaded")
+                        channels[staged_channel.index].CopyFrom(staged_channel)
 
-            if has_lora_update:
-                p = admin_pb2.AdminMessage()
-                p.set_config.lora.CopyFrom(channelSet.lora_config)
-                self.ensureSessionKey(adminIndex=admin_index_for_write)
-                self._send_admin(p, adminIndex=admin_index_for_write)
-                self.localConfig.lora.CopyFrom(channelSet.lora_config)
+                if has_lora_update:
+                    p = admin_pb2.AdminMessage()
+                    p.set_config.lora.CopyFrom(channelSet.lora_config)
+                    self.ensureSessionKey(adminIndex=admin_index_for_write)
+                    self._send_admin(p, adminIndex=admin_index_for_write)
+                    self.localConfig.lora.CopyFrom(channelSet.lora_config)
 
-            if deferred_admin_channel is not None:
+                if deferred_admin_channel is not None:
+                    logger.debug(
+                        f"Channel i:{deferred_admin_channel.index} ch:{deferred_admin_channel}"
+                    )
+                    self._write_channel_snapshot(
+                        deferred_admin_channel,
+                        adminIndex=admin_index_for_write,
+                    )
+                    with self._channels_lock:
+                        channels = self.channels
+                        if channels is None:
+                            self._raise_interface_error("Config or channels not loaded")
+                        channels[deferred_admin_channel.index].CopyFrom(
+                            deferred_admin_channel
+                        )
+            except Exception:
                 with self._channels_lock:
-                    channels = self.channels
-                    if channels is None:
-                        self._raise_interface_error("Config or channels not loaded")
-                    channels[deferred_admin_channel.index] = deferred_admin_channel
-                logger.debug(
-                    f"Channel i:{deferred_admin_channel.index} ch:{deferred_admin_channel}"
+                    self.channels = None
+                    self.partialChannels = []
+                logger.warning(
+                    "Failed while applying replace-all channel updates; invalidated local channel cache.",
+                    exc_info=True,
                 )
-                self.writeChannel(
-                    deferred_admin_channel.index, adminIndex=admin_index_for_write
-                )
+                raise
 
     def onResponseRequestRingtone(self, p: dict[str, Any]) -> None:
         """Process an admin response containing a ringtone fragment and cache it on the Node.

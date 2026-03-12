@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn, cast
 from unittest.mock import MagicMock, call, create_autospec, patch
 
+import google.protobuf.json_format
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -3782,3 +3783,128 @@ def test_handle_packet_from_radio_decode_failure_does_not_raise(
         )
         assert len(callback_calls) == 1
         assert 42 not in iface.responseHandlers
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_handle_packet_from_radio_routing_decode_failure_sets_error_reason(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Malformed ROUTING_APP payloads should surface decode errors via routing.errorReason."""
+    monkeypatch.setattr(
+        mesh_interface_module.publishingThread,  # type: ignore[attr-defined]
+        "queueWork",
+        lambda callback: callback(),
+    )
+
+    with MeshInterface(noProto=True) as iface:
+        fake_on_receive = MagicMock()
+        fake_protocol = types.SimpleNamespace(
+            name="routing",
+            protobufFactory=mesh_pb2.Routing,
+            onReceive=fake_on_receive,
+        )
+        monkeypatch.setattr(
+            mesh_interface_module,
+            "protocols",
+            {portnums_pb2.PortNum.ROUTING_APP: fake_protocol},
+        )
+
+        callback_calls: list[dict[str, Any]] = []
+
+        def _response_callback(packet: dict[str, Any]) -> None:
+            callback_calls.append(packet)
+
+        iface.responseHandlers[77] = ResponseHandler(
+            callback=_response_callback, ackPermitted=True
+        )
+
+        packet = mesh_pb2.MeshPacket()
+        setattr(packet, "from", 1)
+        packet.to = 2
+        packet.decoded.portnum = portnums_pb2.PortNum.ROUTING_APP
+        packet.decoded.request_id = 77
+        packet.decoded.payload = b"\xff\x00\xff\x00"
+
+        with caplog.at_level(logging.WARNING):
+            iface._handle_packet_from_radio(packet, hack=True)
+
+        assert "Failed to decode routing payload" in caplog.text
+        fake_on_receive.assert_called_once()
+        assert callback_calls
+        routing_payload = callback_calls[0]["decoded"]["routing"]
+        assert routing_payload["error"].startswith("decode-failed:")
+        assert routing_payload["errorReason"].startswith("decode-failed:")
+        assert 77 not in iface.responseHandlers
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_handle_packet_from_radio_message_to_dict_failure_does_not_raise(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """MessageToDict conversion failures should be handled as decode-failed payload errors."""
+    monkeypatch.setattr(
+        mesh_interface_module.publishingThread,  # type: ignore[attr-defined]
+        "queueWork",
+        lambda callback: callback(),
+    )
+
+    with MeshInterface(noProto=True) as iface:
+        fake_on_receive = MagicMock()
+        fake_protocol = types.SimpleNamespace(
+            name="position",
+            protobufFactory=mesh_pb2.Position,
+            onReceive=fake_on_receive,
+        )
+        monkeypatch.setattr(
+            mesh_interface_module,
+            "protocols",
+            {portnums_pb2.PortNum.POSITION_APP: fake_protocol},
+        )
+
+        callback_calls: list[dict[str, Any]] = []
+
+        def _response_callback(packet: dict[str, Any]) -> None:
+            callback_calls.append(packet)
+
+        iface.responseHandlers[88] = ResponseHandler(
+            callback=_response_callback, ackPermitted=True
+        )
+
+        original_message_to_dict = google.protobuf.json_format.MessageToDict
+
+        def _message_to_dict_with_position_failure(
+            message: Any,
+            *args: Any,
+            **kwargs: Any,
+        ) -> dict[str, Any]:
+            if isinstance(message, mesh_pb2.Position):
+                raise ValueError("position dict conversion failed")
+            return cast(dict[str, Any], original_message_to_dict(message, *args, **kwargs))
+
+        monkeypatch.setattr(
+            google.protobuf.json_format,
+            "MessageToDict",
+            _message_to_dict_with_position_failure,
+        )
+
+        packet = mesh_pb2.MeshPacket()
+        setattr(packet, "from", 1)
+        packet.to = 2
+        packet.decoded.portnum = portnums_pb2.PortNum.POSITION_APP
+        packet.decoded.request_id = 88
+        packet.decoded.payload = mesh_pb2.Position(latitude_i=1).SerializeToString()
+
+        with caplog.at_level(logging.WARNING):
+            iface._handle_packet_from_radio(packet, hack=True)
+
+        assert "Failed to decode position payload" in caplog.text
+        fake_on_receive.assert_called_once()
+        assert callback_calls
+        assert callback_calls[0]["decoded"]["position"]["error"].startswith(
+            "decode-failed:"
+        )
+        assert 88 not in iface.responseHandlers

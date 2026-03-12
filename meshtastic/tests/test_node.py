@@ -128,6 +128,13 @@ def _make_fake_send_admin(
     return _fake_send_admin
 
 
+def _get_mock_call_arg(call: Any, *, name: str, positional_index: int) -> Any:
+    """Resolve a mock call argument regardless of positional/keyword call style."""
+    if len(call.args) > positional_index:
+        return call.args[positional_index]
+    return call.kwargs.get(name)
+
+
 @pytest.mark.unit
 def test_tracking_lock_rejects_nested_acquisition() -> None:
     """_TrackingLock should fail on nested acquisition attempts."""
@@ -665,8 +672,22 @@ def test_writeChannel_forwards_admin_index_to_session_key_bootstrap(
 
     anode.writeChannel(0, adminIndex=4)
 
-    anode.ensureSessionKey.assert_called_once_with(adminIndex=4)
-    assert anode._send_admin.call_args.kwargs["adminIndex"] == 4
+    assert (
+        _get_mock_call_arg(
+            anode.ensureSessionKey.call_args,
+            name="adminIndex",
+            positional_index=0,
+        )
+        == 4
+    )
+    assert (
+        _get_mock_call_arg(
+            anode._send_admin.call_args,
+            name="adminIndex",
+            positional_index=3,
+        )
+        == 4
+    )
 
 
 @pytest.mark.unit
@@ -1155,7 +1176,8 @@ def test_deleteChannel_rewrites_following_channels_and_updates_admin_index(
     assert len(anode.channels) == CHANNEL_LIMIT
     assert anode._send_admin.call_count == CHANNEL_LIMIT - 1
     assert all(
-        call.kwargs["adminIndex"] == 0 for call in anode._send_admin.call_args_list
+        _get_mock_call_arg(call, name="adminIndex", positional_index=3) == 0
+        for call in anode._send_admin.call_args_list
     )
 
 
@@ -1295,10 +1317,10 @@ def test_setURL_add_only_adds_unique_named_channels(
     assert anode.localConfig.lora.hop_limit == 9
     send_calls = anode._send_admin.call_args_list
     assert len(send_calls) == 2
-    assert send_calls[0].kwargs["adminIndex"] == 0
+    assert _get_mock_call_arg(send_calls[0], name="adminIndex", positional_index=3) == 0
     assert send_calls[0].args[0].HasField("set_channel")
     assert send_calls[0].args[0].set_channel.index == 1
-    assert send_calls[1].kwargs["adminIndex"] == 0
+    assert _get_mock_call_arg(send_calls[1], name="adminIndex", positional_index=3) == 0
     assert send_calls[1].args[0].HasField("set_config")
     assert send_calls[1].args[0].set_config.lora.hop_limit == 9
 
@@ -1366,6 +1388,7 @@ def test_setURL_add_only_requires_loaded_lora_config(
     disabled = Channel(index=1, role=Channel.Role.DISABLED)
     anode.channels = [primary, disabled]
     before_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    before_local_config = anode.localConfig.SerializeToString()
     anode._send_admin = MagicMock()  # type: ignore[method-assign]
 
     channel_set = apponly_pb2.ChannelSet()
@@ -1385,6 +1408,7 @@ def test_setURL_add_only_requires_loaded_lora_config(
     assert anode.channels is not None
     after_snapshot = [channel.SerializeToString() for channel in anode.channels]
     assert after_snapshot == before_snapshot
+    assert anode.localConfig.SerializeToString() == before_local_config
     anode._send_admin.assert_not_called()
 
 
@@ -1493,7 +1517,7 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
 
     assert ensure_session_key_spy.call_args_list
     assert all(
-        call.kwargs.get("adminIndex") == 0
+        _get_mock_call_arg(call, name="adminIndex", positional_index=0) == 0
         for call in ensure_session_key_spy.call_args_list
     )
 
@@ -1571,7 +1595,7 @@ def test_setURL_add_only_invalidates_channels_cache_on_partial_rollback_failure(
 
     assert ensure_session_key_spy.call_args_list
     assert all(
-        call.kwargs.get("adminIndex") == 0
+        _get_mock_call_arg(call, name="adminIndex", positional_index=0) == 0
         for call in ensure_session_key_spy.call_args_list
     )
     assert send_calls["stage_writes"] == 2
@@ -1637,7 +1661,7 @@ def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
 
     assert ensure_session_key_spy.call_args_list
     assert all(
-        call.kwargs.get("adminIndex") == 0
+        _get_mock_call_arg(call, name="adminIndex", positional_index=0) == 0
         for call in ensure_session_key_spy.call_args_list
     )
     assert anode.channels is not None
@@ -1714,7 +1738,7 @@ def test_setURL_replace_pins_admin_index_for_channel_and_lora_writes(
 
     assert ensure_session_key_spy.call_args_list
     assert all(
-        call.kwargs.get("adminIndex") == 1
+        _get_mock_call_arg(call, name="adminIndex", positional_index=0) == 1
         for call in ensure_session_key_spy.call_args_list
     )
     assert len(sent_messages) == 3
@@ -1758,6 +1782,53 @@ def test_setURL_replace_channel_only_url_skips_lora_write_and_cache_update(
     assert len(send_calls) == 2
     assert all(call.args[0].HasField("set_channel") for call in send_calls)
     assert anode.localConfig.lora.hop_limit == 3
+
+
+@pytest.mark.unit
+def test_setURL_replace_disables_channels_omitted_from_url(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=False) should disable stale channels not present in the replacement URL."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.iface.localNode = anode
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    admin_secondary = Channel(index=1, role=Channel.Role.SECONDARY)
+    admin_secondary.settings.name = "admin"
+    stale_secondary_a = Channel(index=2, role=Channel.Role.SECONDARY)
+    stale_secondary_a.settings.name = "stale-a"
+    stale_secondary_b = Channel(index=3, role=Channel.Role.SECONDARY)
+    stale_secondary_b.settings.name = "stale-b"
+    anode.channels = [primary, admin_secondary, stale_secondary_a, stale_secondary_b]
+    anode._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())  # type: ignore[method-assign]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "new-primary"
+    first.psk = b"\x11"
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+    anode.setURL(url, addOnly=False)
+
+    assert anode.channels is not None
+    assert anode.channels[0].settings.name == "new-primary"
+    for channel_index in (1, 2, 3):
+        assert anode.channels[channel_index].role == Channel.Role.DISABLED
+        assert anode.channels[channel_index].settings.name == ""
+
+    channel_writes = [
+        call.args[0].set_channel
+        for call in anode._send_admin.call_args_list
+        if call.args[0].HasField("set_channel")
+    ]
+    assert {channel.index for channel in channel_writes} == {0, 1, 2, 3}
+    assert {
+        channel.index
+        for channel in channel_writes
+        if channel.role == Channel.Role.DISABLED
+    } == {1, 2, 3}
 
 
 @pytest.mark.unit
@@ -1975,8 +2046,16 @@ def test_ensureSessionKey_requests_only_when_missing(
 
     iface._get_or_create_by_num.return_value = {}
     anode.ensureSessionKey(adminIndex=6)
-    anode.requestConfig.assert_called_once_with(
-        admin_pb2.AdminMessage.SESSIONKEY_CONFIG, adminIndex=6
+    assert anode.requestConfig.call_count == 1
+    request_config_call = anode.requestConfig.call_args
+    assert request_config_call.args[0] == admin_pb2.AdminMessage.SESSIONKEY_CONFIG
+    assert (
+        _get_mock_call_arg(
+            request_config_call,
+            name="adminIndex",
+            positional_index=2,
+        )
+        == 6
     )
 
     anode.requestConfig.reset_mock()

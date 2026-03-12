@@ -3540,7 +3540,12 @@ class MeshInterface:  # pylint: disable=R0902
                     pb = handler.protobufFactory()
                     try:
                         pb.ParseFromString(meshPacket.decoded.payload)
+                        p = google.protobuf.json_format.MessageToDict(pb)
+                        asDict["decoded"][handler.name] = p
+                        # Also provide the protobuf raw
+                        asDict["decoded"][handler.name]["raw"] = pb
                     except (protobuf_message.DecodeError, TypeError, ValueError) as exc:
+                        decode_error = f"decode-failed: {exc}"
                         logger.warning(
                             "Failed to decode %s payload for packet id=%s from=%s to=%s: %s",
                             handler.name,
@@ -3549,14 +3554,9 @@ class MeshInterface:  # pylint: disable=R0902
                             asDict.get("to"),
                             exc,
                         )
-                        asDict["decoded"][handler.name] = {
-                            "error": f"decode-failed: {exc}"
-                        }
-                    else:
-                        p = google.protobuf.json_format.MessageToDict(pb)
-                        asDict["decoded"][handler.name] = p
-                        # Also provide the protobuf raw
-                        asDict["decoded"][handler.name]["raw"] = pb
+                        asDict["decoded"][handler.name] = {"error": decode_error}
+                        if handler.name == "routing":
+                            asDict["decoded"][handler.name]["errorReason"] = decode_error
 
                 # Call specialized onReceive if necessary
                 if handler.onReceive is not None:
