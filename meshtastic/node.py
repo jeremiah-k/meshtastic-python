@@ -1049,19 +1049,18 @@ class Node:
         if len(channelSet.settings) == 0:
             self._raise_interface_error("There were no settings.")
 
+        admin_index_for_write = (
+            self.iface.localNode._get_admin_channel_index()
+            if self.iface.localNode != self
+            else self._get_admin_channel_index()
+        )
+
         if addOnly:
             # Add new channels with names not already present
             # Don't change existing channels
             ignored_channel_names: list[str] = []
             channels_to_write: list[tuple[channel_pb2.Channel, str]] = []
             original_channels_by_index: dict[int, channel_pb2.Channel] = {}
-            # Snapshot admin channel path before staging writes so sends do not
-            # depend on locally-mutated channel state.
-            admin_index_for_write = (
-                self.iface.localNode._get_admin_channel_index()
-                if self.iface.localNode != self
-                else self._get_admin_channel_index()
-            )
             # Rollback must have a local LoRa snapshot before transactional apply.
             if not self.localConfig.HasField("lora"):
                 self._raise_interface_error(
@@ -1129,19 +1128,6 @@ class Node:
                 self.ensureSessionKey(adminIndex=admin_index_for_write)
                 lora_write_started = True
                 self._send_admin(set_lora, adminIndex=admin_index_for_write)
-                with self._channels_lock:
-                    channels = self.channels
-                    if channels is None:
-                        self._raise_interface_error("Config or channels not loaded")
-                    for staged_channel, _channel_name in channels_to_write:
-                        if 0 <= staged_channel.index < len(channels):
-                            channels[staged_channel.index].CopyFrom(staged_channel)
-                        else:
-                            self._raise_interface_error(
-                                f"Channel index {staged_channel.index} out of range "
-                                f"(0-{len(channels) - 1})"
-                            )
-                self.localConfig.lora.CopyFrom(channelSet.lora_config)
             # Intentionally broad: rollback should run for any send failure in this
             # transactional block. The original exception is re-raised.
             except Exception:
@@ -1196,6 +1182,25 @@ class Node:
                             "LoRa config cache cleared after rollback failure; reload config before using localConfig.lora."
                         )
                 raise
+            with self._channels_lock:
+                channels = self.channels
+                if channels is None:
+                    logger.warning(
+                        "Channel cache unavailable after successful addOnly apply; reload channels to refresh local state."
+                    )
+                else:
+                    for staged_channel, _channel_name in channels_to_write:
+                        if 0 <= staged_channel.index < len(channels):
+                            channels[staged_channel.index].CopyFrom(staged_channel)
+                        else:
+                            logger.warning(
+                                "Channel index %s out of range during addOnly cache update; invalidating local channel cache.",
+                                staged_channel.index,
+                            )
+                            self.channels = None
+                            self.partialChannels = []
+                            break
+            self.localConfig.lora.CopyFrom(channelSet.lora_config)
         else:
             with self._channels_lock:
                 channels = self.channels
@@ -1223,13 +1228,13 @@ class Node:
                         self._raise_interface_error("Config or channels not loaded")
                     channels[ch.index] = ch
                 logger.debug(f"Channel i:{i} ch:{ch}")
-                self.writeChannel(ch.index)
+                self.writeChannel(ch.index, adminIndex=admin_index_for_write)
 
         if not addOnly:
             p = admin_pb2.AdminMessage()
             p.set_config.lora.CopyFrom(channelSet.lora_config)
-            self.ensureSessionKey()
-            self._send_admin(p)
+            self.ensureSessionKey(adminIndex=admin_index_for_write)
+            self._send_admin(p, adminIndex=admin_index_for_write)
             self.localConfig.lora.CopyFrom(channelSet.lora_config)
 
     def onResponseRequestRingtone(self, p: dict[str, Any]) -> None:

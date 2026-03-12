@@ -121,14 +121,23 @@ def _format_missing_node_num_error(destination_id: int | str) -> str:
     return MISSING_NODE_NUM_ERROR_TEMPLATE.format(destination_id=destination_id)
 
 
-def _looks_like_hex_node_id_tail(destination_id: str) -> bool:
-    """Return True when the whole string is a supported compact hex node identifier."""
+def _extract_hex_node_id_body(destination_id: str) -> str | None:
+    """Return compact hex node-id body when `destination_id` matches supported formats."""
     candidate = destination_id
     if destination_id.startswith("!"):
         candidate = destination_id[1:]
     elif destination_id.startswith(("0x", "0X")):
         candidate = destination_id[2:]
-    return len(candidate) == 8 and all(ch in HEX_NODE_ID_TAIL_CHARS for ch in candidate)
+    if len(candidate) != 8:
+        return None
+    if not all(ch in HEX_NODE_ID_TAIL_CHARS for ch in candidate):
+        return None
+    return candidate
+
+
+def _looks_like_hex_node_id_tail(destination_id: str) -> bool:
+    """Return True when the whole string is a supported compact hex node identifier."""
+    return _extract_hex_node_id_body(destination_id) is not None
 
 
 def _logger_has_visible_info_handler(target_logger: logging.Logger) -> bool:
@@ -2370,34 +2379,38 @@ class MeshInterface:  # pylint: disable=R0902
                 nodeNum = my_node_num
             else:
                 raise MeshInterface.MeshInterfaceError("No myInfo found.")
-        # A simple hex style nodeid - we can parse this without needing the DB
-        elif isinstance(destinationId, str) and _looks_like_hex_node_id_tail(destinationId):
-            # Simple hex-style node id strings (for example !12345678 or 0x12345678).
-            body = destinationId
-            if destinationId.startswith("!"):
-                body = destinationId[1:]
-            elif destinationId.startswith(("0x", "0X")):
-                body = destinationId[2:]
-            nodeNum = int(body, 16)
+        elif isinstance(destinationId, str):
+            # A simple hex style nodeid - we can parse this without needing the DB.
+            compact_hex_body = _extract_hex_node_id_body(destinationId)
+            if compact_hex_body is not None:
+                nodeNum = int(compact_hex_body, 16)
+            else:
+                with self._node_db_lock:
+                    node = self.nodes.get(destinationId) if self.nodes else None
+                    has_nodes = self.nodes is not None
+                    node_found = node is not None
+                    node_num = node.get("num") if isinstance(node, dict) else None
+                if node_found:
+                    if isinstance(node_num, int):
+                        nodeNum = node_num
+                    else:
+                        raise MeshInterface.MeshInterfaceError(
+                            _format_missing_node_num_error(destinationId)
+                        )
+                elif has_nodes:
+                    raise MeshInterface.MeshInterfaceError(
+                        f"NodeId {destinationId} not found in DB"
+                    )
+                else:
+                    logger.warning("Warning: There were no self.nodes.")
         else:
             with self._node_db_lock:
-                node = self.nodes.get(destinationId) if self.nodes else None
                 has_nodes = self.nodes is not None
-                node_found = node is not None
-                node_num = node.get("num") if isinstance(node, dict) else None
-            if node_found:
-                if isinstance(node_num, int):
-                    nodeNum = node_num
-                else:
-                    raise MeshInterface.MeshInterfaceError(
-                        _format_missing_node_num_error(destinationId)
-                    )
-            elif has_nodes:
+            if has_nodes:
                 raise MeshInterface.MeshInterfaceError(
                     f"NodeId {destinationId} not found in DB"
                 )
-            else:
-                logger.warning("Warning: There were no self.nodes.")
+            logger.warning("Warning: There were no self.nodes.")
 
         meshPacket.to = nodeNum
         meshPacket.want_ack = wantAck

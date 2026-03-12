@@ -1321,6 +1321,8 @@ def test_setURL_add_only_requires_loaded_lora_config(
     primary.settings.name = "primary"
     disabled = Channel(index=1, role=Channel.Role.DISABLED)
     anode.channels = [primary, disabled]
+    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    anode._send_admin = MagicMock()  # type: ignore[method-assign]
 
     channel_set = apponly_pb2.ChannelSet()
     new_channel = channel_set.settings.add()
@@ -1335,6 +1337,11 @@ def test_setURL_add_only_requires_loaded_lora_config(
         match=re.escape("LoRa config must be loaded before setURL(addOnly=True)"),
     ):
         anode.setURL(url, addOnly=True)
+
+    assert anode.channels is not None
+    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    assert after_snapshot == before_snapshot
+    anode._send_admin.assert_not_called()
 
 
 @pytest.mark.unit
@@ -1508,6 +1515,8 @@ def test_setURL_add_only_invalidates_channels_cache_on_partial_rollback_failure(
     with pytest.raises(RuntimeError, match="write failed during addOnly batch"):
         anode.setURL(url, addOnly=True)
 
+    assert send_calls["stage_writes"] == 2
+    assert send_calls["rollback_failures"] == 1
     assert anode.channels is None
 
 
@@ -1587,6 +1596,63 @@ def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
     assert rollback_lora_messages[0].set_config.lora.hop_limit == 3
     assert admin_indexes == [0, 0, 0, 0]
     assert anode.localConfig.lora.hop_limit == 3
+
+
+@pytest.mark.unit
+def test_setURL_replace_pins_admin_index_for_channel_and_lora_writes(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=False) should pin admin path from pre-rewrite channel state."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface.localNode._get_admin_channel_index.return_value = 1
+    anode = Node(iface, "!12345678", noProto=False)
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    legacy_admin = Channel(index=1, role=Channel.Role.SECONDARY)
+    legacy_admin.settings.name = "admin"
+    anode.channels = [primary, legacy_admin]
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+
+    sent_messages: list[admin_pb2.AdminMessage] = []
+    admin_indexes: list[int | None] = []
+
+    def _capture_admin_index(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse)
+        sent_messages.append(msg)
+        admin_indexes.append(adminIndex)
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = _capture_admin_index  # type: ignore[method-assign,assignment]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "new-primary"
+    first.psk = b"\x11"
+    second = channel_set.settings.add()
+    second.name = "new-secondary"
+    second.psk = b"\x12"
+    channel_set.lora_config.hop_limit = 9
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+    anode.setURL(url, addOnly=False)
+
+    assert len(sent_messages) == 3
+    assert admin_indexes == [1, 1, 1]
+    assert sent_messages[0].HasField("set_channel")
+    assert sent_messages[0].set_channel.index == 0
+    assert sent_messages[1].HasField("set_channel")
+    assert sent_messages[1].set_channel.index == 1
+    assert sent_messages[2].HasField("set_config")
+    assert sent_messages[2].set_config.HasField("lora")
+    assert sent_messages[2].set_config.lora.hop_limit == 9
+    assert anode.localConfig.lora.hop_limit == 9
 
 
 @pytest.mark.unit
