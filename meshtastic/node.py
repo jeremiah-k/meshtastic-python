@@ -1107,11 +1107,11 @@ class Node:
                             if 0 <= index < len(channels):
                                 channels[index].CopyFrom(previous_channel)
                 for index in written_indices:
-                    previous_channel = original_channels_by_index.get(index)
-                    if previous_channel is None:
+                    rollback_channel = original_channels_by_index.get(index)
+                    if rollback_channel is None:
                         continue
                     rollback_admin = admin_pb2.AdminMessage()
-                    rollback_admin.set_channel.CopyFrom(previous_channel)
+                    rollback_admin.set_channel.CopyFrom(rollback_channel)
                     try:
                         self._send_admin(
                             rollback_admin,

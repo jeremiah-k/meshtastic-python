@@ -1950,7 +1950,9 @@ def test_onRequestGetMetadata_updates_metadata_under_node_db_lock() -> None:
     assert lock.enter_count == 1
     assert lock.is_held is False
     assert iface.metadata_assignment_lock_state is True
-    assert iface.metadata.firmware_version == "2.7.19"
+    metadata = iface.metadata
+    assert metadata is not None
+    assert metadata.firmware_version == "2.7.19"
 
 
 @pytest.mark.unit
