@@ -1048,6 +1048,7 @@ class Node:
 
         if len(channelSet.settings) == 0:
             self._raise_interface_error("There were no settings.")
+        has_lora_update = channelSet.HasField("lora_config")
 
         admin_index_for_write = (
             self.iface.localNode._get_admin_channel_index()
@@ -1061,13 +1062,15 @@ class Node:
             ignored_channel_names: list[str] = []
             channels_to_write: list[tuple[channel_pb2.Channel, str]] = []
             original_channels_by_index: dict[int, channel_pb2.Channel] = {}
-            # Rollback must have a local LoRa snapshot before transactional apply.
-            if not self.localConfig.HasField("lora"):
-                self._raise_interface_error(
-                    "LoRa config must be loaded before setURL(addOnly=True)"
-                )
-            original_lora_config = config_pb2.Config.LoRaConfig()
-            original_lora_config.CopyFrom(self.localConfig.lora)
+            original_lora_config: config_pb2.Config.LoRaConfig | None = None
+            # Rollback needs a local LoRa snapshot only when this URL updates LoRa.
+            if has_lora_update:
+                if not self.localConfig.HasField("lora"):
+                    self._raise_interface_error(
+                        "LoRa config must be loaded before setURL(addOnly=True)"
+                    )
+                original_lora_config = config_pb2.Config.LoRaConfig()
+                original_lora_config.CopyFrom(self.localConfig.lora)
             # Bootstrap admin session using the snapshotted path before staging.
             self.ensureSessionKey(adminIndex=admin_index_for_write)
             with self._channels_lock:
@@ -1123,11 +1126,12 @@ class Node:
                         staged_channel,
                         adminIndex=admin_index_for_write,
                     )
-                set_lora = admin_pb2.AdminMessage()
-                set_lora.set_config.lora.CopyFrom(channelSet.lora_config)
-                self.ensureSessionKey(adminIndex=admin_index_for_write)
-                lora_write_started = True
-                self._send_admin(set_lora, adminIndex=admin_index_for_write)
+                if has_lora_update:
+                    set_lora = admin_pb2.AdminMessage()
+                    set_lora.set_config.lora.CopyFrom(channelSet.lora_config)
+                    self.ensureSessionKey(adminIndex=admin_index_for_write)
+                    lora_write_started = True
+                    self._send_admin(set_lora, adminIndex=admin_index_for_write)
             # Intentionally broad: rollback should run for any send failure in this
             # transactional block. The original exception is re-raised.
             except Exception:
@@ -1160,7 +1164,7 @@ class Node:
                     logger.warning(
                         "Channel rollback incomplete after addOnly failure; invalidated local channel cache."
                     )
-                if lora_write_started:
+                if lora_write_started and original_lora_config is not None:
                     rollback_lora = admin_pb2.AdminMessage()
                     rollback_lora.set_config.lora.CopyFrom(original_lora_config)
                     try:
@@ -1199,7 +1203,8 @@ class Node:
                             self.channels = None
                             self.partialChannels = []
                             break
-            self.localConfig.lora.CopyFrom(channelSet.lora_config)
+            if has_lora_update:
+                self.localConfig.lora.CopyFrom(channelSet.lora_config)
         else:
             with self._channels_lock:
                 channels = self.channels
@@ -1229,7 +1234,7 @@ class Node:
                 logger.debug(f"Channel i:{i} ch:{ch}")
                 self.writeChannel(ch.index, adminIndex=admin_index_for_write)
 
-        if not addOnly:
+        if not addOnly and has_lora_update:
             p = admin_pb2.AdminMessage()
             p.set_config.lora.CopyFrom(channelSet.lora_config)
             self.ensureSessionKey(adminIndex=admin_index_for_write)

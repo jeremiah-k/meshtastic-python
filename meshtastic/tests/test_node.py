@@ -1312,6 +1312,36 @@ def test_setURL_add_only_raises_when_no_disabled_slot_available(
 
 
 @pytest.mark.unit
+def test_setURL_add_only_channel_only_url_skips_lora_snapshot_and_write(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=True) should allow channel-only URLs without requiring cached LoRa."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    disabled = Channel(index=1, role=Channel.Role.DISABLED)
+    anode.channels = [primary, disabled]
+    anode._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())  # type: ignore[method-assign]
+
+    channel_set = apponly_pb2.ChannelSet()
+    added = channel_set.settings.add()
+    added.name = "new-ch"
+    added.psk = b"\x03"
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+    anode.setURL(url, addOnly=True)
+
+    assert anode.channels is not None
+    assert anode.channels[1].settings.name == "new-ch"
+    assert anode.channels[1].role == Channel.Role.SECONDARY
+    assert anode.localConfig.HasField("lora") is False
+    send_calls = anode._send_admin.call_args_list
+    assert len(send_calls) == 1
+    assert send_calls[0].args[0].HasField("set_channel")
+
+
+@pytest.mark.unit
 def test_setURL_add_only_requires_loaded_lora_config(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
@@ -1627,6 +1657,7 @@ def test_setURL_replace_pins_admin_index_for_channel_and_lora_writes(
     """setURL(addOnly=False) should pin admin path from pre-rewrite channel state."""
     iface = autospec_local_node_iface(MeshInterface)
     iface.localNode._get_admin_channel_index.return_value = 1
+    iface._get_or_create_by_num.return_value = {"adminSessionPassKey": b"secret"}
     anode = Node(iface, "!12345678", noProto=False)
 
     primary = Channel(index=0, role=Channel.Role.PRIMARY)
@@ -1634,7 +1665,7 @@ def test_setURL_replace_pins_admin_index_for_channel_and_lora_writes(
     legacy_admin = Channel(index=1, role=Channel.Role.SECONDARY)
     legacy_admin.settings.name = "admin"
     anode.channels = [primary, legacy_admin]
-    ensure_session_key_spy = MagicMock()
+    ensure_session_key_spy = MagicMock(wraps=anode.ensureSessionKey)
     anode.ensureSessionKey = ensure_session_key_spy  # type: ignore[method-assign]
 
     sent_messages: list[admin_pb2.AdminMessage] = []
@@ -1681,6 +1712,37 @@ def test_setURL_replace_pins_admin_index_for_channel_and_lora_writes(
     assert sent_messages[2].set_config.HasField("lora")
     assert sent_messages[2].set_config.lora.hop_limit == 9
     assert anode.localConfig.lora.hop_limit == 9
+
+
+@pytest.mark.unit
+def test_setURL_replace_channel_only_url_skips_lora_write_and_cache_update(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=False) should not write LoRa when URL omits lora_config."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [
+        Channel(index=0, role=Channel.Role.DISABLED),
+        Channel(index=1, role=Channel.Role.DISABLED),
+    ]
+    anode.localConfig.lora.hop_limit = 3
+    anode._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())  # type: ignore[method-assign]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "new-primary"
+    first.psk = b"\x11"
+    second = channel_set.settings.add()
+    second.name = "new-secondary"
+    second.psk = b"\x12"
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+    anode.setURL(url, addOnly=False)
+
+    send_calls = anode._send_admin.call_args_list
+    assert len(send_calls) == 2
+    assert all(call.args[0].HasField("set_channel") for call in send_calls)
+    assert anode.localConfig.lora.hop_limit == 3
 
 
 @pytest.mark.unit
