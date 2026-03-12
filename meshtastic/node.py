@@ -870,6 +870,14 @@ class Node:
         """Public accessor for the admin channel index on this node."""
         return self._get_admin_channel_index()
 
+    def _get_named_admin_channel_index(self) -> int | None:
+        """Return the index of a channel explicitly named ``admin``, if present."""
+        with self._channels_lock:
+            for channel in self.channels or []:
+                if channel.settings and channel.settings.name.lower() == "admin":
+                    return channel.index
+            return None
+
     def _get_admin_channel_index(self) -> int:
         """Get the index of the channel named "admin", or 0 if no such channel exists.
 
@@ -878,11 +886,8 @@ class Node:
         int
             Index of the admin channel, or 0 if no channel with name "admin" is present.
         """
-        with self._channels_lock:
-            for c in self.channels or []:
-                if c.settings and c.settings.name.lower() == "admin":
-                    return c.index
-            return 0
+        named_admin_index = self._get_named_admin_channel_index()
+        return 0 if named_admin_index is None else named_admin_index
 
     def setOwner(
         self,
@@ -1050,11 +1055,14 @@ class Node:
             self._raise_interface_error("There were no settings.")
         has_lora_update = channelSet.HasField("lora_config")
 
-        admin_index_for_write = (
-            self.iface.localNode._get_admin_channel_index()
-            if self.iface.localNode != self
-            else self._get_admin_channel_index()
+        admin_write_node = self.iface.localNode if self.iface.localNode != self else self
+        admin_index_for_write = admin_write_node._get_admin_channel_index()
+        named_admin_index_for_write: int | None = None
+        named_admin_getter = getattr(
+            admin_write_node, "_get_named_admin_channel_index", None
         )
+        if callable(named_admin_getter):
+            named_admin_index_for_write = named_admin_getter()
 
         if addOnly:
             # Add new channels with names not already present
@@ -1229,14 +1237,16 @@ class Node:
                 ch.settings.CopyFrom(chs)
                 staged_channels.append(ch)
 
-            deferred_admin_channel = next(
-                (
-                    staged_channel
-                    for staged_channel in staged_channels
-                    if staged_channel.index == admin_index_for_write
-                ),
-                None,
-            )
+            deferred_admin_channel = None
+            if named_admin_index_for_write is not None:
+                deferred_admin_channel = next(
+                    (
+                        staged_channel
+                        for staged_channel in staged_channels
+                        if staged_channel.index == admin_index_for_write
+                    ),
+                    None,
+                )
 
             for staged_channel in staged_channels:
                 if (

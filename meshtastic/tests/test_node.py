@@ -1671,6 +1671,7 @@ def test_setURL_replace_pins_admin_index_for_channel_and_lora_writes(
     """setURL(addOnly=False) should pin admin path from pre-rewrite channel state."""
     iface = autospec_local_node_iface(MeshInterface)
     iface.localNode._get_admin_channel_index.return_value = 1
+    iface.localNode._get_named_admin_channel_index = MagicMock(return_value=1)  # type: ignore[attr-defined]
     iface._get_or_create_by_num.return_value = {"adminSessionPassKey": b"secret"}
     anode = Node(iface, "!12345678", noProto=False)
 
@@ -2429,11 +2430,13 @@ def test_emit_cached_metadata_reads_metadata_under_node_db_lock(
 
         @property
         def metadata(self) -> mesh_pb2.DeviceMetadata:
+            """Return stored metadata while recording lock-held state at read time."""
             metadata_read_lock_states.append(self._node_db_lock.is_held)
             return self._metadata
 
         @metadata.setter
         def metadata(self, value: mesh_pb2.DeviceMetadata) -> None:
+            """Update stored metadata for the probe interface."""
             self._metadata = value
 
     def _mutate_metadata_after_unlock() -> None:
