@@ -1095,8 +1095,8 @@ class Node:
             try:
                 for channel_index, channel_name in channels_to_write:
                     logger.info(f"Adding new channel '{channel_name}' to device")
-                    self.writeChannel(channel_index, adminIndex=admin_index_for_write)
                     written_indices.append(channel_index)
+                    self.writeChannel(channel_index, adminIndex=admin_index_for_write)
                 set_lora = admin_pb2.AdminMessage()
                 set_lora.set_config.lora.CopyFrom(channelSet.lora_config)
                 self.ensureSessionKey(adminIndex=admin_index_for_write)

@@ -1388,16 +1388,21 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
     after_snapshot = [channel.SerializeToString() for channel in anode.channels]
     assert after_snapshot == before_snapshot
 
-    # First channel write was considered sent; rollback path should attempt
-    # to restore that channel using the same snapshotted admin path.
+    # Rollback should include the in-flight channel index as well, so both staged
+    # channels are restored when writeChannel fails mid-send.
     # No LoRa rollback is attempted because no verified local LoRa snapshot exists.
     rollback_calls = anode._send_admin.call_args_list
-    assert len(rollback_calls) == 1
+    assert len(rollback_calls) == 2
     rollback_channel_msg = rollback_calls[0].args[0]
     assert isinstance(rollback_channel_msg, admin_pb2.AdminMessage)
     assert rollback_channel_msg.set_channel.index == 1
     assert rollback_channel_msg.set_channel.role == Channel.Role.DISABLED
     assert rollback_calls[0].kwargs["adminIndex"] == 0
+    rollback_in_flight_msg = rollback_calls[1].args[0]
+    assert isinstance(rollback_in_flight_msg, admin_pb2.AdminMessage)
+    assert rollback_in_flight_msg.set_channel.index == 2
+    assert rollback_in_flight_msg.set_channel.role == Channel.Role.DISABLED
+    assert rollback_calls[1].kwargs["adminIndex"] == 0
 
 
 @pytest.mark.unit
@@ -2020,7 +2025,7 @@ def test_onRequestGetMetadata_updates_metadata_under_node_db_lock() -> None:
 
         @metadata.setter
         def metadata(self, value: mesh_pb2.DeviceMetadata | None) -> None:
-            self.metadata_assignment_lock_state = lock.is_held
+            self.metadata_assignment_lock_state = self._node_db_lock.is_held
             self._metadata = value
 
     iface = _MetadataAssignmentProbeIface(lock)

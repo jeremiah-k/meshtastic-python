@@ -958,6 +958,7 @@ def test_sendPacket_uses_numeric_num_from_node_record(
 @pytest.mark.parametrize(
     ("destination_id", "expected_num"),
     [
+        ("12345678", 0x12345678),
         ("0x12345678", 0x12345678),
         ("0X90ABCDEF", 0x90ABCDEF),
         ("!89abcdef", 0x89ABCDEF),
