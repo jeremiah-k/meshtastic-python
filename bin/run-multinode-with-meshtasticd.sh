@@ -281,6 +281,7 @@ wait_for_log_pattern() {
 		local log_output=""
 		if ! log_output="$(docker logs "${container}" 2>&1)"; then
 			echo "Failed to read logs from ${container}." >&2
+			printf '%s\n' "${log_output}" >&2
 			return 1
 		fi
 		if grep -Fq "${pattern}" <<<"${log_output}"; then

@@ -836,18 +836,15 @@ def test_sendPacket_alias_with_destination_as_int(
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_sendPacket_with_destination_starting_with_a_bang(
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Verify that _send_packet ignores destination IDs that begin with '!' and logs the action.
-
-    Asserts that calling _send_packet with a destinationId starting with "!" results in a log entry containing "Not sending packet".
-
-    """
+    """Unsupported bang-prefixed IDs should raise when node DB lookup is unavailable."""
     with MeshInterface(noProto=True) as iface:
-        with caplog.at_level(logging.DEBUG):
-            meshPacket = mesh_pb2.MeshPacket()
-            iface._send_packet(meshPacket, destinationId="!1234")
-            assert re.search(r"Not sending packet", caplog.text, re.MULTILINE)
+        mesh_packet = mesh_pb2.MeshPacket()
+        with pytest.raises(
+            MeshInterface.MeshInterfaceError,
+            match=r"NodeId !1234 not found and node DB is unavailable",
+        ):
+            iface._send_packet(mesh_packet, destinationId="!1234")
 
 
 @pytest.mark.unit
@@ -910,16 +907,33 @@ def test_sendPacket_with_destination_is_blank_with_nodes(
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_sendPacket_with_destination_is_blank_without_nodes(
-    caplog: pytest.LogCaptureFixture,
     iface_with_nodes: MeshInterface,
 ) -> None:
-    """Test _send_packet() with '' as a destination with myInfo."""
+    """Test _send_packet() with '' as a destination raises when node DB is unavailable."""
     iface = iface_with_nodes
     iface.nodes = None
     meshPacket = mesh_pb2.MeshPacket()
-    with caplog.at_level(logging.WARNING):
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match=r"NodeId  not found and node DB is unavailable",
+    ):
         iface._send_packet(meshPacket, destinationId="")
-    assert re.search(r"Warning: There were no self.nodes.", caplog.text, re.MULTILINE)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_sendPacket_with_unsupported_destination_type_without_nodes_raises(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """Unsupported destination types should raise when node DB is unavailable."""
+    iface = iface_with_nodes
+    iface.nodes = None
+    mesh_packet = mesh_pb2.MeshPacket()
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match=r"NodeId \[\] not found and node DB is unavailable",
+    ):
+        iface._send_packet(mesh_packet, destinationId=[])  # type: ignore[arg-type]
 
 
 @pytest.mark.unit

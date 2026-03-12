@@ -380,7 +380,7 @@ To keep the refactor manageable:
 
 Continue executing Phase 2 on the active branch:
 
-```text
+```bash
 git checkout meshinterface-pass
 ```
 

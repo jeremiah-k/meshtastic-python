@@ -1140,11 +1140,9 @@ class Node:
                 written_index_set = set(written_indices)
                 for index, rollback_channel in original_channels_by_index.items():
                     if index in written_index_set:
-                        rollback_admin = admin_pb2.AdminMessage()
-                        rollback_admin.set_channel.CopyFrom(rollback_channel)
                         try:
-                            self._send_admin(
-                                rollback_admin,
+                            self._write_channel_snapshot(
+                                rollback_channel,
                                 adminIndex=admin_index_for_write,
                             )
                         # Best-effort rollback path; keep attempting remaining steps.
@@ -1166,6 +1164,7 @@ class Node:
                     rollback_lora = admin_pb2.AdminMessage()
                     rollback_lora.set_config.lora.CopyFrom(original_lora_config)
                     try:
+                        self.ensureSessionKey(adminIndex=admin_index_for_write)
                         self._send_admin(
                             rollback_lora,
                             adminIndex=admin_index_for_write,
@@ -1189,7 +1188,7 @@ class Node:
                         "Channel cache unavailable after successful addOnly apply; reload channels to refresh local state."
                     )
                 else:
-                    for staged_channel, _channel_name in channels_to_write:
+                    for staged_channel, _ in channels_to_write:
                         if 0 <= staged_channel.index < len(channels):
                             channels[staged_channel.index].CopyFrom(staged_channel)
                         else:

@@ -122,7 +122,20 @@ def _format_missing_node_num_error(destination_id: int | str) -> str:
 
 
 def _extract_hex_node_id_body(destination_id: str) -> str | None:
-    """Return compact hex node-id body when `destination_id` matches supported formats."""
+    """Return a compact 8-hex node-id body when ``destination_id`` matches supported forms.
+
+    Parameters
+    ----------
+    destination_id : str
+        Candidate node identifier. Supported prefixed forms are ``!12345678``,
+        ``0x12345678``, and ``0X12345678``; bare ``12345678`` is also supported.
+
+    Returns
+    -------
+    str | None
+        The 8-character hexadecimal body if the full input is a supported compact
+        node-id format; otherwise ``None``.
+    """
     candidate = destination_id
     if destination_id.startswith("!"):
         candidate = destination_id[1:]
@@ -136,7 +149,18 @@ def _extract_hex_node_id_body(destination_id: str) -> str | None:
 
 
 def _looks_like_hex_node_id_tail(destination_id: str) -> bool:
-    """Return True when the whole string is a supported compact hex node identifier."""
+    """Return whether the full string is a supported compact hex node identifier.
+
+    Parameters
+    ----------
+    destination_id : str
+        Candidate node identifier string.
+
+    Returns
+    -------
+    bool
+        ``True`` when ``destination_id`` is exactly a supported compact hex node-id form.
+    """
     return _extract_hex_node_id_body(destination_id) is not None
 
 
@@ -2402,7 +2426,9 @@ class MeshInterface:  # pylint: disable=R0902
                         f"NodeId {destinationId} not found in DB"
                     )
                 else:
-                    logger.warning("Warning: There were no self.nodes.")
+                    raise MeshInterface.MeshInterfaceError(
+                        f"NodeId {destinationId} not found and node DB is unavailable"
+                    )
         else:
             with self._node_db_lock:
                 has_nodes = self.nodes is not None
@@ -2410,7 +2436,9 @@ class MeshInterface:  # pylint: disable=R0902
                 raise MeshInterface.MeshInterfaceError(
                     f"NodeId {destinationId} not found in DB"
                 )
-            logger.warning("Warning: There were no self.nodes.")
+            raise MeshInterface.MeshInterfaceError(
+                f"NodeId {destinationId} not found and node DB is unavailable"
+            )
 
         meshPacket.to = nodeNum
         meshPacket.want_ack = wantAck

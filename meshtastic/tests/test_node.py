@@ -1403,6 +1403,8 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
     disabled2 = Channel(index=2, role=Channel.Role.DISABLED)
     anode.channels = [primary, disabled1, disabled2]
     anode.localConfig.lora.hop_limit = 3
+    ensure_session_key_spy = MagicMock(wraps=anode.ensureSessionKey)
+    anode.ensureSessionKey = ensure_session_key_spy  # type: ignore[method-assign]
     before_snapshot = [channel.SerializeToString() for channel in anode.channels]
 
     staged_writes: list[tuple[int, str, int | None]] = []
@@ -1445,6 +1447,12 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
     with pytest.raises(RuntimeError, match="write failed during addOnly batch"):
         anode.setURL(url, addOnly=True)
 
+    assert ensure_session_key_spy.call_args_list
+    assert all(
+        call.kwargs.get("adminIndex") == 0
+        for call in ensure_session_key_spy.call_args_list
+    )
+
     # Admin index is snapshotted before local mutation (0 fallback here),
     # even though a staged channel is named "admin".
     assert staged_writes == [(1, "admin", 0), (2, "new-b", 0)]
@@ -1477,6 +1485,8 @@ def test_setURL_add_only_invalidates_channels_cache_on_partial_rollback_failure(
     disabled2 = Channel(index=2, role=Channel.Role.DISABLED)
     anode.channels = [primary, disabled1, disabled2]
     anode.localConfig.lora.hop_limit = 3
+    ensure_session_key_spy = MagicMock(wraps=anode.ensureSessionKey)
+    anode.ensureSessionKey = ensure_session_key_spy  # type: ignore[method-assign]
 
     send_calls = {"rollback_failures": 0, "stage_writes": 0}
 
@@ -1515,6 +1525,11 @@ def test_setURL_add_only_invalidates_channels_cache_on_partial_rollback_failure(
     with pytest.raises(RuntimeError, match="write failed during addOnly batch"):
         anode.setURL(url, addOnly=True)
 
+    assert ensure_session_key_spy.call_args_list
+    assert all(
+        call.kwargs.get("adminIndex") == 0
+        for call in ensure_session_key_spy.call_args_list
+    )
     assert send_calls["stage_writes"] == 2
     assert send_calls["rollback_failures"] == 1
     assert anode.channels is None
@@ -1534,6 +1549,8 @@ def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
     anode.channels = [primary, disabled]
     before_snapshot = [channel.SerializeToString() for channel in anode.channels]
     anode.localConfig.lora.hop_limit = 3
+    ensure_session_key_spy = MagicMock(wraps=anode.ensureSessionKey)
+    anode.ensureSessionKey = ensure_session_key_spy  # type: ignore[method-assign]
 
     failed_lora_send = {"seen": False}
     staged_channel_writes: list[int] = []
@@ -1574,6 +1591,11 @@ def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
     with pytest.raises(OSError, match="LoRa write failed"):
         anode.setURL(url, addOnly=True)
 
+    assert ensure_session_key_spy.call_args_list
+    assert all(
+        call.kwargs.get("adminIndex") == 0
+        for call in ensure_session_key_spy.call_args_list
+    )
     assert anode.channels is not None
     after_snapshot = [channel.SerializeToString() for channel in anode.channels]
     assert after_snapshot == before_snapshot
@@ -1612,7 +1634,8 @@ def test_setURL_replace_pins_admin_index_for_channel_and_lora_writes(
     legacy_admin = Channel(index=1, role=Channel.Role.SECONDARY)
     legacy_admin.settings.name = "admin"
     anode.channels = [primary, legacy_admin]
-    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    ensure_session_key_spy = MagicMock()
+    anode.ensureSessionKey = ensure_session_key_spy  # type: ignore[method-assign]
 
     sent_messages: list[admin_pb2.AdminMessage] = []
     admin_indexes: list[int | None] = []
@@ -1643,6 +1666,11 @@ def test_setURL_replace_pins_admin_index_for_channel_and_lora_writes(
 
     anode.setURL(url, addOnly=False)
 
+    assert ensure_session_key_spy.call_args_list
+    assert all(
+        call.kwargs.get("adminIndex") == 1
+        for call in ensure_session_key_spy.call_args_list
+    )
     assert len(sent_messages) == 3
     assert admin_indexes == [1, 1, 1]
     assert sent_messages[0].HasField("set_channel")
