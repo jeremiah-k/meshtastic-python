@@ -2111,6 +2111,7 @@ def test_set_metadata_snapshot_stores_detached_copy_under_lock() -> None:
 
         @property
         def metadata(self) -> mesh_pb2.DeviceMetadata | None:
+            """Return the stored device metadata."""
             return self._metadata
 
         @metadata.setter
