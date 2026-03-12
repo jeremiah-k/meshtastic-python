@@ -454,7 +454,9 @@ class Node:
                 config_values.CopyFrom(raw_config)
                 logger.info("%s:\n%s", camel_to_snake(field), config_values)
 
-    def requestConfig(self, configType: int | FieldDescriptor) -> None:
+    def requestConfig(
+        self, configType: int | FieldDescriptor, adminIndex: int = 0
+    ) -> None:
         """Request a configuration subset or the full configuration from this node.
 
         If `configType` is an int it is treated as a config index. If it is a protobuf
@@ -469,6 +471,9 @@ class Node:
         configType : int | FieldDescriptor
             Numeric config index or a
             protobuf field descriptor indicating which config field to fetch.
+        adminIndex : int
+            Admin channel index to use for sending; when 0 the node's configured
+            admin channel is used. (Default value = 0)
         """
         if self == self.iface.localNode:
             onResponse = None
@@ -490,7 +495,9 @@ class Node:
             else:
                 p.get_module_config_request = msg_index  # pyright: ignore[reportAttributeAccessIssue]
 
-        self._send_admin(p, wantResponse=True, onResponse=onResponse)
+        self._send_admin(
+            p, wantResponse=True, onResponse=onResponse, adminIndex=adminIndex
+        )
         if onResponse:
             self.iface.waitForAckNak()
 
@@ -658,7 +665,7 @@ class Node:
                 )
             channel_to_write = channel_pb2.Channel()
             channel_to_write.CopyFrom(channels[channelIndex])
-        self.ensureSessionKey()
+        self.ensureSessionKey(adminIndex=adminIndex)
         p = admin_pb2.AdminMessage()
         p.set_channel.CopyFrom(channel_to_write)
         self._send_admin(p, adminIndex=adminIndex)
@@ -758,7 +765,7 @@ class Node:
                 admin_index_for_write = self._get_admin_channel_index()
             else:
                 admin_index_for_write = self.iface.localNode.getAdminChannelIndex()
-            self.ensureSessionKey()
+            self.ensureSessionKey(adminIndex=admin_index_for_write)
             p = admin_pb2.AdminMessage()
             p.set_channel.CopyFrom(channel_snapshot)
             self._send_admin(p, adminIndex=admin_index_for_write)
@@ -1026,21 +1033,24 @@ class Node:
             ignored_channel_names: list[str] = []
             channels_to_write: list[tuple[int, str]] = []
             original_channels_by_index: dict[int, channel_pb2.Channel] = {}
-            # Snapshot admin channel path before staging writes so the first send
-            # does not depend on locally-mutated channel state.
+            # Snapshot admin channel path before staging writes so sends do not
+            # depend on locally-mutated channel state.
             admin_index_for_write = (
                 self.iface.localNode._get_admin_channel_index()
                 if self.iface.localNode != self
-                else None
+                else self._get_admin_channel_index()
             )
-            original_lora_config = config_pb2.Config.LoRaConfig()
-            original_lora_config.CopyFrom(self.localConfig.lora)
+            # Bootstrap admin session using the snapshotted path before staging.
+            self.ensureSessionKey(adminIndex=admin_index_for_write)
+            # Rollback should only use a verified local LoRa snapshot.
+            original_lora_config: config_pb2.Config.LoRaConfig | None = None
+            if self.localConfig.HasField("lora"):
+                original_lora_config = config_pb2.Config.LoRaConfig()
+                original_lora_config.CopyFrom(self.localConfig.lora)
             with self._channels_lock:
                 channels = self.channels
                 if channels is None:
                     self._raise_interface_error("Config or channels not loaded")
-                if admin_index_for_write is None:
-                    admin_index_for_write = self._get_admin_channel_index()
                 existing_names = {
                     c.settings.name for c in channels if c.settings and c.settings.name
                 }
@@ -1078,7 +1088,6 @@ class Node:
                 logger.info(
                     f'Ignoring existing or empty channel "{ignored_name}" from add URL'
                 )
-            assert admin_index_for_write is not None
             written_indices: list[int] = []
             try:
                 for channel_index, channel_name in channels_to_write:
@@ -1087,7 +1096,7 @@ class Node:
                     written_indices.append(channel_index)
                 set_lora = admin_pb2.AdminMessage()
                 set_lora.set_config.lora.CopyFrom(channelSet.lora_config)
-                self.ensureSessionKey()
+                self.ensureSessionKey(adminIndex=admin_index_for_write)
                 self._send_admin(set_lora, adminIndex=admin_index_for_write)
             # Intentionally broad: rollback should run for any send failure in this
             # transactional block. The original exception is re-raised.
@@ -1124,19 +1133,20 @@ class Node:
                             index,
                             exc_info=True,
                         )
-                rollback_lora = admin_pb2.AdminMessage()
-                rollback_lora.set_config.lora.CopyFrom(original_lora_config)
-                try:
-                    self._send_admin(
-                        rollback_lora,
-                        adminIndex=admin_index_for_write,
-                    )
-                # Best-effort rollback path; keep original failure semantics.
-                except Exception:
-                    logger.warning(
-                        "Rollback of LoRa config failed after addOnly partial failure.",
-                        exc_info=True,
-                    )
+                if original_lora_config is not None:
+                    rollback_lora = admin_pb2.AdminMessage()
+                    rollback_lora.set_config.lora.CopyFrom(original_lora_config)
+                    try:
+                        self._send_admin(
+                            rollback_lora,
+                            adminIndex=admin_index_for_write,
+                        )
+                    # Best-effort rollback path; keep original failure semantics.
+                    except Exception:
+                        logger.warning(
+                            "Rollback of LoRa config failed after addOnly partial failure.",
+                            exc_info=True,
+                        )
                 raise
         else:
             with self._channels_lock:
@@ -2446,11 +2456,17 @@ class Node:
             pkiEncrypted=True,
         )
 
-    def ensureSessionKey(self) -> None:
+    def ensureSessionKey(self, adminIndex: int = 0) -> None:
         """Ensure an admin session key exists for this node, requesting one if missing.
 
         If protocol use is disabled (`noProto`), no action is taken. Otherwise, if the node has no
         `adminSessionPassKey` recorded, a session-key request is sent.
+
+        Parameters
+        ----------
+        adminIndex : int
+            Admin channel index to use for the session key request; when 0 the
+            node's configured admin channel is used. (Default value = 0)
         """
         if self.noProto:
             logger.warning(
@@ -2463,7 +2479,10 @@ class Node:
                 )
                 is None
             ):
-                self.requestConfig(admin_pb2.AdminMessage.SESSIONKEY_CONFIG)
+                self.requestConfig(
+                    admin_pb2.AdminMessage.SESSIONKEY_CONFIG,
+                    adminIndex=adminIndex,
+                )
 
     def _get_channels_with_hash(self) -> list[dict[str, Any]]:
         """Return a list of channel descriptors containing index, role, name, and an optional hash.

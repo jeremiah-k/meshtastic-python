@@ -635,6 +635,25 @@ def test_writeChannel_with_no_channels_raises_mesh_error(
 
 
 @pytest.mark.unit
+def test_writeChannel_forwards_admin_index_to_session_key_bootstrap(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """writeChannel should use the same admin index for session bootstrap and channel write."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    primary.settings.psk = b"\x01"
+    anode.channels = [primary]
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())  # type: ignore[method-assign]
+
+    anode.writeChannel(0, adminIndex=4)
+
+    anode.ensureSessionKey.assert_called_once_with(adminIndex=4)
+    assert anode._send_admin.call_args.kwargs["adminIndex"] == 4
+
+
+@pytest.mark.unit
 def test_writeConfig_traffic_management(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
@@ -1323,7 +1342,7 @@ def test_setURL_add_only_is_transactional_when_slots_are_insufficient(
 def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_failure(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """setURL(addOnly=True) should keep using the pre-mutation admin path and rollback local state on failure."""
+    """setURL(addOnly=True) should keep using pre-mutation admin path and rollback local channel state."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
 
     primary = Channel(index=0, role=Channel.Role.PRIMARY)
@@ -1366,20 +1385,15 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
     assert after_snapshot == before_snapshot
 
     # First channel write was considered sent; rollback path should attempt
-    # to restore that channel and the previous LoRa config using the same
-    # snapshotted admin path.
+    # to restore that channel using the same snapshotted admin path.
+    # No LoRa rollback is attempted because no verified local LoRa snapshot exists.
     rollback_calls = anode._send_admin.call_args_list
-    assert len(rollback_calls) == 2
+    assert len(rollback_calls) == 1
     rollback_channel_msg = rollback_calls[0].args[0]
-    rollback_lora_msg = rollback_calls[1].args[0]
     assert isinstance(rollback_channel_msg, admin_pb2.AdminMessage)
     assert rollback_channel_msg.set_channel.index == 1
     assert rollback_channel_msg.set_channel.role == Channel.Role.DISABLED
     assert rollback_calls[0].kwargs["adminIndex"] == 0
-    assert isinstance(rollback_lora_msg, admin_pb2.AdminMessage)
-    assert rollback_lora_msg.HasField("set_config")
-    assert rollback_lora_msg.set_config.HasField("lora")
-    assert rollback_calls[1].kwargs["adminIndex"] == 0
 
 
 @pytest.mark.unit
@@ -1632,15 +1646,15 @@ def test_send_admin_uses_session_passkey_and_selected_admin_index(
 def test_ensureSessionKey_requests_only_when_missing(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """EnsureSessionKey should request a key only if one is not already cached."""
+    """EnsureSessionKey should request only when missing and forward the selected admin index."""
     iface = autospec_local_node_iface(MeshInterface)
     anode = Node(iface, 555, noProto=False)
     anode.requestConfig = MagicMock()  # type: ignore[method-assign]
 
     iface._get_or_create_by_num.return_value = {}
-    anode.ensureSessionKey()
+    anode.ensureSessionKey(adminIndex=6)
     anode.requestConfig.assert_called_once_with(
-        admin_pb2.AdminMessage.SESSIONKEY_CONFIG
+        admin_pb2.AdminMessage.SESSIONKEY_CONFIG, adminIndex=6
     )
 
     anode.requestConfig.reset_mock()
