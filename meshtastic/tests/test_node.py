@@ -76,6 +76,8 @@ class _TrackingLock:
         self._on_exit = on_exit
 
     def __enter__(self) -> "_TrackingLock":
+        if self.is_held:
+            raise AssertionError("_TrackingLock does not allow nested acquisition")
         self.enter_count += 1
         self.is_held = True
         return self
@@ -124,6 +126,18 @@ def _make_fake_send_admin(
         return return_packet
 
     return _fake_send_admin
+
+
+@pytest.mark.unit
+def test_tracking_lock_rejects_nested_acquisition() -> None:
+    """_TrackingLock should fail on nested acquisition attempts."""
+    lock = _TrackingLock()
+    with lock:
+        with pytest.raises(
+            AssertionError, match="_TrackingLock does not allow nested acquisition"
+        ):
+            with lock:
+                pass
 
 
 @pytest.mark.unit
@@ -1706,11 +1720,11 @@ def test_setURL_replace_pins_admin_index_for_channel_and_lora_writes(
     assert admin_indexes == [1, 1, 1]
     assert sent_messages[0].HasField("set_channel")
     assert sent_messages[0].set_channel.index == 0
-    assert sent_messages[1].HasField("set_channel")
-    assert sent_messages[1].set_channel.index == 1
-    assert sent_messages[2].HasField("set_config")
-    assert sent_messages[2].set_config.HasField("lora")
-    assert sent_messages[2].set_config.lora.hop_limit == 9
+    assert sent_messages[1].HasField("set_config")
+    assert sent_messages[1].set_config.HasField("lora")
+    assert sent_messages[1].set_config.lora.hop_limit == 9
+    assert sent_messages[2].HasField("set_channel")
+    assert sent_messages[2].set_channel.index == 1
     assert anode.localConfig.lora.hop_limit == 9
 
 
@@ -2388,11 +2402,9 @@ def test_emit_cached_metadata_uses_fallback_values_for_unknown_enums(
 
 @pytest.mark.unit
 def test_emit_cached_metadata_reads_metadata_under_node_db_lock(
-    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """_emit_cached_metadata_for_stdout should emit snapshot lines after lock release."""
-    iface = autospec_local_node_iface(MeshInterface)
     original_metadata = mesh_pb2.DeviceMetadata(
         firmware_version="2.7.18",
         device_state_version=24,
@@ -2401,7 +2413,28 @@ def test_emit_cached_metadata_reads_metadata_under_node_db_lock(
         hw_model=mesh_pb2.HardwareModel.PORTDUINO,
         hasPKC=True,
     )
-    iface.metadata = original_metadata
+
+    metadata_read_lock_states: list[bool] = []
+
+    class _MetadataReadProbeIface:
+        """Minimal interface stub that records lock state on metadata reads."""
+
+        def __init__(
+            self,
+            node_db_lock: _TrackingLock,
+            metadata: mesh_pb2.DeviceMetadata,
+        ) -> None:
+            self._node_db_lock = node_db_lock
+            self._metadata = metadata
+
+        @property
+        def metadata(self) -> mesh_pb2.DeviceMetadata:
+            metadata_read_lock_states.append(self._node_db_lock.is_held)
+            return self._metadata
+
+        @metadata.setter
+        def metadata(self, value: mesh_pb2.DeviceMetadata) -> None:
+            self._metadata = value
 
     def _mutate_metadata_after_unlock() -> None:
         original_metadata.firmware_version = "mutated-after-unlock"
@@ -2410,8 +2443,9 @@ def test_emit_cached_metadata_reads_metadata_under_node_db_lock(
         original_metadata.hw_model = mesh_pb2.HardwareModel.UNSET
         original_metadata.hasPKC = False
 
-    iface._node_db_lock = _TrackingLock(on_exit=_mutate_metadata_after_unlock)
-    anode = Node(iface, "!12345678", noProto=True)
+    lock = _TrackingLock(on_exit=_mutate_metadata_after_unlock)
+    iface = _MetadataReadProbeIface(lock, original_metadata)
+    anode = Node(cast(Any, iface), "!12345678", noProto=True)
     emitted: list[tuple[str, bool]] = []
 
     def _record_emit(line: str) -> None:
@@ -2421,6 +2455,8 @@ def test_emit_cached_metadata_reads_metadata_under_node_db_lock(
 
     assert anode._emit_cached_metadata_for_stdout() is True
     assert emitted
+    assert metadata_read_lock_states
+    assert any(metadata_read_lock_states)
     assert iface._node_db_lock.enter_count == 1
     assert all(not is_held for _line, is_held in emitted)
     assert any("firmware_version: 2.7.18" in line for line, _ in emitted)

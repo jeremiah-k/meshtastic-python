@@ -98,6 +98,7 @@ def test_init_on_position_receive_decode_error_updates_metadata_without_position
     baseline_node = iface._get_or_create_by_num(1234567890)
     with iface._node_db_lock:
         baseline_node["position"] = {"latitudeI": 111111, "longitudeI": 222222}
+        baseline_position = dict(baseline_node["position"])
     packet: dict[str, Any] = {
         "from": 1234567890,
         "decoded": {"position": {"error": "decode-failed: malformed"}},
@@ -106,8 +107,7 @@ def test_init_on_position_receive_decode_error_updates_metadata_without_position
     _on_position_receive(iface, packet)
 
     node = iface._get_or_create_by_num(1234567890)
-    assert node["position"]["latitudeI"] == 111111
-    assert "error" not in node["position"]
+    assert node["position"] == baseline_position
     assert node["lastReceived"]["decoded"]["position"]["error"].startswith(
         "decode-failed:"
     )

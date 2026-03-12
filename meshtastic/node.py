@@ -1211,6 +1211,7 @@ class Node:
                 if channels is None:
                     self._raise_interface_error("Config or channels not loaded")
                 max_channels = len(channels)
+            staged_channels: list[channel_pb2.Channel] = []
             for i, chs in enumerate(channelSet.settings):
                 if i >= max_channels:
                     logger.warning(
@@ -1226,20 +1227,52 @@ class Node:
                 )
                 ch.index = i
                 ch.settings.CopyFrom(chs)
+                staged_channels.append(ch)
+
+            deferred_admin_channel = next(
+                (
+                    staged_channel
+                    for staged_channel in staged_channels
+                    if staged_channel.index == admin_index_for_write
+                ),
+                None,
+            )
+
+            for staged_channel in staged_channels:
+                if (
+                    deferred_admin_channel is not None
+                    and staged_channel.index == deferred_admin_channel.index
+                ):
+                    continue
                 with self._channels_lock:
                     channels = self.channels
                     if channels is None:
                         self._raise_interface_error("Config or channels not loaded")
-                    channels[ch.index] = ch
-                logger.debug(f"Channel i:{i} ch:{ch}")
-                self.writeChannel(ch.index, adminIndex=admin_index_for_write)
+                    channels[staged_channel.index] = staged_channel
+                logger.debug(f"Channel i:{staged_channel.index} ch:{staged_channel}")
+                self.writeChannel(
+                    staged_channel.index, adminIndex=admin_index_for_write
+                )
 
-        if not addOnly and has_lora_update:
-            p = admin_pb2.AdminMessage()
-            p.set_config.lora.CopyFrom(channelSet.lora_config)
-            self.ensureSessionKey(adminIndex=admin_index_for_write)
-            self._send_admin(p, adminIndex=admin_index_for_write)
-            self.localConfig.lora.CopyFrom(channelSet.lora_config)
+            if has_lora_update:
+                p = admin_pb2.AdminMessage()
+                p.set_config.lora.CopyFrom(channelSet.lora_config)
+                self.ensureSessionKey(adminIndex=admin_index_for_write)
+                self._send_admin(p, adminIndex=admin_index_for_write)
+                self.localConfig.lora.CopyFrom(channelSet.lora_config)
+
+            if deferred_admin_channel is not None:
+                with self._channels_lock:
+                    channels = self.channels
+                    if channels is None:
+                        self._raise_interface_error("Config or channels not loaded")
+                    channels[deferred_admin_channel.index] = deferred_admin_channel
+                logger.debug(
+                    f"Channel i:{deferred_admin_channel.index} ch:{deferred_admin_channel}"
+                )
+                self.writeChannel(
+                    deferred_admin_channel.index, adminIndex=admin_index_for_write
+                )
 
     def onResponseRequestRingtone(self, p: dict[str, Any]) -> None:
         """Process an admin response containing a ringtone fragment and cache it on the Node.
