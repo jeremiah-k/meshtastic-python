@@ -3722,4 +3722,8 @@ def test_handle_packet_from_radio_decode_failure_does_not_raise(
 
         assert "Failed to decode position payload" in caplog.text
         fake_on_receive.assert_not_called()
+        assert callback_calls
+        assert callback_calls[0]["decoded"]["position"]["error"].startswith(
+            "decode-failed:"
+        )
         assert len(callback_calls) == 1

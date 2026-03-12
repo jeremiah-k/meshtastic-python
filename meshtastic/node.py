@@ -1022,11 +1022,21 @@ class Node:
             # Add new channels with names not already present
             # Don't change existing channels
             ignored_channel_names: list[str] = []
-            channels_to_write: list[tuple[int, str, channel_pb2.ChannelSettings]] = []
+            channels_to_write: list[tuple[int, str]] = []
+            original_channels_by_index: dict[int, channel_pb2.Channel] = {}
+            # Snapshot admin channel path before staging writes so the first send
+            # does not depend on locally-mutated channel state.
+            admin_index_for_write = (
+                self.iface.localNode._get_admin_channel_index()
+                if self.iface.localNode != self
+                else None
+            )
             with self._channels_lock:
                 channels = self.channels
                 if channels is None:
                     self._raise_interface_error("Config or channels not loaded")
+                if admin_index_for_write is None:
+                    admin_index_for_write = self._get_admin_channel_index()
                 existing_names = {
                     c.settings.name for c in channels if c.settings and c.settings.name
                 }
@@ -1042,23 +1052,60 @@ class Node:
                     pending_new_settings.append(chs)
                     existing_names.add(channel_name)
                 if len(pending_new_settings) > len(disabled_channels):
-                    self._raise_interface_error("No free channels were found")
+                    self._raise_interface_error(
+                        "No free channels were found for all additions "
+                        f"(need {len(pending_new_settings)}, available {len(disabled_channels)})"
+                    )
                 for disabled_channel, new_settings in zip(
                     disabled_channels, pending_new_settings
                 ):
+                    previous_channel = channel_pb2.Channel()
+                    previous_channel.CopyFrom(disabled_channel)
+                    original_channels_by_index[disabled_channel.index] = previous_channel
                     disabled_channel.settings.CopyFrom(new_settings)
                     disabled_channel.role = channel_pb2.Channel.Role.SECONDARY
-                    channels_to_write.append(
-                        (disabled_channel.index, new_settings.name, new_settings)
-                    )
+                    channels_to_write.append((disabled_channel.index, new_settings.name))
 
             for ignored_name in ignored_channel_names:
                 logger.info(
                     f'Ignoring existing or empty channel "{ignored_name}" from add URL'
                 )
-            for channel_index, channel_name, _ in channels_to_write:
-                logger.info(f"Adding new channel '{channel_name}' to device")
-                self.writeChannel(channel_index)
+            assert admin_index_for_write is not None
+            written_indices: list[int] = []
+            try:
+                for channel_index, channel_name in channels_to_write:
+                    logger.info(f"Adding new channel '{channel_name}' to device")
+                    self.writeChannel(channel_index, adminIndex=admin_index_for_write)
+                    written_indices.append(channel_index)
+            except Exception:
+                logger.warning(
+                    "Failed while applying addOnly channel updates; restoring local channel state and attempting rollback for written channels.",
+                    exc_info=True,
+                )
+                with self._channels_lock:
+                    channels = self.channels
+                    if channels is not None:
+                        for index, previous_channel in original_channels_by_index.items():
+                            if 0 <= index < len(channels):
+                                channels[index].CopyFrom(previous_channel)
+                for index in written_indices:
+                    previous_channel = original_channels_by_index.get(index)
+                    if previous_channel is None:
+                        continue
+                    rollback_admin = admin_pb2.AdminMessage()
+                    rollback_admin.set_channel.CopyFrom(previous_channel)
+                    try:
+                        self._send_admin(
+                            rollback_admin,
+                            adminIndex=admin_index_for_write,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Rollback of channel index %s failed after addOnly partial failure.",
+                            index,
+                            exc_info=True,
+                        )
+                raise
         else:
             with self._channels_lock:
                 channels = self.channels

@@ -7,6 +7,7 @@ import logging
 import re
 import threading
 from collections.abc import Callable
+from types import TracebackType
 from typing import Any, Literal, Protocol, cast
 from unittest.mock import MagicMock, patch
 
@@ -56,7 +57,12 @@ class _DropChannelsOnEnterCountLock:
             self.node.channels = None
         return self
 
-    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> Literal[False]:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> Literal[False]:
         _ = (exc_type, exc, tb)
         return False
 
@@ -66,16 +72,24 @@ class _TrackingLock:
 
     def __init__(self, on_exit: Callable[[], None] | None = None) -> None:
         self.enter_count = 0
+        self.is_held = False
         self._on_exit = on_exit
 
     def __enter__(self) -> "_TrackingLock":
         self.enter_count += 1
+        self.is_held = True
         return self
 
-    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> Literal[False]:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> Literal[False]:
         _ = (exc_type, exc, tb)
         if self._on_exit is not None:
             self._on_exit()
+        self.is_held = False
         return False
 
 
@@ -1241,7 +1255,7 @@ def test_setURL_add_only_adds_unique_named_channels(
     assert anode.channels is not None
     assert anode.channels[1].settings.name == "new-ch"
     assert anode.channels[1].role == Channel.Role.SECONDARY
-    anode.writeChannel.assert_called_once_with(1)
+    anode.writeChannel.assert_called_once_with(1, adminIndex=0)
 
 
 @pytest.mark.unit
@@ -1303,6 +1317,64 @@ def test_setURL_add_only_is_transactional_when_slots_are_insufficient(
     after_snapshot = [channel.SerializeToString() for channel in anode.channels]
     assert after_snapshot == before_snapshot
     anode.writeChannel.assert_not_called()
+
+
+@pytest.mark.unit
+def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_failure(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=True) should keep using the pre-mutation admin path and rollback local state on failure."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    primary.settings.psk = b"\x01"
+    disabled1 = Channel(index=1, role=Channel.Role.DISABLED)
+    disabled2 = Channel(index=2, role=Channel.Role.DISABLED)
+    anode.channels = [primary, disabled1, disabled2]
+    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
+
+    write_calls: list[tuple[int, int]] = []
+
+    def _write_then_fail(channel_index: int, adminIndex: int = 0) -> None:  # noqa: N803
+        write_calls.append((channel_index, adminIndex))
+        if len(write_calls) == 2:
+            raise RuntimeError("write failed during addOnly batch")
+
+    anode.writeChannel = MagicMock(side_effect=_write_then_fail)  # type: ignore[method-assign]
+    anode._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())  # type: ignore[method-assign]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "admin"
+    first.psk = b"\x03"
+    second = channel_set.settings.add()
+    second.name = "new-b"
+    second.psk = b"\x04"
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+    with pytest.raises(RuntimeError, match="write failed during addOnly batch"):
+        anode.setURL(url, addOnly=True)
+
+    # Admin index is snapshotted before local mutation (0 fallback here),
+    # even though a staged channel is named "admin".
+    assert write_calls == [(1, 0), (2, 0)]
+
+    assert anode.channels is not None
+    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    assert after_snapshot == before_snapshot
+
+    # First channel write was considered sent; rollback path should attempt
+    # to restore it using the same snapshotted admin path.
+    assert anode._send_admin.call_count == 1
+    rollback_call = anode._send_admin.call_args
+    assert rollback_call is not None
+    rollback_msg = rollback_call.args[0]
+    assert isinstance(rollback_msg, admin_pb2.AdminMessage)
+    assert rollback_msg.set_channel.index == 1
+    assert rollback_msg.set_channel.role == Channel.Role.DISABLED
+    assert rollback_call.kwargs["adminIndex"] == 0
 
 
 @pytest.mark.unit
@@ -1775,7 +1847,8 @@ def test_onRequestGetMetadata_updates_metadata_under_node_db_lock(
     """onRequestGetMetadata should update iface.metadata while holding iface._node_db_lock."""
     iface = autospec_local_node_iface(MeshInterface)
     iface._acknowledgment = Acknowledgment()
-    iface._node_db_lock = _TrackingLock()
+    lock = _TrackingLock()
+    iface._node_db_lock = lock
     anode = Node(iface, "!12345678", noProto=True)
     anode._timeout = MagicMock()
 
@@ -1788,11 +1861,20 @@ def test_onRequestGetMetadata_updates_metadata_under_node_db_lock(
     response.hw_model = mesh_pb2.HardwareModel.PORTDUINO
     response.hasPKC = True
 
+    def _assert_assignment_happened_while_locked() -> None:
+        assert lock.is_held
+        metadata = iface.metadata
+        assert isinstance(metadata, mesh_pb2.DeviceMetadata)
+        assert metadata.firmware_version == "2.7.19"
+
+    lock._on_exit = _assert_assignment_happened_while_locked
+
     anode.onRequestGetMetadata(
         {"decoded": {"portnum": "ADMIN_APP", "admin": {"raw": raw}}}
     )
 
-    assert iface._node_db_lock.enter_count == 1
+    assert lock.enter_count == 1
+    assert lock.is_held is False
     assert iface.metadata.firmware_version == "2.7.19"
 
 
