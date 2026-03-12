@@ -2373,12 +2373,12 @@ class MeshInterface:  # pylint: disable=R0902
         # A simple hex style nodeid - we can parse this without needing the DB
         elif isinstance(destinationId, str) and _looks_like_hex_node_id_tail(destinationId):
             # Simple hex-style node id strings (for example !12345678 or 0x12345678).
+            body = destinationId
             if destinationId.startswith("!"):
-                nodeNum = int(destinationId[1:], 16)
+                body = destinationId[1:]
             elif destinationId.startswith(("0x", "0X")):
-                nodeNum = int(destinationId[2:], 16)
-            else:
-                nodeNum = int(destinationId, 16)
+                body = destinationId[2:]
+            nodeNum = int(body, 16)
         else:
             with self._node_db_lock:
                 node = self.nodes.get(destinationId) if self.nodes else None

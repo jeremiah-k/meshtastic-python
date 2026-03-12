@@ -1257,7 +1257,7 @@ def test_setURL_add_only_adds_unique_named_channels(
     disabled = Channel(index=1, role=Channel.Role.DISABLED)
     anode.channels = [primary, disabled]
     anode.localConfig.lora.hop_limit = 3
-    anode.writeChannel = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())  # type: ignore[method-assign]
 
     channel_set = apponly_pb2.ChannelSet()
     existing = channel_set.settings.add()
@@ -1279,7 +1279,14 @@ def test_setURL_add_only_adds_unique_named_channels(
     assert anode.channels[1].settings.name == "new-ch"
     assert anode.channels[1].role == Channel.Role.SECONDARY
     assert anode.localConfig.lora.hop_limit == 9
-    anode.writeChannel.assert_called_once_with(1, adminIndex=0)
+    send_calls = anode._send_admin.call_args_list
+    assert len(send_calls) == 2
+    assert send_calls[0].kwargs["adminIndex"] == 0
+    assert send_calls[0].args[0].HasField("set_channel")
+    assert send_calls[0].args[0].set_channel.index == 1
+    assert send_calls[1].kwargs["adminIndex"] == 0
+    assert send_calls[1].args[0].HasField("set_config")
+    assert send_calls[1].args[0].set_config.lora.hop_limit == 9
 
 
 @pytest.mark.unit
@@ -1346,7 +1353,7 @@ def test_setURL_add_only_is_transactional_when_slots_are_insufficient(
     disabled = Channel(index=2, role=Channel.Role.DISABLED)
     anode.channels = [primary, secondary, disabled]
     anode.localConfig.lora.hop_limit = 3
-    anode.writeChannel = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())  # type: ignore[method-assign]
 
     before_snapshot = [channel.SerializeToString() for channel in anode.channels]
     before_lora = anode.localConfig.lora.SerializeToString()
@@ -1372,7 +1379,7 @@ def test_setURL_add_only_is_transactional_when_slots_are_insufficient(
     assert after_snapshot == before_snapshot
     after_lora = anode.localConfig.lora.SerializeToString()
     assert after_lora == before_lora
-    anode.writeChannel.assert_not_called()
+    anode._send_admin.assert_not_called()
 
 
 @pytest.mark.unit
@@ -1391,15 +1398,32 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
     anode.localConfig.lora.hop_limit = 3
     before_snapshot = [channel.SerializeToString() for channel in anode.channels]
 
-    write_calls: list[tuple[int, int]] = []
+    staged_writes: list[tuple[int, str, int | None]] = []
+    rollback_writes: list[tuple[int, int | None]] = []
 
-    def _write_then_fail(channel_index: int, adminIndex: int = 0) -> None:  # noqa: N803
-        write_calls.append((channel_index, adminIndex))
-        if len(write_calls) == 2:
-            raise RuntimeError("write failed during addOnly batch")
+    def _send_admin_with_staged_write_failure(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse)
+        if msg.HasField("set_channel"):
+            if msg.set_channel.role == Channel.Role.SECONDARY:
+                staged_writes.append(
+                    (msg.set_channel.index, msg.set_channel.settings.name, adminIndex)
+                )
+                # Simulate a concurrent local mutation after staging to prove we
+                # send the staged snapshot, not a fresh read from self.channels.
+                if len(staged_writes) == 1 and anode.channels is not None:
+                    anode.channels[2].settings.name = "raced-name"
+                if len(staged_writes) == 2:
+                    raise RuntimeError("write failed during addOnly batch")
+            elif msg.set_channel.role == Channel.Role.DISABLED:
+                rollback_writes.append((msg.set_channel.index, adminIndex))
+        return mesh_pb2.MeshPacket()
 
-    anode.writeChannel = MagicMock(side_effect=_write_then_fail)  # type: ignore[method-assign]
-    anode._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())  # type: ignore[method-assign]
+    anode._send_admin = _send_admin_with_staged_write_failure  # type: ignore[method-assign,assignment]
 
     channel_set = apponly_pb2.ChannelSet()
     first = channel_set.settings.add()
@@ -1416,7 +1440,7 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
 
     # Admin index is snapshotted before local mutation (0 fallback here),
     # even though a staged channel is named "admin".
-    assert write_calls == [(1, 0), (2, 0)]
+    assert staged_writes == [(1, "admin", 0), (2, "new-b", 0)]
 
     assert anode.channels is not None
     after_snapshot = [channel.SerializeToString() for channel in anode.channels]
@@ -1425,18 +1449,7 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
     # Rollback should include the in-flight channel index as well, so both staged
     # channels are restored when writeChannel fails mid-send.
     # No LoRa rollback is attempted because the LoRa write never started.
-    rollback_calls = anode._send_admin.call_args_list
-    assert len(rollback_calls) == 2
-    rollback_channel_msg = rollback_calls[0].args[0]
-    assert isinstance(rollback_channel_msg, admin_pb2.AdminMessage)
-    assert rollback_channel_msg.set_channel.index == 1
-    assert rollback_channel_msg.set_channel.role == Channel.Role.DISABLED
-    assert rollback_calls[0].kwargs["adminIndex"] == 0
-    rollback_in_flight_msg = rollback_calls[1].args[0]
-    assert isinstance(rollback_in_flight_msg, admin_pb2.AdminMessage)
-    assert rollback_in_flight_msg.set_channel.index == 2
-    assert rollback_in_flight_msg.set_channel.role == Channel.Role.DISABLED
-    assert rollback_calls[1].kwargs["adminIndex"] == 0
+    assert rollback_writes == [(1, 0), (2, 0)]
 
 
 @pytest.mark.unit
@@ -1454,15 +1467,7 @@ def test_setURL_add_only_invalidates_channels_cache_on_partial_rollback_failure(
     anode.channels = [primary, disabled1, disabled2]
     anode.localConfig.lora.hop_limit = 3
 
-    write_calls = {"count": 0}
-
-    def _write_then_fail(channel_index: int, adminIndex: int | None = None) -> None:  # noqa: N803
-        _ = (channel_index, adminIndex)
-        write_calls["count"] += 1
-        if write_calls["count"] == 2:
-            raise RuntimeError("write failed during addOnly batch")
-
-    send_calls = {"count": 0}
+    send_calls = {"rollback_failures": 0, "stage_writes": 0}
 
     def _rollback_send_fails_once(
         msg: admin_pb2.AdminMessage,
@@ -1471,12 +1476,19 @@ def test_setURL_add_only_invalidates_channels_cache_on_partial_rollback_failure(
         adminIndex: int | None = None,
     ) -> mesh_pb2.MeshPacket:
         _ = (wantResponse, onResponse, adminIndex)
-        send_calls["count"] += 1
-        if msg.HasField("set_channel") and send_calls["count"] == 1:
-            raise OSError("channel rollback failed")
+        if msg.HasField("set_channel"):
+            if msg.set_channel.role == Channel.Role.SECONDARY:
+                send_calls["stage_writes"] += 1
+                if send_calls["stage_writes"] == 2:
+                    raise RuntimeError("write failed during addOnly batch")
+            elif (
+                msg.set_channel.role == Channel.Role.DISABLED
+                and send_calls["rollback_failures"] == 0
+            ):
+                send_calls["rollback_failures"] += 1
+                raise OSError("channel rollback failed")
         return mesh_pb2.MeshPacket()
 
-    anode.writeChannel = MagicMock(side_effect=_write_then_fail)  # type: ignore[method-assign]
     anode._send_admin = _rollback_send_fails_once  # type: ignore[method-assign,assignment]
 
     channel_set = apponly_pb2.ChannelSet()
@@ -1509,9 +1521,9 @@ def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
     anode.channels = [primary, disabled]
     before_snapshot = [channel.SerializeToString() for channel in anode.channels]
     anode.localConfig.lora.hop_limit = 3
-    anode.writeChannel = MagicMock()  # type: ignore[method-assign]
 
     failed_lora_send = {"seen": False}
+    staged_channel_writes: list[int] = []
     rollback_messages: list[admin_pb2.AdminMessage] = []
     admin_indexes: list[int | None] = []
 
@@ -1523,6 +1535,8 @@ def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
     ) -> mesh_pb2.MeshPacket:
         _ = (wantResponse, onResponse)
         admin_indexes.append(adminIndex)
+        if msg.HasField("set_channel") and msg.set_channel.role == Channel.Role.SECONDARY:
+            staged_channel_writes.append(msg.set_channel.index)
         if msg.HasField("set_config") and msg.set_config.HasField("lora"):
             if (
                 not failed_lora_send["seen"]
@@ -1550,17 +1564,24 @@ def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
     assert anode.channels is not None
     after_snapshot = [channel.SerializeToString() for channel in anode.channels]
     assert after_snapshot == before_snapshot
-    anode.writeChannel.assert_called_once_with(1, adminIndex=0)
+    assert staged_channel_writes == [1]
 
     # Rollback should include channel restoration and prior LoRa config.
-    assert len(rollback_messages) == 2
-    assert rollback_messages[0].HasField("set_channel")
-    assert rollback_messages[0].set_channel.index == 1
-    assert rollback_messages[0].set_channel.role == Channel.Role.DISABLED
-    assert rollback_messages[1].HasField("set_config")
-    assert rollback_messages[1].set_config.HasField("lora")
-    assert rollback_messages[1].set_config.lora.hop_limit == 3
-    assert admin_indexes == [0, 0, 0]
+    rollback_channel_messages = [
+        msg
+        for msg in rollback_messages
+        if msg.HasField("set_channel") and msg.set_channel.role == Channel.Role.DISABLED
+    ]
+    rollback_lora_messages = [
+        msg
+        for msg in rollback_messages
+        if msg.HasField("set_config") and msg.set_config.HasField("lora")
+    ]
+    assert len(rollback_channel_messages) == 1
+    assert rollback_channel_messages[0].set_channel.index == 1
+    assert len(rollback_lora_messages) == 1
+    assert rollback_lora_messages[0].set_config.lora.hop_limit == 3
+    assert admin_indexes == [0, 0, 0, 0]
     assert anode.localConfig.lora.hop_limit == 3
 
 

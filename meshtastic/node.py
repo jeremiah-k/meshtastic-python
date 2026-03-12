@@ -640,6 +640,18 @@ class Node:
             onResponse = self.onAckNak
         self._send_admin(p, onResponse=onResponse)
 
+    def _write_channel_snapshot(
+        self,
+        channel_to_write: channel_pb2.Channel,
+        adminIndex: int | None = None,
+    ) -> None:
+        """Write a pre-built channel snapshot to the device."""
+        self.ensureSessionKey(adminIndex=adminIndex)
+        p = admin_pb2.AdminMessage()
+        p.set_channel.CopyFrom(channel_to_write)
+        self._send_admin(p, adminIndex=adminIndex)
+        logger.debug(f"Wrote channel {channel_to_write.index}")
+
     def writeChannel(self, channelIndex: int, adminIndex: int | None = None) -> None:
         """Write the channel at the given index to the device.
 
@@ -668,11 +680,7 @@ class Node:
                 )
             channel_to_write = channel_pb2.Channel()
             channel_to_write.CopyFrom(channels[channelIndex])
-        self.ensureSessionKey(adminIndex=adminIndex)
-        p = admin_pb2.AdminMessage()
-        p.set_channel.CopyFrom(channel_to_write)
-        self._send_admin(p, adminIndex=adminIndex)
-        logger.debug(f"Wrote channel {channelIndex}")
+        self._write_channel_snapshot(channel_to_write, adminIndex=adminIndex)
 
     # COMPAT_STABLE_SHIM: historical channel lookup helpers return live Channel
     # objects for mutate-then-write workflows (get*() -> edit -> writeChannel()).
@@ -1034,7 +1042,7 @@ class Node:
             # Add new channels with names not already present
             # Don't change existing channels
             ignored_channel_names: list[str] = []
-            channels_to_write: list[tuple[int, str]] = []
+            channels_to_write: list[tuple[channel_pb2.Channel, str]] = []
             original_channels_by_index: dict[int, channel_pb2.Channel] = {}
             # Snapshot admin channel path before staging writes so sends do not
             # depend on locally-mutated channel state.
@@ -1085,8 +1093,10 @@ class Node:
                     )
                     disabled_channel.settings.CopyFrom(new_settings)
                     disabled_channel.role = channel_pb2.Channel.Role.SECONDARY
+                    staged_channel = channel_pb2.Channel()
+                    staged_channel.CopyFrom(disabled_channel)
                     channels_to_write.append(
-                        (disabled_channel.index, new_settings.name)
+                        (staged_channel, new_settings.name)
                     )
 
             for ignored_name in ignored_channel_names:
@@ -1096,10 +1106,13 @@ class Node:
             written_indices: list[int] = []
             lora_write_started = False
             try:
-                for channel_index, channel_name in channels_to_write:
+                for staged_channel, channel_name in channels_to_write:
                     logger.info(f"Adding new channel '{channel_name}' to device")
-                    written_indices.append(channel_index)
-                    self.writeChannel(channel_index, adminIndex=admin_index_for_write)
+                    written_indices.append(staged_channel.index)
+                    self._write_channel_snapshot(
+                        staged_channel,
+                        adminIndex=admin_index_for_write,
+                    )
                 set_lora = admin_pb2.AdminMessage()
                 set_lora.set_config.lora.CopyFrom(channelSet.lora_config)
                 self.ensureSessionKey(adminIndex=admin_index_for_write)
