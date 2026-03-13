@@ -170,9 +170,7 @@ def test_init_on_node_info_receive_decode_error_updates_metadata_without_user_st
 
     node = iface._get_or_create_by_num(2468135790)
     assert node["user"] == baseline_user_snapshot
-    assert node["lastReceived"]["decoded"]["user"]["error"].startswith(
-        "decode-failed:"
-    )
+    assert node["lastReceived"]["decoded"]["user"]["error"].startswith("decode-failed:")
 
 
 @pytest.mark.unit

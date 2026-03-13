@@ -503,7 +503,9 @@ class Node:
                     f"{configType.name.upper()}_CONFIG"
                 )
             else:
-                p.get_module_config_request = msg_index  # pyright: ignore[reportAttributeAccessIssue]
+                p.get_module_config_request = (
+                    msg_index  # pyright: ignore[reportAttributeAccessIssue]
+                )
 
         self._send_admin(
             p, wantResponse=True, onResponse=onResponse, adminIndex=adminIndex
@@ -786,7 +788,7 @@ class Node:
                 channels_to_rewrite.append((index, channel_snapshot))
             is_local_node = self.iface.localNode == self
 
-        for index, channel_snapshot in channels_to_rewrite:
+        for _index, channel_snapshot in channels_to_rewrite:
             if is_local_node:
                 admin_index_for_write = self._get_admin_channel_index()
             else:
@@ -878,7 +880,8 @@ class Node:
         with self._channels_lock:
             for channel in self.channels or []:
                 if (
-                    channel.settings
+                    channel.role != channel_pb2.Channel.Role.DISABLED
+                    and channel.settings
                     and _is_named_admin_channel_name(channel.settings.name)
                 ):
                     return channel.index
@@ -1068,14 +1071,24 @@ class Node:
         named_admin_index_for_write = admin_write_node._get_named_admin_channel_index()
         has_admin_write_node_named_admin = named_admin_index_for_write is not None
 
+        def _ordered_admin_indexes(*indexes: int | None) -> list[int]:
+            """Return unique non-None admin channel indexes, preserving input order."""
+            ordered: list[int] = []
+            for index in indexes:
+                if index is None or index in ordered:
+                    continue
+                ordered.append(index)
+            return ordered
+
         if addOnly:
             # Add new channels with names not already present
             # Don't change existing channels
             ignored_channel_names: list[str] = []
             channels_to_write: list[tuple[channel_pb2.Channel, str]] = []
-            deferred_add_only_admin_channel: (
-                tuple[channel_pb2.Channel, str] | None
-            ) = None
+            deferred_add_only_admin_channel: tuple[channel_pb2.Channel, str] | None = (
+                None
+            )
+            deferred_add_only_admin_index: int | None = None
             original_channels_by_index: dict[int, channel_pb2.Channel] = {}
             original_lora_config: config_pb2.Config.LoRaConfig | None = None
             # Rollback needs a local LoRa snapshot only when this URL updates LoRa.
@@ -1104,7 +1117,10 @@ class Node:
                 for chs in channelSet.settings:
                     channel_name = chs.name
                     normalized_name = channel_name.lower()
-                    if channel_name == "" or normalized_name in existing_names_normalized:
+                    if (
+                        channel_name == ""
+                        or normalized_name in existing_names_normalized
+                    ):
                         ignored_channel_names.append(channel_name)
                         continue
                     pending_new_settings.append(chs)
@@ -1126,9 +1142,7 @@ class Node:
                     staged_channel.CopyFrom(disabled_channel)
                     staged_channel.settings.CopyFrom(new_settings)
                     staged_channel.role = channel_pb2.Channel.Role.SECONDARY
-                    channels_to_write.append(
-                        (staged_channel, new_settings.name)
-                    )
+                    channels_to_write.append((staged_channel, new_settings.name))
 
             if not has_admin_write_node_named_admin:
                 deferred_add_only_admin_channel = next(
@@ -1139,6 +1153,8 @@ class Node:
                     ),
                     None,
                 )
+            if deferred_add_only_admin_channel is not None:
+                deferred_add_only_admin_index = deferred_add_only_admin_channel[0].index
 
             for ignored_name in ignored_channel_names:
                 logger.info(
@@ -1185,21 +1201,59 @@ class Node:
                 )
                 rollback_failed = False
                 written_index_set = set(written_indices)
-                for index, rollback_channel in original_channels_by_index.items():
-                    if index in written_index_set:
+                if deferred_add_only_admin_index in written_index_set:
+                    rollback_admin_indexes = _ordered_admin_indexes(
+                        deferred_add_only_admin_index,
+                        admin_index_for_write,
+                    )
+                else:
+                    rollback_admin_indexes = _ordered_admin_indexes(
+                        admin_index_for_write,
+                        deferred_add_only_admin_index,
+                    )
+                channel_rollback_order: list[int] = []
+                if (
+                    deferred_add_only_admin_index is not None
+                    and deferred_add_only_admin_index in written_index_set
+                ):
+                    channel_rollback_order.append(deferred_add_only_admin_index)
+                for index in reversed(written_indices):
+                    if index not in channel_rollback_order:
+                        channel_rollback_order.append(index)
+                for index in channel_rollback_order:
+                    rollback_channel = original_channels_by_index.get(index)
+                    if rollback_channel is None:
+                        continue
+                    rollback_succeeded = False
+                    last_rollback_error: Exception | None = None
+                    for rollback_admin_index in rollback_admin_indexes:
                         try:
                             self._write_channel_snapshot(
                                 rollback_channel,
-                                adminIndex=admin_index_for_write,
+                                adminIndex=rollback_admin_index,
                             )
+                            rollback_succeeded = True
+                            break
                         # Best-effort rollback path; keep attempting remaining steps.
-                        except Exception:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
-                            rollback_failed = True
-                            logger.warning(
-                                "Rollback of channel index %s failed after addOnly partial failure.",
-                                index,
-                                exc_info=True,
-                            )
+                        except (
+                            Exception
+                        ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                            last_rollback_error = rollback_error
+                    if not rollback_succeeded:
+                        rollback_failed = True
+                        logger.warning(
+                            "Rollback of channel index %s failed after addOnly partial failure.",
+                            index,
+                            exc_info=(
+                                None
+                                if last_rollback_error is None
+                                else (
+                                    type(last_rollback_error),
+                                    last_rollback_error,
+                                    last_rollback_error.__traceback__,
+                                )
+                            ),
+                        )
                 if rollback_failed:
                     with self._channels_lock:
                         self.channels = None
@@ -1210,18 +1264,34 @@ class Node:
                 if lora_write_started and original_lora_config is not None:
                     rollback_lora = admin_pb2.AdminMessage()
                     rollback_lora.set_config.lora.CopyFrom(original_lora_config)
-                    try:
-                        self.ensureSessionKey(adminIndex=admin_index_for_write)
-                        self._send_admin(
-                            rollback_lora,
-                            adminIndex=admin_index_for_write,
-                        )
-                        self.localConfig.lora.CopyFrom(original_lora_config)
-                    # Best-effort rollback path; keep original failure semantics.
-                    except Exception:  # noqa: BLE001 - preserve original failure while attempting best-effort LoRa rollback
+                    rollback_lora_succeeded = False
+                    last_rollback_lora_error: Exception | None = None
+                    for rollback_admin_index in rollback_admin_indexes:
+                        try:
+                            self.ensureSessionKey(adminIndex=rollback_admin_index)
+                            self._send_admin(
+                                rollback_lora,
+                                adminIndex=rollback_admin_index,
+                            )
+                            self.localConfig.lora.CopyFrom(original_lora_config)
+                            rollback_lora_succeeded = True
+                            break
+                        # Best-effort rollback path; keep original failure semantics.
+                        # Preserve original failure while attempting best-effort LoRa rollback.
+                        except Exception as rollback_lora_error:  # noqa: BLE001
+                            last_rollback_lora_error = rollback_lora_error
+                    if not rollback_lora_succeeded:
                         logger.warning(
                             "Rollback of LoRa config failed after addOnly partial failure.",
-                            exc_info=True,
+                            exc_info=(
+                                None
+                                if last_rollback_lora_error is None
+                                else (
+                                    type(last_rollback_lora_error),
+                                    last_rollback_lora_error,
+                                    last_rollback_lora_error.__traceback__,
+                                )
+                            ),
                         )
                         self.localConfig.ClearField("lora")
                         logger.warning(
@@ -1292,32 +1362,39 @@ class Node:
                 disabled_channel.role = channel_pb2.Channel.Role.DISABLED
                 staged_channels.append(disabled_channel)
 
-            staged_named_admin_channel = next(
-                (
-                    staged_channel
-                    for staged_channel in staged_channels
-                    if staged_channel.settings
-                    and staged_channel.settings.name
-                    and _is_named_admin_channel_name(staged_channel.settings.name)
-                ),
-                None,
+            staged_named_admin_channels = [
+                staged_channel
+                for staged_channel in staged_channels
+                if staged_channel.settings
+                and staged_channel.settings.name
+                and _is_named_admin_channel_name(staged_channel.settings.name)
+            ]
+            if len(staged_named_admin_channels) > 1:
+                self._raise_interface_error(
+                    "URL contains multiple channels named 'admin'; only one is allowed"
+                )
+            staged_named_admin_channel = (
+                staged_named_admin_channels[0] if staged_named_admin_channels else None
             )
             staged_channels_by_index = {
-                staged_channel.index: staged_channel for staged_channel in staged_channels
+                staged_channel.index: staged_channel
+                for staged_channel in staged_channels
             }
             deferred_new_named_admin_channel = staged_named_admin_channel
+            deferred_new_named_admin_index = (
+                deferred_new_named_admin_channel.index
+                if deferred_new_named_admin_channel is not None
+                else None
+            )
             deferred_previous_admin_slot_channel: channel_pb2.Channel | None = None
             if named_admin_index_for_write is not None:
                 previous_admin_slot_channel = staged_channels_by_index.get(
                     named_admin_index_for_write
                 )
-                if (
-                    previous_admin_slot_channel is not None
-                    and (
-                        deferred_new_named_admin_channel is None
-                        or previous_admin_slot_channel.index
-                        != deferred_new_named_admin_channel.index
-                    )
+                if previous_admin_slot_channel is not None and (
+                    deferred_new_named_admin_channel is None
+                    or previous_admin_slot_channel.index
+                    != deferred_new_named_admin_channel.index
                 ):
                     deferred_previous_admin_slot_channel = previous_admin_slot_channel
             deferred_channel_indexes = {
@@ -1366,7 +1443,9 @@ class Node:
                         deferred_new_named_admin_channel.index,
                         deferred_new_named_admin_channel,
                     )
-                    written_channel_indices.append(deferred_new_named_admin_channel.index)
+                    written_channel_indices.append(
+                        deferred_new_named_admin_channel.index
+                    )
                     self._write_channel_snapshot(
                         deferred_new_named_admin_channel,
                         adminIndex=admin_index_for_write,
@@ -1413,49 +1492,101 @@ class Node:
                     exc_info=True,
                 )
                 rollback_failed = False
-                restored_indices: set[int] = set()
+                written_index_set = set(written_channel_indices)
+                if deferred_new_named_admin_index in written_index_set:
+                    rollback_admin_indexes = _ordered_admin_indexes(
+                        deferred_new_named_admin_index,
+                        rollback_admin_index_for_write,
+                        admin_index_for_write,
+                    )
+                else:
+                    rollback_admin_indexes = _ordered_admin_indexes(
+                        rollback_admin_index_for_write,
+                        admin_index_for_write,
+                        deferred_new_named_admin_index,
+                    )
+                replace_channel_rollback_order: list[int] = []
+                if (
+                    deferred_new_named_admin_index is not None
+                    and deferred_new_named_admin_index in written_index_set
+                ):
+                    replace_channel_rollback_order.append(
+                        deferred_new_named_admin_index
+                    )
                 for index in reversed(written_channel_indices):
-                    if index in restored_indices:
-                        continue
-                    restored_indices.add(index)
+                    if index not in replace_channel_rollback_order:
+                        replace_channel_rollback_order.append(index)
+                for index in replace_channel_rollback_order:
                     replace_rollback_channel: channel_pb2.Channel | None = (
                         replace_original_channels_by_index.get(index)
                     )
                     if replace_rollback_channel is None:
                         continue
-                    try:
-                        self._write_channel_snapshot(
-                            replace_rollback_channel,
-                            adminIndex=rollback_admin_index_for_write,
-                        )
-                        if (
-                            deferred_new_named_admin_channel is not None
-                            and index == deferred_new_named_admin_channel.index
-                        ):
-                            rollback_admin_index_for_write = admin_index_for_write
-                    except Exception:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                    rollback_succeeded = False
+                    replace_last_rollback_error: Exception | None = None
+                    for rollback_admin_index in rollback_admin_indexes:
+                        try:
+                            self._write_channel_snapshot(
+                                replace_rollback_channel,
+                                adminIndex=rollback_admin_index,
+                            )
+                            rollback_succeeded = True
+                            break
+                        except (
+                            Exception
+                        ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                            replace_last_rollback_error = rollback_error
+                    if not rollback_succeeded:
                         rollback_failed = True
                         logger.warning(
                             "Rollback of channel index %s failed after replace-all partial failure.",
                             index,
-                            exc_info=True,
+                            exc_info=(
+                                None
+                                if replace_last_rollback_error is None
+                                else (
+                                    type(replace_last_rollback_error),
+                                    replace_last_rollback_error,
+                                    replace_last_rollback_error.__traceback__,
+                                )
+                            ),
                         )
                 if lora_write_started:
                     if replace_original_lora_config is not None:
                         rollback_lora = admin_pb2.AdminMessage()
-                        rollback_lora.set_config.lora.CopyFrom(replace_original_lora_config)
-                        try:
-                            self.ensureSessionKey(adminIndex=rollback_admin_index_for_write)
-                            self._send_admin(
-                                rollback_lora,
-                                adminIndex=rollback_admin_index_for_write,
-                            )
-                            self.localConfig.lora.CopyFrom(replace_original_lora_config)
-                        except Exception:  # noqa: BLE001 - preserve original failure while attempting best-effort LoRa rollback
+                        rollback_lora.set_config.lora.CopyFrom(
+                            replace_original_lora_config
+                        )
+                        rollback_lora_succeeded = False
+                        replace_last_rollback_lora_error: Exception | None = None
+                        for rollback_admin_index in rollback_admin_indexes:
+                            try:
+                                self.ensureSessionKey(adminIndex=rollback_admin_index)
+                                self._send_admin(
+                                    rollback_lora,
+                                    adminIndex=rollback_admin_index,
+                                )
+                                self.localConfig.lora.CopyFrom(
+                                    replace_original_lora_config
+                                )
+                                rollback_lora_succeeded = True
+                                break
+                            # Preserve original failure while attempting best-effort LoRa rollback.
+                            except Exception as rollback_lora_error:  # noqa: BLE001
+                                replace_last_rollback_lora_error = rollback_lora_error
+                        if not rollback_lora_succeeded:
                             rollback_failed = True
                             logger.warning(
                                 "Rollback of LoRa config failed after replace-all partial failure.",
-                                exc_info=True,
+                                exc_info=(
+                                    None
+                                    if replace_last_rollback_lora_error is None
+                                    else (
+                                        type(replace_last_rollback_lora_error),
+                                        replace_last_rollback_lora_error,
+                                        replace_last_rollback_lora_error.__traceback__,
+                                    )
+                                ),
                             )
                             self.localConfig.ClearField("lora")
                             logger.warning(

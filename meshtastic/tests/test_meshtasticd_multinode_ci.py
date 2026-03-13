@@ -70,6 +70,7 @@ CLI_DEFAULT_TIMEOUT_SECONDS = _positive_float_from_env(
     30.0,
 )
 MIN_CHANNEL_URL_LENGTH = 120
+SATURATION_ERROR_MSG = "No free channels were found"
 INFO_CHANNEL_LINE_RE = re.compile(
     r'^\s*Index (?P<idx>\d+): (?P<role>PRIMARY|SECONDARY).*"name": "(?P<name>[^"]*)"',
     re.MULTILINE,
@@ -134,7 +135,18 @@ def _extract_channel_names(info_output: str) -> dict[int, str]:
 
 
 def _build_add_only_channel_url(channel_name: str) -> str:
-    """Build a channel-only add URL with one uniquely named secondary channel."""
+    """Build a channel-only add URL with one uniquely named secondary channel.
+
+    Parameters
+    ----------
+    channel_name : str
+        Name to assign to the staged secondary channel.
+
+    Returns
+    -------
+    str
+        A meshtastic.org URL encoding a ChannelSet with a single named channel.
+    """
     channel_set = apponly_pb2.ChannelSet()
     staged_channel = channel_set.settings.add()
     staged_channel.name = channel_name
@@ -154,6 +166,23 @@ def _estimate_saturation_add_attempts(
 
     Prefer exported channel capacity when available; otherwise use a conservative
     bound from observed configured channel count.
+
+    Parameters
+    ----------
+    host : str
+        Host passed to the CLI ``--host`` argument.
+    meshtastic_bin : str
+        Path or name of the meshtastic CLI binary under test.
+    configured_channel_count : int
+        Number of channels already configured on the device.
+    tmp_path : Path
+        Temporary directory used for intermediate export files.
+
+    Returns
+    -------
+    int
+        Upper bound on how many ``--ch-add`` attempts are needed to observe
+        saturation.
     """
     probe_export_path = tmp_path / "meshtasticd-multinode-capacity-probe.yaml"
     _run_host_cli_ok(
@@ -512,7 +541,7 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
             )
             if returncode == 0:
                 continue
-            assert "No free channels were found" in output
+            assert SATURATION_ERROR_MSG in output
             saturated = True
             break
         assert saturated
@@ -527,7 +556,7 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
             timeout=CLI_DEFAULT_TIMEOUT_SECONDS,
         )
         assert add_rc != 0
-        assert "No free channels were found" in add_out
+        assert SATURATION_ERROR_MSG in add_out
 
         after_info = _run_host_cli_ok(HOST_A, "--info", meshtastic_bin=meshtastic_bin)
         assert _extract_channel_names(after_info) == before_channels

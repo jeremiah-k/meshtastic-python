@@ -26,7 +26,7 @@ try:
 except ImportError:
     print_color = None
 
-from pubsub import pub  # type: ignore[import-untyped]
+from pubsub import pub
 from tabulate import tabulate
 
 import meshtastic.node
@@ -1531,9 +1531,7 @@ class MeshInterface:  # pylint: disable=R0902
                         )
                         return
                     resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
-                self._response_wait_acks.add(
-                    (acknowledgment_attr, resolved_request_id)
-                )
+                self._response_wait_acks.add((acknowledgment_attr, resolved_request_id))
             elif has_request_scope:
                 logger.debug(
                     "Ignoring stale unscoped acknowledgement for %s while scoped waits are active: %s",
@@ -2521,6 +2519,7 @@ class MeshInterface:  # pylint: disable=R0902
             If waiting times out before an ACK/NAK is received.
         """
         success = self._timeout.waitForAckNak(self._acknowledgment)
+        self._raise_wait_error_if_present("receivedNak")
         if not success:
             raise MeshInterface.MeshInterfaceError(
                 "Timed out waiting for an acknowledgment"
@@ -2623,9 +2622,7 @@ class MeshInterface:  # pylint: disable=R0902
                     request_id,
                     timeout_seconds=self._timeout.expireTimeout,
                 )
-            self._raise_wait_error_if_present(
-                WAIT_ATTR_POSITION, request_id=request_id
-            )
+            self._raise_wait_error_if_present(WAIT_ATTR_POSITION, request_id=request_id)
             if not success:
                 raise MeshInterface.MeshInterfaceError("Timed out waiting for position")
         finally:
@@ -2656,9 +2653,7 @@ class MeshInterface:  # pylint: disable=R0902
                     request_id,
                     timeout_seconds=self._timeout.expireTimeout,
                 )
-            self._raise_wait_error_if_present(
-                WAIT_ATTR_WAYPOINT, request_id=request_id
-            )
+            self._raise_wait_error_if_present(WAIT_ATTR_WAYPOINT, request_id=request_id)
             if not success:
                 raise MeshInterface.MeshInterfaceError("Timed out waiting for waypoint")
         finally:
@@ -3111,13 +3106,14 @@ class MeshInterface:  # pylint: disable=R0902
         if queueStatus.res:
             return
 
+        with self._queue_lock:
+            queue_snapshot = tuple(self.queue.keys())
+            justQueued = self.queue.pop(queueStatus.mesh_packet_id, None)
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
                 "queue: %s",
-                " ".join(f"{key:08x}" for key in self.queue),
+                " ".join(f"{key:08x}" for key in queue_snapshot),
             )
-        with self._queue_lock:
-            justQueued = self.queue.pop(queueStatus.mesh_packet_id, None)
 
         if justQueued is None and queueStatus.mesh_packet_id != 0:
             with self._queue_lock:
@@ -3573,7 +3569,9 @@ class MeshInterface:  # pylint: disable=R0902
                             DECODE_ERROR_KEY: decode_error
                         }
                         if handler.name == "routing":
-                            asDict["decoded"][handler.name]["errorReason"] = decode_error
+                            asDict["decoded"][handler.name][
+                                "errorReason"
+                            ] = decode_error
                         if handler.name == "admin":
                             # Admin callbacks frequently expect decoded.admin.raw.
                             # Avoid dispatching malformed payloads through that path.
@@ -3613,7 +3611,9 @@ class MeshInterface:  # pylint: disable=R0902
                             or callback_name == "onAckNak"
                             or candidate.ackPermitted
                         ):
-                            response_handler = self.responseHandlers.pop(requestId, None)
+                            response_handler = self.responseHandlers.pop(
+                                requestId, None
+                            )
                 if dropped_due_to_decode_failure:
                     logger.warning(
                         "Dropping response callback for requestId %s due to admin decode failure.",

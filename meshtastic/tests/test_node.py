@@ -677,7 +677,7 @@ def test_writeChannel_with_no_channels_raises_mesh_error(
 def test_writeChannel_forwards_admin_index_to_session_key_bootstrap(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """writeChannel should use the same admin index for session bootstrap and channel write."""
+    """WriteChannel should use the same admin index for session bootstrap and channel write."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
     primary = Channel(index=0, role=Channel.Role.PRIMARY)
     primary.settings.name = "primary"
@@ -1245,6 +1245,24 @@ def test_channel_lookup_helpers_cover_name_disabled_and_admin_index(
     assert anode.getDisabledChannel() is None
 
 
+@pytest.mark.unit
+def test_get_named_admin_channel_index_ignores_disabled_admin_channels(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """_get_named_admin_channel_index should skip channels that are DISABLED."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    disabled_admin = Channel(index=1, role=Channel.Role.DISABLED)
+    disabled_admin.settings.name = "admin"
+    secondary = Channel(index=2, role=Channel.Role.SECONDARY)
+    secondary.settings.name = "secondary"
+    anode.channels = [primary, disabled_admin, secondary]
+
+    assert anode._get_named_admin_channel_index() is None
+    assert anode._get_admin_channel_index() == 0
+
+
 def _decode_channel_set_from_url(url: str) -> apponly_pb2.ChannelSet:
     """Decode and parse a ChannelSet from a meshtastic URL."""
     b64 = url.split("#")[-1]
@@ -1612,10 +1630,12 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
         anode.setURL(url, addOnly=True)
 
     assert ensure_session_key_spy.call_args_list
-    assert all(
-        _get_mock_call_arg(call, name="adminIndex", positional_index=0) == 0
+    ensure_session_admin_indexes = [
+        _get_mock_call_arg(call, name="adminIndex", positional_index=0)
         for call in ensure_session_key_spy.call_args_list
-    )
+    ]
+    assert ensure_session_admin_indexes[0] == 0
+    assert set(ensure_session_admin_indexes) <= {0, 1}
 
     # Admin index is snapshotted before local mutation (0 fallback here), and
     # the first newly introduced named-admin channel is deferred until last.
@@ -1629,10 +1649,11 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
     assert after_snapshot[1] == before_snapshot[1]
     assert anode.channels[2].settings.name == "raced-name"
 
-    # Rollback should include the in-flight channel index as well, so both staged
-    # channels are restored when writeChannel fails mid-send.
+    # Rollback includes the in-flight channel index as well. Since the failure
+    # happened on the deferred admin write, rollback first retries via the
+    # deferred index.
     # No LoRa rollback is attempted because the LoRa write never started.
-    assert rollback_writes == [(1, 0), (2, 0)]
+    assert rollback_writes == [(1, 1), (2, 1)]
 
 
 @pytest.mark.unit
@@ -1668,7 +1689,8 @@ def test_setURL_add_only_invalidates_channels_cache_on_partial_rollback_failure(
                     raise RuntimeError("write failed during addOnly batch")
             elif (
                 msg.set_channel.role == Channel.Role.DISABLED
-                and send_calls["rollback_failures"] == 0
+                and msg.set_channel.index == 1
+                and send_calls["rollback_failures"] < 2
             ):
                 send_calls["rollback_failures"] += 1
                 raise OSError("channel rollback failed")
@@ -1690,13 +1712,75 @@ def test_setURL_add_only_invalidates_channels_cache_on_partial_rollback_failure(
         anode.setURL(url, addOnly=True)
 
     assert ensure_session_key_spy.call_args_list
-    assert all(
-        _get_mock_call_arg(call, name="adminIndex", positional_index=0) == 0
+    ensure_session_admin_indexes = [
+        _get_mock_call_arg(call, name="adminIndex", positional_index=0)
         for call in ensure_session_key_spy.call_args_list
-    )
+    ]
+    assert ensure_session_admin_indexes[0] == 0
+    assert set(ensure_session_admin_indexes) <= {0, 1}
     assert send_calls["stage_writes"] == 2
-    assert send_calls["rollback_failures"] == 1
+    assert send_calls["rollback_failures"] == 2
     assert anode.channels is None
+
+
+@pytest.mark.unit
+def test_setURL_add_only_rolls_back_with_fallback_admin_index_after_deferred_admin_failure(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Deferred addOnly admin-write failures should rollback using alternate admin indexes."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.iface.localNode = anode
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    disabled1 = Channel(index=1, role=Channel.Role.DISABLED)
+    disabled2 = Channel(index=2, role=Channel.Role.DISABLED)
+    anode.channels = [primary, disabled1, disabled2]
+    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
+
+    deferred_failure_seen = {"seen": False}
+    rollback_attempts: list[tuple[int, int | None]] = []
+
+    def _send_admin_with_deferred_admin_failure(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse)
+        if msg.HasField("set_channel"):
+            if (
+                msg.set_channel.role == Channel.Role.SECONDARY
+                and msg.set_channel.settings.name == "admin"
+                and not deferred_failure_seen["seen"]
+            ):
+                deferred_failure_seen["seen"] = True
+                raise RuntimeError("deferred admin write failed")
+            if msg.set_channel.role == Channel.Role.DISABLED:
+                rollback_attempts.append((msg.set_channel.index, adminIndex))
+                if adminIndex == 1:
+                    raise OSError("stale admin index")
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = _send_admin_with_deferred_admin_failure  # type: ignore[method-assign,assignment]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "admin"
+    first.psk = b"\x03"
+    second = channel_set.settings.add()
+    second.name = "new-b"
+    second.psk = b"\x04"
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+    with pytest.raises(RuntimeError, match="deferred admin write failed"):
+        anode.setURL(url, addOnly=True)
+
+    assert anode.channels is not None
+    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    assert after_snapshot == before_snapshot
+    assert rollback_attempts == [(1, 1), (1, 0), (2, 1), (2, 0)]
 
 
 @pytest.mark.unit
@@ -1729,7 +1813,10 @@ def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
     ) -> mesh_pb2.MeshPacket:
         _ = (wantResponse, onResponse)
         admin_indexes.append(adminIndex)
-        if msg.HasField("set_channel") and msg.set_channel.role == Channel.Role.SECONDARY:
+        if (
+            msg.HasField("set_channel")
+            and msg.set_channel.role == Channel.Role.SECONDARY
+        ):
             staged_channel_writes.append(msg.set_channel.index)
         if msg.HasField("set_config") and msg.set_config.HasField("lora"):
             if (
@@ -1897,6 +1984,35 @@ def test_setURL_replace_defers_first_named_admin_write_until_end(
 
 
 @pytest.mark.unit
+def test_setURL_replace_rejects_multiple_named_admin_channels(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=False) should reject URLs that stage multiple admin channels."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [
+        Channel(index=0, role=Channel.Role.DISABLED),
+        Channel(index=1, role=Channel.Role.DISABLED),
+        Channel(index=2, role=Channel.Role.DISABLED),
+    ]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "admin"
+    first.psk = b"\x01"
+    second = channel_set.settings.add()
+    second.name = "AdMiN"
+    second.psk = b"\x02"
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match="multiple channels named 'admin'",
+    ):
+        anode.setURL(url, addOnly=False)
+
+
+@pytest.mark.unit
 def test_setURL_replace_when_admin_slot_moves_defers_old_slot_cleanup(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
@@ -1951,6 +2067,78 @@ def test_setURL_replace_when_admin_slot_moves_defers_old_slot_cleanup(
         ("lora", 1),
         ("channel:0", 1),
         ("channel:1", 0),
+    ]
+
+
+@pytest.mark.unit
+def test_setURL_replace_rolls_back_with_fallback_admin_index_after_deferred_admin_failure(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Replace-all rollback should retry with alternate admin indexes after deferred admin failure."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.iface.localNode = anode
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    old_admin = Channel(index=1, role=Channel.Role.SECONDARY)
+    old_admin.settings.name = "admin"
+    third = Channel(index=2, role=Channel.Role.SECONDARY)
+    third.settings.name = "third"
+    anode.channels = [primary, old_admin, third]
+    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
+
+    deferred_failure_seen = {"seen": False}
+    rollback_attempts: list[tuple[int, str, int | None]] = []
+
+    def _send_admin_with_deferred_admin_failure(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse)
+        if msg.HasField("set_channel"):
+            if (
+                msg.set_channel.index == 0
+                and msg.set_channel.settings.name == "admin"
+                and not deferred_failure_seen["seen"]
+            ):
+                deferred_failure_seen["seen"] = True
+                raise RuntimeError("deferred admin write failed")
+            if msg.set_channel.settings.name in {"primary", "third"}:
+                rollback_attempts.append(
+                    (msg.set_channel.index, msg.set_channel.settings.name, adminIndex)
+                )
+                if adminIndex == 0:
+                    raise OSError("stale admin index")
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = _send_admin_with_deferred_admin_failure  # type: ignore[method-assign,assignment]
+
+    channel_set = apponly_pb2.ChannelSet()
+    moved_admin = channel_set.settings.add()
+    moved_admin.name = "admin"
+    moved_admin.psk = b"\x21"
+    replacement_for_old_admin = channel_set.settings.add()
+    replacement_for_old_admin.name = "secondary-new"
+    replacement_for_old_admin.psk = b"\x22"
+    replacement_third = channel_set.settings.add()
+    replacement_third.name = "third-new"
+    replacement_third.psk = b"\x23"
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+    with pytest.raises(RuntimeError, match="deferred admin write failed"):
+        anode.setURL(url, addOnly=False)
+
+    assert anode.channels is not None
+    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    assert after_snapshot == before_snapshot
+    assert rollback_attempts == [
+        (0, "primary", 0),
+        (0, "primary", 1),
+        (2, "third", 0),
+        (2, "third", 1),
     ]
 
 
@@ -2012,9 +2200,12 @@ def test_setURL_replace_rolls_back_written_channels_on_midflight_failure(
     rollback_channels = [
         msg.set_channel
         for msg in sent_messages
-        if msg.HasField("set_channel") and msg.set_channel.settings.name in {"primary", "existing"}
+        if msg.HasField("set_channel")
+        and msg.set_channel.settings.name in {"primary", "existing"}
     ]
-    assert {(channel.index, channel.settings.name) for channel in rollback_channels} == {
+    assert {
+        (channel.index, channel.settings.name) for channel in rollback_channels
+    } == {
         (0, "primary"),
         (1, "existing"),
     }
@@ -2653,7 +2844,7 @@ def test_onRequestGetMetadata_logs_valid_and_fallback_enum_values(
 
 @pytest.mark.unit
 def test_onRequestGetMetadata_updates_metadata_under_node_db_lock() -> None:
-    """onRequestGetMetadata should update iface.metadata while holding iface._node_db_lock."""
+    """OnRequestGetMetadata should update iface.metadata while holding iface._node_db_lock."""
     lock = _TrackingLock()
 
     class _MetadataAssignmentProbeIface:
