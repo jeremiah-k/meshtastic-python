@@ -170,6 +170,7 @@ logger = logging.getLogger(__name__)
 
 REDACTED_TEXT = "<redacted>"
 REDACTED_BYTES = b"<redacted>"
+DECODE_ERROR_KEY = "error"
 
 
 ResponseCallback = Callable[[dict[str, Any]], Any]
@@ -380,7 +381,7 @@ def _on_position_receive(iface: Any, as_dict: dict[str, Any]) -> None:
                 type(p).__name__,
             )
             return
-        if "error" in p:
+        if DECODE_ERROR_KEY in p:
             logger.debug(
                 "Skipping position state update from=%s due to decode error payload",
                 sender,
@@ -425,7 +426,7 @@ def _on_node_info_receive(iface: Any, as_dict: dict[str, Any]) -> None:
                 type(p).__name__,
             )
             return
-        if "error" in p:
+        if DECODE_ERROR_KEY in p:
             logger.debug(
                 "Skipping user state update from=%s due to decode error payload",
                 sender,

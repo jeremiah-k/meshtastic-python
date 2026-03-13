@@ -507,7 +507,15 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
     tmp_path: Path,
     meshtastic_bin: str,
 ) -> None:
-    """`--ch-add-url` should fail atomically when no DISABLED slots remain."""
+    """`--ch-add-url` should fail atomically when no DISABLED slots remain.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Temporary directory used for intermediate export files.
+    meshtastic_bin : str
+        Path or name of the meshtastic CLI binary under test.
+    """
     _wait_for_host_ready(HOST_A, meshtastic_bin)
     baseline_export_path = tmp_path / "meshtasticd-multinode-a-baseline.yaml"
     _run_host_cli_ok(
@@ -552,6 +560,16 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
             meshtastic_bin=meshtastic_bin,
         )
         saturated_channels = _extract_channel_names(saturated_info)
+        saturated_export_before_path = tmp_path / "meshtasticd-multinode-a-sat-before.yaml"
+        _run_host_cli_ok(
+            HOST_A,
+            "--export-config",
+            str(saturated_export_before_path),
+            meshtastic_bin=meshtastic_bin,
+        )
+        saturated_config_before = yaml.safe_load(
+            saturated_export_before_path.read_text(encoding="utf-8")
+        )
 
         channel_name = "CIRollbackProbe"
         channel_url = _build_add_only_channel_url(channel_name)
@@ -568,6 +586,17 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
         after_info = _run_host_cli_ok(HOST_A, "--info", meshtastic_bin=meshtastic_bin)
         assert _extract_channel_names(after_info) == saturated_channels
         assert channel_name not in after_info
+        saturated_export_after_path = tmp_path / "meshtasticd-multinode-a-sat-after.yaml"
+        _run_host_cli_ok(
+            HOST_A,
+            "--export-config",
+            str(saturated_export_after_path),
+            meshtastic_bin=meshtastic_bin,
+        )
+        saturated_config_after = yaml.safe_load(
+            saturated_export_after_path.read_text(encoding="utf-8")
+        )
+        assert saturated_config_after == saturated_config_before
     finally:
         _run_host_cli_ok(
             HOST_A,

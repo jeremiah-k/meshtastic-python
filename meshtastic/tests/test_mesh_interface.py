@@ -133,9 +133,10 @@ def _register_response_capture(
     def _response_callback(packet: dict[str, Any]) -> None:
         callback_calls.append(packet)
 
-    iface.responseHandlers[request_id] = ResponseHandler(
-        callback=_response_callback, ackPermitted=True
-    )
+    with iface._response_handlers_lock:
+        iface.responseHandlers[request_id] = ResponseHandler(
+            callback=_response_callback, ackPermitted=True
+        )
     return callback_calls
 
 
@@ -933,6 +934,9 @@ def test_sendPacket_alias_with_destination_as_int(
 def test_sendPacket_with_destination_starting_with_a_bang() -> None:
     """Unsupported bang-prefixed IDs should raise when node DB lookup is unavailable."""
     with MeshInterface(noProto=True) as iface:
+        with iface._node_db_lock:
+            iface.nodes = None
+            iface.nodesByNum = None
         mesh_packet = mesh_pb2.MeshPacket()
         with pytest.raises(
             MeshInterface.MeshInterfaceError,

@@ -546,9 +546,7 @@ def test_setURL_ignores_channels_over_device_limit(
         settings.psk = b"\x01"
     channel_set.lora_config.hop_limit = 7
 
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    encoded = encoded.replace("=", "")
-    url = f"https://meshtastic.org/e/#{encoded}"
+    url = _encode_channel_set_to_url(channel_set)
 
     with caplog.at_level(logging.WARNING):
         anode.setURL(url)
@@ -1307,6 +1305,12 @@ def _decode_channel_set_from_url(url: str) -> apponly_pb2.ChannelSet:
     return channel_set
 
 
+def _encode_channel_set_to_url(channel_set: apponly_pb2.ChannelSet) -> str:
+    """Encode a ChannelSet as a meshtastic URL."""
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    return f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+
 @pytest.mark.unit
 def test_getURL_requests_lora_when_local_config_empty(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
@@ -1372,8 +1376,7 @@ def test_setURL_add_only_adds_unique_named_channels(
     new_channel.name = "new-ch"
     new_channel.psk = b"\x03"
     channel_set.lora_config.hop_limit = 9
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     anode.setURL(url, addOnly=True)
 
@@ -1411,8 +1414,7 @@ def test_setURL_add_only_treats_names_as_case_insensitive_duplicates(
     second = channel_set.settings.add()
     second.name = "admin"
     second.psk = b"\x02"
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     anode.setURL(url, addOnly=True)
 
@@ -1438,8 +1440,7 @@ def test_setURL_add_only_raises_when_no_disabled_slot_available(
     new_channel = channel_set.settings.add()
     new_channel.name = "new-ch"
     new_channel.psk = b"\x01"
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     with pytest.raises(
         MeshInterface.MeshInterfaceError, match="No free channels were found"
@@ -1463,8 +1464,7 @@ def test_setURL_add_only_channel_only_url_skips_lora_snapshot_and_write(
     added = channel_set.settings.add()
     added.name = "new-ch"
     added.psk = b"\x03"
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     anode.setURL(url, addOnly=True)
 
@@ -1515,8 +1515,7 @@ def test_setURL_add_only_defers_first_named_admin_write_until_end(
     second.name = "new-b"
     second.psk = b"\x04"
     channel_set.lora_config.hop_limit = 9
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     anode.setURL(url, addOnly=True)
 
@@ -1542,8 +1541,7 @@ def test_setURL_add_only_requires_loaded_lora_config(
     new_channel.name = "new-ch"
     new_channel.psk = b"\x03"
     channel_set.lora_config.hop_limit = 9
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     with pytest.raises(
         MeshInterface.MeshInterfaceError,
@@ -1587,8 +1585,7 @@ def test_setURL_add_only_is_transactional_when_slots_are_insufficient(
     second.name = "new-b"
     second.psk = b"\x04"
     channel_set.lora_config.hop_limit = 9
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     with pytest.raises(
         MeshInterface.MeshInterfaceError, match="No free channels were found"
@@ -1655,8 +1652,7 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
     second = channel_set.settings.add()
     second.name = "new-b"
     second.psk = b"\x04"
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     with pytest.raises(RuntimeError, match="write failed during addOnly batch"):
         anode.setURL(url, addOnly=True)
@@ -1737,8 +1733,7 @@ def test_setURL_add_only_invalidates_channels_cache_on_partial_rollback_failure(
     second = channel_set.settings.add()
     second.name = "new-b"
     second.psk = b"\x04"
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     with pytest.raises(RuntimeError, match="write failed during addOnly batch"):
         anode.setURL(url, addOnly=True)
@@ -1803,8 +1798,7 @@ def test_setURL_add_only_rolls_back_with_fallback_admin_index_after_deferred_adm
     second = channel_set.settings.add()
     second.name = "new-b"
     second.psk = b"\x04"
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     with pytest.raises(RuntimeError, match="deferred admin write failed"):
         anode.setURL(url, addOnly=True)
@@ -1868,8 +1862,7 @@ def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
     added.name = "admin"
     added.psk = b"\x03"
     channel_set.lora_config.hop_limit = 9
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     with pytest.raises(OSError, match="LoRa write failed"):
         anode.setURL(url, addOnly=True)
@@ -1947,8 +1940,7 @@ def test_setURL_replace_pins_admin_index_for_channel_and_lora_writes(
     second.name = "new-secondary"
     second.psk = b"\x12"
     channel_set.lora_config.hop_limit = 9
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     anode.setURL(url, addOnly=False)
 
@@ -2007,8 +1999,7 @@ def test_setURL_replace_defers_first_named_admin_write_until_end(
     second.name = "new-b"
     second.psk = b"\x06"
     channel_set.lora_config.hop_limit = 11
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     anode.setURL(url, addOnly=False)
 
@@ -2034,8 +2025,7 @@ def test_setURL_replace_rejects_multiple_named_admin_channels(
     second = channel_set.settings.add()
     second.name = "AdMiN"
     second.psk = b"\x02"
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     with pytest.raises(
         MeshInterface.MeshInterfaceError,
@@ -2089,8 +2079,7 @@ def test_setURL_replace_when_admin_slot_moves_defers_old_slot_cleanup(
     replacement_third.name = "third-new"
     replacement_third.psk = b"\x23"
     channel_set.lora_config.hop_limit = 7
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     anode.setURL(url, addOnly=False)
 
@@ -2157,8 +2146,7 @@ def test_setURL_replace_rolls_back_with_fallback_admin_index_after_deferred_admi
     replacement_third = channel_set.settings.add()
     replacement_third.name = "third-new"
     replacement_third.psk = b"\x23"
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     with pytest.raises(RuntimeError, match="deferred admin write failed"):
         anode.setURL(url, addOnly=False)
@@ -2220,8 +2208,7 @@ def test_setURL_replace_rolls_back_written_channels_on_midflight_failure(
     second = channel_set.settings.add()
     second.name = "new-secondary"
     second.psk = b"\x32"
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     with pytest.raises(RuntimeError, match="replace write failed"):
         anode.setURL(url, addOnly=False)
@@ -2286,8 +2273,7 @@ def test_setURL_replace_rolls_back_lora_when_lora_write_fails(
     second.name = "new-secondary"
     second.psk = b"\x42"
     channel_set.lora_config.hop_limit = 9
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     with pytest.raises(OSError, match="LoRa replace write failed"):
         anode.setURL(url, addOnly=False)
@@ -2325,8 +2311,7 @@ def test_setURL_replace_channel_only_url_skips_lora_write_and_cache_update(
     second = channel_set.settings.add()
     second.name = "new-secondary"
     second.psk = b"\x12"
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     anode.setURL(url, addOnly=False)
 
@@ -2359,8 +2344,7 @@ def test_setURL_replace_disables_channels_omitted_from_url(
     first = channel_set.settings.add()
     first.name = "new-primary"
     first.psk = b"\x11"
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     anode.setURL(url, addOnly=False)
 
@@ -2398,8 +2382,7 @@ def test_setURL_replace_raises_if_channels_disappear_during_assignment(
     setting = channel_set.settings.add()
     setting.name = "primary"
     setting.psk = b"\x01"
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     with pytest.raises(
         MeshInterface.MeshInterfaceError, match="Config or channels not loaded"
@@ -2719,12 +2702,10 @@ def test_setURL_reports_empty_settings_when_channels_loaded(
     anode.channels = [Channel(index=0, role=Channel.Role.DISABLED)]
     channel_set = apponly_pb2.ChannelSet()
     channel_set.lora_config.tx_enabled = True
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-
     with pytest.raises(
         MeshInterface.MeshInterfaceError, match="There were no settings"
     ):
-        anode.setURL(f"https://meshtastic.org/e/#{encoded.rstrip('=')}")
+        anode.setURL(_encode_channel_set_to_url(channel_set))
 
 
 @pytest.mark.unit
@@ -2743,12 +2724,10 @@ def test_setURL_add_only_rechecks_channels_before_addition(
     setting = channel_set.settings.add()
     setting.name = "new-channel"
     setting.psk = b"\x01"
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-
     with pytest.raises(
         MeshInterface.MeshInterfaceError, match="Config or channels not loaded"
     ):
-        anode.setURL(f"https://meshtastic.org/e/#{encoded.rstrip('=')}", addOnly=True)
+        anode.setURL(_encode_channel_set_to_url(channel_set), addOnly=True)
 
 
 @pytest.mark.unit
@@ -2766,12 +2745,10 @@ def test_setURL_replace_rechecks_channels_before_length_calculation(
     setting = channel_set.settings.add()
     setting.name = "primary"
     setting.psk = b"\x01"
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-
     with pytest.raises(
         MeshInterface.MeshInterfaceError, match="Config or channels not loaded"
     ):
-        anode.setURL(f"https://meshtastic.org/e/#{encoded.rstrip('=')}")
+        anode.setURL(_encode_channel_set_to_url(channel_set))
 
 
 @pytest.mark.unit
