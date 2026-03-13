@@ -12,23 +12,24 @@ import threading
 import time
 import types
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn, cast
 from unittest.mock import MagicMock, call, create_autospec, patch
 
+import google.protobuf.json_format
 import pytest
+from google.protobuf.message import Message
 from hypothesis import given
 from hypothesis import strategies as st
 
 import meshtastic.mesh_interface as mesh_interface_module
 
-from .. import (BROADCAST_ADDR, LOCAL_ADDR, NODELESS_WANT_CONFIG_ID,
-                ResponseHandler)
+from .. import BROADCAST_ADDR, LOCAL_ADDR, NODELESS_WANT_CONFIG_ID, ResponseHandler
 from ..mesh_interface import MeshInterface, _timeago
 from ..node import Node
-from ..protobuf import (channel_pb2, config_pb2, mesh_pb2, portnums_pb2,
-                        telemetry_pb2)
+from ..protobuf import channel_pb2, config_pb2, mesh_pb2, portnums_pb2, telemetry_pb2
+
 # TODO
 # from ..config import Config
 from ..util import Timeout
@@ -73,6 +74,101 @@ def _wait_for_scoped_wait_registration(
     pytest.fail(
         f"Timed out waiting for scoped waiter registration: {acknowledgment_attr}#{request_id}"
     )
+
+
+def _inline_queue_work(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Execute queued publish callbacks inline for deterministic packet tests."""
+    monkeypatch.setattr(
+        mesh_interface_module.publishingThread,  # type: ignore[attr-defined]
+        "queueWork",
+        lambda callback: callback(),
+    )
+
+
+def _install_protocol_stub(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    portnum: portnums_pb2.PortNum.ValueType,
+    name: str,
+    protobuf_factory: object,
+    on_receive: Callable[[MeshInterface, dict[str, Any]], None] | MagicMock,
+) -> None:
+    """Install a single protocol stub for a decode-failure test case."""
+    fake_protocol = types.SimpleNamespace(
+        name=name,
+        protobufFactory=protobuf_factory,
+        onReceive=on_receive,
+    )
+    monkeypatch.setattr(
+        mesh_interface_module,
+        "protocols",
+        {portnum: fake_protocol},
+    )
+
+
+def _make_decoded_packet(
+    *,
+    from_node: int = 1,
+    to_node: int = 2,
+    portnum: portnums_pb2.PortNum.ValueType,
+    request_id: int,
+    payload: bytes,
+) -> mesh_pb2.MeshPacket:
+    """Build a MeshPacket with decoded payload fields pre-populated."""
+    packet = mesh_pb2.MeshPacket()
+    setattr(packet, "from", from_node)
+    packet.to = to_node
+    packet.decoded.portnum = portnum
+    packet.decoded.request_id = request_id
+    packet.decoded.payload = payload
+    return packet
+
+
+def _register_response_capture(
+    iface: MeshInterface, request_id: int
+) -> list[dict[str, Any]]:
+    """Register a response handler that appends callback packets to a list."""
+    callback_calls: list[dict[str, Any]] = []
+
+    def _response_callback(packet: dict[str, Any]) -> None:
+        callback_calls.append(packet)
+
+    with iface._response_handlers_lock:
+        iface.responseHandlers[request_id] = ResponseHandler(
+            callback=_response_callback, ackPermitted=True
+        )
+    return callback_calls
+
+
+def _patch_message_to_dict_position_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make MessageToDict fail for Position messages to simulate conversion errors."""
+    original_message_to_dict = google.protobuf.json_format.MessageToDict
+
+    def _message_to_dict_with_position_failure(
+        message: Message,
+        *args: object,
+        **kwargs: object,
+    ) -> dict[str, Any]:
+        if isinstance(message, mesh_pb2.Position):
+            raise TypeError("position dict conversion failed")  # noqa: TRY003
+        message_to_dict = cast(Callable[..., dict[str, Any]], original_message_to_dict)
+        return message_to_dict(message, *args, **kwargs)
+
+    monkeypatch.setattr(
+        google.protobuf.json_format,
+        "MessageToDict",
+        _message_to_dict_with_position_failure,
+    )
+
+
+@pytest.fixture(name="decode_failure_iface")
+def _decode_failure_iface_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[MeshInterface]:
+    """Provide a MeshInterface with inline queueWork for decode-failure tests."""
+    _inline_queue_work(monkeypatch)
+    with MeshInterface(noProto=True) as iface:
+        yield iface
 
 
 @pytest.mark.unit
@@ -835,19 +931,18 @@ def test_sendPacket_alias_with_destination_as_int(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendPacket_with_destination_starting_with_a_bang(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Verify that _send_packet ignores destination IDs that begin with '!' and logs the action.
-
-    Asserts that calling _send_packet with a destinationId starting with "!" results in a log entry containing "Not sending packet".
-
-    """
+def test_sendPacket_with_short_non_hex_bang_destination_raises() -> None:
+    """Short/non-hex bang IDs should raise when node DB lookup is unavailable."""
     with MeshInterface(noProto=True) as iface:
-        with caplog.at_level(logging.DEBUG):
-            meshPacket = mesh_pb2.MeshPacket()
-            iface._send_packet(meshPacket, destinationId="!1234")
-            assert re.search(r"Not sending packet", caplog.text, re.MULTILINE)
+        with iface._node_db_lock:
+            iface.nodes = None
+            iface.nodesByNum = None
+        mesh_packet = mesh_pb2.MeshPacket()
+        with pytest.raises(
+            MeshInterface.MeshInterfaceError,
+            match=r"NodeId !1234 not found and node DB is unavailable",
+        ):
+            iface._send_packet(mesh_packet, destinationId="!1234")
 
 
 @pytest.mark.unit
@@ -910,16 +1005,37 @@ def test_sendPacket_with_destination_is_blank_with_nodes(
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_sendPacket_with_destination_is_blank_without_nodes(
-    caplog: pytest.LogCaptureFixture,
     iface_with_nodes: MeshInterface,
 ) -> None:
-    """Test _send_packet() with '' as a destination with myInfo."""
+    """Test _send_packet() with '' as a destination raises when node DB is unavailable."""
     iface = iface_with_nodes
-    iface.nodes = None
+    with iface._node_db_lock:
+        iface.nodes = None
+        iface.nodesByNum = None
     meshPacket = mesh_pb2.MeshPacket()
-    with caplog.at_level(logging.WARNING):
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match=r"NodeId  not found and node DB is unavailable",
+    ):
         iface._send_packet(meshPacket, destinationId="")
-    assert re.search(r"Warning: There were no self.nodes.", caplog.text, re.MULTILINE)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_sendPacket_with_unsupported_destination_type_without_nodes_raises(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """Unsupported destination types should raise when node DB is unavailable."""
+    iface = iface_with_nodes
+    with iface._node_db_lock:
+        iface.nodes = None
+        iface.nodesByNum = None
+    mesh_packet = mesh_pb2.MeshPacket()
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match=r"NodeId \[\] not found and node DB is unavailable",
+    ):
+        iface._send_packet(mesh_packet, destinationId=[])  # type: ignore[arg-type]
 
 
 @pytest.mark.unit
@@ -951,6 +1067,61 @@ def test_sendPacket_uses_numeric_num_from_node_record(
     sent = iface._send_packet(mesh_packet, destinationId="dst")
 
     assert sent.to == 4242
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@pytest.mark.parametrize(
+    ("destination_id", "expected_num"),
+    [
+        ("12345678", 0x12345678),
+        ("0x12345678", 0x12345678),
+        ("0X90ABCDEF", 0x90ABCDEF),
+        ("!89abcdef", 0x89ABCDEF),
+    ],
+)
+def test_sendPacket_parses_supported_hex_node_id_forms(
+    destination_id: str, expected_num: int
+) -> None:
+    """_send_packet should parse accepted compact hex destination ID forms."""
+    with MeshInterface(noProto=True) as iface:
+        mesh_packet = mesh_pb2.MeshPacket()
+
+        sent = iface._send_packet(mesh_packet, destinationId=destination_id)
+
+        assert sent.to == expected_num
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@pytest.mark.parametrize("destination_id", ["nothexid", "nothexid1"])
+def test_sendPacket_with_non_hex_long_destination_falls_back_to_db_lookup(
+    iface_with_nodes: MeshInterface,
+    destination_id: str,
+) -> None:
+    """Non-hex destination strings of length >= 8 should not raise raw ValueError."""
+    iface = iface_with_nodes
+    mesh_packet = mesh_pb2.MeshPacket()
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match=rf"NodeId {destination_id} not found in DB",
+    ):
+        iface._send_packet(mesh_packet, destinationId=destination_id)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_sendPacket_with_hex_suffix_only_string_still_uses_db_lookup(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """Arbitrary strings ending in hex should not be treated as direct node IDs."""
+    iface = iface_with_nodes
+    mesh_packet = mesh_pb2.MeshPacket()
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match=r"NodeId room-deadbeef not found in DB",
+    ):
+        iface._send_packet(mesh_packet, destinationId="room-deadbeef")
 
 
 @pytest.mark.unit
@@ -1840,7 +2011,9 @@ def test_on_response_position_success_and_routing_error(
         position.longitude_i = -971234567
         position.altitude = 250
         position.precision_bits = 32
-        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_POSITION, request_id=1001)
+        iface._clear_wait_error(
+            mesh_interface_module.WAIT_ATTR_POSITION, request_id=1001
+        )
         wait_thread, wait_errors = _start_wait_thread(
             lambda: iface.waitForPosition(request_id=1001)
         )
@@ -1869,7 +2042,9 @@ def test_on_response_position_success_and_routing_error(
 
         unknown_position = mesh_pb2.Position()
         unknown_position.precision_bits = 5
-        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_POSITION, request_id=1002)
+        iface._clear_wait_error(
+            mesh_interface_module.WAIT_ATTR_POSITION, request_id=1002
+        )
         wait_thread, wait_errors = _start_wait_thread(
             lambda: iface.waitForPosition(request_id=1002)
         )
@@ -1899,7 +2074,9 @@ def test_on_response_position_success_and_routing_error(
 
         disabled_position = mesh_pb2.Position()
         disabled_position.precision_bits = 0
-        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_POSITION, request_id=1003)
+        iface._clear_wait_error(
+            mesh_interface_module.WAIT_ATTR_POSITION, request_id=1003
+        )
         wait_thread, wait_errors = _start_wait_thread(
             lambda: iface.waitForPosition(request_id=1003)
         )
@@ -1927,7 +2104,9 @@ def test_on_response_position_success_and_routing_error(
         assert "position disabled" in caplog.text
 
     with MeshInterface(noProto=True) as iface:
-        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_POSITION, request_id=1004)
+        iface._clear_wait_error(
+            mesh_interface_module.WAIT_ATTR_POSITION, request_id=1004
+        )
         wait_thread, wait_errors = _start_wait_thread(
             lambda: iface.waitForPosition(request_id=1004)
         )
@@ -1988,9 +2167,7 @@ def test_on_response_position_prints_when_info_logging_not_visible(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_logger_visible_info_handler_treats_console_streams_as_visible() -> (
-    None
-):
+def test_logger_visible_info_handler_treats_console_streams_as_visible() -> None:
     """Only stdout-backed console handlers should suppress stdout fallback."""
     handler_logger = logging.getLogger("meshtastic.tests.visible-info-handler")
     original_handlers = list(handler_logger.handlers)
@@ -2146,7 +2323,9 @@ def test_send_traceroute_and_response_rendering(
         route.snr_towards.extend([8, 12])
         route.route_back.extend([12])
         route.snr_back.extend([16, 20])
-        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_TRACEROUTE, request_id=88)
+        iface._clear_wait_error(
+            mesh_interface_module.WAIT_ATTR_TRACEROUTE, request_id=88
+        )
         wait_thread, wait_errors = _start_wait_thread(
             lambda: iface.waitForTraceRoute(1.0, request_id=88)
         )
@@ -2177,7 +2356,9 @@ def test_send_traceroute_and_response_rendering(
 def test_on_response_traceroute_routing_no_response_raises() -> None:
     """Traceroute routing NO_RESPONSE replies should be surfaced by waitForTraceRoute()."""
     with MeshInterface(noProto=True) as iface:
-        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_TRACEROUTE, request_id=9101)
+        iface._clear_wait_error(
+            mesh_interface_module.WAIT_ATTR_TRACEROUTE, request_id=9101
+        )
         wait_thread, wait_errors = _start_wait_thread(
             lambda: iface.waitForTraceRoute(1.0, request_id=9101)
         )
@@ -2209,7 +2390,9 @@ def test_on_response_traceroute_routing_no_response_raises() -> None:
 def test_on_response_traceroute_parse_failures_surface_to_waiters() -> None:
     """Traceroute parse errors should be recorded and raised by waitForTraceRoute()."""
     with MeshInterface(noProto=True) as iface:
-        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_TRACEROUTE, request_id=9102)
+        iface._clear_wait_error(
+            mesh_interface_module.WAIT_ATTR_TRACEROUTE, request_id=9102
+        )
         wait_thread, wait_errors = _start_wait_thread(
             lambda: iface.waitForTraceRoute(1.0, request_id=9102)
         )
@@ -2254,6 +2437,7 @@ def test_send_telemetry_supported_and_fallback_paths(
                 }
             }
         }
+
         def _capture_telemetry_send(
             payload: telemetry_pb2.Telemetry, *_args: object, **kwargs: object
         ) -> mesh_pb2.MeshPacket:
@@ -2296,7 +2480,9 @@ def test_on_response_telemetry_paths(
         device_t = telemetry_pb2.Telemetry()
         device_t.device_metrics.battery_level = 95
         device_t.device_metrics.voltage = 4.23
-        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_TELEMETRY, request_id=2001)
+        iface._clear_wait_error(
+            mesh_interface_module.WAIT_ATTR_TELEMETRY, request_id=2001
+        )
         wait_thread, wait_errors = _start_wait_thread(
             lambda: iface.waitForTelemetry(request_id=2001)
         )
@@ -2325,7 +2511,9 @@ def test_on_response_telemetry_paths(
 
         env_t = telemetry_pb2.Telemetry()
         env_t.environment_metrics.temperature = 21.5
-        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_TELEMETRY, request_id=2002)
+        iface._clear_wait_error(
+            mesh_interface_module.WAIT_ATTR_TELEMETRY, request_id=2002
+        )
         wait_thread, wait_errors = _start_wait_thread(
             lambda: iface.waitForTelemetry(request_id=2002)
         )
@@ -2353,7 +2541,9 @@ def test_on_response_telemetry_paths(
         assert "environmentMetrics:" in caplog.text
 
     with MeshInterface(noProto=True) as iface:
-        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_TELEMETRY, request_id=2003)
+        iface._clear_wait_error(
+            mesh_interface_module.WAIT_ATTR_TELEMETRY, request_id=2003
+        )
         wait_thread, wait_errors = _start_wait_thread(
             lambda: iface.waitForTelemetry(request_id=2003)
         )
@@ -2379,7 +2569,9 @@ def test_on_response_telemetry_paths(
         assert isinstance(wait_errors[0], MeshInterface.MeshInterfaceError)
         assert "No response" in str(wait_errors[0])
 
-        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_TELEMETRY, request_id=2004)
+        iface._clear_wait_error(
+            mesh_interface_module.WAIT_ATTR_TELEMETRY, request_id=2004
+        )
         wait_thread, wait_errors = _start_wait_thread(
             lambda: iface.waitForTelemetry(request_id=2004)
         )
@@ -2412,7 +2604,9 @@ def test_on_response_waypoint_paths(caplog: pytest.LogCaptureFixture) -> None:
     """onResponseWaypoint() should log waypoint payloads and route errors to waiters."""
     with MeshInterface(noProto=True) as iface:
         waypoint = mesh_pb2.Waypoint(name="WPT", id=5)
-        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_WAYPOINT, request_id=3001)
+        iface._clear_wait_error(
+            mesh_interface_module.WAIT_ATTR_WAYPOINT, request_id=3001
+        )
         wait_thread, wait_errors = _start_wait_thread(
             lambda: iface.waitForWaypoint(request_id=3001)
         )
@@ -2439,7 +2633,9 @@ def test_on_response_waypoint_paths(caplog: pytest.LogCaptureFixture) -> None:
         assert "Waypoint received:" in caplog.text
 
     with MeshInterface(noProto=True) as iface:
-        iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_WAYPOINT, request_id=3002)
+        iface._clear_wait_error(
+            mesh_interface_module.WAIT_ATTR_WAYPOINT, request_id=3002
+        )
         wait_thread, wait_errors = _start_wait_thread(
             lambda: iface.waitForWaypoint(request_id=3002)
         )
@@ -2629,6 +2825,25 @@ def test_wait_helpers_raise_expected_timeout_errors() -> None:
             iface.waitForPosition()
         with pytest.raises(MeshInterface.MeshInterfaceError, match="waypoint"):
             iface.waitForWaypoint()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_waitForAckNak_raises_pending_received_nak_wait_error() -> None:
+    """WaitForAckNak should surface detailed pending receivedNak wait errors."""
+    with MeshInterface(noProto=True) as iface:
+        iface._timeout = MagicMock()
+        iface._timeout.waitForAckNak.return_value = False
+        iface._set_wait_error(
+            mesh_interface_module.WAIT_ATTR_NAK,
+            "Failed to decode admin payload: decode-failed: malformed payload",
+        )
+
+        with pytest.raises(
+            MeshInterface.MeshInterfaceError,
+            match="Failed to decode admin payload",
+        ):
+            iface.waitForAckNak()
 
 
 @pytest.mark.unit
@@ -3658,3 +3873,161 @@ def test_handle_packet_from_radio_toid_warning_and_response_handler_paths(
     assert on_receive_calls == [1, 1, 1]
     assert on_ack_calls == [1]
     assert ack_permitted_calls == [1]
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_handle_packet_from_radio_admin_decode_failure_skips_admin_response_callback(
+    decode_failure_iface: MeshInterface,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Admin decode failures should not invoke admin callbacks that depend on decoded admin.raw."""
+    iface = decode_failure_iface
+    with iface._node_db_lock:
+        iface.nodes = {}
+        iface.nodesByNum = {}
+
+    response_callback = MagicMock()
+    with iface._response_handlers_lock:
+        iface.responseHandlers[42] = ResponseHandler(
+            callback=response_callback,
+            ackPermitted=True,
+        )
+    iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_NAK, request_id=42)
+    packet = _make_decoded_packet(
+        from_node=7,
+        to_node=8,
+        portnum=portnums_pb2.PortNum.ADMIN_APP,
+        request_id=42,
+        payload=b"\xff\x00\xff\x00",
+    )
+
+    with caplog.at_level(logging.WARNING):
+        iface._handle_packet_from_radio(packet, hack=True)
+
+    response_callback.assert_not_called()
+    assert 42 not in iface.responseHandlers
+    assert iface._acknowledgment.receivedNak is True
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match="Failed to decode admin payload",
+    ):
+        iface._raise_wait_error_if_present(
+            mesh_interface_module.WAIT_ATTR_NAK,
+            request_id=42,
+        )
+    assert "Failed to decode admin payload" in caplog.text
+    assert (
+        "Dropping response callback for requestId 42 due to admin decode failure."
+        in caplog.text
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_handle_packet_from_radio_decode_failure_does_not_raise(
+    decode_failure_iface: MeshInterface,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Malformed known-protocol payloads should log and continue without crashing receive flow."""
+    iface = decode_failure_iface
+    fake_on_receive = MagicMock()
+    _install_protocol_stub(
+        monkeypatch,
+        portnum=portnums_pb2.PortNum.POSITION_APP,
+        name="position",
+        protobuf_factory=mesh_pb2.Position,
+        on_receive=fake_on_receive,
+    )
+    callback_calls = _register_response_capture(iface, 42)
+    packet = _make_decoded_packet(
+        portnum=portnums_pb2.PortNum.POSITION_APP,
+        request_id=42,
+        payload=b"\xff\x00\xff\x00",
+    )
+
+    with caplog.at_level(logging.WARNING):
+        iface._handle_packet_from_radio(packet, hack=True)
+
+    assert "Failed to decode position payload" in caplog.text
+    fake_on_receive.assert_called_once()
+    assert callback_calls
+    assert callback_calls[0]["decoded"]["position"]["error"].startswith(
+        "decode-failed:"
+    )
+    assert len(callback_calls) == 1
+    assert 42 not in iface.responseHandlers
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_handle_packet_from_radio_routing_decode_failure_sets_error_reason(
+    decode_failure_iface: MeshInterface,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Malformed ROUTING_APP payloads should surface decode errors via routing.errorReason."""
+    iface = decode_failure_iface
+    fake_on_receive = MagicMock()
+    _install_protocol_stub(
+        monkeypatch,
+        portnum=portnums_pb2.PortNum.ROUTING_APP,
+        name="routing",
+        protobuf_factory=mesh_pb2.Routing,
+        on_receive=fake_on_receive,
+    )
+    callback_calls = _register_response_capture(iface, 77)
+    packet = _make_decoded_packet(
+        portnum=portnums_pb2.PortNum.ROUTING_APP,
+        request_id=77,
+        payload=b"\xff\x00\xff\x00",
+    )
+
+    with caplog.at_level(logging.WARNING):
+        iface._handle_packet_from_radio(packet, hack=True)
+
+    assert "Failed to decode routing payload" in caplog.text
+    fake_on_receive.assert_called_once()
+    assert callback_calls
+    routing_payload = callback_calls[0]["decoded"]["routing"]
+    assert routing_payload["error"].startswith("decode-failed:")
+    assert routing_payload["errorReason"].startswith("decode-failed:")
+    assert 77 not in iface.responseHandlers
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_handle_packet_from_radio_message_to_dict_failure_does_not_raise(
+    decode_failure_iface: MeshInterface,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """MessageToDict conversion failures should be handled as decode-failed payload errors."""
+    iface = decode_failure_iface
+    fake_on_receive = MagicMock()
+    _install_protocol_stub(
+        monkeypatch,
+        portnum=portnums_pb2.PortNum.POSITION_APP,
+        name="position",
+        protobuf_factory=mesh_pb2.Position,
+        on_receive=fake_on_receive,
+    )
+    callback_calls = _register_response_capture(iface, 88)
+    _patch_message_to_dict_position_failure(monkeypatch)
+    packet = _make_decoded_packet(
+        portnum=portnums_pb2.PortNum.POSITION_APP,
+        request_id=88,
+        payload=mesh_pb2.Position(latitude_i=1).SerializeToString(),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        iface._handle_packet_from_radio(packet, hack=True)
+
+    assert "Failed to decode position payload" in caplog.text
+    fake_on_receive.assert_called_once()
+    assert callback_calls
+    assert callback_calls[0]["decoded"]["position"]["error"].startswith(
+        "decode-failed:"
+    )
+    assert 88 not in iface.responseHandlers

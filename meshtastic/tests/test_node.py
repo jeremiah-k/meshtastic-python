@@ -6,7 +6,8 @@ import base64
 import logging
 import re
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from types import TracebackType
 from typing import Any, Literal, Protocol, cast
 from unittest.mock import MagicMock, patch
 
@@ -38,7 +39,7 @@ class _FakeSendAdminProtocol(Protocol):
         msg: admin_pb2.AdminMessage,
         wantResponse: bool = False,
         onResponse: Callable[[dict[str, Any]], Any] | None = None,
-        adminIndex: int = 0,
+        adminIndex: int | None = None,
     ) -> mesh_pb2.MeshPacket | None: ...
 
 
@@ -56,9 +57,74 @@ class _DropChannelsOnEnterCountLock:
             self.node.channels = None
         return self
 
-    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> Literal[False]:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> Literal[False]:
         _ = (exc_type, exc, tb)
         return False
+
+
+class _TrackingLock:
+    """Lock stub that records how many times it was acquired."""
+
+    def __init__(self, on_exit: Callable[[], None] | None = None) -> None:
+        self.enter_count = 0
+        self.is_held = False
+        self._on_exit = on_exit
+
+    def __enter__(self) -> "_TrackingLock":
+        if self.is_held:
+            raise AssertionError("_TrackingLock does not allow nested acquisition")
+        self.enter_count += 1
+        self.is_held = True
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> Literal[False]:
+        _ = (exc_type, exc, tb)
+        self.is_held = False
+        if self._on_exit is not None:
+            self._on_exit()
+        return False
+
+
+class _MetadataLockProbeIface:
+    """Minimal interface stub that records metadata read/write lock state."""
+
+    def __init__(
+        self,
+        node_db_lock: _TrackingLock,
+        *,
+        metadata: mesh_pb2.DeviceMetadata | None = None,
+        metadata_read_lock_states: list[bool] | None = None,
+        include_acknowledgment: bool = False,
+    ) -> None:
+        self._node_db_lock = node_db_lock
+        self._metadata = metadata
+        self._metadata_read_lock_states = metadata_read_lock_states
+        self.metadata_assignment_lock_state: bool | None = None
+        if include_acknowledgment:
+            self._acknowledgment = Acknowledgment()
+
+    @property
+    def metadata(self) -> mesh_pb2.DeviceMetadata | None:
+        """Return metadata while optionally recording lock-held read state."""
+        if self._metadata_read_lock_states is not None:
+            self._metadata_read_lock_states.append(self._node_db_lock.is_held)
+        return self._metadata
+
+    @metadata.setter
+    def metadata(self, value: mesh_pb2.DeviceMetadata | None) -> None:
+        """Store metadata while recording lock-held write state."""
+        self.metadata_assignment_lock_state = self._node_db_lock.is_held
+        self._metadata = value
 
 
 def _make_fake_send_admin(
@@ -75,7 +141,7 @@ def _make_fake_send_admin(
         msg: admin_pb2.AdminMessage,
         wantResponse: bool = False,
         onResponse: Callable[[dict[str, Any]], Any] | None = None,
-        adminIndex: int = 0,
+        adminIndex: int | None = None,
     ) -> mesh_pb2.MeshPacket | None:
         if sent_messages is not None:
             sent_messages.append(msg)
@@ -92,6 +158,41 @@ def _make_fake_send_admin(
         return return_packet
 
     return _fake_send_admin
+
+
+class _MockCallLike(Protocol):
+    """Protocol for mock call objects exposing positional/keyword arguments."""
+
+    @property
+    def args(self) -> tuple[object, ...]:
+        """Positional call arguments."""
+        raise NotImplementedError
+
+    @property
+    def kwargs(self) -> Mapping[str, object]:
+        """Keyword call arguments."""
+        raise NotImplementedError
+
+
+def _get_mock_call_arg(
+    call: _MockCallLike, *, name: str, positional_index: int
+) -> object | None:
+    """Resolve a mock call argument regardless of positional/keyword call style."""
+    if len(call.args) > positional_index:
+        return call.args[positional_index]
+    return call.kwargs.get(name)
+
+
+@pytest.mark.unit
+def test_tracking_lock_rejects_nested_acquisition() -> None:
+    """_TrackingLock should fail on nested acquisition attempts."""
+    lock = _TrackingLock()
+    with lock:
+        with pytest.raises(
+            AssertionError, match="_TrackingLock does not allow nested acquisition"
+        ):
+            with lock:
+                pass
 
 
 @pytest.mark.unit
@@ -189,7 +290,7 @@ def test_set_canned_message_sends_payload_and_invalidates_cache(
     anode.iface.localNode.nodeNum = 999
     on_response({"decoded": {"routing": {"errorReason": "NONE"}}, "from": 123})
     assert acknowledgment.receivedAck is True
-    assert captured["adminIndex"] == 0
+    assert captured["adminIndex"] is None
     assert anode.cannedPluginMessage is None
     assert anode.cannedPluginMessageMessages is None
 
@@ -443,10 +544,9 @@ def test_setURL_ignores_channels_over_device_limit(
         settings = channel_set.settings.add()
         settings.name = f"ch{i}"
         settings.psk = b"\x01"
+    channel_set.lora_config.hop_limit = 7
 
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    encoded = encoded.replace("=", "")
-    url = f"https://meshtastic.org/e/#{encoded}"
+    url = _encode_channel_set_to_url(channel_set)
 
     with caplog.at_level(logging.WARNING):
         anode.setURL(url)
@@ -459,6 +559,7 @@ def test_setURL_ignores_channels_over_device_limit(
     assert len(anode.channels) == CHANNEL_LIMIT
     assert anode.channels[0].settings.name == "ch0"
     assert anode.channels[CHANNEL_LIMIT - 1].settings.name == f"ch{CHANNEL_LIMIT - 1}"
+    assert anode.localConfig.lora.hop_limit == 7
 
 
 @pytest.mark.unit
@@ -600,6 +701,39 @@ def test_writeChannel_with_no_channels_raises_mesh_error(
         MeshInterface.MeshInterfaceError, match="Error: No channels have been read"
     ):
         anode.writeChannel(0)
+
+
+@pytest.mark.unit
+def test_writeChannel_forwards_admin_index_to_session_key_bootstrap(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """WriteChannel should use the same admin index for session bootstrap and channel write."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    primary.settings.psk = b"\x01"
+    anode.channels = [primary]
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())  # type: ignore[method-assign]
+
+    anode.writeChannel(0, adminIndex=4)
+
+    assert (
+        _get_mock_call_arg(
+            anode.ensureSessionKey.call_args,
+            name="adminIndex",
+            positional_index=0,
+        )
+        == 4
+    )
+    assert (
+        _get_mock_call_arg(
+            anode._send_admin.call_args,
+            name="adminIndex",
+            positional_index=3,
+        )
+        == 4
+    )
 
 
 @pytest.mark.unit
@@ -1068,7 +1202,7 @@ def test_deleteChannel_rejects_non_secondary_or_disabled(
 def test_deleteChannel_rewrites_following_channels_and_updates_admin_index(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """DeleteChannel should rewrite channels and use fresh admin-index resolution per write."""
+    """DeleteChannel should start on pre-delete admin index and switch after that slot is rewritten."""
     iface = autospec_local_node_iface(MeshInterface)
     anode = Node(iface, "!12345678", noProto=True)
     iface.localNode = anode
@@ -1087,9 +1221,43 @@ def test_deleteChannel_rewrites_following_channels_and_updates_admin_index(
     assert anode.channels is not None
     assert len(anode.channels) == CHANNEL_LIMIT
     assert anode._send_admin.call_count == CHANNEL_LIMIT - 1
-    assert all(
-        call.kwargs["adminIndex"] == 0 for call in anode._send_admin.call_args_list
-    )
+    admin_indexes = [
+        _get_mock_call_arg(call, name="adminIndex", positional_index=3)
+        for call in anode._send_admin.call_args_list
+    ]
+    assert admin_indexes[0] == 1
+    assert all(index == 0 for index in admin_indexes[1:])
+
+
+@pytest.mark.unit
+def test_deleteChannel_switches_admin_index_after_rewriting_former_admin_slot(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """DeleteChannel should keep using the old admin index until the old admin slot is rewritten."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    iface.localNode = anode
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    removable = Channel(index=1, role=Channel.Role.SECONDARY)
+    removable.settings.name = "remove-me"
+    admin_secondary = Channel(index=2, role=Channel.Role.SECONDARY)
+    admin_secondary.settings.name = "admin"
+    disabled = Channel(index=3, role=Channel.Role.DISABLED)
+    anode.channels = [primary, removable, admin_secondary, disabled]
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock()  # type: ignore[method-assign]
+
+    anode.deleteChannel(1)
+
+    admin_indexes = [
+        _get_mock_call_arg(call, name="adminIndex", positional_index=3)
+        for call in anode._send_admin.call_args_list
+    ]
+    # Keep old admin index (2) through rewrite of old slot 2, then switch to 1.
+    assert admin_indexes[:2] == [2, 2]
+    assert all(index == 1 for index in admin_indexes[2:])
 
 
 @pytest.mark.unit
@@ -1140,6 +1308,24 @@ def test_channel_lookup_helpers_cover_name_disabled_and_admin_index(
     assert anode.getDisabledChannel() is None
 
 
+@pytest.mark.unit
+def test_get_named_admin_channel_index_ignores_disabled_admin_channels(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """_get_named_admin_channel_index should skip channels that are DISABLED."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    disabled_admin = Channel(index=1, role=Channel.Role.DISABLED)
+    disabled_admin.settings.name = "admin"
+    secondary = Channel(index=2, role=Channel.Role.SECONDARY)
+    secondary.settings.name = "secondary"
+    anode.channels = [primary, disabled_admin, secondary]
+
+    assert anode._get_named_admin_channel_index() is None
+    assert anode._get_admin_channel_index() == 0
+
+
 def _decode_channel_set_from_url(url: str) -> apponly_pb2.ChannelSet:
     """Decode and parse a ChannelSet from a meshtastic URL."""
     b64 = url.split("#")[-1]
@@ -1150,6 +1336,12 @@ def _decode_channel_set_from_url(url: str) -> apponly_pb2.ChannelSet:
     channel_set = apponly_pb2.ChannelSet()
     channel_set.ParseFromString(raw)
     return channel_set
+
+
+def _encode_channel_set_to_url(channel_set: apponly_pb2.ChannelSet) -> str:
+    """Encode a ChannelSet as a meshtastic URL."""
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    return f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
 
 
 @pytest.mark.unit
@@ -1203,7 +1395,8 @@ def test_setURL_add_only_adds_unique_named_channels(
     primary.settings.name = "existing"
     disabled = Channel(index=1, role=Channel.Role.DISABLED)
     anode.channels = [primary, disabled]
-    anode.writeChannel = MagicMock()  # type: ignore[method-assign]
+    anode.localConfig.lora.hop_limit = 3
+    anode._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())  # type: ignore[method-assign]
 
     channel_set = apponly_pb2.ChannelSet()
     existing = channel_set.settings.add()
@@ -1215,15 +1408,56 @@ def test_setURL_add_only_adds_unique_named_channels(
     new_channel = channel_set.settings.add()
     new_channel.name = "new-ch"
     new_channel.psk = b"\x03"
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    channel_set.lora_config.hop_limit = 9
+    url = _encode_channel_set_to_url(channel_set)
 
     anode.setURL(url, addOnly=True)
 
     assert anode.channels is not None
     assert anode.channels[1].settings.name == "new-ch"
     assert anode.channels[1].role == Channel.Role.SECONDARY
-    anode.writeChannel.assert_called_once_with(1)
+    assert anode.localConfig.lora.hop_limit == 9
+    send_calls = anode._send_admin.call_args_list
+    assert len(send_calls) == 2
+    assert _get_mock_call_arg(send_calls[0], name="adminIndex", positional_index=3) == 0
+    assert send_calls[0].args[0].HasField("set_channel")
+    assert send_calls[0].args[0].set_channel.index == 1
+    assert _get_mock_call_arg(send_calls[1], name="adminIndex", positional_index=3) == 0
+    assert send_calls[1].args[0].HasField("set_config")
+    assert send_calls[1].args[0].set_config.lora.hop_limit == 9
+
+
+@pytest.mark.unit
+def test_setURL_add_only_treats_names_as_case_insensitive_duplicates(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=True) should ignore case-variant duplicate channel names."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    disabled1 = Channel(index=1, role=Channel.Role.DISABLED)
+    disabled2 = Channel(index=2, role=Channel.Role.DISABLED)
+    anode.channels = [primary, disabled1, disabled2]
+    anode._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())  # type: ignore[method-assign]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "Admin"
+    first.psk = b"\x01"
+    second = channel_set.settings.add()
+    second.name = "admin"
+    second.psk = b"\x02"
+    url = _encode_channel_set_to_url(channel_set)
+
+    anode.setURL(url, addOnly=True)
+
+    assert anode.channels is not None
+    assert anode.channels[1].settings.name == "Admin"
+    assert anode.channels[2].role == Channel.Role.DISABLED
+    send_calls = anode._send_admin.call_args_list
+    assert len(send_calls) == 1
+    assert send_calls[0].args[0].HasField("set_channel")
+    assert send_calls[0].args[0].set_channel.settings.name == "Admin"
 
 
 @pytest.mark.unit
@@ -1233,18 +1467,937 @@ def test_setURL_add_only_raises_when_no_disabled_slot_available(
     """setURL(addOnly=True) should fail if no DISABLED channels remain."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
     anode.channels = [Channel(index=i, role=Channel.Role.SECONDARY) for i in range(2)]
+    anode.localConfig.lora.hop_limit = 3
 
     channel_set = apponly_pb2.ChannelSet()
     new_channel = channel_set.settings.add()
     new_channel.name = "new-ch"
     new_channel.psk = b"\x01"
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     with pytest.raises(
         MeshInterface.MeshInterfaceError, match="No free channels were found"
     ):
         anode.setURL(url, addOnly=True)
+
+
+@pytest.mark.unit
+def test_setURL_add_only_channel_only_url_skips_lora_snapshot_and_write(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=True) should allow channel-only URLs without requiring cached LoRa."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    disabled = Channel(index=1, role=Channel.Role.DISABLED)
+    anode.channels = [primary, disabled]
+    anode._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())  # type: ignore[method-assign]
+
+    channel_set = apponly_pb2.ChannelSet()
+    added = channel_set.settings.add()
+    added.name = "new-ch"
+    added.psk = b"\x03"
+    url = _encode_channel_set_to_url(channel_set)
+
+    anode.setURL(url, addOnly=True)
+
+    assert anode.channels is not None
+    assert anode.channels[1].settings.name == "new-ch"
+    assert anode.channels[1].role == Channel.Role.SECONDARY
+    assert anode.localConfig.HasField("lora") is False
+    send_calls = anode._send_admin.call_args_list
+    assert len(send_calls) == 1
+    assert send_calls[0].args[0].HasField("set_channel")
+
+
+@pytest.mark.unit
+def test_setURL_add_only_defers_first_named_admin_write_until_end(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=True) should defer a first named-admin write until other writes finish."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    disabled1 = Channel(index=1, role=Channel.Role.DISABLED)
+    disabled2 = Channel(index=2, role=Channel.Role.DISABLED)
+    anode.channels = [primary, disabled1, disabled2]
+    anode.localConfig.lora.hop_limit = 3
+
+    operations: list[str] = []
+
+    def _record_send(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse, adminIndex)
+        if msg.HasField("set_channel"):
+            operations.append(f"channel:{msg.set_channel.index}")
+        elif msg.HasField("set_config") and msg.set_config.HasField("lora"):
+            operations.append("lora")
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = _record_send  # type: ignore[method-assign,assignment]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "admin"
+    first.psk = b"\x03"
+    second = channel_set.settings.add()
+    second.name = "new-b"
+    second.psk = b"\x04"
+    channel_set.lora_config.hop_limit = 9
+    url = _encode_channel_set_to_url(channel_set)
+
+    anode.setURL(url, addOnly=True)
+
+    assert operations == ["channel:2", "lora", "channel:1"]
+
+
+@pytest.mark.unit
+def test_setURL_add_only_requires_loaded_lora_config(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=True) should require cached LoRa config so rollback is possible."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    disabled = Channel(index=1, role=Channel.Role.DISABLED)
+    anode.channels = [primary, disabled]
+    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    before_local_config = anode.localConfig.SerializeToString()
+    anode._send_admin = MagicMock()  # type: ignore[method-assign]
+
+    channel_set = apponly_pb2.ChannelSet()
+    new_channel = channel_set.settings.add()
+    new_channel.name = "new-ch"
+    new_channel.psk = b"\x03"
+    channel_set.lora_config.hop_limit = 9
+    url = _encode_channel_set_to_url(channel_set)
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match=re.escape("LoRa config must be loaded before setURL(addOnly=True)"),
+    ):
+        anode.setURL(url, addOnly=True)
+
+    assert anode.channels is not None
+    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    assert after_snapshot == before_snapshot
+    assert anode.localConfig.SerializeToString() == before_local_config
+    anode._send_admin.assert_not_called()
+
+
+@pytest.mark.unit
+def test_setURL_add_only_is_transactional_when_slots_are_insufficient(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=True) should not partially mutate channels when it fails for capacity."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    primary.settings.psk = b"\x01"
+    secondary = Channel(index=1, role=Channel.Role.SECONDARY)
+    secondary.settings.name = "existing"
+    secondary.settings.psk = b"\x02"
+    disabled = Channel(index=2, role=Channel.Role.DISABLED)
+    anode.channels = [primary, secondary, disabled]
+    anode.localConfig.lora.hop_limit = 3
+    anode._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())  # type: ignore[method-assign]
+
+    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    before_lora = anode.localConfig.lora.SerializeToString()
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "new-a"
+    first.psk = b"\x03"
+    second = channel_set.settings.add()
+    second.name = "new-b"
+    second.psk = b"\x04"
+    channel_set.lora_config.hop_limit = 9
+    url = _encode_channel_set_to_url(channel_set)
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="No free channels were found"
+    ):
+        anode.setURL(url, addOnly=True)
+
+    assert anode.channels is not None
+    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    assert after_snapshot == before_snapshot
+    after_lora = anode.localConfig.lora.SerializeToString()
+    assert after_lora == before_lora
+    anode._send_admin.assert_not_called()
+
+
+@pytest.mark.unit
+def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_failure(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=True) should keep using pre-mutation admin path and rollback local channel state."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    primary.settings.psk = b"\x01"
+    disabled1 = Channel(index=1, role=Channel.Role.DISABLED)
+    disabled2 = Channel(index=2, role=Channel.Role.DISABLED)
+    anode.channels = [primary, disabled1, disabled2]
+    anode.localConfig.lora.hop_limit = 3
+    ensure_session_key_spy = MagicMock(wraps=anode.ensureSessionKey)
+    anode.ensureSessionKey = ensure_session_key_spy  # type: ignore[method-assign]
+    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
+
+    staged_writes: list[tuple[int, str, int | None]] = []
+    rollback_writes: list[tuple[int, int | None]] = []
+
+    def _send_admin_with_staged_write_failure(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse)
+        if msg.HasField("set_channel"):
+            if msg.set_channel.role == Channel.Role.SECONDARY:
+                staged_writes.append(
+                    (msg.set_channel.index, msg.set_channel.settings.name, adminIndex)
+                )
+                # Simulate a concurrent local mutation after staging to prove we
+                # send the staged snapshot, not a fresh read from self.channels.
+                if len(staged_writes) == 1 and anode.channels is not None:
+                    anode.channels[2].settings.name = "raced-name"
+                if len(staged_writes) == 2:
+                    raise RuntimeError("write failed during addOnly batch")
+            elif msg.set_channel.role == Channel.Role.DISABLED:
+                rollback_writes.append((msg.set_channel.index, adminIndex))
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = _send_admin_with_staged_write_failure  # type: ignore[method-assign,assignment]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "admin"
+    first.psk = b"\x03"
+    second = channel_set.settings.add()
+    second.name = "new-b"
+    second.psk = b"\x04"
+    url = _encode_channel_set_to_url(channel_set)
+
+    with pytest.raises(RuntimeError, match="write failed during addOnly batch"):
+        anode.setURL(url, addOnly=True)
+
+    assert ensure_session_key_spy.call_args_list
+    ensure_session_admin_indexes = [
+        _get_mock_call_arg(call, name="adminIndex", positional_index=0)
+        for call in ensure_session_key_spy.call_args_list
+    ]
+    assert ensure_session_admin_indexes[0] == 0
+    assert set(ensure_session_admin_indexes) <= {0, 1}
+
+    # Admin index is snapshotted before local mutation (0 fallback here), and
+    # the first newly introduced named-admin channel is deferred until last.
+    assert staged_writes == [(2, "new-b", 0), (1, "admin", 0)]
+
+    assert anode.channels is not None
+    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    # The staged addOnly transaction should not overwrite concurrent live-channel
+    # mutations when it fails and rolls back device writes.
+    assert after_snapshot[0] == before_snapshot[0]
+    assert after_snapshot[1] == before_snapshot[1]
+    assert anode.channels[2].settings.name == "raced-name"
+
+    # Rollback includes the in-flight channel index as well. Since the failure
+    # happened on the deferred admin write, rollback first retries via the
+    # deferred index.
+    # No LoRa rollback is attempted because the LoRa write never started.
+    assert rollback_writes == [(1, 1), (2, 1)]
+
+
+@pytest.mark.unit
+def test_setURL_add_only_invalidates_channels_cache_on_partial_rollback_failure(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=True) should invalidate local channels if channel rollback is partial."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    primary.settings.psk = b"\x01"
+    disabled1 = Channel(index=1, role=Channel.Role.DISABLED)
+    disabled2 = Channel(index=2, role=Channel.Role.DISABLED)
+    anode.channels = [primary, disabled1, disabled2]
+    anode.localConfig.lora.hop_limit = 3
+    ensure_session_key_spy = MagicMock(wraps=anode.ensureSessionKey)
+    anode.ensureSessionKey = ensure_session_key_spy  # type: ignore[method-assign]
+
+    send_calls = {"rollback_failures": 0, "stage_writes": 0}
+
+    def _rollback_send_fails_once(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse, adminIndex)
+        if msg.HasField("set_channel"):
+            if msg.set_channel.role == Channel.Role.SECONDARY:
+                send_calls["stage_writes"] += 1
+                if send_calls["stage_writes"] == 2:
+                    raise RuntimeError("write failed during addOnly batch")
+            elif (
+                msg.set_channel.role == Channel.Role.DISABLED
+                and msg.set_channel.index == 1
+                and send_calls["rollback_failures"] < 2
+            ):
+                send_calls["rollback_failures"] += 1
+                raise OSError("channel rollback failed")
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = _rollback_send_fails_once  # type: ignore[method-assign,assignment]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "admin"
+    first.psk = b"\x03"
+    second = channel_set.settings.add()
+    second.name = "new-b"
+    second.psk = b"\x04"
+    url = _encode_channel_set_to_url(channel_set)
+
+    with pytest.raises(RuntimeError, match="write failed during addOnly batch"):
+        anode.setURL(url, addOnly=True)
+
+    assert ensure_session_key_spy.call_args_list
+    ensure_session_admin_indexes = [
+        _get_mock_call_arg(call, name="adminIndex", positional_index=0)
+        for call in ensure_session_key_spy.call_args_list
+    ]
+    assert ensure_session_admin_indexes[0] == 0
+    assert set(ensure_session_admin_indexes) <= {0, 1}
+    assert send_calls["stage_writes"] == 2
+    assert send_calls["rollback_failures"] == 2
+    assert anode.channels is None
+
+
+@pytest.mark.unit
+def test_setURL_add_only_rolls_back_with_fallback_admin_index_after_deferred_admin_failure(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Deferred addOnly admin-write failures should rollback using alternate admin indexes."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.iface.localNode = anode
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    disabled1 = Channel(index=1, role=Channel.Role.DISABLED)
+    disabled2 = Channel(index=2, role=Channel.Role.DISABLED)
+    anode.channels = [primary, disabled1, disabled2]
+    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
+
+    deferred_failure_seen = {"seen": False}
+    rollback_attempts: list[tuple[int, int | None]] = []
+
+    def _send_admin_with_deferred_admin_failure(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse)
+        if msg.HasField("set_channel"):
+            if (
+                msg.set_channel.role == Channel.Role.SECONDARY
+                and msg.set_channel.settings.name == "admin"
+                and not deferred_failure_seen["seen"]
+            ):
+                deferred_failure_seen["seen"] = True
+                raise RuntimeError("deferred admin write failed")
+            if msg.set_channel.role == Channel.Role.DISABLED:
+                rollback_attempts.append((msg.set_channel.index, adminIndex))
+                if adminIndex == 1:
+                    raise OSError("stale admin index")
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = _send_admin_with_deferred_admin_failure  # type: ignore[method-assign,assignment]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "admin"
+    first.psk = b"\x03"
+    second = channel_set.settings.add()
+    second.name = "new-b"
+    second.psk = b"\x04"
+    url = _encode_channel_set_to_url(channel_set)
+
+    with pytest.raises(RuntimeError, match="deferred admin write failed"):
+        anode.setURL(url, addOnly=True)
+
+    assert anode.channels is not None
+    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    assert after_snapshot == before_snapshot
+    assert rollback_attempts == [(1, 1), (1, 0), (2, 1), (2, 0)]
+
+
+@pytest.mark.unit
+def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=True) should rollback channels and LoRa when final LoRa write fails."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    primary.settings.psk = b"\x01"
+    disabled = Channel(index=1, role=Channel.Role.DISABLED)
+    anode.channels = [primary, disabled]
+    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    anode.localConfig.lora.hop_limit = 3
+    ensure_session_key_spy = MagicMock(wraps=anode.ensureSessionKey)
+    anode.ensureSessionKey = ensure_session_key_spy  # type: ignore[method-assign]
+
+    failed_lora_send = {"seen": False}
+    staged_channel_writes: list[int] = []
+    rollback_messages: list[admin_pb2.AdminMessage] = []
+    admin_indexes: list[int | None] = []
+
+    def _send_admin_with_lora_failure(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse)
+        admin_indexes.append(adminIndex)
+        if (
+            msg.HasField("set_channel")
+            and msg.set_channel.role == Channel.Role.SECONDARY
+        ):
+            staged_channel_writes.append(msg.set_channel.index)
+        if msg.HasField("set_config") and msg.set_config.HasField("lora"):
+            if (
+                not failed_lora_send["seen"]
+                and adminIndex == 0
+                and msg.set_config.lora.hop_limit == 9
+            ):
+                failed_lora_send["seen"] = True
+                raise OSError("LoRa write failed")
+        rollback_messages.append(msg)
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = _send_admin_with_lora_failure  # type: ignore[method-assign,assignment]
+
+    channel_set = apponly_pb2.ChannelSet()
+    added = channel_set.settings.add()
+    added.name = "admin"
+    added.psk = b"\x03"
+    channel_set.lora_config.hop_limit = 9
+    url = _encode_channel_set_to_url(channel_set)
+
+    with pytest.raises(OSError, match="LoRa write failed"):
+        anode.setURL(url, addOnly=True)
+
+    assert ensure_session_key_spy.call_args_list
+    assert all(
+        _get_mock_call_arg(call, name="adminIndex", positional_index=0) == 0
+        for call in ensure_session_key_spy.call_args_list
+    )
+    assert anode.channels is not None
+    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    assert after_snapshot == before_snapshot
+    # Deferred admin write is intentionally not attempted until after LoRa write.
+    assert not staged_channel_writes
+
+    # Rollback includes prior LoRa config; no channel rollback is needed because
+    # deferred admin write had not started when LoRa failed.
+    rollback_channel_messages = [
+        msg
+        for msg in rollback_messages
+        if msg.HasField("set_channel") and msg.set_channel.role == Channel.Role.DISABLED
+    ]
+    rollback_lora_messages = [
+        msg
+        for msg in rollback_messages
+        if msg.HasField("set_config") and msg.set_config.HasField("lora")
+    ]
+    assert len(rollback_channel_messages) == 0
+    assert len(rollback_lora_messages) == 1
+    assert rollback_lora_messages[0].set_config.lora.hop_limit == 3
+    assert admin_indexes == [0, 0]
+    assert anode.localConfig.lora.hop_limit == 3
+
+
+@pytest.mark.unit
+def test_setURL_replace_pins_admin_index_for_channel_and_lora_writes(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=False) should pin admin path from pre-rewrite channel state."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface.localNode._get_admin_channel_index.return_value = 1
+    iface.localNode._get_named_admin_channel_index = MagicMock(return_value=1)
+    iface._get_or_create_by_num.return_value = {"adminSessionPassKey": b"secret"}
+    anode = Node(iface, "!12345678", noProto=False)
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    legacy_admin = Channel(index=1, role=Channel.Role.SECONDARY)
+    legacy_admin.settings.name = "admin"
+    anode.channels = [primary, legacy_admin]
+    ensure_session_key_spy = MagicMock(wraps=anode.ensureSessionKey)
+    anode.ensureSessionKey = ensure_session_key_spy  # type: ignore[method-assign]
+
+    sent_messages: list[admin_pb2.AdminMessage] = []
+    admin_indexes: list[int | None] = []
+
+    def _capture_admin_index(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse)
+        sent_messages.append(msg)
+        admin_indexes.append(adminIndex)
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = _capture_admin_index  # type: ignore[method-assign,assignment]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "new-primary"
+    first.psk = b"\x11"
+    second = channel_set.settings.add()
+    second.name = "new-secondary"
+    second.psk = b"\x12"
+    channel_set.lora_config.hop_limit = 9
+    url = _encode_channel_set_to_url(channel_set)
+
+    anode.setURL(url, addOnly=False)
+
+    assert ensure_session_key_spy.call_args_list
+    assert all(
+        _get_mock_call_arg(call, name="adminIndex", positional_index=0) == 1
+        for call in ensure_session_key_spy.call_args_list
+    )
+    assert len(sent_messages) == 3
+    assert admin_indexes == [1, 1, 1]
+    assert sent_messages[0].HasField("set_channel")
+    assert sent_messages[0].set_channel.index == 0
+    assert sent_messages[1].HasField("set_config")
+    assert sent_messages[1].set_config.HasField("lora")
+    assert sent_messages[1].set_config.lora.hop_limit == 9
+    assert sent_messages[2].HasField("set_channel")
+    assert sent_messages[2].set_channel.index == 1
+    assert anode.localConfig.lora.hop_limit == 9
+
+
+@pytest.mark.unit
+def test_setURL_replace_defers_first_named_admin_write_until_end(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=False) should defer first named-admin write until after other writes."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    secondary = Channel(index=1, role=Channel.Role.SECONDARY)
+    secondary.settings.name = "secondary"
+    anode.channels = [primary, secondary]
+    anode.localConfig.lora.hop_limit = 3
+
+    operations: list[str] = []
+
+    def _record_send(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse, adminIndex)
+        if msg.HasField("set_channel"):
+            operations.append(f"channel:{msg.set_channel.index}")
+        elif msg.HasField("set_config") and msg.set_config.HasField("lora"):
+            operations.append("lora")
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = _record_send  # type: ignore[method-assign,assignment]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "admin"
+    first.psk = b"\x05"
+    second = channel_set.settings.add()
+    second.name = "new-b"
+    second.psk = b"\x06"
+    channel_set.lora_config.hop_limit = 11
+    url = _encode_channel_set_to_url(channel_set)
+
+    anode.setURL(url, addOnly=False)
+
+    assert operations == ["channel:1", "lora", "channel:0"]
+
+
+@pytest.mark.unit
+def test_setURL_replace_rejects_multiple_named_admin_channels(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=False) should reject URLs that stage multiple admin channels."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [
+        Channel(index=0, role=Channel.Role.DISABLED),
+        Channel(index=1, role=Channel.Role.DISABLED),
+        Channel(index=2, role=Channel.Role.DISABLED),
+    ]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "admin"
+    first.psk = b"\x01"
+    second = channel_set.settings.add()
+    second.name = "AdMiN"
+    second.psk = b"\x02"
+    url = _encode_channel_set_to_url(channel_set)
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match="multiple channels named 'admin'",
+    ):
+        anode.setURL(url, addOnly=False)
+
+
+@pytest.mark.unit
+def test_setURL_replace_when_admin_slot_moves_defers_old_slot_cleanup(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=False) should apply moved named-admin channel before rewriting prior admin slot."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.iface.localNode = anode
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    old_admin = Channel(index=1, role=Channel.Role.SECONDARY)
+    old_admin.settings.name = "admin"
+    third = Channel(index=2, role=Channel.Role.SECONDARY)
+    third.settings.name = "third"
+    anode.channels = [primary, old_admin, third]
+    anode.localConfig.lora.hop_limit = 3
+
+    operations: list[tuple[str, int | None]] = []
+
+    def _record_send(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse)
+        if msg.HasField("set_channel"):
+            operations.append((f"channel:{msg.set_channel.index}", adminIndex))
+        elif msg.HasField("set_config") and msg.set_config.HasField("lora"):
+            operations.append(("lora", adminIndex))
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = _record_send  # type: ignore[method-assign,assignment]
+
+    channel_set = apponly_pb2.ChannelSet()
+    moved_admin = channel_set.settings.add()
+    moved_admin.name = "admin"
+    moved_admin.psk = b"\x21"
+    replacement_for_old_admin = channel_set.settings.add()
+    replacement_for_old_admin.name = "secondary-new"
+    replacement_for_old_admin.psk = b"\x22"
+    replacement_third = channel_set.settings.add()
+    replacement_third.name = "third-new"
+    replacement_third.psk = b"\x23"
+    channel_set.lora_config.hop_limit = 7
+    url = _encode_channel_set_to_url(channel_set)
+
+    anode.setURL(url, addOnly=False)
+
+    assert operations == [
+        ("channel:2", 1),
+        ("lora", 1),
+        ("channel:0", 1),
+        ("channel:1", 0),
+    ]
+
+
+@pytest.mark.unit
+def test_setURL_replace_rolls_back_with_fallback_admin_index_after_deferred_admin_failure(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Replace-all rollback should retry with alternate admin indexes after deferred admin failure."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.iface.localNode = anode
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    old_admin = Channel(index=1, role=Channel.Role.SECONDARY)
+    old_admin.settings.name = "admin"
+    third = Channel(index=2, role=Channel.Role.SECONDARY)
+    third.settings.name = "third"
+    anode.channels = [primary, old_admin, third]
+    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
+
+    deferred_failure_seen = {"seen": False}
+    rollback_attempts: list[tuple[int, str, int | None]] = []
+
+    def _send_admin_with_deferred_admin_failure(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse)
+        if msg.HasField("set_channel"):
+            if (
+                msg.set_channel.index == 0
+                and msg.set_channel.settings.name == "admin"
+                and not deferred_failure_seen["seen"]
+            ):
+                deferred_failure_seen["seen"] = True
+                raise RuntimeError("deferred admin write failed")
+            if msg.set_channel.settings.name in {"primary", "third"}:
+                rollback_attempts.append(
+                    (msg.set_channel.index, msg.set_channel.settings.name, adminIndex)
+                )
+                if adminIndex == 0:
+                    raise OSError("stale admin index")
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = _send_admin_with_deferred_admin_failure  # type: ignore[method-assign,assignment]
+
+    channel_set = apponly_pb2.ChannelSet()
+    moved_admin = channel_set.settings.add()
+    moved_admin.name = "admin"
+    moved_admin.psk = b"\x21"
+    replacement_for_old_admin = channel_set.settings.add()
+    replacement_for_old_admin.name = "secondary-new"
+    replacement_for_old_admin.psk = b"\x22"
+    replacement_third = channel_set.settings.add()
+    replacement_third.name = "third-new"
+    replacement_third.psk = b"\x23"
+    url = _encode_channel_set_to_url(channel_set)
+
+    with pytest.raises(RuntimeError, match="deferred admin write failed"):
+        anode.setURL(url, addOnly=False)
+
+    assert anode.channels is not None
+    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    assert after_snapshot == before_snapshot
+    assert rollback_attempts == [
+        (0, "primary", 0),
+        (0, "primary", 1),
+        (2, "third", 0),
+        (2, "third", 1),
+    ]
+
+
+@pytest.mark.unit
+def test_setURL_replace_rolls_back_written_channels_on_midflight_failure(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=False) should restore previously written channels when replace fails mid-flight."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.iface.localNode = anode
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    secondary = Channel(index=1, role=Channel.Role.SECONDARY)
+    secondary.settings.name = "existing"
+    disabled = Channel(index=2, role=Channel.Role.DISABLED)
+    anode.channels = [primary, secondary, disabled]
+    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
+
+    failed_stage_write = {"seen": False}
+    sent_messages: list[admin_pb2.AdminMessage] = []
+
+    def _send_admin_with_midflight_failure(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse, adminIndex)
+        if (
+            msg.HasField("set_channel")
+            and msg.set_channel.index == 1
+            and msg.set_channel.settings.name == "new-secondary"
+            and not failed_stage_write["seen"]
+        ):
+            failed_stage_write["seen"] = True
+            raise RuntimeError("replace write failed")
+        sent_messages.append(msg)
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = _send_admin_with_midflight_failure  # type: ignore[method-assign,assignment]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "new-primary"
+    first.psk = b"\x31"
+    second = channel_set.settings.add()
+    second.name = "new-secondary"
+    second.psk = b"\x32"
+    url = _encode_channel_set_to_url(channel_set)
+
+    with pytest.raises(RuntimeError, match="replace write failed"):
+        anode.setURL(url, addOnly=False)
+
+    assert anode.channels is not None
+    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    assert after_snapshot == before_snapshot
+    rollback_channels = [
+        msg.set_channel
+        for msg in sent_messages
+        if msg.HasField("set_channel")
+        and msg.set_channel.settings.name in {"primary", "existing"}
+    ]
+    assert {
+        (channel.index, channel.settings.name) for channel in rollback_channels
+    } == {
+        (0, "primary"),
+        (1, "existing"),
+    }
+
+
+@pytest.mark.unit
+def test_setURL_replace_rolls_back_lora_when_lora_write_fails(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=False) should restore channels and LoRa config when LoRa write fails."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.iface.localNode = anode
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    secondary = Channel(index=1, role=Channel.Role.SECONDARY)
+    secondary.settings.name = "existing"
+    anode.channels = [primary, secondary]
+    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    anode.localConfig.lora.hop_limit = 3
+
+    failed_lora_send = {"seen": False}
+    sent_messages: list[admin_pb2.AdminMessage] = []
+
+    def _send_admin_with_lora_failure(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse, adminIndex)
+        if msg.HasField("set_config") and msg.set_config.HasField("lora"):
+            if not failed_lora_send["seen"] and msg.set_config.lora.hop_limit == 9:
+                failed_lora_send["seen"] = True
+                raise OSError("LoRa replace write failed")
+        sent_messages.append(msg)
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = _send_admin_with_lora_failure  # type: ignore[method-assign,assignment]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "new-primary"
+    first.psk = b"\x41"
+    second = channel_set.settings.add()
+    second.name = "new-secondary"
+    second.psk = b"\x42"
+    channel_set.lora_config.hop_limit = 9
+    url = _encode_channel_set_to_url(channel_set)
+
+    with pytest.raises(OSError, match="LoRa replace write failed"):
+        anode.setURL(url, addOnly=False)
+
+    assert anode.channels is not None
+    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    assert after_snapshot == before_snapshot
+    rollback_lora_messages = [
+        msg
+        for msg in sent_messages
+        if msg.HasField("set_config") and msg.set_config.HasField("lora")
+    ]
+    assert len(rollback_lora_messages) == 1
+    assert rollback_lora_messages[0].set_config.lora.hop_limit == 3
+    assert anode.localConfig.lora.hop_limit == 3
+
+
+@pytest.mark.unit
+def test_setURL_replace_channel_only_url_skips_lora_write_and_cache_update(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=False) should not write LoRa when URL omits lora_config."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [
+        Channel(index=0, role=Channel.Role.DISABLED),
+        Channel(index=1, role=Channel.Role.DISABLED),
+    ]
+    anode.localConfig.lora.hop_limit = 3
+    anode._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())  # type: ignore[method-assign]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "new-primary"
+    first.psk = b"\x11"
+    second = channel_set.settings.add()
+    second.name = "new-secondary"
+    second.psk = b"\x12"
+    url = _encode_channel_set_to_url(channel_set)
+
+    anode.setURL(url, addOnly=False)
+
+    send_calls = anode._send_admin.call_args_list
+    assert len(send_calls) == 2
+    assert all(call.args[0].HasField("set_channel") for call in send_calls)
+    assert anode.localConfig.lora.hop_limit == 3
+
+
+@pytest.mark.unit
+def test_setURL_replace_disables_channels_omitted_from_url(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=False) should disable stale channels not present in the replacement URL."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.iface.localNode = anode
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    admin_secondary = Channel(index=1, role=Channel.Role.SECONDARY)
+    admin_secondary.settings.name = "admin"
+    stale_secondary_a = Channel(index=2, role=Channel.Role.SECONDARY)
+    stale_secondary_a.settings.name = "stale-a"
+    stale_secondary_b = Channel(index=3, role=Channel.Role.SECONDARY)
+    stale_secondary_b.settings.name = "stale-b"
+    anode.channels = [primary, admin_secondary, stale_secondary_a, stale_secondary_b]
+    anode._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())  # type: ignore[method-assign]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "new-primary"
+    first.psk = b"\x11"
+    url = _encode_channel_set_to_url(channel_set)
+
+    anode.setURL(url, addOnly=False)
+
+    assert anode.channels is not None
+    assert anode.channels[0].settings.name == "new-primary"
+    for channel_index in (1, 2, 3):
+        assert anode.channels[channel_index].role == Channel.Role.DISABLED
+        assert anode.channels[channel_index].settings.name == ""
+
+    channel_writes = [
+        call.args[0].set_channel
+        for call in anode._send_admin.call_args_list
+        if call.args[0].HasField("set_channel")
+    ]
+    assert {channel.index for channel in channel_writes} == {0, 1, 2, 3}
+    assert {
+        channel.index
+        for channel in channel_writes
+        if channel.role == Channel.Role.DISABLED
+    } == {1, 2, 3}
 
 
 @pytest.mark.unit
@@ -1262,8 +2415,7 @@ def test_setURL_replace_raises_if_channels_disappear_during_assignment(
     setting = channel_set.settings.add()
     setting.name = "primary"
     setting.psk = b"\x01"
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+    url = _encode_channel_set_to_url(channel_set)
 
     with pytest.raises(
         MeshInterface.MeshInterfaceError, match="Config or channels not loaded"
@@ -1433,18 +2585,45 @@ def test_send_admin_uses_session_passkey_and_selected_admin_index(
 
 
 @pytest.mark.unit
+def test_send_admin_respects_explicit_channel_zero(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """_send_admin should treat channel 0 as explicit, not as auto-detect."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface.localNode._get_admin_channel_index.return_value = 3
+    iface._get_or_create_by_num.return_value = {"adminSessionPassKey": b"secret"}
+    packet = mesh_pb2.MeshPacket()
+    iface.sendData.return_value = packet
+    anode = Node(iface, 321, noProto=False)
+    msg = admin_pb2.AdminMessage()
+
+    result = anode._send_admin(msg, adminIndex=0)
+
+    assert result is packet
+    assert iface.sendData.call_args.kwargs["channelIndex"] == 0
+
+
+@pytest.mark.unit
 def test_ensureSessionKey_requests_only_when_missing(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """EnsureSessionKey should request a key only if one is not already cached."""
+    """EnsureSessionKey should request only when missing and forward the selected admin index."""
     iface = autospec_local_node_iface(MeshInterface)
     anode = Node(iface, 555, noProto=False)
     anode.requestConfig = MagicMock()  # type: ignore[method-assign]
 
     iface._get_or_create_by_num.return_value = {}
-    anode.ensureSessionKey()
-    anode.requestConfig.assert_called_once_with(
-        admin_pb2.AdminMessage.SESSIONKEY_CONFIG
+    anode.ensureSessionKey(adminIndex=6)
+    assert anode.requestConfig.call_count == 1
+    request_config_call = anode.requestConfig.call_args
+    assert request_config_call.args[0] == admin_pb2.AdminMessage.SESSIONKEY_CONFIG
+    assert (
+        _get_mock_call_arg(
+            request_config_call,
+            name="adminIndex",
+            positional_index=1,
+        )
+        == 6
     )
 
     anode.requestConfig.reset_mock()
@@ -1496,21 +2675,33 @@ def test_deleteChannel_missing_or_out_of_range_validations(
 def test_deleteChannel_rewrite_uses_snapshot_when_channels_change_after_lock_release(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """DeleteChannel should complete rewrites from a captured snapshot even if channels change later."""
+    """DeleteChannel should complete rewrites from a captured snapshot even if channels mutate mid-rewrite."""
     iface = autospec_local_node_iface(MeshInterface)
     anode = Node(iface, "!12345678", noProto=True)
     iface.localNode = anode
     anode.channels = [Channel(index=0, role=Channel.Role.SECONDARY)]
-    anode._channels_lock = _DropChannelsOnEnterCountLock(  # type: ignore[assignment]
-        anode, trigger_enter=2
-    )
     anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
-    anode._send_admin = MagicMock()  # type: ignore[method-assign]
+    dropped_channels = False
+
+    def _drop_channels_on_first_send(
+        _msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket | None:
+        nonlocal dropped_channels
+        if not dropped_channels:
+            anode.channels = None
+            dropped_channels = True
+        _ = (wantResponse, onResponse, adminIndex)
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = MagicMock(side_effect=_drop_channels_on_first_send)  # type: ignore[method-assign]
 
     anode.deleteChannel(0)
 
-    # The lock stub drops channels on the second lock acquisition (during admin
-    # index lookup), but rewrite sends still complete from the captured snapshot.
+    # Mid-rewrite local cache mutation should not affect sends from the captured
+    # channel snapshot list.
     assert anode.channels is None
     assert anode._send_admin.call_count == CHANNEL_LIMIT
 
@@ -1556,12 +2747,10 @@ def test_setURL_reports_empty_settings_when_channels_loaded(
     anode.channels = [Channel(index=0, role=Channel.Role.DISABLED)]
     channel_set = apponly_pb2.ChannelSet()
     channel_set.lora_config.tx_enabled = True
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-
     with pytest.raises(
         MeshInterface.MeshInterfaceError, match="There were no settings"
     ):
-        anode.setURL(f"https://meshtastic.org/e/#{encoded.rstrip('=')}")
+        anode.setURL(_encode_channel_set_to_url(channel_set))
 
 
 @pytest.mark.unit
@@ -1571,6 +2760,7 @@ def test_setURL_add_only_rechecks_channels_before_addition(
     """SetURL(addOnly=True) should fail if channels disappear before add loop mutation."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
     anode.channels = [Channel(index=0, role=Channel.Role.DISABLED)]
+    anode.localConfig.lora.hop_limit = 3
     anode._channels_lock = _DropChannelsOnEnterCountLock(  # type: ignore[assignment]
         anode, trigger_enter=2
     )
@@ -1579,12 +2769,10 @@ def test_setURL_add_only_rechecks_channels_before_addition(
     setting = channel_set.settings.add()
     setting.name = "new-channel"
     setting.psk = b"\x01"
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-
     with pytest.raises(
         MeshInterface.MeshInterfaceError, match="Config or channels not loaded"
     ):
-        anode.setURL(f"https://meshtastic.org/e/#{encoded.rstrip('=')}", addOnly=True)
+        anode.setURL(_encode_channel_set_to_url(channel_set), addOnly=True)
 
 
 @pytest.mark.unit
@@ -1602,12 +2790,10 @@ def test_setURL_replace_rechecks_channels_before_length_calculation(
     setting = channel_set.settings.add()
     setting.name = "primary"
     setting.psk = b"\x01"
-    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
-
     with pytest.raises(
         MeshInterface.MeshInterfaceError, match="Config or channels not loaded"
     ):
-        anode.setURL(f"https://meshtastic.org/e/#{encoded.rstrip('=')}")
+        anode.setURL(_encode_channel_set_to_url(channel_set))
 
 
 @pytest.mark.unit
@@ -1711,6 +2897,59 @@ def test_onRequestGetMetadata_logs_valid_and_fallback_enum_values(
 
 
 @pytest.mark.unit
+def test_onRequestGetMetadata_updates_metadata_under_node_db_lock() -> None:
+    """OnRequestGetMetadata should update iface.metadata while holding iface._node_db_lock."""
+    lock = _TrackingLock()
+    iface = _MetadataLockProbeIface(lock, include_acknowledgment=True)
+    anode = Node(cast(Any, iface), "!12345678", noProto=True)
+    anode._timeout = MagicMock()
+
+    raw = admin_pb2.AdminMessage()
+    response = raw.get_device_metadata_response
+    response.firmware_version = "2.7.19"
+    response.device_state_version = 25
+    response.role = config_pb2.Config.DeviceConfig.Role.CLIENT
+    response.position_flags = 0
+    response.hw_model = mesh_pb2.HardwareModel.PORTDUINO
+    response.hasPKC = True
+
+    anode.onRequestGetMetadata(
+        {"decoded": {"portnum": "ADMIN_APP", "admin": {"raw": raw}}}
+    )
+
+    assert lock.enter_count == 1
+    assert lock.is_held is False
+    assert iface.metadata_assignment_lock_state is True
+    metadata = iface.metadata
+    assert metadata is not None
+    assert metadata.firmware_version == "2.7.19"
+
+
+@pytest.mark.unit
+def test_set_metadata_snapshot_stores_detached_copy_under_lock() -> None:
+    """_set_metadata_snapshot should store a detached metadata copy while holding node DB lock."""
+    lock = _TrackingLock()
+    iface = _MetadataLockProbeIface(lock)
+    anode = Node(cast(Any, iface), "!12345678", noProto=True)
+    metadata_snapshot = mesh_pb2.DeviceMetadata(
+        firmware_version="2.7.19",
+        device_state_version=25,
+    )
+
+    anode._set_metadata_snapshot(metadata_snapshot)
+
+    assert lock.enter_count == 1
+    assert lock.is_held is False
+    assert iface.metadata_assignment_lock_state is True
+    metadata = iface.metadata
+    assert isinstance(metadata, mesh_pb2.DeviceMetadata)
+    assert metadata is not metadata_snapshot
+    assert metadata.firmware_version == "2.7.19"
+    metadata_snapshot.firmware_version = "mutated-locally"
+    assert metadata.firmware_version == "2.7.19"
+
+
+@pytest.mark.unit
 def test_onRequestGetMetadata_emits_stdout_when_redirected(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
     capsys: CaptureFixture[str],
@@ -1774,6 +3013,70 @@ def test_emit_cached_metadata_uses_fallback_values_for_unknown_enums(
     assert "role: 999" in emitted
     assert "hw_model: 999" in emitted
     assert any(line.startswith("excluded_modules:") for line in emitted)
+
+
+@pytest.mark.unit
+def test_emit_cached_metadata_reads_metadata_under_node_db_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_emit_cached_metadata_for_stdout should emit snapshot lines after lock release."""
+    original_metadata = mesh_pb2.DeviceMetadata(
+        firmware_version="2.7.18",
+        device_state_version=24,
+        role=config_pb2.Config.DeviceConfig.Role.CLIENT,
+        position_flags=0,
+        hw_model=mesh_pb2.HardwareModel.PORTDUINO,
+        hasPKC=True,
+    )
+
+    metadata_read_lock_states: list[bool] = []
+
+    def _mutate_metadata_after_unlock() -> None:
+        original_metadata.firmware_version = "mutated-after-unlock"
+        original_metadata.device_state_version = 99
+        original_metadata.role = config_pb2.Config.DeviceConfig.Role.CLIENT_HIDDEN
+        original_metadata.hw_model = mesh_pb2.HardwareModel.UNSET
+        original_metadata.hasPKC = False
+
+    lock = _TrackingLock(on_exit=_mutate_metadata_after_unlock)
+    iface = _MetadataLockProbeIface(
+        lock,
+        metadata=original_metadata,
+        metadata_read_lock_states=metadata_read_lock_states,
+    )
+    anode = Node(cast(Any, iface), "!12345678", noProto=True)
+    emitted: list[tuple[str, bool]] = []
+
+    def _record_emit(line: str) -> None:
+        emitted.append((line, iface._node_db_lock.is_held))
+
+    monkeypatch.setattr(anode, "_emit_metadata_line", _record_emit)
+
+    assert anode._emit_cached_metadata_for_stdout() is True
+    assert emitted
+    assert metadata_read_lock_states
+    assert any(metadata_read_lock_states)
+    assert iface._node_db_lock.enter_count == 1
+    assert all(not is_held for _line, is_held in emitted)
+    assert any("firmware_version: 2.7.18" in line for line, _ in emitted)
+    assert not any(
+        "firmware_version: mutated-after-unlock" in line for line, _ in emitted
+    )
+    assert iface.metadata is original_metadata
+    assert iface.metadata.firmware_version == "mutated-after-unlock"
+
+
+@pytest.mark.unit
+def test_get_metadata_snapshot_returns_none_for_non_proto_metadata(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """_get_metadata_snapshot should return None when iface.metadata is not DeviceMetadata."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface._node_db_lock = _TrackingLock()
+    iface.metadata = {"firmware_version": "not-a-protobuf"}
+    anode = Node(iface, "!12345678", noProto=True)
+
+    assert anode._get_metadata_snapshot() is None
 
 
 @pytest.mark.unit

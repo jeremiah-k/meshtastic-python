@@ -1,6 +1,6 @@
 # REFACTOR_PROGRAM-2.md
 
-### Meshtastic Python Refactor – Phase 2 Program Plan
+## Meshtastic Python Refactor – Phase 2 Program Plan
 
 Date: 2026-03-11  
 Base Branch: `develop`  
@@ -8,7 +8,7 @@ Comparison Baseline: `master` (eb964d78)
 
 ---
 
-# 1. Context
+## 1. Context
 
 The current `develop` branch represents a large structural modernization of the Meshtastic Python codebase. It includes:
 
@@ -20,23 +20,23 @@ The current `develop` branch represents a large structural modernization of the 
 - CI pipeline improvements
 - Async / concurrency correctness improvements
 
-`develop` is currently **two large commits ahead of `master`**, but those commits contain:
+`develop` is currently **seven commits ahead of `master`** (`master...develop = 0/7`), and the branch delta contains:
 
-- ~150 files changed
-- ~60k insertions
-- ~10k deletions
+- 153 files changed
+- 61,115 insertions
+- 10,739 deletions
 
 This is effectively a **platform-wide refactor**, not a typical incremental change.
 
-Because of this, the next phase should **not** merge `develop → master` directly.
+Because of this, we still should **not** merge `develop → master` directly.
 
-Instead, we will perform **a small number of large, deliberate stabilization passes** based on `develop`.
+Instead, we perform **a few large, deliberate stabilization passes** based on `develop`.
 
-These passes will become the next branches and PRs.
+Phase 1 (BLE stabilization) is now complete and merged into `develop` (`#63`), and Phase 2 is the active execution stream.
 
 ---
 
-# 2. Refactor Philosophy Going Forward
+## 2. Refactor Philosophy Going Forward
 
 Going forward we will keep the advantages of automation but shift toward **intentional large passes** that address a single subsystem at a time.
 
@@ -56,7 +56,7 @@ Each branch should represent **one engineering theme**.
 
 ---
 
-# 3. Current Refactor State
+## 3. Current Refactor State
 
 The repository now contains significant architectural improvements.
 
@@ -66,7 +66,7 @@ The repository now contains significant architectural improvements.
 
 The BLE implementation has been modularized into:
 
-```
+```text
 meshtastic/interfaces/ble/
     client.py
     connection.py
@@ -86,7 +86,7 @@ meshtastic/interfaces/ble/
 
 A compatibility shim remains at:
 
-```
+```text
 meshtastic/ble_interface.py
 ```
 
@@ -114,7 +114,7 @@ The CLI code received cleanup and better separation of responsibilities.
 
 However:
 
-```
+```text
 meshtastic/__main__.py
 ```
 
@@ -136,21 +136,19 @@ This dramatically improves safety for future refactors.
 
 ---
 
-# 4. Key Remaining Risks
+## 4. Key Remaining Risks
 
 Despite the progress, several areas remain high risk:
 
 ### BLE Lifecycle Behavior
 
-BLE is the most complex subsystem and includes:
+Phase 1 delivered targeted BLE lifecycle hardening and timeout robustness. Remaining BLE risk is now primarily **regression risk**, not major architecture uncertainty.
 
-- async coordination
-- OS-specific behavior
-- reconnect logic
-- ownership / gating logic
-- management operations
+Residual focus areas:
 
-The architecture is improved, but lifecycle correctness must be stabilized.
+- cross-platform runtime behavior in real hardware environments
+- long-duration reconnect reliability
+- maintenance of compatibility semantics as future changes land
 
 ---
 
@@ -180,147 +178,101 @@ Compatibility shims exist but should be validated carefully to ensure:
 
 ---
 
-# 5. Next Phase Refactor Strategy
+## 5. Execution Status and Next-Phase Strategy
 
-Instead of merging `develop → master`, the next steps will consist of **three large stabilization branches**.
+Instead of merging `develop → master` directly, the program continues through themed stabilization passes.
 
-Each branch will be created from `develop`.
+### Phase Status Snapshot
+
+- Phase 1 BLE stabilization: **Completed** (merged into `develop`, PR `#63`)
+- Phase 2 MeshInterface runtime stabilization: **In progress** on `meshinterface-pass`
+- Phase 3 Runtime boundary cleanup: Pending
+- Phase 4 CLI structural refactor: Future
 
 ---
 
-# Phase 1: BLE Stabilization Pass
+## Phase 1: BLE Stabilization Pass (Completed)
 
-Branch name suggestion:
+Executed branch:
 
-```
+```text
 ble-stabilization-pass
 ```
 
-This will be the **largest and most important stabilization phase**.
+Delivered outcomes:
 
-### Goals
-
-- finalize BLE lifecycle behavior
-- stabilize connect / disconnect / reconnect logic
-- verify state machine transitions
-- ensure safe shutdown
-- ensure compatibility with legacy BLE APIs
-
-### Areas of Work
-
-BLE lifecycle correctness
-
-- connection ownership rules
-- pairing / trust support
-- management operation tracking
-- reconnect timing behavior
-- shutdown ordering
-
-Concurrency review
-
-- locking order
-- race conditions
-- notification coordination
-- state synchronization
-
-Compatibility verification
-
-- historical callbacks
-- legacy method names
-- BLE public API exports
-
-Testing improvements
-
-- lifecycle edge cases
-- reconnect scenarios
-- partial connection failures
-- shutdown reliability
-
-### Explicitly Out of Scope
-
-- CLI refactor
-- mesh core restructuring
-- style cleanup unrelated to BLE
-- unrelated test rewrites
+- elapsed-time-based management wait timeout accounting for connect/shutdown paths
+- hardened management operation accounting (underflow-safe behavior)
+- bounded spurious-wakeup regression tests to avoid suite hangs
+- compatibility-preserving fixes validated by expanded BLE lifecycle tests
 
 ---
 
-# Phase 2: MeshInterface Runtime Stabilization
+## Phase 2: MeshInterface Runtime Stabilization (Active)
 
-Branch name suggestion:
+Active branch:
 
+```text
+meshinterface-pass
 ```
-meshinterface-runtime-stabilization
-```
 
-This phase focuses on correctness of the core networking behavior.
+This phase focuses on runtime correctness of request/wait behavior, callback handling, queue behavior, and shared-state safety.
 
-### Goals
+### Phase 2 Goals
 
 - finalize request wait-state semantics
 - ensure deterministic callback handling
 - prevent late callback contamination
 - improve routing error propagation
+- enforce lock ownership discipline in mesh runtime paths
 
-### Areas of Work
+### Phase 2 Areas of Work
 
-```
+```text
 meshtastic/mesh_interface.py
 meshtastic/node.py
+meshtastic/tests/test_mesh_interface.py
+meshtastic/tests/test_node.py
 ```
 
-Key improvements
+Execution checklist for this phase:
 
-- request-scoped wait tracking
-- retired wait request handling
-- response handler locking validation
-- atomic queue send behavior
-- routing error timing cleanup
-
-Testing
-
-```
-tests/test_mesh_interface.py
-```
-
-Add or refine tests covering:
-
-- multiple concurrent requests
-- late responses
-- cancellation behavior
-- transport error handling
+- verify behavior against `master` for backward compatibility and completeness
+- preserve documented compatibility aliases from `COMPATIBILITY.md`
+- enforce `AGENTS.md` lock-partitioning and shutdown contracts
+- harden wait/error bookkeeping for stale, late, and concurrent responses
+- add focused tests for real failure modes (timeouts, race windows, stale callbacks)
 
 ### Explicitly Out of Scope
 
-- BLE architecture
-- CLI behavior
-- host parsing
-- OTA logic
+- BLE architecture changes (unless required by critical regression)
+- CLI behavior or modularization
+- host parsing and OTA boundary cleanup work (Phase 3 scope)
 
 ---
 
-# Phase 3: Runtime Boundary Cleanup
+## Phase 3: Runtime Boundary Cleanup
 
 Branch name suggestion:
 
-```
+```text
 runtime-boundary-cleanup
 ```
 
 This phase improves system boundaries and runtime behavior.
 
-### Goals
+### Phase 3 Goals
 
 - unify host/port parsing
 - improve runtime error surfaces
 - improve OTA error handling
 - improve configuration reliability
 
-### Areas of Work
+### Phase 3 Areas of Work
 
 New module usage:
 
-```
+```text
 meshtastic/host_port.py
 ```
 
@@ -332,7 +284,7 @@ Responsibilities:
 
 OTA improvements
 
-```
+```text
 meshtastic/ota.py
 ```
 
@@ -350,13 +302,13 @@ Security improvements
 
 ---
 
-# Phase 4: CLI Structural Refactor (Future)
+## Phase 4: CLI Structural Refactor (Future)
 
 This phase should **not begin until runtime behavior is stable**.
 
 Branch name suggestion:
 
-```
+```text
 cli-modularization
 ```
 
@@ -366,7 +318,7 @@ Split `__main__.py` responsibilities into separate modules.
 
 Possible structure:
 
-```
+```text
 meshtastic/cli/
     commands.py
     connection.py
@@ -377,7 +329,7 @@ meshtastic/cli/
 
 The CLI entry point should eventually become minimal:
 
-```
+```text
 main()
   -> argument parsing
   -> command dispatch
@@ -385,21 +337,21 @@ main()
 
 ---
 
-# 6. Merge Strategy
+## 6. Merge Strategy
 
-The final merge into `master` will occur **after phases 1–3 are completed**.
+The final merge into `master` will occur **after Phase 2 and Phase 3 are completed** (Phase 1 is already complete).
 
 This allows:
 
-- stabilization of BLE
-- stabilization of MeshInterface runtime behavior
-- stabilization of runtime behavior
+- finalized BLE stability from Phase 1
+- validated MeshInterface runtime stabilization from Phase 2
+- runtime boundary hardening from Phase 3
 
 Once these subsystems are stable, the refactor can be safely promoted to production.
 
 ---
 
-# 7. Development Rules For Next Phases
+## 7. Development Rules For Next Phases
 
 To keep the refactor manageable:
 
@@ -424,38 +376,36 @@ To keep the refactor manageable:
 
 ---
 
-# 8. Immediate Next Step
+## 8. Immediate Next Step
 
-Create the first stabilization branch from `develop`.
+Continue executing Phase 2 on the active branch:
 
+```bash
+git checkout meshinterface-pass
 ```
-git checkout develop
-git checkout -b ble-stabilization-pass
-```
 
-Focus entirely on:
+Immediate focus:
 
-- BLE lifecycle correctness
-- reconnect logic
-- shutdown reliability
-- compatibility verification
-- lifecycle test coverage
+- complete mesh runtime hardening in `mesh_interface.py` and `node.py`
+- run explicit backward-compatibility checks against `master`
+- validate compatibility inventory alignment in `COMPATIBILITY.md`
+- keep tests green with expanded targeted regression coverage
 
-This will produce the **next major PR** in the refactor program.
+This work stream should produce the next major PRs for the refactor program.
 
 ---
 
-# 9. Summary
+## 9. Summary
 
 The major architectural refactor is largely complete.
 
 The next work should not expand scope further.
 
-Instead, the project should proceed through **large stabilization passes**:
+Instead, the project proceeds through **large stabilization passes**:
 
-1. BLE stabilization
-2. MeshInterface runtime stabilization
-3. Runtime boundary cleanup
+1. BLE stabilization (completed)
+2. MeshInterface runtime stabilization (active)
+3. Runtime boundary cleanup (pending)
 4. CLI modularization (future)
 
 Once these passes are complete, `develop` will be ready to merge into `master`.

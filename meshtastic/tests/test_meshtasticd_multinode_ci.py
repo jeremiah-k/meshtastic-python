@@ -4,6 +4,7 @@ This module validates admin operations and configuration reuse across two
 meshtasticd simulator instances.
 """
 
+import base64
 import os
 import re
 import time
@@ -13,6 +14,7 @@ from typing import Any
 import pytest
 import yaml
 
+from ..protobuf import apponly_pb2
 from .cli_test_utils import _run_host_cli, _run_host_cli_ok
 
 pytestmark = [pytest.mark.int, pytest.mark.smokevirt]
@@ -68,6 +70,10 @@ CLI_DEFAULT_TIMEOUT_SECONDS = _positive_float_from_env(
     30.0,
 )
 MIN_CHANNEL_URL_LENGTH = 120
+SATURATION_ERROR_MSG = "No free channels were found"
+SIMPLE_CHANNEL_PSK = b"\x01"
+SATURATION_CONSERVATIVE_PADDING = 8
+SATURATION_DERIVED_PADDING = 2
 INFO_CHANNEL_LINE_RE = re.compile(
     r'^\s*Index (?P<idx>\d+): (?P<role>PRIMARY|SECONDARY).*"name": "(?P<name>[^"]*)"',
     re.MULTILINE,
@@ -129,6 +135,81 @@ def _extract_channel_names(info_output: str) -> dict[int, str]:
     for match in INFO_CHANNEL_LINE_RE.finditer(info_output):
         channels[int(match.group("idx"))] = match.group("name")
     return channels
+
+
+def _build_add_only_channel_url(channel_name: str) -> str:
+    """Build a channel-only add URL with one uniquely named secondary channel.
+
+    Parameters
+    ----------
+    channel_name : str
+        Name to assign to the staged secondary channel.
+
+    Returns
+    -------
+    str
+        A meshtastic.org URL encoding a ChannelSet with a single named channel.
+    """
+    channel_set = apponly_pb2.ChannelSet()
+    staged_channel = channel_set.settings.add()
+    staged_channel.name = channel_name
+    staged_channel.psk = SIMPLE_CHANNEL_PSK
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    return f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+
+def _estimate_saturation_add_attempts(
+    host: str,
+    meshtastic_bin: str,
+    *,
+    configured_channel_count: int,
+    tmp_path: Path,
+) -> int:
+    """Estimate how many ``--ch-add`` attempts are needed to observe saturation.
+
+    Prefer exported channel capacity when available; otherwise use a conservative
+    bound from observed configured channel count.
+
+    Parameters
+    ----------
+    host : str
+        Host passed to the CLI ``--host`` argument.
+    meshtastic_bin : str
+        Path or name of the meshtastic CLI binary under test.
+    configured_channel_count : int
+        Number of channels already configured on the device.
+    tmp_path : Path
+        Temporary directory used for intermediate export files.
+
+    Returns
+    -------
+    int
+        Upper bound on how many ``--ch-add`` attempts are needed to observe
+        saturation.
+    """
+    probe_export_path = tmp_path / "meshtasticd-multinode-capacity-probe.yaml"
+    _run_host_cli_ok(
+        host,
+        "--export-config",
+        str(probe_export_path),
+        meshtastic_bin=meshtastic_bin,
+    )
+    exported_data = yaml.safe_load(probe_export_path.read_text(encoding="utf-8"))
+    conservative_bound = max(
+        configured_channel_count + SATURATION_CONSERVATIVE_PADDING,
+        SATURATION_CONSERVATIVE_PADDING,
+    )
+    if isinstance(exported_data, dict):
+        channels = exported_data.get("channels")
+        if isinstance(channels, list):
+            total_slots = len(channels)
+            available_slots = max(total_slots - configured_channel_count, 0)
+            derived_bound = max(
+                available_slots + SATURATION_DERIVED_PADDING,
+                SATURATION_DERIVED_PADDING,
+            )
+            return max(derived_bound, conservative_bound)
+    return conservative_bound
 
 
 def _extract_exported_channel_identities(channels: list[Any]) -> set[tuple[int, str]]:
@@ -206,7 +287,7 @@ def _configure_channel_blueprint(host: str, meshtastic_bin: str) -> dict[int, st
     )
 
     expected_channel_names = {0: PRIMARY_CHANNEL_NAME, 1: LONGFAST_SECONDARY_NAME}
-    _cli_ok("--ch-add", LONGFAST_SECONDARY_NAME)
+    _cli_ok("--ch-set", "name", LONGFAST_SECONDARY_NAME, "--ch-index", "1")
     _cli_ok("--ch-set", "psk", "none", "--ch-index", "1")
     _cli_ok(
         "--ch-set",
@@ -219,7 +300,7 @@ def _configure_channel_blueprint(host: str, meshtastic_bin: str) -> dict[int, st
     _cli_ok("--ch-set", "downlink_enabled", "false", "--ch-index", "1")
 
     for index, channel_name in enumerate(SECONDARY_CHANNEL_NAMES, start=2):
-        _cli_ok("--ch-add", channel_name)
+        _cli_ok("--ch-set", "name", channel_name, "--ch-index", str(index))
         _cli_ok("--ch-set", "psk", "random", "--ch-index", str(index))
         _cli_ok(
             "--ch-set",
@@ -430,3 +511,116 @@ def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
         assert len(identities_a) == len(channels_a)
         assert len(identities_b) == len(channels_b)
         assert identities_a == identities_b
+
+
+def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain(
+    tmp_path: Path,
+    meshtastic_bin: str,
+) -> None:
+    """`--ch-add-url` should fail atomically when no DISABLED slots remain.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Temporary directory used for intermediate export files.
+    meshtastic_bin : str
+        Path or name of the meshtastic CLI binary under test.
+    """
+    _wait_for_host_ready(HOST_A, meshtastic_bin)
+    baseline_export_path = tmp_path / "meshtasticd-multinode-a-baseline.yaml"
+    _run_host_cli_ok(
+        HOST_A,
+        "--export-config",
+        str(baseline_export_path),
+        meshtastic_bin=meshtastic_bin,
+    )
+    assert baseline_export_path.exists()
+
+    try:
+        _configure_channel_blueprint(HOST_A, meshtastic_bin)
+        initial_info = _run_host_cli_ok(HOST_A, "--info", meshtastic_bin=meshtastic_bin)
+        initial_channels = _extract_channel_names(initial_info)
+        assert initial_channels
+
+        max_attempts = _estimate_saturation_add_attempts(
+            HOST_A,
+            meshtastic_bin,
+            configured_channel_count=len(initial_channels),
+            tmp_path=tmp_path,
+        )
+        saturated = False
+        for attempt in range(max_attempts):
+            fill_name = f"CIFill{attempt:02d}"
+            returncode, output = _run_host_cli(
+                HOST_A,
+                "--ch-add",
+                fill_name,
+                meshtastic_bin=meshtastic_bin,
+                timeout=CLI_DEFAULT_TIMEOUT_SECONDS,
+            )
+            if returncode == 0:
+                continue
+            assert SATURATION_ERROR_MSG in output
+            saturated = True
+            break
+        assert saturated
+        saturated_info = _run_host_cli_ok(
+            HOST_A,
+            "--info",
+            meshtastic_bin=meshtastic_bin,
+        )
+        saturated_channels = _extract_channel_names(saturated_info)
+        saturated_export_before_path = (
+            tmp_path / "meshtasticd-multinode-a-sat-before.yaml"
+        )
+        _run_host_cli_ok(
+            HOST_A,
+            "--export-config",
+            str(saturated_export_before_path),
+            meshtastic_bin=meshtastic_bin,
+        )
+        saturated_config_before = yaml.safe_load(
+            saturated_export_before_path.read_text(encoding="utf-8")
+        )
+
+        channel_name = "CIRollbackProbe"
+        channel_url = _build_add_only_channel_url(channel_name)
+        add_rc, add_out = _run_host_cli(
+            HOST_A,
+            "--ch-add-url",
+            channel_url,
+            meshtastic_bin=meshtastic_bin,
+            timeout=CLI_DEFAULT_TIMEOUT_SECONDS,
+        )
+        assert add_rc != 0
+        assert SATURATION_ERROR_MSG in add_out
+
+        after_info = _run_host_cli_ok(HOST_A, "--info", meshtastic_bin=meshtastic_bin)
+        assert _extract_channel_names(after_info) == saturated_channels
+        assert channel_name not in after_info
+        saturated_export_after_path = (
+            tmp_path / "meshtasticd-multinode-a-sat-after.yaml"
+        )
+        _run_host_cli_ok(
+            HOST_A,
+            "--export-config",
+            str(saturated_export_after_path),
+            meshtastic_bin=meshtastic_bin,
+        )
+        saturated_config_after = yaml.safe_load(
+            saturated_export_after_path.read_text(encoding="utf-8")
+        )
+        assert saturated_config_after == saturated_config_before
+    finally:
+        _run_host_cli_ok(
+            HOST_A,
+            "--configure",
+            str(baseline_export_path),
+            timeout=HOST_CONFIGURE_TIMEOUT_SECONDS,
+            meshtastic_bin=meshtastic_bin,
+        )
+        _wait_for_host_ready(
+            HOST_A,
+            meshtastic_bin,
+            timeout_seconds=HOST_READY_AFTER_CONFIGURE_TIMEOUT_SECONDS,
+        )

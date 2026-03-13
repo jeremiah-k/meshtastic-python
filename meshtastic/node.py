@@ -17,6 +17,7 @@ from typing import (
     Callable,
     NoReturn,
     Sequence,
+    TypeVar,
     cast,
 )
 
@@ -70,6 +71,23 @@ FACTORY_RESET_REQUEST_VALUE: int = 1
 # Extra wait used only when getMetadata() runs under redirected stdout for
 # historical callers that parse printed metadata lines.
 METADATA_STDOUT_COMPAT_WAIT_SECONDS = 1.0
+NAMED_ADMIN_CHANNEL_NAME = "admin"
+_ResultT = TypeVar("_ResultT")
+
+
+def _is_named_admin_channel_name(channel_name: str) -> bool:
+    """Return whether a channel name designates the special named admin channel."""
+    return channel_name.lower() == NAMED_ADMIN_CHANNEL_NAME
+
+
+def _ordered_admin_indexes(*indexes: int | None) -> list[int]:
+    """Return unique non-None admin channel indexes, preserving input order."""
+    ordered: list[int] = []
+    for index in indexes:
+        if index is None or index in ordered:
+            continue
+        ordered.append(index)
+    return ordered
 
 
 class Node:
@@ -195,9 +213,46 @@ class Node:
         if metadata_stdout_event is not None:
             metadata_stdout_event.set()
 
+    def _execute_with_node_db_lock(self, func: Callable[[], _ResultT]) -> _ResultT:
+        """Execute ``func`` while holding ``iface._node_db_lock`` when available."""
+        node_db_lock = getattr(self.iface, "_node_db_lock", None)
+        if (
+            node_db_lock is None
+            or not hasattr(node_db_lock, "__enter__")
+            or not hasattr(node_db_lock, "__exit__")
+        ):
+            return func()
+        with node_db_lock:
+            return func()
+
+    def _get_metadata_snapshot(self) -> mesh_pb2.DeviceMetadata | None:
+        """Return a stable snapshot of ``iface.metadata`` under the node DB lock when available."""
+
+        def _read_and_copy() -> mesh_pb2.DeviceMetadata | None:
+            metadata = getattr(self.iface, "metadata", None)
+            if not isinstance(metadata, mesh_pb2.DeviceMetadata):
+                return None
+            metadata_snapshot = mesh_pb2.DeviceMetadata()
+            metadata_snapshot.CopyFrom(metadata)
+            return metadata_snapshot
+
+        return self._execute_with_node_db_lock(_read_and_copy)
+
+    def _set_metadata_snapshot(
+        self, metadata_snapshot: mesh_pb2.DeviceMetadata
+    ) -> None:
+        """Persist a metadata snapshot to ``iface.metadata`` under the node DB lock when available."""
+
+        def _write() -> None:
+            stored_metadata = mesh_pb2.DeviceMetadata()
+            stored_metadata.CopyFrom(metadata_snapshot)
+            self.iface.metadata = stored_metadata
+
+        self._execute_with_node_db_lock(_write)
+
     def _emit_cached_metadata_for_stdout(self) -> bool:
         """Emit metadata lines from ``self.iface.metadata`` for stdout parser compatibility."""
-        metadata = getattr(self.iface, "metadata", None)
+        metadata = self._get_metadata_snapshot()
         firmware_version = getattr(metadata, "firmware_version", "")
         if not isinstance(firmware_version, str) or not firmware_version:
             return False
@@ -333,7 +388,7 @@ class Node:
         startingIndex : int
             Zero-based channel index to start fetching from (typically 0-7). (Default value = 0)
         """
-        logger.debug(f"requestChannels for nodeNum:{self.nodeNum}")
+        logger.debug("requestChannels for nodeNum:%s", self.nodeNum)
         # only initialize if we're starting out fresh
         if startingIndex == 0:
             with self._channels_lock:
@@ -358,12 +413,13 @@ class Node:
             contain either `getConfigResponse` or `getModuleConfigResponse` and accompanying
             `raw` bytes for the returned field.
         """
-        logger.debug(f"onResponseRequestSetting() p:{p}")
+        logger.debug("onResponseRequestSetting() p:%s", p)
         config_values = None
         if "routing" in p["decoded"]:
             if p["decoded"]["routing"]["errorReason"] != "NONE":
                 logger.error(
-                    f"Error on response: {p['decoded']['routing']['errorReason']}"
+                    "Error on response: %s",
+                    p["decoded"]["routing"]["errorReason"],
                 )
                 self.iface._acknowledgment.receivedNak = True
         else:
@@ -415,7 +471,9 @@ class Node:
                 config_values.CopyFrom(raw_config)
                 logger.info("%s:\n%s", camel_to_snake(field), config_values)
 
-    def requestConfig(self, configType: int | FieldDescriptor) -> None:
+    def requestConfig(
+        self, configType: int | FieldDescriptor, adminIndex: int | None = None
+    ) -> None:
         """Request a configuration subset or the full configuration from this node.
 
         If `configType` is an int it is treated as a config index. If it is a protobuf
@@ -430,6 +488,10 @@ class Node:
         configType : int | FieldDescriptor
             Numeric config index or a
             protobuf field descriptor indicating which config field to fetch.
+        adminIndex : int | None
+            Admin channel index to use for sending; when None the node's
+            configured admin channel is used. Pass 0 to force channel 0.
+            (Default value = None)
         """
         if self == self.iface.localNode:
             onResponse = None
@@ -453,7 +515,9 @@ class Node:
                     msg_index  # pyright: ignore[reportAttributeAccessIssue]
                 )
 
-        self._send_admin(p, wantResponse=True, onResponse=onResponse)
+        self._send_admin(
+            p, wantResponse=True, onResponse=onResponse, adminIndex=adminIndex
+        )
         if onResponse:
             self.iface.waitForAckNak()
 
@@ -587,14 +651,33 @@ class Node:
         config_setter = getattr(p, setter_name)
         getattr(config_setter, config_name).CopyFrom(source_config)
 
-        logger.debug(f"Wrote: {config_name}")
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
+        logger.debug("Wrote: %s", config_name)
+        onResponse = None if self == self.iface.localNode else self.onAckNak
         self._send_admin(p, onResponse=onResponse)
 
-    def writeChannel(self, channelIndex: int, adminIndex: int = 0) -> None:
+    def _write_channel_snapshot(
+        self,
+        channel_to_write: channel_pb2.Channel,
+        adminIndex: int | None = None,
+    ) -> None:
+        """Write a pre-built channel snapshot to the device.
+
+        Parameters
+        ----------
+        channel_to_write : channel_pb2.Channel
+            Snapshot payload to send via `set_channel`.
+        adminIndex : int | None
+            Admin channel index to use for sending; when None the node's
+            configured admin channel is used. Pass 0 to force channel 0.
+            (Default value = None)
+        """
+        self.ensureSessionKey(adminIndex=adminIndex)
+        p = admin_pb2.AdminMessage()
+        p.set_channel.CopyFrom(channel_to_write)
+        self._send_admin(p, adminIndex=adminIndex)
+        logger.debug("Wrote channel %s", channel_to_write.index)
+
+    def writeChannel(self, channelIndex: int, adminIndex: int | None = None) -> None:
         """Write the channel at the given index to the device.
 
         Sends the specified channel configuration to the node and ensures an admin session key is present before sending.
@@ -603,8 +686,9 @@ class Node:
         ----------
         channelIndex : int
             Index of the channel to write.
-        adminIndex : int
-            Admin channel index to use for sending. (Default value = 0)
+        adminIndex : int | None
+            Admin channel index to use for sending; when None the node's
+            configured admin channel is used. (Default value = None)
 
         Raises
         ------
@@ -621,11 +705,7 @@ class Node:
                 )
             channel_to_write = channel_pb2.Channel()
             channel_to_write.CopyFrom(channels[channelIndex])
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.set_channel.CopyFrom(channel_to_write)
-        self._send_admin(p, adminIndex=adminIndex)
-        logger.debug(f"Wrote channel {channelIndex}")
+        self._write_channel_snapshot(channel_to_write, adminIndex=adminIndex)
 
     # COMPAT_STABLE_SHIM: historical channel lookup helpers return live Channel
     # objects for mutate-then-write workflows (get*() -> edit -> writeChannel()).
@@ -705,6 +785,25 @@ class Node:
                 self._raise_interface_error(
                     "Only SECONDARY or DISABLED channels can be deleted"
                 )
+            is_local_node = self.iface.localNode == self
+
+            def _named_admin_index_from_channels(
+                channel_list: list[channel_pb2.Channel],
+            ) -> int:
+                for channel in channel_list:
+                    if (
+                        channel.role != channel_pb2.Channel.Role.DISABLED
+                        and channel.settings
+                        and _is_named_admin_channel_name(channel.settings.name)
+                    ):
+                        return channel.index
+                return 0
+
+            if is_local_node:
+                pre_delete_admin_index = _named_admin_index_from_channels(channels)
+            else:
+                pre_delete_admin_index = self.iface.localNode.getAdminChannelIndex()
+
             # If we move the "admin" channel, the index used for admin writes
             # will need to be recomputed as writes progress.
             channels.pop(channelIndex)
@@ -714,18 +813,25 @@ class Node:
                 channel_snapshot = channel_pb2.Channel()
                 channel_snapshot.CopyFrom(channels[index])
                 channels_to_rewrite.append((index, channel_snapshot))
-            is_local_node = self.iface.localNode == self
 
-        for index, channel_snapshot in channels_to_rewrite:
             if is_local_node:
-                admin_index_for_write = self._get_admin_channel_index()
+                post_delete_admin_index = _named_admin_index_from_channels(channels)
             else:
-                admin_index_for_write = self.iface.localNode.getAdminChannelIndex()
-            self.ensureSessionKey()
-            p = admin_pb2.AdminMessage()
-            p.set_channel.CopyFrom(channel_snapshot)
-            self._send_admin(p, adminIndex=admin_index_for_write)
-            logger.debug(f"Wrote channel {index}")
+                post_delete_admin_index = self.iface.localNode.getAdminChannelIndex()
+
+        admin_index_for_write = pre_delete_admin_index
+        switch_after_admin_slot_rewrite = pre_delete_admin_index >= channelIndex
+
+        for _index, channel_snapshot in channels_to_rewrite:
+            self._write_channel_snapshot(
+                channel_snapshot,
+                adminIndex=admin_index_for_write,
+            )
+            if (
+                switch_after_admin_slot_rewrite
+                and channel_snapshot.index == pre_delete_admin_index
+            ):
+                admin_index_for_write = post_delete_admin_index
 
     def getChannelByName(self, name: str) -> channel_pb2.Channel | None:
         """Find a channel whose settings.name exactly matches the provided name.
@@ -804,6 +910,18 @@ class Node:
         """Public accessor for the admin channel index on this node."""
         return self._get_admin_channel_index()
 
+    def _get_named_admin_channel_index(self) -> int | None:
+        """Return the index of a channel explicitly named ``admin``, if present."""
+        with self._channels_lock:
+            for channel in self.channels or []:
+                if (
+                    channel.role != channel_pb2.Channel.Role.DISABLED
+                    and channel.settings
+                    and _is_named_admin_channel_name(channel.settings.name)
+                ):
+                    return channel.index
+            return None
+
     def _get_admin_channel_index(self) -> int:
         """Get the index of the channel named "admin", or 0 if no such channel exists.
 
@@ -812,11 +930,8 @@ class Node:
         int
             Index of the admin channel, or 0 if no channel with name "admin" is present.
         """
-        with self._channels_lock:
-            for c in self.channels or []:
-                if c.settings and c.settings.name.lower() == "admin":
-                    return c.index
-            return 0
+        named_admin_index = self._get_named_admin_channel_index()
+        return 0 if named_admin_index is None else named_admin_index
 
     def setOwner(
         self,
@@ -850,7 +965,7 @@ class Node:
         MeshInterfaceError
             If `long_name` or `short_name` is provided but empty or whitespace-only after trimming.
         """
-        logger.debug(f"in setOwner nodeNum:{self.nodeNum}")
+        logger.debug("in setOwner nodeNum:%s", self.nodeNum)
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
 
@@ -862,7 +977,9 @@ class Node:
             if len(long_name) > MAX_LONG_NAME_LEN:
                 long_name = long_name[:MAX_LONG_NAME_LEN]
                 logger.warning(
-                    f"Long name is longer than {MAX_LONG_NAME_LEN} characters, truncating to '{long_name}'"
+                    "Long name is longer than %s characters, truncating to '%s'",
+                    MAX_LONG_NAME_LEN,
+                    long_name,
                 )
             p.set_owner.long_name = long_name
             p.set_owner.is_licensed = is_licensed
@@ -883,10 +1000,10 @@ class Node:
             p.set_owner.is_unmessagable = is_unmessagable
 
         # Note: These debug lines are used in unit tests
-        logger.debug(f"p.set_owner.long_name:{p.set_owner.long_name}:")
-        logger.debug(f"p.set_owner.short_name:{p.set_owner.short_name}:")
-        logger.debug(f"p.set_owner.is_licensed:{p.set_owner.is_licensed}:")
-        logger.debug(f"p.set_owner.is_unmessagable:{p.set_owner.is_unmessagable}:")
+        logger.debug("p.set_owner.long_name:%s:", p.set_owner.long_name)
+        logger.debug("p.set_owner.short_name:%s:", p.set_owner.short_name)
+        logger.debug("p.set_owner.is_licensed:%s:", p.set_owner.is_licensed)
+        logger.debug("p.set_owner.is_unmessagable:%s:", p.set_owner.is_unmessagable)
         # If sending to a remote node, wait for ACK/NAK
         if self == self.iface.localNode:
             onResponse = None
@@ -982,49 +1099,273 @@ class Node:
 
         if len(channelSet.settings) == 0:
             self._raise_interface_error("There were no settings.")
+        has_lora_update = channelSet.HasField("lora_config")
+
+        admin_write_node = self.iface.localNode
+        admin_index_for_write = admin_write_node._get_admin_channel_index()
+        named_admin_index_for_write = admin_write_node._get_named_admin_channel_index()
+        has_admin_write_node_named_admin = named_admin_index_for_write is not None
 
         if addOnly:
             # Add new channels with names not already present
             # Don't change existing channels
             ignored_channel_names: list[str] = []
-            channels_to_write: list[tuple[int, str]] = []
+            channels_to_write: list[tuple[channel_pb2.Channel, str]] = []
+            deferred_add_only_admin_channel: tuple[channel_pb2.Channel, str] | None = (
+                None
+            )
+            deferred_add_only_admin_index: int | None = None
+            original_channels_by_index: dict[int, channel_pb2.Channel] = {}
+            original_lora_config: config_pb2.Config.LoRaConfig | None = None
+            # Rollback needs a local LoRa snapshot only when this URL updates LoRa.
+            if has_lora_update:
+                if not self.localConfig.HasField("lora"):
+                    self._raise_interface_error(
+                        "LoRa config must be loaded before setURL(addOnly=True)"
+                    )
+                original_lora_config = config_pb2.Config.LoRaConfig()
+                original_lora_config.CopyFrom(self.localConfig.lora)
+            # Bootstrap admin session using the snapshotted path before staging.
+            self.ensureSessionKey(adminIndex=admin_index_for_write)
             with self._channels_lock:
                 channels = self.channels
                 if channels is None:
                     self._raise_interface_error("Config or channels not loaded")
-                existing_names = {
-                    c.settings.name for c in channels if c.settings and c.settings.name
+                existing_names_normalized = {
+                    c.settings.name.lower()
+                    for c in channels
+                    if (
+                        c.role != channel_pb2.Channel.Role.DISABLED
+                        and c.settings
+                        and c.settings.name
+                    )
                 }
                 disabled_channels = [
                     c for c in channels if c.role == channel_pb2.Channel.Role.DISABLED
                 ]
-                disabled_channel_iter = iter(disabled_channels)
+                pending_new_settings: list[channel_pb2.ChannelSettings] = []
                 for chs in channelSet.settings:
                     channel_name = chs.name
-                    if channel_name == "" or channel_name in existing_names:
+                    normalized_name = channel_name.lower()
+                    if (
+                        channel_name == ""
+                        or normalized_name in existing_names_normalized
+                    ):
                         ignored_channel_names.append(channel_name)
                         continue
-                    disabled_channel = next(disabled_channel_iter, None)
-                    if disabled_channel is None:
-                        self._raise_interface_error("No free channels were found")
-                    disabled_channel.settings.CopyFrom(chs)
-                    disabled_channel.role = channel_pb2.Channel.Role.SECONDARY
-                    channels_to_write.append((disabled_channel.index, channel_name))
-                    existing_names.add(channel_name)
+                    pending_new_settings.append(chs)
+                    existing_names_normalized.add(normalized_name)
+                if len(pending_new_settings) > len(disabled_channels):
+                    self._raise_interface_error(
+                        "No free channels were found for all additions "
+                        f"(need {len(pending_new_settings)}, available {len(disabled_channels)})"
+                    )
+                for disabled_channel, new_settings in zip(
+                    disabled_channels, pending_new_settings, strict=False
+                ):
+                    previous_channel = channel_pb2.Channel()
+                    previous_channel.CopyFrom(disabled_channel)
+                    original_channels_by_index[disabled_channel.index] = (
+                        previous_channel
+                    )
+                    staged_channel = channel_pb2.Channel()
+                    staged_channel.CopyFrom(disabled_channel)
+                    staged_channel.settings.CopyFrom(new_settings)
+                    staged_channel.role = channel_pb2.Channel.Role.SECONDARY
+                    channels_to_write.append((staged_channel, new_settings.name))
+
+            if not has_admin_write_node_named_admin:
+                deferred_add_only_admin_channel = next(
+                    (
+                        candidate
+                        for candidate in channels_to_write
+                        if _is_named_admin_channel_name(candidate[1])
+                    ),
+                    None,
+                )
+            if deferred_add_only_admin_channel is not None:
+                deferred_add_only_admin_index = deferred_add_only_admin_channel[0].index
 
             for ignored_name in ignored_channel_names:
                 logger.info(
-                    f'Ignoring existing or empty channel "{ignored_name}" from add URL'
+                    'Ignoring existing or empty channel "%s" from add URL',
+                    ignored_name,
                 )
-            for channel_index, channel_name in channels_to_write:
-                logger.info(f"Adding new channel '{channel_name}' to device")
-                self.writeChannel(channel_index)
+            written_indices: list[int] = []
+            lora_write_started = False
+            try:
+                for staged_channel, channel_name in channels_to_write:
+                    if (
+                        deferred_add_only_admin_channel is not None
+                        and staged_channel.index
+                        == deferred_add_only_admin_channel[0].index
+                    ):
+                        continue
+                    logger.info("Adding new channel '%s' to device", channel_name)
+                    written_indices.append(staged_channel.index)
+                    self._write_channel_snapshot(
+                        staged_channel,
+                        adminIndex=admin_index_for_write,
+                    )
+                if has_lora_update:
+                    set_lora = admin_pb2.AdminMessage()
+                    set_lora.set_config.lora.CopyFrom(channelSet.lora_config)
+                    self.ensureSessionKey(adminIndex=admin_index_for_write)
+                    lora_write_started = True
+                    self._send_admin(set_lora, adminIndex=admin_index_for_write)
+                if deferred_add_only_admin_channel is not None:
+                    staged_channel, channel_name = deferred_add_only_admin_channel
+                    logger.info("Adding new channel '%s' to device", channel_name)
+                    written_indices.append(staged_channel.index)
+                    self._write_channel_snapshot(
+                        staged_channel,
+                        adminIndex=admin_index_for_write,
+                    )
+            # Intentionally broad: rollback should run for any send failure in this
+            # transactional block. The original exception is re-raised.
+            except Exception:
+                logger.warning(
+                    "Failed while applying addOnly channel updates; attempting rollback "
+                    "for written channels and LoRa config.",
+                    exc_info=True,
+                )
+                rollback_failed = False
+                written_index_set = set(written_indices)
+                if deferred_add_only_admin_index in written_index_set:
+                    rollback_admin_indexes = _ordered_admin_indexes(
+                        deferred_add_only_admin_index,
+                        admin_index_for_write,
+                    )
+                else:
+                    rollback_admin_indexes = _ordered_admin_indexes(
+                        admin_index_for_write,
+                        deferred_add_only_admin_index,
+                    )
+                channel_rollback_order: list[int] = []
+                if (
+                    deferred_add_only_admin_index is not None
+                    and deferred_add_only_admin_index in written_index_set
+                ):
+                    channel_rollback_order.append(deferred_add_only_admin_index)
+                for index in reversed(written_indices):
+                    if index not in channel_rollback_order:
+                        channel_rollback_order.append(index)
+                for index in channel_rollback_order:
+                    rollback_channel = original_channels_by_index.get(index)
+                    if rollback_channel is None:
+                        continue
+                    rollback_succeeded = False
+                    last_rollback_error: Exception | None = None
+                    for rollback_admin_index in rollback_admin_indexes:
+                        try:
+                            self._write_channel_snapshot(
+                                rollback_channel,
+                                adminIndex=rollback_admin_index,
+                            )
+                            rollback_succeeded = True
+                            break
+                        # Best-effort rollback path; keep attempting remaining steps.
+                        except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                            last_rollback_error = rollback_error
+                    if not rollback_succeeded:
+                        rollback_failed = True
+                        logger.warning(
+                            "Rollback of channel index %s failed after addOnly partial failure.",
+                            index,
+                            exc_info=(
+                                None
+                                if last_rollback_error is None
+                                else (
+                                    type(last_rollback_error),
+                                    last_rollback_error,
+                                    last_rollback_error.__traceback__,
+                                )
+                            ),
+                        )
+                if rollback_failed:
+                    with self._channels_lock:
+                        self.channels = None
+                        self.partialChannels = []
+                    logger.warning(
+                        "Channel rollback incomplete after addOnly failure; invalidated local channel cache."
+                    )
+                if lora_write_started and original_lora_config is not None:
+                    rollback_lora = admin_pb2.AdminMessage()
+                    rollback_lora.set_config.lora.CopyFrom(original_lora_config)
+                    rollback_lora_succeeded = False
+                    last_rollback_lora_error: Exception | None = None
+                    for rollback_admin_index in rollback_admin_indexes:
+                        try:
+                            self.ensureSessionKey(adminIndex=rollback_admin_index)
+                            self._send_admin(
+                                rollback_lora,
+                                adminIndex=rollback_admin_index,
+                            )
+                            self.localConfig.lora.CopyFrom(original_lora_config)
+                            rollback_lora_succeeded = True
+                            break
+                        # Best-effort rollback path; keep original failure semantics.
+                        # Preserve original failure while attempting best-effort LoRa rollback.
+                        except Exception as rollback_lora_error:  # noqa: BLE001
+                            last_rollback_lora_error = rollback_lora_error
+                    if not rollback_lora_succeeded:
+                        logger.warning(
+                            "Rollback of LoRa config failed after addOnly partial failure.",
+                            exc_info=(
+                                None
+                                if last_rollback_lora_error is None
+                                else (
+                                    type(last_rollback_lora_error),
+                                    last_rollback_lora_error,
+                                    last_rollback_lora_error.__traceback__,
+                                )
+                            ),
+                        )
+                        self.localConfig.ClearField("lora")
+                        logger.warning(
+                            "LoRa config cache cleared after rollback failure; reload config before using localConfig.lora."
+                        )
+                raise
+            with self._channels_lock:
+                channels = self.channels
+                if channels is None:
+                    logger.warning(
+                        "Channel cache unavailable after successful addOnly apply; reload channels to refresh local state."
+                    )
+                else:
+                    for staged_channel, _ in channels_to_write:
+                        if 0 <= staged_channel.index < len(channels):
+                            channels[staged_channel.index].CopyFrom(staged_channel)
+                        else:
+                            logger.warning(
+                                "Channel index %s out of range during addOnly cache update; invalidating local channel cache.",
+                                staged_channel.index,
+                            )
+                            self.channels = None
+                            self.partialChannels = []
+                            break
+            if has_lora_update:
+                self.localConfig.lora.CopyFrom(channelSet.lora_config)
         else:
             with self._channels_lock:
                 channels = self.channels
                 if channels is None:
                     self._raise_interface_error("Config or channels not loaded")
                 max_channels = len(channels)
+                replace_original_channels_snapshot: list[channel_pb2.Channel] = []
+                replace_original_channels_by_index: dict[int, channel_pb2.Channel] = {}
+                for existing_channel in channels:
+                    channel_snapshot = channel_pb2.Channel()
+                    channel_snapshot.CopyFrom(existing_channel)
+                    replace_original_channels_snapshot.append(channel_snapshot)
+                    replace_original_channels_by_index[existing_channel.index] = (
+                        channel_snapshot
+                    )
+            replace_original_lora_config: config_pb2.Config.LoRaConfig | None = None
+            if has_lora_update and self.localConfig.HasField("lora"):
+                replace_original_lora_config = config_pb2.Config.LoRaConfig()
+                replace_original_lora_config.CopyFrom(self.localConfig.lora)
+            staged_channels: list[channel_pb2.Channel] = []
             for i, chs in enumerate(channelSet.settings):
                 if i >= max_channels:
                     logger.warning(
@@ -1040,18 +1381,266 @@ class Node:
                 )
                 ch.index = i
                 ch.settings.CopyFrom(chs)
-                with self._channels_lock:
-                    channels = self.channels
-                    if channels is None:
-                        self._raise_interface_error("Config or channels not loaded")
-                    channels[ch.index] = ch
-                logger.debug(f"Channel i:{i} ch:{ch}")
-                self.writeChannel(ch.index)
+                staged_channels.append(ch)
+            # Full-replace semantics: any channels not present in the URL should be
+            # explicitly disabled so stale secondaries/admin channels do not persist.
+            for i in range(len(staged_channels), max_channels):
+                disabled_channel = channel_pb2.Channel()
+                disabled_channel.index = i
+                disabled_channel.role = channel_pb2.Channel.Role.DISABLED
+                staged_channels.append(disabled_channel)
 
-        p = admin_pb2.AdminMessage()
-        p.set_config.lora.CopyFrom(channelSet.lora_config)
-        self.ensureSessionKey()
-        self._send_admin(p)
+            staged_named_admin_channels = [
+                staged_channel
+                for staged_channel in staged_channels
+                if staged_channel.settings
+                and staged_channel.settings.name
+                and _is_named_admin_channel_name(staged_channel.settings.name)
+            ]
+            if len(staged_named_admin_channels) > 1:
+                self._raise_interface_error(
+                    "URL contains multiple channels named 'admin'; only one is allowed"
+                )
+            staged_named_admin_channel = (
+                staged_named_admin_channels[0] if staged_named_admin_channels else None
+            )
+            staged_channels_by_index = {
+                staged_channel.index: staged_channel
+                for staged_channel in staged_channels
+            }
+            deferred_new_named_admin_channel = staged_named_admin_channel
+            deferred_new_named_admin_index = (
+                deferred_new_named_admin_channel.index
+                if deferred_new_named_admin_channel is not None
+                else None
+            )
+            deferred_previous_admin_slot_channel: channel_pb2.Channel | None = None
+            if named_admin_index_for_write is not None:
+                previous_admin_slot_channel = staged_channels_by_index.get(
+                    named_admin_index_for_write
+                )
+                if previous_admin_slot_channel is not None and (
+                    deferred_new_named_admin_channel is None
+                    or previous_admin_slot_channel.index
+                    != deferred_new_named_admin_channel.index
+                ):
+                    deferred_previous_admin_slot_channel = previous_admin_slot_channel
+            deferred_channel_indexes = {
+                channel.index
+                for channel in (
+                    deferred_new_named_admin_channel,
+                    deferred_previous_admin_slot_channel,
+                )
+                if channel is not None
+            }
+            written_channel_indices: list[int] = []
+            lora_write_started = False
+            rollback_admin_index_for_write = admin_index_for_write
+
+            try:
+                for staged_channel in staged_channels:
+                    if staged_channel.index in deferred_channel_indexes:
+                        continue
+                    logger.debug(
+                        "Channel i:%s ch:%s",
+                        staged_channel.index,
+                        staged_channel,
+                    )
+                    written_channel_indices.append(staged_channel.index)
+                    self._write_channel_snapshot(
+                        staged_channel,
+                        adminIndex=admin_index_for_write,
+                    )
+                    with self._channels_lock:
+                        channels = self.channels
+                        if channels is None:
+                            self._raise_interface_error("Config or channels not loaded")
+                        channels[staged_channel.index].CopyFrom(staged_channel)
+
+                if has_lora_update:
+                    p = admin_pb2.AdminMessage()
+                    p.set_config.lora.CopyFrom(channelSet.lora_config)
+                    self.ensureSessionKey(adminIndex=admin_index_for_write)
+                    lora_write_started = True
+                    self._send_admin(p, adminIndex=admin_index_for_write)
+                    self.localConfig.lora.CopyFrom(channelSet.lora_config)
+
+                if deferred_new_named_admin_channel is not None:
+                    logger.debug(
+                        "Channel i:%s ch:%s",
+                        deferred_new_named_admin_channel.index,
+                        deferred_new_named_admin_channel,
+                    )
+                    written_channel_indices.append(
+                        deferred_new_named_admin_channel.index
+                    )
+                    self._write_channel_snapshot(
+                        deferred_new_named_admin_channel,
+                        adminIndex=admin_index_for_write,
+                    )
+                    with self._channels_lock:
+                        channels = self.channels
+                        if channels is None:
+                            self._raise_interface_error("Config or channels not loaded")
+                        channels[deferred_new_named_admin_channel.index].CopyFrom(
+                            deferred_new_named_admin_channel
+                        )
+                    rollback_admin_index_for_write = (
+                        deferred_new_named_admin_channel.index
+                    )
+                if deferred_previous_admin_slot_channel is not None:
+                    updated_admin_index_for_write = admin_index_for_write
+                    if deferred_new_named_admin_channel is not None:
+                        updated_admin_index_for_write = (
+                            admin_write_node._get_admin_channel_index()
+                        )
+                    logger.debug(
+                        "Rewriting deferred admin slot i:%s via admin index %s",
+                        deferred_previous_admin_slot_channel.index,
+                        updated_admin_index_for_write,
+                    )
+                    written_channel_indices.append(
+                        deferred_previous_admin_slot_channel.index
+                    )
+                    self._write_channel_snapshot(
+                        deferred_previous_admin_slot_channel,
+                        adminIndex=updated_admin_index_for_write,
+                    )
+                    with self._channels_lock:
+                        channels = self.channels
+                        if channels is None:
+                            self._raise_interface_error("Config or channels not loaded")
+                        channels[deferred_previous_admin_slot_channel.index].CopyFrom(
+                            deferred_previous_admin_slot_channel
+                        )
+            except Exception:
+                logger.warning(
+                    "Failed while applying replace-all channel updates; attempting rollback "
+                    "for written channels and LoRa config.",
+                    exc_info=True,
+                )
+                rollback_failed = False
+                written_index_set = set(written_channel_indices)
+                if deferred_new_named_admin_index in written_index_set:
+                    rollback_admin_indexes = _ordered_admin_indexes(
+                        deferred_new_named_admin_index,
+                        rollback_admin_index_for_write,
+                        admin_index_for_write,
+                    )
+                else:
+                    rollback_admin_indexes = _ordered_admin_indexes(
+                        rollback_admin_index_for_write,
+                        admin_index_for_write,
+                        deferred_new_named_admin_index,
+                    )
+                replace_channel_rollback_order: list[int] = []
+                if (
+                    deferred_new_named_admin_index is not None
+                    and deferred_new_named_admin_index in written_index_set
+                ):
+                    replace_channel_rollback_order.append(
+                        deferred_new_named_admin_index
+                    )
+                for index in reversed(written_channel_indices):
+                    if index not in replace_channel_rollback_order:
+                        replace_channel_rollback_order.append(index)
+                for index in replace_channel_rollback_order:
+                    replace_rollback_channel: channel_pb2.Channel | None = (
+                        replace_original_channels_by_index.get(index)
+                    )
+                    if replace_rollback_channel is None:
+                        continue
+                    rollback_succeeded = False
+                    replace_last_rollback_error: Exception | None = None
+                    for rollback_admin_index in rollback_admin_indexes:
+                        try:
+                            self._write_channel_snapshot(
+                                replace_rollback_channel,
+                                adminIndex=rollback_admin_index,
+                            )
+                            rollback_succeeded = True
+                            break
+                        except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                            replace_last_rollback_error = rollback_error
+                    if not rollback_succeeded:
+                        rollback_failed = True
+                        logger.warning(
+                            "Rollback of channel index %s failed after replace-all partial failure.",
+                            index,
+                            exc_info=(
+                                None
+                                if replace_last_rollback_error is None
+                                else (
+                                    type(replace_last_rollback_error),
+                                    replace_last_rollback_error,
+                                    replace_last_rollback_error.__traceback__,
+                                )
+                            ),
+                        )
+                if lora_write_started:
+                    if replace_original_lora_config is not None:
+                        rollback_lora = admin_pb2.AdminMessage()
+                        rollback_lora.set_config.lora.CopyFrom(
+                            replace_original_lora_config
+                        )
+                        rollback_lora_succeeded = False
+                        replace_last_rollback_lora_error: Exception | None = None
+                        for rollback_admin_index in rollback_admin_indexes:
+                            try:
+                                self.ensureSessionKey(adminIndex=rollback_admin_index)
+                                self._send_admin(
+                                    rollback_lora,
+                                    adminIndex=rollback_admin_index,
+                                )
+                                self.localConfig.lora.CopyFrom(
+                                    replace_original_lora_config
+                                )
+                                rollback_lora_succeeded = True
+                                break
+                            # Preserve original failure while attempting best-effort LoRa rollback.
+                            except Exception as rollback_lora_error:  # noqa: BLE001
+                                replace_last_rollback_lora_error = rollback_lora_error
+                        if not rollback_lora_succeeded:
+                            rollback_failed = True
+                            logger.warning(
+                                "Rollback of LoRa config failed after replace-all partial failure.",
+                                exc_info=(
+                                    None
+                                    if replace_last_rollback_lora_error is None
+                                    else (
+                                        type(replace_last_rollback_lora_error),
+                                        replace_last_rollback_lora_error,
+                                        replace_last_rollback_lora_error.__traceback__,
+                                    )
+                                ),
+                            )
+                            self.localConfig.ClearField("lora")
+                            logger.warning(
+                                "LoRa config cache cleared after rollback failure; reload config before using localConfig.lora."
+                            )
+                    else:
+                        self.localConfig.ClearField("lora")
+                        logger.warning(
+                            "LoRa config cache cleared after replace-all failure without "
+                            "rollback snapshot; reload config before using localConfig.lora."
+                        )
+                if rollback_failed:
+                    with self._channels_lock:
+                        self.channels = None
+                        self.partialChannels = []
+                    logger.warning(
+                        "Replace-all rollback incomplete after failure; invalidated local channel cache."
+                    )
+                else:
+                    with self._channels_lock:
+                        restored_channels: list[channel_pb2.Channel] = []
+                        for original_channel in replace_original_channels_snapshot:
+                            restored_channel = channel_pb2.Channel()
+                            restored_channel.CopyFrom(original_channel)
+                            restored_channels.append(restored_channel)
+                        self.channels = restored_channels
+                        self.partialChannels = []
+                raise
 
     def onResponseRequestRingtone(self, p: dict[str, Any]) -> None:
         """Process an admin response containing a ringtone fragment and cache it on the Node.
@@ -1514,7 +2103,7 @@ class Node:
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
         p.reboot_seconds = secs
-        logger.info(f"Telling node to reboot in {secs} seconds")
+        logger.info("Telling node to reboot in %s seconds", secs)
 
         # If sending to a remote node, wait for ACK/NAK
         if self == self.iface.localNode:
@@ -1585,7 +2174,7 @@ class Node:
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
         p.reboot_ota_seconds = secs
-        logger.info(f"Telling node to reboot to OTA in {secs} seconds")
+        logger.info("Telling node to reboot to OTA in %s seconds", secs)
 
         # If sending to a remote node, wait for ACK/NAK
         if self == self.iface.localNode:
@@ -1702,7 +2291,7 @@ class Node:
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
         p.shutdown_seconds = secs
-        logger.info(f"Telling node to shutdown in {secs} seconds")
+        logger.info("Telling node to shutdown in %s seconds", secs)
 
         # If sending to a remote node, wait for ACK/NAK
         if self == self.iface.localNode:
@@ -2007,7 +2596,7 @@ class Node:
             timeSec = int(time.time())
         p = admin_pb2.AdminMessage()
         p.set_time_only = timeSec
-        logger.info(f"Setting node time to {timeSec}")
+        logger.info("Setting node time to %s", timeSec)
 
         if self == self.iface.localNode:
             onResponse = None
@@ -2085,7 +2674,7 @@ class Node:
             Decoded packet containing at minimum a 'decoded' key with routing and
             admin/raw get_device_metadata_response fields.
         """
-        logger.debug(f"onRequestGetMetadata() p:{p}")
+        logger.debug("onRequestGetMetadata() p:%s", p)
 
         decoded = p["decoded"]
 
@@ -2116,7 +2705,7 @@ class Node:
         c = decoded["admin"]["raw"].get_device_metadata_response
         metadata_snapshot = mesh_pb2.DeviceMetadata()
         metadata_snapshot.CopyFrom(c)
-        self.iface.metadata = metadata_snapshot
+        self._set_metadata_snapshot(metadata_snapshot)
         self._timeout.reset()  # We made forward progress
         logger.debug("Received metadata %s", stripnl(c))
         self._emit_metadata_line(f"\nfirmware_version: {c.firmware_version}")
@@ -2159,14 +2748,15 @@ class Node:
             - a routing message with 'routing.errorReason', or
             - an admin message with 'admin.raw.get_channel_response' (a Channel protobuf-like object with an `index` field).
         """
-        logger.debug(f"onResponseRequestChannel() p:{p}")
+        logger.debug("onResponseRequestChannel() p:%s", p)
 
         if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.ROUTING_APP
         ):
             if p["decoded"]["routing"]["errorReason"] != "NONE":
                 logger.warning(
-                    f"Channel request failed, error reason: {p['decoded']['routing']['errorReason']}"
+                    "Channel request failed, error reason: %s",
+                    p["decoded"]["routing"]["errorReason"],
                 )
                 self._timeout.expireTime = time.time()  # Do not wait any longer
                 return  # Don't try to parse this routing message
@@ -2264,10 +2854,11 @@ class Node:
         # Show progress message for super slow operations
         if self != self.iface.localNode:
             logger.info(
-                f"Requesting channel {channelNum} info from remote node (this could take a while)"
+                "Requesting channel %s info from remote node (this could take a while)",
+                channelNum,
             )
         else:
-            logger.debug(f"Requesting channel {channelNum}")
+            logger.debug("Requesting channel %s", channelNum)
 
         return self._send_admin(
             p, wantResponse=True, onResponse=self.onResponseRequestChannel
@@ -2279,7 +2870,7 @@ class Node:
         p: admin_pb2.AdminMessage,
         wantResponse: bool = False,
         onResponse: Callable[[dict[str, Any]], Any] | None = None,
-        adminIndex: int = 0,
+        adminIndex: int | None = None,
     ) -> mesh_pb2.MeshPacket | None:
         """Send an AdminMessage to this Node's admin channel.
 
@@ -2291,8 +2882,10 @@ class Node:
             Request a response from the recipient when True. (Default value = False)
         onResponse : Callable[[dict[str, Any]], Any] | None
             Optional callback invoked with the received response packet. (Default value = None)
-        adminIndex : int
-            Channel index to use for the admin message; when 0 the node's configured admin channel is used. (Default value = 0)
+        adminIndex : int | None
+            Channel index to use for the admin message; when None the node's
+            configured admin channel is used. Pass 0 to force channel 0.
+            (Default value = None)
 
         Returns
         -------
@@ -2307,10 +2900,10 @@ class Node:
             )
             return None
         if (
-            adminIndex == 0
-        ):  # unless a special channel index was used, we want to use the admin index
+            adminIndex is None
+        ):  # None means auto-detect; channel 0 remains an explicit valid index.
             adminIndex = self.iface.localNode._get_admin_channel_index()
-        logger.debug(f"adminIndex:{adminIndex}")
+        logger.debug("adminIndex:%s", adminIndex)
         node_info = self.iface._get_or_create_by_num(self.nodeNum)
         passkey = node_info.get("adminSessionPassKey")
         if isinstance(passkey, bytes):
@@ -2326,11 +2919,18 @@ class Node:
             pkiEncrypted=True,
         )
 
-    def ensureSessionKey(self) -> None:
+    def ensureSessionKey(self, adminIndex: int | None = None) -> None:
         """Ensure an admin session key exists for this node, requesting one if missing.
 
         If protocol use is disabled (`noProto`), no action is taken. Otherwise, if the node has no
         `adminSessionPassKey` recorded, a session-key request is sent.
+
+        Parameters
+        ----------
+        adminIndex : int | None
+            Admin channel index to use for the session key request; when None
+            the node's configured admin channel is used. Pass 0 to force
+            channel 0. (Default value = None)
         """
         if self.noProto:
             logger.warning(
@@ -2343,7 +2943,10 @@ class Node:
                 )
                 is None
             ):
-                self.requestConfig(admin_pb2.AdminMessage.SESSIONKEY_CONFIG)
+                self.requestConfig(
+                    admin_pb2.AdminMessage.SESSIONKEY_CONFIG,
+                    adminIndex=adminIndex,
+                )
 
     def _get_channels_with_hash(self) -> list[dict[str, Any]]:
         """Return a list of channel descriptors containing index, role, name, and an optional hash.

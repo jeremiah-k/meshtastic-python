@@ -33,6 +33,7 @@ import meshtastic.node
 from meshtastic import (
     BROADCAST_ADDR,
     BROADCAST_NUM,
+    DECODE_ERROR_KEY,
     LOCAL_ADDR,
     NODELESS_WANT_CONFIG_ID,
     ResponseHandler,
@@ -82,6 +83,12 @@ VALID_TELEMETRY_TYPES: tuple[TelemetryType, ...] = (
 VALID_TELEMETRY_TYPE_SET: frozenset[str] = frozenset(VALID_TELEMETRY_TYPES)
 UNKNOWN_SNR_QUARTER_DB = -128
 MISSING_NODE_NUM_ERROR_TEMPLATE = "NodeId {destination_id} has no numeric 'num' in DB"
+NODE_NOT_FOUND_IN_DB_ERROR_TEMPLATE = "NodeId {destination_id} not found in DB"
+NODE_NOT_FOUND_DB_UNAVAILABLE_ERROR_TEMPLATE = (
+    "NodeId {destination_id} not found and node DB is unavailable"
+)
+HEX_NODE_ID_TAIL_CHARS = frozenset("0123456789abcdefABCDEF")
+DECODE_FAILED_PREFIX = "decode-failed: "
 NO_RESPONSE_FIRMWARE_ERROR: str = (
     "No response from node. At least firmware 2.1.22 is required on the destination node."
 )
@@ -93,6 +100,7 @@ WAIT_ATTR_POSITION: str = "receivedPosition"
 WAIT_ATTR_TELEMETRY: str = "receivedTelemetry"
 WAIT_ATTR_TRACEROUTE: str = "receivedTraceRoute"
 WAIT_ATTR_WAYPOINT: str = "receivedWaypoint"
+WAIT_ATTR_NAK: str = "receivedNak"
 LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM: dict[int, str] = {
     portnums_pb2.PortNum.POSITION_APP: WAIT_ATTR_POSITION,
     portnums_pb2.PortNum.TRACEROUTE_APP: WAIT_ATTR_TRACEROUTE,
@@ -118,6 +126,45 @@ PayloadData: TypeAlias = bytes | bytearray | memoryview | _SerializablePayload
 def _format_missing_node_num_error(destination_id: int | str) -> str:
     """Return a consistent error message for nodes missing numeric IDs."""
     return MISSING_NODE_NUM_ERROR_TEMPLATE.format(destination_id=destination_id)
+
+
+def _format_node_not_found_in_db_error(destination_id: int | str) -> str:
+    """Return a consistent error for node IDs missing from an available node DB."""
+    return NODE_NOT_FOUND_IN_DB_ERROR_TEMPLATE.format(destination_id=destination_id)
+
+
+def _format_node_db_unavailable_error(destination_id: int | str) -> str:
+    """Return a consistent error for node IDs when node DB is unavailable."""
+    return NODE_NOT_FOUND_DB_UNAVAILABLE_ERROR_TEMPLATE.format(
+        destination_id=destination_id
+    )
+
+
+def _extract_hex_node_id_body(destination_id: str) -> str | None:
+    """Return a compact 8-hex node-id body when ``destination_id`` matches supported forms.
+
+    Parameters
+    ----------
+    destination_id : str
+        Candidate node identifier. Supported prefixed forms are ``!12345678``,
+        ``0x12345678``, and ``0X12345678``; bare ``12345678`` is also supported.
+
+    Returns
+    -------
+    str | None
+        The 8-character hexadecimal body if the full input is a supported compact
+        node-id format; otherwise ``None``.
+    """
+    candidate = destination_id
+    if destination_id.startswith("!"):
+        candidate = destination_id[1:]
+    elif destination_id.startswith(("0x", "0X")):
+        candidate = destination_id[2:]
+    if len(candidate) != 8:
+        return None
+    if not all(ch in HEX_NODE_ID_TAIL_CHARS for ch in candidate):
+        return None
+    return candidate
 
 
 def _logger_has_visible_info_handler(target_logger: logging.Logger) -> bool:
@@ -408,10 +455,12 @@ class MeshInterface:  # pylint: disable=R0902
         """
         if exc_type is not None and exc_value is not None:
             logger.error(
-                f"An exception of type {exc_type} with value {exc_value} has occurred"
+                "An exception of type %s with value %s has occurred",
+                exc_type,
+                exc_value,
             )
             if trace is not None:
-                logger.error(f"Traceback:\n{''.join(traceback.format_tb(trace))}")
+                logger.error("Traceback:\n%s", "".join(traceback.format_tb(trace)))
         try:
             self.close()
         except Exception:
@@ -1483,9 +1532,7 @@ class MeshInterface:  # pylint: disable=R0902
                         )
                         return
                     resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
-                self._response_wait_acks.add(
-                    (acknowledgment_attr, resolved_request_id)
-                )
+                self._response_wait_acks.add((acknowledgment_attr, resolved_request_id))
             elif has_request_scope:
                 logger.debug(
                     "Ignoring stale unscoped acknowledgement for %s while scoped waits are active: %s",
@@ -2359,30 +2406,42 @@ class MeshInterface:  # pylint: disable=R0902
                 nodeNum = my_node_num
             else:
                 raise MeshInterface.MeshInterfaceError("No myInfo found.")
-        # A simple hex style nodeid - we can parse this without needing the DB
-        elif isinstance(destinationId, str) and len(destinationId) >= 8:
-            # assuming some form of node id string such as !1234578 or 0x12345678
-            # always grab the last 8 items of the hexadecimal id str and parse to integer
-            nodeNum = int(destinationId[-8:], 16)
-        else:
-            with self._node_db_lock:
-                node = self.nodes.get(destinationId) if self.nodes else None
-                has_nodes = self.nodes is not None
-                node_found = node is not None
-                node_num = node.get("num") if isinstance(node, dict) else None
-            if node_found:
-                if isinstance(node_num, int):
-                    nodeNum = node_num
+        elif isinstance(destinationId, str):
+            # A simple hex style nodeid - we can parse this without needing the DB.
+            compact_hex_body = _extract_hex_node_id_body(destinationId)
+            if compact_hex_body is not None:
+                nodeNum = int(compact_hex_body, 16)
+            else:
+                with self._node_db_lock:
+                    node = self.nodes.get(destinationId) if self.nodes else None
+                    has_nodes = self.nodes is not None
+                    node_found = node is not None
+                    node_num = node.get("num") if isinstance(node, dict) else None
+                if node_found:
+                    if isinstance(node_num, int):
+                        nodeNum = node_num
+                    else:
+                        raise MeshInterface.MeshInterfaceError(
+                            _format_missing_node_num_error(destinationId)
+                        )
+                elif has_nodes:
+                    raise MeshInterface.MeshInterfaceError(
+                        _format_node_not_found_in_db_error(destinationId)
+                    )
                 else:
                     raise MeshInterface.MeshInterfaceError(
-                        _format_missing_node_num_error(destinationId)
+                        _format_node_db_unavailable_error(destinationId)
                     )
-            elif has_nodes:
+        else:
+            with self._node_db_lock:
+                has_nodes = self.nodes is not None
+            if has_nodes:
                 raise MeshInterface.MeshInterfaceError(
-                    f"NodeId {destinationId} not found in DB"
+                    _format_node_not_found_in_db_error(destinationId)
                 )
-            else:
-                logger.warning("Warning: There were no self.nodes.")
+            raise MeshInterface.MeshInterfaceError(
+                _format_node_db_unavailable_error(destinationId)
+            )
 
         meshPacket.to = nodeNum
         meshPacket.want_ack = wantAck
@@ -2461,6 +2520,7 @@ class MeshInterface:  # pylint: disable=R0902
             If waiting times out before an ACK/NAK is received.
         """
         success = self._timeout.waitForAckNak(self._acknowledgment)
+        self._raise_wait_error_if_present(WAIT_ATTR_NAK)
         if not success:
             raise MeshInterface.MeshInterfaceError(
                 "Timed out waiting for an acknowledgment"
@@ -2563,9 +2623,7 @@ class MeshInterface:  # pylint: disable=R0902
                     request_id,
                     timeout_seconds=self._timeout.expireTimeout,
                 )
-            self._raise_wait_error_if_present(
-                WAIT_ATTR_POSITION, request_id=request_id
-            )
+            self._raise_wait_error_if_present(WAIT_ATTR_POSITION, request_id=request_id)
             if not success:
                 raise MeshInterface.MeshInterfaceError("Timed out waiting for position")
         finally:
@@ -2596,9 +2654,7 @@ class MeshInterface:  # pylint: disable=R0902
                     request_id,
                     timeout_seconds=self._timeout.expireTimeout,
                 )
-            self._raise_wait_error_if_present(
-                WAIT_ATTR_WAYPOINT, request_id=request_id
-            )
+            self._raise_wait_error_if_present(WAIT_ATTR_WAYPOINT, request_id=request_id)
             if not success:
                 raise MeshInterface.MeshInterfaceError("Timed out waiting for waypoint")
         finally:
@@ -2946,7 +3002,6 @@ class MeshInterface:  # pylint: disable=R0902
             )
             return
 
-        # logger.debug(f"Sending toRadio: {stripnl(toRadio)}")
         if not toRadio.HasField("packet"):
             # not a meshpacket -- send immediately, give queue a chance,
             # this makes heartbeat trigger queue
@@ -3041,21 +3096,32 @@ class MeshInterface:  # pylint: disable=R0902
         with self._queue_lock:
             self.queueStatus = queueStatus
         logger.debug(
-            f"TX QUEUE free {queueStatus.free} of {queueStatus.maxlen}, res = {queueStatus.res}, id = {queueStatus.mesh_packet_id:08x} "
+            "TX QUEUE free %s of %s, res = %s, id = %08x ",
+            queueStatus.free,
+            queueStatus.maxlen,
+            queueStatus.res,
+            queueStatus.mesh_packet_id,
         )
 
         if queueStatus.res:
             return
 
-        # logger.warn("queue: " + " ".join(f'{k:08x}' for k in self.queue))
+        debug_enabled = logger.isEnabledFor(logging.DEBUG)
         with self._queue_lock:
+            queue_snapshot = tuple(self.queue.keys()) if debug_enabled else ()
             justQueued = self.queue.pop(queueStatus.mesh_packet_id, None)
+        if debug_enabled:
+            logger.debug(
+                "queue: %s",
+                " ".join(f"{key:08x}" for key in queue_snapshot),
+            )
 
         if justQueued is None and queueStatus.mesh_packet_id != 0:
             with self._queue_lock:
                 self.queue[queueStatus.mesh_packet_id] = False
             logger.debug(
-                f"Reply for unexpected packet ID {queueStatus.mesh_packet_id:08x}"
+                "Reply for unexpected packet ID %08x",
+                queueStatus.mesh_packet_id,
             )
         # logger.warn("queue: " + " ".join(f'{k:08x}' for k in self.queue))
 
@@ -3429,7 +3495,8 @@ class MeshInterface:  # pylint: disable=R0902
         if not hack and "from" not in asDict:
             asDict["from"] = 0
             logger.error(
-                f"Device returned a packet we sent, ignoring: {stripnl(asDict)}"
+                "Device returned a packet we sent, ignoring: %s",
+                stripnl(asDict),
             )
             return
         if "to" not in asDict:
@@ -3463,7 +3530,7 @@ class MeshInterface:  # pylint: disable=R0902
             # it to prevent confusion
             if "portnum" not in decoded:
                 decoded["portnum"] = portnum
-                logger.warning(f"portnum was not in decoded. Setting to:{portnum}")
+                logger.warning("portnum was not in decoded. Setting to:%s", portnum)
             else:
                 portnum = decoded["portnum"]
 
@@ -3476,17 +3543,40 @@ class MeshInterface:  # pylint: disable=R0902
             handler = protocols.get(portNumInt)
             # The decoded protobuf as a dictionary (if we understand this message)
             p = None
+            skip_response_callback_for_decode_failure = False
             if handler is not None:
                 topic = f"meshtastic.receive.{handler.name}"
 
                 # Convert to protobuf if possible
                 if handler.protobufFactory is not None:
                     pb = handler.protobufFactory()
-                    pb.ParseFromString(meshPacket.decoded.payload)
-                    p = google.protobuf.json_format.MessageToDict(pb)
-                    asDict["decoded"][handler.name] = p
-                    # Also provide the protobuf raw
-                    asDict["decoded"][handler.name]["raw"] = pb
+                    try:
+                        pb.ParseFromString(meshPacket.decoded.payload)
+                        p = google.protobuf.json_format.MessageToDict(pb)
+                        asDict["decoded"][handler.name] = p
+                        # Also provide the protobuf raw
+                        asDict["decoded"][handler.name]["raw"] = pb
+                    except (protobuf_message.DecodeError, TypeError, ValueError) as exc:
+                        decode_error = f"{DECODE_FAILED_PREFIX}{exc}"
+                        logger.warning(
+                            "Failed to decode %s payload for packet id=%s from=%s to=%s: %s",
+                            handler.name,
+                            getattr(meshPacket, "id", 0),
+                            asDict.get("from"),
+                            asDict.get("to"),
+                            exc,
+                        )
+                        asDict["decoded"][handler.name] = {
+                            DECODE_ERROR_KEY: decode_error
+                        }
+                        if handler.name == "routing":
+                            asDict["decoded"][handler.name][
+                                "errorReason"
+                            ] = decode_error
+                        if handler.name == "admin":
+                            # Admin callbacks frequently expect decoded.admin.raw.
+                            # Avoid dispatching malformed payloads through that path.
+                            skip_response_callback_for_decode_failure = True
 
                 # Call specialized onReceive if necessary
                 if handler.onReceive is not None:
@@ -3504,16 +3594,45 @@ class MeshInterface:  # pylint: disable=R0902
                     "errorReason" not in routing or routing["errorReason"] == "NONE"
                 )
                 response_handler: ResponseHandler | None = None
+                dropped_due_to_decode_failure = False
                 # Keep lookup/eligibility/pop atomic under the response-handler lock
                 # so a competing thread cannot remove the handler between checks.
                 with self._response_handlers_lock:
                     candidate = self.responseHandlers.get(requestId, None)
-                    if candidate is not None and (
-                        (not isAck)
-                        or candidate.callback.__name__ == "onAckNak"
-                        or candidate.ackPermitted
-                    ):
-                        response_handler = self.responseHandlers.pop(requestId, None)
+                    if candidate is not None:
+                        callback_name = getattr(candidate.callback, "__name__", "")
+                        if (
+                            skip_response_callback_for_decode_failure
+                            and callback_name != "onAckNak"
+                        ):
+                            self.responseHandlers.pop(requestId, None)
+                            dropped_due_to_decode_failure = True
+                        elif (
+                            (not isAck)
+                            or callback_name == "onAckNak"
+                            or candidate.ackPermitted
+                        ):
+                            response_handler = self.responseHandlers.pop(
+                                requestId, None
+                            )
+                if dropped_due_to_decode_failure:
+                    logger.warning(
+                        "Dropping response callback for requestId %s due to admin decode failure.",
+                        requestId,
+                    )
+                    admin_decoded_payload = asDict.get("decoded", {}).get("admin", {})
+                    if isinstance(admin_decoded_payload, dict):
+                        admin_decode_error = admin_decoded_payload.get(
+                            DECODE_ERROR_KEY, f"{DECODE_FAILED_PREFIX}unknown error"
+                        )
+                    else:
+                        admin_decode_error = f"{DECODE_FAILED_PREFIX}unknown error"
+                    self._set_wait_error(
+                        WAIT_ATTR_NAK,
+                        f"Failed to decode admin payload: {admin_decode_error}",
+                        request_id=requestId,
+                    )
+                    self._acknowledgment.receivedNak = True
                 if response_handler is not None:
                     logger.debug("Calling response handler for requestId %s", requestId)
                     try:

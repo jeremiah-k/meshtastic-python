@@ -1,5 +1,6 @@
 """Meshtastic unit tests for __init__.py."""
 
+import copy
 import logging
 import re
 from types import SimpleNamespace
@@ -11,6 +12,7 @@ import serial as pyserial  # type: ignore[import-untyped]
 
 import meshtastic
 from meshtastic import (
+    DECODE_ERROR_KEY,
     _on_admin_receive,
     _on_node_info_receive,
     _on_position_receive,
@@ -87,6 +89,33 @@ def test_init_on_position_receive_updates_node_position(
 
 
 @pytest.mark.unit
+def test_init_on_position_receive_decode_error_updates_metadata_without_position_state(
+    iface_with_nodes: MeshInterface,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Decode-error position payloads should update receive metadata but not overwrite position state."""
+    args = SimpleNamespace(camel_case=False)
+    monkeypatch.setattr(mt_config, "args", args)
+    iface = iface_with_nodes
+    baseline_node = iface._get_or_create_by_num(1234567890)
+    with iface._node_db_lock:
+        baseline_node["position"] = {"latitudeI": 111111, "longitudeI": 222222}
+        baseline_position = dict(baseline_node["position"])
+    packet: dict[str, Any] = {
+        "from": 1234567890,
+        "decoded": {"position": {DECODE_ERROR_KEY: "decode-failed: malformed"}},
+    }
+
+    _on_position_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(1234567890)
+    assert node["position"] == baseline_position
+    assert node["lastReceived"]["decoded"]["position"][DECODE_ERROR_KEY].startswith(
+        "decode-failed:"
+    )
+
+
+@pytest.mark.unit
 def test_init_on_node_info_receive(
     caplog: pytest.LogCaptureFixture,
     iface_with_nodes: MeshInterface,
@@ -114,6 +143,37 @@ def test_init_on_node_info_receive(
     assert iface.nodes is not None
     assert iface.nodes["bar"] is node
     assert node["lastReceived"]["decoded"]["user"]["id"] == "bar"
+
+
+@pytest.mark.unit
+def test_init_on_node_info_receive_decode_error_updates_metadata_without_user_state(
+    iface_with_nodes: MeshInterface,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Decode-error user payloads should update receive metadata but not overwrite user state."""
+    args = SimpleNamespace(camel_case=False)
+    monkeypatch.setattr(mt_config, "args", args)
+    iface = iface_with_nodes
+    baseline_node = iface._get_or_create_by_num(2468135790)
+    with iface._node_db_lock:
+        baseline_node["user"] = {
+            "id": "baseline-user",
+            "longName": "Baseline User",
+            "shortName": "BU",
+        }
+        baseline_user_snapshot = copy.deepcopy(baseline_node["user"])
+    packet: dict[str, Any] = {
+        "from": 2468135790,
+        "decoded": {"user": {DECODE_ERROR_KEY: "decode-failed: malformed"}},
+    }
+
+    _on_node_info_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(2468135790)
+    assert node["user"] == baseline_user_snapshot
+    assert node["lastReceived"]["decoded"]["user"][DECODE_ERROR_KEY].startswith(
+        "decode-failed:"
+    )
 
 
 @pytest.mark.unit

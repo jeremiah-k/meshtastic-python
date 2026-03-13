@@ -336,13 +336,22 @@ def autospec_local_node_iface() -> Callable[[type[Any]], MagicMock]:
     Callable[[type[Any]], MagicMock]
         A factory function that takes a spec class (e.g., MeshInterface, SerialInterface)
         and returns an autospecced mock with a localNode attribute configured with
-        _get_admin_channel_index returning 0.
+        _get_admin_channel_index returning 0, _get_named_admin_channel_index
+        returning None, and getAdminChannelIndex returning 0.
     """
 
     def _factory(spec_class: type[Any]) -> MagicMock:
         iface = create_autospec(spec_class, instance=True)
-        local_node = MagicMock(spec=["_get_admin_channel_index"])
+        local_node = MagicMock(
+            spec=[
+                "_get_admin_channel_index",
+                "_get_named_admin_channel_index",
+                "getAdminChannelIndex",
+            ]
+        )
         local_node._get_admin_channel_index.return_value = 0
+        local_node._get_named_admin_channel_index.return_value = None
+        local_node.getAdminChannelIndex.return_value = 0
         iface.localNode = local_node
         return cast(MagicMock, iface)
 
