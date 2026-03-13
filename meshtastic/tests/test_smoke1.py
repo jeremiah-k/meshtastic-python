@@ -485,12 +485,13 @@ def restore_smoke1_module_config() -> Iterator[None]:
         _assert_connected(ready_output)
         restore_succeeded = True
     finally:
-        keep_backup_on_restore_failure = (
-            os.getenv(KEEP_BACKUP_ON_RESTORE_FAILURE_ENV_VAR, "").strip().lower()
-            in {"1", "true", "yes", "on"}
-        )
+        keep_backup_on_restore_failure = os.getenv(
+            KEEP_BACKUP_ON_RESTORE_FAILURE_ENV_VAR, ""
+        ).strip().lower() in {"1", "true", "yes", "on"}
         should_keep_backup = (
-            keep_backup_on_restore_failure and export_succeeded and not restore_succeeded
+            keep_backup_on_restore_failure
+            and export_succeeded
+            and not restore_succeeded
         )
         if not should_keep_backup:
             with contextlib.suppress(FileNotFoundError):
@@ -766,7 +767,8 @@ def test_smoke1_ch_values(preset_cmd: str, expected_preset: str) -> None:
 
     info_out = _wait_for_mutation_to_settle(
         predicate=lambda output: (
-            (block := _channel_info_block(output)) is not None and expected_preset in block
+            (block := _channel_info_block(output)) is not None
+            and expected_preset in block
         )
     )
     channel_zero = _channel_info_block(info_out)

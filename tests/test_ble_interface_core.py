@@ -73,7 +73,8 @@ def _pin_trust_environment(
     """
     Configure host-specific dependencies so tests of trust() run in a controlled Linux-like environment.
 
-    Parameters:
+    Parameters
+    ----------
         monkeypatch (pytest.MonkeyPatch): Fixture used to apply attribute patches.
         run (Callable[..., object] | None): Optional replacement for subprocess.run used by trust(); if None, a sentinel callable is installed that raises AssertionError if invoked.
     """
@@ -1958,13 +1959,16 @@ def test_ble_interface_close_bounds_wait_on_spurious_management_wakeups(
         """
         Simulate a spurious wait for tests and track each requested timeout.
 
-        Parameters:
+        Parameters
+        ----------
             timeout (float | None): The requested wait duration in seconds; if greater than zero the function sleeps for that duration.
 
-        Returns:
+        Returns
+        -------
             bool: `True` to indicate the wait condition remains satisfied.
 
-        Raises:
+        Raises
+        ------
             AssertionError: If the number of invocations exceeds the allowed spurious-wait budget, signals that shutdown waited past its timeout.
         """
         wait_calls.append(timeout)
@@ -1990,10 +1994,12 @@ def test_ble_interface_close_bounds_wait_on_spurious_management_wakeups(
         """
         Context manager used in tests to record a requested management address and provide a no-op gate.
 
-        Parameters:
+        Parameters
+        ----------
             address (str): The management address being requested; the address is recorded for test inspection.
 
-        Returns:
+        Returns
+        -------
             contextmanager: A context manager that performs no gating and yields `None`.
         """
         gate_calls.append(address)
@@ -2668,7 +2674,8 @@ def test_connect_times_out_on_spurious_management_wakeups(
         """
         Advance and return a test monotonic timestamp by 0.01 seconds.
 
-        Returns:
+        Returns
+        -------
             Current monotonic time in seconds; the returned value increases by 0.01 on each call.
         """
         nonlocal fake_time
@@ -2683,13 +2690,16 @@ def test_connect_times_out_on_spurious_management_wakeups(
         """
         Record a spurious wait invocation and signal a wakeup.
 
-        Parameters:
+        Parameters
+        ----------
             timeout (float | None): The timeout value passed to the wait; may be None.
 
-        Returns:
+        Returns
+        -------
             bool: `True` to indicate a spurious wakeup.
 
-        Raises:
+        Raises
+        ------
             AssertionError: If the number of recorded wait calls exceeds the configured budget.
         """
         wait_calls.append(timeout)
@@ -2738,7 +2748,8 @@ def test_connect_management_wait_timeout_resets_between_wait_cycles(
         """
         Provide a monotonic timestamp for tests, advancing through a preset sequence and falling back to incremental steps when the sequence is exhausted.
 
-        Returns:
+        Returns
+        -------
             float: The current monotonic time value and updates the captured `last_time` variable.
         """
         nonlocal last_time
@@ -2756,14 +2767,16 @@ def test_connect_management_wait_timeout_resets_between_wait_cycles(
         """
         Simulate waiting for management operations to drain and record the requested timeout.
 
-        Parameters:
+        Parameters
+        ----------
             timeout (float | None): Maximum seconds to wait, or `None` to indicate an indefinite wait.
 
         Behavior:
             Appends the provided `timeout` value to the `wait_calls` list and sets
             `iface._management_inflight` to 0 to indicate no inflight management operations.
 
-        Returns:
+        Returns
+        -------
             bool: `True` to indicate the wait condition was signaled.
         """
         wait_calls.append(timeout)
@@ -2774,7 +2787,8 @@ def test_connect_management_wait_timeout_resets_between_wait_cycles(
         """
         Increment the duplicate-check counter and, on the second invocation, mark the interface as having one inflight management operation.
 
-        Parameters:
+        Parameters
+        ----------
             _key (str | None): Ignored; present to match the duplicate-check callback signature.
         """
         nonlocal duplicate_checks
@@ -2814,14 +2828,16 @@ def test_connect_management_wait_timeout_resets_between_wait_cycles(
         """
         Create and attach a DummyClient to the test BLE interface and mark it as connected.
 
-        Parameters:
+        Parameters
+        ----------
             _address (str | None): Ignored; present to match the real establish signature.
             _normalized_request (str | None): Ignored; present to match the real establish signature.
             _address_key (str | None): Ignored; present to match the real establish signature.
             pair_on_connect (bool): Accepted but ignored by this test stub.
             connect_timeout (float | None): Accepted but ignored by this test stub.
 
-        Returns:
+        Returns
+        -------
             tuple[DummyClient, None, None]: The created DummyClient instance and two None placeholders (resolved address and resolved identifier).
         """
         _ = (pair_on_connect, connect_timeout)

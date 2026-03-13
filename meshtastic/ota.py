@@ -85,7 +85,9 @@ class ESP32WiFiOTA:
                     image.extend(block)
                     file_hash.update(block)
         except FileNotFoundError as exc:
-            raise OTAError(MISSING_FIRMWARE_ERROR.format(filename=self._filename)) from exc
+            raise OTAError(
+                MISSING_FIRMWARE_ERROR.format(filename=self._filename)
+            ) from exc
         except OSError as exc:
             raise OTAError(
                 READ_FIRMWARE_ERROR.format(filename=self._filename, error=exc)

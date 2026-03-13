@@ -212,9 +212,7 @@ def test_esp32_wifi_ota_update_success(mock_socket_class: MagicMock) -> None:
             ota.update()
 
             # Verify socket connection was created.
-            mock_socket_class.assert_called_once_with(
-                ("192.168.1.1", 3232), timeout=15
-            )
+            mock_socket_class.assert_called_once_with(("192.168.1.1", 3232), timeout=15)
 
             # Verify start command was sent
             start_cmd = f"OTA {len(test_data)} {ota.hash_hex()}\n".encode("utf-8")

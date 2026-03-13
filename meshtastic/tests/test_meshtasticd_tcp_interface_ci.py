@@ -99,8 +99,8 @@ def test_parse_host_and_port_accepts_bracketed_ipv6_with_port() -> None:
 def test_parse_host_and_port_snake_case_alias_matches_canonical_name() -> None:
     """The snake_case host parser alias should delegate to the canonical camelCase name."""
     from meshtastic.host_port import (  # pylint: disable=import-outside-toplevel
-        parseHostAndPort,
         parse_host_and_port,
+        parseHostAndPort,
     )
 
     assert parse_host_and_port(
