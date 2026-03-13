@@ -1230,6 +1230,37 @@ def test_deleteChannel_rewrites_following_channels_and_updates_admin_index(
 
 
 @pytest.mark.unit
+def test_deleteChannel_switches_admin_index_after_rewriting_former_admin_slot(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """DeleteChannel should keep using the old admin index until the old admin slot is rewritten."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    iface.localNode = anode
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    removable = Channel(index=1, role=Channel.Role.SECONDARY)
+    removable.settings.name = "remove-me"
+    admin_secondary = Channel(index=2, role=Channel.Role.SECONDARY)
+    admin_secondary.settings.name = "admin"
+    disabled = Channel(index=3, role=Channel.Role.DISABLED)
+    anode.channels = [primary, removable, admin_secondary, disabled]
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock()  # type: ignore[method-assign]
+
+    anode.deleteChannel(1)
+
+    admin_indexes = [
+        _get_mock_call_arg(call, name="adminIndex", positional_index=3)
+        for call in anode._send_admin.call_args_list
+    ]
+    # Keep old admin index (2) through rewrite of old slot 2, then switch to 1.
+    assert admin_indexes[:2] == [2, 2]
+    assert all(index == 1 for index in admin_indexes[2:])
+
+
+@pytest.mark.unit
 def test_channel_lookup_helpers_cover_name_disabled_and_admin_index(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:

@@ -277,9 +277,10 @@ wait_for_log_pattern() {
 	local timeout_seconds=${3:-30}
 	local deadline=$((SECONDS + timeout_seconds))
 	local last_log_error=""
+	local log_output=""
 
 	while ((SECONDS < deadline)); do
-		local log_output=""
+		log_output=""
 		if ! log_output="$(docker logs "${container}" 2>&1)"; then
 			last_log_error="${log_output}"
 			if ! docker ps --format '{{.Names}}' | grep -Fxq "${container}"; then

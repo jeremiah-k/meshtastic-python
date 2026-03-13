@@ -33,6 +33,7 @@ import meshtastic.node
 from meshtastic import (
     BROADCAST_ADDR,
     BROADCAST_NUM,
+    DECODE_ERROR_KEY,
     LOCAL_ADDR,
     NODELESS_WANT_CONFIG_ID,
     ResponseHandler,
@@ -87,7 +88,6 @@ NODE_NOT_FOUND_DB_UNAVAILABLE_ERROR_TEMPLATE = (
     "NodeId {destination_id} not found and node DB is unavailable"
 )
 HEX_NODE_ID_TAIL_CHARS = frozenset("0123456789abcdefABCDEF")
-DECODE_ERROR_KEY = "error"
 DECODE_FAILED_PREFIX = "decode-failed: "
 NO_RESPONSE_FIRMWARE_ERROR: str = (
     "No response from node. At least firmware 2.1.22 is required on the destination node."

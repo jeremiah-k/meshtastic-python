@@ -786,6 +786,7 @@ class Node:
                     "Only SECONDARY or DISABLED channels can be deleted"
                 )
             is_local_node = self.iface.localNode == self
+
             def _named_admin_index_from_channels(
                 channel_list: list[channel_pb2.Channel],
             ) -> int:
