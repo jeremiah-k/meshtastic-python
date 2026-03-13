@@ -112,17 +112,17 @@ Semantic deprecation:
 
 ### Utility and Config
 
-| Module            | Compatibility symbol      | Canonical symbol       |
-| ----------------- | ------------------------- | ---------------------- |
-| `meshtastic.host_port` | `parse_host_and_port()` | `parseHostAndPort()` |
-| `meshtastic.util` | `blacklistVids`           | `BLACKLIST_VIDS`       |
-| `meshtastic.util` | `whitelistVids`           | `WHITELIST_VIDS`       |
-| `meshtastic.util` | `our_exit()`              | `ourExit()`            |
-| `meshtastic.util` | `remove_keys_from_dict()` | `removeKeysFromDict()` |
-| `meshtastic.util` | `detect_windows_port()`   | `detectWindowsPort()`  |
-| `meshtastic.util` | `message_to_json()`       | `messageToJson()`      |
-| `meshtastic.util` | `to_node_num()`           | `toNodeNum()`          |
-| `meshtastic.util` | `flags_to_list()`         | `flagsToList()`        |
+| Module                 | Compatibility symbol      | Canonical symbol       |
+| ---------------------- | ------------------------- | ---------------------- |
+| `meshtastic.host_port` | `parse_host_and_port()`   | `parseHostAndPort()`   |
+| `meshtastic.util`      | `blacklistVids`           | `BLACKLIST_VIDS`       |
+| `meshtastic.util`      | `whitelistVids`           | `WHITELIST_VIDS`       |
+| `meshtastic.util`      | `our_exit()`              | `ourExit()`            |
+| `meshtastic.util`      | `remove_keys_from_dict()` | `removeKeysFromDict()` |
+| `meshtastic.util`      | `detect_windows_port()`   | `detectWindowsPort()`  |
+| `meshtastic.util`      | `message_to_json()`       | `messageToJson()`      |
+| `meshtastic.util`      | `to_node_num()`           | `toNodeNum()`          |
+| `meshtastic.util`      | `flags_to_list()`         | `flagsToList()`        |
 
 ### Node and Tunnel
 

@@ -147,7 +147,9 @@ def test_tunnel_creates_tap_device_when_proto_enabled(
         "meshtastic.tunnel.pub.unsubscribe",
         lambda *_args, **_kwargs: None,
     )
-    monkeypatch.setattr("meshtastic.tunnel.pub.subscribe", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "meshtastic.tunnel.pub.subscribe", lambda *_args, **_kwargs: None
+    )
 
     with _managed_tunnel(iface) as tun:
         assert tun.tun is not None
