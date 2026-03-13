@@ -1057,17 +1057,16 @@ class Node:
 
         admin_write_node = self.iface.localNode
         admin_index_for_write = admin_write_node._get_admin_channel_index()
-        named_admin_index_for_write: int | None = None
         named_admin_getter = getattr(
             admin_write_node, "_get_named_admin_channel_index", None
         )
-        if callable(named_admin_getter):
-            named_admin_index_for_write = named_admin_getter()
+        named_admin_index_for_write = (
+            named_admin_getter() if callable(named_admin_getter) else None
+        )
 
         def _is_named_admin_channel_name(channel_name: str) -> bool:
             return channel_name.lower() == "admin"
 
-        has_admin_write_node_named_admin = named_admin_index_for_write is not None
         admin_write_channels_obj: object | None = None
         admin_write_channels_lock = getattr(admin_write_node, "_channels_lock", None)
         if (
@@ -1079,23 +1078,19 @@ class Node:
                 admin_write_channels_obj = getattr(admin_write_node, "channels", None)
         else:
             admin_write_channels_obj = getattr(admin_write_node, "channels", None)
-        if isinstance(admin_write_channels_obj, list):
-            if not has_admin_write_node_named_admin:
-                has_admin_write_node_named_admin = any(
-                    c.settings
-                    and c.settings.name
-                    and _is_named_admin_channel_name(c.settings.name)
-                    for c in admin_write_channels_obj
-                )
-            if named_admin_index_for_write is None and has_admin_write_node_named_admin:
-                for channel in admin_write_channels_obj:
-                    if (
-                        channel.settings
-                        and channel.settings.name
-                        and _is_named_admin_channel_name(channel.settings.name)
-                    ):
-                        named_admin_index_for_write = channel.index
-                        break
+        if (
+            named_admin_index_for_write is None
+            and isinstance(admin_write_channels_obj, list)
+        ):
+            for channel in admin_write_channels_obj:
+                if (
+                    channel.settings
+                    and channel.settings.name
+                    and _is_named_admin_channel_name(channel.settings.name)
+                ):
+                    named_admin_index_for_write = channel.index
+                    break
+        has_admin_write_node_named_admin = named_admin_index_for_write is not None
 
         if addOnly:
             # Add new channels with names not already present
@@ -1141,7 +1136,7 @@ class Node:
                         f"(need {len(pending_new_settings)}, available {len(disabled_channels)})"
                     )
                 for disabled_channel, new_settings in zip(
-                    disabled_channels, pending_new_settings, strict=False
+                    disabled_channels, pending_new_settings
                 ):
                     previous_channel = channel_pb2.Channel()
                     previous_channel.CopyFrom(disabled_channel)
