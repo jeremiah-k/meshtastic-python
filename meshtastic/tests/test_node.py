@@ -1378,6 +1378,52 @@ def test_setURL_add_only_channel_only_url_skips_lora_snapshot_and_write(
 
 
 @pytest.mark.unit
+def test_setURL_add_only_defers_first_named_admin_write_until_end(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=True) should defer a first named-admin write until other writes finish."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    disabled1 = Channel(index=1, role=Channel.Role.DISABLED)
+    disabled2 = Channel(index=2, role=Channel.Role.DISABLED)
+    anode.channels = [primary, disabled1, disabled2]
+    anode.localConfig.lora.hop_limit = 3
+
+    operations: list[str] = []
+
+    def _record_send(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse, adminIndex)
+        if msg.HasField("set_channel"):
+            operations.append(f"channel:{msg.set_channel.index}")
+        elif msg.HasField("set_config") and msg.set_config.HasField("lora"):
+            operations.append("lora")
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = _record_send  # type: ignore[method-assign,assignment]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "admin"
+    first.psk = b"\x03"
+    second = channel_set.settings.add()
+    second.name = "new-b"
+    second.psk = b"\x04"
+    channel_set.lora_config.hop_limit = 9
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+    anode.setURL(url, addOnly=True)
+
+    assert operations == ["channel:2", "lora", "channel:1"]
+
+
+@pytest.mark.unit
 def test_setURL_add_only_requires_loaded_lora_config(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
@@ -1521,9 +1567,9 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
         for call in ensure_session_key_spy.call_args_list
     )
 
-    # Admin index is snapshotted before local mutation (0 fallback here),
-    # even though a staged channel is named "admin".
-    assert staged_writes == [(1, "admin", 0), (2, "new-b", 0)]
+    # Admin index is snapshotted before local mutation (0 fallback here), and
+    # the first newly introduced named-admin channel is deferred until last.
+    assert staged_writes == [(2, "new-b", 0), (1, "admin", 0)]
 
     assert anode.channels is not None
     after_snapshot = [channel.SerializeToString() for channel in anode.channels]
@@ -1667,9 +1713,11 @@ def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
     assert anode.channels is not None
     after_snapshot = [channel.SerializeToString() for channel in anode.channels]
     assert after_snapshot == before_snapshot
-    assert staged_channel_writes == [1]
+    # Deferred admin write is intentionally not attempted until after LoRa write.
+    assert not staged_channel_writes
 
-    # Rollback should include channel restoration and prior LoRa config.
+    # Rollback includes prior LoRa config; no channel rollback is needed because
+    # deferred admin write had not started when LoRa failed.
     rollback_channel_messages = [
         msg
         for msg in rollback_messages
@@ -1680,11 +1728,10 @@ def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
         for msg in rollback_messages
         if msg.HasField("set_config") and msg.set_config.HasField("lora")
     ]
-    assert len(rollback_channel_messages) == 1
-    assert rollback_channel_messages[0].set_channel.index == 1
+    assert len(rollback_channel_messages) == 0
     assert len(rollback_lora_messages) == 1
     assert rollback_lora_messages[0].set_config.lora.hop_limit == 3
-    assert admin_indexes == [0, 0, 0, 0]
+    assert admin_indexes == [0, 0]
     assert anode.localConfig.lora.hop_limit == 3
 
 
@@ -1751,6 +1798,52 @@ def test_setURL_replace_pins_admin_index_for_channel_and_lora_writes(
     assert sent_messages[2].HasField("set_channel")
     assert sent_messages[2].set_channel.index == 1
     assert anode.localConfig.lora.hop_limit == 9
+
+
+@pytest.mark.unit
+def test_setURL_replace_defers_first_named_admin_write_until_end(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=False) should defer first named-admin write until after other writes."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    secondary = Channel(index=1, role=Channel.Role.SECONDARY)
+    secondary.settings.name = "secondary"
+    anode.channels = [primary, secondary]
+    anode.localConfig.lora.hop_limit = 3
+
+    operations: list[str] = []
+
+    def _record_send(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse, adminIndex)
+        if msg.HasField("set_channel"):
+            operations.append(f"channel:{msg.set_channel.index}")
+        elif msg.HasField("set_config") and msg.set_config.HasField("lora"):
+            operations.append("lora")
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = _record_send  # type: ignore[method-assign,assignment]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "admin"
+    first.psk = b"\x05"
+    second = channel_set.settings.add()
+    second.name = "new-b"
+    second.psk = b"\x06"
+    channel_set.lora_config.hop_limit = 11
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+    anode.setURL(url, addOnly=False)
+
+    assert operations == ["channel:1", "lora", "channel:0"]
 
 
 @pytest.mark.unit

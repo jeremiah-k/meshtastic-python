@@ -1063,12 +1063,28 @@ class Node:
         )
         if callable(named_admin_getter):
             named_admin_index_for_write = named_admin_getter()
+        with self._channels_lock:
+            channels = self.channels
+            if channels is None:
+                self._raise_interface_error("Config or channels not loaded")
+            has_local_named_admin = any(
+                c.settings
+                and c.settings.name
+                and c.settings.name.lower() == "admin"
+                for c in channels
+            )
+
+        def _is_named_admin_channel_name(channel_name: str) -> bool:
+            return channel_name.lower() == "admin"
 
         if addOnly:
             # Add new channels with names not already present
             # Don't change existing channels
             ignored_channel_names: list[str] = []
             channels_to_write: list[tuple[channel_pb2.Channel, str]] = []
+            deferred_add_only_admin_channel: (
+                tuple[channel_pb2.Channel, str] | None
+            ) = None
             original_channels_by_index: dict[int, channel_pb2.Channel] = {}
             original_lora_config: config_pb2.Config.LoRaConfig | None = None
             # Rollback needs a local LoRa snapshot only when this URL updates LoRa.
@@ -1120,6 +1136,16 @@ class Node:
                         (staged_channel, new_settings.name)
                     )
 
+            if not has_local_named_admin:
+                deferred_add_only_admin_channel = next(
+                    (
+                        candidate
+                        for candidate in channels_to_write
+                        if _is_named_admin_channel_name(candidate[1])
+                    ),
+                    None,
+                )
+
             for ignored_name in ignored_channel_names:
                 logger.info(
                     'Ignoring existing or empty channel "%s" from add URL',
@@ -1129,6 +1155,12 @@ class Node:
             lora_write_started = False
             try:
                 for staged_channel, channel_name in channels_to_write:
+                    if (
+                        deferred_add_only_admin_channel is not None
+                        and staged_channel.index
+                        == deferred_add_only_admin_channel[0].index
+                    ):
+                        continue
                     logger.info("Adding new channel '%s' to device", channel_name)
                     written_indices.append(staged_channel.index)
                     self._write_channel_snapshot(
@@ -1141,6 +1173,14 @@ class Node:
                     self.ensureSessionKey(adminIndex=admin_index_for_write)
                     lora_write_started = True
                     self._send_admin(set_lora, adminIndex=admin_index_for_write)
+                if deferred_add_only_admin_channel is not None:
+                    staged_channel, channel_name = deferred_add_only_admin_channel
+                    logger.info("Adding new channel '%s' to device", channel_name)
+                    written_indices.append(staged_channel.index)
+                    self._write_channel_snapshot(
+                        staged_channel,
+                        adminIndex=admin_index_for_write,
+                    )
             # Intentionally broad: rollback should run for any send failure in this
             # transactional block. The original exception is re-raised.
             except Exception:
@@ -1252,6 +1292,16 @@ class Node:
                         staged_channel
                         for staged_channel in staged_channels
                         if staged_channel.index == admin_index_for_write
+                    ),
+                    None,
+                )
+            if deferred_admin_channel is None and not has_local_named_admin:
+                deferred_admin_channel = next(
+                    (
+                        staged_channel
+                        for staged_channel in staged_channels
+                        if staged_channel.settings
+                        and _is_named_admin_channel_name(staged_channel.settings.name)
                     ),
                     None,
                 )

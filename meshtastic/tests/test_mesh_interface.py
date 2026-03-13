@@ -3732,6 +3732,50 @@ def test_handle_packet_from_radio_toid_warning_and_response_handler_paths(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_handle_packet_from_radio_admin_decode_failure_skips_admin_response_callback(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Admin decode failures should not invoke admin callbacks that depend on decoded admin.raw."""
+    monkeypatch.setattr(
+        mesh_interface_module.publishingThread,  # type: ignore[attr-defined]
+        "queueWork",
+        lambda callback: callback(),
+    )
+
+    with MeshInterface(noProto=True) as iface:
+        with iface._node_db_lock:
+            iface.nodes = {}
+            iface.nodesByNum = {}
+
+        response_callback = MagicMock()
+        iface.responseHandlers[42] = ResponseHandler(
+            callback=response_callback,
+            ackPermitted=True,
+        )
+
+        packet = mesh_pb2.MeshPacket()
+        setattr(packet, "from", 7)
+        packet.to = 8
+        packet.decoded.portnum = portnums_pb2.PortNum.ADMIN_APP
+        packet.decoded.request_id = 42
+        packet.decoded.payload = b"\xff\x00\xff\x00"
+
+        with caplog.at_level(logging.WARNING):
+            iface._handle_packet_from_radio(packet, hack=True)
+
+        response_callback.assert_not_called()
+        assert 42 not in iface.responseHandlers
+        assert iface._acknowledgment.receivedNak is True
+        assert "Failed to decode admin payload" in caplog.text
+        assert (
+            "Dropping response callback for requestId 42 due to admin decode failure."
+            in caplog.text
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_handle_packet_from_radio_decode_failure_does_not_raise(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,

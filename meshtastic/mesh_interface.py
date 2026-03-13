@@ -3532,6 +3532,7 @@ class MeshInterface:  # pylint: disable=R0902
             handler = protocols.get(portNumInt)
             # The decoded protobuf as a dictionary (if we understand this message)
             p = None
+            skip_response_callback_for_decode_failure = False
             if handler is not None:
                 topic = f"meshtastic.receive.{handler.name}"
 
@@ -3557,6 +3558,10 @@ class MeshInterface:  # pylint: disable=R0902
                         asDict["decoded"][handler.name] = {"error": decode_error}
                         if handler.name == "routing":
                             asDict["decoded"][handler.name]["errorReason"] = decode_error
+                        if handler.name == "admin":
+                            # Admin callbacks frequently expect decoded.admin.raw.
+                            # Avoid dispatching malformed payloads through that path.
+                            skip_response_callback_for_decode_failure = True
 
                 # Call specialized onReceive if necessary
                 if handler.onReceive is not None:
@@ -3574,16 +3579,31 @@ class MeshInterface:  # pylint: disable=R0902
                     "errorReason" not in routing or routing["errorReason"] == "NONE"
                 )
                 response_handler: ResponseHandler | None = None
+                dropped_due_to_decode_failure = False
                 # Keep lookup/eligibility/pop atomic under the response-handler lock
                 # so a competing thread cannot remove the handler between checks.
                 with self._response_handlers_lock:
                     candidate = self.responseHandlers.get(requestId, None)
-                    if candidate is not None and (
-                        (not isAck)
-                        or candidate.callback.__name__ == "onAckNak"
-                        or candidate.ackPermitted
-                    ):
-                        response_handler = self.responseHandlers.pop(requestId, None)
+                    if candidate is not None:
+                        callback_name = getattr(candidate.callback, "__name__", "")
+                        if (
+                            skip_response_callback_for_decode_failure
+                            and callback_name != "onAckNak"
+                        ):
+                            self.responseHandlers.pop(requestId, None)
+                            dropped_due_to_decode_failure = True
+                        elif (
+                            (not isAck)
+                            or callback_name == "onAckNak"
+                            or candidate.ackPermitted
+                        ):
+                            response_handler = self.responseHandlers.pop(requestId, None)
+                if dropped_due_to_decode_failure:
+                    logger.warning(
+                        "Dropping response callback for requestId %s due to admin decode failure.",
+                        requestId,
+                    )
+                    self._acknowledgment.receivedNak = True
                 if response_handler is not None:
                     logger.debug("Calling response handler for requestId %s", requestId)
                     try:
