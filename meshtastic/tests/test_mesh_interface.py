@@ -12,7 +12,7 @@ import threading
 import time
 import types
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn, cast
 from unittest.mock import MagicMock, call, create_autospec, patch
@@ -74,6 +74,100 @@ def _wait_for_scoped_wait_registration(
     pytest.fail(
         f"Timed out waiting for scoped waiter registration: {acknowledgment_attr}#{request_id}"
     )
+
+
+def _inline_queue_work(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Execute queued publish callbacks inline for deterministic packet tests."""
+    monkeypatch.setattr(
+        mesh_interface_module.publishingThread,  # type: ignore[attr-defined]
+        "queueWork",
+        lambda callback: callback(),
+    )
+
+
+def _install_protocol_stub(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    portnum: portnums_pb2.PortNum.ValueType,
+    name: str,
+    protobuf_factory: object,
+    on_receive: Callable[[MeshInterface, dict[str, Any]], None] | MagicMock,
+) -> None:
+    """Install a single protocol stub for a decode-failure test case."""
+    fake_protocol = types.SimpleNamespace(
+        name=name,
+        protobufFactory=protobuf_factory,
+        onReceive=on_receive,
+    )
+    monkeypatch.setattr(
+        mesh_interface_module,
+        "protocols",
+        {portnum: fake_protocol},
+    )
+
+
+def _make_decoded_packet(
+    *,
+    from_node: int = 1,
+    to_node: int = 2,
+    portnum: portnums_pb2.PortNum.ValueType,
+    request_id: int,
+    payload: bytes,
+) -> mesh_pb2.MeshPacket:
+    """Build a MeshPacket with decoded payload fields pre-populated."""
+    packet = mesh_pb2.MeshPacket()
+    setattr(packet, "from", from_node)
+    packet.to = to_node
+    packet.decoded.portnum = portnum
+    packet.decoded.request_id = request_id
+    packet.decoded.payload = payload
+    return packet
+
+
+def _register_response_capture(
+    iface: MeshInterface, request_id: int
+) -> list[dict[str, Any]]:
+    """Register a response handler that appends callback packets to a list."""
+    callback_calls: list[dict[str, Any]] = []
+
+    def _response_callback(packet: dict[str, Any]) -> None:
+        callback_calls.append(packet)
+
+    iface.responseHandlers[request_id] = ResponseHandler(
+        callback=_response_callback, ackPermitted=True
+    )
+    return callback_calls
+
+
+def _patch_message_to_dict_position_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make MessageToDict fail for Position messages to simulate conversion errors."""
+    original_message_to_dict = google.protobuf.json_format.MessageToDict
+
+    def _message_to_dict_with_position_failure(
+        message: Message,
+        *args: object,
+        **kwargs: object,
+    ) -> dict[str, Any]:
+        if isinstance(message, mesh_pb2.Position):
+            raise TypeError("position dict conversion failed")  # noqa: TRY003
+        message_to_dict = cast(Callable[..., dict[str, Any]], original_message_to_dict)
+        return message_to_dict(message, *args, **kwargs)
+
+    monkeypatch.setattr(
+        google.protobuf.json_format,
+        "MessageToDict",
+        _message_to_dict_with_position_failure,
+    )
+
+
+@pytest.fixture(name="decode_failure_iface")
+def _decode_failure_iface_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[MeshInterface]:
+    """Provide a MeshInterface with inline queueWork for decode-failure tests."""
+    _inline_queue_work(monkeypatch)
+    with MeshInterface(noProto=True) as iface:
+        yield iface
 
 
 @pytest.mark.unit
@@ -2733,7 +2827,7 @@ def test_waitForAckNak_raises_pending_received_nak_wait_error() -> None:
         iface._timeout = MagicMock()
         iface._timeout.waitForAckNak.return_value = False
         iface._set_wait_error(
-            "receivedNak",
+            mesh_interface_module.WAIT_ATTR_NAK,
             "Failed to decode admin payload: decode-failed: malformed payload",
         )
 
@@ -3776,230 +3870,154 @@ def test_handle_packet_from_radio_toid_warning_and_response_handler_paths(
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_handle_packet_from_radio_admin_decode_failure_skips_admin_response_callback(
-    monkeypatch: pytest.MonkeyPatch,
+    decode_failure_iface: MeshInterface,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Admin decode failures should not invoke admin callbacks that depend on decoded admin.raw."""
-    monkeypatch.setattr(
-        mesh_interface_module.publishingThread,  # type: ignore[attr-defined]
-        "queueWork",
-        lambda callback: callback(),
+    iface = decode_failure_iface
+    with iface._node_db_lock:
+        iface.nodes = {}
+        iface.nodesByNum = {}
+
+    response_callback = MagicMock()
+    iface.responseHandlers[42] = ResponseHandler(
+        callback=response_callback,
+        ackPermitted=True,
+    )
+    packet = _make_decoded_packet(
+        from_node=7,
+        to_node=8,
+        portnum=portnums_pb2.PortNum.ADMIN_APP,
+        request_id=42,
+        payload=b"\xff\x00\xff\x00",
     )
 
-    with MeshInterface(noProto=True) as iface:
-        with iface._node_db_lock:
-            iface.nodes = {}
-            iface.nodesByNum = {}
+    with caplog.at_level(logging.WARNING):
+        iface._handle_packet_from_radio(packet, hack=True)
 
-        response_callback = MagicMock()
-        iface.responseHandlers[42] = ResponseHandler(
-            callback=response_callback,
-            ackPermitted=True,
+    response_callback.assert_not_called()
+    assert 42 not in iface.responseHandlers
+    assert iface._acknowledgment.receivedNak is True
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match="Failed to decode admin payload",
+    ):
+        iface._raise_wait_error_if_present(
+            mesh_interface_module.WAIT_ATTR_NAK,
+            request_id=42,
         )
-
-        packet = mesh_pb2.MeshPacket()
-        setattr(packet, "from", 7)
-        packet.to = 8
-        packet.decoded.portnum = portnums_pb2.PortNum.ADMIN_APP
-        packet.decoded.request_id = 42
-        packet.decoded.payload = b"\xff\x00\xff\x00"
-
-        with caplog.at_level(logging.WARNING):
-            iface._handle_packet_from_radio(packet, hack=True)
-
-        response_callback.assert_not_called()
-        assert 42 not in iface.responseHandlers
-        assert iface._acknowledgment.receivedNak is True
-        with pytest.raises(
-            MeshInterface.MeshInterfaceError,
-            match="Failed to decode admin payload",
-        ):
-            iface._raise_wait_error_if_present("receivedNak", request_id=42)
-        assert "Failed to decode admin payload" in caplog.text
-        assert (
-            "Dropping response callback for requestId 42 due to admin decode failure."
-            in caplog.text
-        )
+    assert "Failed to decode admin payload" in caplog.text
+    assert (
+        "Dropping response callback for requestId 42 due to admin decode failure."
+        in caplog.text
+    )
 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_handle_packet_from_radio_decode_failure_does_not_raise(
+    decode_failure_iface: MeshInterface,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Malformed known-protocol payloads should log and continue without crashing receive flow."""
-    monkeypatch.setattr(
-        mesh_interface_module.publishingThread,  # type: ignore[attr-defined]
-        "queueWork",
-        lambda callback: callback(),
+    iface = decode_failure_iface
+    fake_on_receive = MagicMock()
+    _install_protocol_stub(
+        monkeypatch,
+        portnum=portnums_pb2.PortNum.POSITION_APP,
+        name="position",
+        protobuf_factory=mesh_pb2.Position,
+        on_receive=fake_on_receive,
+    )
+    callback_calls = _register_response_capture(iface, 42)
+    packet = _make_decoded_packet(
+        portnum=portnums_pb2.PortNum.POSITION_APP,
+        request_id=42,
+        payload=b"\xff\x00\xff\x00",
     )
 
-    with MeshInterface(noProto=True) as iface:
-        fake_on_receive = MagicMock()
-        fake_protocol = types.SimpleNamespace(
-            name="position",
-            protobufFactory=mesh_pb2.Position,
-            onReceive=fake_on_receive,
-        )
-        monkeypatch.setattr(
-            mesh_interface_module,
-            "protocols",
-            {portnums_pb2.PortNum.POSITION_APP: fake_protocol},
-        )
+    with caplog.at_level(logging.WARNING):
+        iface._handle_packet_from_radio(packet, hack=True)
 
-        callback_calls: list[dict[str, Any]] = []
-
-        def _response_callback(packet: dict[str, Any]) -> None:
-            callback_calls.append(packet)
-
-        iface.responseHandlers[42] = ResponseHandler(
-            callback=_response_callback, ackPermitted=True
-        )
-
-        packet = mesh_pb2.MeshPacket()
-        setattr(packet, "from", 1)
-        packet.to = 2
-        packet.decoded.portnum = portnums_pb2.PortNum.POSITION_APP
-        packet.decoded.request_id = 42
-        packet.decoded.payload = b"\xff\x00\xff\x00"
-
-        with caplog.at_level(logging.WARNING):
-            iface._handle_packet_from_radio(packet, hack=True)
-
-        assert "Failed to decode position payload" in caplog.text
-        fake_on_receive.assert_called_once()
-        assert callback_calls
-        assert callback_calls[0]["decoded"]["position"]["error"].startswith(
-            "decode-failed:"
-        )
-        assert len(callback_calls) == 1
-        assert 42 not in iface.responseHandlers
+    assert "Failed to decode position payload" in caplog.text
+    fake_on_receive.assert_called_once()
+    assert callback_calls
+    assert callback_calls[0]["decoded"]["position"]["error"].startswith(
+        "decode-failed:"
+    )
+    assert len(callback_calls) == 1
+    assert 42 not in iface.responseHandlers
 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_handle_packet_from_radio_routing_decode_failure_sets_error_reason(
+    decode_failure_iface: MeshInterface,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Malformed ROUTING_APP payloads should surface decode errors via routing.errorReason."""
-    monkeypatch.setattr(
-        mesh_interface_module.publishingThread,  # type: ignore[attr-defined]
-        "queueWork",
-        lambda callback: callback(),
+    iface = decode_failure_iface
+    fake_on_receive = MagicMock()
+    _install_protocol_stub(
+        monkeypatch,
+        portnum=portnums_pb2.PortNum.ROUTING_APP,
+        name="routing",
+        protobuf_factory=mesh_pb2.Routing,
+        on_receive=fake_on_receive,
+    )
+    callback_calls = _register_response_capture(iface, 77)
+    packet = _make_decoded_packet(
+        portnum=portnums_pb2.PortNum.ROUTING_APP,
+        request_id=77,
+        payload=b"\xff\x00\xff\x00",
     )
 
-    with MeshInterface(noProto=True) as iface:
-        fake_on_receive = MagicMock()
-        fake_protocol = types.SimpleNamespace(
-            name="routing",
-            protobufFactory=mesh_pb2.Routing,
-            onReceive=fake_on_receive,
-        )
-        monkeypatch.setattr(
-            mesh_interface_module,
-            "protocols",
-            {portnums_pb2.PortNum.ROUTING_APP: fake_protocol},
-        )
+    with caplog.at_level(logging.WARNING):
+        iface._handle_packet_from_radio(packet, hack=True)
 
-        callback_calls: list[dict[str, Any]] = []
-
-        def _response_callback(packet: dict[str, Any]) -> None:
-            callback_calls.append(packet)
-
-        iface.responseHandlers[77] = ResponseHandler(
-            callback=_response_callback, ackPermitted=True
-        )
-
-        packet = mesh_pb2.MeshPacket()
-        setattr(packet, "from", 1)
-        packet.to = 2
-        packet.decoded.portnum = portnums_pb2.PortNum.ROUTING_APP
-        packet.decoded.request_id = 77
-        packet.decoded.payload = b"\xff\x00\xff\x00"
-
-        with caplog.at_level(logging.WARNING):
-            iface._handle_packet_from_radio(packet, hack=True)
-
-        assert "Failed to decode routing payload" in caplog.text
-        fake_on_receive.assert_called_once()
-        assert callback_calls
-        routing_payload = callback_calls[0]["decoded"]["routing"]
-        assert routing_payload["error"].startswith("decode-failed:")
-        assert routing_payload["errorReason"].startswith("decode-failed:")
-        assert 77 not in iface.responseHandlers
+    assert "Failed to decode routing payload" in caplog.text
+    fake_on_receive.assert_called_once()
+    assert callback_calls
+    routing_payload = callback_calls[0]["decoded"]["routing"]
+    assert routing_payload["error"].startswith("decode-failed:")
+    assert routing_payload["errorReason"].startswith("decode-failed:")
+    assert 77 not in iface.responseHandlers
 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_handle_packet_from_radio_message_to_dict_failure_does_not_raise(
+    decode_failure_iface: MeshInterface,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """MessageToDict conversion failures should be handled as decode-failed payload errors."""
-    monkeypatch.setattr(
-        mesh_interface_module.publishingThread,  # type: ignore[attr-defined]
-        "queueWork",
-        lambda callback: callback(),
+    iface = decode_failure_iface
+    fake_on_receive = MagicMock()
+    _install_protocol_stub(
+        monkeypatch,
+        portnum=portnums_pb2.PortNum.POSITION_APP,
+        name="position",
+        protobuf_factory=mesh_pb2.Position,
+        on_receive=fake_on_receive,
+    )
+    callback_calls = _register_response_capture(iface, 88)
+    _patch_message_to_dict_position_failure(monkeypatch)
+    packet = _make_decoded_packet(
+        portnum=portnums_pb2.PortNum.POSITION_APP,
+        request_id=88,
+        payload=mesh_pb2.Position(latitude_i=1).SerializeToString(),
     )
 
-    with MeshInterface(noProto=True) as iface:
-        fake_on_receive = MagicMock()
-        fake_protocol = types.SimpleNamespace(
-            name="position",
-            protobufFactory=mesh_pb2.Position,
-            onReceive=fake_on_receive,
-        )
-        monkeypatch.setattr(
-            mesh_interface_module,
-            "protocols",
-            {portnums_pb2.PortNum.POSITION_APP: fake_protocol},
-        )
+    with caplog.at_level(logging.WARNING):
+        iface._handle_packet_from_radio(packet, hack=True)
 
-        callback_calls: list[dict[str, Any]] = []
-
-        def _response_callback(packet: dict[str, Any]) -> None:
-            callback_calls.append(packet)
-
-        iface.responseHandlers[88] = ResponseHandler(
-            callback=_response_callback, ackPermitted=True
-        )
-
-        original_message_to_dict = google.protobuf.json_format.MessageToDict
-
-        def _message_to_dict_with_position_failure(
-            message: Message,
-            *args: object,
-            **kwargs: object,
-        ) -> dict[str, Any]:
-            if isinstance(message, mesh_pb2.Position):
-                raise TypeError("position dict conversion failed")  # noqa: TRY003
-            message_to_dict = cast(
-                Callable[..., dict[str, Any]], original_message_to_dict
-            )
-            return message_to_dict(message, *args, **kwargs)
-
-        monkeypatch.setattr(
-            google.protobuf.json_format,
-            "MessageToDict",
-            _message_to_dict_with_position_failure,
-        )
-
-        packet = mesh_pb2.MeshPacket()
-        setattr(packet, "from", 1)
-        packet.to = 2
-        packet.decoded.portnum = portnums_pb2.PortNum.POSITION_APP
-        packet.decoded.request_id = 88
-        packet.decoded.payload = mesh_pb2.Position(latitude_i=1).SerializeToString()
-
-        with caplog.at_level(logging.WARNING):
-            iface._handle_packet_from_radio(packet, hack=True)
-
-        assert "Failed to decode position payload" in caplog.text
-        fake_on_receive.assert_called_once()
-        assert callback_calls
-        assert callback_calls[0]["decoded"]["position"]["error"].startswith(
-            "decode-failed:"
-        )
-        assert 88 not in iface.responseHandlers
+    assert "Failed to decode position payload" in caplog.text
+    fake_on_receive.assert_called_once()
+    assert callback_calls
+    assert callback_calls[0]["decoded"]["position"]["error"].startswith(
+        "decode-failed:"
+    )
+    assert 88 not in iface.responseHandlers

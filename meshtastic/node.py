@@ -72,12 +72,22 @@ FACTORY_RESET_REQUEST_VALUE: int = 1
 # historical callers that parse printed metadata lines.
 METADATA_STDOUT_COMPAT_WAIT_SECONDS = 1.0
 NAMED_ADMIN_CHANNEL_NAME = "admin"
-_LockedCallResult = TypeVar("_LockedCallResult")
+_ResultT = TypeVar("_ResultT")
 
 
 def _is_named_admin_channel_name(channel_name: str) -> bool:
     """Return whether a channel name designates the special named admin channel."""
     return channel_name.lower() == NAMED_ADMIN_CHANNEL_NAME
+
+
+def _ordered_admin_indexes(*indexes: int | None) -> list[int]:
+    """Return unique non-None admin channel indexes, preserving input order."""
+    ordered: list[int] = []
+    for index in indexes:
+        if index is None or index in ordered:
+            continue
+        ordered.append(index)
+    return ordered
 
 
 class Node:
@@ -204,8 +214,8 @@ class Node:
             metadata_stdout_event.set()
 
     def _execute_with_node_db_lock(
-        self, func: Callable[[], _LockedCallResult]
-    ) -> _LockedCallResult:
+        self, func: Callable[[], _ResultT]
+    ) -> _ResultT:
         """Execute ``func`` while holding ``iface._node_db_lock`` when available."""
         node_db_lock = getattr(self.iface, "_node_db_lock", None)
         if (
@@ -1071,15 +1081,6 @@ class Node:
         named_admin_index_for_write = admin_write_node._get_named_admin_channel_index()
         has_admin_write_node_named_admin = named_admin_index_for_write is not None
 
-        def _ordered_admin_indexes(*indexes: int | None) -> list[int]:
-            """Return unique non-None admin channel indexes, preserving input order."""
-            ordered: list[int] = []
-            for index in indexes:
-                if index is None or index in ordered:
-                    continue
-                ordered.append(index)
-            return ordered
-
         if addOnly:
             # Add new channels with names not already present
             # Don't change existing channels
@@ -1235,9 +1236,7 @@ class Node:
                             rollback_succeeded = True
                             break
                         # Best-effort rollback path; keep attempting remaining steps.
-                        except (
-                            Exception
-                        ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                        except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                             last_rollback_error = rollback_error
                     if not rollback_succeeded:
                         rollback_failed = True
@@ -1532,9 +1531,7 @@ class Node:
                             )
                             rollback_succeeded = True
                             break
-                        except (
-                            Exception
-                        ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                        except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                             replace_last_rollback_error = rollback_error
                     if not rollback_succeeded:
                         rollback_failed = True

@@ -95,6 +95,38 @@ class _TrackingLock:
         return False
 
 
+class _MetadataLockProbeIface:
+    """Minimal interface stub that records metadata read/write lock state."""
+
+    def __init__(
+        self,
+        node_db_lock: _TrackingLock,
+        *,
+        metadata: mesh_pb2.DeviceMetadata | None = None,
+        metadata_read_lock_states: list[bool] | None = None,
+        include_acknowledgment: bool = False,
+    ) -> None:
+        self._node_db_lock = node_db_lock
+        self._metadata = metadata
+        self._metadata_read_lock_states = metadata_read_lock_states
+        self.metadata_assignment_lock_state: bool | None = None
+        if include_acknowledgment:
+            self._acknowledgment = Acknowledgment()
+
+    @property
+    def metadata(self) -> mesh_pb2.DeviceMetadata | None:
+        """Return metadata while optionally recording lock-held read state."""
+        if self._metadata_read_lock_states is not None:
+            self._metadata_read_lock_states.append(self._node_db_lock.is_held)
+        return self._metadata
+
+    @metadata.setter
+    def metadata(self, value: mesh_pb2.DeviceMetadata | None) -> None:
+        """Store metadata while recording lock-held write state."""
+        self.metadata_assignment_lock_state = self._node_db_lock.is_held
+        self._metadata = value
+
+
 def _make_fake_send_admin(
     *,
     sent_messages: list[admin_pb2.AdminMessage] | None = None,
@@ -2846,27 +2878,7 @@ def test_onRequestGetMetadata_logs_valid_and_fallback_enum_values(
 def test_onRequestGetMetadata_updates_metadata_under_node_db_lock() -> None:
     """OnRequestGetMetadata should update iface.metadata while holding iface._node_db_lock."""
     lock = _TrackingLock()
-
-    class _MetadataAssignmentProbeIface:
-        """Minimal interface stub that asserts metadata writes happen while lock is held."""
-
-        def __init__(self, node_db_lock: _TrackingLock) -> None:
-            self._node_db_lock = node_db_lock
-            self._acknowledgment = Acknowledgment()
-            self._metadata: mesh_pb2.DeviceMetadata | None = None
-            self.metadata_assignment_lock_state: bool | None = None
-
-        @property
-        def metadata(self) -> mesh_pb2.DeviceMetadata | None:
-            """Metadata property for testing lock state during assignment."""
-            return self._metadata
-
-        @metadata.setter
-        def metadata(self, value: mesh_pb2.DeviceMetadata | None) -> None:
-            self.metadata_assignment_lock_state = self._node_db_lock.is_held
-            self._metadata = value
-
-    iface = _MetadataAssignmentProbeIface(lock)
+    iface = _MetadataLockProbeIface(lock, include_acknowledgment=True)
     anode = Node(cast(Any, iface), "!12345678", noProto=True)
     anode._timeout = MagicMock()
 
@@ -2895,26 +2907,7 @@ def test_onRequestGetMetadata_updates_metadata_under_node_db_lock() -> None:
 def test_set_metadata_snapshot_stores_detached_copy_under_lock() -> None:
     """_set_metadata_snapshot should store a detached metadata copy while holding node DB lock."""
     lock = _TrackingLock()
-
-    class _MetadataSnapshotProbeIface:
-        """Minimal interface stub that records lock state during metadata assignment."""
-
-        def __init__(self, node_db_lock: _TrackingLock) -> None:
-            self._node_db_lock = node_db_lock
-            self._metadata: mesh_pb2.DeviceMetadata | None = None
-            self.metadata_assignment_lock_state: bool | None = None
-
-        @property
-        def metadata(self) -> mesh_pb2.DeviceMetadata | None:
-            """Return the stored device metadata."""
-            return self._metadata
-
-        @metadata.setter
-        def metadata(self, value: mesh_pb2.DeviceMetadata | None) -> None:
-            self.metadata_assignment_lock_state = self._node_db_lock.is_held
-            self._metadata = value
-
-    iface = _MetadataSnapshotProbeIface(lock)
+    iface = _MetadataLockProbeIface(lock)
     anode = Node(cast(Any, iface), "!12345678", noProto=True)
     metadata_snapshot = mesh_pb2.DeviceMetadata(
         firmware_version="2.7.19",
@@ -3016,28 +3009,6 @@ def test_emit_cached_metadata_reads_metadata_under_node_db_lock(
 
     metadata_read_lock_states: list[bool] = []
 
-    class _MetadataReadProbeIface:
-        """Minimal interface stub that records lock state on metadata reads."""
-
-        def __init__(
-            self,
-            node_db_lock: _TrackingLock,
-            metadata: mesh_pb2.DeviceMetadata,
-        ) -> None:
-            self._node_db_lock = node_db_lock
-            self._metadata = metadata
-
-        @property
-        def metadata(self) -> mesh_pb2.DeviceMetadata:
-            """Return stored metadata while recording lock-held state at read time."""
-            metadata_read_lock_states.append(self._node_db_lock.is_held)
-            return self._metadata
-
-        @metadata.setter
-        def metadata(self, value: mesh_pb2.DeviceMetadata) -> None:
-            """Update stored metadata for the probe interface."""
-            self._metadata = value
-
     def _mutate_metadata_after_unlock() -> None:
         original_metadata.firmware_version = "mutated-after-unlock"
         original_metadata.device_state_version = 99
@@ -3046,7 +3017,11 @@ def test_emit_cached_metadata_reads_metadata_under_node_db_lock(
         original_metadata.hasPKC = False
 
     lock = _TrackingLock(on_exit=_mutate_metadata_after_unlock)
-    iface = _MetadataReadProbeIface(lock, original_metadata)
+    iface = _MetadataLockProbeIface(
+        lock,
+        metadata=original_metadata,
+        metadata_read_lock_states=metadata_read_lock_states,
+    )
     anode = Node(cast(Any, iface), "!12345678", noProto=True)
     emitted: list[tuple[str, bool]] = []
 

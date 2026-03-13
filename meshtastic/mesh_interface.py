@@ -100,6 +100,7 @@ WAIT_ATTR_POSITION: str = "receivedPosition"
 WAIT_ATTR_TELEMETRY: str = "receivedTelemetry"
 WAIT_ATTR_TRACEROUTE: str = "receivedTraceRoute"
 WAIT_ATTR_WAYPOINT: str = "receivedWaypoint"
+WAIT_ATTR_NAK: str = "receivedNak"
 LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM: dict[int, str] = {
     portnums_pb2.PortNum.POSITION_APP: WAIT_ATTR_POSITION,
     portnums_pb2.PortNum.TRACEROUTE_APP: WAIT_ATTR_TRACEROUTE,
@@ -2519,7 +2520,7 @@ class MeshInterface:  # pylint: disable=R0902
             If waiting times out before an ACK/NAK is received.
         """
         success = self._timeout.waitForAckNak(self._acknowledgment)
-        self._raise_wait_error_if_present("receivedNak")
+        self._raise_wait_error_if_present(WAIT_ATTR_NAK)
         if not success:
             raise MeshInterface.MeshInterfaceError(
                 "Timed out waiting for an acknowledgment"
@@ -3001,7 +3002,6 @@ class MeshInterface:  # pylint: disable=R0902
             )
             return
 
-        # logger.debug("Sending toRadio: %s", stripnl(toRadio))
         if not toRadio.HasField("packet"):
             # not a meshpacket -- send immediately, give queue a chance,
             # this makes heartbeat trigger queue
@@ -3627,7 +3627,7 @@ class MeshInterface:  # pylint: disable=R0902
                     else:
                         admin_decode_error = f"{DECODE_FAILED_PREFIX}unknown error"
                     self._set_wait_error(
-                        "receivedNak",
+                        WAIT_ATTR_NAK,
                         f"Failed to decode admin payload: {admin_decode_error}",
                         request_id=requestId,
                     )

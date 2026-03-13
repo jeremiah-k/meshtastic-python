@@ -71,6 +71,7 @@ CLI_DEFAULT_TIMEOUT_SECONDS = _positive_float_from_env(
 )
 MIN_CHANNEL_URL_LENGTH = 120
 SATURATION_ERROR_MSG = "No free channels were found"
+SIMPLE_CHANNEL_PSK = b"\x01"
 INFO_CHANNEL_LINE_RE = re.compile(
     r'^\s*Index (?P<idx>\d+): (?P<role>PRIMARY|SECONDARY).*"name": "(?P<name>[^"]*)"',
     re.MULTILINE,
@@ -150,7 +151,7 @@ def _build_add_only_channel_url(channel_name: str) -> str:
     channel_set = apponly_pb2.ChannelSet()
     staged_channel = channel_set.settings.add()
     staged_channel.name = channel_name
-    staged_channel.psk = b"\x01"
+    staged_channel.psk = SIMPLE_CHANNEL_PSK
     encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
     return f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
 
@@ -519,14 +520,14 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
 
     try:
         _configure_channel_blueprint(HOST_A, meshtastic_bin)
-        before_info = _run_host_cli_ok(HOST_A, "--info", meshtastic_bin=meshtastic_bin)
-        before_channels = _extract_channel_names(before_info)
-        assert before_channels
+        initial_info = _run_host_cli_ok(HOST_A, "--info", meshtastic_bin=meshtastic_bin)
+        initial_channels = _extract_channel_names(initial_info)
+        assert initial_channels
 
         max_attempts = _estimate_saturation_add_attempts(
             HOST_A,
             meshtastic_bin,
-            configured_channel_count=len(before_channels),
+            configured_channel_count=len(initial_channels),
             tmp_path=tmp_path,
         )
         saturated = False
@@ -545,6 +546,12 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
             saturated = True
             break
         assert saturated
+        saturated_info = _run_host_cli_ok(
+            HOST_A,
+            "--info",
+            meshtastic_bin=meshtastic_bin,
+        )
+        saturated_channels = _extract_channel_names(saturated_info)
 
         channel_name = "CIRollbackProbe"
         channel_url = _build_add_only_channel_url(channel_name)
@@ -559,7 +566,7 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
         assert SATURATION_ERROR_MSG in add_out
 
         after_info = _run_host_cli_ok(HOST_A, "--info", meshtastic_bin=meshtastic_bin)
-        assert _extract_channel_names(after_info) == before_channels
+        assert _extract_channel_names(after_info) == saturated_channels
         assert channel_name not in after_info
     finally:
         _run_host_cli_ok(
