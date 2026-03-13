@@ -276,13 +276,23 @@ wait_for_log_pattern() {
 	local pattern=$2
 	local timeout_seconds=${3:-30}
 	local deadline=$((SECONDS + timeout_seconds))
+	local last_log_error=""
 
 	while ((SECONDS < deadline)); do
 		local log_output=""
 		if ! log_output="$(docker logs "${container}" 2>&1)"; then
-			echo "Failed to read logs from ${container}." >&2
-			printf '%s\n' "${log_output}" >&2
-			return 1
+			last_log_error="${log_output}"
+			if ! docker ps --format '{{.Names}}' | grep -Fxq "${container}"; then
+				echo "${container} exited while waiting for log pattern '${pattern}'." >&2
+				if [[ -n ${last_log_error} ]]; then
+					printf '%s\n' "${last_log_error}" >&2
+				fi
+				mark_logs_printed
+				docker logs "${container}" >&2 || true
+				return 1
+			fi
+			sleep 1
+			continue
 		fi
 		if grep -Fq "${pattern}" <<<"${log_output}"; then
 			return 0
@@ -296,6 +306,10 @@ wait_for_log_pattern() {
 		sleep 1
 	done
 
+	if [[ -n ${last_log_error} ]]; then
+		echo "Failed to read logs from ${container} before timeout." >&2
+		printf '%s\n' "${last_log_error}" >&2
+	fi
 	echo "${container} did not emit expected log pattern '${pattern}' within ${timeout_seconds}s." >&2
 	mark_logs_printed
 	docker logs "${container}" >&2 || true

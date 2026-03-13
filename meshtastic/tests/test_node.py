@@ -1742,7 +1742,7 @@ def test_setURL_replace_pins_admin_index_for_channel_and_lora_writes(
     """setURL(addOnly=False) should pin admin path from pre-rewrite channel state."""
     iface = autospec_local_node_iface(MeshInterface)
     iface.localNode._get_admin_channel_index.return_value = 1
-    iface.localNode._get_named_admin_channel_index = MagicMock(return_value=1)  # type: ignore[attr-defined]
+    iface.localNode._get_named_admin_channel_index = MagicMock(return_value=1)
     iface._get_or_create_by_num.return_value = {"adminSessionPassKey": b"secret"}
     anode = Node(iface, "!12345678", noProto=False)
 
@@ -1902,6 +1902,134 @@ def test_setURL_replace_when_admin_slot_moves_defers_old_slot_cleanup(
         ("channel:0", 1),
         ("channel:1", 0),
     ]
+
+
+@pytest.mark.unit
+def test_setURL_replace_rolls_back_written_channels_on_midflight_failure(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=False) should restore previously written channels when replace fails mid-flight."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.iface.localNode = anode
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    secondary = Channel(index=1, role=Channel.Role.SECONDARY)
+    secondary.settings.name = "existing"
+    disabled = Channel(index=2, role=Channel.Role.DISABLED)
+    anode.channels = [primary, secondary, disabled]
+    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
+
+    failed_stage_write = {"seen": False}
+    sent_messages: list[admin_pb2.AdminMessage] = []
+
+    def _send_admin_with_midflight_failure(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse, adminIndex)
+        if (
+            msg.HasField("set_channel")
+            and msg.set_channel.index == 1
+            and msg.set_channel.settings.name == "new-secondary"
+            and not failed_stage_write["seen"]
+        ):
+            failed_stage_write["seen"] = True
+            raise RuntimeError("replace write failed")
+        sent_messages.append(msg)
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = _send_admin_with_midflight_failure  # type: ignore[method-assign,assignment]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "new-primary"
+    first.psk = b"\x31"
+    second = channel_set.settings.add()
+    second.name = "new-secondary"
+    second.psk = b"\x32"
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+    with pytest.raises(RuntimeError, match="replace write failed"):
+        anode.setURL(url, addOnly=False)
+
+    assert anode.channels is not None
+    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    assert after_snapshot == before_snapshot
+    rollback_channels = [
+        msg.set_channel
+        for msg in sent_messages
+        if msg.HasField("set_channel") and msg.set_channel.settings.name in {"primary", "existing"}
+    ]
+    assert {(channel.index, channel.settings.name) for channel in rollback_channels} == {
+        (0, "primary"),
+        (1, "existing"),
+    }
+
+
+@pytest.mark.unit
+def test_setURL_replace_rolls_back_lora_when_lora_write_fails(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=False) should restore channels and LoRa config when LoRa write fails."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.iface.localNode = anode
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    secondary = Channel(index=1, role=Channel.Role.SECONDARY)
+    secondary.settings.name = "existing"
+    anode.channels = [primary, secondary]
+    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    anode.localConfig.lora.hop_limit = 3
+
+    failed_lora_send = {"seen": False}
+    sent_messages: list[admin_pb2.AdminMessage] = []
+
+    def _send_admin_with_lora_failure(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse, adminIndex)
+        if msg.HasField("set_config") and msg.set_config.HasField("lora"):
+            if not failed_lora_send["seen"] and msg.set_config.lora.hop_limit == 9:
+                failed_lora_send["seen"] = True
+                raise OSError("LoRa replace write failed")
+        sent_messages.append(msg)
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = _send_admin_with_lora_failure  # type: ignore[method-assign,assignment]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "new-primary"
+    first.psk = b"\x41"
+    second = channel_set.settings.add()
+    second.name = "new-secondary"
+    second.psk = b"\x42"
+    channel_set.lora_config.hop_limit = 9
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+    with pytest.raises(OSError, match="LoRa replace write failed"):
+        anode.setURL(url, addOnly=False)
+
+    assert anode.channels is not None
+    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
+    assert after_snapshot == before_snapshot
+    rollback_lora_messages = [
+        msg
+        for msg in sent_messages
+        if msg.HasField("set_config") and msg.set_config.HasField("lora")
+    ]
+    assert len(rollback_lora_messages) == 1
+    assert rollback_lora_messages[0].set_config.lora.hop_limit == 3
+    assert anode.localConfig.lora.hop_limit == 3
 
 
 @pytest.mark.unit

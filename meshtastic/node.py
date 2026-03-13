@@ -1145,7 +1145,7 @@ class Node:
                         f"(need {len(pending_new_settings)}, available {len(disabled_channels)})"
                     )
                 for disabled_channel, new_settings in zip(
-                    disabled_channels, pending_new_settings
+                    disabled_channels, pending_new_settings, strict=False
                 ):
                     previous_channel = channel_pb2.Channel()
                     previous_channel.CopyFrom(disabled_channel)
@@ -1284,6 +1284,19 @@ class Node:
                 if channels is None:
                     self._raise_interface_error("Config or channels not loaded")
                 max_channels = len(channels)
+                replace_original_channels_snapshot: list[channel_pb2.Channel] = []
+                replace_original_channels_by_index: dict[int, channel_pb2.Channel] = {}
+                for existing_channel in channels:
+                    channel_snapshot = channel_pb2.Channel()
+                    channel_snapshot.CopyFrom(existing_channel)
+                    replace_original_channels_snapshot.append(channel_snapshot)
+                    replace_original_channels_by_index[existing_channel.index] = (
+                        channel_snapshot
+                    )
+            replace_original_lora_config: config_pb2.Config.LoRaConfig | None = None
+            if has_lora_update and self.localConfig.HasField("lora"):
+                replace_original_lora_config = config_pb2.Config.LoRaConfig()
+                replace_original_lora_config.CopyFrom(self.localConfig.lora)
             staged_channels: list[channel_pb2.Channel] = []
             for i, chs in enumerate(channelSet.settings):
                 if i >= max_channels:
@@ -1345,6 +1358,9 @@ class Node:
                 )
                 if channel is not None
             }
+            written_channel_indices: list[int] = []
+            lora_write_started = False
+            rollback_admin_index_for_write = admin_index_for_write
 
             try:
                 for staged_channel in staged_channels:
@@ -1355,6 +1371,7 @@ class Node:
                         staged_channel.index,
                         staged_channel,
                     )
+                    written_channel_indices.append(staged_channel.index)
                     self._write_channel_snapshot(
                         staged_channel,
                         adminIndex=admin_index_for_write,
@@ -1369,6 +1386,7 @@ class Node:
                     p = admin_pb2.AdminMessage()
                     p.set_config.lora.CopyFrom(channelSet.lora_config)
                     self.ensureSessionKey(adminIndex=admin_index_for_write)
+                    lora_write_started = True
                     self._send_admin(p, adminIndex=admin_index_for_write)
                     self.localConfig.lora.CopyFrom(channelSet.lora_config)
 
@@ -1378,6 +1396,7 @@ class Node:
                         deferred_new_named_admin_channel.index,
                         deferred_new_named_admin_channel,
                     )
+                    written_channel_indices.append(deferred_new_named_admin_channel.index)
                     self._write_channel_snapshot(
                         deferred_new_named_admin_channel,
                         adminIndex=admin_index_for_write,
@@ -1389,6 +1408,9 @@ class Node:
                         channels[deferred_new_named_admin_channel.index].CopyFrom(
                             deferred_new_named_admin_channel
                         )
+                    rollback_admin_index_for_write = (
+                        deferred_new_named_admin_channel.index
+                    )
                 if deferred_previous_admin_slot_channel is not None:
                     updated_admin_index_for_write = admin_index_for_write
                     if deferred_new_named_admin_channel is not None:
@@ -1399,6 +1421,9 @@ class Node:
                         "Rewriting deferred admin slot i:%s via admin index %s",
                         deferred_previous_admin_slot_channel.index,
                         updated_admin_index_for_write,
+                    )
+                    written_channel_indices.append(
+                        deferred_previous_admin_slot_channel.index
                     )
                     self._write_channel_snapshot(
                         deferred_previous_admin_slot_channel,
@@ -1412,13 +1437,82 @@ class Node:
                             deferred_previous_admin_slot_channel
                         )
             except Exception:
-                with self._channels_lock:
-                    self.channels = None
-                    self.partialChannels = []
                 logger.warning(
-                    "Failed while applying replace-all channel updates; invalidated local channel cache.",
+                    "Failed while applying replace-all channel updates; attempting rollback "
+                    "for written channels and LoRa config.",
                     exc_info=True,
                 )
+                rollback_failed = False
+                restored_indices: set[int] = set()
+                for index in reversed(written_channel_indices):
+                    if index in restored_indices:
+                        continue
+                    restored_indices.add(index)
+                    replace_rollback_channel: channel_pb2.Channel | None = (
+                        replace_original_channels_by_index.get(index)
+                    )
+                    if replace_rollback_channel is None:
+                        continue
+                    try:
+                        self._write_channel_snapshot(
+                            replace_rollback_channel,
+                            adminIndex=rollback_admin_index_for_write,
+                        )
+                        if (
+                            deferred_new_named_admin_channel is not None
+                            and index == deferred_new_named_admin_channel.index
+                        ):
+                            rollback_admin_index_for_write = admin_index_for_write
+                    except Exception:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                        rollback_failed = True
+                        logger.warning(
+                            "Rollback of channel index %s failed after replace-all partial failure.",
+                            index,
+                            exc_info=True,
+                        )
+                if lora_write_started:
+                    if replace_original_lora_config is not None:
+                        rollback_lora = admin_pb2.AdminMessage()
+                        rollback_lora.set_config.lora.CopyFrom(replace_original_lora_config)
+                        try:
+                            self.ensureSessionKey(adminIndex=rollback_admin_index_for_write)
+                            self._send_admin(
+                                rollback_lora,
+                                adminIndex=rollback_admin_index_for_write,
+                            )
+                            self.localConfig.lora.CopyFrom(replace_original_lora_config)
+                        except Exception:  # noqa: BLE001 - preserve original failure while attempting best-effort LoRa rollback
+                            rollback_failed = True
+                            logger.warning(
+                                "Rollback of LoRa config failed after replace-all partial failure.",
+                                exc_info=True,
+                            )
+                            self.localConfig.ClearField("lora")
+                            logger.warning(
+                                "LoRa config cache cleared after rollback failure; reload config before using localConfig.lora."
+                            )
+                    else:
+                        self.localConfig.ClearField("lora")
+                        logger.warning(
+                            "LoRa config cache cleared after replace-all failure without "
+                            "rollback snapshot; reload config before using localConfig.lora."
+                        )
+                if rollback_failed:
+                    with self._channels_lock:
+                        self.channels = None
+                        self.partialChannels = []
+                    logger.warning(
+                        "Replace-all rollback incomplete after failure; invalidated local channel cache."
+                    )
+                else:
+                    with self._channels_lock:
+                        restored_channels: list[channel_pb2.Channel] = []
+                        for original_channel in replace_original_channels_snapshot:
+                            restored_channel = channel_pb2.Channel()
+                            restored_channel.CopyFrom(original_channel)
+                            restored_channels.append(restored_channel)
+                        self.channels = restored_channels
+                        self.partialChannels = []
                 raise
 
     def onResponseRequestRingtone(self, p: dict[str, Any]) -> None:

@@ -127,12 +127,12 @@ def _format_missing_node_num_error(destination_id: int | str) -> str:
     return MISSING_NODE_NUM_ERROR_TEMPLATE.format(destination_id=destination_id)
 
 
-def _format_node_not_found_in_db_error(destination_id: object) -> str:
+def _format_node_not_found_in_db_error(destination_id: int | str) -> str:
     """Return a consistent error for node IDs missing from an available node DB."""
     return NODE_NOT_FOUND_IN_DB_ERROR_TEMPLATE.format(destination_id=destination_id)
 
 
-def _format_node_db_unavailable_error(destination_id: object) -> str:
+def _format_node_db_unavailable_error(destination_id: int | str) -> str:
     """Return a consistent error for node IDs when node DB is unavailable."""
     return NODE_NOT_FOUND_DB_UNAVAILABLE_ERROR_TEMPLATE.format(
         destination_id=destination_id
@@ -3127,7 +3127,11 @@ class MeshInterface:  # pylint: disable=R0902
         if queueStatus.res:
             return
 
-        # logger.warn("queue: " + " ".join(f'{k:08x}' for k in self.queue))
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "queue: %s",
+                " ".join(f"{key:08x}" for key in self.queue),
+            )
         with self._queue_lock:
             justQueued = self.queue.pop(queueStatus.mesh_packet_id, None)
 
