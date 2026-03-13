@@ -3768,6 +3768,11 @@ def test_handle_packet_from_radio_admin_decode_failure_skips_admin_response_call
         response_callback.assert_not_called()
         assert 42 not in iface.responseHandlers
         assert iface._acknowledgment.receivedNak is True
+        with pytest.raises(
+            MeshInterface.MeshInterfaceError,
+            match="Failed to decode admin payload",
+        ):
+            iface._raise_wait_error_if_present("receivedNak", request_id=42)
         assert "Failed to decode admin payload" in caplog.text
         assert (
             "Dropping response callback for requestId 42 due to admin decode failure."

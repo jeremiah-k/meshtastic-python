@@ -6,7 +6,7 @@ import base64
 import logging
 import re
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from types import TracebackType
 from typing import Any, Literal, Protocol, cast
 from unittest.mock import MagicMock, patch
@@ -128,7 +128,23 @@ def _make_fake_send_admin(
     return _fake_send_admin
 
 
-def _get_mock_call_arg(call: Any, *, name: str, positional_index: int) -> Any:
+class _MockCallLike(Protocol):
+    """Protocol for mock call objects exposing positional/keyword arguments."""
+
+    @property
+    def args(self) -> tuple[object, ...]:
+        """Positional call arguments."""
+        ...
+
+    @property
+    def kwargs(self) -> Mapping[str, object]:
+        """Keyword call arguments."""
+        ...
+
+
+def _get_mock_call_arg(
+    call: _MockCallLike, *, name: str, positional_index: int
+) -> object | None:
     """Resolve a mock call argument regardless of positional/keyword call style."""
     if len(call.args) > positional_index:
         return call.args[positional_index]

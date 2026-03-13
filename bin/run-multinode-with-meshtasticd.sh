@@ -294,6 +294,7 @@ wait_for_log_pattern() {
 			sleep 1
 			continue
 		fi
+		last_log_error=""
 		if grep -Fq "${pattern}" <<<"${log_output}"; then
 			return 0
 		fi

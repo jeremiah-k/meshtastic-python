@@ -4,6 +4,7 @@ This module validates admin operations and configuration reuse across two
 meshtasticd simulator instances.
 """
 
+import base64
 import os
 import re
 import time
@@ -13,6 +14,7 @@ from typing import Any
 import pytest
 import yaml
 
+from ..protobuf import apponly_pb2
 from .cli_test_utils import _run_host_cli, _run_host_cli_ok
 
 pytestmark = [pytest.mark.int, pytest.mark.smokevirt]
@@ -72,6 +74,7 @@ INFO_CHANNEL_LINE_RE = re.compile(
     r'^\s*Index (?P<idx>\d+): (?P<role>PRIMARY|SECONDARY).*"name": "(?P<name>[^"]*)"',
     re.MULTILINE,
 )
+SATURATION_ADD_ATTEMPTS = 32
 
 
 def _wait_for_host_ready(
@@ -129,6 +132,16 @@ def _extract_channel_names(info_output: str) -> dict[int, str]:
     for match in INFO_CHANNEL_LINE_RE.finditer(info_output):
         channels[int(match.group("idx"))] = match.group("name")
     return channels
+
+
+def _build_add_only_channel_url(channel_name: str) -> str:
+    """Build a channel-only add URL with one uniquely named secondary channel."""
+    channel_set = apponly_pb2.ChannelSet()
+    staged_channel = channel_set.settings.add()
+    staged_channel.name = channel_name
+    staged_channel.psk = b"\x01"
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    return f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
 
 
 def _extract_exported_channel_identities(channels: list[Any]) -> set[tuple[int, str]]:
@@ -430,3 +443,72 @@ def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
         assert len(identities_a) == len(channels_a)
         assert len(identities_b) == len(channels_b)
         assert identities_a == identities_b
+
+
+def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain(
+    tmp_path: Path,
+    meshtastic_bin: str,
+) -> None:
+    """`--ch-add-url` should fail atomically when no DISABLED slots remain."""
+    _wait_for_host_ready(HOST_A, meshtastic_bin)
+    baseline_export_path = tmp_path / "meshtasticd-multinode-a-baseline.yaml"
+    _run_host_cli_ok(
+        HOST_A,
+        "--export-config",
+        str(baseline_export_path),
+        meshtastic_bin=meshtastic_bin,
+    )
+    assert baseline_export_path.exists()
+
+    try:
+        _configure_channel_blueprint(HOST_A, meshtastic_bin)
+
+        saturated = False
+        for index in range(SATURATION_ADD_ATTEMPTS):
+            fill_name = f"CIFill{index:02d}"
+            returncode, output = _run_host_cli(
+                HOST_A,
+                "--ch-add",
+                fill_name,
+                meshtastic_bin=meshtastic_bin,
+                timeout=CLI_DEFAULT_TIMEOUT_SECONDS,
+            )
+            if returncode == 0:
+                continue
+            assert "No free channels were found" in output
+            saturated = True
+            break
+        assert saturated
+
+        before_info = _run_host_cli_ok(HOST_A, "--info", meshtastic_bin=meshtastic_bin)
+        before_channels = _extract_channel_names(before_info)
+        assert before_channels
+
+        channel_name = "CIRollbackProbe"
+        channel_url = _build_add_only_channel_url(channel_name)
+        add_rc, add_out = _run_host_cli(
+            HOST_A,
+            "--ch-add-url",
+            channel_url,
+            meshtastic_bin=meshtastic_bin,
+            timeout=CLI_DEFAULT_TIMEOUT_SECONDS,
+        )
+        assert add_rc != 0
+        assert "No free channels were found" in add_out
+
+        after_info = _run_host_cli_ok(HOST_A, "--info", meshtastic_bin=meshtastic_bin)
+        assert _extract_channel_names(after_info) == before_channels
+        assert channel_name not in after_info
+    finally:
+        _run_host_cli_ok(
+            HOST_A,
+            "--configure",
+            str(baseline_export_path),
+            timeout=HOST_CONFIGURE_TIMEOUT_SECONDS,
+            meshtastic_bin=meshtastic_bin,
+        )
+        _wait_for_host_ready(
+            HOST_A,
+            meshtastic_bin,
+            timeout_seconds=HOST_READY_AFTER_CONFIGURE_TIMEOUT_SECONDS,
+        )

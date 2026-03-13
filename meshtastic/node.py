@@ -642,10 +642,7 @@ class Node:
         getattr(config_setter, config_name).CopyFrom(source_config)
 
         logger.debug("Wrote: %s", config_name)
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
+        onResponse = None if self == self.iface.localNode else self.onAckNak
         self._send_admin(p, onResponse=onResponse)
 
     def _write_channel_snapshot(
@@ -1069,36 +1066,7 @@ class Node:
 
         admin_write_node = self.iface.localNode
         admin_index_for_write = admin_write_node._get_admin_channel_index()
-        named_admin_getter = getattr(
-            admin_write_node, "_get_named_admin_channel_index", None
-        )
-        named_admin_index_for_write = (
-            named_admin_getter() if callable(named_admin_getter) else None
-        )
-
-        admin_write_channels_obj: object | None = None
-        admin_write_channels_lock = getattr(admin_write_node, "_channels_lock", None)
-        if (
-            admin_write_channels_lock is not None
-            and hasattr(admin_write_channels_lock, "__enter__")
-            and hasattr(admin_write_channels_lock, "__exit__")
-        ):
-            with admin_write_channels_lock:
-                admin_write_channels_obj = getattr(admin_write_node, "channels", None)
-        else:
-            admin_write_channels_obj = getattr(admin_write_node, "channels", None)
-        if (
-            named_admin_index_for_write is None
-            and isinstance(admin_write_channels_obj, list)
-        ):
-            for channel in admin_write_channels_obj:
-                if (
-                    channel.settings
-                    and channel.settings.name
-                    and _is_named_admin_channel_name(channel.settings.name)
-                ):
-                    named_admin_index_for_write = channel.index
-                    break
+        named_admin_index_for_write = admin_write_node._get_named_admin_channel_index()
         has_admin_write_node_named_admin = named_admin_index_for_write is not None
 
         if addOnly:

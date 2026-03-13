@@ -3635,6 +3635,18 @@ class MeshInterface:  # pylint: disable=R0902
                         "Dropping response callback for requestId %s due to admin decode failure.",
                         requestId,
                     )
+                    admin_decoded_payload = asDict.get("decoded", {}).get("admin", {})
+                    if isinstance(admin_decoded_payload, dict):
+                        admin_decode_error = admin_decoded_payload.get(
+                            DECODE_ERROR_KEY, f"{DECODE_FAILED_PREFIX}unknown error"
+                        )
+                    else:
+                        admin_decode_error = f"{DECODE_FAILED_PREFIX}unknown error"
+                    self._set_wait_error(
+                        "receivedNak",
+                        f"Failed to decode admin payload: {admin_decode_error}",
+                        request_id=requestId,
+                    )
                     self._acknowledgment.receivedNak = True
                 if response_handler is not None:
                     logger.debug("Calling response handler for requestId %s", requestId)
