@@ -470,10 +470,12 @@ class MeshInterface:  # pylint: disable=R0902
         """
         if exc_type is not None and exc_value is not None:
             logger.error(
-                f"An exception of type {exc_type} with value {exc_value} has occurred"
+                "An exception of type %s with value %s has occurred",
+                exc_type,
+                exc_value,
             )
             if trace is not None:
-                logger.error(f"Traceback:\n{''.join(traceback.format_tb(trace))}")
+                logger.error("Traceback:\n%s", "".join(traceback.format_tb(trace)))
         try:
             self.close()
         except Exception:
@@ -3020,7 +3022,7 @@ class MeshInterface:  # pylint: disable=R0902
             )
             return
 
-        # logger.debug(f"Sending toRadio: {stripnl(toRadio)}")
+        # logger.debug("Sending toRadio: %s", stripnl(toRadio))
         if not toRadio.HasField("packet"):
             # not a meshpacket -- send immediately, give queue a chance,
             # this makes heartbeat trigger queue
@@ -3115,7 +3117,11 @@ class MeshInterface:  # pylint: disable=R0902
         with self._queue_lock:
             self.queueStatus = queueStatus
         logger.debug(
-            f"TX QUEUE free {queueStatus.free} of {queueStatus.maxlen}, res = {queueStatus.res}, id = {queueStatus.mesh_packet_id:08x} "
+            "TX QUEUE free %s of %s, res = %s, id = %08x ",
+            queueStatus.free,
+            queueStatus.maxlen,
+            queueStatus.res,
+            queueStatus.mesh_packet_id,
         )
 
         if queueStatus.res:
@@ -3129,7 +3135,8 @@ class MeshInterface:  # pylint: disable=R0902
             with self._queue_lock:
                 self.queue[queueStatus.mesh_packet_id] = False
             logger.debug(
-                f"Reply for unexpected packet ID {queueStatus.mesh_packet_id:08x}"
+                "Reply for unexpected packet ID %08x",
+                queueStatus.mesh_packet_id,
             )
         # logger.warn("queue: " + " ".join(f'{k:08x}' for k in self.queue))
 
@@ -3503,7 +3510,8 @@ class MeshInterface:  # pylint: disable=R0902
         if not hack and "from" not in asDict:
             asDict["from"] = 0
             logger.error(
-                f"Device returned a packet we sent, ignoring: {stripnl(asDict)}"
+                "Device returned a packet we sent, ignoring: %s",
+                stripnl(asDict),
             )
             return
         if "to" not in asDict:
@@ -3537,7 +3545,7 @@ class MeshInterface:  # pylint: disable=R0902
             # it to prevent confusion
             if "portnum" not in decoded:
                 decoded["portnum"] = portnum
-                logger.warning(f"portnum was not in decoded. Setting to:{portnum}")
+                logger.warning("portnum was not in decoded. Setting to:%s", portnum)
             else:
                 portnum = decoded["portnum"]
 

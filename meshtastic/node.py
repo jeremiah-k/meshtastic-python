@@ -71,7 +71,13 @@ FACTORY_RESET_REQUEST_VALUE: int = 1
 # Extra wait used only when getMetadata() runs under redirected stdout for
 # historical callers that parse printed metadata lines.
 METADATA_STDOUT_COMPAT_WAIT_SECONDS = 1.0
+NAMED_ADMIN_CHANNEL_NAME = "admin"
 _LockedCallResult = TypeVar("_LockedCallResult")
+
+
+def _is_named_admin_channel_name(channel_name: str) -> bool:
+    """Return whether a channel name designates the special named admin channel."""
+    return channel_name.lower() == NAMED_ADMIN_CHANNEL_NAME
 
 
 class Node:
@@ -374,7 +380,7 @@ class Node:
         startingIndex : int
             Zero-based channel index to start fetching from (typically 0-7). (Default value = 0)
         """
-        logger.debug(f"requestChannels for nodeNum:{self.nodeNum}")
+        logger.debug("requestChannels for nodeNum:%s", self.nodeNum)
         # only initialize if we're starting out fresh
         if startingIndex == 0:
             with self._channels_lock:
@@ -399,12 +405,13 @@ class Node:
             contain either `getConfigResponse` or `getModuleConfigResponse` and accompanying
             `raw` bytes for the returned field.
         """
-        logger.debug(f"onResponseRequestSetting() p:{p}")
+        logger.debug("onResponseRequestSetting() p:%s", p)
         config_values = None
         if "routing" in p["decoded"]:
             if p["decoded"]["routing"]["errorReason"] != "NONE":
                 logger.error(
-                    f"Error on response: {p['decoded']['routing']['errorReason']}"
+                    "Error on response: %s",
+                    p["decoded"]["routing"]["errorReason"],
                 )
                 self.iface._acknowledgment.receivedNak = True
         else:
@@ -634,7 +641,7 @@ class Node:
         config_setter = getattr(p, setter_name)
         getattr(config_setter, config_name).CopyFrom(source_config)
 
-        logger.debug(f"Wrote: {config_name}")
+        logger.debug("Wrote: %s", config_name)
         if self == self.iface.localNode:
             onResponse = None
         else:
@@ -791,7 +798,7 @@ class Node:
             p = admin_pb2.AdminMessage()
             p.set_channel.CopyFrom(channel_snapshot)
             self._send_admin(p, adminIndex=admin_index_for_write)
-            logger.debug(f"Wrote channel {index}")
+            logger.debug("Wrote channel %s", index)
 
     def getChannelByName(self, name: str) -> channel_pb2.Channel | None:
         """Find a channel whose settings.name exactly matches the provided name.
@@ -874,7 +881,10 @@ class Node:
         """Return the index of a channel explicitly named ``admin``, if present."""
         with self._channels_lock:
             for channel in self.channels or []:
-                if channel.settings and channel.settings.name.lower() == "admin":
+                if (
+                    channel.settings
+                    and _is_named_admin_channel_name(channel.settings.name)
+                ):
                     return channel.index
             return None
 
@@ -921,7 +931,7 @@ class Node:
         MeshInterfaceError
             If `long_name` or `short_name` is provided but empty or whitespace-only after trimming.
         """
-        logger.debug(f"in setOwner nodeNum:{self.nodeNum}")
+        logger.debug("in setOwner nodeNum:%s", self.nodeNum)
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
 
@@ -933,7 +943,9 @@ class Node:
             if len(long_name) > MAX_LONG_NAME_LEN:
                 long_name = long_name[:MAX_LONG_NAME_LEN]
                 logger.warning(
-                    f"Long name is longer than {MAX_LONG_NAME_LEN} characters, truncating to '{long_name}'"
+                    "Long name is longer than %s characters, truncating to '%s'",
+                    MAX_LONG_NAME_LEN,
+                    long_name,
                 )
             p.set_owner.long_name = long_name
             p.set_owner.is_licensed = is_licensed
@@ -954,10 +966,10 @@ class Node:
             p.set_owner.is_unmessagable = is_unmessagable
 
         # Note: These debug lines are used in unit tests
-        logger.debug(f"p.set_owner.long_name:{p.set_owner.long_name}:")
-        logger.debug(f"p.set_owner.short_name:{p.set_owner.short_name}:")
-        logger.debug(f"p.set_owner.is_licensed:{p.set_owner.is_licensed}:")
-        logger.debug(f"p.set_owner.is_unmessagable:{p.set_owner.is_unmessagable}:")
+        logger.debug("p.set_owner.long_name:%s:", p.set_owner.long_name)
+        logger.debug("p.set_owner.short_name:%s:", p.set_owner.short_name)
+        logger.debug("p.set_owner.is_licensed:%s:", p.set_owner.is_licensed)
+        logger.debug("p.set_owner.is_unmessagable:%s:", p.set_owner.is_unmessagable)
         # If sending to a remote node, wait for ACK/NAK
         if self == self.iface.localNode:
             onResponse = None
@@ -1063,9 +1075,6 @@ class Node:
         named_admin_index_for_write = (
             named_admin_getter() if callable(named_admin_getter) else None
         )
-
-        def _is_named_admin_channel_name(channel_name: str) -> bool:
-            return channel_name.lower() == "admin"
 
         admin_write_channels_obj: object | None = None
         admin_write_channels_lock = getattr(admin_write_node, "_channels_lock", None)
@@ -1873,7 +1882,7 @@ class Node:
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
         p.reboot_seconds = secs
-        logger.info(f"Telling node to reboot in {secs} seconds")
+        logger.info("Telling node to reboot in %s seconds", secs)
 
         # If sending to a remote node, wait for ACK/NAK
         if self == self.iface.localNode:
@@ -1944,7 +1953,7 @@ class Node:
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
         p.reboot_ota_seconds = secs
-        logger.info(f"Telling node to reboot to OTA in {secs} seconds")
+        logger.info("Telling node to reboot to OTA in %s seconds", secs)
 
         # If sending to a remote node, wait for ACK/NAK
         if self == self.iface.localNode:
@@ -2061,7 +2070,7 @@ class Node:
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
         p.shutdown_seconds = secs
-        logger.info(f"Telling node to shutdown in {secs} seconds")
+        logger.info("Telling node to shutdown in %s seconds", secs)
 
         # If sending to a remote node, wait for ACK/NAK
         if self == self.iface.localNode:
@@ -2366,7 +2375,7 @@ class Node:
             timeSec = int(time.time())
         p = admin_pb2.AdminMessage()
         p.set_time_only = timeSec
-        logger.info(f"Setting node time to {timeSec}")
+        logger.info("Setting node time to %s", timeSec)
 
         if self == self.iface.localNode:
             onResponse = None
@@ -2444,7 +2453,7 @@ class Node:
             Decoded packet containing at minimum a 'decoded' key with routing and
             admin/raw get_device_metadata_response fields.
         """
-        logger.debug(f"onRequestGetMetadata() p:{p}")
+        logger.debug("onRequestGetMetadata() p:%s", p)
 
         decoded = p["decoded"]
 
@@ -2518,14 +2527,15 @@ class Node:
             - a routing message with 'routing.errorReason', or
             - an admin message with 'admin.raw.get_channel_response' (a Channel protobuf-like object with an `index` field).
         """
-        logger.debug(f"onResponseRequestChannel() p:{p}")
+        logger.debug("onResponseRequestChannel() p:%s", p)
 
         if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.ROUTING_APP
         ):
             if p["decoded"]["routing"]["errorReason"] != "NONE":
                 logger.warning(
-                    f"Channel request failed, error reason: {p['decoded']['routing']['errorReason']}"
+                    "Channel request failed, error reason: %s",
+                    p["decoded"]["routing"]["errorReason"],
                 )
                 self._timeout.expireTime = time.time()  # Do not wait any longer
                 return  # Don't try to parse this routing message
@@ -2623,10 +2633,11 @@ class Node:
         # Show progress message for super slow operations
         if self != self.iface.localNode:
             logger.info(
-                f"Requesting channel {channelNum} info from remote node (this could take a while)"
+                "Requesting channel %s info from remote node (this could take a while)",
+                channelNum,
             )
         else:
-            logger.debug(f"Requesting channel {channelNum}")
+            logger.debug("Requesting channel %s", channelNum)
 
         return self._send_admin(
             p, wantResponse=True, onResponse=self.onResponseRequestChannel
@@ -2671,7 +2682,7 @@ class Node:
             adminIndex is None
         ):  # None means auto-detect; channel 0 remains an explicit valid index.
             adminIndex = self.iface.localNode._get_admin_channel_index()
-        logger.debug(f"adminIndex:{adminIndex}")
+        logger.debug("adminIndex:%s", adminIndex)
         node_info = self.iface._get_or_create_by_num(self.nodeNum)
         passkey = node_info.get("adminSessionPassKey")
         if isinstance(passkey, bytes):
