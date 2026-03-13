@@ -1219,7 +1219,7 @@ class Node:
                                 adminIndex=admin_index_for_write,
                             )
                         # Best-effort rollback path; keep attempting remaining steps.
-                        except Exception:
+                        except Exception:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                             rollback_failed = True
                             logger.warning(
                                 "Rollback of channel index %s failed after addOnly partial failure.",
@@ -1244,7 +1244,7 @@ class Node:
                         )
                         self.localConfig.lora.CopyFrom(original_lora_config)
                     # Best-effort rollback path; keep original failure semantics.
-                    except Exception:
+                    except Exception:  # noqa: BLE001 - preserve original failure while attempting best-effort LoRa rollback
                         logger.warning(
                             "Rollback of LoRa config failed after addOnly partial failure.",
                             exc_info=True,

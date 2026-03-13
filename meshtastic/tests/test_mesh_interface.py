@@ -21,6 +21,7 @@ import google.protobuf.json_format
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+from google.protobuf.message import Message
 
 import meshtastic.mesh_interface as mesh_interface_module
 
@@ -3921,13 +3922,14 @@ def test_handle_packet_from_radio_message_to_dict_failure_does_not_raise(
         original_message_to_dict = google.protobuf.json_format.MessageToDict
 
         def _message_to_dict_with_position_failure(
-            message: Any,
-            *args: Any,
-            **kwargs: Any,
+            message: Message,
+            *args: object,
+            **kwargs: object,
         ) -> dict[str, Any]:
             if isinstance(message, mesh_pb2.Position):
-                raise ValueError("position dict conversion failed")
-            return cast(dict[str, Any], original_message_to_dict(message, *args, **kwargs))
+                raise TypeError("position dict conversion failed")  # noqa: TRY003
+            message_to_dict = cast(Callable[..., dict[str, Any]], original_message_to_dict)
+            return message_to_dict(message, *args, **kwargs)
 
         monkeypatch.setattr(
             google.protobuf.json_format,

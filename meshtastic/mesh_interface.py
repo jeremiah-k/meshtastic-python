@@ -82,6 +82,10 @@ VALID_TELEMETRY_TYPES: tuple[TelemetryType, ...] = (
 VALID_TELEMETRY_TYPE_SET: frozenset[str] = frozenset(VALID_TELEMETRY_TYPES)
 UNKNOWN_SNR_QUARTER_DB = -128
 MISSING_NODE_NUM_ERROR_TEMPLATE = "NodeId {destination_id} has no numeric 'num' in DB"
+NODE_NOT_FOUND_IN_DB_ERROR_TEMPLATE = "NodeId {destination_id} not found in DB"
+NODE_NOT_FOUND_DB_UNAVAILABLE_ERROR_TEMPLATE = (
+    "NodeId {destination_id} not found and node DB is unavailable"
+)
 HEX_NODE_ID_TAIL_CHARS = frozenset("0123456789abcdefABCDEF")
 DECODE_ERROR_KEY = "error"
 DECODE_FAILED_PREFIX = "decode-failed: "
@@ -121,6 +125,18 @@ PayloadData: TypeAlias = bytes | bytearray | memoryview | _SerializablePayload
 def _format_missing_node_num_error(destination_id: int | str) -> str:
     """Return a consistent error message for nodes missing numeric IDs."""
     return MISSING_NODE_NUM_ERROR_TEMPLATE.format(destination_id=destination_id)
+
+
+def _format_node_not_found_in_db_error(destination_id: object) -> str:
+    """Return a consistent error for node IDs missing from an available node DB."""
+    return NODE_NOT_FOUND_IN_DB_ERROR_TEMPLATE.format(destination_id=destination_id)
+
+
+def _format_node_db_unavailable_error(destination_id: object) -> str:
+    """Return a consistent error for node IDs when node DB is unavailable."""
+    return NODE_NOT_FOUND_DB_UNAVAILABLE_ERROR_TEMPLATE.format(
+        destination_id=destination_id
+    )
 
 
 def _extract_hex_node_id_body(destination_id: str) -> str | None:
@@ -2425,21 +2441,21 @@ class MeshInterface:  # pylint: disable=R0902
                         )
                 elif has_nodes:
                     raise MeshInterface.MeshInterfaceError(
-                        f"NodeId {destinationId} not found in DB"
+                        _format_node_not_found_in_db_error(destinationId)
                     )
                 else:
                     raise MeshInterface.MeshInterfaceError(
-                        f"NodeId {destinationId} not found and node DB is unavailable"
+                        _format_node_db_unavailable_error(destinationId)
                     )
         else:
             with self._node_db_lock:
                 has_nodes = self.nodes is not None
             if has_nodes:
                 raise MeshInterface.MeshInterfaceError(
-                    f"NodeId {destinationId} not found in DB"
+                    _format_node_not_found_in_db_error(destinationId)
                 )
             raise MeshInterface.MeshInterfaceError(
-                f"NodeId {destinationId} not found and node DB is unavailable"
+                _format_node_db_unavailable_error(destinationId)
             )
 
         meshPacket.to = nodeNum
