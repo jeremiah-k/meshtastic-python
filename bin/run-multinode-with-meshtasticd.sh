@@ -288,6 +288,7 @@ wait_for_log_pattern() {
 					printf '%s\n' "${last_log_error}" >&2
 				fi
 				mark_logs_printed
+				# Retry once to capture complete logs from the now-stopped container.
 				docker logs "${container}" >&2 || true
 				return 1
 			fi

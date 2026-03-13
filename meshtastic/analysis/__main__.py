@@ -14,7 +14,7 @@ import pandas as pd
 import plotly.express as px  # type: ignore[import-untyped]
 import plotly.graph_objects as go  # type: ignore[import-untyped]
 import pyarrow as pa
-from dash import Dash, dcc, html
+from dash import Dash, dcc, html  # type: ignore[import-untyped]
 from pyarrow import feather
 
 from .. import mesh_pb2, powermon_pb2, util

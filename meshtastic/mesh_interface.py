@@ -26,7 +26,7 @@ try:
 except ImportError:
     print_color = None
 
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped]
 from tabulate import tabulate
 
 import meshtastic.node
@@ -164,22 +164,6 @@ def _extract_hex_node_id_body(destination_id: str) -> str | None:
     if not all(ch in HEX_NODE_ID_TAIL_CHARS for ch in candidate):
         return None
     return candidate
-
-
-def _looks_like_hex_node_id_tail(destination_id: str) -> bool:
-    """Return whether the full string is a supported compact hex node identifier.
-
-    Parameters
-    ----------
-    destination_id : str
-        Candidate node identifier string.
-
-    Returns
-    -------
-    bool
-        ``True`` when ``destination_id`` is exactly a supported compact hex node-id form.
-    """
-    return _extract_hex_node_id_body(destination_id) is not None
 
 
 def _logger_has_visible_info_handler(target_logger: logging.Logger) -> bool:

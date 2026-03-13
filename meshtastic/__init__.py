@@ -46,7 +46,7 @@ unicode scripts they can be different.
 ```
 import meshtastic
 import meshtastic.serial_interface
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped]
 
 def onReceive(packet, interface): # called when a packet arrives
     print(f"Received: {packet}")

@@ -134,12 +134,12 @@ class _MockCallLike(Protocol):
     @property
     def args(self) -> tuple[object, ...]:
         """Positional call arguments."""
-        ...
+        raise NotImplementedError
 
     @property
     def kwargs(self) -> Mapping[str, object]:
         """Keyword call arguments."""
-        ...
+        raise NotImplementedError
 
 
 def _get_mock_call_arg(
@@ -1339,6 +1339,40 @@ def test_setURL_add_only_adds_unique_named_channels(
     assert _get_mock_call_arg(send_calls[1], name="adminIndex", positional_index=3) == 0
     assert send_calls[1].args[0].HasField("set_config")
     assert send_calls[1].args[0].set_config.lora.hop_limit == 9
+
+
+@pytest.mark.unit
+def test_setURL_add_only_treats_names_as_case_insensitive_duplicates(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=True) should ignore case-variant duplicate channel names."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    disabled1 = Channel(index=1, role=Channel.Role.DISABLED)
+    disabled2 = Channel(index=2, role=Channel.Role.DISABLED)
+    anode.channels = [primary, disabled1, disabled2]
+    anode._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())  # type: ignore[method-assign]
+
+    channel_set = apponly_pb2.ChannelSet()
+    first = channel_set.settings.add()
+    first.name = "Admin"
+    first.psk = b"\x01"
+    second = channel_set.settings.add()
+    second.name = "admin"
+    second.psk = b"\x02"
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+    anode.setURL(url, addOnly=True)
+
+    assert anode.channels is not None
+    assert anode.channels[1].settings.name == "Admin"
+    assert anode.channels[2].role == Channel.Role.DISABLED
+    send_calls = anode._send_admin.call_args_list
+    assert len(send_calls) == 1
+    assert send_calls[0].args[0].HasField("set_channel")
+    assert send_calls[0].args[0].set_channel.settings.name == "Admin"
 
 
 @pytest.mark.unit

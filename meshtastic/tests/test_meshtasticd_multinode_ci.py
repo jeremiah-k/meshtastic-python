@@ -74,7 +74,6 @@ INFO_CHANNEL_LINE_RE = re.compile(
     r'^\s*Index (?P<idx>\d+): (?P<role>PRIMARY|SECONDARY).*"name": "(?P<name>[^"]*)"',
     re.MULTILINE,
 )
-SATURATION_ADD_ATTEMPTS = 32
 
 
 def _wait_for_host_ready(
@@ -142,6 +141,35 @@ def _build_add_only_channel_url(channel_name: str) -> str:
     staged_channel.psk = b"\x01"
     encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
     return f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+
+def _estimate_saturation_add_attempts(
+    host: str,
+    meshtastic_bin: str,
+    *,
+    configured_channel_count: int,
+    tmp_path: Path,
+) -> int:
+    """Estimate how many ``--ch-add`` attempts are needed to observe saturation.
+
+    Prefer exported channel capacity when available; otherwise use a conservative
+    bound from observed configured channel count.
+    """
+    probe_export_path = tmp_path / "meshtasticd-multinode-capacity-probe.yaml"
+    _run_host_cli_ok(
+        host,
+        "--export-config",
+        str(probe_export_path),
+        meshtastic_bin=meshtastic_bin,
+    )
+    exported_data = yaml.safe_load(probe_export_path.read_text(encoding="utf-8"))
+    if isinstance(exported_data, dict):
+        channels = exported_data.get("channels")
+        if isinstance(channels, list):
+            total_slots = len(channels)
+            available_slots = max(total_slots - configured_channel_count, 0)
+            return max(available_slots + 2, 2)
+    return max(configured_channel_count + 8, 8)
 
 
 def _extract_exported_channel_identities(channels: list[Any]) -> set[tuple[int, str]]:
@@ -219,7 +247,7 @@ def _configure_channel_blueprint(host: str, meshtastic_bin: str) -> dict[int, st
     )
 
     expected_channel_names = {0: PRIMARY_CHANNEL_NAME, 1: LONGFAST_SECONDARY_NAME}
-    _cli_ok("--ch-add", LONGFAST_SECONDARY_NAME)
+    _cli_ok("--ch-set", "name", LONGFAST_SECONDARY_NAME, "--ch-index", "1")
     _cli_ok("--ch-set", "psk", "none", "--ch-index", "1")
     _cli_ok(
         "--ch-set",
@@ -232,7 +260,7 @@ def _configure_channel_blueprint(host: str, meshtastic_bin: str) -> dict[int, st
     _cli_ok("--ch-set", "downlink_enabled", "false", "--ch-index", "1")
 
     for index, channel_name in enumerate(SECONDARY_CHANNEL_NAMES, start=2):
-        _cli_ok("--ch-add", channel_name)
+        _cli_ok("--ch-set", "name", channel_name, "--ch-index", str(index))
         _cli_ok("--ch-set", "psk", "random", "--ch-index", str(index))
         _cli_ok(
             "--ch-set",
@@ -462,10 +490,19 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
 
     try:
         _configure_channel_blueprint(HOST_A, meshtastic_bin)
+        before_info = _run_host_cli_ok(HOST_A, "--info", meshtastic_bin=meshtastic_bin)
+        before_channels = _extract_channel_names(before_info)
+        assert before_channels
 
+        max_attempts = _estimate_saturation_add_attempts(
+            HOST_A,
+            meshtastic_bin,
+            configured_channel_count=len(before_channels),
+            tmp_path=tmp_path,
+        )
         saturated = False
-        for index in range(SATURATION_ADD_ATTEMPTS):
-            fill_name = f"CIFill{index:02d}"
+        for attempt in range(max_attempts):
+            fill_name = f"CIFill{attempt:02d}"
             returncode, output = _run_host_cli(
                 HOST_A,
                 "--ch-add",
@@ -479,10 +516,6 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
             saturated = True
             break
         assert saturated
-
-        before_info = _run_host_cli_ok(HOST_A, "--info", meshtastic_bin=meshtastic_bin)
-        before_channels = _extract_channel_names(before_info)
-        assert before_channels
 
         channel_name = "CIRollbackProbe"
         channel_url = _build_add_only_channel_url(channel_name)

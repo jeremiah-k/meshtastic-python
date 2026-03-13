@@ -791,11 +791,10 @@ class Node:
                 admin_index_for_write = self._get_admin_channel_index()
             else:
                 admin_index_for_write = self.iface.localNode.getAdminChannelIndex()
-            self.ensureSessionKey(adminIndex=admin_index_for_write)
-            p = admin_pb2.AdminMessage()
-            p.set_channel.CopyFrom(channel_snapshot)
-            self._send_admin(p, adminIndex=admin_index_for_write)
-            logger.debug("Wrote channel %s", index)
+            self._write_channel_snapshot(
+                channel_snapshot,
+                adminIndex=admin_index_for_write,
+            )
 
     def getChannelByName(self, name: str) -> channel_pb2.Channel | None:
         """Find a channel whose settings.name exactly matches the provided name.
@@ -1093,8 +1092,10 @@ class Node:
                 channels = self.channels
                 if channels is None:
                     self._raise_interface_error("Config or channels not loaded")
-                existing_names = {
-                    c.settings.name for c in channels if c.settings and c.settings.name
+                existing_names_normalized = {
+                    c.settings.name.lower()
+                    for c in channels
+                    if c.settings and c.settings.name
                 }
                 disabled_channels = [
                     c for c in channels if c.role == channel_pb2.Channel.Role.DISABLED
@@ -1102,11 +1103,12 @@ class Node:
                 pending_new_settings: list[channel_pb2.ChannelSettings] = []
                 for chs in channelSet.settings:
                     channel_name = chs.name
-                    if channel_name == "" or channel_name in existing_names:
+                    normalized_name = channel_name.lower()
+                    if channel_name == "" or normalized_name in existing_names_normalized:
                         ignored_channel_names.append(channel_name)
                         continue
                     pending_new_settings.append(chs)
-                    existing_names.add(channel_name)
+                    existing_names_normalized.add(normalized_name)
                 if len(pending_new_settings) > len(disabled_channels):
                     self._raise_interface_error(
                         "No free channels were found for all additions "
