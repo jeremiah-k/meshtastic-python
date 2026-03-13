@@ -343,10 +343,15 @@ def autospec_local_node_iface() -> Callable[[type[Any]], MagicMock]:
     def _factory(spec_class: type[Any]) -> MagicMock:
         iface = create_autospec(spec_class, instance=True)
         local_node = MagicMock(
-            spec=["_get_admin_channel_index", "_get_named_admin_channel_index"]
+            spec=[
+                "_get_admin_channel_index",
+                "_get_named_admin_channel_index",
+                "getAdminChannelIndex",
+            ]
         )
         local_node._get_admin_channel_index.return_value = 0
         local_node._get_named_admin_channel_index.return_value = None
+        local_node.getAdminChannelIndex.return_value = 0
         iface.localNode = local_node
         return cast(MagicMock, iface)
 

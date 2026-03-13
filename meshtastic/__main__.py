@@ -18,7 +18,7 @@ from typing import Any, NoReturn, Protocol
 
 import yaml
 from google.protobuf.json_format import MessageToDict
-from pubsub import pub  # type: ignore[import-untyped]
+from pubsub import pub
 
 import meshtastic.ota
 import meshtastic.serial_interface
@@ -385,7 +385,9 @@ def getPref(node: Any, comp_name: str) -> bool:
                 for v in pref_value
             ]
         else:
-            pref_value = _redact_pref_value(secret_name, meshtastic.util.toStr(pref_value))
+            pref_value = _redact_pref_value(
+                secret_name, meshtastic.util.toStr(pref_value)
+            )
         print(f"{str(config_type.name)}.{uni_name}: {str(pref_value)}")
         logger.debug("%s.%s: %s", config_type.name, uni_name, pref_value)
 
@@ -1661,11 +1663,7 @@ def onConnected(interface: MeshInterface) -> None:
                     tunnel.Tunnel(interface)
 
         if not skip_ack_wait and (
-            args.ack
-            or (
-                args.dest != BROADCAST_ADDR
-                and waitForAckNak
-            )
+            args.ack or (args.dest != BROADCAST_ADDR and waitForAckNak)
         ):
             print(
                 "Waiting for an acknowledgment from remote node (this could take a while)"

@@ -213,9 +213,7 @@ class Node:
         if metadata_stdout_event is not None:
             metadata_stdout_event.set()
 
-    def _execute_with_node_db_lock(
-        self, func: Callable[[], _ResultT]
-    ) -> _ResultT:
+    def _execute_with_node_db_lock(self, func: Callable[[], _ResultT]) -> _ResultT:
         """Execute ``func`` while holding ``iface._node_db_lock`` when available."""
         node_db_lock = getattr(self.iface, "_node_db_lock", None)
         if (
@@ -787,6 +785,21 @@ class Node:
                 self._raise_interface_error(
                     "Only SECONDARY or DISABLED channels can be deleted"
                 )
+            is_local_node = self.iface.localNode == self
+
+            if is_local_node:
+                pre_delete_admin_index = 0
+                for channel in channels:
+                    if (
+                        channel.role != channel_pb2.Channel.Role.DISABLED
+                        and channel.settings
+                        and _is_named_admin_channel_name(channel.settings.name)
+                    ):
+                        pre_delete_admin_index = channel.index
+                        break
+            else:
+                pre_delete_admin_index = self.iface.localNode.getAdminChannelIndex()
+
             # If we move the "admin" channel, the index used for admin writes
             # will need to be recomputed as writes progress.
             channels.pop(channelIndex)
@@ -796,17 +809,33 @@ class Node:
                 channel_snapshot = channel_pb2.Channel()
                 channel_snapshot.CopyFrom(channels[index])
                 channels_to_rewrite.append((index, channel_snapshot))
-            is_local_node = self.iface.localNode == self
+
+            if is_local_node:
+                post_delete_admin_index = 0
+                for channel in channels:
+                    if (
+                        channel.role != channel_pb2.Channel.Role.DISABLED
+                        and channel.settings
+                        and _is_named_admin_channel_name(channel.settings.name)
+                    ):
+                        post_delete_admin_index = channel.index
+                        break
+            else:
+                post_delete_admin_index = self.iface.localNode.getAdminChannelIndex()
+
+        admin_index_for_write = pre_delete_admin_index
+        switch_after_admin_slot_rewrite = pre_delete_admin_index >= channelIndex
 
         for _index, channel_snapshot in channels_to_rewrite:
-            if is_local_node:
-                admin_index_for_write = self._get_admin_channel_index()
-            else:
-                admin_index_for_write = self.iface.localNode.getAdminChannelIndex()
             self._write_channel_snapshot(
                 channel_snapshot,
                 adminIndex=admin_index_for_write,
             )
+            if (
+                switch_after_admin_slot_rewrite
+                and channel_snapshot.index == pre_delete_admin_index
+            ):
+                admin_index_for_write = post_delete_admin_index
 
     def getChannelByName(self, name: str) -> channel_pb2.Channel | None:
         """Find a channel whose settings.name exactly matches the provided name.
@@ -1109,7 +1138,11 @@ class Node:
                 existing_names_normalized = {
                     c.settings.name.lower()
                     for c in channels
-                    if c.settings and c.settings.name
+                    if (
+                        c.role != channel_pb2.Channel.Role.DISABLED
+                        and c.settings
+                        and c.settings.name
+                    )
                 }
                 disabled_channels = [
                     c for c in channels if c.role == channel_pb2.Channel.Role.DISABLED
@@ -1236,7 +1269,9 @@ class Node:
                             rollback_succeeded = True
                             break
                         # Best-effort rollback path; keep attempting remaining steps.
-                        except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                        except (
+                            Exception
+                        ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                             last_rollback_error = rollback_error
                     if not rollback_succeeded:
                         rollback_failed = True
@@ -1531,7 +1566,9 @@ class Node:
                             )
                             rollback_succeeded = True
                             break
-                        except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                        except (
+                            Exception
+                        ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                             replace_last_rollback_error = rollback_error
                     if not rollback_succeeded:
                         rollback_failed = True

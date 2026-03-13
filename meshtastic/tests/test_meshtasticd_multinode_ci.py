@@ -193,13 +193,15 @@ def _estimate_saturation_add_attempts(
         meshtastic_bin=meshtastic_bin,
     )
     exported_data = yaml.safe_load(probe_export_path.read_text(encoding="utf-8"))
+    conservative_bound = max(configured_channel_count + 8, 8)
     if isinstance(exported_data, dict):
         channels = exported_data.get("channels")
         if isinstance(channels, list):
             total_slots = len(channels)
             available_slots = max(total_slots - configured_channel_count, 0)
-            return max(available_slots + 2, 2)
-    return max(configured_channel_count + 8, 8)
+            derived_bound = max(available_slots + 2, 2)
+            return max(derived_bound, conservative_bound)
+    return conservative_bound
 
 
 def _extract_exported_channel_identities(channels: list[Any]) -> set[tuple[int, str]]:
@@ -560,7 +562,9 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
             meshtastic_bin=meshtastic_bin,
         )
         saturated_channels = _extract_channel_names(saturated_info)
-        saturated_export_before_path = tmp_path / "meshtasticd-multinode-a-sat-before.yaml"
+        saturated_export_before_path = (
+            tmp_path / "meshtasticd-multinode-a-sat-before.yaml"
+        )
         _run_host_cli_ok(
             HOST_A,
             "--export-config",
@@ -586,7 +590,9 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
         after_info = _run_host_cli_ok(HOST_A, "--info", meshtastic_bin=meshtastic_bin)
         assert _extract_channel_names(after_info) == saturated_channels
         assert channel_name not in after_info
-        saturated_export_after_path = tmp_path / "meshtasticd-multinode-a-sat-after.yaml"
+        saturated_export_after_path = (
+            tmp_path / "meshtasticd-multinode-a-sat-after.yaml"
+        )
         _run_host_cli_ok(
             HOST_A,
             "--export-config",

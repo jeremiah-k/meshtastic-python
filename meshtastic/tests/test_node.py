@@ -1202,7 +1202,7 @@ def test_deleteChannel_rejects_non_secondary_or_disabled(
 def test_deleteChannel_rewrites_following_channels_and_updates_admin_index(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """DeleteChannel should rewrite channels and use fresh admin-index resolution per write."""
+    """DeleteChannel should start on pre-delete admin index and switch after that slot is rewritten."""
     iface = autospec_local_node_iface(MeshInterface)
     anode = Node(iface, "!12345678", noProto=True)
     iface.localNode = anode
@@ -1221,10 +1221,12 @@ def test_deleteChannel_rewrites_following_channels_and_updates_admin_index(
     assert anode.channels is not None
     assert len(anode.channels) == CHANNEL_LIMIT
     assert anode._send_admin.call_count == CHANNEL_LIMIT - 1
-    assert all(
-        _get_mock_call_arg(call, name="adminIndex", positional_index=3) == 0
+    admin_indexes = [
+        _get_mock_call_arg(call, name="adminIndex", positional_index=3)
         for call in anode._send_admin.call_args_list
-    )
+    ]
+    assert admin_indexes[0] == 1
+    assert all(index == 0 for index in admin_indexes[1:])
 
 
 @pytest.mark.unit
@@ -2642,21 +2644,28 @@ def test_deleteChannel_missing_or_out_of_range_validations(
 def test_deleteChannel_rewrite_uses_snapshot_when_channels_change_after_lock_release(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """DeleteChannel should complete rewrites from a captured snapshot even if channels change later."""
+    """DeleteChannel should complete rewrites from a captured snapshot even if channels mutate mid-rewrite."""
     iface = autospec_local_node_iface(MeshInterface)
     anode = Node(iface, "!12345678", noProto=True)
     iface.localNode = anode
     anode.channels = [Channel(index=0, role=Channel.Role.SECONDARY)]
-    anode._channels_lock = _DropChannelsOnEnterCountLock(  # type: ignore[assignment]
-        anode, trigger_enter=2
-    )
     anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
-    anode._send_admin = MagicMock()  # type: ignore[method-assign]
+    dropped_channels = False
+
+    def _drop_channels_on_first_send(*args: Any, **kwargs: Any) -> mesh_pb2.MeshPacket:
+        nonlocal dropped_channels
+        if not dropped_channels:
+            anode.channels = None
+            dropped_channels = True
+        _ = (args, kwargs)
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = MagicMock(side_effect=_drop_channels_on_first_send)  # type: ignore[method-assign]
 
     anode.deleteChannel(0)
 
-    # The lock stub drops channels on the second lock acquisition (during admin
-    # index lookup), but rewrite sends still complete from the captured snapshot.
+    # Mid-rewrite local cache mutation should not affect sends from the captured
+    # channel snapshot list.
     assert anode.channels is None
     assert anode._send_admin.call_count == CHANNEL_LIMIT
 

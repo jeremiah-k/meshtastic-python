@@ -1009,7 +1009,9 @@ def test_sendPacket_with_destination_is_blank_without_nodes(
 ) -> None:
     """Test _send_packet() with '' as a destination raises when node DB is unavailable."""
     iface = iface_with_nodes
-    iface.nodes = None
+    with iface._node_db_lock:
+        iface.nodes = None
+        iface.nodesByNum = None
     meshPacket = mesh_pb2.MeshPacket()
     with pytest.raises(
         MeshInterface.MeshInterfaceError,
@@ -1025,7 +1027,9 @@ def test_sendPacket_with_unsupported_destination_type_without_nodes_raises(
 ) -> None:
     """Unsupported destination types should raise when node DB is unavailable."""
     iface = iface_with_nodes
-    iface.nodes = None
+    with iface._node_db_lock:
+        iface.nodes = None
+        iface.nodesByNum = None
     mesh_packet = mesh_pb2.MeshPacket()
     with pytest.raises(
         MeshInterface.MeshInterfaceError,
@@ -3884,10 +3888,11 @@ def test_handle_packet_from_radio_admin_decode_failure_skips_admin_response_call
         iface.nodesByNum = {}
 
     response_callback = MagicMock()
-    iface.responseHandlers[42] = ResponseHandler(
-        callback=response_callback,
-        ackPermitted=True,
-    )
+    with iface._response_handlers_lock:
+        iface.responseHandlers[42] = ResponseHandler(
+            callback=response_callback,
+            ackPermitted=True,
+        )
     packet = _make_decoded_packet(
         from_node=7,
         to_node=8,
