@@ -72,6 +72,8 @@ CLI_DEFAULT_TIMEOUT_SECONDS = _positive_float_from_env(
 MIN_CHANNEL_URL_LENGTH = 120
 SATURATION_ERROR_MSG = "No free channels were found"
 SIMPLE_CHANNEL_PSK = b"\x01"
+SATURATION_CONSERVATIVE_PADDING = 8
+SATURATION_DERIVED_PADDING = 2
 INFO_CHANNEL_LINE_RE = re.compile(
     r'^\s*Index (?P<idx>\d+): (?P<role>PRIMARY|SECONDARY).*"name": "(?P<name>[^"]*)"',
     re.MULTILINE,
@@ -193,13 +195,19 @@ def _estimate_saturation_add_attempts(
         meshtastic_bin=meshtastic_bin,
     )
     exported_data = yaml.safe_load(probe_export_path.read_text(encoding="utf-8"))
-    conservative_bound = max(configured_channel_count + 8, 8)
+    conservative_bound = max(
+        configured_channel_count + SATURATION_CONSERVATIVE_PADDING,
+        SATURATION_CONSERVATIVE_PADDING,
+    )
     if isinstance(exported_data, dict):
         channels = exported_data.get("channels")
         if isinstance(channels, list):
             total_slots = len(channels)
             available_slots = max(total_slots - configured_channel_count, 0)
-            derived_bound = max(available_slots + 2, 2)
+            derived_bound = max(
+                available_slots + SATURATION_DERIVED_PADDING,
+                SATURATION_DERIVED_PADDING,
+            )
             return max(derived_bound, conservative_bound)
     return conservative_bound
 

@@ -931,8 +931,8 @@ def test_sendPacket_alias_with_destination_as_int(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendPacket_with_destination_starting_with_a_bang() -> None:
-    """Unsupported bang-prefixed IDs should raise when node DB lookup is unavailable."""
+def test_sendPacket_with_short_non_hex_bang_destination_raises() -> None:
+    """Short/non-hex bang IDs should raise when node DB lookup is unavailable."""
     with MeshInterface(noProto=True) as iface:
         with iface._node_db_lock:
             iface.nodes = None
@@ -3893,6 +3893,7 @@ def test_handle_packet_from_radio_admin_decode_failure_skips_admin_response_call
             callback=response_callback,
             ackPermitted=True,
         )
+    iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_NAK, request_id=42)
     packet = _make_decoded_packet(
         from_node=7,
         to_node=8,

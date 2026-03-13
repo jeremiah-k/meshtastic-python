@@ -786,17 +786,20 @@ class Node:
                     "Only SECONDARY or DISABLED channels can be deleted"
                 )
             is_local_node = self.iface.localNode == self
-
-            if is_local_node:
-                pre_delete_admin_index = 0
-                for channel in channels:
+            def _named_admin_index_from_channels(
+                channel_list: list[channel_pb2.Channel],
+            ) -> int:
+                for channel in channel_list:
                     if (
                         channel.role != channel_pb2.Channel.Role.DISABLED
                         and channel.settings
                         and _is_named_admin_channel_name(channel.settings.name)
                     ):
-                        pre_delete_admin_index = channel.index
-                        break
+                        return channel.index
+                return 0
+
+            if is_local_node:
+                pre_delete_admin_index = _named_admin_index_from_channels(channels)
             else:
                 pre_delete_admin_index = self.iface.localNode.getAdminChannelIndex()
 
@@ -811,15 +814,7 @@ class Node:
                 channels_to_rewrite.append((index, channel_snapshot))
 
             if is_local_node:
-                post_delete_admin_index = 0
-                for channel in channels:
-                    if (
-                        channel.role != channel_pb2.Channel.Role.DISABLED
-                        and channel.settings
-                        and _is_named_admin_channel_name(channel.settings.name)
-                    ):
-                        post_delete_admin_index = channel.index
-                        break
+                post_delete_admin_index = _named_admin_index_from_channels(channels)
             else:
                 post_delete_admin_index = self.iface.localNode.getAdminChannelIndex()
 
@@ -1269,9 +1264,7 @@ class Node:
                             rollback_succeeded = True
                             break
                         # Best-effort rollback path; keep attempting remaining steps.
-                        except (
-                            Exception
-                        ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                        except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                             last_rollback_error = rollback_error
                     if not rollback_succeeded:
                         rollback_failed = True
@@ -1566,9 +1559,7 @@ class Node:
                             )
                             rollback_succeeded = True
                             break
-                        except (
-                            Exception
-                        ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                        except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                             replace_last_rollback_error = rollback_error
                     if not rollback_succeeded:
                         rollback_failed = True

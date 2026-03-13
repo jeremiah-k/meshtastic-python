@@ -2652,12 +2652,17 @@ def test_deleteChannel_rewrite_uses_snapshot_when_channels_change_after_lock_rel
     anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
     dropped_channels = False
 
-    def _drop_channels_on_first_send(*args: Any, **kwargs: Any) -> mesh_pb2.MeshPacket:
+    def _drop_channels_on_first_send(
+        _msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket | None:
         nonlocal dropped_channels
         if not dropped_channels:
             anode.channels = None
             dropped_channels = True
-        _ = (args, kwargs)
+        _ = (wantResponse, onResponse, adminIndex)
         return mesh_pb2.MeshPacket()
 
     anode._send_admin = MagicMock(side_effect=_drop_channels_on_first_send)  # type: ignore[method-assign]

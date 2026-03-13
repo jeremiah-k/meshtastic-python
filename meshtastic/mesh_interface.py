@@ -3106,10 +3106,11 @@ class MeshInterface:  # pylint: disable=R0902
         if queueStatus.res:
             return
 
+        debug_enabled = logger.isEnabledFor(logging.DEBUG)
         with self._queue_lock:
-            queue_snapshot = tuple(self.queue.keys())
+            queue_snapshot = tuple(self.queue.keys()) if debug_enabled else ()
             justQueued = self.queue.pop(queueStatus.mesh_packet_id, None)
-        if logger.isEnabledFor(logging.DEBUG):
+        if debug_enabled:
             logger.debug(
                 "queue: %s",
                 " ".join(f"{key:08x}" for key in queue_snapshot),

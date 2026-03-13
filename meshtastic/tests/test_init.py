@@ -12,6 +12,7 @@ import serial as pyserial  # type: ignore[import-untyped]
 
 import meshtastic
 from meshtastic import (
+    DECODE_ERROR_KEY,
     _on_admin_receive,
     _on_node_info_receive,
     _on_position_receive,
@@ -102,14 +103,14 @@ def test_init_on_position_receive_decode_error_updates_metadata_without_position
         baseline_position = dict(baseline_node["position"])
     packet: dict[str, Any] = {
         "from": 1234567890,
-        "decoded": {"position": {"error": "decode-failed: malformed"}},
+        "decoded": {"position": {DECODE_ERROR_KEY: "decode-failed: malformed"}},
     }
 
     _on_position_receive(iface, packet)
 
     node = iface._get_or_create_by_num(1234567890)
     assert node["position"] == baseline_position
-    assert node["lastReceived"]["decoded"]["position"]["error"].startswith(
+    assert node["lastReceived"]["decoded"]["position"][DECODE_ERROR_KEY].startswith(
         "decode-failed:"
     )
 
@@ -163,14 +164,16 @@ def test_init_on_node_info_receive_decode_error_updates_metadata_without_user_st
         baseline_user_snapshot = copy.deepcopy(baseline_node["user"])
     packet: dict[str, Any] = {
         "from": 2468135790,
-        "decoded": {"user": {"error": "decode-failed: malformed"}},
+        "decoded": {"user": {DECODE_ERROR_KEY: "decode-failed: malformed"}},
     }
 
     _on_node_info_receive(iface, packet)
 
     node = iface._get_or_create_by_num(2468135790)
     assert node["user"] == baseline_user_snapshot
-    assert node["lastReceived"]["decoded"]["user"]["error"].startswith("decode-failed:")
+    assert node["lastReceived"]["decoded"]["user"][DECODE_ERROR_KEY].startswith(
+        "decode-failed:"
+    )
 
 
 @pytest.mark.unit
