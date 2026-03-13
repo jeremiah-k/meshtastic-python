@@ -1063,19 +1063,39 @@ class Node:
         )
         if callable(named_admin_getter):
             named_admin_index_for_write = named_admin_getter()
-        with self._channels_lock:
-            channels = self.channels
-            if channels is None:
-                self._raise_interface_error("Config or channels not loaded")
-            has_local_named_admin = any(
-                c.settings
-                and c.settings.name
-                and c.settings.name.lower() == "admin"
-                for c in channels
-            )
 
         def _is_named_admin_channel_name(channel_name: str) -> bool:
             return channel_name.lower() == "admin"
+
+        has_admin_write_node_named_admin = named_admin_index_for_write is not None
+        admin_write_channels_obj: object | None = None
+        admin_write_channels_lock = getattr(admin_write_node, "_channels_lock", None)
+        if (
+            admin_write_channels_lock is not None
+            and hasattr(admin_write_channels_lock, "__enter__")
+            and hasattr(admin_write_channels_lock, "__exit__")
+        ):
+            with admin_write_channels_lock:
+                admin_write_channels_obj = getattr(admin_write_node, "channels", None)
+        else:
+            admin_write_channels_obj = getattr(admin_write_node, "channels", None)
+        if isinstance(admin_write_channels_obj, list):
+            if not has_admin_write_node_named_admin:
+                has_admin_write_node_named_admin = any(
+                    c.settings
+                    and c.settings.name
+                    and _is_named_admin_channel_name(c.settings.name)
+                    for c in admin_write_channels_obj
+                )
+            if named_admin_index_for_write is None and has_admin_write_node_named_admin:
+                for channel in admin_write_channels_obj:
+                    if (
+                        channel.settings
+                        and channel.settings.name
+                        and _is_named_admin_channel_name(channel.settings.name)
+                    ):
+                        named_admin_index_for_write = channel.index
+                        break
 
         if addOnly:
             # Add new channels with names not already present
@@ -1136,7 +1156,7 @@ class Node:
                         (staged_channel, new_settings.name)
                     )
 
-            if not has_local_named_admin:
+            if not has_admin_write_node_named_admin:
                 deferred_add_only_admin_channel = next(
                     (
                         candidate
@@ -1285,33 +1305,46 @@ class Node:
                 disabled_channel.role = channel_pb2.Channel.Role.DISABLED
                 staged_channels.append(disabled_channel)
 
-            deferred_admin_channel = None
+            staged_named_admin_channel = next(
+                (
+                    staged_channel
+                    for staged_channel in staged_channels
+                    if staged_channel.settings
+                    and staged_channel.settings.name
+                    and _is_named_admin_channel_name(staged_channel.settings.name)
+                ),
+                None,
+            )
+            staged_channels_by_index = {
+                staged_channel.index: staged_channel for staged_channel in staged_channels
+            }
+            deferred_new_named_admin_channel = staged_named_admin_channel
+            deferred_previous_admin_slot_channel: channel_pb2.Channel | None = None
             if named_admin_index_for_write is not None:
-                deferred_admin_channel = next(
-                    (
-                        staged_channel
-                        for staged_channel in staged_channels
-                        if staged_channel.index == admin_index_for_write
-                    ),
-                    None,
+                previous_admin_slot_channel = staged_channels_by_index.get(
+                    named_admin_index_for_write
                 )
-            if deferred_admin_channel is None and not has_local_named_admin:
-                deferred_admin_channel = next(
-                    (
-                        staged_channel
-                        for staged_channel in staged_channels
-                        if staged_channel.settings
-                        and _is_named_admin_channel_name(staged_channel.settings.name)
-                    ),
-                    None,
+                if (
+                    previous_admin_slot_channel is not None
+                    and (
+                        deferred_new_named_admin_channel is None
+                        or previous_admin_slot_channel.index
+                        != deferred_new_named_admin_channel.index
+                    )
+                ):
+                    deferred_previous_admin_slot_channel = previous_admin_slot_channel
+            deferred_channel_indexes = {
+                channel.index
+                for channel in (
+                    deferred_new_named_admin_channel,
+                    deferred_previous_admin_slot_channel,
                 )
+                if channel is not None
+            }
 
             try:
                 for staged_channel in staged_channels:
-                    if (
-                        deferred_admin_channel is not None
-                        and staged_channel.index == deferred_admin_channel.index
-                    ):
+                    if staged_channel.index in deferred_channel_indexes:
                         continue
                     logger.debug(
                         "Channel i:%s ch:%s",
@@ -1335,22 +1368,44 @@ class Node:
                     self._send_admin(p, adminIndex=admin_index_for_write)
                     self.localConfig.lora.CopyFrom(channelSet.lora_config)
 
-                if deferred_admin_channel is not None:
+                if deferred_new_named_admin_channel is not None:
                     logger.debug(
                         "Channel i:%s ch:%s",
-                        deferred_admin_channel.index,
-                        deferred_admin_channel,
+                        deferred_new_named_admin_channel.index,
+                        deferred_new_named_admin_channel,
                     )
                     self._write_channel_snapshot(
-                        deferred_admin_channel,
+                        deferred_new_named_admin_channel,
                         adminIndex=admin_index_for_write,
                     )
                     with self._channels_lock:
                         channels = self.channels
                         if channels is None:
                             self._raise_interface_error("Config or channels not loaded")
-                        channels[deferred_admin_channel.index].CopyFrom(
-                            deferred_admin_channel
+                        channels[deferred_new_named_admin_channel.index].CopyFrom(
+                            deferred_new_named_admin_channel
+                        )
+                if deferred_previous_admin_slot_channel is not None:
+                    updated_admin_index_for_write = admin_index_for_write
+                    if deferred_new_named_admin_channel is not None:
+                        updated_admin_index_for_write = (
+                            admin_write_node._get_admin_channel_index()
+                        )
+                    logger.debug(
+                        "Rewriting deferred admin slot i:%s via admin index %s",
+                        deferred_previous_admin_slot_channel.index,
+                        updated_admin_index_for_write,
+                    )
+                    self._write_channel_snapshot(
+                        deferred_previous_admin_slot_channel,
+                        adminIndex=updated_admin_index_for_write,
+                    )
+                    with self._channels_lock:
+                        channels = self.channels
+                        if channels is None:
+                            self._raise_interface_error("Config or channels not loaded")
+                        channels[deferred_previous_admin_slot_channel.index].CopyFrom(
+                            deferred_previous_admin_slot_channel
                         )
             except Exception:
                 with self._channels_lock:

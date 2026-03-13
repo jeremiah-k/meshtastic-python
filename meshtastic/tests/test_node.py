@@ -1847,6 +1847,64 @@ def test_setURL_replace_defers_first_named_admin_write_until_end(
 
 
 @pytest.mark.unit
+def test_setURL_replace_when_admin_slot_moves_defers_old_slot_cleanup(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=False) should apply moved named-admin channel before rewriting prior admin slot."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.iface.localNode = anode
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    old_admin = Channel(index=1, role=Channel.Role.SECONDARY)
+    old_admin.settings.name = "admin"
+    third = Channel(index=2, role=Channel.Role.SECONDARY)
+    third.settings.name = "third"
+    anode.channels = [primary, old_admin, third]
+    anode.localConfig.lora.hop_limit = 3
+
+    operations: list[tuple[str, int | None]] = []
+
+    def _record_send(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse)
+        if msg.HasField("set_channel"):
+            operations.append((f"channel:{msg.set_channel.index}", adminIndex))
+        elif msg.HasField("set_config") and msg.set_config.HasField("lora"):
+            operations.append(("lora", adminIndex))
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = _record_send  # type: ignore[method-assign,assignment]
+
+    channel_set = apponly_pb2.ChannelSet()
+    moved_admin = channel_set.settings.add()
+    moved_admin.name = "admin"
+    moved_admin.psk = b"\x21"
+    replacement_for_old_admin = channel_set.settings.add()
+    replacement_for_old_admin.name = "secondary-new"
+    replacement_for_old_admin.psk = b"\x22"
+    replacement_third = channel_set.settings.add()
+    replacement_third.name = "third-new"
+    replacement_third.psk = b"\x23"
+    channel_set.lora_config.hop_limit = 7
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    url = f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
+
+    anode.setURL(url, addOnly=False)
+
+    assert operations == [
+        ("channel:2", 1),
+        ("lora", 1),
+        ("channel:0", 1),
+        ("channel:1", 0),
+    ]
+
+
+@pytest.mark.unit
 def test_setURL_replace_channel_only_url_skips_lora_write_and_cache_update(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:

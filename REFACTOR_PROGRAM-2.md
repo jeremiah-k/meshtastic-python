@@ -30,7 +30,7 @@ This is effectively a **platform-wide refactor**, not a typical incremental chan
 
 Because of this, we still should **not** merge `develop → master` directly.
 
-Instead, we perform **a small number of large, deliberate stabilization passes** based on `develop`.
+Instead, we perform **a few large, deliberate stabilization passes** based on `develop`.
 
 Phase 1 (BLE stabilization) is now complete and merged into `develop` (`#63`), and Phase 2 is the active execution stream.
 

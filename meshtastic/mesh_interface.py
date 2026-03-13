@@ -83,6 +83,8 @@ VALID_TELEMETRY_TYPE_SET: frozenset[str] = frozenset(VALID_TELEMETRY_TYPES)
 UNKNOWN_SNR_QUARTER_DB = -128
 MISSING_NODE_NUM_ERROR_TEMPLATE = "NodeId {destination_id} has no numeric 'num' in DB"
 HEX_NODE_ID_TAIL_CHARS = frozenset("0123456789abcdefABCDEF")
+DECODE_ERROR_KEY = "error"
+DECODE_FAILED_PREFIX = "decode-failed: "
 NO_RESPONSE_FIRMWARE_ERROR: str = (
     "No response from node. At least firmware 2.1.22 is required on the destination node."
 )
@@ -3546,7 +3548,7 @@ class MeshInterface:  # pylint: disable=R0902
                         # Also provide the protobuf raw
                         asDict["decoded"][handler.name]["raw"] = pb
                     except (protobuf_message.DecodeError, TypeError, ValueError) as exc:
-                        decode_error = f"decode-failed: {exc}"
+                        decode_error = f"{DECODE_FAILED_PREFIX}{exc}"
                         logger.warning(
                             "Failed to decode %s payload for packet id=%s from=%s to=%s: %s",
                             handler.name,
@@ -3555,7 +3557,9 @@ class MeshInterface:  # pylint: disable=R0902
                             asDict.get("to"),
                             exc,
                         )
-                        asDict["decoded"][handler.name] = {"error": decode_error}
+                        asDict["decoded"][handler.name] = {
+                            DECODE_ERROR_KEY: decode_error
+                        }
                         if handler.name == "routing":
                             asDict["decoded"][handler.name]["errorReason"] = decode_error
                         if handler.name == "admin":
