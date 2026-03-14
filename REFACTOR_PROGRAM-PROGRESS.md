@@ -20,8 +20,8 @@ This is an internal working tracker for large-pass execution.
 
 | Pass | Theme | Status | Notes |
 | --- | --- | --- | --- |
-| P1 | BLE boundary API promotion and adoption | Completed | Public boundary APIs adopted with legacy test-double compatibility fallbacks. |
-| P2 | BLEInterface decomposition (lifecycle/receive/management adapters) | In progress | First large extraction landed with service-module delegation and compatibility parity. |
+| P1 | BLE boundary API promotion and adoption | Completed | Public boundary APIs adopted with master-surface compatibility and underscore-compatible test-double fallbacks. |
+| P2 | BLEInterface decomposition (lifecycle/receive/management adapters) | In progress | First large extraction landed with service-module delegation and master-surface compatibility parity. |
 | P3 | MeshInterface inbound dispatch split | Planned | `_handle_from_radio` decomposition with dispatch map. |
 | P4 | Node `setURL()` transaction extraction | Planned | Planner/apply/rollback separation. |
 | P5 | Compat isolation and hot-path cleanup | Planned | Move shims out of core runtime paths where feasible. |
@@ -66,7 +66,7 @@ This is an internal working tracker for large-pass execution.
 - Implemented boundary API promotion across BLE collaborators.
 - Replaced direct collaborator-private calls in BLE interface/runtime code with public collaborator APIs.
 - Completed compatibility fallbacks for underscore-only test doubles used across BLE tests.
-- Added compatibility wrappers in `BLEInterface`, `ConnectionOrchestrator`, `ClientManager`, and `ReconnectScheduler` so production code uses public APIs while tests/mocks with underscore methods remain valid.
+- Added compatibility wrappers in `BLEInterface`, `ConnectionOrchestrator`, `ClientManager`, and `ReconnectScheduler` so production code uses public APIs while underscore-based master/test-double call shapes remain valid.
 - Continued P2 boundary-hardening cleanup:
   - fixed disconnect-notification queue flush to avoid full-timeout stalls when queue enqueue fails,
   - switched BLE thread coordinator wrappers to public-first (`create_thread`/`start_thread`) with underscore-compatible fallback,
@@ -77,6 +77,10 @@ This is an internal working tracker for large-pass execution.
   - restored `_discover`-only discovery-client compatibility for injected runtime/test factories,
   - added `ConnectionOrchestrator` dispatch helper to reduce adapter drift while preserving mock-compatible fallback behavior,
   - decomposed receive-loop orchestration into phase helpers and bounded recovery backoff exponent growth with remaining-cooldown waits.
+  - fixed `ConnectionOrchestrator` non-call dispatch to treat unconfigured mock child attributes as missing values,
+  - fixed lifecycle start failure handling to clear stale `iface._receiveThread` references before re-raising,
+  - moved `connected_elsewhere()` checks out of `_connect_lock` + `_management_lock` critical sections in management command execution,
+  - hardened discovery dispatch so unconfigured mock `discover()` no longer masks configured `_discover()` compatibility entrypoints.
 - Targeted verification completed:
   - `ruff check meshtastic/interfaces/ble/interface.py meshtastic/interfaces/ble/connection.py meshtastic/interfaces/ble/reconnection.py`
   - `poetry run mypy meshtastic/interfaces/ble/interface.py meshtastic/interfaces/ble/connection.py meshtastic/interfaces/ble/reconnection.py --strict`
@@ -89,6 +93,9 @@ This is an internal working tracker for large-pass execution.
   - `poetry run ruff check meshtastic/interfaces/ble/{discovery.py,errors.py,management_service.py,receive_service.py,connection.py} tests/test_ble_interface_core.py`
   - `poetry run mypy meshtastic/interfaces/ble/{discovery.py,errors.py,management_service.py,receive_service.py,connection.py} --strict`
   - `poetry run pytest tests/test_ble_connection_edge_cases.py tests/test_ble_interface_core.py tests/test_ble_interface_advanced.py tests/test_ble_integration_scenarios.py tests/test_ble_coordination.py tests/test_ble_runner.py -q` (`272 passed`)
+  - `source venv/bin/activate && mypy --strict meshtastic/interfaces/ble/{connection.py,discovery.py,lifecycle_service.py,management_service.py,receive_service.py}`
+  - `source venv/bin/activate && pytest -q tests/test_ble_connection_edge_cases.py`
+  - `source venv/bin/activate && pytest -q tests/test_ble_interface_core.py -k "management_rejects_temp_client_when_target_owned_elsewhere or discovery_manager_accepts_discover_underscore_only_factory or discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover or start_receive_thread_skips_when_interface_closed or start_receive_thread_clears_cached_thread_when_start_fails or discovery_manager_rejects_non_callable_discover_method"`
 
 ## Pass P2 Plan (Next)
 

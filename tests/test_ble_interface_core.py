@@ -11,6 +11,7 @@ from collections.abc import Iterator
 from queue import Queue
 from types import SimpleNamespace, TracebackType
 from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, cast
+from unittest.mock import MagicMock
 
 import pytest
 from bleak.backends.device import BLEDevice
@@ -910,9 +911,21 @@ def test_ble_interface_management_rejects_temp_client_when_target_owned_elsewher
         "findDevice",
         lambda _address: _create_ble_device("AA:BB:CC:DD:EE:FF", "Meshtastic"),
     )
+    lock_states: list[tuple[bool, bool]] = []
+
+    def _connected_elsewhere_probe(key: str | None, owner: object | None = None) -> bool:
+        connect_lock_was_free = iface._connect_lock.acquire(blocking=False)
+        if connect_lock_was_free:
+            iface._connect_lock.release()
+        management_lock_was_free = iface._management_lock.acquire(blocking=False)
+        if management_lock_was_free:
+            iface._management_lock.release()
+        lock_states.append((connect_lock_was_free, management_lock_was_free))
+        return key == "aabbccddeeff" and owner is iface
+
     monkeypatch.setattr(
         "meshtastic.interfaces.ble.interface._is_currently_connected_elsewhere",
-        lambda key, owner=None: key == "aabbccddeeff" and owner is iface,
+        _connected_elsewhere_probe,
     )
     monkeypatch.setattr(
         "meshtastic.interfaces.ble.interface.BLEClient",
@@ -928,6 +941,7 @@ def test_ble_interface_management_rejects_temp_client_when_target_owned_elsewher
         with pytest.raises(BLEInterface.BLEError, match=ERROR_CONNECTION_SUPPRESSED):
             iface.unpair("mesh-node", await_timeout=7.0)
 
+    assert lock_states == [(True, True)]
     iface.close()
 
 
@@ -4621,6 +4635,43 @@ def test_start_receive_thread_skips_when_interface_closed(
     iface._start_receive_thread(name="BLEReceiveAfterClose")
 
 
+def test_start_receive_thread_clears_cached_thread_when_start_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Start failure should clear cached receive thread reference for retry safety."""
+    from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
+
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    with iface._state_lock:
+        iface._want_receive = True
+    thread_like = SimpleNamespace(
+        name="BLEReceiveStartFailure",
+        ident=None,
+        is_alive=lambda: False,
+    )
+    monkeypatch.setattr(
+        iface.thread_coordinator,
+        "_create_thread",
+        lambda **_kwargs: thread_like,
+        raising=True,
+    )
+
+    def _raise_start_failure(_thread: object) -> None:
+        raise RuntimeError("start failed")
+
+    monkeypatch.setattr(
+        iface.thread_coordinator,
+        "_start_thread",
+        _raise_start_failure,
+        raising=True,
+    )
+
+    with pytest.raises(RuntimeError, match="start failed"):
+        BLELifecycleService.start_receive_thread(iface, name="BLEReceiveStartFailure")
+
+    assert iface._receiveThread is None
+
+
 def test_find_device_multiple_matches_raises() -> None:
     """Providing an address that matches multiple devices should raise BLEError."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
@@ -4744,7 +4795,7 @@ def test_discovery_manager_accepts_discover_underscore_only_factory() -> None:
 
     class UnderscoreDiscoveryClient:
         @staticmethod
-        def _discover(**_kwargs: Any) -> dict[str, Any]:
+        def _discover(**_kwargs: object) -> dict[str, Any]:
             return discover_result
 
     manager = DiscoveryManager(
@@ -4753,6 +4804,26 @@ def test_discovery_manager_accepts_discover_underscore_only_factory() -> None:
     devices = manager._discover_devices(address=None)
 
     assert devices == [filtered_device]
+
+
+def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> None:
+    """Discovery should ignore unconfigured mock discover() and use configured _discover()."""
+    filtered_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "Filtered")
+    discover_result = {
+        "filtered": (
+            filtered_device,
+            SimpleNamespace(service_uuids=[SERVICE_UUID]),
+        ),
+    }
+    client = MagicMock()
+    client._discover.return_value = discover_result
+    manager = DiscoveryManager(client_factory=lambda **_kwargs: client)
+
+    devices = manager._discover_devices(address=None)
+
+    assert devices == [filtered_device]
+    client._discover.assert_called_once()
+    client.discover.assert_not_called()
 
 
 def test_discovery_manager_supports_factory_without_log_if_no_address_kwarg() -> None:
@@ -4796,7 +4867,7 @@ def test_discovery_manager_uses_default_bleclient_when_ble_module_missing(
             self.bleak_client = None
 
         @staticmethod
-        def _discover(**_kwargs: Any) -> dict[str, Any]:
+        def _discover(**_kwargs: object) -> dict[str, Any]:
             return discover_result
 
     monkeypatch.setattr(discovery_mod, "resolve_ble_module", lambda: None)

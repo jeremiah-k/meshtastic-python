@@ -66,6 +66,7 @@ class BLEReceiveRecoveryService:
             poll_without_notify = BLEReceiveRecoveryService._should_poll_without_notify(
                 iface
             )
+            # Proceed only when fallback polling is viable without notify callbacks.
             return poll_without_notify, poll_without_notify
 
         coordinator.clear_event("read_trigger")
@@ -190,7 +191,8 @@ class BLEReceiveRecoveryService:
                     ):
                         break
 
-                    assert client is not None
+                    if client is None:  # pragma: no cover
+                        break
                     try:
                         if not BLEReceiveRecoveryService._read_and_handle_payload(
                             iface,

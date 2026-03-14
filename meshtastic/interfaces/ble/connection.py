@@ -73,6 +73,11 @@ def _is_unconfigured_mock_callable(candidate: object) -> bool:
     )
 
 
+def _is_unconfigured_mock_member(candidate: object) -> bool:
+    """Return True when an attribute is an unconfigured auto-generated Mock."""
+    return _is_unconfigured_mock_callable(candidate)
+
+
 class ConnectionValidator:
     """Encapsulate connection pre-checks and reuse logic."""
 
@@ -506,10 +511,52 @@ class ConnectionOrchestrator:
         default_if_missing: object = _DISPATCH_MISSING,
         prefer_underscore_for_unconfigured_public_mock: bool = False,
     ) -> object:
-        """Dispatch to public/underscore members while preserving compatibility behavior."""
+        """Dispatch to public/underscore members with compatibility fallback.
+
+        Parameters
+        ----------
+        target : object
+            Object from which the member will be read.
+        public_name : str
+            Canonical public member name.
+        underscore_name : str
+            Compatibility underscore-prefixed member name.
+        prefer_instance_type : type[object] | None
+            When target matches this type, require the public member.
+        call_member : bool
+            Whether to call the resolved member.
+        args : tuple[object, ...]
+            Positional arguments used when ``call_member`` is True.
+        kwargs : dict[str, object] | None
+            Keyword arguments used when ``call_member`` is True.
+        underscore_attr_type : type[object] | None
+            When returning an attribute, prefer underscore member if it matches
+            this type.
+        default_if_missing : object
+            Default value returned when neither member is available.
+        prefer_underscore_for_unconfigured_public_mock : bool
+            Prefer underscore callable when the public callable is an
+            unconfigured child mock.
+
+        Returns
+        -------
+        object
+            The called member result or resolved attribute value.
+
+        Raises
+        ------
+        AttributeError
+            If no supported member exists and no default is provided.
+        """
         kwargs = {} if kwargs is None else kwargs
         public_member = getattr(target, public_name, _DISPATCH_MISSING)
         underscore_member = getattr(target, underscore_name, _DISPATCH_MISSING)
+
+        if not call_member:
+            if _is_unconfigured_mock_member(public_member):
+                public_member = _DISPATCH_MISSING
+            if _is_unconfigured_mock_member(underscore_member):
+                underscore_member = _DISPATCH_MISSING
 
         if (
             call_member

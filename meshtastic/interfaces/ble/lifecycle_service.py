@@ -60,7 +60,13 @@ class BLELifecycleService:
                 daemon=True,
             )
             iface._receiveThread = thread
-        iface.thread_coordinator.start_thread(thread)
+        try:
+            iface.thread_coordinator.start_thread(thread)
+        except Exception:  # noqa: BLE001 - start failure must clear stale thread reference
+            with iface._state_lock:
+                if iface._receiveThread is thread:
+                    iface._receiveThread = None
+            raise
         if reset_recovery:
             # Reset recovery throttling on successful thread start (not during recovery).
             with iface._state_lock:

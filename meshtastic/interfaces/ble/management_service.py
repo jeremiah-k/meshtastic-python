@@ -92,6 +92,9 @@ class BLEManagementCommandsService:
             if target_address is None:
                 raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_REQUIRED)
             with iface._management_target_gate(target_address):
+                client_to_use: BLEClient | None = None
+                target_key: str | None = None
+                temporary_client: BLEClient | None = None
                 with iface._connect_lock:
                     with iface._management_lock:
                         iface._validate_management_preconditions()
@@ -100,30 +103,26 @@ class BLEManagementCommandsService:
                                 target_address,
                                 expected_binding=expected_implicit_binding,
                             )
-                        existing_client = iface._get_management_client_for_target(
+                        client_to_use = iface._get_management_client_for_target(
                             target_address,
                             prefer_current_client=address is None,
                         )
-                        if existing_client is not None:
-                            client_to_use = existing_client
-                            temporary_client = None
-                        else:
+                        if client_to_use is None:
                             target_key = _addr_key(target_address)
-                            if (
-                                target_key is not None
-                                and connected_elsewhere(target_key, iface)
-                            ):
-                                raise iface.BLEError(ERROR_CONNECTION_SUPPRESSED)
-                            temporary_client = ble_client_factory(
-                                target_address, log_if_no_address=False
-                            )
-                            client_to_use = temporary_client
 
-                    try:
-                        return command(client_to_use)
-                    finally:
-                        if temporary_client is not None:
-                            iface._client_manager_safe_close_client(temporary_client)
+                if client_to_use is None:
+                    if target_key is not None and connected_elsewhere(target_key, iface):
+                        raise iface.BLEError(ERROR_CONNECTION_SUPPRESSED)
+                    temporary_client = ble_client_factory(
+                        target_address, log_if_no_address=False
+                    )
+                    client_to_use = temporary_client
+
+                try:
+                    return command(client_to_use)
+                finally:
+                    if temporary_client is not None:
+                        iface._client_manager_safe_close_client(temporary_client)
         finally:
             if management_started:
                 iface._finish_management_operation()

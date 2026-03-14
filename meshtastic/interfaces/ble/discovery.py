@@ -9,6 +9,7 @@ import time
 from collections.abc import Awaitable
 from types import TracebackType
 from typing import Any, Callable, Protocol, cast, runtime_checkable
+from unittest.mock import DEFAULT, Mock
 
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
@@ -57,8 +58,23 @@ class UnderscoreDiscoveryClientProtocol(Protocol):
 
 def _is_discovery_client_like(client: object) -> bool:
     """Return True when a discovery client exposes a supported scan entrypoint."""
-    return callable(getattr(client, "discover", None)) or callable(
-        getattr(client, "_discover", None)
+    discover = getattr(client, "discover", None)
+    if callable(discover) and not _is_unconfigured_mock_callable(discover):
+        return True
+    underscore_discover = getattr(client, "_discover", None)
+    return callable(underscore_discover) and not _is_unconfigured_mock_callable(
+        underscore_discover
+    )
+
+
+def _is_unconfigured_mock_callable(candidate: object) -> bool:
+    """Return True when a callable is an auto-generated unconfigured Mock."""
+    if not isinstance(candidate, Mock):
+        return False
+    return (
+        getattr(candidate, "_mock_return_value", DEFAULT) is DEFAULT
+        and candidate.side_effect is None
+        and not candidate.call_args_list
     )
 
 
@@ -565,15 +581,15 @@ class DiscoveryManager:
                 discover_kwargs["service_uuids"] = [SERVICE_UUID]
 
             discover = getattr(client, "discover", None)
-            if not callable(discover):
+            if not callable(discover) or _is_unconfigured_mock_callable(discover):
                 # Compatibility for minimal test doubles that still expose
                 # underscore-prefixed discover helpers.
                 discover = getattr(client, "_discover", None)
-            if not callable(discover):
+            if not callable(discover) or _is_unconfigured_mock_callable(discover):
                 raise DiscoveryClientError.invalid_client(
                     resolved_factory,
                     type(client),
-                    ["discover"],
+                    ["discover", "_discover"],
                 )
             response = discover(**discover_kwargs)
             logger.debug(
