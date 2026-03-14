@@ -16,7 +16,10 @@ from meshtastic.interfaces.ble.gating import (
 )
 from meshtastic.interfaces.ble.policies import ReconnectPolicy
 from meshtastic.interfaces.ble.state import BLEStateManager
-from meshtastic.interfaces.ble.utils import _is_unconfigured_mock_callable
+from meshtastic.interfaces.ble.utils import (
+    _is_unconfigured_mock_callable,
+    _thread_start_probe,
+)
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
@@ -213,10 +216,7 @@ class ReconnectScheduler:
         # schedulers will see a non-None _reconnect_thread and exit early.
         try:
             self._thread_start_thread(thread)
-            thread_ident = getattr(thread, "ident", None)
-            thread_is_alive = bool(
-                callable(getattr(thread, "is_alive", None)) and thread.is_alive()
-            )
+            thread_ident, thread_is_alive = _thread_start_probe(thread)
             if thread_ident is None and not thread_is_alive:
                 logger.debug(
                     "Auto-reconnect thread did not start; clearing stale thread reference."
@@ -228,6 +228,7 @@ class ReconnectScheduler:
             raise
         return True
 
+    # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _schedule_reconnect.
     def schedule_reconnect(self, auto_reconnect: bool, shutdown_event: Event) -> bool:
         """Schedule reconnect worker startup through the public compatibility wrapper.
 
@@ -261,6 +262,7 @@ class ReconnectScheduler:
             # Always clear the reference once the worker loop exits to match legacy behavior.
             self._reconnect_thread = None
 
+    # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _clear_thread_reference.
     def clear_thread_reference(self) -> None:
         """Clear reconnect thread state through the public compatibility wrapper.
 

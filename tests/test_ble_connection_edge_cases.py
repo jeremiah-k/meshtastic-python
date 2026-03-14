@@ -38,7 +38,9 @@ class MockBLEError(Exception):
 
 def _make_orchestrator_client_manager() -> MagicMock:
     """Return a client-manager mock configured for public-orchestrator adapters."""
-    client_manager = MagicMock()
+    client_manager = MagicMock(
+        spec_set=["create_client", "connect_client", "safe_close_client"]
+    )
     client_manager.connect_client.return_value = None
     client_manager.safe_close_client.return_value = None
     return client_manager

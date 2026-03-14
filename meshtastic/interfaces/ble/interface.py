@@ -130,6 +130,24 @@ ERROR_RETRY_POLICY_MISSING_SHOULD_RETRY: str = (
     "Retry policy missing should_retry/_should_retry"
 )
 ERROR_RETRY_POLICY_MISSING_GET_DELAY: str = "Retry policy missing get_delay/_get_delay"
+ERROR_DISCOVERY_MANAGER_MISSING_DISCOVER_DEVICES: str = (
+    "Discovery manager is missing discover_devices"
+)
+ERROR_STATE_MANAGER_MISSING_BOOL_IS_CONNECTED: str = (
+    "State manager is missing bool _is_connected"
+)
+ERROR_CONNECTION_VALIDATOR_MISSING_CHECK_EXISTING_CLIENT: str = (
+    "Connection validator is missing check_existing_client"
+)
+ERROR_CONNECTION_ORCHESTRATOR_MISSING_ESTABLISH_CONNECTION: str = (
+    "Connection orchestrator is missing establish_connection"
+)
+ERROR_CLIENT_MANAGER_MISSING_SAFE_CLOSE_CLIENT: str = (
+    "Client manager is missing safe_close_client"
+)
+ERROR_CLIENT_MANAGER_MISSING_UPDATE_CLIENT_REFERENCE: str = (
+    "Client manager is missing update_client_reference"
+)
 
 
 class BLEInterface(MeshInterface):
@@ -403,7 +421,7 @@ class BLEInterface(MeshInterface):
         want_receive : bool
             True to request the receive loop to run, False to stop it.
         """
-        BLELifecycleService._set_receive_wanted(self, want_receive)
+        BLELifecycleService._set_receive_wanted(self, want_receive=want_receive)
 
     def _should_run_receive_loop(self) -> bool:
         """Return whether the receive loop should run.
@@ -1594,7 +1612,7 @@ class BLEInterface(MeshInterface):
         # Preserve pre-refactor failure mode for misconfigured doubles.
         fallback_discover_devices = discovery_manager.discover_devices
         if _is_unconfigured_mock_callable(fallback_discover_devices):
-            raise AttributeError("Discovery manager is missing discover_devices")
+            raise AttributeError(ERROR_DISCOVERY_MANAGER_MISSING_DISCOVER_DEVICES)
         return fallback_discover_devices(address)
 
     def _state_manager_is_connected(self) -> bool:
@@ -1614,7 +1632,7 @@ class BLEInterface(MeshInterface):
         if _is_unconfigured_mock_member(fallback_is_connected) or not isinstance(
             fallback_is_connected, bool
         ):
-            raise AttributeError("State manager is missing bool _is_connected")
+            raise AttributeError(ERROR_STATE_MANAGER_MISSING_BOOL_IS_CONNECTED)
         return fallback_is_connected
 
     def _validator_check_existing_client(
@@ -1655,9 +1673,7 @@ class BLEInterface(MeshInterface):
             self._connection_validator.check_existing_client
         )
         if _is_unconfigured_mock_callable(fallback_check_existing_client):
-            raise AttributeError(
-                "Connection validator is missing check_existing_client"
-            )
+            raise AttributeError(ERROR_CONNECTION_VALIDATOR_MISSING_CHECK_EXISTING_CLIENT)
         return bool(
             fallback_check_existing_client(
                 client,
@@ -1719,9 +1735,7 @@ class BLEInterface(MeshInterface):
             self._connection_orchestrator.establish_connection
         )
         if _is_unconfigured_mock_callable(fallback_establish_connection):
-            raise AttributeError(
-                "Connection orchestrator is missing establish_connection"
-            )
+            raise AttributeError(ERROR_CONNECTION_ORCHESTRATOR_MISSING_ESTABLISH_CONNECTION)
         return fallback_establish_connection(
             address,
             self.address,
@@ -1751,7 +1765,7 @@ class BLEInterface(MeshInterface):
             return
         fallback_safe_close_client = self._client_manager.safe_close_client
         if _is_unconfigured_mock_callable(fallback_safe_close_client):
-            raise AttributeError("Client manager is missing safe_close_client")
+            raise AttributeError(ERROR_CLIENT_MANAGER_MISSING_SAFE_CLOSE_CLIENT)
         fallback_safe_close_client(client)
 
     def _client_manager_update_client_reference(
@@ -1776,7 +1790,7 @@ class BLEInterface(MeshInterface):
             return
         fallback_update_client_reference = self._client_manager.update_client_reference
         if _is_unconfigured_mock_callable(fallback_update_client_reference):
-            raise AttributeError("Client manager is missing update_client_reference")
+            raise AttributeError(ERROR_CLIENT_MANAGER_MISSING_UPDATE_CLIENT_REFERENCE)
         fallback_update_client_reference(client, previous_client)
 
     @staticmethod
@@ -1958,7 +1972,7 @@ class BLEInterface(MeshInterface):
             )
         if not is_connected or existing_client is None:
             return None
-        if existing_client.isConnected() and self._validator_check_existing_client(
+        if self._validator_check_existing_client(
             existing_client,
             normalized_request,
             last_connection_request,

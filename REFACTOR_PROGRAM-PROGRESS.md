@@ -152,6 +152,21 @@ This is an internal working tracker for large-pass execution.
   - `poetry run pytest -q tests/test_ble_interface_core.py -k "management_rejects_temp_client_when_target_owned_elsewhere or wait_for_disconnect_notifications_skips_unconfigured_queuework or publish_connection_status_runs_directly_when_queuework_unconfigured or publish_connection_status_falls_back_when_queuework_raises"` (`5 passed`)
   - `poetry run pytest -q tests/test_ble_interface_advanced.py -k "wait_for_disconnect_notifications_exceptions or drain_publish_queue_exceptions"` (`2 passed`)
   - `make ci-strict` (`1370 passed, 3 skipped, 92 deselected`; `mypy --strict` clean)
+  - follow-up decomposition/review-closure pass:
+    - split lifecycle disconnect flow into `_resolve_disconnect_target`, `_compute_disconnect_keys`, `_close_previous_client_async`, and `_execute_disconnect_side_effects`,
+    - split lifecycle close flow into `_await_management_shutdown`, `_shutdown_discovery`, `_shutdown_receive_thread`, `_shutdown_client`, `_finalize_close_state`,
+    - added `_verify_ownership_snapshot` and simplified repeated verified-connect ownership checks,
+    - hardened thread-start probes (typed `ident`/`is_alive`) in lifecycle/reconnection/client-manager async close paths,
+    - added public-first coordinator compatibility dispatch wrappers in lifecycle/receive services,
+    - extracted receive event-name constants (`READ_TRIGGER_EVENT`, `RECONNECTED_EVENT`) and replaced literal usage,
+    - hardened discovery for awaitable `discover()` responses via `_async_await` bridge fallback and invalid-client cleanup path,
+    - tightened connection connected-state compatibility checks (`isConnected`/`is_connected`/`_is_connected`) and removed direct `existing_client.isConnected()` call in interface reuse path,
+    - expanded NumPy-style docstrings in `client.py` and `management_service.py`,
+    - constrained orchestrator client-manager edge-case test helper via `MagicMock(spec_set=[...])`.
+  - `ruff check meshtastic/interfaces/ble/{utils.py,lifecycle_service.py,connection.py,reconnection.py,receive_service.py,compatibility_service.py,discovery.py,interface.py,management_service.py,client.py} tests/test_ble_connection_edge_cases.py tests/test_ble_interface_core.py`
+  - `poetry run mypy meshtastic/interfaces/ble/{utils.py,lifecycle_service.py,connection.py,reconnection.py,receive_service.py,compatibility_service.py,discovery.py,interface.py,management_service.py,client.py} --strict`
+  - `poetry run pytest -q tests/test_ble_connection_edge_cases.py tests/test_ble_interface_core.py tests/test_ble_interface_advanced.py` (`246 passed`)
+  - `make ci-strict` (`1370 passed, 3 skipped, 92 deselected`; `mypy --strict` clean)
 
 ## Pass P2 Plan (Next)
 
@@ -200,13 +215,13 @@ This is an internal working tracker for large-pass execution.
 
 Current `wc -l` (2026-03-14):
 
-- `meshtastic/interfaces/ble/interface.py`: **2666**
-- `meshtastic/interfaces/ble/connection.py`: **1274**
-- `meshtastic/interfaces/ble/client.py`: **1002**
+- `meshtastic/interfaces/ble/interface.py`: **2680**
+- `meshtastic/interfaces/ble/connection.py`: **1339**
+- `meshtastic/interfaces/ble/client.py`: **1072**
 - `meshtastic/interfaces/ble/gating.py`: **768**
 - `meshtastic/interfaces/ble/runner.py`: **729**
-- `meshtastic/interfaces/ble/discovery.py`: **668**
-- `meshtastic/interfaces/ble/reconnection.py`: **603**
+- `meshtastic/interfaces/ble/discovery.py`: **700**
+- `meshtastic/interfaces/ble/reconnection.py`: **626**
 
 `interface.py` trend:
 
@@ -214,7 +229,7 @@ Current `wc -l` (2026-03-14):
 - `59fc5e5`: 3203 lines
 - `1e89a17` (previous decomposition commit): 3121 lines
 - `a6aa65f` (disconnect/close extraction): 2759 lines
-- current working tree: **2666** lines
+- current working tree: **2680** lines
 
 Next active reduction targets:
 

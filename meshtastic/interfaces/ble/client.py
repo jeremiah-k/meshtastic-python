@@ -155,7 +155,18 @@ class BLEClient:
         )
 
     def _initialize_runtime_state(self, address: BLEDevice | str | None) -> None:
-        """Initialize non-transport runtime state for a BLEClient instance."""
+        """Initialize non-transport runtime state for a BLEClient instance.
+
+        Parameters
+        ----------
+        address : BLEDevice | str | None
+            Address-like constructor input used to initialize the cached
+            ``self.address`` field.
+
+        Returns
+        -------
+        None
+        """
         # Error handling infrastructure
         self.error_handler = BLEErrorHandler()
         self.bleak_client: BleakRootClient | None = None
@@ -176,7 +187,23 @@ class BLEClient:
         log_if_no_address: bool,
         **kwargs: Any,
     ) -> None:
-        """Initialize underlying Bleak transport when address is available."""
+        """Initialize underlying Bleak transport when address is available.
+
+        Parameters
+        ----------
+        address : BLEDevice | str | None
+            Device/address used to instantiate the underlying Bleak client.
+            ``None`` leaves the instance in discovery-only mode.
+        log_if_no_address : bool
+            Whether to emit a debug log when transport initialization is skipped
+            due to a missing address.
+        **kwargs : Any
+            Keyword arguments forwarded to the Bleak client constructor.
+
+        Returns
+        -------
+        None
+        """
         if address is None:
             if log_if_no_address:
                 logger.debug("No address provided - only discover method will work.")
@@ -195,7 +222,23 @@ class BLEClient:
             self.address = bleak_address
 
     def _require_bleak_client(self, error_message: str) -> BleakRootClient:
-        """Return active Bleak client or raise BLEError for uninitialized transport."""
+        """Return active Bleak client or raise BLEError for uninitialized transport.
+
+        Parameters
+        ----------
+        error_message : str
+            Message used when raising ``BLEError`` for uninitialized transport.
+
+        Returns
+        -------
+        BleakRootClient
+            Active underlying Bleak client.
+
+        Raises
+        ------
+        BLEError
+            If ``self.bleak_client`` is not initialized.
+        """
         bleak_client = self.bleak_client
         if bleak_client is None:
             raise self.BLEError(error_message)
@@ -209,7 +252,33 @@ class BLEClient:
         timeout: float | None = None,
         sync_address: bool = False,
     ) -> T:
-        """Run a Bleak transport operation with common initialization checks."""
+        """Run a Bleak transport operation with common initialization checks.
+
+        Parameters
+        ----------
+        error_message : str
+            Message used when transport is unavailable.
+        operation : Callable[[BleakRootClient], Coroutine[Any, Any, T]]
+            Callable that builds the transport coroutine to execute.
+        timeout : float | None
+            Optional timeout forwarded to ``_async_await``.
+        sync_address : bool
+            When True, refresh ``self.address`` from Bleak after a successful
+            operation.
+
+        Returns
+        -------
+        T
+            Result produced by the transport coroutine.
+
+        Raises
+        ------
+        BLEError
+            If transport is unavailable.
+        Exception
+            Propagates operation execution errors and timeout exceptions raised
+            by ``_async_await``.
+        """
         bleak_client = self._require_bleak_client(error_message)
         result: T = self._async_await(operation(bleak_client), timeout=timeout)
         if sync_address:

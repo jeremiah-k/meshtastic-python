@@ -51,6 +51,30 @@ def _is_unconfigured_mock_callable(candidate: object) -> bool:
     return callable(candidate) and _is_unconfigured_mock_member(candidate)
 
 
+def _thread_start_probe(thread: object) -> tuple[int | None, bool]:
+    """Return normalized thread start indicators for compatibility-safe checks.
+
+    Parameters
+    ----------
+    thread : object
+        Thread-like object exposing optional ``ident`` and ``is_alive`` members.
+
+    Returns
+    -------
+    tuple[int | None, bool]
+        Normalized ``(ident, is_alive)`` where ``ident`` is ``None`` unless it
+        is an ``int``, and ``is_alive`` is ``False`` unless ``is_alive()``
+        returns a real ``bool``.
+    """
+    thread_ident = getattr(thread, "ident", None)
+    if thread_ident is not None and not isinstance(thread_ident, int):
+        thread_ident = None
+    is_alive = getattr(thread, "is_alive", None)
+    alive_result = is_alive() if callable(is_alive) else False
+    thread_is_alive = alive_result if isinstance(alive_result, bool) else False
+    return thread_ident, thread_is_alive
+
+
 def sanitize_address(address: str | None) -> str | None:
     """Normalize a BLE address or identifier by removing common separators and converting to lowercase.
 

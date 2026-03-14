@@ -32,6 +32,7 @@ from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
     _is_unconfigured_mock_member,
+    _thread_start_probe,
     sanitize_address,
 )
 
@@ -111,6 +112,24 @@ class ConnectionValidator:
         """Public pre-check for whether a BLE connection request can proceed."""
         self._validate_connection_request()
 
+    @staticmethod
+    def _client_is_connected(client: BLEClient | None) -> bool:
+        """Resolve connected state from public/legacy BLEClient compatibility members."""
+        if client is None:
+            return False
+        for candidate_name in ("isConnected", "is_connected", "_is_connected"):
+            candidate = getattr(client, candidate_name, None)
+            if callable(candidate):
+                if _is_unconfigured_mock_callable(candidate):
+                    continue
+                connected = candidate()
+                if isinstance(connected, bool):
+                    return connected
+                continue
+            if isinstance(candidate, bool) and not _is_unconfigured_mock_member(candidate):
+                return candidate
+        return False
+
     def _check_existing_client(
         self,
         client: BLEClient | None,
@@ -139,7 +158,9 @@ class ConnectionValidator:
             `True` if the client is connected and its normalized address equals
             the normalized request or one of the known targets, `False` otherwise.
         """
-        if not client or not client.isConnected():
+        if not self._client_is_connected(client):
+            return False
+        if client is None:
             return False
         normalized_request_key = sanitize_address(normalized_request)
         client_address = sanitize_address(getattr(client, "address", None))
@@ -384,18 +405,26 @@ class ClientManager:
         # Compute the decision under lock, but start the thread after releasing
         # to avoid holding the lock during thread creation/start
         should_close = False
+        client_to_close: BLEClient | None = None
         with self.state_lock:
             if old_client and old_client is not new_client:
                 should_close = True
+                client_to_close = old_client
 
-        if should_close:
-            close_thread = self._thread_create_thread(
-                target=self._safe_close_client,
-                args=(old_client,),
-                name="BLEClientClose",
-                daemon=True,
-            )
-            self._thread_start_thread(close_thread)
+        if should_close and client_to_close is not None:
+            try:
+                close_thread = self._thread_create_thread(
+                    target=self._safe_close_client,
+                    args=(client_to_close,),
+                    name="BLEClientClose",
+                    daemon=True,
+                )
+                self._thread_start_thread(close_thread)
+                thread_ident, thread_is_alive = _thread_start_probe(close_thread)
+                if thread_ident is None and not thread_is_alive:
+                    self._safe_close_client(client_to_close)
+            except Exception:
+                self._safe_close_client(client_to_close)
 
     def update_client_reference(
         self,
@@ -1088,7 +1117,7 @@ class ConnectionOrchestrator:
             # Post-registration check: verify client is still connected.
             # This catches disconnects that occurred during notification registration
             # which may have been ignored by _handle_disconnect due to CONNECTING state.
-            if not client.isConnected():
+            if not self.validator._client_is_connected(client):
                 logger.debug(
                     "Connection finalization aborted: client disconnected during notification registration"
                 )

@@ -19,11 +19,14 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.errors import DecodeError
 from meshtastic.interfaces.ble.state import ConnectionState
-from meshtastic.interfaces.ble.utils import _sleep
+from meshtastic.interfaces.ble.utils import _is_unconfigured_mock_callable, _sleep
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.coordination import ThreadCoordinator
     from meshtastic.interfaces.ble.interface import BLEInterface
+
+READ_TRIGGER_EVENT = "read_trigger"
+RECONNECTED_EVENT = "reconnected_event"
 
 
 class BLEReceiveRecoveryService:
@@ -49,6 +52,55 @@ class BLEReceiveRecoveryService:
             return not iface._fromnum_notify_enabled
 
     @staticmethod
+    def _coordinator_wait_for_event(
+        coordinator: "ThreadCoordinator", event_name: str, *, timeout: float | None
+    ) -> bool:
+        """Wait for a coordinator event using public-first compatibility dispatch."""
+        wait_for_event = getattr(coordinator, "wait_for_event", None)
+        if callable(wait_for_event) and not _is_unconfigured_mock_callable(wait_for_event):
+            return bool(wait_for_event(event_name, timeout=timeout))
+        legacy_wait_for_event = getattr(coordinator, "_wait_for_event", None)
+        if callable(legacy_wait_for_event) and not _is_unconfigured_mock_callable(
+            legacy_wait_for_event
+        ):
+            return bool(legacy_wait_for_event(event_name, timeout=timeout))
+        return False
+
+    @staticmethod
+    def _coordinator_check_and_clear_event(
+        coordinator: "ThreadCoordinator", event_name: str
+    ) -> bool:
+        """Check and clear a coordinator event using compatibility dispatch."""
+        check_and_clear_event = getattr(coordinator, "check_and_clear_event", None)
+        if callable(check_and_clear_event) and not _is_unconfigured_mock_callable(
+            check_and_clear_event
+        ):
+            return bool(check_and_clear_event(event_name))
+        legacy_check_and_clear_event = getattr(
+            coordinator, "_check_and_clear_event", None
+        )
+        if callable(legacy_check_and_clear_event) and not _is_unconfigured_mock_callable(
+            legacy_check_and_clear_event
+        ):
+            return bool(legacy_check_and_clear_event(event_name))
+        return False
+
+    @staticmethod
+    def _coordinator_clear_event(
+        coordinator: "ThreadCoordinator", event_name: str
+    ) -> None:
+        """Clear a coordinator event using compatibility dispatch."""
+        clear_event = getattr(coordinator, "clear_event", None)
+        if callable(clear_event) and not _is_unconfigured_mock_callable(clear_event):
+            clear_event(event_name)
+            return
+        legacy_clear_event = getattr(coordinator, "_clear_event", None)
+        if callable(legacy_clear_event) and not _is_unconfigured_mock_callable(
+            legacy_clear_event
+        ):
+            legacy_clear_event(event_name)
+
+    @staticmethod
     def _wait_for_read_trigger(
         iface: "BLEInterface",
         *,
@@ -56,11 +108,16 @@ class BLEReceiveRecoveryService:
         wait_timeout: float,
     ) -> tuple[bool, bool]:
         """Wait for read-trigger event and compute poll mode for this cycle."""
-        event_signaled = coordinator._wait_for_event("read_trigger", timeout=wait_timeout)
+        event_signaled = BLEReceiveRecoveryService._coordinator_wait_for_event(
+            coordinator,
+            READ_TRIGGER_EVENT,
+            timeout=wait_timeout,
+        )
         poll_without_notify = False
         if not event_signaled:
-            if iface._ever_connected and coordinator._check_and_clear_event(
-                "reconnected_event"
+            if iface._ever_connected and BLEReceiveRecoveryService._coordinator_check_and_clear_event(
+                coordinator,
+                RECONNECTED_EVENT,
             ):
                 logger.debug("Detected reconnection, resuming normal operation")
             poll_without_notify = BLEReceiveRecoveryService._should_poll_without_notify(
@@ -69,7 +126,7 @@ class BLEReceiveRecoveryService:
             # Proceed only when fallback polling is viable without notify callbacks.
             return poll_without_notify, poll_without_notify
 
-        coordinator._clear_event("read_trigger")
+        BLEReceiveRecoveryService._coordinator_clear_event(coordinator, READ_TRIGGER_EVENT)
         return True, poll_without_notify
 
     @staticmethod
@@ -100,7 +157,11 @@ class BLEReceiveRecoveryService:
             logger.debug(
                 "Skipping BLE read while connect publication is pending verification."
             )
-            coordinator._wait_for_event("reconnected_event", timeout=wait_timeout)
+            BLEReceiveRecoveryService._coordinator_wait_for_event(
+                coordinator,
+                RECONNECTED_EVENT,
+                timeout=wait_timeout,
+            )
             return True
 
         if client is not None:
@@ -109,7 +170,11 @@ class BLEReceiveRecoveryService:
         if iface.auto_reconnect or is_connecting:
             wait_reason = "connection establishment" if is_connecting else "auto-reconnect"
             logger.debug("BLE client is None; waiting for %s", wait_reason)
-            coordinator._wait_for_event("reconnected_event", timeout=wait_timeout)
+            BLEReceiveRecoveryService._coordinator_wait_for_event(
+                coordinator,
+                RECONNECTED_EVENT,
+                timeout=wait_timeout,
+            )
             return True
 
         if is_closing:

@@ -586,6 +586,36 @@ class DiscoveryManager:
                     ["discover", "_discover"],
                 )
             response = discover(**discover_kwargs)
+            if inspect.isawaitable(response):
+                await_bridge = getattr(client, "async_await", None)
+                if not callable(await_bridge) or _is_unconfigured_mock_callable(
+                    await_bridge
+                ):
+                    await_bridge = getattr(client, "_async_await", None)
+                if callable(await_bridge) and not _is_unconfigured_mock_callable(
+                    await_bridge
+                ):
+                    response = await_bridge(response)
+                if inspect.isawaitable(response):
+                    if inspect.iscoroutine(response):
+                        response.close()
+                    discarded_awaitable_client: (
+                        BLEClient
+                        | DiscoveryClientProtocol
+                        | UnderscoreDiscoveryClientProtocol
+                        | None
+                    ) = None
+                    with self._client_lock:
+                        if self._client is client:
+                            discarded_awaitable_client = self._client
+                            self._client = None
+                    if discarded_awaitable_client is not None:
+                        _close_discovery_client_best_effort(discarded_awaitable_client)
+                    raise DiscoveryClientError.invalid_client(
+                        resolved_factory,
+                        type(client),
+                        ["discover", "_discover"],
+                    )
             logger.debug(
                 "Scan completed in %.2f seconds", time.monotonic() - scan_start
             )

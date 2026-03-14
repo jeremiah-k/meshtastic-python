@@ -1,8 +1,8 @@
 """Compatibility/event publication helpers for BLE interface orchestration."""
 
-from queue import Empty
+from queue import Empty, Full
 from threading import Event
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 from meshtastic.interfaces.ble.constants import (
     DISCONNECT_TIMEOUT_SECONDS,
@@ -19,6 +19,46 @@ class BLECompatibilityEventService:
     """Service helpers for compatibility event publication paths."""
 
     @staticmethod
+    def _enqueue_publish_callback(
+        publishing_thread: object,
+        callback: Any,
+        *,
+        prefer_non_blocking: bool = False,
+    ) -> bool:
+        """Queue callback for publishing thread, preferring non-blocking enqueue."""
+        queue_work = getattr(publishing_thread, "queueWork", None)
+        queue = getattr(publishing_thread, "queue", None)
+        put_nowait = getattr(queue, "put_nowait", None)
+        can_queue_work = callable(queue_work) and not _is_unconfigured_mock_callable(
+            queue_work
+        )
+        can_put_nowait = callable(put_nowait) and not _is_unconfigured_mock_callable(
+            put_nowait
+        )
+        queue_work_callback: Callable[[Any], object] | None = (
+            cast(Callable[[Any], object], queue_work) if can_queue_work else None
+        )
+        put_nowait_callback: Callable[[Any], object] | None = (
+            cast(Callable[[Any], object], put_nowait) if can_put_nowait else None
+        )
+        if prefer_non_blocking and put_nowait_callback is not None:
+            try:
+                put_nowait_callback(callback)
+                return True
+            except Full:
+                return False
+        if queue_work_callback is not None:
+            queue_work_callback(callback)
+            return True
+        if put_nowait_callback is not None:
+            try:
+                put_nowait_callback(callback)
+                return True
+            except Full:
+                return False
+        return False
+
+    @staticmethod
     def wait_for_disconnect_notifications(
         iface: "BLEInterface",
         timeout: float | None = None,
@@ -29,18 +69,13 @@ class BLECompatibilityEventService:
         if timeout is None:
             timeout = DISCONNECT_TIMEOUT_SECONDS
         flush_event = Event()
-        queue_work = getattr(publishing_thread, "queueWork", None)
-        if not callable(queue_work) or _is_unconfigured_mock_callable(queue_work):
-            BLECompatibilityEventService.drain_publish_queue(
-                iface,
-                flush_event,
-                publishing_thread=publishing_thread,
-            )
-            return
 
         def _queue_flush_notification() -> bool:
-            queue_work(flush_event.set)
-            return True
+            return BLECompatibilityEventService._enqueue_publish_callback(
+                publishing_thread,
+                flush_event.set,
+                prefer_non_blocking=True,
+            )
 
         queued = iface.error_handler.safe_execute(
             _queue_flush_notification,
@@ -59,10 +94,14 @@ class BLECompatibilityEventService:
         if not flush_event.wait(timeout=timeout):
             thread = getattr(publishing_thread, "thread", None)
             is_alive = getattr(thread, "is_alive", None)
+            alive_result = is_alive() if callable(is_alive) else False
+            thread_is_alive = (
+                alive_result if isinstance(alive_result, bool) else False
+            )
             if (
                 callable(is_alive)
                 and not _is_unconfigured_mock_callable(is_alive)
-                and is_alive()
+                and thread_is_alive
             ):
                 logger.debug("Timed out waiting for publish queue flush")
             else:
@@ -141,10 +180,10 @@ class BLECompatibilityEventService:
                 )
 
         try:
-            queue_work = getattr(publishing_thread, "queueWork", None)
-            if callable(queue_work) and not _is_unconfigured_mock_callable(queue_work):
-                queue_work(_publish_status)
-            else:
+            queued = BLECompatibilityEventService._enqueue_publish_callback(
+                publishing_thread, _publish_status
+            )
+            if not queued:
                 _publish_status()
         except Exception:  # noqa: BLE001 - best-effort queueing path
             logger.debug(
