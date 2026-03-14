@@ -5,6 +5,8 @@ import logging
 import socket
 from typing import Callable, Protocol
 
+from meshtastic.host_port import parseHostAndPort
+
 logger = logging.getLogger(__name__)
 OTA_SOCKET_TIMEOUT_SECONDS = 15
 OTA_CHUNK_SIZE_BYTES = 1024
@@ -16,7 +18,13 @@ READ_FIRMWARE_ERROR: str = "Unable to read firmware file {filename}: {error}"
 FIRMWARE_CHANGED_ERROR: str = (
     "Firmware file {filename} changed after OTA session initialization."
 )
-OTA_TRANSPORT_ERROR: str = "OTA transport to {host}:{port} failed: {error}"
+OTA_DESTINATION_ENV_LABEL = "OTA destination"
+INVALID_OTA_DESTINATION_ERROR: str = (
+    "Invalid OTA destination {destination!r}: {error}"
+)
+OTA_TRANSPORT_ERROR: str = (
+    "OTA transport to {host}:{port} failed during {stage}: {error}"
+)
 
 
 class _SHA256Digest(Protocol):
@@ -57,15 +65,33 @@ class ESP32WiFiOTA:
     """ESP32 WiFi Unified OTA updates."""
 
     def __init__(self, filename: str, hostname: str, port: int = 3232) -> None:
+        normalized_host, normalized_port = self._normalize_destination(hostname, port)
         self._filename = filename
-        self._hostname = hostname
-        self._port = port
+        self._hostname = normalized_host
+        self._port = normalized_port
         self._socket: socket.socket | None = None
 
         self._file_bytes: bytes = b""
         self._size = 0
         self._file_hash: _SHA256Digest = hashlib.sha256()
         self._refresh_firmware_metadata()
+
+    @staticmethod
+    def _normalize_destination(hostname: str, port: int) -> tuple[str, int]:
+        """Validate and normalize OTA destination host/port."""
+        try:
+            return parseHostAndPort(
+                hostname,
+                default_port=port,
+                env_var=OTA_DESTINATION_ENV_LABEL,
+            )
+        except ValueError as exc:
+            raise OTAError(
+                INVALID_OTA_DESTINATION_ERROR.format(
+                    destination=hostname,
+                    error=exc,
+                )
+            ) from exc
 
     def _refresh_firmware_metadata(self) -> tuple[int, _SHA256Digest]:
         """Refresh cached firmware size/hash from disk and validate non-empty file.
@@ -162,6 +188,7 @@ class ESP32WiFiOTA:
             file_hash.hexdigest(),
         )
 
+        transport_stage = "connect"
         try:
             self._socket = socket.create_connection(
                 (self._hostname, self._port),
@@ -170,9 +197,11 @@ class ESP32WiFiOTA:
             logger.debug("Connected to %s:%d", self._hostname, self._port)
 
             # Send start command
+            transport_stage = "send OTA start command"
             self._socket.sendall(f"OTA {size} {file_hash.hexdigest()}\n".encode())
 
             # Wait for OK from the device
+            transport_stage = "wait for OTA ready response"
             while True:
                 response = self._read_line()
                 if response == "OK":
@@ -187,6 +216,7 @@ class ESP32WiFiOTA:
 
             sent_bytes = 0
             for offset in range(0, size, OTA_CHUNK_SIZE_BYTES):
+                transport_stage = "send firmware chunk"
                 chunk = firmware_image[offset : offset + OTA_CHUNK_SIZE_BYTES]
                 self._socket.sendall(chunk)
                 sent_bytes += len(chunk)
@@ -209,6 +239,7 @@ class ESP32WiFiOTA:
                             next_progress_log_percent += OTA_PROGRESS_LOG_PERCENT_STEP
 
             # Wait for OK from device
+            transport_stage = "wait for OTA completion response"
             logger.info("Firmware sent, waiting for verification...")
             while True:
                 response = self._read_line()
@@ -225,6 +256,7 @@ class ESP32WiFiOTA:
                 OTA_TRANSPORT_ERROR.format(
                     host=self._hostname,
                     port=self._port,
+                    stage=transport_stage,
                     error=exc,
                 )
             ) from exc
