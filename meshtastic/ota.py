@@ -18,7 +18,7 @@ READ_FIRMWARE_ERROR: str = "Unable to read firmware file {filename}: {error}"
 FIRMWARE_CHANGED_ERROR: str = (
     "Firmware file {filename} changed after OTA session initialization."
 )
-OTA_DESTINATION_ENV_LABEL = "OTA destination"
+OTA_DESTINATION_ENV_LABEL: str = "OTA destination"
 INVALID_OTA_DESTINATION_ERROR: str = (
     "Invalid OTA destination {destination!r}: {error}"
 )
