@@ -28,6 +28,7 @@ def _is_unconfigured_mock_member(candidate: object) -> bool:
         return False
     return (
         getattr(candidate, "_mock_return_value", DEFAULT) is DEFAULT
+        and getattr(candidate, "_mock_wraps", None) is None
         and getattr(candidate, "side_effect", None) is None
         and not getattr(candidate, "call_args_list", [])
     )

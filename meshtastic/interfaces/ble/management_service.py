@@ -121,14 +121,13 @@ class BLEManagementCommandsService:
                 target_address = iface._resolve_target_address_for_management(address)
 
             if use_existing_client_without_resolved_address:
-                with iface._connect_lock:
-                    with iface._management_lock:
-                        iface._validate_management_preconditions()
-                        refreshed_existing_client = (
-                            iface._get_management_client_if_available(address)
-                        )
-                        if refreshed_existing_client is None:
-                            raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
+                with iface._connect_lock, iface._management_lock:
+                    iface._validate_management_preconditions()
+                    refreshed_existing_client = (
+                        iface._get_management_client_if_available(address)
+                    )
+                    if refreshed_existing_client is None:
+                        raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
                 return command(refreshed_existing_client)
 
             if target_address is None:
@@ -137,20 +136,19 @@ class BLEManagementCommandsService:
                 client_to_use: BLEClient | None = None
                 target_key: str | None = None
                 temporary_client: BLEClient | None = None
-                with iface._connect_lock:
-                    with iface._management_lock:
-                        iface._validate_management_preconditions()
-                        if address is None:
-                            iface._revalidate_implicit_management_target(
-                                target_address,
-                                expected_binding=expected_implicit_binding,
-                            )
-                        client_to_use = iface._get_management_client_for_target(
+                with iface._connect_lock, iface._management_lock:
+                    iface._validate_management_preconditions()
+                    if address is None:
+                        iface._revalidate_implicit_management_target(
                             target_address,
-                            prefer_current_client=address is None,
+                            expected_binding=expected_implicit_binding,
                         )
-                        if client_to_use is None:
-                            target_key = _addr_key(target_address)
+                    client_to_use = iface._get_management_client_for_target(
+                        target_address,
+                        prefer_current_client=address is None,
+                    )
+                    if client_to_use is None:
+                        target_key = _addr_key(target_address)
 
                 if client_to_use is None:
                     if target_key is not None and connected_elsewhere(target_key, iface):

@@ -56,7 +56,6 @@ from meshtastic.interfaces.ble.constants import (
     ERROR_ADDRESS_RESOLUTION_FAILED,
     ERROR_CONNECTION_FAILED,
     ERROR_CONNECTION_SUPPRESSED,
-    ERROR_DISCOVERY_MANAGER_UNAVAILABLE,
     ERROR_INTERFACE_CLOSING,
     ERROR_MANAGEMENT_ADDRESS_EMPTY,
     ERROR_MANAGEMENT_ADDRESS_REQUIRED,
@@ -1789,7 +1788,7 @@ class BLEInterface(MeshInterface):
         """Discover devices via public API with underscore fallback for test doubles."""
         discovery_manager = self._discovery_manager
         if discovery_manager is None:
-            raise self.BLEError(ERROR_DISCOVERY_MANAGER_UNAVAILABLE)
+            return []
         discover_devices = getattr(discovery_manager, "discover_devices", None)
         if callable(discover_devices) and not _is_unconfigured_mock_callable(
             discover_devices
@@ -1808,16 +1807,16 @@ class BLEInterface(MeshInterface):
 
     def _state_manager_is_connected(self) -> bool:
         """Read connected state with fallback for underscore/mocked state managers."""
-        is_connected = getattr(self._state_manager, "_is_connected", None)
-        if not _is_unconfigured_mock_member(is_connected) and isinstance(
-            is_connected, bool
+        underscore_is_connected = getattr(self._state_manager, "_is_connected", None)
+        if not _is_unconfigured_mock_member(underscore_is_connected) and isinstance(
+            underscore_is_connected, bool
         ):
-            return is_connected
-        legacy_is_connected = getattr(self._state_manager, "is_connected", None)
-        if not _is_unconfigured_mock_member(legacy_is_connected) and isinstance(
-            legacy_is_connected, bool
+            return underscore_is_connected
+        public_is_connected = getattr(self._state_manager, "is_connected", None)
+        if not _is_unconfigured_mock_member(public_is_connected) and isinstance(
+            public_is_connected, bool
         ):
-            return legacy_is_connected
+            return public_is_connected
         # Preserve pre-refactor failure mode for misconfigured doubles.
         fallback_is_connected = self._state_manager._is_connected
         if _is_unconfigured_mock_member(fallback_is_connected) or not isinstance(
@@ -2841,7 +2840,7 @@ class BLEInterface(MeshInterface):
         Exception
             For unexpected errors in the receive thread that trigger recovery.
         """
-        BLEReceiveRecoveryService.receive_from_radio_impl(self)
+        BLEReceiveRecoveryService._receive_from_radio_impl(self)
 
     def _recover_receive_thread(self, disconnect_reason: str) -> None:
         """Handle receive-thread failure and trigger guarded recovery.

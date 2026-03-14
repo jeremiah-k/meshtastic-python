@@ -212,33 +212,31 @@ class ClientManager:
         """Create thread via public API with underscore fallback for test doubles."""
         create_thread = getattr(self.thread_coordinator, "create_thread", None)
         legacy_create_thread = getattr(self.thread_coordinator, "_create_thread", None)
-        valid_create_thread = callable(create_thread) and not _is_unconfigured_mock_callable(
+        valid_create_thread = (
             create_thread
+            if callable(create_thread) and not _is_unconfigured_mock_callable(create_thread)
+            else None
         )
-        if valid_create_thread and callable(create_thread):
+        valid_legacy_create_thread = (
+            legacy_create_thread
+            if callable(legacy_create_thread)
+            and not _is_unconfigured_mock_callable(legacy_create_thread)
+            else None
+        )
+        if valid_create_thread is not None:
             return cast(
                 ThreadLike,
-                create_thread(
+                valid_create_thread(
                     target=target,
                     args=args,
                     name=name,
                     daemon=daemon,
                 ),
             )
-        if callable(legacy_create_thread):
+        if valid_legacy_create_thread is not None:
             return cast(
                 ThreadLike,
-                legacy_create_thread(
-                    target=target,
-                    args=args,
-                    name=name,
-                    daemon=daemon,
-                ),
-            )
-        if callable(create_thread):
-            return cast(
-                ThreadLike,
-                create_thread(
+                valid_legacy_create_thread(
                     target=target,
                     args=args,
                     name=name,
@@ -253,17 +251,22 @@ class ClientManager:
         """Start thread via public API with underscore fallback for test doubles."""
         start_thread = getattr(self.thread_coordinator, "start_thread", None)
         legacy_start_thread = getattr(self.thread_coordinator, "_start_thread", None)
-        valid_start_thread = callable(start_thread) and not _is_unconfigured_mock_callable(
+        valid_start_thread = (
             start_thread
+            if callable(start_thread) and not _is_unconfigured_mock_callable(start_thread)
+            else None
         )
-        if valid_start_thread and callable(start_thread):
-            start_thread(thread)
+        valid_legacy_start_thread = (
+            legacy_start_thread
+            if callable(legacy_start_thread)
+            and not _is_unconfigured_mock_callable(legacy_start_thread)
+            else None
+        )
+        if valid_start_thread is not None:
+            valid_start_thread(thread)
             return
-        if callable(legacy_start_thread):
-            legacy_start_thread(thread)
-            return
-        if callable(start_thread):
-            start_thread(thread)
+        if valid_legacy_start_thread is not None:
+            valid_legacy_start_thread(thread)
             return
         raise AttributeError("Thread coordinator is missing start_thread/_start_thread")
 
@@ -494,7 +497,6 @@ class ConnectionOrchestrator:
         kwargs: dict[str, object] | None = None,
         underscore_attr_type: type[object] | None = None,
         default_if_missing: object = _DISPATCH_MISSING,
-        prefer_underscore_for_unconfigured_public_mock: bool = False,
     ) -> object:
         """Dispatch to public/underscore members with compatibility fallback.
 
@@ -519,10 +521,6 @@ class ConnectionOrchestrator:
             this type.
         default_if_missing : object
             Default value returned when neither member is available.
-        prefer_underscore_for_unconfigured_public_mock : bool
-            Prefer underscore callable when the public callable is an
-            unconfigured child mock.
-
         Returns
         -------
         object
@@ -596,7 +594,6 @@ class ConnectionOrchestrator:
             underscore_name="_validate_connection_request",
             prefer_instance_type=ConnectionValidator,
             call_member=True,
-            prefer_underscore_for_unconfigured_public_mock=True,
         )
 
     def _state_current_state(self) -> ConnectionState:
@@ -631,7 +628,6 @@ class ConnectionOrchestrator:
                 underscore_name="_transition_to",
                 call_member=True,
                 args=(new_state,),
-                prefer_underscore_for_unconfigured_public_mock=False,
             )
         )
 
@@ -643,7 +639,6 @@ class ConnectionOrchestrator:
                 public_name="reset_to_disconnected",
                 underscore_name="_reset_to_disconnected",
                 call_member=True,
-                prefer_underscore_for_unconfigured_public_mock=True,
             )
         )
 
@@ -655,7 +650,6 @@ class ConnectionOrchestrator:
             underscore_name="_set_event",
             call_member=True,
             args=(name,),
-            prefer_underscore_for_unconfigured_public_mock=True,
         )
 
     def _client_manager_create_client(
@@ -678,7 +672,6 @@ class ConnectionOrchestrator:
                 "pair_on_connect": pair_on_connect,
                 "connect_timeout": connect_timeout,
             },
-            prefer_underscore_for_unconfigured_public_mock=True,
         )
         return cast(BLEClient, created_client)
 
@@ -694,7 +687,6 @@ class ConnectionOrchestrator:
             call_member=True,
             args=(client,),
             kwargs={"timeout": timeout},
-            prefer_underscore_for_unconfigured_public_mock=True,
         )
 
     def _client_manager_safe_close_client(self, client: BLEClient) -> None:
@@ -706,7 +698,6 @@ class ConnectionOrchestrator:
             prefer_instance_type=ClientManager,
             call_member=True,
             args=(client,),
-            prefer_underscore_for_unconfigured_public_mock=True,
         )
 
     @staticmethod

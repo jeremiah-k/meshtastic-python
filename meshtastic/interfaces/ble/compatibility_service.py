@@ -9,6 +9,7 @@ from meshtastic.interfaces.ble.constants import (
     MAX_DRAIN_ITERATIONS,
     logger,
 )
+from meshtastic.interfaces.ble.utils import _is_unconfigured_mock_callable
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
@@ -28,9 +29,17 @@ class BLECompatibilityEventService:
         if timeout is None:
             timeout = DISCONNECT_TIMEOUT_SECONDS
         flush_event = Event()
+        queue_work = getattr(publishing_thread, "queueWork", None)
+        if not callable(queue_work) or _is_unconfigured_mock_callable(queue_work):
+            BLECompatibilityEventService.drain_publish_queue(
+                iface,
+                flush_event,
+                publishing_thread=publishing_thread,
+            )
+            return
 
         def _queue_flush_notification() -> bool:
-            publishing_thread.queueWork(flush_event.set)  # type: ignore[attr-defined]
+            queue_work(flush_event.set)
             return True
 
         queued = iface.error_handler.safe_execute(
@@ -49,7 +58,12 @@ class BLECompatibilityEventService:
 
         if not flush_event.wait(timeout=timeout):
             thread = getattr(publishing_thread, "thread", None)
-            if thread is not None and thread.is_alive():
+            is_alive = getattr(thread, "is_alive", None)
+            if (
+                callable(is_alive)
+                and not _is_unconfigured_mock_callable(is_alive)
+                and is_alive()
+            ):
                 logger.debug("Timed out waiting for publish queue flush")
             else:
                 BLECompatibilityEventService.drain_publish_queue(
@@ -122,7 +136,11 @@ class BLECompatibilityEventService:
                 )
 
         try:
-            publishing_thread.queueWork(_publish_status)  # type: ignore[attr-defined]
+            queue_work = getattr(publishing_thread, "queueWork", None)
+            if callable(queue_work) and not _is_unconfigured_mock_callable(queue_work):
+                queue_work(_publish_status)
+            else:
+                _publish_status()
         except Exception:  # noqa: BLE001 - best-effort queueing path
             logger.debug(
                 "Error queuing connection status publish via publishingThread.queueWork",

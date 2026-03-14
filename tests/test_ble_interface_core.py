@@ -4495,6 +4495,49 @@ def test_transient_read_retry_uses_zero_based_delay(
     iface.close()
 
 
+def test_receive_recovery_backoff_reaches_configured_cap_for_non_power_of_two(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Recovery backoff should reach configured max even when max is not power-of-two."""
+    import meshtastic.interfaces.ble.receive_service as receive_service_mod
+
+    iface = SimpleNamespace()
+    iface._is_connection_closing = False
+    iface._state_lock = threading.RLock()
+    iface.client = None
+    iface._handle_disconnect = lambda *_args, **_kwargs: True
+    iface._set_receive_wanted = lambda *_args, **_kwargs: None
+    iface._receive_recovery_attempts = 4
+    iface._last_recovery_time = 100.0
+    iface._read_retry_count = 7
+    iface._should_run_receive_loop = lambda: True
+    iface._start_receive_thread = MagicMock()
+    iface._shutdown_event = MagicMock()
+    iface._shutdown_event.wait.return_value = True
+
+    monkeypatch.setattr(
+        receive_service_mod,
+        "RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD",
+        0,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        receive_service_mod,
+        "RECEIVE_RECOVERY_MAX_BACKOFF_SEC",
+        30.0,
+        raising=True,
+    )
+    monkeypatch.setattr(receive_service_mod.time, "monotonic", lambda: 100.0)
+
+    receive_service_mod.BLEReceiveRecoveryService._recover_receive_thread(
+        iface, "receive_thread_fatal"
+    )
+
+    iface._shutdown_event.wait.assert_called_once_with(timeout=30.0)
+    assert iface._read_retry_count == 7
+    iface._start_receive_thread.assert_not_called()
+
+
 def test_receive_loop_outer_catch_routes_to_disconnect_handler(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -4792,6 +4835,80 @@ def test_find_device_direct_connect_preserves_raw_address() -> None:
 
     assert direct_device.address == address
     assert direct_device.name == address
+
+
+def test_find_device_direct_connect_without_discovery_manager() -> None:
+    """Direct-connect fallback should work when discovery manager is intentionally missing."""
+    iface = object.__new__(ble_mod.BLEInterface)
+    iface._discovery_manager = None  # type: ignore[assignment]
+
+    address = "AA:BB:CC:DD:EE:FF"
+    direct_device = BLEInterface.findDevice(iface, address)
+
+    assert direct_device.address == address
+    assert direct_device.name == address
+
+
+def test_wait_for_disconnect_notifications_skips_unconfigured_queuework(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Disconnect flush should immediately use drain path when queueWork is unconfigured."""
+    from meshtastic.interfaces.ble.compatibility_service import (
+        BLECompatibilityEventService,
+    )
+
+    iface = SimpleNamespace(
+        error_handler=SimpleNamespace(safe_execute=lambda func, **_kwargs: func())
+    )
+    publishing_thread = MagicMock()
+    drained: list[bool] = []
+    monkeypatch.setattr(
+        BLECompatibilityEventService,
+        "drain_publish_queue",
+        lambda *_args, **_kwargs: drained.append(True),
+        raising=True,
+    )
+
+    BLECompatibilityEventService.wait_for_disconnect_notifications(
+        iface,
+        timeout=0.01,
+        publishing_thread=publishing_thread,
+    )
+
+    assert drained == [True]
+
+
+def test_publish_connection_status_runs_directly_when_queuework_unconfigured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Status publish should run inline when queueWork is an unconfigured mock."""
+    from meshtastic.interfaces.ble.compatibility_service import (
+        BLECompatibilityEventService,
+    )
+    from meshtastic import mesh_interface as mesh_iface_module
+
+    sent: list[tuple[str, object, bool]] = []
+
+    def _send_message(topic: str, *, interface: object, connected: bool) -> None:
+        sent.append((topic, interface, connected))
+
+    monkeypatch.setattr(
+        mesh_iface_module,
+        "pub",
+        SimpleNamespace(sendMessage=_send_message),
+        raising=True,
+    )
+
+    iface = SimpleNamespace()
+    publishing_thread = MagicMock()
+
+    BLECompatibilityEventService.publish_connection_status(
+        iface,
+        connected=True,
+        publishing_thread=publishing_thread,
+    )
+
+    assert sent == [("meshtastic.connection.status", iface, True)]
 
 
 def test_discovery_manager_filters_meshtastic_devices(

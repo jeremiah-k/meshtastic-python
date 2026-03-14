@@ -160,7 +160,7 @@ class BLEReceiveRecoveryService:
         return True
 
     @staticmethod
-    def receive_from_radio_impl(iface: "BLEInterface") -> None:
+    def _receive_from_radio_impl(iface: "BLEInterface") -> None:
         """Run receive loop and dispatch radio packets."""
         coordinator = iface.thread_coordinator
         wait_timeout = BLEConfig.RECEIVE_WAIT_TIMEOUT
@@ -264,11 +264,7 @@ class BLEReceiveRecoveryService:
             last_recovery = iface._last_recovery_time
         if attempts > RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD:
             max_exponent = max(
-                int(
-                    math.floor(
-                        math.log2(max(RECEIVE_RECOVERY_MAX_BACKOFF_SEC, 1.0))
-                    )
-                ),
+                math.ceil(math.log2(max(RECEIVE_RECOVERY_MAX_BACKOFF_SEC, 1.0))),
                 0,
             )
             exponent = min(

@@ -415,7 +415,7 @@ def test_client_manager_update_client_reference_same_client() -> None:
 
     # Should not create thread when old and new are the same
     manager._update_client_reference(mock_client, mock_client)
-    thread_coordinator._create_thread.assert_not_called()
+    thread_coordinator.create_thread.assert_not_called()
 
 
 @pytest.mark.unit
@@ -430,12 +430,15 @@ def test_client_manager_update_client_reference_schedules_close() -> None:
 
     old_client = MagicMock()
     new_client = MagicMock()
+    thread_like = MagicMock()
+    thread_coordinator.create_thread.return_value = thread_like
+    thread_coordinator.start_thread.return_value = None
 
     manager._update_client_reference(new_client, old_client)
 
     # Should have created and started a thread
-    thread_coordinator._create_thread.assert_called_once()
-    thread_coordinator._start_thread.assert_called_once()
+    thread_coordinator.create_thread.assert_called_once()
+    thread_coordinator.start_thread.assert_called_once_with(thread_like)
 
 
 @pytest.mark.unit
@@ -587,10 +590,8 @@ def test_transition_failure_to_disconnected_forces_reset_when_transitions_reject
     """_transition_failure_to_disconnected should force reset if transition calls fail."""
     state_manager = MagicMock()
     state_manager._current_state = ConnectionState.CONNECTING
-    state_manager.current_state = ConnectionState.CONNECTING
     state_manager._transition_to.return_value = False
-    state_manager.transition_to.return_value = False
-    state_manager.reset_to_disconnected.return_value = True
+    state_manager._reset_to_disconnected.return_value = True
     state_lock = RLock()
     validator = ConnectionValidator(BLEStateManager(), state_lock, MockBLEError)
     orchestrator = ConnectionOrchestrator(
@@ -605,7 +606,7 @@ def test_transition_failure_to_disconnected_forces_reset_when_transitions_reject
 
     orchestrator._transition_failure_to_disconnected("unit-test")
 
-    state_manager.reset_to_disconnected.assert_called_once_with()
+    state_manager._reset_to_disconnected.assert_called_once_with()
 
 
 @pytest.mark.unit

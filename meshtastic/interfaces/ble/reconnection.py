@@ -166,9 +166,6 @@ class ReconnectScheduler:
         if valid_start_thread is not None:
             valid_start_thread(thread)
             return
-        if valid_legacy_start_thread is not None:
-            valid_legacy_start_thread(thread)
-            return
         raise AttributeError("Thread coordinator is missing start_thread/_start_thread")
 
     def _schedule_reconnect(self, auto_reconnect: bool, shutdown_event: Event) -> bool:
