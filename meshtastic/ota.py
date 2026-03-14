@@ -19,25 +19,30 @@ FIRMWARE_CHANGED_ERROR: str = (
     "Firmware file {filename} changed after OTA session initialization."
 )
 OTA_DESTINATION_ENV_LABEL: str = "OTA destination"
-INVALID_OTA_DESTINATION_ERROR: str = (
-    "Invalid OTA destination {destination!r}: {error}"
-)
-OTA_TRANSPORT_ERROR: str = (
-    "OTA transport to {host}:{port} failed during {stage}: {error}"
-)
+INVALID_OTA_DESTINATION_ERROR: str = "Invalid OTA destination {destination!r}: {error}"
+OTA_TRANSPORT_ERROR: str = "OTA transport to {endpoint} failed during {stage}: {error}"
+
+
+def _format_endpoint(host: str, port: int) -> str:
+    """Return a host:port string with IPv6 literals bracketed."""
+    if ":" in host and not host.startswith("["):
+        return f"[{host}]:{port}"
+    return f"{host}:{port}"
 
 
 class _SHA256Digest(Protocol):
     """Minimal digest protocol returned by hashlib.sha256()."""
 
-    def update(self, data: bytes) -> None:
+    def update(self, data: bytes, /) -> None:
         """Update the digest with bytes."""
 
     def digest(self) -> bytes:
         """Return raw digest bytes."""
+        ...
 
     def hexdigest(self) -> str:
         """Return digest as hexadecimal string."""
+        ...
 
 
 def _file_sha256(filename: str) -> _SHA256Digest:
@@ -254,8 +259,7 @@ class ESP32WiFiOTA:
         except (ConnectionError, OSError) as exc:
             raise OTATransportError(
                 OTA_TRANSPORT_ERROR.format(
-                    host=self._hostname,
-                    port=self._port,
+                    endpoint=_format_endpoint(self._hostname, self._port),
                     stage=transport_stage,
                     error=exc,
                 )

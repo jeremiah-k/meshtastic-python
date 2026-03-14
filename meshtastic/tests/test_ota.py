@@ -576,7 +576,7 @@ def test_esp32_wifi_ota_update_socket_cleanup_on_error(
 # pylint: disable=redefined-outer-name
 def test_esp32_wifi_ota_update_transport_error_includes_stage(
     mock_socket_class: MagicMock,
-    firmware_file_factory: Callable[[bytes], str],
+    firmware_file_factory: Callable[..., str],
 ) -> None:
     """OTATransportError should include transport stage context for connection failures."""
     mock_socket_class.side_effect = OSError("network unreachable")
@@ -593,7 +593,7 @@ def test_esp32_wifi_ota_update_transport_error_includes_stage(
 # pylint: disable=redefined-outer-name
 def test_esp32_wifi_ota_update_transport_error_includes_send_stage(
     mock_socket_class: MagicMock,
-    firmware_file_factory: Callable[[bytes], str],
+    firmware_file_factory: Callable[..., str],
 ) -> None:
     """OTATransportError should include non-connect stage context for send failures."""
     mock_socket = MagicMock()
