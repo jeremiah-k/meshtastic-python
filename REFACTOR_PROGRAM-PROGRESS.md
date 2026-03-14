@@ -67,11 +67,22 @@ This is an internal working tracker for large-pass execution.
 - Replaced direct collaborator-private calls in BLE interface/runtime code with public collaborator APIs.
 - Completed compatibility fallbacks for underscore-only test doubles used across BLE tests.
 - Added compatibility wrappers in `BLEInterface`, `ConnectionOrchestrator`, `ClientManager`, and `ReconnectScheduler` so production code uses public APIs while tests/mocks with underscore methods remain valid.
+- Continued P2 boundary-hardening cleanup:
+  - fixed disconnect-notification queue flush to avoid full-timeout stalls when queue enqueue fails,
+  - switched BLE thread coordinator wrappers to public-first (`create_thread`/`start_thread`) with legacy underscore fallback,
+  - removed lock-held `bluetoothctl trust` subprocess execution in implicit-address management flow,
+  - tightened receive-thread duplicate-start guard for "pending start" threads (`ident is None`),
+  - aligned `_state_manager_is_connected` fallback to preserve misconfigured-double failure signaling,
+  - fixed BLE naming-policy guidance typo in `BLE.md`.
 - Targeted verification completed:
   - `ruff check meshtastic/interfaces/ble/interface.py meshtastic/interfaces/ble/connection.py meshtastic/interfaces/ble/reconnection.py`
   - `poetry run mypy meshtastic/interfaces/ble/interface.py meshtastic/interfaces/ble/connection.py meshtastic/interfaces/ble/reconnection.py --strict`
   - `poetry run pytest tests/test_ble_interface_core.py tests/test_ble_connection_edge_cases.py -q` (`223 passed`)
   - `poetry run pytest tests/test_ble_*.py -q` (`411 passed, 3 skipped`)
+  - `poetry run ruff check meshtastic/interfaces/ble/{compatibility_service.py,connection.py,reconnection.py,interface.py,lifecycle_service.py,management_service.py} tests/test_ble_interface_core.py BLE.md REFACTOR_PROGRAM-PROGRESS.md`
+  - `poetry run mypy meshtastic/interfaces/ble/{compatibility_service.py,connection.py,reconnection.py,interface.py,lifecycle_service.py,management_service.py} --strict`
+  - `poetry run pytest tests/test_ble_connection_edge_cases.py tests/test_ble_interface_core.py tests/test_ble_interface_advanced.py -q` (`233 passed`)
+  - `poetry run pytest tests/test_ble_integration_scenarios.py tests/test_ble_runner.py tests/test_ble_coordination.py -q` (`38 passed`)
 
 ## Pass P2 Plan (Next)
 

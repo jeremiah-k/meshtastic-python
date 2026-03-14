@@ -46,10 +46,10 @@ class BLELifecycleService:
             if (
                 existing is not None
                 and existing is not threading.current_thread()
-                and existing.is_alive()
+                and (existing.is_alive() or existing.ident is None)
             ):
                 logger.debug(
-                    "Skipping receive thread start (%s): %s is already running.",
+                    "Skipping receive thread start (%s): %s is already running or pending start.",
                     name,
                     existing.name,
                 )
@@ -87,6 +87,8 @@ class BLELifecycleService:
                     "Skipping auto-reconnect scheduling because interface is closing."
                 )
                 return
+            # Keep clear() under the state lock so reconnect scheduling starts a
+            # fresh cycle against a non-signaled shutdown event.
             iface._shutdown_event.clear()
         iface._reconnect_scheduler.schedule_reconnect(
             iface.auto_reconnect, iface._shutdown_event

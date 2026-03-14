@@ -28,11 +28,20 @@ class BLECompatibilityEventService:
         if timeout is None:
             timeout = DISCONNECT_TIMEOUT_SECONDS
         flush_event = Event()
-        iface.error_handler.safe_execute(
-            lambda: publishing_thread.queueWork(flush_event.set),  # type: ignore[attr-defined]
+
+        def _queue_flush_notification() -> bool:
+            publishing_thread.queueWork(flush_event.set)  # type: ignore[attr-defined]
+            return True
+
+        queued = iface.error_handler.safe_execute(
+            _queue_flush_notification,
+            default_return=False,
             error_msg="Runtime error during disconnect notification flush (possible threading issue)",
             reraise=False,
         )
+        if not queued:
+            iface._drain_publish_queue(flush_event)
+            return
 
         if not flush_event.wait(timeout=timeout):
             thread = getattr(publishing_thread, "thread", None)

@@ -1796,7 +1796,8 @@ class BLEInterface(MeshInterface):
         legacy_is_connected = getattr(self._state_manager, "_is_connected", None)
         if isinstance(legacy_is_connected, bool):
             return legacy_is_connected
-        return bool(is_connected)
+        # Preserve pre-refactor failure mode for misconfigured doubles.
+        return self._state_manager.is_connected
 
     def _validator_check_existing_client(
         self,
@@ -2967,7 +2968,7 @@ class BLEInterface(MeshInterface):
                     discovery_manager.close, "discovery manager close"
                 )
 
-            self._set_receive_wanted(False)  # Tell the thread we want it to stop
+            self._set_receive_wanted(want_receive=False)  # Tell the thread we want it to stop
             self.thread_coordinator.wake_waiting_threads(
                 "read_trigger", "reconnected_event"
             )  # Wake all waiting threads

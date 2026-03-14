@@ -193,8 +193,8 @@ Contributor rule for naming updates:
 1. Keep legacy snake_case BLE public methods callable.
 2. Keep only the approved BLE camelCase promotions callable:
    `findDevice`, `isConnected`, and `stopNotify`.
-3. Route compatibility names to one implementation (prefer internal
-   stable canonical helpers.
+3. Route compatibility names to one implementation, preferring stable
+   canonical helpers.
 4. Do not add new BLE aliases unless there is an explicit compatibility need.
 5. Do not remove compatibility wrappers unless there is an explicit breaking
    change decision.

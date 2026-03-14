@@ -2059,10 +2059,10 @@ def test_ble_interface_close_bounds_wait_on_spurious_management_wakeups(
     assert any("Timed out waiting" in record.message for record in caplog.records)
 
 
-def test_ble_interface_implicit_trust_holds_connect_lock_during_subprocess(
+def test_ble_interface_implicit_trust_releases_connect_lock_before_subprocess(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Implicit trust() should hold the connect lock until bluetoothctl returns."""
+    """Implicit trust() should release the connect lock before bluetoothctl blocks."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     trust_target = "AA:BB:CC:DD:EE:FF"
     with iface._state_lock:
@@ -2095,7 +2095,8 @@ def test_ble_interface_implicit_trust_holds_connect_lock_during_subprocess(
     trust_thread.start()
     assert run_started.wait(timeout=1.0)
 
-    assert iface._connect_lock.acquire(blocking=False) is False
+    assert iface._connect_lock.acquire(blocking=False) is True
+    iface._connect_lock.release()
 
     allow_run_return.set()
     trust_thread.join(timeout=2.0)
