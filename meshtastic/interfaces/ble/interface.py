@@ -1157,7 +1157,8 @@ class BLEInterface(MeshInterface):
             awaitable,
             timeout,
             label,
-            timeout_error_factory=lambda timeout_label, timeout_seconds: BLEInterface.BLEError(
+            timeout_error_factory=lambda timeout_label,
+            timeout_seconds: BLEInterface.BLEError(
                 ERROR_TIMEOUT.format(timeout_label, timeout_seconds)
             ),
         )
@@ -1803,7 +1804,7 @@ class BLEInterface(MeshInterface):
         fallback_discover_devices = discovery_manager.discover_devices
         if _is_unconfigured_mock_callable(fallback_discover_devices):
             raise AttributeError("Discovery manager is missing discover_devices")
-        return cast(list[BLEDevice], fallback_discover_devices(address))
+        return fallback_discover_devices(address)
 
     def _state_manager_is_connected(self) -> bool:
         """Read connected state with fallback for underscore/mocked state managers."""
@@ -1848,9 +1849,9 @@ class BLEInterface(MeshInterface):
         legacy_check_existing_client = getattr(
             self._connection_validator, "_check_existing_client", None
         )
-        if callable(legacy_check_existing_client) and not _is_unconfigured_mock_callable(
+        if callable(
             legacy_check_existing_client
-        ):
+        ) and not _is_unconfigured_mock_callable(legacy_check_existing_client):
             return bool(
                 legacy_check_existing_client(
                     client,
@@ -1859,7 +1860,9 @@ class BLEInterface(MeshInterface):
                 )
             )
         # Preserve pre-refactor failure mode for misconfigured doubles.
-        fallback_check_existing_client = self._connection_validator.check_existing_client
+        fallback_check_existing_client = (
+            self._connection_validator.check_existing_client
+        )
         if _is_unconfigured_mock_callable(fallback_check_existing_client):
             raise AttributeError(
                 "Connection validator is missing check_existing_client"
@@ -1921,7 +1924,9 @@ class BLEInterface(MeshInterface):
                 ),
             )
         # Preserve pre-refactor failure mode for misconfigured doubles.
-        fallback_establish_connection = self._connection_orchestrator.establish_connection
+        fallback_establish_connection = (
+            self._connection_orchestrator.establish_connection
+        )
         if _is_unconfigured_mock_callable(fallback_establish_connection):
             raise AttributeError(
                 "Connection orchestrator is missing establish_connection"
@@ -1945,7 +1950,9 @@ class BLEInterface(MeshInterface):
         ):
             safe_close_client(client)
             return
-        legacy_safe_close_client = getattr(self._client_manager, "_safe_close_client", None)
+        legacy_safe_close_client = getattr(
+            self._client_manager, "_safe_close_client", None
+        )
         if callable(legacy_safe_close_client) and not _is_unconfigured_mock_callable(
             legacy_safe_close_client
         ):
@@ -1971,9 +1978,9 @@ class BLEInterface(MeshInterface):
         legacy_update_client_reference = getattr(
             self._client_manager, "_update_client_reference", None
         )
-        if callable(legacy_update_client_reference) and not _is_unconfigured_mock_callable(
+        if callable(
             legacy_update_client_reference
-        ):
+        ) and not _is_unconfigured_mock_callable(legacy_update_client_reference):
             legacy_update_client_reference(client, previous_client)
             return
         fallback_update_client_reference = self._client_manager.update_client_reference
@@ -2160,13 +2167,10 @@ class BLEInterface(MeshInterface):
             )
         if not is_connected or existing_client is None:
             return None
-        if (
-            existing_client.isConnected()
-            and self._validator_check_existing_client(
-                existing_client,
-                normalized_request,
-                last_connection_request,
-            )
+        if existing_client.isConnected() and self._validator_check_existing_client(
+            existing_client,
+            normalized_request,
+            last_connection_request,
         ):
             return existing_client
         return None
@@ -3030,7 +3034,9 @@ class BLEInterface(MeshInterface):
                     discovery_manager.close, "discovery manager close"
                 )
 
-            self._set_receive_wanted(want_receive=False)  # Tell the thread we want it to stop
+            self._set_receive_wanted(
+                want_receive=False
+            )  # Tell the thread we want it to stop
             self.thread_coordinator._wake_waiting_threads(
                 "read_trigger", "reconnected_event"
             )  # Wake all waiting threads

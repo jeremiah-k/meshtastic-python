@@ -73,14 +73,9 @@ class BLECompatibilityEventService:
             )
             return
 
-        iface_drain = getattr(iface, "_drain_publish_queue", None)
-        if callable(iface_drain):
-            iface.error_handler.safe_execute(
-                lambda: iface_drain(flush_event),
-                error_msg="Error draining publish queue via interface fallback",
-                reraise=False,
-            )
-            return
+        # Do not call iface._drain_publish_queue here - it would recursively
+        # call this method again. Instead, fall through to the direct queue
+        # draining logic below.
 
         queue = getattr(publishing_thread, "queue", None)
         if queue is None:
