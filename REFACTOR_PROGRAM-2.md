@@ -1,6 +1,6 @@
 # REFACTOR_PROGRAM-2.md
 
-## Meshtastic Python Refactor – Phase 2 Program Plan
+## Meshtastic Python Refactor – Phase 2/3 Program Plan
 
 Date: 2026-03-11  
 Base Branch: `develop`  
@@ -32,7 +32,7 @@ Because of this, we still should **not** merge `develop → master` directly.
 
 Instead, we perform **a few large, deliberate stabilization passes** based on `develop`.
 
-Phase 1 (BLE stabilization) is now complete and merged into `develop` (`#63`), and Phase 2 is the active execution stream.
+Phase 1 (BLE stabilization) is complete and merged into `develop` (`#63`), Phase 2 runtime stabilization is complete, and Phase 3 is now the active execution stream.
 
 ---
 
@@ -185,8 +185,8 @@ Instead of merging `develop → master` directly, the program continues through 
 ### Phase Status Snapshot
 
 - Phase 1 BLE stabilization: **Completed** (merged into `develop`, PR `#63`)
-- Phase 2 MeshInterface runtime stabilization: **In progress** on `meshinterface-pass`
-- Phase 3 Runtime boundary cleanup: Pending
+- Phase 2 MeshInterface runtime stabilization: **Completed** on `meshinterface-pass`
+- Phase 3 Runtime boundary cleanup: **In progress** on `runtime-boundary-cleanup`
 - Phase 4 CLI structural refactor: Future
 
 ---
@@ -208,9 +208,9 @@ Delivered outcomes:
 
 ---
 
-## Phase 2: MeshInterface Runtime Stabilization (Active)
+## Phase 2: MeshInterface Runtime Stabilization (Completed)
 
-Active branch:
+Execution branch:
 
 ```text
 meshinterface-pass
@@ -251,7 +251,7 @@ Execution checklist for this phase:
 
 ---
 
-## Phase 3: Runtime Boundary Cleanup
+## Phase 3: Runtime Boundary Cleanup (Active)
 
 Branch name suggestion:
 
@@ -339,7 +339,7 @@ main()
 
 ## 6. Merge Strategy
 
-The final merge into `master` will occur **after Phase 2 and Phase 3 are completed** (Phase 1 is already complete).
+The final merge into `master` will occur **after Phase 3 is completed** (Phases 1 and 2 are already complete).
 
 This allows:
 
@@ -378,18 +378,19 @@ To keep the refactor manageable:
 
 ## 8. Immediate Next Step
 
-Continue executing Phase 2 on the active branch:
+Start executing Phase 3 on the active branch:
 
 ```bash
-git checkout meshinterface-pass
+git checkout runtime-boundary-cleanup
 ```
 
 Immediate focus:
 
-- complete mesh runtime hardening in `mesh_interface.py` and `node.py`
-- run explicit backward-compatibility checks against `master`
-- validate compatibility inventory alignment in `COMPATIBILITY.md`
-- keep tests green with expanded targeted regression coverage
+- unify host/port parsing behavior across CLI and runtime code paths
+- improve runtime-facing error surfaces for OTA and transport failures
+- harden OTA destination validation and socket-failure diagnostics
+- improve configuration reliability and preference-sanitization paths
+- keep security-sensitive outputs redacted and validate request-id handling
 
 This work stream should produce the next major PRs for the refactor program.
 
@@ -404,8 +405,8 @@ The next work should not expand scope further.
 Instead, the project proceeds through **large stabilization passes**:
 
 1. BLE stabilization (completed)
-2. MeshInterface runtime stabilization (active)
-3. Runtime boundary cleanup (pending)
+2. MeshInterface runtime stabilization (completed)
+3. Runtime boundary cleanup (active)
 4. CLI modularization (future)
 
 Once these passes are complete, `develop` will be ready to merge into `master`.

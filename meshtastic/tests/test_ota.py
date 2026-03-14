@@ -1,8 +1,10 @@
 """Meshtastic unit tests for ota.py."""
 
+from collections.abc import Callable
 import hashlib
 import logging
 import os
+from pathlib import Path
 import tempfile
 from unittest.mock import MagicMock, patch
 
@@ -15,6 +17,21 @@ from meshtastic.ota import (
     OTATransportError,
     _file_sha256,
 )
+
+
+@pytest.fixture
+def firmware_file_factory(tmp_path: Path) -> Callable[..., str]:
+    """Provide a helper that writes firmware bytes to a test-local file path."""
+    counter = 0
+
+    def _create_firmware_file(payload: bytes = b"fake firmware data") -> str:
+        nonlocal counter
+        firmware_path = tmp_path / f"firmware-{counter}.bin"
+        counter += 1
+        firmware_path.write_bytes(payload)
+        return str(firmware_path)
+
+    return _create_firmware_file
 
 
 @pytest.mark.unit
@@ -91,6 +108,27 @@ def test_esp32_wifi_ota_init_default_port() -> None:
         assert ota._port == 3232
     finally:
         os.unlink(temp_file)
+
+
+@pytest.mark.unit
+# pylint: disable=redefined-outer-name
+def test_esp32_wifi_ota_init_parses_host_port_destination(
+    firmware_file_factory: Callable[..., str],
+) -> None:
+    """ESP32WiFiOTA should normalize HOST:PORT destinations via shared parser."""
+    ota = ESP32WiFiOTA(firmware_file_factory(), "192.168.1.1:4545")
+    assert ota._hostname == "192.168.1.1"
+    assert ota._port == 4545
+
+
+@pytest.mark.unit
+# pylint: disable=redefined-outer-name
+def test_esp32_wifi_ota_init_rejects_invalid_destination(
+    firmware_file_factory: Callable[..., str],
+) -> None:
+    """ESP32WiFiOTA should raise OTAError for malformed OTA destination values."""
+    with pytest.raises(OTAError, match="Invalid OTA destination"):
+        ESP32WiFiOTA(firmware_file_factory(), "[]:3232")
 
 
 @pytest.mark.unit
@@ -531,6 +569,44 @@ def test_esp32_wifi_ota_update_socket_cleanup_on_error(
 
     finally:
         os.unlink(temp_file)
+
+
+@pytest.mark.unit
+@patch("meshtastic.ota.socket.create_connection")
+# pylint: disable=redefined-outer-name
+def test_esp32_wifi_ota_update_transport_error_includes_stage(
+    mock_socket_class: MagicMock,
+    firmware_file_factory: Callable[..., str],
+) -> None:
+    """OTATransportError should include transport stage context for connection failures."""
+    mock_socket_class.side_effect = OSError("network unreachable")
+    ota = ESP32WiFiOTA(firmware_file_factory(b"firmware"), "192.168.1.1")
+    with pytest.raises(
+        OTATransportError,
+        match=r"failed during connect: network unreachable",
+    ):
+        ota.update()
+
+
+@pytest.mark.unit
+@patch("meshtastic.ota.socket.create_connection")
+# pylint: disable=redefined-outer-name
+def test_esp32_wifi_ota_update_transport_error_includes_send_stage(
+    mock_socket_class: MagicMock,
+    firmware_file_factory: Callable[..., str],
+) -> None:
+    """OTATransportError should include non-connect stage context for send failures."""
+    mock_socket = MagicMock()
+    mock_socket.sendall.side_effect = OSError("network unreachable")
+    mock_socket_class.return_value = mock_socket
+
+    ota = ESP32WiFiOTA(firmware_file_factory(b"firmware"), "192.168.1.1")
+    with pytest.raises(
+        OTATransportError,
+        match=r"failed during send OTA start command: network unreachable",
+    ):
+        ota.update()
+    mock_socket.close.assert_called_once()
 
 
 @pytest.mark.unit

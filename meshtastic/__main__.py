@@ -877,7 +877,10 @@ def onConnected(interface: MeshInterface) -> None:
             ota_dest = LOCAL_ADDR if args.dest == BROADCAST_ADDR else args.dest
             waitForAckNak = False
 
-            ota = meshtastic.ota.ESP32WiFiOTA(args.ota_update, interface.hostname)
+            try:
+                ota = meshtastic.ota.ESP32WiFiOTA(args.ota_update, interface.hostname)
+            except meshtastic.ota.OTAError as e:
+                _cli_exit(f"OTA update failed: {e}")
 
             print(f"Triggering OTA update on {interface.hostname}...")
             interface.getNode(
