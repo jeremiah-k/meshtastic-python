@@ -81,6 +81,18 @@ This is an internal working tracker for large-pass execution.
   - fixed lifecycle start failure handling to clear stale `iface._receiveThread` references before re-raising,
   - moved `connected_elsewhere()` checks out of `_connect_lock` + `_management_lock` critical sections in management command execution,
   - hardened discovery dispatch so unconfigured mock `discover()` no longer masks configured `_discover()` compatibility entrypoints.
+- Continued P2 decomposition (line-reduction focused):
+  - extracted verified-connect finalization helpers from `ble/interface.py` into `ble/lifecycle_service.py`:
+    - `_emit_verified_connection_side_effects`
+    - `_discard_invalidated_connected_client`
+    - `_finalize_connection_gates`
+    - `_is_owned_connected_client`
+  - kept `BLEInterface` method names as delegating wrappers for compatibility while moving orchestration body out of `interface.py`.
+  - additional correctness fixes integrated during decomposition:
+    - receive recovery backoff cap now reaches non-power-of-two configured max values,
+    - `BLECompatibilityEventService` queueWork paths now guard against unconfigured mocks,
+    - thread-coordinator helper dispatch in `ClientManager` now rejects unconfigured public and underscore mock callables symmetrically,
+    - wrapped (`Mock(wraps=...)`) spies are no longer misclassified as unconfigured mock members.
 - Targeted verification completed:
   - `ruff check meshtastic/interfaces/ble/interface.py meshtastic/interfaces/ble/connection.py meshtastic/interfaces/ble/reconnection.py`
   - `poetry run mypy meshtastic/interfaces/ble/interface.py meshtastic/interfaces/ble/connection.py meshtastic/interfaces/ble/reconnection.py --strict`
@@ -96,6 +108,10 @@ This is an internal working tracker for large-pass execution.
   - `source venv/bin/activate && mypy --strict meshtastic/interfaces/ble/{connection.py,discovery.py,lifecycle_service.py,management_service.py,receive_service.py}`
   - `source venv/bin/activate && pytest -q tests/test_ble_connection_edge_cases.py`
   - `source venv/bin/activate && pytest -q tests/test_ble_interface_core.py -k "management_rejects_temp_client_when_target_owned_elsewhere or discovery_manager_accepts_discover_underscore_only_factory or discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover or start_receive_thread_skips_when_interface_closed or start_receive_thread_clears_cached_thread_when_start_fails or discovery_manager_rejects_non_callable_discover_method"`
+  - `poetry run pytest -q tests/test_ble_connection_edge_cases.py` (`52 passed`)
+  - `poetry run pytest -q tests/test_ble_interface_core.py -k "discard_invalidated_connected_client or finalize_connection_gates or is_owned_connected_client or emit_verified_connection_side_effects or find_device_direct_connect_without_discovery_manager or wait_for_disconnect_notifications_skips_unconfigured_queuework or publish_connection_status_runs_directly_when_queuework_unconfigured or receive_recovery_backoff_reaches_configured_cap_for_non_power_of_two"` (`12 passed`)
+  - `poetry run pytest -q tests/test_ble_integration_scenarios.py -k "client_manager_handles_concurrent_updates"` (`1 passed`)
+  - `make ci-strict` (`1366 passed, 3 skipped, 92 deselected`; `mypy --strict` clean)
 
 ## Pass P2 Plan (Next)
 
@@ -139,3 +155,27 @@ This is an internal working tracker for large-pass execution.
 
 - Move connect/disconnect lifecycle core (`_handle_disconnect`, connect-finalization helpers, close teardown sequencing) into a dedicated lifecycle runtime service.
 - Finish reducing `BLEInterface` direct orchestration density while keeping lock-order semantics and compatibility shims unchanged.
+
+### Decomposition Hotspots (Current)
+
+Current `wc -l` (2026-03-14):
+
+- `meshtastic/interfaces/ble/interface.py`: **3121**
+- `meshtastic/interfaces/ble/connection.py`: **1177**
+- `meshtastic/interfaces/ble/client.py`: **964**
+- `meshtastic/interfaces/ble/gating.py`: **768**
+- `meshtastic/interfaces/ble/runner.py`: **729**
+- `meshtastic/interfaces/ble/discovery.py`: **668**
+- `meshtastic/interfaces/ble/reconnection.py`: **603**
+
+`interface.py` trend:
+
+- `40835ba`: 3674 lines
+- `59fc5e5`: 3203 lines
+- current working tree: **3121** lines
+
+Next active reduction targets:
+
+1. `ble/interface.py`: move close-shutdown sequencing and remaining `_handle_disconnect` orchestration into lifecycle service.
+2. `ble/connection.py`: split connect orchestration into focused sub-services/helpers (request validation, attempt strategy, state finalization).
+3. `ble/client.py`: isolate BLEClient setup/teardown and transport operations from compatibility wrappers.

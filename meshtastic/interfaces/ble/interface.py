@@ -2455,16 +2455,8 @@ class BLEInterface(MeshInterface):
         self, connected_client: BLEClient
     ) -> None:
         """Emit reconnect signaling/logging only after verified connect publish."""
-        coordinator = getattr(self, "thread_coordinator", None)
-        if self._prior_publish_was_reconnect and coordinator is not None:
-            coordinator._set_event("reconnected_event")
-        self._prior_publish_was_reconnect = False
-        normalized_device_address = sanitize_address(
-            self._extract_client_address(connected_client)
-        )
-        logger.info(
-            "Connection successful to %s",
-            normalized_device_address or "unknown",
+        BLELifecycleService._emit_verified_connection_side_effects(
+            self, connected_client
         )
 
     def _discard_invalidated_connected_client(
@@ -2488,50 +2480,12 @@ class BLEInterface(MeshInterface):
             Normalized request identifier to restore when the connection result
             is discarded before ownership is finalized.
         """
-        restored_address = (
-            restore_address.strip()
-            if restore_address is not None and restore_address.strip()
-            else None
+        BLELifecycleService._discard_invalidated_connected_client(
+            self,
+            client,
+            restore_address=restore_address,
+            restore_last_connection_request=restore_last_connection_request,
         )
-        should_reset_state = False
-        is_closing = False
-        with self._state_lock:
-            if self.client is client:
-                is_closing = self._state_manager._is_closing or self._closed
-                self.client = None
-                self._client_publish_pending = False
-                self._client_replacement_pending = False
-                # The disconnect callback remains registered on `client` until
-                # best-effort close completes, so mark this interface as already
-                # notified before close() can trigger a stale callback.
-                self._disconnect_notified = True
-                if not is_closing:
-                    self.address = restored_address
-                    self._last_connection_request = restore_last_connection_request
-                    self._connection_alias_key = None
-                    should_reset_state = True
-                else:
-                    self._last_connection_request = None
-            elif self.client is None and self._client_publish_pending:
-                # A provisional client can be detached by a concurrent
-                # disconnect path before this cleanup runs; ensure callers do
-                # not remain stuck in ERROR_MANAGEMENT_CONNECTING.
-                self._client_publish_pending = False
-                self._client_replacement_pending = False
-                is_closing = self._state_manager._is_closing or self._closed
-                if not is_closing:
-                    self.address = restored_address
-                    self._last_connection_request = restore_last_connection_request
-                    self._connection_alias_key = None
-                    should_reset_state = True
-                else:
-                    self._last_connection_request = None
-
-        self._client_manager_safe_close_client(client)
-
-        if should_reset_state:
-            with self._state_lock:
-                self._state_manager._reset_to_disconnected()
 
     def _finalize_connection_gates(
         self,
@@ -2552,47 +2506,12 @@ class BLEInterface(MeshInterface):
         connection_alias_key : str | None
             Optional alias key used when claiming connection gates, or `None` if not used.
         """
-        still_active, is_closing = self._get_connected_client_status(connected_client)
-
-        if still_active:
-            self._mark_address_keys_connected(
-                connected_device_key, connection_alias_key
-            )
-            needs_cleanup = False
-            with self._state_lock:
-                still_active, is_closing = self._get_connected_client_status_locked(
-                    connected_client
-                )
-                if still_active:
-                    self._connection_alias_key = connection_alias_key
-                else:
-                    if is_closing:
-                        logger.debug(
-                            "Interface closed during connect(), cleaning up gate claim for %s",
-                            getattr(connected_client, "address", "unknown"),
-                        )
-                    else:
-                        logger.debug(
-                            "Interface lost ownership during connect(), cleaning up gate claim for %s",
-                            getattr(connected_client, "address", "unknown"),
-                        )
-                    self._connection_alias_key = None
-                    needs_cleanup = True
-            if needs_cleanup:
-                self._mark_address_keys_disconnected(
-                    connected_device_key, connection_alias_key
-                )
-        else:
-            if is_closing:
-                logger.debug(
-                    "Skipping connect gate marking during shutdown for stale client result (%s).",
-                    getattr(connected_client, "address", "unknown"),
-                )
-            else:
-                logger.debug(
-                    "Skipping connect gate marking for client result that lost ownership (%s).",
-                    getattr(connected_client, "address", "unknown"),
-                )
+        BLELifecycleService._finalize_connection_gates(
+            self,
+            connected_client,
+            connected_device_key,
+            connection_alias_key,
+        )
 
     def _is_owned_connected_client(self, client: BLEClient) -> bool:
         """Return whether this interface still owns the provided connected client.
@@ -2608,8 +2527,7 @@ class BLEInterface(MeshInterface):
             `True` when the interface is not closed, still references `client`,
             and the state machine reports CONNECTED.
         """
-        is_owned, _ = self._get_connected_client_status(client)
-        return is_owned
+        return BLELifecycleService._is_owned_connected_client(self, client)
 
     # ---------------------------------------------------------------------
     # Main connection method

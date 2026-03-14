@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from bleak import BleakClient as BleakRootClient
 
 from meshtastic.interfaces.ble.constants import logger
+from meshtastic.interfaces.ble.utils import sanitize_address
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
@@ -118,3 +119,132 @@ class BLELifecycleService:
     ) -> None:
         """Ensure BLE client resources are released."""
         iface._client_manager_safe_close_client(client)
+
+    @staticmethod
+    def _emit_verified_connection_side_effects(
+        iface: "BLEInterface", connected_client: "BLEClient"
+    ) -> None:
+        """Emit reconnect signaling/logging only after verified connect publish."""
+        coordinator = getattr(iface, "thread_coordinator", None)
+        if iface._prior_publish_was_reconnect and coordinator is not None:
+            coordinator._set_event("reconnected_event")
+        iface._prior_publish_was_reconnect = False
+        normalized_device_address = sanitize_address(
+            iface._extract_client_address(connected_client)
+        )
+        logger.info(
+            "Connection successful to %s",
+            normalized_device_address or "unknown",
+        )
+
+    @staticmethod
+    def _discard_invalidated_connected_client(
+        iface: "BLEInterface",
+        client: "BLEClient",
+        *,
+        restore_address: str | None = None,
+        restore_last_connection_request: str | None = None,
+    ) -> None:
+        """Best-effort cleanup for a connected client invalidated before return."""
+        restored_address = (
+            restore_address.strip()
+            if restore_address is not None and restore_address.strip()
+            else None
+        )
+        should_reset_state = False
+        is_closing = False
+        with iface._state_lock:
+            if iface.client is client:
+                is_closing = iface._state_manager._is_closing or iface._closed
+                iface.client = None
+                iface._client_publish_pending = False
+                iface._client_replacement_pending = False
+                # The disconnect callback remains registered on `client` until
+                # best-effort close completes, so mark this interface as already
+                # notified before close() can trigger a stale callback.
+                iface._disconnect_notified = True
+                if not is_closing:
+                    iface.address = restored_address
+                    iface._last_connection_request = restore_last_connection_request
+                    iface._connection_alias_key = None
+                    should_reset_state = True
+                else:
+                    iface._last_connection_request = None
+            elif iface.client is None and iface._client_publish_pending:
+                # A provisional client can be detached by a concurrent
+                # disconnect path before this cleanup runs; ensure callers do
+                # not remain stuck in ERROR_MANAGEMENT_CONNECTING.
+                iface._client_publish_pending = False
+                iface._client_replacement_pending = False
+                is_closing = iface._state_manager._is_closing or iface._closed
+                if not is_closing:
+                    iface.address = restored_address
+                    iface._last_connection_request = restore_last_connection_request
+                    iface._connection_alias_key = None
+                    should_reset_state = True
+                else:
+                    iface._last_connection_request = None
+
+        iface._client_manager_safe_close_client(client)
+
+        if should_reset_state:
+            with iface._state_lock:
+                iface._state_manager._reset_to_disconnected()
+
+    @staticmethod
+    def _finalize_connection_gates(
+        iface: "BLEInterface",
+        connected_client: "BLEClient",
+        connected_device_key: str | None,
+        connection_alias_key: str | None,
+    ) -> None:
+        """Finalize post-connection gating and cleanup stale claims."""
+        still_active, is_closing = iface._get_connected_client_status(connected_client)
+
+        if still_active:
+            iface._mark_address_keys_connected(
+                connected_device_key, connection_alias_key
+            )
+            needs_cleanup = False
+            with iface._state_lock:
+                still_active, is_closing = iface._get_connected_client_status_locked(
+                    connected_client
+                )
+                if still_active:
+                    iface._connection_alias_key = connection_alias_key
+                else:
+                    if is_closing:
+                        logger.debug(
+                            "Interface closed during connect(), cleaning up gate claim for %s",
+                            getattr(connected_client, "address", "unknown"),
+                        )
+                    else:
+                        logger.debug(
+                            "Interface lost ownership during connect(), cleaning up gate claim for %s",
+                            getattr(connected_client, "address", "unknown"),
+                        )
+                    iface._connection_alias_key = None
+                    needs_cleanup = True
+            if needs_cleanup:
+                iface._mark_address_keys_disconnected(
+                    connected_device_key, connection_alias_key
+                )
+        else:
+            if is_closing:
+                logger.debug(
+                    "Skipping connect gate marking during shutdown for stale client result (%s).",
+                    getattr(connected_client, "address", "unknown"),
+                )
+            else:
+                logger.debug(
+                    "Skipping connect gate marking for client result that lost ownership (%s).",
+                    getattr(connected_client, "address", "unknown"),
+                )
+
+    @staticmethod
+    def _is_owned_connected_client(
+        iface: "BLEInterface", client: "BLEClient"
+    ) -> bool:
+        """Return whether the interface still owns the provided connected client."""
+        is_owned, _ = iface._get_connected_client_status(client)
+        return is_owned
