@@ -20,7 +20,7 @@ from meshtastic.ota import (
 
 
 @pytest.fixture
-def firmware_file_factory(tmp_path: Path) -> Callable[[bytes], str]:
+def firmware_file_factory(tmp_path: Path) -> Callable[..., str]:
     """Provide a helper that writes firmware bytes to a test-local file path."""
     counter = 0
 
@@ -111,8 +111,9 @@ def test_esp32_wifi_ota_init_default_port() -> None:
 
 
 @pytest.mark.unit
+# pylint: disable=redefined-outer-name
 def test_esp32_wifi_ota_init_parses_host_port_destination(
-    firmware_file_factory: Callable[[bytes], str],
+    firmware_file_factory: Callable[..., str],
 ) -> None:
     """ESP32WiFiOTA should normalize HOST:PORT destinations via shared parser."""
     ota = ESP32WiFiOTA(firmware_file_factory(), "192.168.1.1:4545")
@@ -121,8 +122,9 @@ def test_esp32_wifi_ota_init_parses_host_port_destination(
 
 
 @pytest.mark.unit
+# pylint: disable=redefined-outer-name
 def test_esp32_wifi_ota_init_rejects_invalid_destination(
-    firmware_file_factory: Callable[[bytes], str],
+    firmware_file_factory: Callable[..., str],
 ) -> None:
     """ESP32WiFiOTA should raise OTAError for malformed OTA destination values."""
     with pytest.raises(OTAError, match="Invalid OTA destination"):
@@ -571,6 +573,7 @@ def test_esp32_wifi_ota_update_socket_cleanup_on_error(
 
 @pytest.mark.unit
 @patch("meshtastic.ota.socket.create_connection")
+# pylint: disable=redefined-outer-name
 def test_esp32_wifi_ota_update_transport_error_includes_stage(
     mock_socket_class: MagicMock,
     firmware_file_factory: Callable[[bytes], str],
@@ -587,6 +590,7 @@ def test_esp32_wifi_ota_update_transport_error_includes_stage(
 
 @pytest.mark.unit
 @patch("meshtastic.ota.socket.create_connection")
+# pylint: disable=redefined-outer-name
 def test_esp32_wifi_ota_update_transport_error_includes_send_stage(
     mock_socket_class: MagicMock,
     firmware_file_factory: Callable[[bytes], str],
