@@ -386,6 +386,8 @@ class DiscoveryManager:
         ) = None
         self._client_lock = threading.RLock()
 
+    # COMPAT_STABLE_SHIM: retained compatibility entrypoint for callers still
+    # using underscore-prefixed discovery manager APIs.
     def _discover_devices(self, address: str | None) -> list[BLEDevice]:
         """Discover BLE devices advertising the configured service UUID.
 

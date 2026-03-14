@@ -108,7 +108,13 @@ from meshtastic.interfaces.ble.policies import RetryPolicy
 from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryService
 from meshtastic.interfaces.ble.reconnection import ReconnectScheduler
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
-from meshtastic.interfaces.ble.utils import _sleep, sanitize_address, with_timeout
+from meshtastic.interfaces.ble.utils import (
+    _is_unconfigured_mock_callable,
+    _is_unconfigured_mock_member,
+    _sleep,
+    sanitize_address,
+    with_timeout,
+)
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import mesh_pb2
 
@@ -1779,29 +1785,45 @@ class BLEInterface(MeshInterface):
         return sanitize_address(address)
 
     def _discover_devices(self, address: str | None) -> list[BLEDevice]:
-        """Discover devices via public API with underscore fallback for legacy test doubles."""
+        """Discover devices via public API with underscore fallback for test doubles."""
         discovery_manager = self._discovery_manager
         if discovery_manager is None:
             raise self.BLEError(ERROR_DISCOVERY_MANAGER_UNAVAILABLE)
         discover_devices = getattr(discovery_manager, "discover_devices", None)
-        if callable(discover_devices):
+        if callable(discover_devices) and not _is_unconfigured_mock_callable(
+            discover_devices
+        ):
             return cast(list[BLEDevice], discover_devices(address))
         legacy_discover_devices = getattr(discovery_manager, "_discover_devices", None)
-        if callable(legacy_discover_devices):
+        if callable(legacy_discover_devices) and not _is_unconfigured_mock_callable(
+            legacy_discover_devices
+        ):
             return cast(list[BLEDevice], legacy_discover_devices(address))
         # Preserve pre-refactor failure mode for misconfigured doubles.
-        return discovery_manager.discover_devices(address)
+        fallback_discover_devices = discovery_manager.discover_devices
+        if _is_unconfigured_mock_callable(fallback_discover_devices):
+            raise AttributeError("Discovery manager is missing discover_devices")
+        return cast(list[BLEDevice], fallback_discover_devices(address))
 
     def _state_manager_is_connected(self) -> bool:
-        """Read connected state with fallback for legacy/mocked state managers."""
+        """Read connected state with fallback for underscore/mocked state managers."""
         is_connected = getattr(self._state_manager, "_is_connected", None)
-        if isinstance(is_connected, bool):
+        if not _is_unconfigured_mock_member(is_connected) and isinstance(
+            is_connected, bool
+        ):
             return is_connected
         legacy_is_connected = getattr(self._state_manager, "is_connected", None)
-        if isinstance(legacy_is_connected, bool):
+        if not _is_unconfigured_mock_member(legacy_is_connected) and isinstance(
+            legacy_is_connected, bool
+        ):
             return legacy_is_connected
         # Preserve pre-refactor failure mode for misconfigured doubles.
-        return self._state_manager._is_connected
+        fallback_is_connected = self._state_manager._is_connected
+        if _is_unconfigured_mock_member(fallback_is_connected) or not isinstance(
+            fallback_is_connected, bool
+        ):
+            raise AttributeError("State manager is missing bool _is_connected")
+        return fallback_is_connected
 
     def _validator_check_existing_client(
         self,
@@ -1809,11 +1831,13 @@ class BLEInterface(MeshInterface):
         normalized_request: str | None,
         last_connection_request: str | None,
     ) -> bool:
-        """Check existing-client compatibility with public-first, legacy-fallback lookup."""
+        """Check existing-client compatibility with public-first, underscore-fallback lookup."""
         check_existing_client = getattr(
             self._connection_validator, "check_existing_client", None
         )
-        if callable(check_existing_client):
+        if callable(check_existing_client) and not _is_unconfigured_mock_callable(
+            check_existing_client
+        ):
             return bool(
                 check_existing_client(
                     client,
@@ -1824,7 +1848,9 @@ class BLEInterface(MeshInterface):
         legacy_check_existing_client = getattr(
             self._connection_validator, "_check_existing_client", None
         )
-        if callable(legacy_check_existing_client):
+        if callable(legacy_check_existing_client) and not _is_unconfigured_mock_callable(
+            legacy_check_existing_client
+        ):
             return bool(
                 legacy_check_existing_client(
                     client,
@@ -1833,8 +1859,13 @@ class BLEInterface(MeshInterface):
                 )
             )
         # Preserve pre-refactor failure mode for misconfigured doubles.
+        fallback_check_existing_client = self._connection_validator.check_existing_client
+        if _is_unconfigured_mock_callable(fallback_check_existing_client):
+            raise AttributeError(
+                "Connection validator is missing check_existing_client"
+            )
         return bool(
-            self._connection_validator.check_existing_client(
+            fallback_check_existing_client(
                 client,
                 normalized_request,
                 last_connection_request,
@@ -1848,11 +1879,13 @@ class BLEInterface(MeshInterface):
         pair_on_connect: bool = False,
         connect_timeout: float | None = None,
     ) -> BLEClient:
-        """Establish BLE connection via orchestrator public API with legacy fallback."""
+        """Establish BLE connection via orchestrator public API with underscore fallback."""
         establish_connection = getattr(
             self._connection_orchestrator, "establish_connection", None
         )
-        if callable(establish_connection):
+        if callable(establish_connection) and not _is_unconfigured_mock_callable(
+            establish_connection
+        ):
             return cast(
                 BLEClient,
                 establish_connection(
@@ -1871,7 +1904,9 @@ class BLEInterface(MeshInterface):
         legacy_establish_connection = getattr(
             self._connection_orchestrator, "_establish_connection", None
         )
-        if callable(legacy_establish_connection):
+        if callable(legacy_establish_connection) and not _is_unconfigured_mock_callable(
+            legacy_establish_connection
+        ):
             return cast(
                 BLEClient,
                 legacy_establish_connection(
@@ -1886,7 +1921,12 @@ class BLEInterface(MeshInterface):
                 ),
             )
         # Preserve pre-refactor failure mode for misconfigured doubles.
-        return self._connection_orchestrator.establish_connection(
+        fallback_establish_connection = self._connection_orchestrator.establish_connection
+        if _is_unconfigured_mock_callable(fallback_establish_connection):
+            raise AttributeError(
+                "Connection orchestrator is missing establish_connection"
+            )
+        return fallback_establish_connection(
             address,
             self.address,
             self._register_notifications,
@@ -1900,14 +1940,21 @@ class BLEInterface(MeshInterface):
     def _client_manager_safe_close_client(self, client: BLEClient) -> None:
         """Close BLE client via public API with underscore fallback for test doubles."""
         safe_close_client = getattr(self._client_manager, "safe_close_client", None)
-        if callable(safe_close_client):
+        if callable(safe_close_client) and not _is_unconfigured_mock_callable(
+            safe_close_client
+        ):
             safe_close_client(client)
             return
         legacy_safe_close_client = getattr(self._client_manager, "_safe_close_client", None)
-        if callable(legacy_safe_close_client):
+        if callable(legacy_safe_close_client) and not _is_unconfigured_mock_callable(
+            legacy_safe_close_client
+        ):
             legacy_safe_close_client(client)
             return
-        self._client_manager.safe_close_client(client)
+        fallback_safe_close_client = self._client_manager.safe_close_client
+        if _is_unconfigured_mock_callable(fallback_safe_close_client):
+            raise AttributeError("Client manager is missing safe_close_client")
+        fallback_safe_close_client(client)
 
     def _client_manager_update_client_reference(
         self, client: BLEClient, previous_client: BLEClient
@@ -1916,25 +1963,34 @@ class BLEInterface(MeshInterface):
         update_client_reference = getattr(
             self._client_manager, "update_client_reference", None
         )
-        if callable(update_client_reference):
+        if callable(update_client_reference) and not _is_unconfigured_mock_callable(
+            update_client_reference
+        ):
             update_client_reference(client, previous_client)
             return
         legacy_update_client_reference = getattr(
             self._client_manager, "_update_client_reference", None
         )
-        if callable(legacy_update_client_reference):
+        if callable(legacy_update_client_reference) and not _is_unconfigured_mock_callable(
+            legacy_update_client_reference
+        ):
             legacy_update_client_reference(client, previous_client)
             return
-        self._client_manager.update_client_reference(client, previous_client)
+        fallback_update_client_reference = self._client_manager.update_client_reference
+        if _is_unconfigured_mock_callable(fallback_update_client_reference):
+            raise AttributeError("Client manager is missing update_client_reference")
+        fallback_update_client_reference(client, previous_client)
 
     @staticmethod
     def _retry_policy_should_retry(policy: object, attempt: int) -> bool:
         """Evaluate retry decision with public-first, underscore-fallback lookup."""
         should_retry = getattr(policy, "should_retry", None)
-        if callable(should_retry):
+        if callable(should_retry) and not _is_unconfigured_mock_callable(should_retry):
             return bool(should_retry(attempt))
         legacy_should_retry = getattr(policy, "_should_retry", None)
-        if callable(legacy_should_retry):
+        if callable(legacy_should_retry) and not _is_unconfigured_mock_callable(
+            legacy_should_retry
+        ):
             return bool(legacy_should_retry(attempt))
         raise AttributeError(ERROR_RETRY_POLICY_MISSING_SHOULD_RETRY)
 
@@ -1942,10 +1998,12 @@ class BLEInterface(MeshInterface):
     def _retry_policy_get_delay(policy: object, attempt: int) -> float:
         """Read retry delay with public-first, underscore-fallback lookup."""
         get_delay = getattr(policy, "get_delay", None)
-        if callable(get_delay):
+        if callable(get_delay) and not _is_unconfigured_mock_callable(get_delay):
             return float(get_delay(attempt))
         legacy_get_delay = getattr(policy, "_get_delay", None)
-        if callable(legacy_get_delay):
+        if callable(legacy_get_delay) and not _is_unconfigured_mock_callable(
+            legacy_get_delay
+        ):
             return float(legacy_get_delay(attempt))
         raise AttributeError(ERROR_RETRY_POLICY_MISSING_GET_DELAY)
 
@@ -2765,7 +2823,7 @@ class BLEInterface(MeshInterface):
         bool
             `True` if the read loop should continue to allow auto-reconnect, `False` otherwise.
         """
-        return BLEReceiveRecoveryService.handle_read_loop_disconnect(
+        return BLEReceiveRecoveryService._handle_read_loop_disconnect(
             self, error_message, previous_client
         )
 
@@ -2789,7 +2847,7 @@ class BLEInterface(MeshInterface):
         disconnect_reason : str
             Reason string passed to disconnect handling for diagnostics.
         """
-        BLEReceiveRecoveryService.recover_receive_thread(self, disconnect_reason)
+        BLEReceiveRecoveryService._recover_receive_thread(self, disconnect_reason)
 
     def _read_from_radio_with_retries(
         self,
@@ -2815,7 +2873,7 @@ class BLEInterface(MeshInterface):
         bytes | None
             The payload bytes when a non-empty read occurs, or `None` if no non-empty payload was obtained after retries.
         """
-        return BLEReceiveRecoveryService.read_from_radio_with_retries(
+        return BLEReceiveRecoveryService._read_from_radio_with_retries(
             self, client, retry_on_empty=retry_on_empty
         )
 
@@ -2834,14 +2892,14 @@ class BLEInterface(MeshInterface):
         BLEInterface.BLEError
             When the retry policy is exhausted and the read should be treated as persistent.
         """
-        BLEReceiveRecoveryService.handle_transient_read_error(self, error)
+        BLEReceiveRecoveryService._handle_transient_read_error(self, error)
 
     def _log_empty_read_warning(self) -> None:
         """Emit a throttled warning when repeated empty FROMRADIO BLE reads are observed.
 
         If the cooldown period has elapsed, log a warning that an empty read retry limit was exceeded and include how many warnings were suppressed during the last cooldown window; otherwise increment the suppressed-warning counter and log a debug message with the current suppressed count and cooldown duration.
         """
-        BLEReceiveRecoveryService.log_empty_read_warning(self)
+        BLEReceiveRecoveryService._log_empty_read_warning(self)
 
     def _send_to_radio_impl(self, toRadio: mesh_pb2.ToRadio) -> None:
         """Send a protobuf ToRadio message over the TORADIO BLE characteristic.

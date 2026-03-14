@@ -141,17 +141,6 @@ class ReconnectScheduler:
                     daemon=daemon,
                 ),
             )
-        if valid_legacy_create_thread is not None:
-            return cast(
-                ThreadLike,
-                valid_legacy_create_thread(
-                    target=target,
-                    args=args,
-                    kwargs=kwargs,
-                    name=name,
-                    daemon=daemon,
-                ),
-            )
         raise AttributeError(
             "Thread coordinator is missing create_thread/_create_thread"
         )

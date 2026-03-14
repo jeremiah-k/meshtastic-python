@@ -11,7 +11,19 @@ T = TypeVar("T")
 
 
 def _is_unconfigured_mock_member(candidate: object) -> bool:
-    """Return True when candidate is an unconfigured auto-generated mock member."""
+    """Return whether a candidate is an unconfigured auto-generated mock member.
+
+    Parameters
+    ----------
+    candidate : object
+        Candidate object to inspect.
+
+    Returns
+    -------
+    bool
+        True when the object is a mock member with default return behavior,
+        no side effect, and no recorded calls.
+    """
     if not isinstance(candidate, (Mock, NonCallableMock)):
         return False
     return (
@@ -22,7 +34,19 @@ def _is_unconfigured_mock_member(candidate: object) -> bool:
 
 
 def _is_unconfigured_mock_callable(candidate: object) -> bool:
-    """Return True when candidate is an unconfigured callable auto-generated mock."""
+    """Return whether a candidate is an unconfigured callable auto-generated mock.
+
+    Parameters
+    ----------
+    candidate : object
+        Candidate object to inspect.
+
+    Returns
+    -------
+    bool
+        True when candidate is callable and also matches
+        ``_is_unconfigured_mock_member``.
+    """
     return callable(candidate) and _is_unconfigured_mock_member(candidate)
 
 

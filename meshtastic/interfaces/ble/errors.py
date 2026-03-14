@@ -104,6 +104,7 @@ class BLEErrorHandler:
                 raise
             return default_return
 
+    # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _safe_execute.
     @staticmethod
     def safe_execute(
         func: Callable[[], T],
@@ -159,6 +160,7 @@ class BLEErrorHandler:
         else:
             return True
 
+    # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _safe_cleanup.
     @staticmethod
     def safe_cleanup(
         func: Callable[[], Any], cleanup_name: str = "cleanup operation"

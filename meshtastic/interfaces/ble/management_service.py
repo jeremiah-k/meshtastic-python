@@ -65,9 +65,8 @@ def _create_management_client(
             parameter.kind == inspect.Parameter.VAR_KEYWORD
             for parameter in signature.parameters.values()
         )
-        if accepts_log_kwarg:
-            return ble_client_factory(target_address, log_if_no_address=False)
-        return ble_client_factory(target_address)
+        if not accepts_log_kwarg:
+            return ble_client_factory(target_address)
 
     try:
         return ble_client_factory(target_address, log_if_no_address=False)

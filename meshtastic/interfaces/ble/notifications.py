@@ -92,6 +92,7 @@ class NotificationManager:
             self._characteristic_to_callback[characteristic] = callback
             return token
 
+    # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _subscribe.
     def subscribe(self, characteristic: str, callback: Callable[[Any, Any], None]) -> int:
         """Public entrypoint for tracking a characteristic notification subscription."""
         return self._subscribe(characteristic, callback)
@@ -112,6 +113,7 @@ class NotificationManager:
             self._resubscribe_failures.clear()
             self._subscription_counter = 0
 
+    # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _cleanup_all.
     def cleanup_all(self) -> None:
         """Public entrypoint for clearing all tracked subscriptions."""
         self._cleanup_all()
@@ -151,6 +153,7 @@ class NotificationManager:
                 len(characteristics),
             )
 
+    # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _unsubscribe_all.
     def unsubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
         """Public entrypoint for best-effort notification unsubscribe on shutdown."""
         self._unsubscribe_all(client, timeout=timeout)
@@ -214,6 +217,7 @@ class NotificationManager:
                         return
                     failures.pop(characteristic, None)
 
+    # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _resubscribe_all.
     def resubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
         """Public entrypoint for reconnect-time notification resubscription."""
         self._resubscribe_all(client, timeout=timeout)
@@ -245,6 +249,7 @@ class NotificationManager:
         with self._lock:
             return self._characteristic_to_callback.get(characteristic)
 
+    # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _get_callback.
     def get_callback(self, characteristic: str) -> Callable[[Any, Any], None] | None:
         """Public callback lookup for a tracked characteristic."""
         return self._get_callback(characteristic)

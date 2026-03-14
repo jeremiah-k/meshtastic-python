@@ -30,7 +30,7 @@ class BLEReceiveRecoveryService:
     """Service helpers for BLE receive-loop and recovery behavior."""
 
     @staticmethod
-    def handle_read_loop_disconnect(
+    def _handle_read_loop_disconnect(
         iface: "BLEInterface", error_message: str, previous_client: BLEClient
     ) -> bool:
         """Return whether receive loop should continue after a disconnect."""
@@ -245,7 +245,7 @@ class BLEReceiveRecoveryService:
             iface._recover_receive_thread("receive_thread_fatal")
 
     @staticmethod
-    def recover_receive_thread(iface: "BLEInterface", disconnect_reason: str) -> None:
+    def _recover_receive_thread(iface: "BLEInterface", disconnect_reason: str) -> None:
         """Handle receive-thread crash and guarded recovery."""
         if iface._is_connection_closing:
             return
@@ -283,14 +283,16 @@ class BLEReceiveRecoveryService:
                     remaining_wait,
                     attempts,
                 )
-                iface._shutdown_event.wait(timeout=remaining_wait)
+                if iface._shutdown_event.wait(timeout=remaining_wait):
+                    return
         with iface._state_lock:
             iface._last_recovery_time = time.monotonic()
+        iface._read_retry_count = 0
         if iface._should_run_receive_loop():
             iface._start_receive_thread(name="BLEReceiveRecovery", reset_recovery=False)
 
     @staticmethod
-    def read_from_radio_with_retries(
+    def _read_from_radio_with_retries(
         iface: "BLEInterface",
         client: BLEClient,
         *,
@@ -313,7 +315,7 @@ class BLEReceiveRecoveryService:
         return None
 
     @staticmethod
-    def handle_transient_read_error(iface: "BLEInterface", error: BleakError) -> None:
+    def _handle_transient_read_error(iface: "BLEInterface", error: BleakError) -> None:
         """Apply transient read retry policy and raise on exhaustion."""
         transient_policy = iface._transient_read_policy
         if iface._retry_policy_should_retry(transient_policy, iface._read_retry_count):
@@ -331,7 +333,7 @@ class BLEReceiveRecoveryService:
         raise iface.BLEError(ERROR_READING_BLE) from error
 
     @staticmethod
-    def log_empty_read_warning(iface: "BLEInterface") -> None:
+    def _log_empty_read_warning(iface: "BLEInterface") -> None:
         """Emit throttled warning on repeated empty FROMRADIO reads."""
         now = time.monotonic()
         cooldown = BLEConfig.EMPTY_READ_WARNING_COOLDOWN

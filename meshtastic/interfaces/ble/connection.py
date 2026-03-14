@@ -209,7 +209,7 @@ class ClientManager:
         name: str,
         daemon: bool,
     ) -> ThreadLike:
-        """Create thread via public API with underscore fallback for legacy test doubles."""
+        """Create thread via public API with underscore fallback for test doubles."""
         create_thread = getattr(self.thread_coordinator, "create_thread", None)
         legacy_create_thread = getattr(self.thread_coordinator, "_create_thread", None)
         valid_create_thread = callable(create_thread) and not _is_unconfigured_mock_callable(
@@ -250,7 +250,7 @@ class ClientManager:
         )
 
     def _thread_start_thread(self, thread: ThreadLike) -> None:
-        """Start thread via public API with underscore fallback for legacy test doubles."""
+        """Start thread via public API with underscore fallback for test doubles."""
         start_thread = getattr(self.thread_coordinator, "start_thread", None)
         legacy_start_thread = getattr(self.thread_coordinator, "_start_thread", None)
         valid_start_thread = callable(start_thread) and not _is_unconfigured_mock_callable(
@@ -545,23 +545,8 @@ class ConnectionOrchestrator:
         else:
             if _is_unconfigured_mock_callable(public_member):
                 public_member = _DISPATCH_MISSING
-            underscore_is_unconfigured = _is_unconfigured_mock_callable(
-                underscore_member
-            )
-            keep_unconfigured_underscore = (
-                prefer_underscore_for_unconfigured_public_mock
-                and public_member is _DISPATCH_MISSING
-            )
-            if underscore_is_unconfigured and not keep_unconfigured_underscore:
+            if _is_unconfigured_mock_callable(underscore_member):
                 underscore_member = _DISPATCH_MISSING
-
-        if (
-            call_member
-            and prefer_underscore_for_unconfigured_public_mock
-            and public_member is _DISPATCH_MISSING
-            and callable(underscore_member)
-        ):
-            return underscore_member(*args, **kwargs)
 
         if prefer_instance_type is not None and isinstance(target, prefer_instance_type):
             if public_member is _DISPATCH_MISSING:
@@ -582,10 +567,16 @@ class ConnectionOrchestrator:
             if callable(underscore_member):
                 return underscore_member(*args, **kwargs)
         else:
-            if underscore_attr_type is not None and isinstance(underscore_member, underscore_attr_type):
-                return underscore_member
             if public_member is not _DISPATCH_MISSING:
-                return public_member
+                if (
+                    underscore_attr_type is None
+                    or isinstance(public_member, underscore_attr_type)
+                ):
+                    return public_member
+            if underscore_attr_type is not None and isinstance(
+                underscore_member, underscore_attr_type
+            ):
+                return underscore_member
             if underscore_attr_type is None and underscore_member is not _DISPATCH_MISSING:
                 return underscore_member
 
@@ -612,9 +603,8 @@ class ConnectionOrchestrator:
         """Read current state with fallback for underscore/mocked state managers."""
         state_value = self._dispatch_public_or_underscore(
             target=self.state_manager,
-            public_name="_current_state",
-            underscore_name="current_state",
-            prefer_instance_type=BLEStateManager,
+            public_name="current_state",
+            underscore_name="_current_state",
             call_member=False,
             underscore_attr_type=ConnectionState,
         )
@@ -624,9 +614,8 @@ class ConnectionOrchestrator:
         """Read closing-state flag with fallback for underscore/mocked state managers."""
         is_closing = self._dispatch_public_or_underscore(
             target=self.state_manager,
-            public_name="_is_closing",
-            underscore_name="is_closing",
-            prefer_instance_type=BLEStateManager,
+            public_name="is_closing",
+            underscore_name="_is_closing",
             call_member=False,
             underscore_attr_type=bool,
             default_if_missing=False,
@@ -638,9 +627,8 @@ class ConnectionOrchestrator:
         return bool(
             self._dispatch_public_or_underscore(
                 target=self.state_manager,
-                public_name="_transition_to",
-                underscore_name="transition_to",
-                prefer_instance_type=BLEStateManager,
+                public_name="transition_to",
+                underscore_name="_transition_to",
                 call_member=True,
                 args=(new_state,),
                 prefer_underscore_for_unconfigured_public_mock=False,

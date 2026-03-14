@@ -40,7 +40,11 @@ class BLECompatibilityEventService:
             reraise=False,
         )
         if not queued:
-            iface._drain_publish_queue(flush_event)
+            BLECompatibilityEventService.drain_publish_queue(
+                iface,
+                flush_event,
+                publishing_thread=publishing_thread,
+            )
             return
 
         if not flush_event.wait(timeout=timeout):
@@ -48,13 +52,36 @@ class BLECompatibilityEventService:
             if thread is not None and thread.is_alive():
                 logger.debug("Timed out waiting for publish queue flush")
             else:
-                iface._drain_publish_queue(flush_event)
+                BLECompatibilityEventService.drain_publish_queue(
+                    iface,
+                    flush_event,
+                    publishing_thread=publishing_thread,
+                )
 
     @staticmethod
     def drain_publish_queue(
         iface: "BLEInterface", flush_event: Event, *, publishing_thread: object
     ) -> None:
         """Drain and run pending publish callbacks on the current thread."""
+        thread = getattr(publishing_thread, "thread", None)
+        thread_drain = getattr(thread, "_drain_publish_queue", None)
+        if callable(thread_drain):
+            iface.error_handler.safe_execute(
+                lambda: thread_drain(flush_event),
+                error_msg="Error draining publish queue via publishing thread",
+                reraise=False,
+            )
+            return
+
+        iface_drain = getattr(iface, "_drain_publish_queue", None)
+        if callable(iface_drain):
+            iface.error_handler.safe_execute(
+                lambda: iface_drain(flush_event),
+                error_msg="Error draining publish queue via interface fallback",
+                reraise=False,
+            )
+            return
+
         queue = getattr(publishing_thread, "queue", None)
         if queue is None:
             return
