@@ -1,7 +1,7 @@
 # Meshtastic Python Refactor Program
 
-> Note: `REFACTOR_PROGRAM-2.md` is the active staged continuation plan.
-> This file remains the Phase 1 rationale and decision record.
+> Note: This is the primary long-lived refactor record.
+> The prior staged continuation plan is now summarized here (see Section 18).
 
 ## 1) Purpose
 
@@ -429,3 +429,54 @@ This section now keeps only durable rationale from the hardening stream:
 
 Validation and review-execution policy in this document should remain durable.
 Time-bound run history and per-cycle triage belong in PR discussion and CI artifacts.
+
+## 18) Phase 1-3 Execution Summary (Archived Continuation Work)
+
+This section captures the completed execution summary that had been tracked in
+`REFACTOR_PROGRAM-2.md` during the active stabilization stream.
+
+### 18.1 Context During Execution
+
+At continuation start, `develop` represented a broad modernization delta over
+`master` (architecture, compatibility, test coverage, CI/tooling, and runtime
+correctness hardening). The team intentionally avoided direct `develop → master`
+promotion and used large subsystem-focused stabilization passes.
+
+### 18.2 Completed Stabilization Passes
+
+#### Phase 1: BLE Stabilization (Completed)
+
+- Branch: `ble-stabilization-pass`
+- Status: merged into `develop` (PR `#63`)
+- Outcomes:
+  - elapsed-time-based management wait timeout accounting across connect/shutdown
+  - hardened management operation accounting (underflow-safe)
+  - bounded spurious-wakeup regression tests
+  - compatibility-preserving lifecycle fixes validated by expanded BLE tests
+
+#### Phase 2: MeshInterface Runtime Stabilization (Completed)
+
+- Branch: `meshinterface-pass`
+- Outcomes:
+  - request-scoped wait-state and error handling hardening
+  - response-handler locking and atomic pop/eligibility handling
+  - queue correctness and shutdown quiescence improvements
+  - safer callback/error propagation in routing/admin response paths
+  - expanded regression coverage in `test_mesh_interface.py` and `test_node.py`
+
+#### Phase 3: Runtime Boundary Cleanup (Completed)
+
+- Branch: `runtime-boundary-cleanup`
+- Outcomes:
+  - shared host/port parsing via `meshtastic/host_port.py`
+  - IPv4/IPv6 and destination-shape validation consistency across CLI/runtime
+  - OTA destination normalization and improved transport-stage error surfacing
+  - targeted reliability hardening in runtime boundary paths and tests
+
+### 18.3 Summary of Execution Strategy
+
+The phased stream delivered subsystem-level stabilization without expanding
+scope into uncontrolled feature work. With Phases 1-3 complete, future work
+should focus on boundary cleanup and complexity reduction in remaining large
+centers of gravity, while keeping compatibility behavior stable unless
+explicitly changed by policy.
