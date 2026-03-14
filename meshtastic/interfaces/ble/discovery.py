@@ -47,6 +47,21 @@ class DiscoveryClientProtocol(Protocol):
         """Run a BLE scan and return raw backend response data."""
 
 
+@runtime_checkable
+class UnderscoreDiscoveryClientProtocol(Protocol):
+    """Compatibility protocol for discovery clients exposing ``_discover``."""
+
+    def _discover(self, **kwargs: Any) -> Any:
+        """Run a BLE scan and return raw backend response data."""
+
+
+def _is_discovery_client_like(client: object) -> bool:
+    """Return True when a discovery client exposes a supported scan entrypoint."""
+    return callable(getattr(client, "discover", None)) or callable(
+        getattr(client, "_discover", None)
+    )
+
+
 def _is_unexpected_keyword_error(exc: TypeError, kwarg_name: str) -> bool:
     """Return True when a TypeError clearly indicates an unsupported keyword arg."""
     message = str(exc)
@@ -361,7 +376,9 @@ class DiscoveryManager:
         """
         # Allow test overrides via meshtastic.ble_interface monkeypatch (backwards compatibility)
         self.client_factory = client_factory
-        self._client: BLEClient | DiscoveryClientProtocol | None = None
+        self._client: (
+            BLEClient | DiscoveryClientProtocol | UnderscoreDiscoveryClientProtocol | None
+        ) = None
         self._client_lock = threading.RLock()
 
     def _discover_devices(self, address: str | None) -> list[BLEDevice]:
@@ -479,21 +496,41 @@ class DiscoveryManager:
                     )
                 # Accept BLEClient instances or runtime-checkable protocol implementations
                 # so tests can provide minimal discovery doubles.
-                elif not isinstance(self._client, (BLEClient, DiscoveryClientProtocol)):
+                elif not (
+                    isinstance(
+                        self._client,
+                        (
+                            BLEClient,
+                            DiscoveryClientProtocol,
+                            UnderscoreDiscoveryClientProtocol,
+                        ),
+                    )
+                    or _is_discovery_client_like(self._client)
+                ):
                     invalid_client = self._client
                     _discard_cached_client()
                     invalid_client_error = DiscoveryClientError.invalid_client(
                         resolved_factory,
                         type(invalid_client),
-                        ["discover"],
+                        ["discover", "_discover"],
                     )
 
-            client: BLEClient | DiscoveryClientProtocol | None = None
+            client: (
+                BLEClient
+                | DiscoveryClientProtocol
+                | UnderscoreDiscoveryClientProtocol
+                | None
+            ) = None
             if self._client is None:
                 if invalid_client_error is None:
                     raise DiscoveryClientError.factory_returned_none(resolved_factory)
             else:
-                client = cast(BLEClient | DiscoveryClientProtocol, self._client)
+                client = cast(
+                    BLEClient
+                    | DiscoveryClientProtocol
+                    | UnderscoreDiscoveryClientProtocol,
+                    self._client,
+                )
 
         seen_stale_ids: set[int] = set()
         for stale_client in stale_clients:
@@ -505,7 +542,10 @@ class DiscoveryManager:
 
         if invalid_client_error is not None:
             raise invalid_client_error
-        client = cast(BLEClient | DiscoveryClientProtocol, client)
+        client = cast(
+            BLEClient | DiscoveryClientProtocol | UnderscoreDiscoveryClientProtocol,
+            client,
+        )
         devices: list[BLEDevice] = []
         target_identifier = address.strip() if address else None
         try:

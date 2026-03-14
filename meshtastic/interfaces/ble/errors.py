@@ -108,6 +108,7 @@ class BLEErrorHandler:
     def safe_execute(
         func: Callable[[], T],
         default_return: T | None = None,
+        *,
         log_error: bool = True,
         error_msg: str = "Error in operation",
         reraise: bool = False,

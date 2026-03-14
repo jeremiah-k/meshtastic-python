@@ -351,29 +351,19 @@ class BLEManagementCommandsService:
                                 target_address,
                                 expected_binding=expected_implicit_binding,
                             )
-                    BLEManagementCommandsService.run_bluetoothctl_trust_command(
-                        iface,
-                        bluetoothctl_path,
-                        canonical_address,
-                        validated_timeout,
-                        subprocess_module=subprocess_module,
-                        trust_hex_blob_re=trust_hex_blob_re,
-                        trust_token_re=trust_token_re,
-                        trust_command_output_max_chars=trust_command_output_max_chars,
-                    )
                 else:
                     with iface._connect_lock, iface._management_lock:
                         iface._validate_management_preconditions()
-                    BLEManagementCommandsService.run_bluetoothctl_trust_command(
-                        iface,
-                        bluetoothctl_path,
-                        canonical_address,
-                        validated_timeout,
-                        subprocess_module=subprocess_module,
-                        trust_hex_blob_re=trust_hex_blob_re,
-                        trust_token_re=trust_token_re,
-                        trust_command_output_max_chars=trust_command_output_max_chars,
-                    )
+                BLEManagementCommandsService.run_bluetoothctl_trust_command(
+                    iface,
+                    bluetoothctl_path,
+                    canonical_address,
+                    validated_timeout,
+                    subprocess_module=subprocess_module,
+                    trust_hex_blob_re=trust_hex_blob_re,
+                    trust_token_re=trust_token_re,
+                    trust_command_output_max_chars=trust_command_output_max_chars,
+                )
         finally:
             if management_started:
                 iface._finish_management_operation()

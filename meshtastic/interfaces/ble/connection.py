@@ -51,6 +51,7 @@ _CONNECT_TIMEOUT_INVALID_MSG: str = (
     "connect_timeout must be a finite positive number of seconds."
 )
 _CONNECT_TIMEOUT_FALLBACK_SECONDS: float = 10.0
+_DISPATCH_MISSING = object()
 
 
 def _is_device_not_found_error(err: Exception) -> bool:
@@ -491,65 +492,142 @@ class ConnectionOrchestrator:
         self.state_lock = state_lock
         self.thread_coordinator = thread_coordinator
 
+    def _dispatch_public_or_underscore(
+        self,
+        *,
+        target: object,
+        public_name: str,
+        underscore_name: str,
+        prefer_instance_type: type[object] | None = None,
+        call_member: bool,
+        args: tuple[object, ...] = (),
+        kwargs: dict[str, object] | None = None,
+        underscore_attr_type: type[object] | None = None,
+        default_if_missing: object = _DISPATCH_MISSING,
+        prefer_underscore_for_unconfigured_public_mock: bool = False,
+    ) -> object:
+        """Dispatch to public/underscore members while preserving compatibility behavior."""
+        kwargs = {} if kwargs is None else kwargs
+        public_member = getattr(target, public_name, _DISPATCH_MISSING)
+        underscore_member = getattr(target, underscore_name, _DISPATCH_MISSING)
+
+        if (
+            call_member
+            and prefer_underscore_for_unconfigured_public_mock
+            and callable(public_member)
+            and callable(underscore_member)
+            and _is_unconfigured_mock_callable(public_member)
+        ):
+            return underscore_member(*args, **kwargs)
+
+        if prefer_instance_type is not None and isinstance(target, prefer_instance_type):
+            if public_member is _DISPATCH_MISSING:
+                raise AttributeError(
+                    f"{type(target).__name__} is missing required member '{public_name}'"
+                )
+            if call_member:
+                if not callable(public_member):
+                    raise AttributeError(
+                        f"{type(target).__name__}.{public_name} is not callable"
+                    )
+                return public_member(*args, **kwargs)
+            return public_member
+
+        if call_member:
+            if callable(public_member):
+                return public_member(*args, **kwargs)
+            if callable(underscore_member):
+                return underscore_member(*args, **kwargs)
+        else:
+            if underscore_attr_type is not None and isinstance(underscore_member, underscore_attr_type):
+                return underscore_member
+            if public_member is not _DISPATCH_MISSING:
+                return public_member
+            if underscore_attr_type is None and underscore_member is not _DISPATCH_MISSING:
+                return underscore_member
+
+        if default_if_missing is not _DISPATCH_MISSING:
+            return default_if_missing
+
+        raise AttributeError(
+            f"{type(target).__name__} is missing supported members "
+            f"'{public_name}'/'{underscore_name}'"
+        )
+
     def _validator_validate_connection_request(self) -> None:
-        """Call validator pre-check with legacy fallback for test doubles."""
-        if isinstance(self.validator, ConnectionValidator):
-            self.validator.validate_connection_request()
-            return
-        legacy = getattr(self.validator, "_validate_connection_request", None)
-        if callable(legacy):
-            legacy()
-            return
-        self.validator.validate_connection_request()
+        """Call validator pre-check with underscore-compatible fallback for test doubles."""
+        self._dispatch_public_or_underscore(
+            target=self.validator,
+            public_name="validate_connection_request",
+            underscore_name="_validate_connection_request",
+            prefer_instance_type=ConnectionValidator,
+            call_member=True,
+            prefer_underscore_for_unconfigured_public_mock=True,
+        )
 
     def _state_current_state(self) -> ConnectionState:
-        """Read current state with fallback for legacy/mocked state managers."""
-        if isinstance(self.state_manager, BLEStateManager):
-            return self.state_manager.current_state
-        legacy = getattr(self.state_manager, "_current_state", None)
-        if isinstance(legacy, ConnectionState):
-            return legacy
-        return cast(ConnectionState, getattr(self.state_manager, "current_state"))
+        """Read current state with fallback for underscore/mocked state managers."""
+        state_value = self._dispatch_public_or_underscore(
+            target=self.state_manager,
+            public_name="current_state",
+            underscore_name="_current_state",
+            prefer_instance_type=BLEStateManager,
+            call_member=False,
+            underscore_attr_type=ConnectionState,
+        )
+        return cast(ConnectionState, state_value)
 
     def _state_is_closing(self) -> bool:
-        """Read closing-state flag with fallback for legacy/mocked state managers."""
-        if isinstance(self.state_manager, BLEStateManager):
-            return self.state_manager.is_closing
-        legacy = getattr(self.state_manager, "_is_closing", None)
-        if isinstance(legacy, bool):
-            return legacy
-        return bool(getattr(self.state_manager, "is_closing", False))
+        """Read closing-state flag with fallback for underscore/mocked state managers."""
+        is_closing = self._dispatch_public_or_underscore(
+            target=self.state_manager,
+            public_name="is_closing",
+            underscore_name="_is_closing",
+            prefer_instance_type=BLEStateManager,
+            call_member=False,
+            underscore_attr_type=bool,
+            default_if_missing=False,
+        )
+        return bool(is_closing)
 
     def _state_transition_to(self, new_state: ConnectionState) -> bool:
-        """Transition helper with fallback for legacy/mocked state managers."""
-        if isinstance(self.state_manager, BLEStateManager):
-            return self.state_manager.transition_to(new_state)
-        legacy = getattr(self.state_manager, "_transition_to", None)
-        if callable(legacy):
-            return bool(legacy(new_state))
-        transition = getattr(self.state_manager, "transition_to")
-        return bool(transition(new_state))
+        """Transition helper with fallback for underscore/mocked state managers."""
+        return bool(
+            self._dispatch_public_or_underscore(
+                target=self.state_manager,
+                public_name="transition_to",
+                underscore_name="_transition_to",
+                prefer_instance_type=BLEStateManager,
+                call_member=True,
+                args=(new_state,),
+                prefer_underscore_for_unconfigured_public_mock=True,
+            )
+        )
 
     def _state_reset_to_disconnected(self) -> bool:
-        """Reset helper with fallback for legacy/mocked state managers."""
-        if isinstance(self.state_manager, BLEStateManager):
-            return self.state_manager.reset_to_disconnected()
-        legacy = getattr(self.state_manager, "_reset_to_disconnected", None)
-        if callable(legacy):
-            return bool(legacy())
-        reset = getattr(self.state_manager, "reset_to_disconnected")
-        return bool(reset())
+        """Reset helper with fallback for underscore/mocked state managers."""
+        return bool(
+            self._dispatch_public_or_underscore(
+                target=self.state_manager,
+                public_name="reset_to_disconnected",
+                underscore_name="_reset_to_disconnected",
+                prefer_instance_type=BLEStateManager,
+                call_member=True,
+                prefer_underscore_for_unconfigured_public_mock=True,
+            )
+        )
 
     def _thread_set_event(self, name: str) -> None:
-        """Set thread-coordinator event with legacy fallback for test doubles."""
-        if isinstance(self.thread_coordinator, ThreadCoordinator):
-            self.thread_coordinator.set_event(name)
-            return
-        legacy = getattr(self.thread_coordinator, "_set_event", None)
-        if callable(legacy):
-            legacy(name)
-            return
-        self.thread_coordinator.set_event(name)
+        """Set thread-coordinator event with underscore-compatible fallback for test doubles."""
+        self._dispatch_public_or_underscore(
+            target=self.thread_coordinator,
+            public_name="set_event",
+            underscore_name="_set_event",
+            prefer_instance_type=ThreadCoordinator,
+            call_member=True,
+            args=(name,),
+            prefer_underscore_for_unconfigured_public_mock=True,
+        )
 
     def _client_manager_create_client(
         self,
@@ -559,68 +637,48 @@ class ConnectionOrchestrator:
         pair_on_connect: bool,
         connect_timeout: float | None,
     ) -> BLEClient:
-        """Create client via public API with legacy fallback for mocks/test doubles."""
-        create_client = getattr(self.client_manager, "create_client", None)
-        legacy = getattr(self.client_manager, "_create_client", None)
-        if (
-            callable(create_client)
-            and callable(legacy)
-            and _is_unconfigured_mock_callable(create_client)
-        ):
-            return cast(
-                BLEClient,
-                legacy(
-                    device,
-                    on_disconnect_func,
-                    pair_on_connect=pair_on_connect,
-                    connect_timeout=connect_timeout,
-                ),
-            )
-        if callable(create_client):
-            return cast(
-                BLEClient,
-                create_client(
-                    device,
-                    on_disconnect_func,
-                    pair_on_connect=pair_on_connect,
-                    connect_timeout=connect_timeout,
-                ),
-            )
-        if callable(legacy):
-            return cast(
-                BLEClient,
-                legacy(
-                    device,
-                    on_disconnect_func,
-                    pair_on_connect=pair_on_connect,
-                    connect_timeout=connect_timeout,
-                ),
-            )
-        raise AttributeError("Client manager is missing create_client/_create_client")
+        """Create client via public API with underscore-compatible fallback for mocks/test doubles."""
+        created_client = self._dispatch_public_or_underscore(
+            target=self.client_manager,
+            public_name="create_client",
+            underscore_name="_create_client",
+            prefer_instance_type=ClientManager,
+            call_member=True,
+            args=(device, on_disconnect_func),
+            kwargs={
+                "pair_on_connect": pair_on_connect,
+                "connect_timeout": connect_timeout,
+            },
+            prefer_underscore_for_unconfigured_public_mock=True,
+        )
+        return cast(BLEClient, created_client)
 
     def _client_manager_connect_client(
         self, client: BLEClient, *, timeout: float | None
     ) -> None:
-        """Connect client via public API with legacy fallback for mocks/test doubles."""
-        if isinstance(self.client_manager, ClientManager):
-            self.client_manager.connect_client(client, timeout=timeout)
-            return
-        legacy = getattr(self.client_manager, "_connect_client", None)
-        if callable(legacy):
-            legacy(client, timeout=timeout)
-            return
-        self.client_manager.connect_client(client, timeout=timeout)
+        """Connect client via public API with underscore-compatible fallback for mocks/test doubles."""
+        self._dispatch_public_or_underscore(
+            target=self.client_manager,
+            public_name="connect_client",
+            underscore_name="_connect_client",
+            prefer_instance_type=ClientManager,
+            call_member=True,
+            args=(client,),
+            kwargs={"timeout": timeout},
+            prefer_underscore_for_unconfigured_public_mock=True,
+        )
 
     def _client_manager_safe_close_client(self, client: BLEClient) -> None:
-        """Close client via public API with legacy fallback for mocks/test doubles."""
-        if isinstance(self.client_manager, ClientManager):
-            self.client_manager.safe_close_client(client)
-            return
-        legacy = getattr(self.client_manager, "_safe_close_client", None)
-        if callable(legacy):
-            legacy(client)
-            return
-        self.client_manager.safe_close_client(client)
+        """Close client via public API with underscore-compatible fallback for mocks/test doubles."""
+        self._dispatch_public_or_underscore(
+            target=self.client_manager,
+            public_name="safe_close_client",
+            underscore_name="_safe_close_client",
+            prefer_instance_type=ClientManager,
+            call_member=True,
+            args=(client,),
+            prefer_underscore_for_unconfigured_public_mock=True,
+        )
 
     @staticmethod
     def _get_connect_timeout(*, pair_on_connect: bool) -> float:

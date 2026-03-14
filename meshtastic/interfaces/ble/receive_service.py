@@ -1,5 +1,6 @@
 """Receive-loop and recovery helpers for BLE interface orchestration."""
 
+import math
 import time
 from typing import TYPE_CHECKING
 
@@ -21,6 +22,7 @@ from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import _sleep
 
 if TYPE_CHECKING:
+    from meshtastic.interfaces.ble.coordination import ThreadCoordinator
     from meshtastic.interfaces.ble.interface import BLEInterface
 
 
@@ -41,99 +43,162 @@ class BLEReceiveRecoveryService:
         return should_continue
 
     @staticmethod
+    def _should_poll_without_notify(iface: "BLEInterface") -> bool:
+        """Return whether polling should continue without notification trigger."""
+        with iface._state_lock:
+            return not iface._fromnum_notify_enabled
+
+    @staticmethod
+    def _wait_for_read_trigger(
+        iface: "BLEInterface",
+        *,
+        coordinator: "ThreadCoordinator",
+        wait_timeout: float,
+    ) -> tuple[bool, bool]:
+        """Wait for read-trigger event and compute poll mode for this cycle."""
+        event_signaled = coordinator.wait_for_event("read_trigger", timeout=wait_timeout)
+        poll_without_notify = False
+        if not event_signaled:
+            if iface._ever_connected and coordinator.check_and_clear_event(
+                "reconnected_event"
+            ):
+                logger.debug("Detected reconnection, resuming normal operation")
+            poll_without_notify = BLEReceiveRecoveryService._should_poll_without_notify(
+                iface
+            )
+            return poll_without_notify, poll_without_notify
+
+        coordinator.clear_event("read_trigger")
+        return True, poll_without_notify
+
+    @staticmethod
+    def _snapshot_client_state(
+        iface: "BLEInterface",
+    ) -> tuple[BLEClient | None, bool, bool, bool]:
+        """Snapshot client and gating flags needed by the read loop."""
+        with iface._state_lock:
+            client = iface.client
+            is_connecting = iface._state_manager.current_state == ConnectionState.CONNECTING
+            publish_pending = iface._client_publish_pending
+            is_closing = iface._state_manager.is_closing or iface._closed
+        return client, is_connecting, publish_pending, is_closing
+
+    @staticmethod
+    def _process_client_state(
+        iface: "BLEInterface",
+        *,
+        coordinator: "ThreadCoordinator",
+        wait_timeout: float,
+        client: BLEClient | None,
+        is_connecting: bool,
+        publish_pending: bool,
+        is_closing: bool,
+    ) -> bool:
+        """Handle current client state and return True when loop should break."""
+        if publish_pending:
+            logger.debug(
+                "Skipping BLE read while connect publication is pending verification."
+            )
+            coordinator.wait_for_event("reconnected_event", timeout=wait_timeout)
+            return True
+
+        if client is not None:
+            return False
+
+        if iface.auto_reconnect or is_connecting:
+            wait_reason = "connection establishment" if is_connecting else "auto-reconnect"
+            logger.debug("BLE client is None; waiting for %s", wait_reason)
+            coordinator.wait_for_event("reconnected_event", timeout=wait_timeout)
+            return True
+
+        if is_closing:
+            logger.debug("BLE client is None, shutting down")
+            iface._set_receive_wanted(False)
+        else:
+            logger.debug("BLE client is None; re-checking connection state")
+        return True
+
+    @staticmethod
+    def _reset_recovery_after_stability(iface: "BLEInterface") -> None:
+        """Reset receive recovery attempts after sustained stable reads."""
+        now = time.monotonic()
+        with iface._state_lock:
+            if (
+                iface._receive_recovery_attempts > 0
+                and now - iface._last_recovery_time >= RECEIVE_RECOVERY_STABILITY_RESET_SEC
+            ):
+                logger.debug(
+                    "Resetting receive recovery attempts after %.1fs of stability.",
+                    now - iface._last_recovery_time,
+                )
+                iface._receive_recovery_attempts = 0
+
+    @staticmethod
+    def _read_and_handle_payload(
+        iface: "BLEInterface",
+        client: BLEClient,
+        *,
+        poll_without_notify: bool,
+    ) -> bool:
+        """Read one payload iteration and return True to continue inner loop."""
+        payload = iface._read_from_radio_with_retries(
+            client,
+            retry_on_empty=not poll_without_notify,
+        )
+        if not payload:
+            return False
+        logger.debug("FROMRADIO read: %s", payload.hex())
+        try:
+            iface._handle_from_radio(payload)
+        except DecodeError as exc:
+            logger.warning("Failed to parse FromRadio packet, discarding: %s", exc)
+            iface._read_retry_count = 0
+            return True
+        BLEReceiveRecoveryService._reset_recovery_after_stability(iface)
+        iface._read_retry_count = 0
+        return True
+
+    @staticmethod
     def receive_from_radio_impl(iface: "BLEInterface") -> None:
         """Run receive loop and dispatch radio packets."""
         coordinator = iface.thread_coordinator
         wait_timeout = BLEConfig.RECEIVE_WAIT_TIMEOUT
         try:
             while iface._should_run_receive_loop():
-                event_signaled = coordinator.wait_for_event(
-                    "read_trigger", timeout=wait_timeout
+                proceed, poll_without_notify = (
+                    BLEReceiveRecoveryService._wait_for_read_trigger(
+                        iface,
+                        coordinator=coordinator,
+                        wait_timeout=wait_timeout,
+                    )
                 )
-                poll_without_notify = False
-                if not event_signaled:
-                    if iface._ever_connected and coordinator.check_and_clear_event(
-                        "reconnected_event"
-                    ):
-                        logger.debug("Detected reconnection, resuming normal operation")
-                    with iface._state_lock:
-                        poll_without_notify = not iface._fromnum_notify_enabled
-                    if not poll_without_notify:
-                        continue
-                else:
-                    coordinator.clear_event("read_trigger")
+                if not proceed:
+                    continue
 
                 while iface._should_run_receive_loop():
-                    with iface._state_lock:
-                        client = iface.client
-                        is_connecting = (
-                            iface._state_manager.current_state
-                            == ConnectionState.CONNECTING
-                        )
-                        publish_pending = iface._client_publish_pending
-                        is_closing = iface._state_manager.is_closing or iface._closed
-                    if publish_pending:
-                        logger.debug(
-                            "Skipping BLE read while connect publication is pending verification."
-                        )
-                        coordinator.wait_for_event(
-                            "reconnected_event",
-                            timeout=wait_timeout,
-                        )
+                    client, is_connecting, publish_pending, is_closing = (
+                        BLEReceiveRecoveryService._snapshot_client_state(iface)
+                    )
+                    if BLEReceiveRecoveryService._process_client_state(
+                        iface,
+                        coordinator=coordinator,
+                        wait_timeout=wait_timeout,
+                        client=client,
+                        is_connecting=is_connecting,
+                        publish_pending=publish_pending,
+                        is_closing=is_closing,
+                    ):
                         break
-                    if client is None:
-                        if iface.auto_reconnect or is_connecting:
-                            wait_reason = (
-                                "connection establishment"
-                                if is_connecting
-                                else "auto-reconnect"
-                            )
-                            logger.debug(
-                                "BLE client is None; waiting for %s",
-                                wait_reason,
-                            )
-                            coordinator.wait_for_event(
-                                "reconnected_event",
-                                timeout=wait_timeout,
-                            )
-                            break
-                        if is_closing:
-                            logger.debug("BLE client is None, shutting down")
-                            iface._set_receive_wanted(False)
-                        else:
-                            logger.debug(
-                                "BLE client is None; re-checking connection state"
-                            )
-                        break
+
+                    assert client is not None
                     try:
-                        payload = iface._read_from_radio_with_retries(
+                        if not BLEReceiveRecoveryService._read_and_handle_payload(
+                            iface,
                             client,
-                            retry_on_empty=not poll_without_notify,
-                        )
-                        if not payload:
+                            poll_without_notify=poll_without_notify,
+                        ):
                             break
-                        logger.debug("FROMRADIO read: %s", payload.hex())
-                        try:
-                            iface._handle_from_radio(payload)
-                        except DecodeError as exc:
-                            logger.warning(
-                                "Failed to parse FromRadio packet, discarding: %s", exc
-                            )
-                            iface._read_retry_count = 0
-                            continue
-                        now = time.monotonic()
-                        with iface._state_lock:
-                            if (
-                                iface._receive_recovery_attempts > 0
-                                and now - iface._last_recovery_time
-                                >= RECEIVE_RECOVERY_STABILITY_RESET_SEC
-                            ):
-                                logger.debug(
-                                    "Resetting receive recovery attempts after %.1fs of stability.",
-                                    now - iface._last_recovery_time,
-                                )
-                                iface._receive_recovery_attempts = 0
-                        iface._read_retry_count = 0
+                        continue
                     except (BleakDBusError, BLEClient.BLEError) as exc:
                         if iface._handle_read_loop_disconnect(repr(exc), client):
                             break
@@ -196,17 +261,27 @@ class BLEReceiveRecoveryService:
             attempts = iface._receive_recovery_attempts
             last_recovery = iface._last_recovery_time
         if attempts > RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD:
-            backoff = min(
-                2 ** (attempts - RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD),
-                RECEIVE_RECOVERY_MAX_BACKOFF_SEC,
+            max_exponent = max(
+                int(
+                    math.floor(
+                        math.log2(max(RECEIVE_RECOVERY_MAX_BACKOFF_SEC, 1.0))
+                    )
+                ),
+                0,
             )
-            if now - last_recovery < backoff:
+            exponent = min(
+                attempts - RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD,
+                max_exponent,
+            )
+            backoff = min(2.0**exponent, RECEIVE_RECOVERY_MAX_BACKOFF_SEC)
+            remaining_wait = backoff - (now - last_recovery)
+            if remaining_wait > 0:
                 logger.warning(
                     "Throttling BLE receive recovery: waiting %.1fs before retry (attempt %d)",
-                    backoff,
+                    remaining_wait,
                     attempts,
                 )
-                iface._shutdown_event.wait(timeout=backoff)
+                iface._shutdown_event.wait(timeout=remaining_wait)
         with iface._state_lock:
             iface._last_recovery_time = time.monotonic()
         if iface._should_run_receive_loop():

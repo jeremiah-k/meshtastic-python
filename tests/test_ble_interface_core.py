@@ -4717,7 +4717,7 @@ def test_discovery_manager_filters_targeted_scan_to_whitelist_match(
 
 
 def test_discovery_manager_rejects_non_callable_discover_method() -> None:
-    """DiscoveryManager should reject duck-typed clients whose _discover is not callable."""
+    """DiscoveryManager should reject clients missing callable discover entrypoints."""
 
     class InvalidDiscoveryClient:
         _discover = None
@@ -4726,10 +4726,33 @@ def test_discovery_manager_rejects_non_callable_discover_method() -> None:
         client_factory=lambda **_kwargs: InvalidDiscoveryClient()
     )
 
-    with pytest.raises(DiscoveryClientError, match="_discover"):
+    with pytest.raises(DiscoveryClientError, match=r"discover|_discover"):
         manager._discover_devices(address=None)
 
     assert manager._client is None
+
+
+def test_discovery_manager_accepts_discover_underscore_only_factory() -> None:
+    """DiscoveryManager should accept clients that expose only `_discover`."""
+    filtered_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "Filtered")
+    discover_result = {
+        "filtered": (
+            filtered_device,
+            SimpleNamespace(service_uuids=[SERVICE_UUID]),
+        ),
+    }
+
+    class UnderscoreDiscoveryClient:
+        @staticmethod
+        def _discover(**_kwargs: Any) -> dict[str, Any]:
+            return discover_result
+
+    manager = DiscoveryManager(
+        client_factory=lambda **_kwargs: UnderscoreDiscoveryClient()
+    )
+    devices = manager._discover_devices(address=None)
+
+    assert devices == [filtered_device]
 
 
 def test_discovery_manager_supports_factory_without_log_if_no_address_kwarg() -> None:
