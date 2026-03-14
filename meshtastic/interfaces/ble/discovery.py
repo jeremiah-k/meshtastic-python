@@ -43,7 +43,7 @@ _PENDING_DISCOVERY_CLOSE_TASKS_LOCK = threading.Lock()
 class DiscoveryClientProtocol(Protocol):
     """Minimal protocol required by DiscoveryManager for scan operations."""
 
-    def _discover(self, **kwargs: Any) -> Any:
+    def discover(self, **kwargs: Any) -> Any:
         """Run a BLE scan and return raw backend response data."""
 
 
@@ -485,7 +485,7 @@ class DiscoveryManager:
                     invalid_client_error = DiscoveryClientError.invalid_client(
                         resolved_factory,
                         type(invalid_client),
-                        ["_discover"],
+                        ["discover"],
                     )
 
             client: BLEClient | DiscoveryClientProtocol | None = None
@@ -524,7 +524,18 @@ class DiscoveryManager:
             if not target_identifier:
                 discover_kwargs["service_uuids"] = [SERVICE_UUID]
 
-            response = client._discover(**discover_kwargs)
+            discover = getattr(client, "discover", None)
+            if not callable(discover):
+                # Compatibility for minimal test doubles that still expose
+                # underscore-prefixed discover helpers.
+                discover = getattr(client, "_discover", None)
+            if not callable(discover):
+                raise DiscoveryClientError.invalid_client(
+                    resolved_factory,
+                    type(client),
+                    ["discover"],
+                )
+            response = discover(**discover_kwargs)
             logger.debug(
                 "Scan completed in %.2f seconds", time.monotonic() - scan_start
             )
@@ -549,6 +560,10 @@ class DiscoveryManager:
             devices = []
 
         return devices
+
+    def discover_devices(self, address: str | None) -> list[BLEDevice]:
+        """Public discovery entrypoint for BLE device scans."""
+        return self._discover_devices(address)
 
     def close(self) -> None:
         """Close the manager's persistent discovery client and clear the internal reference.

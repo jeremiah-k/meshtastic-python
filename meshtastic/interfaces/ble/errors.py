@@ -105,6 +105,23 @@ class BLEErrorHandler:
             return default_return
 
     @staticmethod
+    def safe_execute(
+        func: Callable[[], T],
+        default_return: T | None = None,
+        log_error: bool = True,
+        error_msg: str = "Error in operation",
+        reraise: bool = False,
+    ) -> T | None:
+        """Public wrapper for standardized guarded callable execution."""
+        return BLEErrorHandler._safe_execute(
+            func=func,
+            default_return=default_return,
+            log_error=log_error,
+            error_msg=error_msg,
+            reraise=reraise,
+        )
+
+    @staticmethod
     def _safe_cleanup(
         func: Callable[[], Any], cleanup_name: str = "cleanup operation"
     ) -> bool:
@@ -140,3 +157,10 @@ class BLEErrorHandler:
             return False
         else:
             return True
+
+    @staticmethod
+    def safe_cleanup(
+        func: Callable[[], Any], cleanup_name: str = "cleanup operation"
+    ) -> bool:
+        """Public wrapper for best-effort cleanup execution."""
+        return BLEErrorHandler._safe_cleanup(func=func, cleanup_name=cleanup_name)

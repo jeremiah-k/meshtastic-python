@@ -157,6 +157,10 @@ class ReconnectPolicy:
             self.max_delay, max(effective_lower, delay + jitter)
         )  # Clamp to [effective_lower, max_delay]
 
+    def get_delay(self, attempt: int | None = None) -> float:
+        """Public delay accessor for cross-module retry/backoff consumers."""
+        return self._get_delay(attempt)
+
     def _should_retry(self, attempt: int | None = None) -> bool:
         """Return whether another retry attempt is permitted.
 
@@ -173,6 +177,10 @@ class ReconnectPolicy:
         if attempt is None:
             attempt = self._attempt_count
         return self.max_retries is None or attempt < self.max_retries
+
+    def should_retry(self, attempt: int | None = None) -> bool:
+        """Public retry-eligibility accessor for cross-module consumers."""
+        return self._should_retry(attempt)
 
     def next_attempt(self) -> tuple[float, bool]:
         """Compute delay for the current retry attempt and report whether that consumed attempt is permitted.
@@ -294,6 +302,11 @@ class RetryPolicy:
         )
 
     @staticmethod
+    def empty_read() -> ReconnectPolicy:
+        """Public preset for empty-read retry behavior."""
+        return RetryPolicy._empty_read()
+
+    @staticmethod
     def _transient_error() -> ReconnectPolicy:
         """Create a ReconnectPolicy tuned for transient BLE read errors.
 
@@ -311,6 +324,11 @@ class RetryPolicy:
         )
 
     @staticmethod
+    def transient_error() -> ReconnectPolicy:
+        """Public preset for transient-read retry behavior."""
+        return RetryPolicy._transient_error()
+
+    @staticmethod
     def _auto_reconnect() -> ReconnectPolicy:
         """Create a ReconnectPolicy preset for automatic BLE reconnection.
 
@@ -326,3 +344,8 @@ class RetryPolicy:
             jitter_ratio=BLEConfig.AUTO_RECONNECT_JITTER_RATIO,
             max_retries=None,
         )
+
+    @staticmethod
+    def auto_reconnect() -> ReconnectPolicy:
+        """Public preset for auto-reconnect behavior."""
+        return RetryPolicy._auto_reconnect()

@@ -21,6 +21,12 @@ recommended patterns for code that embeds `meshtastic-python`.
 | `ConnectionOrchestrator`                 | Coordinates a full connection attempt: validate → discover → connect → register notifications |
 | `ReconnectScheduler` / `ReconnectWorker` | Policy-driven background reconnect loop                                                       |
 
+### Boundary contract (current)
+
+- BLE orchestration paths should call collaborator **public** methods.
+- Underscore-prefixed methods remain as compatibility/testing shims where needed.
+- Cross-component private-member access should stay inside the defining module.
+
 ### Key design choices
 
 - **Process-wide address gate.** A registry in
@@ -92,7 +98,7 @@ from meshtastic.interfaces.ble.errors import BLEErrorHandler
 handler = BLEErrorHandler()
 
 # Execute a callable; return a fallback on any handled exception.
-result = handler._safe_execute(
+result = handler.safe_execute(
     lambda: risky_call(),
     default_return=None,
     error_msg="risky_call failed",
@@ -100,12 +106,15 @@ result = handler._safe_execute(
 )
 
 # Best-effort cleanup: suppresses all non-exit exceptions, returns bool.
-ok = handler._safe_cleanup(lambda: resource.close(), "resource close")
+ok = handler.safe_cleanup(lambda: resource.close(), "resource close")
 ```
 
-`_safe_execute` swallows `BleakError`, `DecodeError`, and
+`safe_execute` swallows `BleakError`, `DecodeError`, and
 `concurrent.futures.TimeoutError`; other exceptions are also caught unless
 `reraise=True`. `SystemExit` and `KeyboardInterrupt` always propagate.
+
+Compatibility note: underscore methods (`_safe_execute`, `_safe_cleanup`) are
+still available for legacy/internal call sites.
 
 ### `NotificationManager`
 
@@ -118,39 +127,46 @@ from meshtastic.interfaces.ble.notifications import NotificationManager
 mgr = NotificationManager()
 
 # Register a callback for a characteristic UUID; returns an opaque token.
-token = mgr._subscribe(uuid, callback)
+token = mgr.subscribe(uuid, callback)
 
 # Retrieve the most-recently-registered callback for a UUID.
-cb = mgr._get_callback(uuid)
+cb = mgr.get_callback(uuid)
 
 # Stop all notifications through a BLEClient (e.g. during shutdown).
-mgr._unsubscribe_all(client, timeout=5.0)
+mgr.unsubscribe_all(client, timeout=5.0)
 
 # Re-register all subscriptions on a new client (e.g. after reconnect).
-mgr._resubscribe_all(client, timeout=5.0)
+mgr.resubscribe_all(client, timeout=5.0)
 
 # Clear internal subscription state (called after full disconnect + cleanup).
-mgr._cleanup_all()
+mgr.cleanup_all()
 ```
+
+Compatibility note: underscore methods are still available for legacy/internal
+call sites.
 
 ### `RetryPolicy` / `ReconnectPolicy`
 
 The BLE read loop and auto-reconnect use policies from
 [`meshtastic/interfaces/ble/policies.py`](meshtastic/interfaces/ble/policies.py).
 
-`ReconnectPolicy` is an internal BLE policy utility and uses
-underscore-prefixed snake_case helpers in the BLE subsystem:
+`ReconnectPolicy` remains an internal BLE policy utility. Canonical collaborator
+calls should use the public methods shown below.
 
 ```python
 from meshtastic.interfaces.ble.policies import RetryPolicy
 
-policy = RetryPolicy._empty_read()  # or ._transient_error() / ._auto_reconnect()
+policy = RetryPolicy.empty_read()  # or .transient_error() / .auto_reconnect()
 
-delay = policy._get_delay(attempt)       # float, jittered exponential backoff
-should_go = policy._should_retry(count)  # bool, respects max_retries
-delay, ok = policy.next_attempt()        # canonical: compute delay + advance counter
-attempt_count = policy.get_attempt_count()  # int, current retry attempt number
+delay = policy.get_delay(attempt)          # float, jittered exponential backoff
+should_go = policy.should_retry(count)     # bool, respects max_retries
+delay, ok = policy.next_attempt()          # canonical: compute delay + advance counter
+attempt_count = policy.get_attempt_count() # int, current retry attempt number
 ```
+
+Compatibility note: underscore variants (`_empty_read`, `_get_delay`,
+`_should_retry`, etc.) are still supported for legacy test doubles and
+transitional internal code.
 
 Compatibility note: the core library does not currently expose camelCase policy
 aliases (`emptyRead`, `transientError`, `autoReconnect`) on `RetryPolicy`.
@@ -169,7 +185,7 @@ Contributor rule for naming updates:
 2. Keep only the approved BLE camelCase promotions callable:
    `findDevice`, `isConnected`, and `stopNotify`.
 3. Route compatibility names to one implementation (prefer internal
-   underscore-prefixed helpers).
+   stable canonical helpers.
 4. Do not add new BLE aliases unless there is an explicit compatibility need.
 5. Do not remove compatibility wrappers unless there is an explicit breaking
    change decision.

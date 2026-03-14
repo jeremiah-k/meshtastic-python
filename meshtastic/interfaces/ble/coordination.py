@@ -152,6 +152,24 @@ class ThreadCoordinator:
             self._threads.append(thread)
             return thread
 
+    def create_thread(
+        self,
+        target: Callable[..., Any],
+        name: str,
+        *,
+        daemon: bool = True,
+        args: tuple[Any, ...] = (),
+        kwargs: dict[str, Any] | None = None,
+    ) -> ThreadLike:
+        """Public thread-creation entrypoint used by BLE collaborators."""
+        return self._create_thread(
+            target=target,
+            name=name,
+            daemon=daemon,
+            args=args,
+            kwargs=kwargs,
+        )
+
     def _create_event(self, name: str) -> Event:
         """Register or retrieve a named Event for coordinator synchronization.
 
@@ -186,6 +204,10 @@ class ThreadCoordinator:
             event = Event()
             self._events[name] = event
             return event
+
+    def create_event(self, name: str) -> Event:
+        """Public event creation/retrieval entrypoint."""
+        return self._create_event(name)
 
     def _get_event(self, name: str) -> Event | None:
         """Retrieve the Event registered under the given name.
@@ -253,6 +275,10 @@ class ThreadCoordinator:
             ):
                 thread.join(timeout=EVENT_THREAD_JOIN_TIMEOUT)
 
+    def start_thread(self, thread: ThreadLike) -> None:
+        """Public thread-start entrypoint."""
+        self._start_thread(thread)
+
     def _join_thread(self, thread: ThreadLike, timeout: float | None = None) -> None:
         """Join a tracked thread if it is alive and not the current thread.
 
@@ -271,6 +297,10 @@ class ThreadCoordinator:
             )
         if should_join:
             thread.join(timeout=timeout)
+
+    def join_thread(self, thread: ThreadLike, timeout: float | None = None) -> None:
+        """Public per-thread join entrypoint."""
+        self._join_thread(thread, timeout=timeout)
 
     def _join_all(self, timeout: float | None = None) -> None:
         """Join all tracked alive threads except the calling thread, applying the given timeout to each join.
@@ -351,6 +381,10 @@ class ThreadCoordinator:
         with self._lock:
             self._set_event_no_lock(name)
 
+    def set_event(self, name: str) -> None:
+        """Public event-set entrypoint."""
+        self._set_event(name)
+
     def _clear_event(self, name: str) -> None:
         """Clear the tracked event with the given name.
 
@@ -363,6 +397,10 @@ class ThreadCoordinator:
         """
         with self._lock:
             self._clear_event_no_lock(name)
+
+    def clear_event(self, name: str) -> None:
+        """Public event-clear entrypoint."""
+        self._clear_event(name)
 
     def _wait_for_event(self, name: str, timeout: float | None = None) -> bool:
         """Wait for the named tracked event to be set or until the timeout elapses.
@@ -386,6 +424,10 @@ class ThreadCoordinator:
             return event.wait(timeout=timeout)
         return False
 
+    def wait_for_event(self, name: str, timeout: float | None = None) -> bool:
+        """Public event wait entrypoint."""
+        return self._wait_for_event(name, timeout=timeout)
+
     def _check_and_clear_event(self, name: str) -> bool:
         """Clear the named tracked event if it exists and is currently set.
 
@@ -406,6 +448,10 @@ class ThreadCoordinator:
                 return True
             return False
 
+    def check_and_clear_event(self, name: str) -> bool:
+        """Public check-and-clear entrypoint for named events."""
+        return self._check_and_clear_event(name)
+
     def _wake_waiting_threads(self, *event_names: str) -> None:
         """Set the named coordinator events to wake any threads waiting on them.
 
@@ -417,6 +463,10 @@ class ThreadCoordinator:
         with self._lock:
             for name in event_names:
                 self._set_event_no_lock(name)
+
+    def wake_waiting_threads(self, *event_names: str) -> None:
+        """Public helper to wake waiters on one or more events."""
+        self._wake_waiting_threads(*event_names)
 
     def _clear_events(self, *event_names: str) -> None:
         """Clear the specified named tracked events.
@@ -431,6 +481,10 @@ class ThreadCoordinator:
         with self._lock:
             for name in event_names:
                 self._clear_event_no_lock(name)
+
+    def clear_events(self, *event_names: str) -> None:
+        """Public helper to clear one or more named events."""
+        self._clear_events(*event_names)
 
     def _cleanup(self) -> None:
         """Perform coordinated shutdown of the coordinator.
@@ -462,3 +516,7 @@ class ThreadCoordinator:
         # Join threads outside the lock to avoid deadlocks if threads touch the coordinator during shutdown
         for thread in threads_to_join:
             thread.join(timeout=EVENT_THREAD_JOIN_TIMEOUT)
+
+    def cleanup(self) -> None:
+        """Public coordinator cleanup entrypoint."""
+        self._cleanup()

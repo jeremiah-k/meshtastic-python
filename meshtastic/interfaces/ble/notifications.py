@@ -92,6 +92,10 @@ class NotificationManager:
             self._characteristic_to_callback[characteristic] = callback
             return token
 
+    def subscribe(self, characteristic: str, callback: Callable[[Any, Any], None]) -> int:
+        """Public entrypoint for tracking a characteristic notification subscription."""
+        return self._subscribe(characteristic, callback)
+
     def _cleanup_all(self) -> None:
         """Clear all tracked BLE notification subscriptions and per-characteristic callbacks.
 
@@ -107,6 +111,10 @@ class NotificationManager:
             self._characteristic_to_callback.clear()
             self._resubscribe_failures.clear()
             self._subscription_counter = 0
+
+    def cleanup_all(self) -> None:
+        """Public entrypoint for clearing all tracked subscriptions."""
+        self._cleanup_all()
 
     def _unsubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
         """Stop notifications for every characteristic currently tracked and ignore any errors.
@@ -142,6 +150,10 @@ class NotificationManager:
                 failure_count,
                 len(characteristics),
             )
+
+    def unsubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
+        """Public entrypoint for best-effort notification unsubscribe on shutdown."""
+        self._unsubscribe_all(client, timeout=timeout)
 
     def _resubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
         """Resubscribe all tracked BLE notification callbacks on the given client.
@@ -202,6 +214,10 @@ class NotificationManager:
                         return
                     failures.pop(characteristic, None)
 
+    def resubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
+        """Public entrypoint for reconnect-time notification resubscription."""
+        self._resubscribe_all(client, timeout=timeout)
+
     def __len__(self) -> int:
         """Report the number of active BLE notification subscriptions being tracked.
 
@@ -228,3 +244,7 @@ class NotificationManager:
         """
         with self._lock:
             return self._characteristic_to_callback.get(characteristic)
+
+    def get_callback(self, characteristic: str) -> Callable[[Any, Any], None] | None:
+        """Public callback lookup for a tracked characteristic."""
+        return self._get_callback(characteristic)

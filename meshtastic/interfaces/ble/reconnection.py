@@ -4,7 +4,7 @@ import logging
 import math
 from collections.abc import Callable
 from threading import TIMEOUT_MAX, Event, RLock
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
@@ -94,6 +94,58 @@ class ReconnectScheduler:
         self._reconnect_worker = ReconnectWorker(interface, self._reconnect_policy)
         self._reconnect_thread: ThreadLike | None = None
 
+    def _thread_create_thread(
+        self,
+        *,
+        target: Callable[..., object],
+        args: tuple[object, ...],
+        kwargs: dict[str, object],
+        name: str,
+        daemon: bool,
+    ) -> ThreadLike:
+        """Create a thread via public coordinator API with underscore fallback."""
+        if isinstance(self.thread_coordinator, ThreadCoordinator):
+            return self.thread_coordinator.create_thread(
+                target=target,
+                args=args,
+                kwargs=kwargs,
+                name=name,
+                daemon=daemon,
+            )
+        legacy_create_thread = getattr(self.thread_coordinator, "_create_thread", None)
+        if callable(legacy_create_thread):
+            return cast(
+                ThreadLike,
+                legacy_create_thread(
+                    target=target,
+                    args=args,
+                    kwargs=kwargs,
+                    name=name,
+                    daemon=daemon,
+                ),
+            )
+        return cast(
+            ThreadLike,
+            self.thread_coordinator.create_thread(
+                target=target,
+                args=args,
+                kwargs=kwargs,
+                name=name,
+                daemon=daemon,
+            ),
+        )
+
+    def _thread_start_thread(self, thread: ThreadLike) -> None:
+        """Start a thread via public coordinator API with underscore fallback."""
+        if isinstance(self.thread_coordinator, ThreadCoordinator):
+            self.thread_coordinator.start_thread(thread)
+            return
+        legacy_start_thread = getattr(self.thread_coordinator, "_start_thread", None)
+        if callable(legacy_start_thread):
+            legacy_start_thread(thread)
+            return
+        self.thread_coordinator.start_thread(thread)
+
     def _schedule_reconnect(self, auto_reconnect: bool, shutdown_event: Event) -> bool:
         """Schedule a background BLE reconnect worker when auto-reconnect is enabled and no worker is already running.
 
@@ -126,7 +178,7 @@ class ReconnectScheduler:
                 )
                 return False
 
-            thread = self.thread_coordinator._create_thread(
+            thread = self._thread_create_thread(
                 target=self._reconnect_worker._attempt_reconnect_loop,
                 args=(shutdown_event,),
                 kwargs={"on_exit": self._clear_thread_reference},
@@ -138,7 +190,7 @@ class ReconnectScheduler:
         # Start outside the lock: the reference is already set, so concurrent
         # schedulers will see a non-None _reconnect_thread and exit early.
         try:
-            self.thread_coordinator._start_thread(thread)
+            self._thread_start_thread(thread)
             thread_ident = getattr(thread, "ident", None)
             thread_is_alive = bool(
                 callable(getattr(thread, "is_alive", None)) and thread.is_alive()
@@ -154,6 +206,10 @@ class ReconnectScheduler:
             raise
         return True
 
+    def schedule_reconnect(self, auto_reconnect: bool, shutdown_event: Event) -> bool:
+        """Public entrypoint for scheduling reconnect worker startup."""
+        return self._schedule_reconnect(auto_reconnect, shutdown_event)
+
     def _clear_thread_reference(self) -> None:
         """Clear the internal reference to the running reconnect thread.
 
@@ -168,6 +224,10 @@ class ReconnectScheduler:
         with self.state_lock:
             # Always clear the reference once the worker loop exits to match legacy behavior.
             self._reconnect_thread = None
+
+    def clear_thread_reference(self) -> None:
+        """Public helper to clear reconnect thread reference."""
+        self._clear_thread_reference()
 
 
 class ReconnectWorker:

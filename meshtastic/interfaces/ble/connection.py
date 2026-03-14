@@ -7,7 +7,7 @@ import re
 import sys
 from collections.abc import Callable
 from threading import Event, RLock
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
@@ -25,7 +25,7 @@ from meshtastic.interfaces.ble.constants import (
     ERROR_INVALID_CONNECT_TIMEOUT,
     BLEConfig,
 )
-from meshtastic.interfaces.ble.coordination import ThreadCoordinator
+from meshtastic.interfaces.ble.coordination import ThreadCoordinator, ThreadLike
 from meshtastic.interfaces.ble.discovery import _looks_like_ble_address
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
@@ -95,12 +95,16 @@ class ConnectionValidator:
             the error message will be "Already connected or connection in progress".
         """
         with self.state_lock:
-            can_connect = self.state_manager._can_connect
-            is_closing = self.state_manager._is_closing
+            can_connect = self.state_manager.can_connect
+            is_closing = self.state_manager.is_closing
             if not can_connect:
                 if is_closing:
                     raise self.BLEError(BLECLIENT_ERROR_CANNOT_CONNECT_WHILE_CLOSING)
                 raise self.BLEError(BLECLIENT_ERROR_ALREADY_CONNECTED)
+
+    def validate_connection_request(self) -> None:
+        """Public pre-check for whether a BLE connection request can proceed."""
+        self._validate_connection_request()
 
     def _check_existing_client(
         self,
@@ -150,6 +154,19 @@ class ConnectionValidator:
             or normalized_request_key in normalized_known_targets
         )
 
+    def check_existing_client(
+        self,
+        client: BLEClient | None,
+        normalized_request: str | None,
+        last_connection_request: str | None,
+    ) -> bool:
+        """Public existing-client validation helper."""
+        return self._check_existing_client(
+            client,
+            normalized_request,
+            last_connection_request,
+        )
+
 
 class ClientManager:
     """Helper for creating, connecting, and closing BLEClient instances."""
@@ -178,6 +195,54 @@ class ClientManager:
         self.state_lock = state_lock
         self.thread_coordinator = thread_coordinator
         self.error_handler = error_handler
+
+    def _thread_create_thread(
+        self,
+        *,
+        target: Callable[..., object],
+        args: tuple[object, ...],
+        name: str,
+        daemon: bool,
+    ) -> ThreadLike:
+        """Create thread via public API with underscore fallback for legacy test doubles."""
+        if isinstance(self.thread_coordinator, ThreadCoordinator):
+            return self.thread_coordinator.create_thread(
+                target=target,
+                args=args,
+                name=name,
+                daemon=daemon,
+            )
+        legacy_create_thread = getattr(self.thread_coordinator, "_create_thread", None)
+        if callable(legacy_create_thread):
+            return cast(
+                ThreadLike,
+                legacy_create_thread(
+                    target=target,
+                    args=args,
+                    name=name,
+                    daemon=daemon,
+                ),
+            )
+        return cast(
+            ThreadLike,
+            self.thread_coordinator.create_thread(
+                target=target,
+                args=args,
+                name=name,
+                daemon=daemon,
+            ),
+        )
+
+    def _thread_start_thread(self, thread: ThreadLike) -> None:
+        """Start thread via public API with underscore fallback for legacy test doubles."""
+        if isinstance(self.thread_coordinator, ThreadCoordinator):
+            self.thread_coordinator.start_thread(thread)
+            return
+        legacy_start_thread = getattr(self.thread_coordinator, "_start_thread", None)
+        if callable(legacy_start_thread):
+            legacy_start_thread(thread)
+            return
+        self.thread_coordinator.start_thread(thread)
 
     def _create_client(
         self,
@@ -218,6 +283,22 @@ class ClientManager:
             pair=pair_on_connect,
         )
 
+    def create_client(
+        self,
+        device: BLEDevice | str,
+        disconnect_callback: Callable[["BleakRootClient"], None],
+        *,
+        pair_on_connect: bool = False,
+        connect_timeout: float | None = None,
+    ) -> BLEClient:
+        """Public BLEClient construction helper."""
+        return self._create_client(
+            device,
+            disconnect_callback,
+            pair_on_connect=pair_on_connect,
+            connect_timeout=connect_timeout,
+        )
+
     def _connect_client(self, client: BLEClient, timeout: float | None = None) -> None:
         """Connect the provided BLEClient and ensure its GATT services are populated.
 
@@ -254,6 +335,10 @@ class ClientManager:
             )
             client._get_services()
 
+    def connect_client(self, client: BLEClient, timeout: float | None = None) -> None:
+        """Public BLEClient connect helper with service-readiness checks."""
+        self._connect_client(client, timeout=timeout)
+
     def _update_client_reference(
         self,
         new_client: BLEClient,
@@ -278,13 +363,21 @@ class ClientManager:
                 should_close = True
 
         if should_close:
-            close_thread = self.thread_coordinator._create_thread(
+            close_thread = self._thread_create_thread(
                 target=self._safe_close_client,
                 args=(old_client,),
                 name="BLEClientClose",
                 daemon=True,
             )
-            self.thread_coordinator._start_thread(close_thread)
+            self._thread_start_thread(close_thread)
+
+    def update_client_reference(
+        self,
+        new_client: BLEClient,
+        old_client: BLEClient | None,
+    ) -> None:
+        """Public helper for replacing active clients with async old-client close."""
+        self._update_client_reference(new_client, old_client)
 
     def _safe_close_client(self, client: BLEClient, event: Event | None = None) -> None:
         """Attempt to disconnect and close the given BLE client, suppressing any errors and optionally signal completion.
@@ -303,7 +396,7 @@ class ClientManager:
             and not getattr(client, "_closed", False)
             and getattr(client, "bleak_client", None)
         ):
-            self.error_handler._safe_cleanup(
+            self.error_handler.safe_cleanup(
                 lambda: client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS),
                 "client disconnect",
             )
@@ -312,11 +405,18 @@ class ClientManager:
                 "Skipping BLE client disconnect during interpreter finalization."
             )
         if not skip_disconnect:
-            self.error_handler._safe_cleanup(client.close, "client close")
+            self.error_handler.safe_cleanup(client.close, "client close")
         else:
             logger.debug("Skipping BLE client close during interpreter finalization.")
         if event:
             event.set()
+
+    def safe_close_client(self, client: BLEClient, event: Event | None = None) -> None:
+        """Public best-effort client close helper."""
+        if event is None:
+            self._safe_close_client(client)
+        else:
+            self._safe_close_client(client, event=event)
 
 
 class ConnectionOrchestrator:
@@ -358,6 +458,127 @@ class ConnectionOrchestrator:
         self.state_manager = state_manager
         self.state_lock = state_lock
         self.thread_coordinator = thread_coordinator
+
+    def _validator_validate_connection_request(self) -> None:
+        """Call validator pre-check with legacy fallback for test doubles."""
+        if isinstance(self.validator, ConnectionValidator):
+            self.validator.validate_connection_request()
+            return
+        legacy = getattr(self.validator, "_validate_connection_request", None)
+        if callable(legacy):
+            legacy()
+            return
+        self.validator.validate_connection_request()
+
+    def _state_current_state(self) -> ConnectionState:
+        """Read current state with fallback for legacy/mocked state managers."""
+        if isinstance(self.state_manager, BLEStateManager):
+            return self.state_manager.current_state
+        legacy = getattr(self.state_manager, "_current_state", None)
+        if isinstance(legacy, ConnectionState):
+            return legacy
+        return cast(ConnectionState, getattr(self.state_manager, "current_state"))
+
+    def _state_is_closing(self) -> bool:
+        """Read closing-state flag with fallback for legacy/mocked state managers."""
+        if isinstance(self.state_manager, BLEStateManager):
+            return self.state_manager.is_closing
+        legacy = getattr(self.state_manager, "_is_closing", None)
+        if isinstance(legacy, bool):
+            return legacy
+        return bool(getattr(self.state_manager, "is_closing", False))
+
+    def _state_transition_to(self, new_state: ConnectionState) -> bool:
+        """Transition helper with fallback for legacy/mocked state managers."""
+        if isinstance(self.state_manager, BLEStateManager):
+            return self.state_manager.transition_to(new_state)
+        legacy = getattr(self.state_manager, "_transition_to", None)
+        if callable(legacy):
+            return bool(legacy(new_state))
+        transition = getattr(self.state_manager, "transition_to")
+        return bool(transition(new_state))
+
+    def _state_reset_to_disconnected(self) -> bool:
+        """Reset helper with fallback for legacy/mocked state managers."""
+        if isinstance(self.state_manager, BLEStateManager):
+            return self.state_manager.reset_to_disconnected()
+        legacy = getattr(self.state_manager, "_reset_to_disconnected", None)
+        if callable(legacy):
+            return bool(legacy())
+        reset = getattr(self.state_manager, "reset_to_disconnected")
+        return bool(reset())
+
+    def _thread_set_event(self, name: str) -> None:
+        """Set thread-coordinator event with legacy fallback for test doubles."""
+        if isinstance(self.thread_coordinator, ThreadCoordinator):
+            self.thread_coordinator.set_event(name)
+            return
+        legacy = getattr(self.thread_coordinator, "_set_event", None)
+        if callable(legacy):
+            legacy(name)
+            return
+        self.thread_coordinator.set_event(name)
+
+    def _client_manager_create_client(
+        self,
+        device: BLEDevice | str,
+        on_disconnect_func: Callable[["BleakRootClient"], None],
+        *,
+        pair_on_connect: bool,
+        connect_timeout: float | None,
+    ) -> BLEClient:
+        """Create client via public API with legacy fallback for mocks/test doubles."""
+        if isinstance(self.client_manager, ClientManager):
+            return self.client_manager.create_client(
+                device,
+                on_disconnect_func,
+                pair_on_connect=pair_on_connect,
+                connect_timeout=connect_timeout,
+            )
+        legacy = getattr(self.client_manager, "_create_client", None)
+        if callable(legacy):
+            return cast(
+                BLEClient,
+                legacy(
+                    device,
+                    on_disconnect_func,
+                    pair_on_connect=pair_on_connect,
+                    connect_timeout=connect_timeout,
+                ),
+            )
+        return cast(
+            BLEClient,
+            self.client_manager.create_client(
+                device,
+                on_disconnect_func,
+                pair_on_connect=pair_on_connect,
+                connect_timeout=connect_timeout,
+            ),
+        )
+
+    def _client_manager_connect_client(
+        self, client: BLEClient, *, timeout: float | None
+    ) -> None:
+        """Connect client via public API with legacy fallback for mocks/test doubles."""
+        if isinstance(self.client_manager, ClientManager):
+            self.client_manager.connect_client(client, timeout=timeout)
+            return
+        legacy = getattr(self.client_manager, "_connect_client", None)
+        if callable(legacy):
+            legacy(client, timeout=timeout)
+            return
+        self.client_manager.connect_client(client, timeout=timeout)
+
+    def _client_manager_safe_close_client(self, client: BLEClient) -> None:
+        """Close client via public API with legacy fallback for mocks/test doubles."""
+        if isinstance(self.client_manager, ClientManager):
+            self.client_manager.safe_close_client(client)
+            return
+        legacy = getattr(self.client_manager, "_safe_close_client", None)
+        if callable(legacy):
+            legacy(client)
+            return
+        self.client_manager.safe_close_client(client)
 
     @staticmethod
     def _get_connect_timeout(*, pair_on_connect: bool) -> float:
@@ -484,7 +705,7 @@ class ConnectionOrchestrator:
         """
         # Initial state check under lock before performing blocking I/O
         with self.state_lock:
-            current_state = self.state_manager._current_state
+            current_state = self._state_current_state()
             if current_state != ConnectionState.CONNECTING:
                 logger.debug(
                     "Connection finalization aborted: state changed from CONNECTING to %s during connect",
@@ -501,7 +722,7 @@ class ConnectionOrchestrator:
 
         # Re-check state after registration under lock for atomic state transition
         with self.state_lock:
-            if self.state_manager._current_state != ConnectionState.CONNECTING:
+            if self._state_current_state() != ConnectionState.CONNECTING:
                 logger.debug(
                     "Connection finalization aborted: state changed during notification registration"
                 )
@@ -520,7 +741,7 @@ class ConnectionOrchestrator:
                     CONNECTION_ERROR_CLIENT_DISCONNECTED_DURING_FINALIZATION
                 )
 
-            if not self.state_manager._transition_to(ConnectionState.CONNECTED):
+            if not self._state_transition_to(ConnectionState.CONNECTED):
                 raise self.interface.BLEError(
                     CONNECTION_ERROR_STATE_TRANSITION_INVALIDATED
                 )
@@ -528,7 +749,7 @@ class ConnectionOrchestrator:
         if emit_connected_side_effects:
             on_connected_func()
             if getattr(self.interface, "_ever_connected", False):
-                self.thread_coordinator._set_event("reconnected_event")
+                self._thread_set_event("reconnected_event")
             normalized_device_address = sanitize_address(device_address)
             logger.info(
                 "Connection successful to %s",
@@ -545,26 +766,26 @@ class ConnectionOrchestrator:
         error_context : str
             Context string used in log messages to identify the failure context.
         """
-        if not self.state_manager._transition_to(ConnectionState.ERROR):
+        if not self._state_transition_to(ConnectionState.ERROR):
             logger.warning(
                 "Failed state transition to %s during %s (current=%s)",
                 ConnectionState.ERROR.value,
                 error_context,
-                self.state_manager._current_state.value,
+                self._state_current_state().value,
             )
-        if not self.state_manager._transition_to(ConnectionState.DISCONNECTED):
+        if not self._state_transition_to(ConnectionState.DISCONNECTED):
             logger.warning(
                 "Failed state transition to %s during %s (current=%s); forcing reset",
                 ConnectionState.DISCONNECTED.value,
                 error_context,
-                self.state_manager._current_state.value,
+                self._state_current_state().value,
             )
-            self.state_manager._reset_to_disconnected()
+            self._state_reset_to_disconnected()
 
     def _raise_if_interface_closing(self) -> None:
         """Abort connection work when shutdown is already in progress."""
         with self.state_lock:
-            is_closing = self.state_manager._is_closing
+            is_closing = self._state_is_closing()
         raw_closed = getattr(self.interface, "_closed", False)
         is_closed = raw_closed is True
         if is_closing or is_closed:
@@ -621,7 +842,7 @@ class ConnectionOrchestrator:
         Exception
             If any other error occurs during the connection process.
         """
-        self.validator._validate_connection_request()
+        self._validator_validate_connection_request()
         self._raise_if_interface_closing()
 
         target_address = address if address is not None else current_address
@@ -661,7 +882,7 @@ class ConnectionOrchestrator:
         )
 
         with self.state_lock:
-            if not self.state_manager._transition_to(ConnectionState.CONNECTING):
+            if not self._state_transition_to(ConnectionState.CONNECTING):
                 raise self.interface.BLEError(BLECLIENT_ERROR_ALREADY_CONNECTED)
         client: BLEClient | None = None
         skip_discovery_scan = False
@@ -671,7 +892,7 @@ class ConnectionOrchestrator:
             # Discovery mode (target_address=None) skips directly to find_device
             if target_address:
                 self._raise_if_interface_closing()
-                client = self.client_manager._create_client(
+                client = self._client_manager_create_client(
                     target_address,
                     on_disconnect_func,
                     pair_on_connect=pair_on_connect,
@@ -679,7 +900,7 @@ class ConnectionOrchestrator:
                 )
                 try:
                     self._raise_if_interface_closing()
-                    self.client_manager._connect_client(
+                    self._client_manager_connect_client(
                         client, timeout=direct_connect_timeout
                     )
                 except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
@@ -707,7 +928,7 @@ class ConnectionOrchestrator:
                             normalized_target,
                         )
                     if client:
-                        self.client_manager._safe_close_client(client)
+                        self._client_manager_safe_close_client(client)
                     client = None
                 else:
                     self._raise_if_interface_closing()
@@ -732,14 +953,14 @@ class ConnectionOrchestrator:
                 retry_connect_timeout = discovery_connect_timeout
 
             self._raise_if_interface_closing()
-            client = self.client_manager._create_client(
+            client = self._client_manager_create_client(
                 connection_target,
                 on_disconnect_func,
                 pair_on_connect=pair_on_connect,
                 connect_timeout=retry_connect_timeout,
             )
             try:
-                self.client_manager._connect_client(
+                self._client_manager_connect_client(
                     client, timeout=retry_connect_timeout
                 )
             except BleakDBusError:
@@ -761,19 +982,19 @@ class ConnectionOrchestrator:
                     "Direct retry also reported device-not-found for %s; attempting discovery scan fallback.",
                     normalized_target,
                 )
-                self.client_manager._safe_close_client(client)
+                self._client_manager_safe_close_client(client)
                 client = None
                 self._raise_if_interface_closing()
                 device = self.interface.findDevice(target_address)
                 self._raise_if_interface_closing()
                 resolved_address = device.address
-                client = self.client_manager._create_client(
+                client = self._client_manager_create_client(
                     device,
                     on_disconnect_func,
                     pair_on_connect=pair_on_connect,
                     connect_timeout=discovery_connect_timeout,
                 )
-                self.client_manager._connect_client(
+                self._client_manager_connect_client(
                     client,
                     timeout=discovery_connect_timeout,
                 )
@@ -789,7 +1010,7 @@ class ConnectionOrchestrator:
             return client
         except BleakDBusError:
             if client:
-                self.client_manager._safe_close_client(client)
+                self._client_manager_safe_close_client(client)
             self._transition_failure_to_disconnected("BleakDBusError during connect")
             raise
         except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
@@ -800,13 +1021,37 @@ class ConnectionOrchestrator:
             )
             # Clean up client before re-raising to avoid resource leak
             if client:
-                self.client_manager._safe_close_client(client)
+                self._client_manager_safe_close_client(client)
             raise
         except Exception:
             logger.warning(
                 "Failed to connect, closing BLEClient thread.", exc_info=True
             )
             if client:
-                self.client_manager._safe_close_client(client)
+                self._client_manager_safe_close_client(client)
             self._transition_failure_to_disconnected("unexpected connect failure")
             raise
+
+    def establish_connection(
+        self,
+        address: str | None,
+        current_address: str | None,
+        register_notifications_func: Callable[[BLEClient], None],
+        on_connected_func: Callable[[], None],
+        on_disconnect_func: Callable[["BleakRootClient"], None],
+        *,
+        pair_on_connect: bool = False,
+        connect_timeout: float | None = None,
+        emit_connected_side_effects: bool = True,
+    ) -> BLEClient:
+        """Public entrypoint for orchestrating connection establishment."""
+        return self._establish_connection(
+            address=address,
+            current_address=current_address,
+            register_notifications_func=register_notifications_func,
+            on_connected_func=on_connected_func,
+            on_disconnect_func=on_disconnect_func,
+            pair_on_connect=pair_on_connect,
+            connect_timeout=connect_timeout,
+            emit_connected_side_effects=emit_connected_side_effects,
+        )
