@@ -4663,6 +4663,52 @@ def test_main_ota_update_fails_fast_on_non_transport_error(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_main_ota_update_constructor_error_exits_gracefully(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--ota-update should exit gracefully when ESP32WiFiOTA constructor raises OTAError.
+
+    This tests the error handling for constructor failures (invalid destination,
+    missing firmware file, empty firmware, etc.) that occur before update() is called.
+    """
+    sys.argv = ["", "--host", "localhost", "--ota-update", "firmware.bin"]
+    mt_config.args = cast(Any, sys.argv)
+
+    node = MagicMock(autospec=Node)
+    get_node = MagicMock(return_value=node)
+
+    with (
+        patch(
+            "meshtastic.tcp_interface.TCPInterface",
+            _make_fake_tcp_interface(get_node=get_node),
+        ),
+        patch(
+            "meshtastic.ota.ESP32WiFiOTA",
+            side_effect=OTAError(
+                "Invalid OTA destination 'bad:port': malformed address"
+            ),
+        ) as ota_ctor_mock,
+        patch("meshtastic.__main__.time.sleep") as sleep_mock,
+        pytest.raises(SystemExit) as excinfo,
+    ):
+        main()
+
+    _, err = capsys.readouterr()
+    assert (
+        "OTA update failed: Invalid OTA destination 'bad:port': malformed address"
+        in err
+    )
+    assert excinfo.value.code == 1
+    # Constructor was called with firmware path and hostname
+    ota_ctor_mock.assert_called_once_with("firmware.bin", "localhost")
+    # Should not reach sleep/retry logic since constructor failed
+    assert sleep_mock.call_args_list == []
+    # Should not call update or startOTA since constructor failed
+    node.startOTA.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_main_ota_update_succeeds_and_prints_completion(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
