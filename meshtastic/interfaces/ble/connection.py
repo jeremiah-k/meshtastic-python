@@ -417,12 +417,25 @@ class ClientManager:
         """
         is_finalizing = getattr(sys, "is_finalizing", None)
         skip_disconnect = bool(is_finalizing()) if callable(is_finalizing) else False
+        safe_cleanup = getattr(self.error_handler, "safe_cleanup", None)
+        if not callable(safe_cleanup) or _is_unconfigured_mock_callable(safe_cleanup):
+            safe_cleanup = getattr(self.error_handler, "_safe_cleanup", None)
+        if not callable(safe_cleanup) or _is_unconfigured_mock_callable(safe_cleanup):
+            # Preserve best-effort close behavior for minimal test doubles that do
+            # not expose either cleanup helper.
+            def safe_cleanup(func: Callable[[], object], _cleanup_name: str) -> bool:
+                try:
+                    func()
+                except Exception:  # noqa: BLE001 - cleanup path must stay best-effort
+                    return False
+                return True
+
         if (
             not skip_disconnect
             and not getattr(client, "_closed", False)
             and getattr(client, "bleak_client", None)
         ):
-            self.error_handler.safe_cleanup(
+            safe_cleanup(
                 lambda: client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS),
                 "client disconnect",
             )
@@ -431,7 +444,7 @@ class ClientManager:
                 "Skipping BLE client disconnect during interpreter finalization."
             )
         if not skip_disconnect:
-            self.error_handler.safe_cleanup(client.close, "client close")
+            safe_cleanup(client.close, "client close")
         else:
             logger.debug("Skipping BLE client close during interpreter finalization.")
         if event:
@@ -916,7 +929,7 @@ class ConnectionOrchestrator:
             return target_address, target_address, direct_connect_timeout
 
         self._raise_if_interface_closing()
-        device = self.interface.findDevice(target_address)
+        device = self._compat_find_device(target_address)
         return device, device.address, discovery_connect_timeout
 
     def _connect_retry_target(
@@ -968,7 +981,7 @@ class ConnectionOrchestrator:
             self._client_manager_safe_close_client(client)
 
             self._raise_if_interface_closing()
-            device = self.interface.findDevice(target_address)
+            device = self._compat_find_device(target_address)
             self._raise_if_interface_closing()
             resolved_address = device.address
             client = self._client_manager_create_client(
@@ -987,6 +1000,29 @@ class ConnectionOrchestrator:
                 raise
 
         return client, resolved_address
+
+    def _compat_find_device(self, target_address: str | None) -> BLEDevice:
+        """Resolve find-device lookup with historical method-name compatibility."""
+        find_device = getattr(self.interface, "findDevice", None)
+        if callable(find_device) and not _is_unconfigured_mock_callable(find_device):
+            return cast(BLEDevice, find_device(target_address))
+
+        legacy_find_device = getattr(self.interface, "find_device", None)
+        if callable(legacy_find_device) and not _is_unconfigured_mock_callable(
+            legacy_find_device
+        ):
+            return cast(BLEDevice, legacy_find_device(target_address))
+
+        underscore_find_device = getattr(self.interface, "_find_device", None)
+        if callable(underscore_find_device) and not _is_unconfigured_mock_callable(
+            underscore_find_device
+        ):
+            return cast(BLEDevice, underscore_find_device(target_address))
+
+        fallback_find_device = getattr(self.interface, "findDevice")
+        if _is_unconfigured_mock_callable(fallback_find_device):
+            raise AttributeError("Interface is missing findDevice/find_device/_find_device")
+        return cast(BLEDevice, fallback_find_device(target_address))
 
     def _finalize_connection(
         self,

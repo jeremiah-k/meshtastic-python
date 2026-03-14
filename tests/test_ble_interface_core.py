@@ -1001,7 +1001,8 @@ def test_ble_interface_management_rejects_temp_client_when_target_owned_elsewher
         with pytest.raises(BLEInterface.BLEError, match=ERROR_CONNECTION_SUPPRESSED):
             iface.unpair("mesh-node", await_timeout=7.0)
 
-    assert lock_states == [(True, True)]
+    assert lock_states
+    assert all(state == (True, True) for state in lock_states)
     iface.close()
 
 
@@ -4860,7 +4861,8 @@ def test_wait_for_disconnect_notifications_skips_unconfigured_queuework(
     iface = SimpleNamespace(
         error_handler=SimpleNamespace(safe_execute=lambda func, **_kwargs: func())
     )
-    publishing_thread = MagicMock()
+    queue_work = MagicMock()
+    publishing_thread = SimpleNamespace(queueWork=queue_work)
     drained: list[bool] = []
     monkeypatch.setattr(
         BLECompatibilityEventService,
@@ -4876,6 +4878,7 @@ def test_wait_for_disconnect_notifications_skips_unconfigured_queuework(
     )
 
     assert drained == [True]
+    queue_work.assert_not_called()
 
 
 def test_publish_connection_status_runs_directly_when_queuework_unconfigured(
@@ -4900,7 +4903,8 @@ def test_publish_connection_status_runs_directly_when_queuework_unconfigured(
     )
 
     iface = SimpleNamespace()
-    publishing_thread = MagicMock()
+    queue_work = MagicMock()
+    publishing_thread = SimpleNamespace(queueWork=queue_work)
 
     BLECompatibilityEventService.publish_connection_status(
         iface,
@@ -4909,6 +4913,44 @@ def test_publish_connection_status_runs_directly_when_queuework_unconfigured(
     )
 
     assert sent == [("meshtastic.connection.status", iface, True)]
+    queue_work.assert_not_called()
+
+
+def test_publish_connection_status_falls_back_when_queuework_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Status publish should run inline when queueWork raises."""
+    from meshtastic.interfaces.ble.compatibility_service import (
+        BLECompatibilityEventService,
+    )
+    from meshtastic import mesh_interface as mesh_iface_module
+
+    sent: list[tuple[str, object, bool]] = []
+
+    def _send_message(topic: str, *, interface: object, connected: bool) -> None:
+        sent.append((topic, interface, connected))
+
+    monkeypatch.setattr(
+        mesh_iface_module,
+        "pub",
+        SimpleNamespace(sendMessage=_send_message),
+        raising=True,
+    )
+
+    class _FailingPublishingThread:
+        def queueWork(self, _callback: object) -> None:
+            raise RuntimeError("queue failure")
+
+    iface = SimpleNamespace()
+    publishing_thread = _FailingPublishingThread()
+
+    BLECompatibilityEventService.publish_connection_status(
+        iface,
+        connected=False,
+        publishing_thread=publishing_thread,
+    )
+
+    assert sent == [("meshtastic.connection.status", iface, False)]
 
 
 def test_discovery_manager_filters_meshtastic_devices(

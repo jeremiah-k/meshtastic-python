@@ -181,6 +181,7 @@ class BLEClient:
             if log_if_no_address:
                 logger.debug("No address provided - only discover method will work.")
             return
+        # kwargs intentionally forward to BleakRootClient's external, untyped constructor.
         self.bleak_client = BleakRootClient(address, **kwargs)
         self._sync_address_from_bleak()
 
@@ -204,18 +205,18 @@ class BLEClient:
         self,
         *,
         error_message: str,
-        operation: Callable[[BleakRootClient], Coroutine[Any, Any, Any]],
+        operation: Callable[[BleakRootClient], Coroutine[Any, Any, T]],
         timeout: float | None = None,
         sync_address: bool = False,
-    ) -> Any:
+    ) -> T:
         """Run a Bleak transport operation with common initialization checks."""
         bleak_client = self._require_bleak_client(error_message)
-        result = self._async_await(operation(bleak_client), timeout=timeout)
+        result: T = self._async_await(operation(bleak_client), timeout=timeout)
         if sync_address:
             self._sync_address_from_bleak()
         return result
 
-    # COMPAT_STABLE_SHIM: historical discovery entrypoint used by BLE discovery compatibility paths.
+    # INTERNAL_COMPAT: historical discovery entrypoint used by BLE discovery compatibility paths.
     def _discover(self, **kwargs: Any) -> Any:
         """Discover nearby BLE devices.
 

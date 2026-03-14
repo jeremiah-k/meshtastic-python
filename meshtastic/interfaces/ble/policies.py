@@ -158,7 +158,19 @@ class ReconnectPolicy:
         )  # Clamp to [effective_lower, max_delay]
 
     def get_delay(self, attempt: int | None = None) -> float:
-        """Public delay accessor for cross-module retry/backoff consumers."""
+        """Return retry delay through the public compatibility wrapper.
+
+        Parameters
+        ----------
+        attempt : int | None
+            Optional zero-based attempt index; when omitted, the internal
+            attempt counter is used. (Default value = None)
+
+        Returns
+        -------
+        float
+            Jittered retry delay in seconds.
+        """
         return self._get_delay(attempt)
 
     def _should_retry(self, attempt: int | None = None) -> bool:
@@ -179,7 +191,19 @@ class ReconnectPolicy:
         return self.max_retries is None or attempt < self.max_retries
 
     def should_retry(self, attempt: int | None = None) -> bool:
-        """Public retry-eligibility accessor for cross-module consumers."""
+        """Return retry eligibility through the public compatibility wrapper.
+
+        Parameters
+        ----------
+        attempt : int | None
+            Optional zero-based attempt index to evaluate; when omitted, the
+            internal attempt counter is used. (Default value = None)
+
+        Returns
+        -------
+        bool
+            True when another retry is allowed, otherwise False.
+        """
         return self._should_retry(attempt)
 
     def next_attempt(self) -> tuple[float, bool]:
@@ -303,7 +327,13 @@ class RetryPolicy:
 
     @staticmethod
     def empty_read() -> ReconnectPolicy:
-        """Public preset for empty-read retry behavior."""
+        """Return the public empty-read retry preset.
+
+        Returns
+        -------
+        ReconnectPolicy
+            Policy configured for empty read retry/backoff behavior.
+        """
         return RetryPolicy._empty_read()
 
     @staticmethod
@@ -325,7 +355,13 @@ class RetryPolicy:
 
     @staticmethod
     def transient_error() -> ReconnectPolicy:
-        """Public preset for transient-read retry behavior."""
+        """Return the public transient-read retry preset.
+
+        Returns
+        -------
+        ReconnectPolicy
+            Policy configured for transient read retry/backoff behavior.
+        """
         return RetryPolicy._transient_error()
 
     @staticmethod
@@ -347,5 +383,11 @@ class RetryPolicy:
 
     @staticmethod
     def auto_reconnect() -> ReconnectPolicy:
-        """Public preset for auto-reconnect behavior."""
+        """Return the public auto-reconnect retry preset.
+
+        Returns
+        -------
+        ReconnectPolicy
+            Policy configured for automatic reconnect backoff behavior.
+        """
         return RetryPolicy._auto_reconnect()

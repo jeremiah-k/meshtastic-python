@@ -568,9 +568,18 @@ class DiscoveryManager:
                 # underscore-prefixed discover helpers.
                 discover = getattr(client, "_discover", None)
             if not callable(discover) or _is_unconfigured_mock_callable(discover):
+                discarded_client: (
+                    BLEClient
+                    | DiscoveryClientProtocol
+                    | UnderscoreDiscoveryClientProtocol
+                    | None
+                ) = None
                 with self._client_lock:
                     if self._client is client:
+                        discarded_client = self._client
                         self._client = None
+                if discarded_client is not None:
+                    _close_discovery_client_best_effort(discarded_client)
                 raise DiscoveryClientError.invalid_client(
                     resolved_factory,
                     type(client),

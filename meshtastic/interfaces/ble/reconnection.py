@@ -203,7 +203,7 @@ class ReconnectScheduler:
             thread = self._thread_create_thread(
                 target=self._reconnect_worker._attempt_reconnect_loop,
                 args=(shutdown_event,),
-                kwargs={"on_exit": self._clear_thread_reference},
+                kwargs={"on_exit": self.clear_thread_reference},
                 name="BLEAutoReconnect",
                 daemon=True,
             )
@@ -229,7 +229,21 @@ class ReconnectScheduler:
         return True
 
     def schedule_reconnect(self, auto_reconnect: bool, shutdown_event: Event) -> bool:
-        """Public entrypoint for scheduling reconnect worker startup."""
+        """Schedule reconnect worker startup through the public compatibility wrapper.
+
+        Parameters
+        ----------
+        auto_reconnect : bool
+            Whether auto-reconnect is enabled for the current interface.
+        shutdown_event : Event
+            Event observed by the worker loop to stop reconnect attempts during
+            shutdown.
+
+        Returns
+        -------
+        bool
+            True when a reconnect worker was scheduled, otherwise False.
+        """
         return self._schedule_reconnect(auto_reconnect, shutdown_event)
 
     def _clear_thread_reference(self) -> None:
@@ -248,7 +262,14 @@ class ReconnectScheduler:
             self._reconnect_thread = None
 
     def clear_thread_reference(self) -> None:
-        """Public helper to clear reconnect thread reference."""
+        """Clear reconnect thread state through the public compatibility wrapper.
+
+        Returns
+        -------
+        None
+            Always returns None after clearing the cached reconnect thread
+            reference.
+        """
         self._clear_thread_reference()
 
 

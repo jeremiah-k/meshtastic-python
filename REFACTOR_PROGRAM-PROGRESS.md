@@ -141,6 +141,17 @@ This is an internal working tracker for large-pass execution.
   - `poetry run pytest -q tests/test_ble_connection_edge_cases.py -k "connection_orchestrator_interrupt_resets_state_and_closes_client or connection_orchestrator_reraises_retry_ble_dbus_error or connection_orchestrator_handles_bleak_dbus_error_during_connect"` (`3 passed`)
   - `poetry run pytest -q tests/test_ble_interface_core.py tests/test_ble_interface_advanced.py tests/test_ble_connection_edge_cases.py tests/test_ble_client_edge_cases.py tests/test_ble_integration_scenarios.py` (`299 passed`)
   - `make ci-strict` (`1366 passed, 3 skipped, 92 deselected`; `mypy --strict` clean)
+  - review-closure/hardening pass:
+    - hardened compatibility dispatch and cleanup paths across BLE collaborators,
+    - guaranteed best-effort shutdown cleanup ordering in lifecycle close flow,
+    - tightened mock filtering for publish/drain compatibility event paths,
+    - aligned compatibility inventory markers/docs for BLE error-handler wrappers.
+  - `ruff check COMPATIBILITY.md meshtastic/interfaces/ble/{client.py,compatibility_service.py,connection.py,discovery.py,errors.py,lifecycle_service.py,management_service.py,notifications.py,policies.py,reconnection.py} tests/test_ble_connection_edge_cases.py tests/test_ble_interface_core.py`
+  - `poetry run mypy meshtastic/interfaces/ble/{client.py,compatibility_service.py,connection.py,discovery.py,errors.py,lifecycle_service.py,management_service.py,notifications.py,policies.py,reconnection.py} --strict`
+  - `poetry run pytest -q tests/test_ble_connection_edge_cases.py -k "safe_close_client_already_closed or preserves_pair_on_connect_across_direct_retry or preserves_pair_on_connect_across_scan_fallback or skips_scan_after_direct_device_not_found_for_explicit_address or safe_close_client_falls_back_to_legacy_safe_cleanup or fallbacks_to_find_device_when_findDevice_missing or fallbacks_to_underscore_find_device"` (`7 passed`)
+  - `poetry run pytest -q tests/test_ble_interface_core.py -k "management_rejects_temp_client_when_target_owned_elsewhere or wait_for_disconnect_notifications_skips_unconfigured_queuework or publish_connection_status_runs_directly_when_queuework_unconfigured or publish_connection_status_falls_back_when_queuework_raises"` (`5 passed`)
+  - `poetry run pytest -q tests/test_ble_interface_advanced.py -k "wait_for_disconnect_notifications_exceptions or drain_publish_queue_exceptions"` (`2 passed`)
+  - `make ci-strict` (`1370 passed, 3 skipped, 92 deselected`; `mypy --strict` clean)
 
 ## Pass P2 Plan (Next)
 

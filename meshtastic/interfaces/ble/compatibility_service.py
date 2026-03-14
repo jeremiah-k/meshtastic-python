@@ -79,7 +79,7 @@ class BLECompatibilityEventService:
         """Drain and run pending publish callbacks on the current thread."""
         thread = getattr(publishing_thread, "thread", None)
         thread_drain = getattr(thread, "_drain_publish_queue", None)
-        if callable(thread_drain):
+        if callable(thread_drain) and not _is_unconfigured_mock_callable(thread_drain):
             iface.error_handler.safe_execute(
                 lambda: thread_drain(flush_event),
                 error_msg="Error draining publish queue via publishing thread",
@@ -92,7 +92,12 @@ class BLECompatibilityEventService:
         # draining logic below.
 
         queue = getattr(publishing_thread, "queue", None)
-        if queue is None:
+        get_nowait = getattr(queue, "get_nowait", None)
+        if (
+            queue is None
+            or not callable(get_nowait)
+            or _is_unconfigured_mock_callable(get_nowait)
+        ):
             return
         iterations = 0
         while not flush_event.is_set():
@@ -103,7 +108,7 @@ class BLECompatibilityEventService:
                 )
                 break
             try:
-                runnable = queue.get_nowait()
+                runnable = get_nowait()
             except Empty:
                 break
             iterations += 1
@@ -146,3 +151,4 @@ class BLECompatibilityEventService:
                 "Error queuing connection status publish via publishingThread.queueWork",
                 exc_info=True,
             )
+            _publish_status()

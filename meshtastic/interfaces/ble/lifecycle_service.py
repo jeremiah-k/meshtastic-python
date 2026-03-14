@@ -279,13 +279,20 @@ class BLELifecycleService:
 
         def _close_previous_client_async() -> None:
             if previous_client:
-                close_thread = iface.thread_coordinator._create_thread(
-                    target=iface._client_manager_safe_close_client,
-                    args=(previous_client,),
-                    name="BLEClientClose",
-                    daemon=True,
-                )
-                iface.thread_coordinator._start_thread(close_thread)
+                try:
+                    close_thread = iface.thread_coordinator._create_thread(
+                        target=iface._client_manager_safe_close_client,
+                        args=(previous_client,),
+                        name="BLEClientClose",
+                        daemon=True,
+                    )
+                    iface.thread_coordinator._start_thread(close_thread)
+                except Exception:  # noqa: BLE001 - cleanup must not abort disconnect flow
+                    logger.warning(
+                        "Failed to start async BLE client close; closing inline.",
+                        exc_info=True,
+                    )
+                    iface._client_manager_safe_close_client(previous_client)
 
         if skip_side_effects:
             if stale_disconnect_keys:
@@ -730,46 +737,56 @@ class BLELifecycleService:
                     iface.client = None
 
             client_address = iface._extract_client_address(client)
-            if client is not None:
-                gate_context = (
-                    iface._management_target_gate(client_address)
-                    if client_address is not None
-                    and not management_wait_timed_out
-                    and not publish_pending
-                    else contextlib.nullcontext()
-                )
-                with gate_context:
-                    iface._notification_manager.unsubscribe_all(
-                        client, timeout=NOTIFICATION_START_TIMEOUT
+            try:
+                if client is not None:
+                    gate_context = (
+                        iface._management_target_gate(client_address)
+                        if client_address is not None
+                        and not management_wait_timed_out
+                        and not publish_pending
+                        else contextlib.nullcontext()
                     )
-                    iface._disconnect_and_close_client(client)
-            iface._notification_manager.cleanup_all()
+                    with gate_context:
+                        iface.error_handler.safe_cleanup(
+                            lambda: iface._notification_manager.unsubscribe_all(
+                                client, timeout=NOTIFICATION_START_TIMEOUT
+                            ),
+                            "notification unsubscribe_all",
+                        )
+                        iface.error_handler.safe_cleanup(
+                            lambda: iface._disconnect_and_close_client(client),
+                            "BLE client disconnect/close",
+                        )
+                iface.error_handler.safe_cleanup(
+                    iface._notification_manager.cleanup_all,
+                    "notification manager cleanup",
+                )
 
-            notify = False
-            with iface._state_lock:
-                if iface._client_publish_pending:
-                    replacement_pending = iface._client_replacement_pending
-                    iface._client_publish_pending = False
-                    iface._client_replacement_pending = False
-                    if replacement_pending and not iface._disconnect_notified:
+                notify = False
+                with iface._state_lock:
+                    if iface._client_publish_pending:
+                        replacement_pending = iface._client_replacement_pending
+                        iface._client_publish_pending = False
+                        iface._client_replacement_pending = False
+                        if replacement_pending and not iface._disconnect_notified:
+                            iface._disconnect_notified = True
+                            notify = True
+                        else:
+                            iface._disconnect_notified = True
+                    elif iface._client_replacement_pending:
+                        iface._client_replacement_pending = False
+                        if not iface._disconnect_notified:
+                            iface._disconnect_notified = True
+                            notify = True
+                    elif not iface._disconnect_notified:
                         iface._disconnect_notified = True
                         notify = True
-                    else:
-                        iface._disconnect_notified = True
-                elif iface._client_replacement_pending:
-                    iface._client_replacement_pending = False
-                    if not iface._disconnect_notified:
-                        iface._disconnect_notified = True
-                        notify = True
-                elif not iface._disconnect_notified:
-                    iface._disconnect_notified = True
-                    notify = True
 
-            if notify:
-                iface._disconnected()
-                iface._wait_for_disconnect_notifications()
-
-            iface.thread_coordinator._cleanup()
+                if notify:
+                    iface._disconnected()
+                    iface._wait_for_disconnect_notifications()
+            finally:
+                iface.thread_coordinator._cleanup()
         finally:
             with iface._state_lock:
                 # Record final state as DISCONNECTED for observers; instance remains closed.

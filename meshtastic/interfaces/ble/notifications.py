@@ -94,7 +94,20 @@ class NotificationManager:
 
     # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _subscribe.
     def subscribe(self, characteristic: str, callback: Callable[[Any, Any], None]) -> int:
-        """Public entrypoint for tracking a characteristic notification subscription."""
+        """Track a notification subscription through the public compatibility wrapper.
+
+        Parameters
+        ----------
+        characteristic : str
+            BLE characteristic identifier (UUID/handle) being subscribed.
+        callback : Callable[[Any, Any], None]
+            Callback invoked for notification payloads on ``characteristic``.
+
+        Returns
+        -------
+        int
+            Opaque subscription token returned by ``_subscribe``.
+        """
         return self._subscribe(characteristic, callback)
 
     def _cleanup_all(self) -> None:
@@ -115,7 +128,13 @@ class NotificationManager:
 
     # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _cleanup_all.
     def cleanup_all(self) -> None:
-        """Public entrypoint for clearing all tracked subscriptions."""
+        """Clear all tracked subscriptions through the public wrapper.
+
+        Returns
+        -------
+        None
+            Always returns None after resetting subscription tracking state.
+        """
         self._cleanup_all()
 
     def _unsubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
@@ -155,7 +174,21 @@ class NotificationManager:
 
     # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _unsubscribe_all.
     def unsubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
-        """Public entrypoint for best-effort notification unsubscribe on shutdown."""
+        """Stop all tracked notifications through the public compatibility wrapper.
+
+        Parameters
+        ----------
+        client : BLEClient
+            BLE client used to invoke ``stop_notify`` for tracked
+            characteristics.
+        timeout : float | None
+            Optional per-unsubscribe timeout value.
+
+        Returns
+        -------
+        None
+            Always returns None after best-effort unsubscribe attempts.
+        """
         self._unsubscribe_all(client, timeout=timeout)
 
     def _resubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
@@ -219,7 +252,20 @@ class NotificationManager:
 
     # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _resubscribe_all.
     def resubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
-        """Public entrypoint for reconnect-time notification resubscription."""
+        """Resubscribe tracked notifications through the public wrapper.
+
+        Parameters
+        ----------
+        client : BLEClient
+            BLE client used to invoke ``start_notify`` callbacks.
+        timeout : float | None
+            Optional per-subscription timeout value.
+
+        Returns
+        -------
+        None
+            Always returns None after best-effort resubscribe attempts.
+        """
         self._resubscribe_all(client, timeout=timeout)
 
     def __len__(self) -> int:
@@ -251,5 +297,16 @@ class NotificationManager:
 
     # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _get_callback.
     def get_callback(self, characteristic: str) -> Callable[[Any, Any], None] | None:
-        """Public callback lookup for a tracked characteristic."""
+        """Look up a tracked callback through the public compatibility wrapper.
+
+        Parameters
+        ----------
+        characteristic : str
+            Characteristic identifier to resolve.
+
+        Returns
+        -------
+        Callable[[Any, Any], None] | None
+            Most-recent callback for the characteristic, or None when absent.
+        """
         return self._get_callback(characteristic)

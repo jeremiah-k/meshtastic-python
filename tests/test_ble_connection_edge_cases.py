@@ -402,6 +402,29 @@ def test_client_manager_safe_close_client_already_closed() -> None:
 
 
 @pytest.mark.unit
+def test_client_manager_safe_close_client_falls_back_to_legacy_safe_cleanup() -> None:
+    """_safe_close_client should use _safe_cleanup when safe_cleanup is unconfigured."""
+    state_manager = BLEStateManager()
+    lock = RLock()
+    thread_coordinator = MagicMock()
+    error_handler = MagicMock()
+    error_handler.safe_cleanup = MagicMock()
+    error_handler._safe_cleanup = MagicMock(side_effect=lambda func, _name: func())
+    manager = ClientManager(state_manager, lock, thread_coordinator, error_handler)
+
+    mock_client = MagicMock()
+    mock_client._closed = False
+    mock_client.bleak_client = object()
+
+    manager._safe_close_client(mock_client)
+
+    error_handler.safe_cleanup.assert_not_called()
+    assert error_handler._safe_cleanup.call_count == 2
+    mock_client.disconnect.assert_called_once()
+    mock_client.close.assert_called_once()
+
+
+@pytest.mark.unit
 def test_client_manager_update_client_reference_same_client() -> None:
     """_update_client_reference should not close when old and new are same."""
     state_manager = BLEStateManager()
@@ -1366,6 +1389,110 @@ def test_connection_orchestrator_uses_discovery_for_non_address_identifier_after
         ANY,
         emit_connected_side_effects=True,
     )
+
+
+@pytest.mark.unit
+def test_connection_orchestrator_fallbacks_to_find_device_when_findDevice_missing() -> (
+    None
+):
+    """Explicit-address retry should use find_device() when findDevice() is absent."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = _make_orchestrator_client_manager()
+    direct_client = MagicMock()
+    retry_client = MagicMock()
+    discovered_client = MagicMock()
+    client_manager.create_client.side_effect = [
+        direct_client,
+        retry_client,
+        discovered_client,
+    ]
+    client_manager.connect_client.side_effect = [
+        BleakDeviceNotFoundError("AA:BB:CC:DD:EE:FF", "not found"),
+        BleakDeviceNotFoundError("AA:BB:CC:DD:EE:FF", "not found"),
+        None,
+    ]
+
+    discovered_device = BLEDevice("AA:BB:CC:DD:EE:FF", "Mesh", details=None)
+    interface = SimpleNamespace(
+        BLEError=MockBLEError,
+        _closed=False,
+        find_device=MagicMock(return_value=discovered_device),
+    )
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+    orchestrator._finalize_connection = MagicMock()  # type: ignore[method-assign]
+
+    result = orchestrator._establish_connection(
+        address="AA:BB:CC:DD:EE:FF",
+        current_address=None,
+        register_notifications_func=lambda _client: None,
+        on_connected_func=lambda: None,
+        on_disconnect_func=lambda _client: None,
+    )
+
+    assert result is discovered_client
+    interface.find_device.assert_called_once_with("AA:BB:CC:DD:EE:FF")
+
+
+@pytest.mark.unit
+def test_connection_orchestrator_fallbacks_to_underscore_find_device() -> None:
+    """Explicit-address retry should use _find_device() when other names are absent."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = _make_orchestrator_client_manager()
+    direct_client = MagicMock()
+    retry_client = MagicMock()
+    discovered_client = MagicMock()
+    client_manager.create_client.side_effect = [
+        direct_client,
+        retry_client,
+        discovered_client,
+    ]
+    client_manager.connect_client.side_effect = [
+        BleakDeviceNotFoundError("11:22:33:44:55:66", "not found"),
+        BleakDeviceNotFoundError("11:22:33:44:55:66", "not found"),
+        None,
+    ]
+
+    discovered_device = BLEDevice("11:22:33:44:55:66", "Mesh", details=None)
+    interface = SimpleNamespace(
+        BLEError=MockBLEError,
+        _closed=False,
+        _find_device=MagicMock(return_value=discovered_device),
+    )
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+    orchestrator._finalize_connection = MagicMock()  # type: ignore[method-assign]
+
+    result = orchestrator._establish_connection(
+        address="11:22:33:44:55:66",
+        current_address=None,
+        register_notifications_func=lambda _client: None,
+        on_connected_func=lambda: None,
+        on_disconnect_func=lambda _client: None,
+    )
+
+    assert result is discovered_client
+    interface._find_device.assert_called_once_with("11:22:33:44:55:66")
 
 
 @pytest.mark.unit

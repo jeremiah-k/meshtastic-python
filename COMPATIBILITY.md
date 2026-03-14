@@ -54,6 +54,8 @@ Additional approved BLE compatibility and promotions:
 | `BLEClient.isConnected`                   | `PRIMARY`            | Silent         | Approved promoted camelCase name.              |
 | `BLEClient.stop_notify`                   | `COMPAT_STABLE_SHIM` | Silent         | Shim for `stopNotify`.                         |
 | `BLEClient.stopNotify`                    | `PRIMARY`            | Silent         | Approved promoted camelCase name.              |
+| `BLEErrorHandler.safe_execute`            | `COMPAT_STABLE_SHIM` | Silent         | Wrapper alias for `_safe_execute`.             |
+| `BLEErrorHandler.safe_cleanup`            | `COMPAT_STABLE_SHIM` | Silent         | Wrapper alias for `_safe_cleanup`.             |
 | `BLEInterface.find_device`                | `COMPAT_STABLE_SHIM` | Silent         | Historical snake_case wrapper.                 |
 | `BLEInterface.findDevice`                 | `PRIMARY`            | Silent         | Approved promoted camelCase name.              |
 | `BLEClient._discover`                     | `INTERNAL_COMPAT`    | Silent         | Historical internal discovery entrypoint.      |
@@ -159,6 +161,8 @@ Semantic deprecation:
 | `meshtastic.interfaces.ble.client`    | `stop_notify()`              | `stopNotify()`                |
 | `meshtastic.interfaces.ble.client`    | `async_await()`              | `_async_await()`              |
 | `meshtastic.interfaces.ble.client`    | `async_run()`                | `_async_run()`                |
+| `meshtastic.interfaces.ble.errors`    | `safe_execute()`             | `_safe_execute()`             |
+| `meshtastic.interfaces.ble.errors`    | `safe_cleanup()`             | `_safe_cleanup()`             |
 | `meshtastic.interfaces.ble.discovery` | `_discover_devices()`        | `discover_devices()`          |
 | `meshtastic.interfaces.ble.interface` | `find_device()`              | `findDevice()`                |
 | `meshtastic.interfaces.ble.interface` | `from_num_handler()`         | `_from_num_handler()`         |

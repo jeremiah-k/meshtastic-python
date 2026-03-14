@@ -282,8 +282,11 @@ class BLEManagementCommandsService:
             sanitized = trust_hex_blob_re.sub("[redacted-hex]", sanitized)
             sanitized = trust_token_re.sub("[redacted-token]", sanitized)
             sanitized = " ".join(sanitized.split())
-            if len(sanitized) > trust_command_output_max_chars:
-                max_prefix = trust_command_output_max_chars - 3
+            max_output_chars = max(trust_command_output_max_chars, 0)
+            if len(sanitized) > max_output_chars:
+                if max_output_chars <= 3:
+                    return sanitized[:max_output_chars]
+                max_prefix = max_output_chars - 3
                 return f"{sanitized[:max_prefix]}..."
             return sanitized
 
