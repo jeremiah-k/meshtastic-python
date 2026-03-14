@@ -98,6 +98,20 @@ This is an internal working tracker for large-pass execution.
   - moved shutdown orchestration body from `BLEInterface.close()` to `BLELifecycleService._close(...)` and kept `BLEInterface.close()` as a thin delegating wrapper.
   - preserved lock-order and shutdown semantics by passing management wait policy values from `interface.py` into lifecycle service (`_MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS`, `_MANAGEMENT_CONNECT_WAIT_POLL_SECONDS`).
   - this pass reduced `ble/interface.py` from **3121** lines to **2759** lines.
+- Continued P2 decomposition pass (interface/connect/client focus):
+  - extracted the remaining connect-result verification/publication orchestration (`_verify_and_publish_connected`) into `BLELifecycleService` while preserving patch-sensitive wrapper semantics on `BLEInterface` for status/ownership probes.
+  - split `ConnectionOrchestrator._establish_connection(...)` into explicit internal phases:
+    - `_prepare_connection_target`,
+    - `_resolve_connection_timeouts`,
+    - `_attempt_direct_connect`,
+    - `_resolve_retry_target`,
+    - `_connect_retry_target`.
+  - preserved connection failure cleanup semantics during split by ensuring direct/retry clients are closed on all error exits (including direct/retry `BleakDBusError`, keyboard interrupts, and retry fallback failures).
+  - separated BLE client setup vs transport responsibilities in `BLEClient`:
+    - setup/runtime initialization: `_initialize_runtime_state`, `_initialize_transport_client`,
+    - transport execution helpers: `_require_bleak_client`, `_run_transport_operation`,
+    - transport wrappers (`connect`/`disconnect`/`read_gatt_char`/`write_gatt_char`/`start_notify`/`stopNotify`) now delegate through shared transport helper.
+  - this pass reduced `ble/interface.py` from **2759** lines to **2666** lines.
 - Targeted verification completed:
   - `ruff check meshtastic/interfaces/ble/interface.py meshtastic/interfaces/ble/connection.py meshtastic/interfaces/ble/reconnection.py`
   - `poetry run mypy meshtastic/interfaces/ble/interface.py meshtastic/interfaces/ble/connection.py meshtastic/interfaces/ble/reconnection.py --strict`
@@ -120,6 +134,12 @@ This is an internal working tracker for large-pass execution.
   - `poetry run ruff check meshtastic/interfaces/ble/interface.py meshtastic/interfaces/ble/lifecycle_service.py`
   - `poetry run mypy meshtastic/interfaces/ble/interface.py meshtastic/interfaces/ble/lifecycle_service.py --strict`
   - `poetry run pytest -q tests/test_ble_interface_core.py tests/test_ble_interface_advanced.py tests/test_ble_integration_scenarios.py tests/test_ble_connection_edge_cases.py` (`253 passed`)
+  - `make ci-strict` (`1366 passed, 3 skipped, 92 deselected`; `mypy --strict` clean)
+  - `poetry run ruff check meshtastic/interfaces/ble/interface.py meshtastic/interfaces/ble/lifecycle_service.py meshtastic/interfaces/ble/connection.py meshtastic/interfaces/ble/client.py`
+  - `poetry run mypy meshtastic/interfaces/ble/interface.py meshtastic/interfaces/ble/lifecycle_service.py meshtastic/interfaces/ble/connection.py meshtastic/interfaces/ble/client.py --strict`
+  - `poetry run pytest -q tests/test_ble_interface_core.py -k "finalize_connection_gates_cleans_up_when_client_loses_ownership_mid_finalize or is_owned_connected_client_reads_status_tuple or connect_raises_when_registry_ownership_is_lost_after_gate_finalization or connect_restores_requested_identifier_after_name_target_loses_ownership or connect_rechecks_ownership_before_publishing_connected"` (`6 passed`)
+  - `poetry run pytest -q tests/test_ble_connection_edge_cases.py -k "connection_orchestrator_interrupt_resets_state_and_closes_client or connection_orchestrator_reraises_retry_ble_dbus_error or connection_orchestrator_handles_bleak_dbus_error_during_connect"` (`3 passed`)
+  - `poetry run pytest -q tests/test_ble_interface_core.py tests/test_ble_interface_advanced.py tests/test_ble_connection_edge_cases.py tests/test_ble_client_edge_cases.py tests/test_ble_integration_scenarios.py` (`299 passed`)
   - `make ci-strict` (`1366 passed, 3 skipped, 92 deselected`; `mypy --strict` clean)
 
 ## Pass P2 Plan (Next)
@@ -162,16 +182,16 @@ This is an internal working tracker for large-pass execution.
 
 ### Remaining P2 Work
 
-- Continue extracting connect-finalization helpers (`_verify_and_publish_connected`, invalidated-connect handling, gate-ownership verification) into lifecycle runtime service.
+- Continue reducing connect-path orchestration density (`_establish_and_update_client`, connect gate claim sequencing, and final state publication flow) into dedicated collaborators.
 - Finish reducing `BLEInterface` direct orchestration density while keeping lock-order semantics and compatibility shims unchanged.
 
 ### Decomposition Hotspots (Current)
 
 Current `wc -l` (2026-03-14):
 
-- `meshtastic/interfaces/ble/interface.py`: **2759**
-- `meshtastic/interfaces/ble/connection.py`: **1177**
-- `meshtastic/interfaces/ble/client.py`: **964**
+- `meshtastic/interfaces/ble/interface.py`: **2666**
+- `meshtastic/interfaces/ble/connection.py`: **1274**
+- `meshtastic/interfaces/ble/client.py`: **1002**
 - `meshtastic/interfaces/ble/gating.py`: **768**
 - `meshtastic/interfaces/ble/runner.py`: **729**
 - `meshtastic/interfaces/ble/discovery.py`: **668**
@@ -182,10 +202,11 @@ Current `wc -l` (2026-03-14):
 - `40835ba`: 3674 lines
 - `59fc5e5`: 3203 lines
 - `1e89a17` (previous decomposition commit): 3121 lines
-- current working tree: **2759** lines
+- `a6aa65f` (disconnect/close extraction): 2759 lines
+- current working tree: **2666** lines
 
 Next active reduction targets:
 
-1. `ble/interface.py`: move remaining connect-result verification/publication orchestration into lifecycle service.
-2. `ble/connection.py`: split connect orchestration into focused sub-services/helpers (request validation, attempt strategy, state finalization).
-3. `ble/client.py`: isolate BLEClient setup/teardown and transport operations from compatibility wrappers.
+1. `ble/interface.py`: continue reducing connect path density by extracting `_establish_and_update_client` and related state mutation sequencing into lifecycle/connection collaborators.
+2. `ble/connection.py`: move new connection phase helpers into a dedicated internal module/service to reduce file size while retaining current behavior and tests.
+3. `ble/client.py`: move transport helper layer into a dedicated internal module/service and keep `BLEClient` as thin compatibility/public wrapper.

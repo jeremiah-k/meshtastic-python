@@ -789,6 +789,205 @@ class ConnectionOrchestrator:
             return float(connect_timeout)
         return cls._get_connect_timeout(pair_on_connect=pair_on_connect)
 
+    def _prepare_connection_target(
+        self,
+        *,
+        address: str | None,
+        current_address: str | None,
+    ) -> tuple[str | None, str | None]:
+        """Resolve and validate the connection target address for this attempt."""
+        target_address = address if address is not None else current_address
+        if target_address is not None:
+            target_address = target_address.strip()
+        # Allow None target_address for discovery mode - findDevice() handles this.
+        # Only reject empty/whitespace-only strings that are explicitly provided.
+        if target_address is not None and not target_address:
+            raise self.interface.BLEError(CONNECTION_ERROR_EMPTY_ADDRESS)
+
+        normalized_target = sanitize_address(target_address)
+        if target_address:
+            logger.info("Attempting to connect to %s", target_address)
+        else:
+            logger.info("Attempting discovery-mode connection (no address specified)")
+        return target_address, normalized_target
+
+    def _resolve_connection_timeouts(
+        self,
+        *,
+        pair_on_connect: bool,
+        connect_timeout: float | None,
+    ) -> tuple[float, float]:
+        """Compute direct and discovery connect timeout budgets for the attempt."""
+        try:
+            direct_connect_timeout = self._resolve_connect_timeout(
+                pair_on_connect=pair_on_connect,
+                connect_timeout=connect_timeout,
+            )
+        except ValueError as exc:
+            raise self.interface.BLEError(
+                ERROR_INVALID_CONNECT_TIMEOUT.format(exc=exc)
+            ) from exc
+
+        # Preserve historical cadence: direct address attempts use the shorter
+        # timeout; discovery-resolved connects use full connection time unless
+        # caller explicitly overrides timeout.
+        discovery_connect_timeout = (
+            direct_connect_timeout
+            if connect_timeout is not None or pair_on_connect
+            else self._get_connect_timeout(pair_on_connect=True)
+        )
+        return direct_connect_timeout, discovery_connect_timeout
+
+    def _attempt_direct_connect(
+        self,
+        *,
+        target_address: str | None,
+        normalized_target: str | None,
+        on_disconnect_func: Callable[["BleakRootClient"], None],
+        pair_on_connect: bool,
+        direct_connect_timeout: float,
+        register_notifications_func: Callable[[BLEClient], None],
+        on_connected_func: Callable[[], None],
+        emit_connected_side_effects: bool,
+    ) -> tuple[BLEClient | None, bool]:
+        """Try explicit-address direct connection; return client or fallback hint."""
+        if not target_address:
+            return None, False
+
+        self._raise_if_interface_closing()
+        client = self._client_manager_create_client(
+            target_address,
+            on_disconnect_func,
+            pair_on_connect=pair_on_connect,
+            connect_timeout=direct_connect_timeout,
+        )
+        try:
+            self._raise_if_interface_closing()
+            self._client_manager_connect_client(client, timeout=direct_connect_timeout)
+        except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
+            self._client_manager_safe_close_client(client)
+            raise
+        except BleakDBusError:
+            self._client_manager_safe_close_client(client)
+            raise
+        except (
+            BleakError,
+            BLEClient.BLEError,
+            OSError,
+            TimeoutError,
+        ) as direct_err:
+            logger.debug(
+                "Direct connect to %s failed; falling back to discovery: %s",
+                normalized_target,
+                direct_err,
+                exc_info=True,
+            )
+            skip_discovery_scan = _looks_like_ble_address(
+                target_address
+            ) and _is_device_not_found_error(direct_err)
+            if skip_discovery_scan:
+                logger.debug(
+                    "Direct connect reported device-not-found for %s; skipping discovery scan and retrying explicit address connect.",
+                    normalized_target,
+                )
+            self._client_manager_safe_close_client(client)
+            return None, skip_discovery_scan
+
+        self._raise_if_interface_closing()
+        self._finalize_connection(
+            client,
+            target_address,
+            register_notifications_func,
+            on_connected_func,
+            emit_connected_side_effects=emit_connected_side_effects,
+        )
+        return client, False
+
+    def _resolve_retry_target(
+        self,
+        *,
+        target_address: str | None,
+        skip_discovery_scan: bool,
+        direct_connect_timeout: float,
+        discovery_connect_timeout: float,
+    ) -> tuple[BLEDevice | str, str, float]:
+        """Resolve retry connection target from direct or discovery path."""
+        if skip_discovery_scan and target_address is not None:
+            return target_address, target_address, direct_connect_timeout
+
+        self._raise_if_interface_closing()
+        device = self.interface.findDevice(target_address)
+        return device, device.address, discovery_connect_timeout
+
+    def _connect_retry_target(
+        self,
+        *,
+        connection_target: BLEDevice | str,
+        resolved_address: str,
+        target_address: str | None,
+        skip_discovery_scan: bool,
+        on_disconnect_func: Callable[["BleakRootClient"], None],
+        pair_on_connect: bool,
+        retry_connect_timeout: float,
+        discovery_connect_timeout: float,
+    ) -> tuple[BLEClient, str]:
+        """Connect to retry target with explicit-address fallback to discovery."""
+        self._raise_if_interface_closing()
+        client = self._client_manager_create_client(
+            connection_target,
+            on_disconnect_func,
+            pair_on_connect=pair_on_connect,
+            connect_timeout=retry_connect_timeout,
+        )
+        try:
+            self._client_manager_connect_client(client, timeout=retry_connect_timeout)
+        except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
+            self._client_manager_safe_close_client(client)
+            raise
+        except BleakDBusError:
+            self._client_manager_safe_close_client(client)
+            raise
+        except (
+            BleakError,
+            BLEClient.BLEError,
+            OSError,
+            TimeoutError,
+        ) as retry_err:
+            should_attempt_discovery_after_retry = (
+                skip_discovery_scan
+                and target_address is not None
+                and _is_device_not_found_error(retry_err)
+            )
+            if not should_attempt_discovery_after_retry:
+                self._client_manager_safe_close_client(client)
+                raise
+            logger.debug(
+                "Direct retry also reported device-not-found for %s; attempting discovery scan fallback.",
+                sanitize_address(target_address),
+            )
+            self._client_manager_safe_close_client(client)
+
+            self._raise_if_interface_closing()
+            device = self.interface.findDevice(target_address)
+            self._raise_if_interface_closing()
+            resolved_address = device.address
+            client = self._client_manager_create_client(
+                device,
+                on_disconnect_func,
+                pair_on_connect=pair_on_connect,
+                connect_timeout=discovery_connect_timeout,
+            )
+            try:
+                self._client_manager_connect_client(
+                    client,
+                    timeout=discovery_connect_timeout,
+                )
+            except Exception:
+                self._client_manager_safe_close_client(client)
+                raise
+
+        return client, resolved_address
+
     def _finalize_connection(
         self,
         client: BLEClient,
@@ -965,40 +1164,15 @@ class ConnectionOrchestrator:
         self._validator_validate_connection_request()
         self._raise_if_interface_closing()
 
-        target_address = address if address is not None else current_address
-        if target_address is not None:
-            target_address = target_address.strip()
-        # Allow None target_address for discovery mode - findDevice() handles this
-        # Only reject empty/whitespace-only strings that are explicitly provided
-        if target_address is not None and not target_address:
-            raise self.interface.BLEError(CONNECTION_ERROR_EMPTY_ADDRESS)
-
-        normalized_target = sanitize_address(target_address)
-        # Note: normalized_target can be None for discovery mode - this is intentional
-        # The discovery fallback in findDevice() will scan for any Meshtastic device
-
-        if target_address:
-            logger.info("Attempting to connect to %s", target_address)
-        else:
-            logger.info("Attempting discovery-mode connection (no address specified)")
-
-        try:
-            direct_connect_timeout = self._resolve_connect_timeout(
+        target_address, normalized_target = self._prepare_connection_target(
+            address=address,
+            current_address=current_address,
+        )
+        direct_connect_timeout, discovery_connect_timeout = (
+            self._resolve_connection_timeouts(
                 pair_on_connect=pair_on_connect,
                 connect_timeout=connect_timeout,
             )
-        except ValueError as exc:
-            raise self.interface.BLEError(
-                ERROR_INVALID_CONNECT_TIMEOUT.format(exc=exc)
-            ) from exc
-        # Preserve the historical connection cadence: use the shorter timeout
-        # for direct address attempts, but allow full connection time once a
-        # device has been resolved via discovery unless the caller explicitly
-        # overrode the timeout.
-        discovery_connect_timeout = (
-            direct_connect_timeout
-            if connect_timeout is not None or pair_on_connect
-            else self._get_connect_timeout(pair_on_connect=True)
         )
 
         with self.state_lock:
@@ -1006,118 +1180,41 @@ class ConnectionOrchestrator:
                 raise self.interface.BLEError(BLECLIENT_ERROR_ALREADY_CONNECTED)
         client: BLEClient | None = None
         skip_discovery_scan = False
-        should_attempt_discovery_after_retry = False
         try:
-            # Only attempt direct connect if we have a target address
-            # Discovery mode (target_address=None) skips directly to find_device
-            if target_address:
-                self._raise_if_interface_closing()
-                client = self._client_manager_create_client(
-                    target_address,
-                    on_disconnect_func,
-                    pair_on_connect=pair_on_connect,
-                    connect_timeout=direct_connect_timeout,
-                )
-                try:
-                    self._raise_if_interface_closing()
-                    self._client_manager_connect_client(
-                        client, timeout=direct_connect_timeout
-                    )
-                except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
-                    raise
-                except BleakDBusError:
-                    raise
-                except (
-                    BleakError,
-                    BLEClient.BLEError,
-                    OSError,
-                    TimeoutError,
-                ) as direct_err:
-                    logger.debug(
-                        "Direct connect to %s failed; falling back to discovery: %s",
-                        normalized_target,
-                        direct_err,
-                        exc_info=True,
-                    )
-                    skip_discovery_scan = _looks_like_ble_address(
-                        target_address
-                    ) and _is_device_not_found_error(direct_err)
-                    if skip_discovery_scan:
-                        logger.debug(
-                            "Direct connect reported device-not-found for %s; skipping discovery scan and retrying explicit address connect.",
-                            normalized_target,
-                        )
-                    if client:
-                        self._client_manager_safe_close_client(client)
-                    client = None
-                else:
-                    self._raise_if_interface_closing()
-                    self._finalize_connection(
-                        client,
-                        target_address,
-                        register_notifications_func,
-                        on_connected_func,
-                        emit_connected_side_effects=emit_connected_side_effects,
-                    )
-                    return client
-
-            if skip_discovery_scan and target_address is not None:
-                resolved_address = target_address
-                connection_target: BLEDevice | str = target_address
-                retry_connect_timeout = direct_connect_timeout
-            else:
-                self._raise_if_interface_closing()
-                device = self.interface.findDevice(target_address)
-                resolved_address = device.address
-                connection_target = device
-                retry_connect_timeout = discovery_connect_timeout
-
-            self._raise_if_interface_closing()
-            client = self._client_manager_create_client(
-                connection_target,
-                on_disconnect_func,
+            client, skip_discovery_scan = self._attempt_direct_connect(
+                target_address=target_address,
+                normalized_target=normalized_target,
+                on_disconnect_func=on_disconnect_func,
                 pair_on_connect=pair_on_connect,
-                connect_timeout=retry_connect_timeout,
+                direct_connect_timeout=direct_connect_timeout,
+                register_notifications_func=register_notifications_func,
+                on_connected_func=on_connected_func,
+                emit_connected_side_effects=emit_connected_side_effects,
             )
-            try:
-                self._client_manager_connect_client(
-                    client, timeout=retry_connect_timeout
-                )
-            except BleakDBusError:
-                raise
-            except (
-                BleakError,
-                BLEClient.BLEError,
-                OSError,
-                TimeoutError,
-            ) as retry_err:
-                should_attempt_discovery_after_retry = (
-                    skip_discovery_scan
-                    and target_address is not None
-                    and _is_device_not_found_error(retry_err)
-                )
-                if not should_attempt_discovery_after_retry:
-                    raise
-                logger.debug(
-                    "Direct retry also reported device-not-found for %s; attempting discovery scan fallback.",
-                    normalized_target,
-                )
-                self._client_manager_safe_close_client(client)
-                client = None
-                self._raise_if_interface_closing()
-                device = self.interface.findDevice(target_address)
-                self._raise_if_interface_closing()
-                resolved_address = device.address
-                client = self._client_manager_create_client(
-                    device,
-                    on_disconnect_func,
-                    pair_on_connect=pair_on_connect,
-                    connect_timeout=discovery_connect_timeout,
-                )
-                self._client_manager_connect_client(
-                    client,
-                    timeout=discovery_connect_timeout,
-                )
+            if client is not None:
+                return client
+
+            (
+                connection_target,
+                resolved_address,
+                retry_connect_timeout,
+            ) = self._resolve_retry_target(
+                target_address=target_address,
+                skip_discovery_scan=skip_discovery_scan,
+                direct_connect_timeout=direct_connect_timeout,
+                discovery_connect_timeout=discovery_connect_timeout,
+            )
+
+            client, resolved_address = self._connect_retry_target(
+                connection_target=connection_target,
+                resolved_address=resolved_address,
+                target_address=target_address,
+                skip_discovery_scan=skip_discovery_scan,
+                on_disconnect_func=on_disconnect_func,
+                pair_on_connect=pair_on_connect,
+                retry_connect_timeout=retry_connect_timeout,
+                discovery_connect_timeout=discovery_connect_timeout,
+            )
 
             self._raise_if_interface_closing()
             self._finalize_connection(

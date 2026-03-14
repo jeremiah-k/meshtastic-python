@@ -147,9 +147,17 @@ class BLEClient:
         **kwargs : Any
             Keyword arguments forwarded to the underlying Bleak client constructor when `address` is provided.
         """
+        self._initialize_runtime_state(address)
+        self._initialize_transport_client(
+            address,
+            log_if_no_address=log_if_no_address,
+            **kwargs,
+        )
+
+    def _initialize_runtime_state(self, address: BLEDevice | str | None) -> None:
+        """Initialize non-transport runtime state for a BLEClient instance."""
         # Error handling infrastructure
         self.error_handler = BLEErrorHandler()
-
         self.bleak_client: BleakRootClient | None = None
         self.address: str | None = (
             address.address if isinstance(address, BLEDevice) else address
@@ -158,16 +166,21 @@ class BLEClient:
         self._pending_futures: weakref.WeakSet[Future[Any]] = weakref.WeakSet()
         self._pending_futures_lock = RLock()
         self._close_lock = RLock()
-
-        # Use singleton runner for all BLE operations
+        # Use singleton runner for all BLE operations.
         self._runner = BLECoroutineRunner()
 
+    def _initialize_transport_client(
+        self,
+        address: BLEDevice | str | None,
+        *,
+        log_if_no_address: bool,
+        **kwargs: Any,
+    ) -> None:
+        """Initialize underlying Bleak transport when address is available."""
         if address is None:
             if log_if_no_address:
                 logger.debug("No address provided - only discover method will work.")
             return
-
-        # Create underlying Bleak client for actual BLE communication
         self.bleak_client = BleakRootClient(address, **kwargs)
         self._sync_address_from_bleak()
 
@@ -179,6 +192,28 @@ class BLEClient:
         bleak_address = getattr(bleak_client, "address", None)
         if isinstance(bleak_address, str) and bleak_address:
             self.address = bleak_address
+
+    def _require_bleak_client(self, error_message: str) -> BleakRootClient:
+        """Return active Bleak client or raise BLEError for uninitialized transport."""
+        bleak_client = self.bleak_client
+        if bleak_client is None:
+            raise self.BLEError(error_message)
+        return bleak_client
+
+    def _run_transport_operation(
+        self,
+        *,
+        error_message: str,
+        operation: Callable[[BleakRootClient], Coroutine[Any, Any, Any]],
+        timeout: float | None = None,
+        sync_address: bool = False,
+    ) -> Any:
+        """Run a Bleak transport operation with common initialization checks."""
+        bleak_client = self._require_bleak_client(error_message)
+        result = self._async_await(operation(bleak_client), timeout=timeout)
+        if sync_address:
+            self._sync_address_from_bleak()
+        return result
 
     # COMPAT_STABLE_SHIM: historical discovery entrypoint used by BLE discovery compatibility paths.
     def _discover(self, **kwargs: Any) -> Any:
@@ -378,14 +413,12 @@ class BLEClient:
         BLEError
             If the BLE client is not initialized or the connection operation fails.
         """
-        bleak_client = self.bleak_client
-        if bleak_client is None:
-            raise self.BLEError(BLECLIENT_ERROR_CANNOT_CONNECT_NOT_INITIALIZED)
-        result = self._async_await(
-            bleak_client.connect(**kwargs), timeout=await_timeout
+        return self._run_transport_operation(
+            error_message=BLECLIENT_ERROR_CANNOT_CONNECT_NOT_INITIALIZED,
+            operation=lambda bleak_client: bleak_client.connect(**kwargs),
+            timeout=await_timeout,
+            sync_address=True,
         )
-        self._sync_address_from_bleak()
-        return result
 
     def isConnected(self) -> bool:
         """Return whether the underlying Bleak client currently has an active connection.
@@ -450,11 +483,12 @@ class BLEClient:
         BLEError
             If the BLE client is not initialized or if the underlying disconnect fails.
         """
-        bleak_client = self.bleak_client
-        if bleak_client is None:
-            raise self.BLEError(BLECLIENT_ERROR_CANNOT_DISCONNECT_NOT_INITIALIZED)
-        self._async_await(bleak_client.disconnect(**kwargs), timeout=await_timeout)
-        self._sync_address_from_bleak()
+        self._run_transport_operation(
+            error_message=BLECLIENT_ERROR_CANNOT_DISCONNECT_NOT_INITIALIZED,
+            operation=lambda bleak_client: bleak_client.disconnect(**kwargs),
+            timeout=await_timeout,
+            sync_address=True,
+        )
 
     def read_gatt_char(
         self, *args: Any, timeout: float | None = None, **kwargs: Any
@@ -482,13 +516,14 @@ class BLEClient:
         BLEError
             If the read operation fails for any other reason.
         """
-        bleak_client = self.bleak_client
-        if bleak_client is None:
-            raise self.BLEError(BLECLIENT_ERROR_CANNOT_READ_NOT_INITIALIZED)
         return cast(
             bytes,
-            self._async_await(
-                bleak_client.read_gatt_char(*args, **kwargs), timeout=timeout
+            self._run_transport_operation(
+                error_message=BLECLIENT_ERROR_CANNOT_READ_NOT_INITIALIZED,
+                operation=lambda bleak_client: bleak_client.read_gatt_char(
+                    *args, **kwargs
+                ),
+                timeout=timeout,
             ),
         )
 
@@ -513,11 +548,12 @@ class BLEClient:
         BLEError
             If the write operation fails for any other reason.
         """
-        bleak_client = self.bleak_client
-        if bleak_client is None:
-            raise self.BLEError(BLECLIENT_ERROR_CANNOT_WRITE_NOT_INITIALIZED)
-        self._async_await(
-            bleak_client.write_gatt_char(*args, **kwargs), timeout=timeout
+        self._run_transport_operation(
+            error_message=BLECLIENT_ERROR_CANNOT_WRITE_NOT_INITIALIZED,
+            operation=lambda bleak_client: bleak_client.write_gatt_char(
+                *args, **kwargs
+            ),
+            timeout=timeout,
         )
 
     def _get_services(self, **_kwargs: Any) -> Any:
@@ -541,9 +577,9 @@ class BLEClient:
             If the BLE client has not been initialized or services cannot be
             retrieved from Bleak (for example, if discovery has not completed).
         """
-        bleak_client = self.bleak_client
-        if bleak_client is None:
-            raise self.BLEError(BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_INITIALIZED)
+        bleak_client = self._require_bleak_client(
+            BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_INITIALIZED
+        )
         # In Bleak 2.1.1+, services are auto-enumerated on connect and exposed
         # as a property, but the property can still raise during discovery.
         try:
@@ -635,10 +671,11 @@ class BLEClient:
         BLEError
             If the BLE client is not initialized, the registration fails, or the operation times out.
         """
-        bleak_client = self.bleak_client
-        if bleak_client is None:
-            raise self.BLEError(BLECLIENT_ERROR_CANNOT_START_NOTIFY_NOT_INITIALIZED)
-        self._async_await(bleak_client.start_notify(*args, **kwargs), timeout=timeout)
+        self._run_transport_operation(
+            error_message=BLECLIENT_ERROR_CANNOT_START_NOTIFY_NOT_INITIALIZED,
+            operation=lambda bleak_client: bleak_client.start_notify(*args, **kwargs),
+            timeout=timeout,
+        )
 
     def stopNotify(
         self, *args: Any, timeout: float | None = None, **kwargs: Any
@@ -659,10 +696,11 @@ class BLEClient:
         BLEError
             If no BLE client is initialized or if the operation times out or fails.
         """
-        bleak_client = self.bleak_client
-        if bleak_client is None:
-            raise self.BLEError(BLECLIENT_ERROR_CANNOT_STOP_NOTIFY_NOT_INITIALIZED)
-        self._async_await(bleak_client.stop_notify(*args, **kwargs), timeout=timeout)
+        self._run_transport_operation(
+            error_message=BLECLIENT_ERROR_CANNOT_STOP_NOTIFY_NOT_INITIALIZED,
+            operation=lambda bleak_client: bleak_client.stop_notify(*args, **kwargs),
+            timeout=timeout,
+        )
 
     # COMPAT_STABLE_SHIM: snake_case alias for stopNotify
     def stop_notify(

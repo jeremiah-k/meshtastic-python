@@ -9,11 +9,13 @@ from typing import TYPE_CHECKING
 from bleak import BleakClient as BleakRootClient
 
 from meshtastic.interfaces.ble.constants import (
+    CONNECTION_ERROR_LOST_OWNERSHIP,
+    ERROR_INTERFACE_CLOSING,
     NOTIFICATION_START_TIMEOUT,
     RECEIVE_THREAD_JOIN_TIMEOUT,
     logger,
 )
-from meshtastic.interfaces.ble.gating import _addr_key
+from meshtastic.interfaces.ble.gating import _addr_key, _is_currently_connected_elsewhere
 from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import sanitize_address
 from meshtastic.mesh_interface import MeshInterface
@@ -393,6 +395,192 @@ class BLELifecycleService:
         if should_reset_state:
             with iface._state_lock:
                 iface._state_manager._reset_to_disconnected()
+
+    @staticmethod
+    def _get_connected_client_status_locked(
+        iface: "BLEInterface", client: "BLEClient"
+    ) -> tuple[bool, bool]:
+        """Return owned/closing status for a connected client while holding state lock."""
+        is_closing = iface._state_manager._is_closing or iface._closed
+        is_owned = (
+            not iface._closed
+            and iface.client is client
+            and iface._state_manager._is_connected
+            and client.isConnected()
+        )
+        return is_owned, is_closing
+
+    @staticmethod
+    def _get_connected_client_status(
+        iface: "BLEInterface", client: "BLEClient"
+    ) -> tuple[bool, bool]:
+        """Return whether interface owns `client` and whether shutdown has started."""
+        with iface._state_lock:
+            return BLELifecycleService._get_connected_client_status_locked(iface, client)
+
+    @staticmethod
+    def _has_lost_gate_ownership(iface: "BLEInterface", *keys: str | None) -> bool:
+        """Return whether any connected address key is now owned elsewhere."""
+        return any(
+            key is not None and _is_currently_connected_elsewhere(key, owner=iface)
+            for key in keys
+        )
+
+    @staticmethod
+    def _raise_for_invalidated_connect_result(
+        iface: "BLEInterface",
+        connected_client: "BLEClient",
+        connected_device_key: str | None,
+        connection_alias_key: str | None,
+        *,
+        is_closing: bool,
+        lost_gate_ownership: bool,
+        restore_address: str | None,
+        restore_last_connection_request: str | None,
+    ) -> None:
+        """Clean up a stale connect result and raise the appropriate BLEError."""
+        stale_keys = iface._sorted_address_keys(
+            connected_device_key,
+            connection_alias_key,
+        )
+        if not lost_gate_ownership:
+            with iface._state_lock:
+                active_client = iface.client
+                active_keys = set(
+                    iface._sorted_address_keys(
+                        _addr_key(iface._extract_client_address(active_client)),
+                        iface._connection_alias_key,
+                    )
+                )
+            stale_keys = [key for key in stale_keys if key not in active_keys]
+        if stale_keys:
+            iface._mark_address_keys_disconnected(*stale_keys)
+        BLELifecycleService._discard_invalidated_connected_client(
+            iface,
+            connected_client,
+            restore_address=restore_address,
+            restore_last_connection_request=restore_last_connection_request,
+        )
+        if is_closing:
+            raise iface.BLEError(ERROR_INTERFACE_CLOSING)
+        raise iface.BLEError(CONNECTION_ERROR_LOST_OWNERSHIP)
+
+    @staticmethod
+    def _verify_and_publish_connected(
+        iface: "BLEInterface",
+        connected_client: "BLEClient",
+        connected_device_key: str | None,
+        connection_alias_key: str | None,
+        *,
+        restore_address: str | None,
+        restore_last_connection_request: str | None,
+    ) -> None:
+        """Publish connected state only when ownership is still valid."""
+        lost_gate_ownership = iface._has_lost_gate_ownership(
+            connected_device_key,
+            connection_alias_key,
+        )
+        publish_connected = False
+        publish_candidate = False
+        publish_now = False
+        publish_committed = False
+        prior_ever_connected = False
+        is_closing = False
+
+        with iface._state_lock:
+            still_owned, is_closing = iface._get_connected_client_status_locked(
+                connected_client
+            )
+            if still_owned and not lost_gate_ownership:
+                prior_ever_connected = iface._ever_connected
+                publish_connected = True
+
+        if publish_connected:
+            still_owned, is_closing = iface._get_connected_client_status(
+                connected_client
+            )
+            if still_owned:
+                lost_gate_ownership = iface._has_lost_gate_ownership(
+                    connected_device_key,
+                    connection_alias_key,
+                )
+                if not lost_gate_ownership:
+                    with iface._state_lock:
+                        still_owned, is_closing = iface._get_connected_client_status_locked(
+                            connected_client
+                        )
+                        if still_owned:
+                            publish_candidate = True
+
+        if publish_candidate:
+            can_attempt_publish = False
+            with iface._state_lock:
+                still_owned, is_closing = iface._get_connected_client_status_locked(
+                    connected_client
+                )
+                if still_owned and not is_closing:
+                    can_attempt_publish = True
+            if can_attempt_publish:
+                lost_gate_ownership = iface._has_lost_gate_ownership(
+                    connected_device_key,
+                    connection_alias_key,
+                )
+                if not lost_gate_ownership:
+                    with iface._state_lock:
+                        still_owned, is_closing = iface._get_connected_client_status_locked(
+                            connected_client
+                        )
+                        if still_owned and not is_closing:
+                            publish_now = True
+
+        if publish_now:
+            should_publish_connected = False
+            with iface._state_lock:
+                still_owned, is_closing = iface._get_connected_client_status_locked(
+                    connected_client
+                )
+                if still_owned and not is_closing:
+                    if not iface._client_publish_pending:
+                        # Some direct test harnesses stub connection setup
+                        # without setting provisional publish state.
+                        iface._client_publish_pending = True
+                        iface._client_replacement_pending = False
+                    should_publish_connected = True
+            if should_publish_connected:
+                try:
+                    iface._connected()
+                except Exception:
+                    with iface._state_lock:
+                        if iface.client is connected_client:
+                            iface._client_publish_pending = False
+                            iface._client_replacement_pending = False
+                    raise
+                with iface._state_lock:
+                    still_owned, is_closing = iface._get_connected_client_status_locked(
+                        connected_client
+                    )
+                    if still_owned and not is_closing:
+                        iface._ever_connected = True
+                        iface._prior_publish_was_reconnect = prior_ever_connected
+                        iface._client_publish_pending = False
+                        iface._client_replacement_pending = False
+                        publish_committed = True
+                    elif iface.client is connected_client:
+                        iface._client_publish_pending = False
+                        iface._client_replacement_pending = False
+            if publish_committed:
+                iface._emit_verified_connection_side_effects(connected_client)
+                return
+
+        iface._raise_for_invalidated_connect_result(
+            connected_client,
+            connected_device_key,
+            connection_alias_key,
+            is_closing=is_closing,
+            lost_gate_ownership=lost_gate_ownership,
+            restore_address=restore_address,
+            restore_last_connection_request=restore_last_connection_request,
+        )
 
     @staticmethod
     def _finalize_connection_gates(

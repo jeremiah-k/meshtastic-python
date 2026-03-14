@@ -2141,104 +2141,11 @@ class BLEInterface(MeshInterface):
         restore_last_connection_request: str | None,
     ) -> None:
         """Publish `_connected()` only if ownership is still valid at publish time."""
-        lost_gate_ownership = self._has_lost_gate_ownership(
-            connected_device_key,
-            connection_alias_key,
-        )
-        publish_connected = False
-        publish_candidate = False
-        publish_now = False
-        publish_committed = False
-        prior_ever_connected = False
-        is_closing = False
-        with self._state_lock:
-            still_owned, is_closing = self._get_connected_client_status_locked(
-                connected_client
-            )
-            if still_owned and not lost_gate_ownership:
-                prior_ever_connected = self._ever_connected
-                publish_connected = True
-        if publish_connected:
-            still_owned, is_closing = self._get_connected_client_status(
-                connected_client
-            )
-            if still_owned:
-                lost_gate_ownership = self._has_lost_gate_ownership(
-                    connected_device_key,
-                    connection_alias_key,
-                )
-                if not lost_gate_ownership:
-                    with self._state_lock:
-                        still_owned, is_closing = (
-                            self._get_connected_client_status_locked(connected_client)
-                        )
-                        if still_owned:
-                            publish_candidate = True
-        if publish_candidate:
-            can_attempt_publish = False
-            with self._state_lock:
-                still_owned, is_closing = self._get_connected_client_status_locked(
-                    connected_client
-                )
-                if still_owned and not is_closing:
-                    can_attempt_publish = True
-            if can_attempt_publish:
-                lost_gate_ownership = self._has_lost_gate_ownership(
-                    connected_device_key,
-                    connection_alias_key,
-                )
-                if not lost_gate_ownership:
-                    with self._state_lock:
-                        still_owned, is_closing = (
-                            self._get_connected_client_status_locked(connected_client)
-                        )
-                        if still_owned and not is_closing:
-                            publish_now = True
-        if publish_now:
-            should_publish_connected = False
-            with self._state_lock:
-                still_owned, is_closing = self._get_connected_client_status_locked(
-                    connected_client
-                )
-                if still_owned and not is_closing:
-                    if not self._client_publish_pending:
-                        # Some direct test harnesses stub connection setup
-                        # without setting provisional publish state.
-                        self._client_publish_pending = True
-                        self._client_replacement_pending = False
-                    should_publish_connected = True
-            if should_publish_connected:
-                try:
-                    self._connected()
-                except Exception:
-                    with self._state_lock:
-                        if self.client is connected_client:
-                            self._client_publish_pending = False
-                            self._client_replacement_pending = False
-                    raise
-                with self._state_lock:
-                    still_owned, is_closing = self._get_connected_client_status_locked(
-                        connected_client
-                    )
-                    if still_owned and not is_closing:
-                        self._ever_connected = True
-                        self._prior_publish_was_reconnect = prior_ever_connected
-                        self._client_publish_pending = False
-                        self._client_replacement_pending = False
-                        publish_committed = True
-                    elif self.client is connected_client:
-                        self._client_publish_pending = False
-                        self._client_replacement_pending = False
-            if publish_committed:
-                self._emit_verified_connection_side_effects(connected_client)
-                return
-
-        self._raise_for_invalidated_connect_result(
+        BLELifecycleService._verify_and_publish_connected(
+            self,
             connected_client,
             connected_device_key,
             connection_alias_key,
-            is_closing=is_closing,
-            lost_gate_ownership=lost_gate_ownership,
             restore_address=restore_address,
             restore_last_connection_request=restore_last_connection_request,
         )
