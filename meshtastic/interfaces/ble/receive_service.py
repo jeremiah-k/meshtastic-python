@@ -56,10 +56,10 @@ class BLEReceiveRecoveryService:
         wait_timeout: float,
     ) -> tuple[bool, bool]:
         """Wait for read-trigger event and compute poll mode for this cycle."""
-        event_signaled = coordinator.wait_for_event("read_trigger", timeout=wait_timeout)
+        event_signaled = coordinator._wait_for_event("read_trigger", timeout=wait_timeout)
         poll_without_notify = False
         if not event_signaled:
-            if iface._ever_connected and coordinator.check_and_clear_event(
+            if iface._ever_connected and coordinator._check_and_clear_event(
                 "reconnected_event"
             ):
                 logger.debug("Detected reconnection, resuming normal operation")
@@ -69,7 +69,7 @@ class BLEReceiveRecoveryService:
             # Proceed only when fallback polling is viable without notify callbacks.
             return poll_without_notify, poll_without_notify
 
-        coordinator.clear_event("read_trigger")
+        coordinator._clear_event("read_trigger")
         return True, poll_without_notify
 
     @staticmethod
@@ -79,9 +79,9 @@ class BLEReceiveRecoveryService:
         """Snapshot client and gating flags needed by the read loop."""
         with iface._state_lock:
             client = iface.client
-            is_connecting = iface._state_manager.current_state == ConnectionState.CONNECTING
+            is_connecting = iface._state_manager._current_state == ConnectionState.CONNECTING
             publish_pending = iface._client_publish_pending
-            is_closing = iface._state_manager.is_closing or iface._closed
+            is_closing = iface._state_manager._is_closing or iface._closed
         return client, is_connecting, publish_pending, is_closing
 
     @staticmethod
@@ -100,7 +100,7 @@ class BLEReceiveRecoveryService:
             logger.debug(
                 "Skipping BLE read while connect publication is pending verification."
             )
-            coordinator.wait_for_event("reconnected_event", timeout=wait_timeout)
+            coordinator._wait_for_event("reconnected_event", timeout=wait_timeout)
             return True
 
         if client is not None:
@@ -109,7 +109,7 @@ class BLEReceiveRecoveryService:
         if iface.auto_reconnect or is_connecting:
             wait_reason = "connection establishment" if is_connecting else "auto-reconnect"
             logger.debug("BLE client is None; waiting for %s", wait_reason)
-            coordinator.wait_for_event("reconnected_event", timeout=wait_timeout)
+            coordinator._wait_for_event("reconnected_event", timeout=wait_timeout)
             return True
 
         if is_closing:

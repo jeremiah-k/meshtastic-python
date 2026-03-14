@@ -767,6 +767,54 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
     iface.close()
 
 
+def test_ble_interface_pair_supports_temporary_factory_without_log_kwarg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """pair() should support temporary BLEClient factories that only accept address."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    with iface._state_lock:
+        iface.client = None
+        iface._state_manager._reset_to_disconnected()
+    monkeypatch.setattr(
+        iface,
+        "findDevice",
+        lambda _address: _create_ble_device("AA:BB:CC:DD:EE:FF", "Meshtastic"),
+    )
+
+    pair_kwargs: list[dict[str, object]] = []
+    pair_await_timeouts: list[float | None] = []
+
+    def _pair(*, await_timeout: float | None = None, **kwargs: object) -> None:
+        pair_await_timeouts.append(await_timeout)
+        pair_kwargs.append(dict(kwargs))
+
+    temp_client = SimpleNamespace(
+        pair=_pair,
+        bleak_client=SimpleNamespace(address="AA:BB:CC:DD:EE:FF"),
+    )
+    cleanup_calls: list[Any] = []
+
+    def _temp_client_factory_without_kwargs(_address: str) -> SimpleNamespace:
+        return temp_client
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.BLEClient",
+        _temp_client_factory_without_kwargs,
+    )
+    monkeypatch.setattr(
+        iface._client_manager,
+        "_safe_close_client",
+        lambda client: cleanup_calls.append(client),
+    )
+
+    iface.pair("mesh-node", confirm=True, await_timeout=7.0)
+
+    assert pair_kwargs == [{"confirm": True}]
+    assert pair_await_timeouts == [7.0]
+    assert cleanup_calls == [temp_client]
+    iface.close()
+
+
 def test_ble_interface_close_waits_for_temporary_pair_operation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -914,13 +962,25 @@ def test_ble_interface_management_rejects_temp_client_when_target_owned_elsewher
     lock_states: list[tuple[bool, bool]] = []
 
     def _connected_elsewhere_probe(key: str | None, owner: object | None = None) -> bool:
-        connect_lock_was_free = iface._connect_lock.acquire(blocking=False)
-        if connect_lock_was_free:
-            iface._connect_lock.release()
-        management_lock_was_free = iface._management_lock.acquire(blocking=False)
-        if management_lock_was_free:
-            iface._management_lock.release()
-        lock_states.append((connect_lock_was_free, management_lock_was_free))
+        probe_done = threading.Event()
+        probe_result: list[tuple[bool, bool]] = []
+
+        def _probe_lock_ownership() -> None:
+            connect_lock_was_free = iface._connect_lock.acquire(blocking=False)
+            if connect_lock_was_free:
+                iface._connect_lock.release()
+            management_lock_was_free = iface._management_lock.acquire(blocking=False)
+            if management_lock_was_free:
+                iface._management_lock.release()
+            probe_result.append((connect_lock_was_free, management_lock_was_free))
+            probe_done.set()
+
+        probe_thread = threading.Thread(target=_probe_lock_ownership, daemon=True)
+        probe_thread.start()
+        assert probe_done.wait(timeout=1.0)
+        probe_thread.join(timeout=1.0)
+        assert probe_result
+        lock_states.append(probe_result[0])
         return key == "aabbccddeeff" and owner is iface
 
     monkeypatch.setattr(
@@ -4667,7 +4727,39 @@ def test_start_receive_thread_clears_cached_thread_when_start_fails(
     )
 
     with pytest.raises(RuntimeError, match="start failed"):
-        BLELifecycleService.start_receive_thread(iface, name="BLEReceiveStartFailure")
+        BLELifecycleService._start_receive_thread(iface, name="BLEReceiveStartFailure")
+
+    assert iface._receiveThread is None
+
+
+def test_start_receive_thread_clears_cached_thread_when_start_noops(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No-op thread starts should clear stale receive thread placeholders."""
+    from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
+
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    with iface._state_lock:
+        iface._want_receive = True
+    thread_like = SimpleNamespace(
+        name="BLEReceiveStartNoop",
+        ident=None,
+        is_alive=lambda: False,
+    )
+    monkeypatch.setattr(
+        iface.thread_coordinator,
+        "_create_thread",
+        lambda **_kwargs: thread_like,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        iface.thread_coordinator,
+        "_start_thread",
+        lambda _thread: None,
+        raising=True,
+    )
+
+    BLELifecycleService._start_receive_thread(iface, name="BLEReceiveStartNoop")
 
     assert iface._receiveThread is None
 

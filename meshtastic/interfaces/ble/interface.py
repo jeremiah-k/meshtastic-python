@@ -122,6 +122,10 @@ _TRUST_HEX_BLOB_RE = re.compile(r"\b[0-9A-Fa-f]{16,}\b")
 _TRUST_TOKEN_RE = re.compile(r"\b[A-Za-z0-9+/=_-]{40,}\b")
 ERROR_PAIR_ON_CONNECT_BOOL: str = "pair_on_connect must be a bool."
 ERROR_PAIR_BOOL: str = "pair must be a bool when provided."
+ERROR_RETRY_POLICY_MISSING_SHOULD_RETRY: str = (
+    "Retry policy missing should_retry/_should_retry"
+)
+ERROR_RETRY_POLICY_MISSING_GET_DELAY: str = "Retry policy missing get_delay/_get_delay"
 
 
 class BLEInterface(MeshInterface):
@@ -290,13 +294,13 @@ class BLEInterface(MeshInterface):
         )
 
         # Event coordination for reconnection and read operations
-        self._read_trigger = self.thread_coordinator.create_event(
+        self._read_trigger = self.thread_coordinator._create_event(
             "read_trigger"
         )  # Signals when data is available to read
-        self._reconnected_event = self.thread_coordinator.create_event(
+        self._reconnected_event = self.thread_coordinator._create_event(
             "reconnected_event"
         )  # Signals when reconnection occurred
-        self._shutdown_event = self.thread_coordinator.create_event("shutdown_event")
+        self._shutdown_event = self.thread_coordinator._create_event("shutdown_event")
         # Whether FROMNUM notifications were successfully registered for the
         # active connection. When false, receive loop falls back to periodic
         # FROMRADIO polling.
@@ -395,7 +399,7 @@ class BLEInterface(MeshInterface):
         want_receive : bool
             True to request the receive loop to run, False to stop it.
         """
-        BLELifecycleService.set_receive_wanted(self, want_receive)
+        BLELifecycleService._set_receive_wanted(self, want_receive)
 
     def _should_run_receive_loop(self) -> bool:
         """Return whether the receive loop should run.
@@ -405,7 +409,7 @@ class BLEInterface(MeshInterface):
         bool
             `True` if the receive loop is desired and the interface is not closed, `False` otherwise.
         """
-        return BLELifecycleService.should_run_receive_loop(self)
+        return BLELifecycleService._should_run_receive_loop(self)
 
     def _start_receive_thread(self, *, name: str, reset_recovery: bool = True) -> None:
         """Create and start the background receive thread, updating `_receiveThread`.
@@ -419,7 +423,7 @@ class BLEInterface(MeshInterface):
             successful thread start; if False, preserve the counter for recovery
             backoff tracking. Defaults to True.
         """
-        BLELifecycleService.start_receive_thread(
+        BLELifecycleService._start_receive_thread(
             self, name=name, reset_recovery=reset_recovery
         )
 
@@ -559,7 +563,7 @@ class BLEInterface(MeshInterface):
                 return (
                     self.auto_reconnect
                     and not self._closed
-                    and not self._state_manager.is_closing
+                    and not self._state_manager._is_closing
                 )
         disconnect_lock_released = False
         target_client = client
@@ -578,9 +582,9 @@ class BLEInterface(MeshInterface):
             # _disconnect_lock is released exactly once even on exceptions.
             # Perform state checks and state mutation atomically under the state lock.
             with self._state_lock:
-                current_state = self._state_manager.current_state
+                current_state = self._state_manager._current_state
                 current_client = self.client
-                is_closing = self._state_manager.is_closing or self._closed
+                is_closing = self._state_manager._is_closing or self._closed
                 was_publish_pending = self._client_publish_pending
                 was_replacement_pending = self._client_replacement_pending
 
@@ -631,7 +635,7 @@ class BLEInterface(MeshInterface):
                 self._client_replacement_pending = False
                 self._disconnect_notified = True
                 self._connection_alias_key = None
-                self._state_manager.transition_to(ConnectionState.DISCONNECTED)
+                self._state_manager._transition_to(ConnectionState.DISCONNECTED)
                 should_reconnect = self.auto_reconnect
                 should_schedule_reconnect = should_reconnect and not self._closed
 
@@ -697,13 +701,13 @@ class BLEInterface(MeshInterface):
         def _close_previous_client_async() -> None:
             if previous_client:
                 # Keep cleanup behavior consistent between reconnect paths.
-                close_thread = self.thread_coordinator.create_thread(
+                close_thread = self.thread_coordinator._create_thread(
                     target=self._client_manager_safe_close_client,
                     args=(previous_client,),
                     name="BLEClientClose",
                     daemon=True,
                 )
-                self.thread_coordinator.start_thread(close_thread)
+                self.thread_coordinator._start_thread(close_thread)
 
         if skip_side_effects:
             if stale_disconnect_keys:
@@ -735,7 +739,7 @@ class BLEInterface(MeshInterface):
         if should_reconnect:
             # Event coordination for reconnection (only if not closed)
             if should_schedule_reconnect:
-                self.thread_coordinator.clear_events(
+                self.thread_coordinator._clear_events(
                     "read_trigger", "reconnected_event"
                 )
                 self._schedule_auto_reconnect()
@@ -752,14 +756,14 @@ class BLEInterface(MeshInterface):
         client : BleakRootClient
             The Bleak client instance that disconnected.
         """
-        BLELifecycleService.on_ble_disconnect(self, client)
+        BLELifecycleService._on_ble_disconnect(self, client)
 
     def _schedule_auto_reconnect(self) -> None:
         """Schedule repeated automatic reconnection attempts until a connection is established or shutdown begins.
 
         Does nothing if automatic reconnection is disabled or the interface is closing or already closed.
         """
-        BLELifecycleService.schedule_auto_reconnect(self)
+        BLELifecycleService._schedule_auto_reconnect(self)
 
     def _handle_malformed_fromnum(self, reason: str, exc_info: bool = False) -> None:
         """Track malformed FROMNUM notifications and log occurrences; emit a warning when a configured threshold is reached.
@@ -810,7 +814,7 @@ class BLEInterface(MeshInterface):
             )
             return
         finally:
-            self.thread_coordinator.set_event("read_trigger")
+            self.thread_coordinator._set_event("read_trigger")
 
     # COMPAT_STABLE_SHIM (2.7.7): historical public BLEInterface callback.
     # Keep callable without deprecation warning.
@@ -1790,14 +1794,14 @@ class BLEInterface(MeshInterface):
 
     def _state_manager_is_connected(self) -> bool:
         """Read connected state with fallback for legacy/mocked state managers."""
-        is_connected = getattr(self._state_manager, "is_connected", None)
+        is_connected = getattr(self._state_manager, "_is_connected", None)
         if isinstance(is_connected, bool):
             return is_connected
-        legacy_is_connected = getattr(self._state_manager, "_is_connected", None)
+        legacy_is_connected = getattr(self._state_manager, "is_connected", None)
         if isinstance(legacy_is_connected, bool):
             return legacy_is_connected
         # Preserve pre-refactor failure mode for misconfigured doubles.
-        return self._state_manager.is_connected
+        return self._state_manager._is_connected
 
     def _validator_check_existing_client(
         self,
@@ -1932,7 +1936,7 @@ class BLEInterface(MeshInterface):
         legacy_should_retry = getattr(policy, "_should_retry", None)
         if callable(legacy_should_retry):
             return bool(legacy_should_retry(attempt))
-        raise AttributeError("Retry policy missing should_retry/_should_retry")
+        raise AttributeError(ERROR_RETRY_POLICY_MISSING_SHOULD_RETRY)
 
     @staticmethod
     def _retry_policy_get_delay(policy: object, attempt: int) -> float:
@@ -1943,7 +1947,7 @@ class BLEInterface(MeshInterface):
         legacy_get_delay = getattr(policy, "_get_delay", None)
         if callable(legacy_get_delay):
             return float(legacy_get_delay(attempt))
-        raise AttributeError("Retry policy missing get_delay/_get_delay")
+        raise AttributeError(ERROR_RETRY_POLICY_MISSING_GET_DELAY)
 
     @property
     def _connection_state(self) -> ConnectionState:
@@ -1955,7 +1959,7 @@ class BLEInterface(MeshInterface):
             The current connection state of the interface.
         """
         with self._state_lock:
-            return self._state_manager.current_state
+            return self._state_manager._current_state
 
     @property
     def _is_connection_connected(self) -> bool:
@@ -1967,7 +1971,7 @@ class BLEInterface(MeshInterface):
             `True` if a BLE connection is active, `False` otherwise.
         """
         with self._state_lock:
-            return self._state_manager.is_connected
+            return self._state_manager._is_connected
 
     @property
     def _is_connection_closing(self) -> bool:
@@ -1979,7 +1983,7 @@ class BLEInterface(MeshInterface):
             True if the interface is closing or closed, False otherwise.
         """
         with self._state_lock:
-            return self._state_manager.is_closing or self._closed
+            return self._state_manager._is_closing or self._closed
 
     @property
     def _can_initiate_connection(self) -> bool:
@@ -1993,7 +1997,7 @@ class BLEInterface(MeshInterface):
             True if a new connection can be initiated, False otherwise.
         """
         with self._state_lock:
-            return self._state_manager.can_connect and not self._closed
+            return self._state_manager._can_connect and not self._closed
 
     # ---------------------------------------------------------------------
     # Connection helper methods (extracted from connect() for readability)
@@ -2027,7 +2031,7 @@ class BLEInterface(MeshInterface):
         self._validate_connection_preconditions()
         with self._state_lock:
             if (
-                self._state_manager.current_state == ConnectionState.CONNECTING
+                self._state_manager._current_state == ConnectionState.CONNECTING
                 or self._client_publish_pending
             ):
                 raise self.BLEError(ERROR_MANAGEMENT_CONNECTING)
@@ -2046,7 +2050,7 @@ class BLEInterface(MeshInterface):
             `True` if the connection should be suppressed because the key is connected elsewhere and this interface is not the active connection, `False` otherwise.
         """
         with self._state_lock:
-            is_self_connected = self._state_manager.is_connected
+            is_self_connected = self._state_manager._is_connected
         return bool(
             connection_key
             and _is_currently_connected_elsewhere(connection_key, owner=self)
@@ -2172,7 +2176,7 @@ class BLEInterface(MeshInterface):
         previous_client = None
         abort_connect = False
         with self._state_lock:
-            if self._closed or self._state_manager.is_closing:
+            if self._closed or self._state_manager._is_closing:
                 abort_connect = True
                 self._client_publish_pending = False
                 self._client_replacement_pending = False
@@ -2216,11 +2220,11 @@ class BLEInterface(MeshInterface):
         self, client: BLEClient
     ) -> tuple[bool, bool]:
         """Return owned/closing status for a connected client while holding `_state_lock`."""
-        is_closing = self._state_manager.is_closing or self._closed
+        is_closing = self._state_manager._is_closing or self._closed
         is_owned = (
             not self._closed
             and self.client is client
-            and self._state_manager.is_connected
+            and self._state_manager._is_connected
             and client.isConnected()
         )
         return is_owned, is_closing
@@ -2392,7 +2396,7 @@ class BLEInterface(MeshInterface):
         """Emit reconnect signaling/logging only after verified connect publish."""
         coordinator = getattr(self, "thread_coordinator", None)
         if self._prior_publish_was_reconnect and coordinator is not None:
-            coordinator.set_event("reconnected_event")
+            coordinator._set_event("reconnected_event")
         self._prior_publish_was_reconnect = False
         normalized_device_address = sanitize_address(
             self._extract_client_address(connected_client)
@@ -2432,7 +2436,7 @@ class BLEInterface(MeshInterface):
         is_closing = False
         with self._state_lock:
             if self.client is client:
-                is_closing = self._state_manager.is_closing or self._closed
+                is_closing = self._state_manager._is_closing or self._closed
                 self.client = None
                 self._client_publish_pending = False
                 self._client_replacement_pending = False
@@ -2453,7 +2457,7 @@ class BLEInterface(MeshInterface):
                 # not remain stuck in ERROR_MANAGEMENT_CONNECTING.
                 self._client_publish_pending = False
                 self._client_replacement_pending = False
-                is_closing = self._state_manager.is_closing or self._closed
+                is_closing = self._state_manager._is_closing or self._closed
                 if not is_closing:
                     self.address = restored_address
                     self._last_connection_request = restore_last_connection_request
@@ -2466,7 +2470,7 @@ class BLEInterface(MeshInterface):
 
         if should_reset_state:
             with self._state_lock:
-                self._state_manager.reset_to_disconnected()
+                self._state_manager._reset_to_disconnected()
 
     def _finalize_connection_gates(
         self,
@@ -2900,7 +2904,7 @@ class BLEInterface(MeshInterface):
         if write_successful:
             # Brief delay to allow write to propagate before triggering read
             _sleep(BLEConfig.SEND_PROPAGATION_DELAY)
-            self.thread_coordinator.set_event(
+            self.thread_coordinator._set_event(
                 "read_trigger"
             )  # Wake receive loop to process any response
 
@@ -2923,7 +2927,7 @@ class BLEInterface(MeshInterface):
                         "BLEInterface.close called on already closed interface; ignoring"
                     )
                     return
-                was_closing = self._state_manager.is_closing
+                was_closing = self._state_manager._is_closing
                 # Mark closed immediately to prevent overlapping cleanup in concurrent calls
                 self._closed = True
                 if was_closing:
@@ -2931,11 +2935,11 @@ class BLEInterface(MeshInterface):
                         "BLEInterface.close called while another shutdown is in progress; continuing with cleanup"
                     )
                 # Transition to DISCONNECTING only if we're not already fully disconnected or mid-disconnect
-                if self._state_manager.current_state not in (
+                if self._state_manager._current_state not in (
                     ConnectionState.DISCONNECTED,
                     ConnectionState.DISCONNECTING,
                 ):
-                    self._state_manager.transition_to(ConnectionState.DISCONNECTING)
+                    self._state_manager._transition_to(ConnectionState.DISCONNECTING)
             while self._management_inflight > 0:
                 elapsed = time.monotonic() - management_wait_started
                 if elapsed >= _MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS:
@@ -2969,7 +2973,7 @@ class BLEInterface(MeshInterface):
                 )
 
             self._set_receive_wanted(want_receive=False)  # Tell the thread we want it to stop
-            self.thread_coordinator.wake_waiting_threads(
+            self.thread_coordinator._wake_waiting_threads(
                 "read_trigger", "reconnected_event"
             )  # Wake all waiting threads
             if self._receiveThread:
@@ -2978,7 +2982,7 @@ class BLEInterface(MeshInterface):
                         "close() called from receive thread; skipping self-join"
                     )
                 else:
-                    self.thread_coordinator.join_thread(
+                    self.thread_coordinator._join_thread(
                         self._receiveThread, timeout=RECEIVE_THREAD_JOIN_TIMEOUT
                     )
                     if self._receiveThread.is_alive():
@@ -3051,14 +3055,14 @@ class BLEInterface(MeshInterface):
                 self._wait_for_disconnect_notifications()
 
             # Clean up thread coordinator
-            self.thread_coordinator.cleanup()
+            self.thread_coordinator._cleanup()
         finally:
             # Use unified state lock
             with self._state_lock:
                 # Record final state as DISCONNECTED for observers; instance remains closed.
                 # Safe re-entrant call: _state_lock and _state_manager.lock share the
                 # same RLock instance set during state manager initialization.
-                self._state_manager.transition_to(ConnectionState.DISCONNECTED)
+                self._state_manager._transition_to(ConnectionState.DISCONNECTED)
                 alias_key = self._connection_alias_key
                 self._connection_alias_key = None
             close_key = _addr_key(self.address)
@@ -3088,7 +3092,7 @@ class BLEInterface(MeshInterface):
         client : BLEClient
             BLE client to disconnect and close; operation is idempotent and safe to call on already-closed clients.
         """
-        BLELifecycleService.disconnect_and_close_client(self, client)
+        BLELifecycleService._disconnect_and_close_client(self, client)
 
     def _drain_publish_queue(self, flush_event: Event) -> None:
         """Drain and run pending publish callbacks on the current thread until the queue is empty or the provided event is set.

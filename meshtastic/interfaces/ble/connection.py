@@ -8,7 +8,6 @@ import sys
 from collections.abc import Callable
 from threading import Event, RLock
 from typing import TYPE_CHECKING, cast
-from unittest.mock import DEFAULT, Mock
 
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
@@ -30,7 +29,11 @@ from meshtastic.interfaces.ble.coordination import ThreadCoordinator, ThreadLike
 from meshtastic.interfaces.ble.discovery import _looks_like_ble_address
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
-from meshtastic.interfaces.ble.utils import sanitize_address
+from meshtastic.interfaces.ble.utils import (
+    _is_unconfigured_mock_callable,
+    _is_unconfigured_mock_member,
+    sanitize_address,
+)
 
 if TYPE_CHECKING:
     from bleak import BleakClient as BleakRootClient
@@ -60,22 +63,6 @@ def _is_device_not_found_error(err: Exception) -> bool:
         return True
     message = str(err).casefold()
     return bool(message) and _DEVICE_NOT_FOUND_MESSAGE_RE.search(message) is not None
-
-
-def _is_unconfigured_mock_callable(candidate: object) -> bool:
-    """Return True when a callable is an auto-generated Mock attribute."""
-    if not isinstance(candidate, Mock):
-        return False
-    return (
-        getattr(candidate, "_mock_return_value", DEFAULT) is DEFAULT
-        and candidate.side_effect is None
-        and not candidate.call_args_list
-    )
-
-
-def _is_unconfigured_mock_member(candidate: object) -> bool:
-    """Return True when an attribute is an unconfigured auto-generated Mock."""
-    return _is_unconfigured_mock_callable(candidate)
 
 
 class ConnectionValidator:
@@ -113,8 +100,8 @@ class ConnectionValidator:
             the error message will be "Already connected or connection in progress".
         """
         with self.state_lock:
-            can_connect = self.state_manager.can_connect
-            is_closing = self.state_manager.is_closing
+            can_connect = self.state_manager._can_connect
+            is_closing = self.state_manager._is_closing
             if not can_connect:
                 if is_closing:
                     raise self.BLEError(BLECLIENT_ERROR_CANNOT_CONNECT_WHILE_CLOSING)
@@ -225,21 +212,10 @@ class ClientManager:
         """Create thread via public API with underscore fallback for legacy test doubles."""
         create_thread = getattr(self.thread_coordinator, "create_thread", None)
         legacy_create_thread = getattr(self.thread_coordinator, "_create_thread", None)
-        if (
-            callable(create_thread)
-            and callable(legacy_create_thread)
-            and _is_unconfigured_mock_callable(create_thread)
-        ):
-            return cast(
-                ThreadLike,
-                legacy_create_thread(
-                    target=target,
-                    args=args,
-                    name=name,
-                    daemon=daemon,
-                ),
-            )
-        if callable(create_thread):
+        valid_create_thread = callable(create_thread) and not _is_unconfigured_mock_callable(
+            create_thread
+        )
+        if valid_create_thread and callable(create_thread):
             return cast(
                 ThreadLike,
                 create_thread(
@@ -259,6 +235,16 @@ class ClientManager:
                     daemon=daemon,
                 ),
             )
+        if callable(create_thread):
+            return cast(
+                ThreadLike,
+                create_thread(
+                    target=target,
+                    args=args,
+                    name=name,
+                    daemon=daemon,
+                ),
+            )
         raise AttributeError(
             "Thread coordinator is missing create_thread/_create_thread"
         )
@@ -267,18 +253,17 @@ class ClientManager:
         """Start thread via public API with underscore fallback for legacy test doubles."""
         start_thread = getattr(self.thread_coordinator, "start_thread", None)
         legacy_start_thread = getattr(self.thread_coordinator, "_start_thread", None)
-        if (
-            callable(start_thread)
-            and callable(legacy_start_thread)
-            and _is_unconfigured_mock_callable(start_thread)
-        ):
-            legacy_start_thread(thread)
-            return
-        if callable(start_thread):
+        valid_start_thread = callable(start_thread) and not _is_unconfigured_mock_callable(
+            start_thread
+        )
+        if valid_start_thread and callable(start_thread):
             start_thread(thread)
             return
         if callable(legacy_start_thread):
             legacy_start_thread(thread)
+            return
+        if callable(start_thread):
+            start_thread(thread)
             return
         raise AttributeError("Thread coordinator is missing start_thread/_start_thread")
 
@@ -557,13 +542,24 @@ class ConnectionOrchestrator:
                 public_member = _DISPATCH_MISSING
             if _is_unconfigured_mock_member(underscore_member):
                 underscore_member = _DISPATCH_MISSING
+        else:
+            if _is_unconfigured_mock_callable(public_member):
+                public_member = _DISPATCH_MISSING
+            underscore_is_unconfigured = _is_unconfigured_mock_callable(
+                underscore_member
+            )
+            keep_unconfigured_underscore = (
+                prefer_underscore_for_unconfigured_public_mock
+                and public_member is _DISPATCH_MISSING
+            )
+            if underscore_is_unconfigured and not keep_unconfigured_underscore:
+                underscore_member = _DISPATCH_MISSING
 
         if (
             call_member
             and prefer_underscore_for_unconfigured_public_mock
-            and callable(public_member)
+            and public_member is _DISPATCH_MISSING
             and callable(underscore_member)
-            and _is_unconfigured_mock_callable(public_member)
         ):
             return underscore_member(*args, **kwargs)
 
@@ -616,8 +612,8 @@ class ConnectionOrchestrator:
         """Read current state with fallback for underscore/mocked state managers."""
         state_value = self._dispatch_public_or_underscore(
             target=self.state_manager,
-            public_name="current_state",
-            underscore_name="_current_state",
+            public_name="_current_state",
+            underscore_name="current_state",
             prefer_instance_type=BLEStateManager,
             call_member=False,
             underscore_attr_type=ConnectionState,
@@ -628,8 +624,8 @@ class ConnectionOrchestrator:
         """Read closing-state flag with fallback for underscore/mocked state managers."""
         is_closing = self._dispatch_public_or_underscore(
             target=self.state_manager,
-            public_name="is_closing",
-            underscore_name="_is_closing",
+            public_name="_is_closing",
+            underscore_name="is_closing",
             prefer_instance_type=BLEStateManager,
             call_member=False,
             underscore_attr_type=bool,
@@ -642,12 +638,12 @@ class ConnectionOrchestrator:
         return bool(
             self._dispatch_public_or_underscore(
                 target=self.state_manager,
-                public_name="transition_to",
-                underscore_name="_transition_to",
+                public_name="_transition_to",
+                underscore_name="transition_to",
                 prefer_instance_type=BLEStateManager,
                 call_member=True,
                 args=(new_state,),
-                prefer_underscore_for_unconfigured_public_mock=True,
+                prefer_underscore_for_unconfigured_public_mock=False,
             )
         )
 
@@ -658,7 +654,6 @@ class ConnectionOrchestrator:
                 target=self.state_manager,
                 public_name="reset_to_disconnected",
                 underscore_name="_reset_to_disconnected",
-                prefer_instance_type=BLEStateManager,
                 call_member=True,
                 prefer_underscore_for_unconfigured_public_mock=True,
             )
@@ -670,7 +665,6 @@ class ConnectionOrchestrator:
             target=self.thread_coordinator,
             public_name="set_event",
             underscore_name="_set_event",
-            prefer_instance_type=ThreadCoordinator,
             call_member=True,
             args=(name,),
             prefer_underscore_for_unconfigured_public_mock=True,

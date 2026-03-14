@@ -16,19 +16,19 @@ class BLELifecycleService:
     """Service helpers for BLEInterface lifecycle responsibilities."""
 
     @staticmethod
-    def set_receive_wanted(iface: "BLEInterface", want_receive: bool) -> None:
+    def _set_receive_wanted(iface: "BLEInterface", want_receive: bool) -> None:
         """Request or clear the background receive loop."""
         with iface._state_lock:
             iface._want_receive = want_receive
 
     @staticmethod
-    def should_run_receive_loop(iface: "BLEInterface") -> bool:
+    def _should_run_receive_loop(iface: "BLEInterface") -> bool:
         """Return whether the receive loop should run."""
         with iface._state_lock:
             return iface._want_receive and not iface._closed
 
     @staticmethod
-    def start_receive_thread(
+    def _start_receive_thread(
         iface: "BLEInterface", *, name: str, reset_recovery: bool = True
     ) -> None:
         """Create and start the background receive thread."""
@@ -54,31 +54,43 @@ class BLELifecycleService:
                     existing.name,
                 )
                 return
-            thread = iface.thread_coordinator.create_thread(
+            thread = iface.thread_coordinator._create_thread(
                 target=iface._receive_from_radio_impl,
                 name=name,
                 daemon=True,
             )
             iface._receiveThread = thread
         try:
-            iface.thread_coordinator.start_thread(thread)
+            iface.thread_coordinator._start_thread(thread)
         except Exception:  # noqa: BLE001 - start failure must clear stale thread reference
             with iface._state_lock:
                 if iface._receiveThread is thread:
                     iface._receiveThread = None
             raise
+        thread_is_alive = bool(
+            callable(getattr(thread, "is_alive", None)) and thread.is_alive()
+        )
+        if not thread_is_alive:
+            with iface._state_lock:
+                if iface._receiveThread is thread:
+                    iface._receiveThread = None
+            logger.debug(
+                "Receive thread %s did not start; cleared stale thread reference.",
+                name,
+            )
+            return
         if reset_recovery:
             # Reset recovery throttling on successful thread start (not during recovery).
             with iface._state_lock:
                 iface._receive_recovery_attempts = 0
 
     @staticmethod
-    def on_ble_disconnect(iface: "BLEInterface", client: BleakRootClient) -> None:
+    def _on_ble_disconnect(iface: "BLEInterface", client: BleakRootClient) -> None:
         """Handle Bleak client disconnect callback."""
         iface._handle_disconnect("bleak_callback", bleak_client=client)
 
     @staticmethod
-    def schedule_auto_reconnect(iface: "BLEInterface") -> None:
+    def _schedule_auto_reconnect(iface: "BLEInterface") -> None:
         """Schedule background auto-reconnect attempts when enabled."""
         if not iface.auto_reconnect:
             return
@@ -88,7 +100,7 @@ class BLELifecycleService:
                     "Skipping auto-reconnect scheduling because interface is closed."
                 )
                 return
-            if iface._state_manager.is_closing:
+            if iface._state_manager._is_closing:
                 logger.debug(
                     "Skipping auto-reconnect scheduling because interface is closing."
                 )
@@ -101,6 +113,8 @@ class BLELifecycleService:
         )
 
     @staticmethod
-    def disconnect_and_close_client(iface: "BLEInterface", client: "BLEClient") -> None:
+    def _disconnect_and_close_client(
+        iface: "BLEInterface", client: "BLEClient"
+    ) -> None:
         """Ensure BLE client resources are released."""
         iface._client_manager_safe_close_client(client)

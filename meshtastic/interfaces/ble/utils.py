@@ -5,8 +5,25 @@ import importlib
 import time
 from types import ModuleType
 from typing import Awaitable, Callable, TypeVar
+from unittest.mock import DEFAULT, Mock, NonCallableMock
 
 T = TypeVar("T")
+
+
+def _is_unconfigured_mock_member(candidate: object) -> bool:
+    """Return True when candidate is an unconfigured auto-generated mock member."""
+    if not isinstance(candidate, (Mock, NonCallableMock)):
+        return False
+    return (
+        getattr(candidate, "_mock_return_value", DEFAULT) is DEFAULT
+        and getattr(candidate, "side_effect", None) is None
+        and not getattr(candidate, "call_args_list", [])
+    )
+
+
+def _is_unconfigured_mock_callable(candidate: object) -> bool:
+    """Return True when candidate is an unconfigured callable auto-generated mock."""
+    return callable(candidate) and _is_unconfigured_mock_member(candidate)
 
 
 def sanitize_address(address: str | None) -> str | None:

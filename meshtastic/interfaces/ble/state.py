@@ -135,11 +135,6 @@ class BLEStateManager:
             return self._state
 
     @property
-    def current_state(self) -> ConnectionState:
-        """Public accessor for the current BLE connection state."""
-        return self._current_state
-
-    @property
     def _is_connected(self) -> bool:
         """Whether the BLE interface is currently in the CONNECTED state.
 
@@ -155,11 +150,6 @@ class BLEStateManager:
         return self._current_state == ConnectionState.CONNECTED
 
     @property
-    def is_connected(self) -> bool:
-        """Public accessor for whether the BLE interface is connected."""
-        return self._is_connected
-
-    @property
     def _is_closing(self) -> bool:
         """Internal property: Indicates whether the BLE interface is in the DISCONNECTING state.
 
@@ -173,11 +163,6 @@ class BLEStateManager:
             True if the current connection state is DISCONNECTING, False otherwise.
         """
         return self._current_state == ConnectionState.DISCONNECTING
-
-    @property
-    def is_closing(self) -> bool:
-        """Public accessor for whether the BLE interface is closing."""
-        return self._is_closing
 
     @property
     def _can_connect(self) -> bool:
@@ -198,11 +183,6 @@ class BLEStateManager:
         )
 
     @property
-    def can_connect(self) -> bool:
-        """Public accessor for whether a new connection can be initiated."""
-        return self._can_connect
-
-    @property
     def _is_connecting(self) -> bool:
         """Whether the BLE interface is in a connecting state.
 
@@ -219,11 +199,6 @@ class BLEStateManager:
             ConnectionState.CONNECTING,
             ConnectionState.RECONNECTING,
         )
-
-    @property
-    def is_connecting(self) -> bool:
-        """Public accessor for whether the interface is in a connecting state."""
-        return self._is_connecting
 
     @property
     def _is_active(self) -> bool:
@@ -243,11 +218,6 @@ class BLEStateManager:
             ConnectionState.RECONNECTING,
             ConnectionState.CONNECTED,
         )
-
-    @property
-    def is_active(self) -> bool:
-        """Public accessor for whether the interface has an active or pending connection."""
-        return self._is_active
 
     def _transition_to_unlocked(self, new_state: ConnectionState) -> bool:
         """Transition helper that assumes `_state_lock` is already held."""
@@ -284,10 +254,6 @@ class BLEStateManager:
         """
         with self._state_lock:
             return self._transition_to_unlocked(new_state)
-
-    def transition_to(self, new_state: ConnectionState) -> bool:
-        """Public transition method for changing BLE connection state."""
-        return self._transition_to(new_state)
 
     def _is_valid_transition(
         self, from_state: ConnectionState, to_state: ConnectionState
@@ -337,12 +303,6 @@ class BLEStateManager:
                 return False
             return self._transition_to_unlocked(new_state)
 
-    def transition_if_in(
-        self, expected_states: set[ConnectionState], new_state: ConnectionState
-    ) -> bool:
-        """Public conditional transition helper for atomic state moves."""
-        return self._transition_if_in(expected_states, new_state)
-
     def _reset_to_disconnected(self) -> bool:
         """Force the connection state to DISCONNECTED for recovery or cleanup.
 
@@ -357,7 +317,3 @@ class BLEStateManager:
             # Prefer validated transition semantics; this is a no-op when already
             # disconnected and remains resilient to future transition-map edits.
             return self._transition_to_unlocked(ConnectionState.DISCONNECTED)
-
-    def reset_to_disconnected(self) -> bool:
-        """Public helper to force state reset to DISCONNECTED."""
-        return self._reset_to_disconnected()

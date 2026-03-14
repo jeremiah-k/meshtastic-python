@@ -5,7 +5,6 @@ import math
 from collections.abc import Callable
 from threading import TIMEOUT_MAX, Event, RLock
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
-from unittest.mock import DEFAULT, Mock
 
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
@@ -17,22 +16,12 @@ from meshtastic.interfaces.ble.gating import (
 )
 from meshtastic.interfaces.ble.policies import ReconnectPolicy
 from meshtastic.interfaces.ble.state import BLEStateManager
+from meshtastic.interfaces.ble.utils import _is_unconfigured_mock_callable
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
 
 logger = logging.getLogger("meshtastic.ble")
-
-
-def _is_unconfigured_mock_callable(candidate: object) -> bool:
-    """Return True when a callable is an auto-generated Mock attribute."""
-    if not isinstance(candidate, Mock):
-        return False
-    return (
-        getattr(candidate, "_mock_return_value", DEFAULT) is DEFAULT
-        and candidate.side_effect is None
-        and not candidate.call_args_list
-    )
 
 
 def _camel_to_snake(name: str) -> str:
@@ -118,14 +107,22 @@ class ReconnectScheduler:
         """Create a thread via public coordinator API with underscore fallback."""
         create_thread = getattr(self.thread_coordinator, "create_thread", None)
         legacy_create_thread = getattr(self.thread_coordinator, "_create_thread", None)
-        if (
-            callable(create_thread)
-            and callable(legacy_create_thread)
-            and _is_unconfigured_mock_callable(create_thread)
-        ):
+        valid_create_thread = (
+            create_thread
+            if callable(create_thread)
+            and not _is_unconfigured_mock_callable(create_thread)
+            else None
+        )
+        valid_legacy_create_thread = (
+            legacy_create_thread
+            if callable(legacy_create_thread)
+            and not _is_unconfigured_mock_callable(legacy_create_thread)
+            else None
+        )
+        if valid_create_thread is None and valid_legacy_create_thread is not None:
             return cast(
                 ThreadLike,
-                legacy_create_thread(
+                valid_legacy_create_thread(
                     target=target,
                     args=args,
                     kwargs=kwargs,
@@ -133,10 +130,10 @@ class ReconnectScheduler:
                     daemon=daemon,
                 ),
             )
-        if callable(create_thread):
+        if valid_create_thread is not None:
             return cast(
                 ThreadLike,
-                create_thread(
+                valid_create_thread(
                     target=target,
                     args=args,
                     kwargs=kwargs,
@@ -144,10 +141,10 @@ class ReconnectScheduler:
                     daemon=daemon,
                 ),
             )
-        if callable(legacy_create_thread):
+        if valid_legacy_create_thread is not None:
             return cast(
                 ThreadLike,
-                legacy_create_thread(
+                valid_legacy_create_thread(
                     target=target,
                     args=args,
                     kwargs=kwargs,
@@ -163,18 +160,25 @@ class ReconnectScheduler:
         """Start a thread via public coordinator API with underscore fallback."""
         start_thread = getattr(self.thread_coordinator, "start_thread", None)
         legacy_start_thread = getattr(self.thread_coordinator, "_start_thread", None)
-        if (
-            callable(start_thread)
-            and callable(legacy_start_thread)
-            and _is_unconfigured_mock_callable(start_thread)
-        ):
-            legacy_start_thread(thread)
+        valid_start_thread = (
+            start_thread
+            if callable(start_thread) and not _is_unconfigured_mock_callable(start_thread)
+            else None
+        )
+        valid_legacy_start_thread = (
+            legacy_start_thread
+            if callable(legacy_start_thread)
+            and not _is_unconfigured_mock_callable(legacy_start_thread)
+            else None
+        )
+        if valid_start_thread is None and valid_legacy_start_thread is not None:
+            valid_legacy_start_thread(thread)
             return
-        if callable(start_thread):
-            start_thread(thread)
+        if valid_start_thread is not None:
+            valid_start_thread(thread)
             return
-        if callable(legacy_start_thread):
-            legacy_start_thread(thread)
+        if valid_legacy_start_thread is not None:
+            valid_legacy_start_thread(thread)
             return
         raise AttributeError("Thread coordinator is missing start_thread/_start_thread")
 

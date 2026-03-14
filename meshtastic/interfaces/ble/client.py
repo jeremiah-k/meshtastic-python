@@ -180,6 +180,7 @@ class BLEClient:
         if isinstance(bleak_address, str) and bleak_address:
             self.address = bleak_address
 
+    # COMPAT_STABLE_SHIM: historical discovery entrypoint used by BLE discovery compatibility paths.
     def _discover(self, **kwargs: Any) -> Any:
         """Discover nearby BLE devices.
 

@@ -9,7 +9,6 @@ import time
 from collections.abc import Awaitable
 from types import TracebackType
 from typing import Any, Callable, Protocol, cast, runtime_checkable
-from unittest.mock import DEFAULT, Mock
 
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
@@ -21,6 +20,7 @@ from meshtastic.interfaces.ble.constants import (
     logger,
 )
 from meshtastic.interfaces.ble.utils import (
+    _is_unconfigured_mock_callable,
     resolve_ble_module,
     sanitize_address,
 )
@@ -64,17 +64,6 @@ def _is_discovery_client_like(client: object) -> bool:
     underscore_discover = getattr(client, "_discover", None)
     return callable(underscore_discover) and not _is_unconfigured_mock_callable(
         underscore_discover
-    )
-
-
-def _is_unconfigured_mock_callable(candidate: object) -> bool:
-    """Return True when a callable is an auto-generated unconfigured Mock."""
-    if not isinstance(candidate, Mock):
-        return False
-    return (
-        getattr(candidate, "_mock_return_value", DEFAULT) is DEFAULT
-        and candidate.side_effect is None
-        and not candidate.call_args_list
     )
 
 
@@ -510,18 +499,9 @@ class DiscoveryManager:
                     invalid_client_error = DiscoveryClientError.factory_returned_none(
                         resolved_factory
                     )
-                # Accept BLEClient instances or runtime-checkable protocol implementations
-                # so tests can provide minimal discovery doubles.
-                elif not (
-                    isinstance(
-                        self._client,
-                        (
-                            BLEClient,
-                            DiscoveryClientProtocol,
-                            UnderscoreDiscoveryClientProtocol,
-                        ),
-                    )
-                    or _is_discovery_client_like(self._client)
+                # Accept concrete BLE clients or discovery-like doubles.
+                elif not isinstance(self._client, BLEClient) and not _is_discovery_client_like(
+                    self._client
                 ):
                     invalid_client = self._client
                     _discard_cached_client()
@@ -586,6 +566,9 @@ class DiscoveryManager:
                 # underscore-prefixed discover helpers.
                 discover = getattr(client, "_discover", None)
             if not callable(discover) or _is_unconfigured_mock_callable(discover):
+                with self._client_lock:
+                    if self._client is client:
+                        self._client = None
                 raise DiscoveryClientError.invalid_client(
                     resolved_factory,
                     type(client),
@@ -608,6 +591,8 @@ class DiscoveryManager:
         except (BleakError, RuntimeError) as e:
             logger.warning("Device discovery failed: %s", e, exc_info=True)
             devices = []
+        except DiscoveryClientError:
+            raise
         except Exception as e:  # pragma: no cover  # noqa: BLE001
             # Defensive last resort to keep discovery best-effort
             logger.warning(

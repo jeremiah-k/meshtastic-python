@@ -27,14 +27,18 @@ recommended patterns for code that embeds `meshtastic-python`.
 
 ### Boundary contract (current)
 
-- BLE orchestration paths should call collaborator **public** methods.
-- Underscore-prefixed methods remain as compatibility/testing shims where needed.
-- Cross-component private-member access should stay inside the defining module.
-- `BLEInterface` remains the compatibility boundary: service modules receive
-  patch-sensitive collaborators (for example `publishingThread`, `BLEClient`,
-  `_is_currently_connected_elsewhere`, `sys/shutil/subprocess`) via delegation
-  wrappers so existing tests/integrations that monkeypatch
+- BLE orchestration paths should prefer collaborator entrypoints over direct
+  cross-module private calls when wrappers exist.
+- Underscore-prefixed methods are canonical for internal orchestration
+  collaborators (`state`, `coordination`, lifecycle services).
+- `BLEInterface` remains the compatibility boundary: patch-sensitive
+  collaborators (for example `publishingThread`, `BLEClient`,
+  `_is_currently_connected_elsewhere`, `sys/shutil/subprocess`) are delegated
+  from the interface so existing tests/integrations that monkeypatch
   `meshtastic.interfaces.ble.interface.*` continue to work.
+- Some service helpers still read interface-private state directly where
+  dedicated wrappers are not yet extracted; that boundary cleanup is in
+  progress and should not be treated as stable external API.
 
 ### Key design choices
 
@@ -159,8 +163,7 @@ call sites.
 The BLE read loop and auto-reconnect use policies from
 [`meshtastic/interfaces/ble/policies.py`](meshtastic/interfaces/ble/policies.py).
 
-`ReconnectPolicy` remains an internal BLE policy utility. Canonical collaborator
-calls should use the public methods shown below.
+Use `RetryPolicy` for bounded retry decisions in the receive/read paths.
 
 ```python
 from meshtastic.interfaces.ble.policies import RetryPolicy
@@ -169,8 +172,17 @@ policy = RetryPolicy.empty_read()  # or .transient_error() / .auto_reconnect()
 
 delay = policy.get_delay(attempt)          # float, jittered exponential backoff
 should_go = policy.should_retry(count)     # bool, respects max_retries
-delay, ok = policy.next_attempt()          # canonical: compute delay + advance counter
-attempt_count = policy.get_attempt_count() # int, current retry attempt number
+```
+
+`ReconnectPolicy` remains an internal BLE policy utility used by reconnect
+workers/schedulers:
+
+```python
+from meshtastic.interfaces.ble.policies import ReconnectPolicy
+
+policy = ReconnectPolicy(initial_delay=5.0, max_delay=120.0, backoff=2.0, jitter_ratio=0.2)
+delay, should_retry = policy.next_attempt()   # compute delay and advance attempt counter
+attempt_count = policy.get_attempt_count()    # read current attempt counter
 ```
 
 Compatibility note: underscore variants (`_empty_read`, `_get_delay`,

@@ -56,6 +56,7 @@ Additional approved BLE compatibility and promotions:
 | `BLEClient.stopNotify`                    | `PRIMARY`            | Silent         | Approved promoted camelCase name.              |
 | `BLEInterface.find_device`                | `COMPAT_STABLE_SHIM` | Silent         | Historical snake_case wrapper.                 |
 | `BLEInterface.findDevice`                 | `PRIMARY`            | Silent         | Approved promoted camelCase name.              |
+| `BLEClient._discover`                     | `INTERNAL_COMPAT`    | Silent         | Historical internal discovery entrypoint.      |
 | `BLEStateManager._lock`                   | `INTERNAL_COMPAT`    | Silent         | Alias to `lock` property for legacy internals. |
 | `meshtastic.ble_interface.BleakClient`    | `COMPAT_STABLE_SHIM` | Silent         | Legacy module-level import compatibility.      |
 | `meshtastic.ble_interface.BleakScanner`   | `COMPAT_STABLE_SHIM` | Silent         | Legacy module-level import compatibility.      |
@@ -153,6 +154,7 @@ Semantic deprecation:
 | Module                                | Compatibility symbol         | Canonical symbol              |
 | ------------------------------------- | ---------------------------- | ----------------------------- |
 | `meshtastic.interfaces.ble.client`    | `find_device()`              | `discover()`                  |
+| `meshtastic.interfaces.ble.client`    | `_discover()`                | `discover()`                  |
 | `meshtastic.interfaces.ble.client`    | `is_connected()`             | `isConnected()`               |
 | `meshtastic.interfaces.ble.client`    | `stop_notify()`              | `stopNotify()`                |
 | `meshtastic.interfaces.ble.client`    | `async_await()`              | `_async_await()`              |
