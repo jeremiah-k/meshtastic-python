@@ -21,7 +21,7 @@ This is an internal working tracker for large-pass execution.
 | Pass | Theme | Status | Notes |
 | --- | --- | --- | --- |
 | P1 | BLE boundary API promotion and adoption | Completed | Public boundary APIs adopted with legacy test-double compatibility fallbacks. |
-| P2 | BLEInterface decomposition (lifecycle/receive/management adapters) | Planned | Structure-first extraction, no behavior changes. |
+| P2 | BLEInterface decomposition (lifecycle/receive/management adapters) | In progress | First large extraction landed with service-module delegation and compatibility parity. |
 | P3 | MeshInterface inbound dispatch split | Planned | `_handle_from_radio` decomposition with dispatch map. |
 | P4 | Node `setURL()` transaction extraction | Planned | Planner/apply/rollback separation. |
 | P5 | Compat isolation and hot-path cleanup | Planned | Move shims out of core runtime paths where feasible. |
@@ -90,3 +90,28 @@ This is an internal working tracker for large-pass execution.
 - Introduce private helper classes/modules with constructor-injected collaborators.
 - Move logic in chunks with delegation shims and no behavior changes.
 - Keep targeted BLE test slice green after each extraction chunk.
+
+## Pass P2 Progress (Current)
+
+### Completed In This Pass
+
+- Added service modules:
+  - `meshtastic/interfaces/ble/lifecycle_service.py`
+  - `meshtastic/interfaces/ble/receive_service.py`
+  - `meshtastic/interfaces/ble/management_service.py`
+  - `meshtastic/interfaces/ble/compatibility_service.py`
+- Delegated `BLEInterface` method clusters into those services while preserving public/private entrypoint names on `BLEInterface`.
+- Preserved monkeypatch/test compatibility by routing patch-sensitive dependencies (`BLEClient`, `_is_currently_connected_elsewhere`, `publishingThread`, `sys`, `shutil`, `subprocess`) through `interface.py` wrappers.
+- Kept behavior parity with targeted strict typing and BLE test slices.
+
+### Verification (This Pass)
+
+- `ruff check meshtastic/interfaces/ble/interface.py meshtastic/interfaces/ble/lifecycle_service.py meshtastic/interfaces/ble/receive_service.py meshtastic/interfaces/ble/compatibility_service.py meshtastic/interfaces/ble/management_service.py`
+- `poetry run mypy meshtastic/interfaces/ble/interface.py meshtastic/interfaces/ble/lifecycle_service.py meshtastic/interfaces/ble/receive_service.py meshtastic/interfaces/ble/compatibility_service.py meshtastic/interfaces/ble/management_service.py --strict`
+- `poetry run pytest tests/test_ble_interface_core.py tests/test_ble_connection_edge_cases.py -q` (`223 passed`)
+- `poetry run pytest tests/test_ble_*.py -q` (`411 passed, 3 skipped`)
+
+### Remaining P2 Work
+
+- Move connect/disconnect lifecycle core (`_handle_disconnect`, connect-finalization helpers, close teardown sequencing) into a dedicated lifecycle runtime service.
+- Finish reducing `BLEInterface` direct orchestration density while keeping lock-order semantics and compatibility shims unchanged.

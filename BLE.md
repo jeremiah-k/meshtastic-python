@@ -20,12 +20,21 @@ recommended patterns for code that embeds `meshtastic-python`.
 | `ClientManager`                          | Owns `BLEClient` lifecycle and safe-close operations                                          |
 | `ConnectionOrchestrator`                 | Coordinates a full connection attempt: validate → discover → connect → register notifications |
 | `ReconnectScheduler` / `ReconnectWorker` | Policy-driven background reconnect loop                                                       |
+| `BLELifecycleService`                    | Lifecycle/threading adapters used by `BLEInterface` for receive thread and reconnect triggers |
+| `BLEReceiveRecoveryService`              | Receive-loop, transient read retry, and receive-thread recovery runtime logic                 |
+| `BLEManagementCommandsService`           | Pair/unpair/trust command execution and temporary-client management                           |
+| `BLECompatibilityEventService`           | Legacy event publication and publish-queue drain/flush behavior                               |
 
 ### Boundary contract (current)
 
 - BLE orchestration paths should call collaborator **public** methods.
 - Underscore-prefixed methods remain as compatibility/testing shims where needed.
 - Cross-component private-member access should stay inside the defining module.
+- `BLEInterface` remains the compatibility boundary: service modules receive
+  patch-sensitive collaborators (for example `publishingThread`, `BLEClient`,
+  `_is_currently_connected_elsewhere`, `sys/shutil/subprocess`) via delegation
+  wrappers so existing tests/integrations that monkeypatch
+  `meshtastic.interfaces.ble.interface.*` continue to work.
 
 ### Key design choices
 
