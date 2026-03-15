@@ -21,6 +21,7 @@ from meshtastic.interfaces.ble.coordination import ThreadLike
 from meshtastic.interfaces.ble.gating import _addr_key, _is_currently_connected_elsewhere
 from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import (
+    _is_unexpected_keyword_error,
     _is_unconfigured_mock_callable,
     _is_unconfigured_mock_member,
     _thread_start_probe,
@@ -70,6 +71,62 @@ class _OwnershipSnapshot:
 
 class BLELifecycleService:
     """Service helpers for BLEInterface lifecycle responsibilities."""
+
+    @staticmethod
+    def _resolve_error_handler_hook(
+        iface: "BLEInterface", public_name: str, legacy_name: str
+    ) -> Callable[..., object] | None:
+        """Resolve an error-handler hook with public-first fallback behavior."""
+        error_handler = getattr(iface, "error_handler", None)
+        hook = getattr(error_handler, public_name, None)
+        if callable(hook) and not _is_unconfigured_mock_callable(hook):
+            return cast(Callable[..., object], hook)
+        legacy_hook = getattr(error_handler, legacy_name, None)
+        if callable(legacy_hook) and not _is_unconfigured_mock_callable(legacy_hook):
+            return cast(Callable[..., object], legacy_hook)
+        return None
+
+    @staticmethod
+    def _error_handler_safe_cleanup(
+        iface: "BLEInterface",
+        cleanup: Callable[[], object],
+        operation_name: str,
+    ) -> None:
+        """Run cleanup via resolved error-handler hook with best-effort fallback."""
+        safe_cleanup = BLELifecycleService._resolve_error_handler_hook(
+            iface, "safe_cleanup", "_safe_cleanup"
+        )
+        if safe_cleanup is not None:
+            safe_cleanup(cleanup, operation_name)
+            return
+        try:
+            cleanup()
+        except Exception:  # noqa: BLE001 - shutdown cleanup must remain best effort
+            logger.debug("Error during %s", operation_name, exc_info=True)
+
+    @staticmethod
+    def _error_handler_safe_execute(
+        iface: "BLEInterface",
+        func: Callable[[], object],
+        *,
+        error_msg: str,
+    ) -> object | None:
+        """Run callable via resolved error-handler execute hook with fallback."""
+        safe_execute = BLELifecycleService._resolve_error_handler_hook(
+            iface, "safe_execute", "_safe_execute"
+        )
+        if safe_execute is not None:
+            try:
+                return safe_execute(func, error_msg=error_msg)
+            except TypeError as exc:
+                if not _is_unexpected_keyword_error(exc, "error_msg"):
+                    logger.debug(error_msg, exc_info=True)
+                    return None
+        try:
+            return func()
+        except Exception:  # noqa: BLE001 - shutdown execution must remain best effort
+            logger.debug(error_msg, exc_info=True)
+            return None
 
     @staticmethod
     def _set_receive_wanted(iface: "BLEInterface", *, want_receive: bool) -> None:
@@ -1028,7 +1085,11 @@ class BLELifecycleService:
         discovery_manager = iface._discovery_manager
         iface._discovery_manager = None
         if discovery_manager is not None:
-            iface.error_handler.safe_cleanup(discovery_manager.close, "discovery manager close")
+            BLELifecycleService._error_handler_safe_cleanup(
+                iface,
+                discovery_manager.close,
+                "discovery manager close",
+            )
         iface._set_receive_wanted(want_receive=False)
 
     @staticmethod
@@ -1057,7 +1118,8 @@ class BLELifecycleService:
     @staticmethod
     def _close_mesh_interface(iface: "BLEInterface") -> None:
         """Run mesh-interface close under safe execution wrapper."""
-        iface.error_handler.safe_execute(
+        BLELifecycleService._error_handler_safe_execute(
+            iface,
             lambda: MeshInterface.close(iface),
             error_msg="Error closing mesh interface",
         )
@@ -1138,7 +1200,8 @@ class BLELifecycleService:
                     "unsubscribe_all", "_unsubscribe_all"
                 )
                 if unsubscribe_all is not None:
-                    iface.error_handler.safe_cleanup(
+                    BLELifecycleService._error_handler_safe_cleanup(
+                        iface,
                         lambda: unsubscribe_all(
                             client, timeout=NOTIFICATION_START_TIMEOUT
                         ),
@@ -1148,13 +1211,15 @@ class BLELifecycleService:
                     logger.debug(
                         "Notification manager is missing unsubscribe_all/_unsubscribe_all"
                     )
-                iface.error_handler.safe_cleanup(
+                BLELifecycleService._error_handler_safe_cleanup(
+                    iface,
                     lambda: iface._disconnect_and_close_client(client),
                     "BLE client disconnect/close",
                 )
         cleanup_all = _resolve_notification_cleanup("cleanup_all", "_cleanup_all")
         if cleanup_all is not None:
-            iface.error_handler.safe_cleanup(
+            BLELifecycleService._error_handler_safe_cleanup(
+                iface,
                 cleanup_all,
                 "notification manager cleanup",
             )

@@ -4,12 +4,16 @@ import asyncio
 import inspect
 import importlib
 import time
+from collections.abc import Awaitable, Callable
 from types import ModuleType
-from typing import Any, Awaitable, Callable, TypeVar
+from typing import Any, TypeVar
 from unittest.mock import DEFAULT, Mock, NonCallableMock
 
 T = TypeVar("T")
 _UNEXPECTED_KEYWORD_FRAGMENT = "unexpected keyword argument"
+_POSITIONAL_ONLY_KEYWORD_FRAGMENT = (
+    "positional-only arguments passed as keyword arguments"
+)
 
 
 def _is_unconfigured_mock_member(candidate: object) -> bool:
@@ -70,7 +74,14 @@ def _is_unexpected_keyword_error(exc: TypeError, kwarg_name: str) -> bool:
         keyword argument.
     """
     message = str(exc)
-    return _UNEXPECTED_KEYWORD_FRAGMENT in message and f"'{kwarg_name}'" in message
+    quoted_kwarg = f"'{kwarg_name}'"
+    has_keyword_mismatch = _UNEXPECTED_KEYWORD_FRAGMENT in message
+    has_positional_only_mismatch = (
+        _POSITIONAL_ONLY_KEYWORD_FRAGMENT in message or "positional-only" in message
+    )
+    return quoted_kwarg in message and (
+        has_keyword_mismatch or has_positional_only_mismatch
+    )
 
 
 def _call_factory_with_optional_kwarg(
@@ -115,7 +126,11 @@ def _call_factory_with_optional_kwarg(
 
     accepts_optional_kwarg = False
     if signature is not None:
-        accepts_optional_kwarg = (optional_kwarg in signature.parameters) or any(
+        optional_parameter = signature.parameters.get(optional_kwarg)
+        accepts_optional_kwarg = (
+            optional_parameter is not None
+            and optional_parameter.kind is not inspect.Parameter.POSITIONAL_ONLY
+        ) or any(
             parameter.kind == inspect.Parameter.VAR_KEYWORD
             for parameter in signature.parameters.values()
         )

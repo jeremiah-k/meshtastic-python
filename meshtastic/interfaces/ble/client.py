@@ -480,8 +480,7 @@ class BLEClient:
             or await_timeout <= 0
         ):
             raise self.BLEError(ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID)
-        if self.bleak_client is None:
-            raise self.BLEError(not_initialized_error)
+        self._require_bleak_client(not_initialized_error)
         if operation is None:
             raise self.BLEError(unsupported_error)
         try:
@@ -523,12 +522,13 @@ class BLEClient:
         BLEError
             If the BLE client is not initialized or the pairing operation fails.
         """
-        bleak_client = self.bleak_client
+        bleak_client = self._require_bleak_client(
+            BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED
+        )
         self._run_management_call(
             (
                 None
-                if bleak_client is None
-                or not callable(getattr(bleak_client, "pair", None))
+                if not callable(getattr(bleak_client, "pair", None))
                 else lambda: bleak_client.pair(**kwargs)
             ),
             await_timeout=await_timeout,
@@ -559,12 +559,13 @@ class BLEClient:
         BLEError
             If the BLE client is not initialized or if the backend does not expose `unpair`.
         """
-        bleak_client = self.bleak_client
+        bleak_client = self._require_bleak_client(
+            BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED
+        )
         self._run_management_call(
             (
                 None
-                if bleak_client is None
-                or not callable(getattr(bleak_client, "unpair", None))
+                if not callable(getattr(bleak_client, "unpair", None))
                 else lambda: bleak_client.unpair()
             ),
             await_timeout=await_timeout,

@@ -171,16 +171,13 @@ class BLECompatibilityEventService:
         if prefer_non_blocking:
             if thread_is_alive is False:
                 return False
-            if put_nowait_callback is not None:
-                try:
-                    put_nowait_callback(callback)
-                    return True
-                except Full:
-                    return False
-            if queue_work_callback is not None:
-                queue_work_callback(callback)
+            if put_nowait_callback is None:
+                return False
+            try:
+                put_nowait_callback(callback)
                 return True
-            return False
+            except Full:
+                return False
         if queue_work_callback is not None:
             queue_work_callback(callback)
             return True
@@ -378,3 +375,15 @@ class BLECompatibilityEventService:
                 exc_info=True,
             )
             _publish_status()
+
+    # COMPAT_STABLE_SHIM: retained for existing callers during service migration.
+    @staticmethod
+    def publish_connection_status_legacy(
+        iface: "BLEInterface", connected: bool, *, publishing_thread: object
+    ) -> None:
+        """Backward-compatible alias for ``publish_connection_status``."""
+        BLECompatibilityEventService.publish_connection_status(
+            iface,
+            connected,
+            publishing_thread=publishing_thread,
+        )

@@ -555,7 +555,29 @@ class BLEInterface(MeshInterface):
         client: BLEClient | None = None,
         bleak_client: BleakRootClient | None = None,
     ) -> bool:
-        """Handle a BLE client disconnection and drive reconnect/shutdown orchestration."""
+        """Handle BLE disconnect events via lifecycle-service delegation.
+
+        Parameters
+        ----------
+        source : str
+            Disconnect-source label used for logging and diagnostics.
+        client : BLEClient | None
+            Optional client instance associated with the disconnect callback.
+        bleak_client : BleakRootClient | None
+            Optional raw Bleak client instance associated with the callback.
+
+        Returns
+        -------
+        bool
+            ``True`` when receive-loop processing should continue, otherwise
+            ``False``.
+
+        Raises
+        ------
+        AttributeError
+            Intentionally propagated when delegated lifecycle-service helpers
+            are unavailable on compatibility doubles.
+        """
         return BLELifecycleService._handle_disconnect(
             self,
             source,
@@ -687,7 +709,27 @@ class BLEInterface(MeshInterface):
             if not callable(safe_execute) or _is_unconfigured_mock_callable(
                 safe_execute
             ):
-                handler(sender, data)
+                try:
+                    handler(sender, data)
+                except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
+                    report_exception = getattr(
+                        self.error_handler, "handle_unhandled_exception", None
+                    )
+                    if not callable(report_exception) or _is_unconfigured_mock_callable(
+                        report_exception
+                    ):
+                        report_exception = getattr(
+                            self.error_handler, "_handle_unhandled_exception", None
+                        )
+                    if callable(report_exception) and not _is_unconfigured_mock_callable(
+                        report_exception
+                    ):
+                        try:
+                            report_exception(error_msg)
+                        except Exception:  # noqa: BLE001 - callback error reporting is best effort
+                            logger.debug(error_msg, exc_info=True)
+                    else:
+                        logger.debug(error_msg, exc_info=True)
                 return
             safe_execute(
                 lambda: handler(sender, data),
@@ -1534,7 +1576,27 @@ class BLEInterface(MeshInterface):
         canonical_address: str,
         validated_timeout: float,
     ) -> None:
-        """Run `bluetoothctl trust` and translate subprocess failures into BLEError."""
+        """Delegate execution of ``bluetoothctl trust`` to management service.
+
+        Parameters
+        ----------
+        bluetoothctl_path : str
+            Resolved path to the ``bluetoothctl`` binary.
+        canonical_address : str
+            Canonicalized device address passed to ``bluetoothctl trust``.
+        validated_timeout : float
+            Positive finite timeout in seconds for subprocess execution.
+
+        Returns
+        -------
+        None
+            Trust execution is performed for side effects only.
+
+        Raises
+        ------
+        BLEError
+            If command execution fails or times out.
+        """
         BLEManagementCommandsService._run_bluetoothctl_trust_command(
             self,
             bluetoothctl_path,
@@ -1606,10 +1668,32 @@ class BLEInterface(MeshInterface):
 
     def _discover_devices(self, address: str | None) -> list[BLEDevice]:
         # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
-        """Discover devices via public API with underscore fallback for test doubles."""
+        """Discover devices via discovery-manager compatibility dispatch.
+
+        Parameters
+        ----------
+        address : str | None
+            Optional address or identifier used to filter scan results.
+
+        Returns
+        -------
+        list[BLEDevice]
+            Discovered devices matching the requested target filter.
+
+        Raises
+        ------
+        AttributeError
+            If no supported discovery entrypoint exists on the configured
+            discovery manager.
+        """
         discovery_manager = self._discovery_manager
         if discovery_manager is None:
             return []
+        discover_devices = getattr(discovery_manager, "discoverDevices", None)
+        if callable(discover_devices) and not _is_unconfigured_mock_callable(
+            discover_devices
+        ):
+            return cast(list[BLEDevice], discover_devices(address))
         discover_devices = getattr(discovery_manager, "discover_devices", None)
         if callable(discover_devices) and not _is_unconfigured_mock_callable(
             discover_devices
@@ -1628,7 +1712,18 @@ class BLEInterface(MeshInterface):
 
     def _state_manager_is_connected(self) -> bool:
         # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
-        """Read connected state with fallback for underscore/mocked state managers."""
+        """Read connected-state flag through compatibility member dispatch.
+
+        Returns
+        -------
+        bool
+            Current connected-state flag from the configured state manager.
+
+        Raises
+        ------
+        AttributeError
+            If no supported connected-state member exists on the state manager.
+        """
         public_is_connected = getattr(self._state_manager, "is_connected", None)
         if not _is_unconfigured_mock_member(public_is_connected) and isinstance(
             public_is_connected, bool
@@ -1654,7 +1749,28 @@ class BLEInterface(MeshInterface):
         last_connection_request: str | None,
     ) -> bool:
         # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
-        """Check existing-client compatibility with public-first, underscore-fallback lookup."""
+        """Check whether an existing client matches the requested connection target.
+
+        Parameters
+        ----------
+        client : BLEClient
+            Client candidate to validate.
+        normalized_request : str | None
+            Normalized requested address/identifier.
+        last_connection_request : str | None
+            Last stored normalized connection request.
+
+        Returns
+        -------
+        bool
+            ``True`` when the client is considered a compatible existing
+            connection target.
+
+        Raises
+        ------
+        AttributeError
+            If neither supported validator compatibility method exists.
+        """
         check_existing_client = getattr(
             self._connection_validator, "check_existing_client", None
         )
@@ -1703,7 +1819,29 @@ class BLEInterface(MeshInterface):
         connect_timeout: float | None = None,
     ) -> BLEClient:
         # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
-        """Establish BLE connection via orchestrator public API with underscore fallback."""
+        """Establish a BLE connection through orchestrator compatibility dispatch.
+
+        Parameters
+        ----------
+        address : str | None
+            Explicit target address/identifier or ``None`` for discovery mode.
+        pair_on_connect : bool
+            Whether pairing should be requested during connect.
+        connect_timeout : float | None
+            Optional caller-supplied connect timeout in seconds.
+
+        Returns
+        -------
+        BLEClient
+            Connected BLE client instance.
+
+        Raises
+        ------
+        AttributeError
+            If no supported orchestrator connect entrypoint is available.
+        BLEError
+            Propagated from orchestrator connection flow on failure.
+        """
         establish_connection = getattr(
             self._connection_orchestrator, "establish_connection", None
         )
@@ -1763,7 +1901,23 @@ class BLEInterface(MeshInterface):
 
     def _client_manager_safe_close_client(self, client: BLEClient) -> None:
         # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
-        """Close BLE client via public API with underscore fallback for test doubles."""
+        """Close a BLE client via client-manager compatibility dispatch.
+
+        Parameters
+        ----------
+        client : BLEClient
+            Client to close using best-effort manager helpers.
+
+        Returns
+        -------
+        None
+            Cleanup is performed for side effects only.
+
+        Raises
+        ------
+        AttributeError
+            If no supported client-close helper exists on the manager.
+        """
         safe_close_client = getattr(self._client_manager, "safe_close_client", None)
         if callable(safe_close_client) and not _is_unconfigured_mock_callable(
             safe_close_client
@@ -1787,7 +1941,25 @@ class BLEInterface(MeshInterface):
         self, client: BLEClient, previous_client: BLEClient
     ) -> None:
         # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
-        """Update client reference via public API with underscore fallback for test doubles."""
+        """Update active-client reference via manager compatibility dispatch.
+
+        Parameters
+        ----------
+        client : BLEClient
+            Client that should become active.
+        previous_client : BLEClient
+            Previously active client to retire/close asynchronously.
+
+        Returns
+        -------
+        None
+            Update is performed for side effects only.
+
+        Raises
+        ------
+        AttributeError
+            If no supported update-client-reference helper is available.
+        """
         update_client_reference = getattr(
             self._client_manager, "update_client_reference", None
         )
@@ -1812,7 +1984,25 @@ class BLEInterface(MeshInterface):
     @staticmethod
     def _retry_policy_should_retry(policy: object, attempt: int) -> bool:
         # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
-        """Evaluate retry decision with public-first, underscore-fallback lookup."""
+        """Evaluate retry permission via policy compatibility dispatch.
+
+        Parameters
+        ----------
+        policy : object
+            Retry-policy object exposing public or underscore retry helpers.
+        attempt : int
+            Retry attempt index to evaluate.
+
+        Returns
+        -------
+        bool
+            ``True`` when another retry is permitted.
+
+        Raises
+        ------
+        AttributeError
+            If no supported retry helper exists on ``policy``.
+        """
         should_retry = getattr(policy, "should_retry", None)
         if callable(should_retry) and not _is_unconfigured_mock_callable(should_retry):
             return bool(should_retry(attempt))
@@ -1826,7 +2016,25 @@ class BLEInterface(MeshInterface):
     @staticmethod
     def _retry_policy_get_delay(policy: object, attempt: int) -> float:
         # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
-        """Read retry delay with public-first, underscore-fallback lookup."""
+        """Resolve retry delay via policy compatibility dispatch.
+
+        Parameters
+        ----------
+        policy : object
+            Retry-policy object exposing public or underscore delay helpers.
+        attempt : int
+            Retry attempt index used for delay calculation.
+
+        Returns
+        -------
+        float
+            Retry delay in seconds.
+
+        Raises
+        ------
+        AttributeError
+            If no supported delay helper exists on ``policy``.
+        """
         get_delay = getattr(policy, "get_delay", None)
         if callable(get_delay) and not _is_unconfigured_mock_callable(get_delay):
             return float(get_delay(attempt))
@@ -2669,14 +2877,17 @@ class BLEInterface(MeshInterface):
         )
 
     def _publish_connection_status(self, connected: bool) -> None:
-        """Enqueue a legacy connection status publish for backward compatibility with tests and integrations.
-
-        Attempts to queue a publish of a "meshtastic.connection.status" message indicating whether this interface is connected; failures to queue or send are handled silently and logged at debug level as a best-effort operation.
+        """Enqueue legacy connection-status publication via compatibility service.
 
         Parameters
         ----------
         connected : bool
-            True when the interface is connected, False when disconnected.
+            ``True`` when connected; ``False`` when disconnected.
+
+        Returns
+        -------
+        None
+            Publication is best-effort and performed for side effects.
         """
         BLECompatibilityEventService.publish_connection_status(
             self,

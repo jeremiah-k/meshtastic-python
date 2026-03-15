@@ -167,9 +167,10 @@ Use `RetryPolicy` for bounded retry decisions in the receive/read paths.
 ```python
 from meshtastic.interfaces.ble.policies import RetryPolicy
 
-policy = RetryPolicy._empty_read()  # or ._transient_error() / ._auto_reconnect()
-# or use descriptor presets that return fresh policy instances:
+# Use descriptor presets that return fresh policy instances (preferred):
 policy = RetryPolicy.EMPTY_READ  # TRANSIENT_ERROR / AUTO_RECONNECT
+# or use factory methods:
+policy = RetryPolicy._empty_read()  # or ._transient_error() / ._auto_reconnect()
 
 delay = policy._get_delay(attempt)         # float, jittered exponential backoff
 should_go = policy._should_retry(count)    # bool, respects max_retries

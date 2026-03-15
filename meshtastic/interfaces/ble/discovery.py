@@ -45,18 +45,18 @@ _PENDING_DISCOVERY_CLOSE_TASKS_LOCK = threading.Lock()
 class DiscoveryClientProtocol(Protocol):
     """Minimal protocol required by DiscoveryManager for scan operations."""
 
-    def discover(self, **kwargs: Any) -> Any:
+    def discover(self, **kwargs: object) -> object:
         """Run a BLE scan and return backend response data.
 
         Parameters
         ----------
-        **kwargs : Any
+        **kwargs : object
             Backend-specific scan options (for example ``timeout`` and
             filtering hints) forwarded to the underlying implementation.
 
         Returns
         -------
-        Any
+        object
             Raw backend scan response consumed by discovery parsing helpers.
         """
 
@@ -65,18 +65,18 @@ class DiscoveryClientProtocol(Protocol):
 class UnderscoreDiscoveryClientProtocol(Protocol):
     """Compatibility protocol for discovery clients exposing ``_discover``."""
 
-    def _discover(self, **kwargs: Any) -> Any:
+    def _discover(self, **kwargs: object) -> object:
         """Run a BLE scan via underscore compatibility entrypoint.
 
         Parameters
         ----------
-        **kwargs : Any
+        **kwargs : object
             Backend-specific scan options (for example ``timeout`` and
             filtering hints) forwarded to the underlying implementation.
 
         Returns
         -------
-        Any
+        object
             Raw backend scan response consumed by discovery parsing helpers.
         """
 
@@ -701,7 +701,7 @@ class DiscoveryManager:
 
         return devices
 
-    def discover_devices(self, address: str | None) -> list[BLEDevice]:
+    def discoverDevices(self, address: str | None) -> list[BLEDevice]:
         """Run BLE discovery and return matching devices.
 
         Parameters
@@ -717,6 +717,11 @@ class DiscoveryManager:
             filter.
         """
         return self._discover_devices(address)
+
+    # COMPAT_STABLE_SHIM: snake_case alias retained for collaborator migration.
+    def discover_devices(self, address: str | None) -> list[BLEDevice]:
+        """Backward-compatible snake_case alias for ``discoverDevices``."""
+        return self.discoverDevices(address)
 
     def close(self) -> None:
         """Close the manager's persistent discovery client and clear the internal reference.

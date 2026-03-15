@@ -40,6 +40,7 @@ TRUST_COMMAND_OUTPUT_MAX_CHARS: int = 200
 TRUST_HEX_BLOB_RE = re.compile(r"\b[0-9A-Fa-f]{16,}\b")
 TRUST_TOKEN_RE = re.compile(r"\b[A-Za-z0-9+/=_-]{40,}\b")
 _DISCOVERY_FACTORY_LOG_KWARG = "log_if_no_address"
+_HEX_MAC_NO_SEPARATOR_RE = re.compile(r"^[0-9A-Fa-f]{12}$")
 
 T = TypeVar("T")
 
@@ -90,6 +91,22 @@ def _create_management_client(
         optional_kwarg=_DISCOVERY_FACTORY_LOG_KWARG,
         optional_value=False,
         on_kwarg_rejected=_log_kwarg_rejected,
+    )
+
+
+def _is_blank_or_malformed_address_like(address: str | None) -> bool:
+    """Return whether an address input is blank or malformed address-like text."""
+    if address is None:
+        return False
+    stripped_address = address.strip()
+    if not stripped_address:
+        return True
+    normalized_address = sanitize_address(stripped_address)
+    if normalized_address is not None:
+        return False
+    return (
+        ":" in stripped_address
+        or _HEX_MAC_NO_SEPARATOR_RE.fullmatch(stripped_address) is not None
     )
 
 
@@ -345,7 +362,7 @@ class BLEManagementCommandsService:
             If preconditions fail, target resolution fails, or target ownership
             changes while entering the management gate.
         """
-        if address is not None and sanitize_address(address) is None:
+        if _is_blank_or_malformed_address_like(address):
             raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
 
         management_started = False
@@ -746,7 +763,7 @@ class BLEManagementCommandsService:
             If address validation, environment preconditions, target resolution,
             or command execution fails.
         """
-        if address is not None and sanitize_address(address) is None:
+        if _is_blank_or_malformed_address_like(address):
             raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
 
         expected_implicit_binding = None
