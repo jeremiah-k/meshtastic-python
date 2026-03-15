@@ -214,9 +214,10 @@ class ThreadCoordinator:
             Thread previously registered with this coordinator via _create_thread.
         """
         if isinstance(thread, _InertThread):
-            # Preserve _create_thread post-cleanup contract for callers that
-            # only discover the inert thread at start time.
-            thread.start()
+            logger.debug(
+                "Ignoring start request for inert thread '%s' after coordinator cleanup",
+                thread.name,
+            )
             return
         should_start = False
         must_join_after_start = False

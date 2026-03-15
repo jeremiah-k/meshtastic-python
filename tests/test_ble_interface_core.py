@@ -5053,10 +5053,10 @@ def test_publish_connection_status_runs_directly_when_queuework_unconfigured(
     queue_work.assert_not_called()
 
 
-def test_publish_connection_status_falls_back_inline_when_non_blocking_enqueue_unavailable(
+def test_publish_connection_status_falls_back_inline_when_queuework_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify status publish falls back inline when non-blocking enqueue is unavailable.
+    """Verify status publish falls back inline when queueWork raises.
 
     Parameters
     ----------
@@ -5100,7 +5100,7 @@ def test_publish_connection_status_falls_back_inline_when_non_blocking_enqueue_u
         publishing_thread=publishing_thread,
     )
 
-    assert len(queue_attempts) == 0
+    assert len(queue_attempts) == 1
     assert sent == [("meshtastic.connection.status", iface, False)]
 
 

@@ -52,10 +52,31 @@ class _ManagementStartContext:
     target_address: str | None
     use_existing_client_without_resolved_address: bool
 
+
 def _create_management_client(
     ble_client_factory: Callable[..., BLEClient], target_address: str
 ) -> BLEClient:
-    """Create a temporary BLE client while tolerating factories without kwargs."""
+    """Create a temporary management client with optional-kwarg compatibility.
+
+    Parameters
+    ----------
+    ble_client_factory : Callable[..., BLEClient]
+        Factory used to create temporary management clients.
+    target_address : str
+        Address passed to the factory for client creation.
+
+    Returns
+    -------
+    BLEClient
+        Newly created management client.
+
+    Raises
+    ------
+    TypeError
+        Propagated when factory invocation fails for reasons other than
+        rejecting ``log_if_no_address``.
+    """
+
     def _log_kwarg_rejected(exc: TypeError) -> None:
         logger.debug(
             "Management client factory rejected log_if_no_address kwarg; retrying without it: %s",
@@ -79,7 +100,28 @@ class BLEManagementCommandsService:
     def _start_management_phase(
         iface: "BLEInterface", address: str | None
     ) -> _ManagementStartContext:
-        """Begin management operation and capture startup context."""
+        """Begin management operation and capture startup context.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing management locks and state helpers.
+        address : str | None
+            Explicit target address or ``None`` for implicit targeting.
+
+        Returns
+        -------
+        _ManagementStartContext
+            Captured startup context used by downstream management steps.
+
+        Raises
+        ------
+        BLEError
+            Propagated when management preconditions fail.
+        Exception
+            Re-raises any startup failure after finishing the management
+            operation token.
+        """
         with iface._connect_lock, iface._management_lock:
             iface._validate_management_preconditions()
             iface._begin_management_operation_locked()
@@ -110,7 +152,30 @@ class BLEManagementCommandsService:
         address: str | None,
         start_context: _ManagementStartContext,
     ) -> tuple[str | None, BLEClient | None]:
-        """Resolve target address or refresh an existing-client-only path."""
+        """Resolve management target address and optional existing client.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing target-resolution and validation helpers.
+        address : str | None
+            Explicit target address or ``None`` for implicit targeting.
+        start_context : _ManagementStartContext
+            Context captured at management startup.
+
+        Returns
+        -------
+        tuple[str | None, BLEClient | None]
+            ``(target_address, refreshed_existing_client)`` where the client is
+            only populated for existing-client paths that do not require
+            temporary-client acquisition.
+
+        Raises
+        ------
+        BLEError
+            If a refreshed existing client disappears or implicit binding
+            changes mid-operation.
+        """
         target_address = start_context.target_address
         if (
             target_address is None
@@ -149,7 +214,34 @@ class BLEManagementCommandsService:
         connected_elsewhere: Callable[[str | None, object | None], bool],
         ble_client_factory: Callable[..., BLEClient],
     ) -> tuple[BLEClient, BLEClient | None]:
-        """Acquire active or temporary client for a resolved management target."""
+        """Acquire active or temporary client for a resolved management target.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing management/client lookup helpers.
+        address : str | None
+            Explicit target address or ``None`` for implicit targeting.
+        target_address : str
+            Resolved management target address.
+        expected_implicit_binding : str | None
+            Binding snapshot captured at operation startup for revalidation.
+        connected_elsewhere : Callable[[str | None, object | None], bool]
+            Function used to detect target ownership by another interface.
+        ble_client_factory : Callable[..., BLEClient]
+            Factory used to create a temporary client when needed.
+
+        Returns
+        -------
+        tuple[BLEClient, BLEClient | None]
+            ``(client_to_use, temporary_client)`` where ``temporary_client`` is
+            populated only when a new temporary client was created.
+
+        Raises
+        ------
+        BLEError
+            If target ownership has changed or is currently held elsewhere.
+        """
         client_to_use: BLEClient | None = None
         target_key: str | None = None
         temporary_client: BLEClient | None = None
@@ -184,7 +276,30 @@ class BLEManagementCommandsService:
         temporary_client: BLEClient | None,
         command: Callable[[BLEClient], T],
     ) -> T:
-        """Execute management command and close temporary client on exit."""
+        """Execute a management command and close temporary client on exit.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing client-close helpers.
+        client_to_use : BLEClient
+            Client passed to ``command``.
+        temporary_client : BLEClient | None
+            Temporary client to close after execution when present.
+        command : Callable[[BLEClient], T]
+            Management command callable.
+
+        Returns
+        -------
+        T
+            Value returned by ``command``.
+
+        Raises
+        ------
+        Exception
+            Propagates any exception raised by ``command`` after temporary
+            client cleanup is attempted.
+        """
         try:
             return command(client_to_use)
         finally:

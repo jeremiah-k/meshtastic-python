@@ -1605,6 +1605,7 @@ class BLEInterface(MeshInterface):
         return sanitize_address(address)
 
     def _discover_devices(self, address: str | None) -> list[BLEDevice]:
+        # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
         """Discover devices via public API with underscore fallback for test doubles."""
         discovery_manager = self._discovery_manager
         if discovery_manager is None:
@@ -1626,6 +1627,7 @@ class BLEInterface(MeshInterface):
         return fallback_discover_devices(address)
 
     def _state_manager_is_connected(self) -> bool:
+        # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
         """Read connected state with fallback for underscore/mocked state managers."""
         public_is_connected = getattr(self._state_manager, "is_connected", None)
         if not _is_unconfigured_mock_member(public_is_connected) and isinstance(
@@ -1651,6 +1653,7 @@ class BLEInterface(MeshInterface):
         normalized_request: str | None,
         last_connection_request: str | None,
     ) -> bool:
+        # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
         """Check existing-client compatibility with public-first, underscore-fallback lookup."""
         check_existing_client = getattr(
             self._connection_validator, "check_existing_client", None
@@ -1699,6 +1702,7 @@ class BLEInterface(MeshInterface):
         pair_on_connect: bool = False,
         connect_timeout: float | None = None,
     ) -> BLEClient:
+        # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
         """Establish BLE connection via orchestrator public API with underscore fallback."""
         establish_connection = getattr(
             self._connection_orchestrator, "establish_connection", None
@@ -1758,6 +1762,7 @@ class BLEInterface(MeshInterface):
         )
 
     def _client_manager_safe_close_client(self, client: BLEClient) -> None:
+        # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
         """Close BLE client via public API with underscore fallback for test doubles."""
         safe_close_client = getattr(self._client_manager, "safe_close_client", None)
         if callable(safe_close_client) and not _is_unconfigured_mock_callable(
@@ -1781,6 +1786,7 @@ class BLEInterface(MeshInterface):
     def _client_manager_update_client_reference(
         self, client: BLEClient, previous_client: BLEClient
     ) -> None:
+        # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
         """Update client reference via public API with underscore fallback for test doubles."""
         update_client_reference = getattr(
             self._client_manager, "update_client_reference", None
@@ -1805,6 +1811,7 @@ class BLEInterface(MeshInterface):
 
     @staticmethod
     def _retry_policy_should_retry(policy: object, attempt: int) -> bool:
+        # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
         """Evaluate retry decision with public-first, underscore-fallback lookup."""
         should_retry = getattr(policy, "should_retry", None)
         if callable(should_retry) and not _is_unconfigured_mock_callable(should_retry):
@@ -1818,6 +1825,7 @@ class BLEInterface(MeshInterface):
 
     @staticmethod
     def _retry_policy_get_delay(policy: object, attempt: int) -> float:
+        # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
         """Read retry delay with public-first, underscore-fallback lookup."""
         get_delay = getattr(policy, "get_delay", None)
         if callable(get_delay) and not _is_unconfigured_mock_callable(get_delay):

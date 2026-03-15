@@ -109,6 +109,7 @@ class ConnectionValidator:
                 raise self.BLEError(BLECLIENT_ERROR_ALREADY_CONNECTED)
 
     def validate_connection_request(self) -> None:
+        # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _validate_connection_request.
         """Public pre-check for whether a BLE connection request can proceed."""
         self._validate_connection_request()
 
@@ -184,6 +185,7 @@ class ConnectionValidator:
         normalized_request: str | None,
         last_connection_request: str | None,
     ) -> bool:
+        # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _check_existing_client.
         """Public existing-client validation helper."""
         return self._check_existing_client(
             client,
@@ -336,6 +338,7 @@ class ClientManager:
         pair_on_connect: bool = False,
         connect_timeout: float | None = None,
     ) -> BLEClient:
+        # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _create_client.
         """Public BLEClient construction helper."""
         return self._create_client(
             device,
@@ -381,6 +384,7 @@ class ClientManager:
             client._get_services()
 
     def connect_client(self, client: BLEClient, timeout: float | None = None) -> None:
+        # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _connect_client.
         """Public BLEClient connect helper with service-readiness checks."""
         self._connect_client(client, timeout=timeout)
 
@@ -429,6 +433,7 @@ class ClientManager:
         new_client: BLEClient,
         old_client: BLEClient | None,
     ) -> None:
+        # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _update_client_reference.
         """Public helper for replacing active clients with async old-client close."""
         self._update_client_reference(new_client, old_client)
 
@@ -478,6 +483,7 @@ class ClientManager:
             event.set()
 
     def safe_close_client(self, client: BLEClient, event: Event | None = None) -> None:
+        # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _safe_close_client.
         """Public best-effort client close helper."""
         if event is None:
             self._safe_close_client(client)
@@ -1329,6 +1335,7 @@ class ConnectionOrchestrator:
         connect_timeout: float | None = None,
         emit_connected_side_effects: bool = True,
     ) -> BLEClient:
+        # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _establish_connection.
         """Public entrypoint for orchestrating connection establishment."""
         return self._establish_connection(
             address=address,

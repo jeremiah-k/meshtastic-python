@@ -785,7 +785,7 @@ def test_connection_orchestrator_raises_when_connect_state_transition_fails() ->
     state_lock = RLock()
     assert state_manager._transition_to(ConnectionState.CONNECTING)
     assert state_manager._transition_to(ConnectionState.CONNECTED)
-    validator = MagicMock()
+    validator = MagicMock(spec_set=ConnectionValidator)
     validator.validate_connection_request.return_value = None
     client_manager = _make_orchestrator_client_manager()
     interface = MagicMock()

@@ -9,7 +9,10 @@ from meshtastic.interfaces.ble.constants import (
     MAX_DRAIN_ITERATIONS,
     logger,
 )
-from meshtastic.interfaces.ble.utils import _is_unconfigured_mock_callable
+from meshtastic.interfaces.ble.utils import (
+    _is_unconfigured_mock_callable,
+    _is_unexpected_keyword_error,
+)
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
@@ -94,6 +97,15 @@ class BLECompatibilityEventService:
                     error_msg=error_msg,
                     reraise=reraise,
                 )
+            except TypeError as exc:
+                if not any(
+                    _is_unexpected_keyword_error(exc, kwarg_name)
+                    for kwarg_name in ("default_return", "error_msg", "reraise")
+                ):
+                    logger.debug(error_msg, exc_info=True)
+                    if reraise:
+                        raise
+                    return default_return
             except Exception:  # noqa: BLE001 - disconnect paths must remain best effort
                 logger.debug(error_msg, exc_info=True)
                 if reraise:
@@ -159,13 +171,16 @@ class BLECompatibilityEventService:
         if prefer_non_blocking:
             if thread_is_alive is False:
                 return False
-            if put_nowait_callback is None:
-                return False
-            try:
-                put_nowait_callback(callback)
+            if put_nowait_callback is not None:
+                try:
+                    put_nowait_callback(callback)
+                    return True
+                except Full:
+                    return False
+            if queue_work_callback is not None:
+                queue_work_callback(callback)
                 return True
-            except Full:
-                return False
+            return False
         if queue_work_callback is not None:
             queue_work_callback(callback)
             return True

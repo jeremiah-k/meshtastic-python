@@ -416,6 +416,13 @@ def test_auto_reconnect_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
             if disconnect_events:
                 break
             time.sleep(0.01)
+        for _ in range(10):
+            time.sleep(0.01)
+        disconnect_events = [
+            (topic, kw)
+            for topic, kw in published_events
+            if topic == "meshtastic.connection.status" and kw.get("connected") is False
+        ]
         assert (
             len(disconnect_events) == 1
         ), f"Expected exactly one disconnect event, got {len(disconnect_events)}"
@@ -442,6 +449,13 @@ def test_auto_reconnect_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
             if reconnect_events:
                 break
             time.sleep(0.01)
+        for _ in range(10):
+            time.sleep(0.01)
+        reconnect_events = [
+            (topic, kw)
+            for topic, kw in published_events
+            if topic == "meshtastic.connection.status" and kw.get("connected") is True
+        ]
         assert (
             len(reconnect_events) == 1
         ), f"Expected exactly one reconnect event, got {len(reconnect_events)}"

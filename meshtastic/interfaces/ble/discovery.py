@@ -493,12 +493,6 @@ class DiscoveryManager:
                     Callable[..., Any],
                     self.client_factory or getattr(ble_mod, "BLEClient", BLEClient),
                 )
-                # Prefer signature-based compatibility checks so real factory
-                # TypeErrors are not misclassified as kwarg mismatch.
-                try:
-                    signature = inspect.signature(resolved_factory)
-                except (TypeError, ValueError):
-                    signature = None
 
                 def _log_kwarg_rejected(exc: TypeError) -> None:
                     logger.debug(
@@ -507,24 +501,12 @@ class DiscoveryManager:
                         exc_info=True,
                     )
 
-                if signature is None:
-                    self._client = _call_factory_with_optional_kwarg(
-                        resolved_factory,
-                        optional_kwarg=_DISCOVERY_FACTORY_LOG_KWARG,
-                        optional_value=False,
-                        on_kwarg_rejected=_log_kwarg_rejected,
-                    )
-                else:
-                    accepts_log_kwarg = (
-                        _DISCOVERY_FACTORY_LOG_KWARG in signature.parameters
-                    ) or any(
-                        parameter.kind == inspect.Parameter.VAR_KEYWORD
-                        for parameter in signature.parameters.values()
-                    )
-                    if accepts_log_kwarg:
-                        self._client = resolved_factory(log_if_no_address=False)
-                    else:
-                        self._client = resolved_factory()
+                self._client = _call_factory_with_optional_kwarg(
+                    resolved_factory,
+                    optional_kwarg=_DISCOVERY_FACTORY_LOG_KWARG,
+                    optional_value=False,
+                    on_kwarg_rejected=_log_kwarg_rejected,
+                )
                 # Validate factory returned a valid client (duck typing for testability)
                 if self._client is None:
                     invalid_client_error = DiscoveryClientError.factory_returned_none(
@@ -674,6 +656,24 @@ class DiscoveryManager:
                         type(client),
                         ["async_await", "_async_await"],
                     )
+            if not isinstance(response, dict):
+                discarded_response_client: (
+                    BLEClient
+                    | DiscoveryClientProtocol
+                    | UnderscoreDiscoveryClientProtocol
+                    | None
+                ) = None
+                with self._client_lock:
+                    if self._client is client:
+                        discarded_response_client = self._client
+                        self._client = None
+                if discarded_response_client is not None:
+                    _close_discovery_client_best_effort(discarded_response_client)
+                raise DiscoveryClientError.invalid_client(
+                    resolved_factory,
+                    type(client),
+                    ["return_adv"],
+                )
             logger.debug(
                 "Scan completed in %.2f seconds", time.monotonic() - scan_start
             )

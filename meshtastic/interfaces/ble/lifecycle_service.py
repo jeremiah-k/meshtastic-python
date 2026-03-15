@@ -373,6 +373,17 @@ class BLELifecycleService:
                     logger.debug("Ignoring stale disconnect from %s.", source)
                     return _DisconnectPlan(early_return=True)
 
+            if (
+                current_client is None
+                and not was_publish_pending
+                and not was_replacement_pending
+            ):
+                logger.debug(
+                    "Ignoring stale disconnect from %s: no active client is owned.",
+                    source,
+                )
+                return _DisconnectPlan(early_return=True)
+
             # Ignore stale disconnect callbacks from non-active clients.
             if (
                 target_client is not None

@@ -227,7 +227,21 @@ class BLEClient:
     def _resolve_error_handler_hook(
         self, public_name: str, legacy_name: str
     ) -> Callable[..., Any] | None:
-        """Resolve error-handler hook with public-first, underscore fallback."""
+        """Resolve an error-handler hook with public-first fallback semantics.
+
+        Parameters
+        ----------
+        public_name : str
+            Public hook name to resolve first.
+        legacy_name : str
+            Underscore-prefixed fallback hook name.
+
+        Returns
+        -------
+        Callable[..., Any] | None
+            Resolved callable when a configured hook is available; otherwise
+            ``None``.
+        """
         error_handler = getattr(self, "error_handler", None)
         if error_handler is None:
             return None
@@ -248,7 +262,30 @@ class BLEClient:
         error_msg: str = "Error in operation",
         reraise: bool = False,
     ) -> T | None:
-        """Run callable via error handler safe_execute fallback."""
+        """Execute a callable via resolved ``safe_execute`` with inline fallback.
+
+        Parameters
+        ----------
+        func : Callable[[], T]
+            Callable to execute.
+        default_return : T | None
+            Value returned when execution fails and ``reraise`` is ``False``.
+        error_msg : str
+            Log message used when execution fails.
+        reraise : bool
+            When ``True``, re-raise execution errors after logging.
+
+        Returns
+        -------
+        T | None
+            Result returned by ``func`` or ``safe_execute`` on success;
+            otherwise ``default_return``.
+
+        Raises
+        ------
+        Exception
+            Propagates execution errors when ``reraise`` is ``True``.
+        """
         safe_execute = self._resolve_error_handler_hook("safe_execute", "_safe_execute")
         if safe_execute is not None:
             return cast(
@@ -271,7 +308,20 @@ class BLEClient:
     def _error_handler_safe_cleanup(
         self, cleanup: Callable[[], Any], operation_name: str
     ) -> None:
-        """Run cleanup via error handler safe_cleanup fallback."""
+        """Run cleanup via resolved ``safe_cleanup`` with best-effort fallback.
+
+        Parameters
+        ----------
+        cleanup : Callable[[], Any]
+            Cleanup callable to execute.
+        operation_name : str
+            Operation name included in fallback error logging.
+
+        Returns
+        -------
+        None
+            Always returns ``None``.
+        """
         safe_cleanup = self._resolve_error_handler_hook("safe_cleanup", "_safe_cleanup")
         if safe_cleanup is not None:
             safe_cleanup(cleanup, operation_name)
