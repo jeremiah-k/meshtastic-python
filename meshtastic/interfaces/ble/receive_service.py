@@ -11,6 +11,7 @@ from meshtastic.interfaces.ble.constants import (
     ERROR_READING_BLE,
     FROMRADIO_UUID,
     GATT_IO_TIMEOUT,
+    RECONNECTED_EVENT,
     RECEIVE_RECOVERY_MAX_BACKOFF_SEC,
     RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD,
     RECEIVE_RECOVERY_STABILITY_RESET_SEC,
@@ -26,7 +27,6 @@ if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
 
 READ_TRIGGER_EVENT = "read_trigger"
-RECONNECTED_EVENT = "reconnected_event"
 COORDINATOR_WAIT_FALLBACK_SLEEP_SEC = 0.001
 RECEIVE_THREAD_FATAL_REASON = "receive_thread_fatal"
 

@@ -11,7 +11,8 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
-    _is_unexpected_keyword_error,
+    resolve_safe_execute,
+    safe_execute_through_adapter,
 )
 
 if TYPE_CHECKING:
@@ -42,16 +43,7 @@ class BLECompatibilityEventService:
             Resolved ``safe_execute`` callable when available and configured,
             otherwise ``None``.
         """
-        error_handler = getattr(iface, "error_handler", None)
-        safe_execute = getattr(error_handler, "safe_execute", None)
-        if callable(safe_execute) and not _is_unconfigured_mock_callable(safe_execute):
-            return cast(Callable[..., Any], safe_execute)
-        legacy_safe_execute = getattr(error_handler, "_safe_execute", None)
-        if callable(legacy_safe_execute) and not _is_unconfigured_mock_callable(
-            legacy_safe_execute
-        ):
-            return cast(Callable[..., Any], legacy_safe_execute)
-        return None
+        return cast(Callable[..., Any] | None, resolve_safe_execute(iface))
 
     @staticmethod
     def _safe_execute(
@@ -88,36 +80,13 @@ class BLECompatibilityEventService:
         Exception
             Re-raises execution failures only when ``reraise`` is ``True``.
         """
-        safe_execute = BLECompatibilityEventService._resolve_safe_execute(iface)
-        if safe_execute is not None:
-            try:
-                return safe_execute(
-                    func,
-                    default_return=default_return,
-                    error_msg=error_msg,
-                    reraise=reraise,
-                )
-            except TypeError as exc:
-                if not any(
-                    _is_unexpected_keyword_error(exc, kwarg_name)
-                    for kwarg_name in ("default_return", "error_msg", "reraise")
-                ):
-                    logger.debug(error_msg, exc_info=True)
-                    if reraise:
-                        raise
-                    return default_return
-            except Exception:  # noqa: BLE001 - disconnect paths must remain best effort
-                logger.debug(error_msg, exc_info=True)
-                if reraise:
-                    raise
-                return default_return
-        try:
-            return func()
-        except Exception:  # noqa: BLE001 - fallback path mirrors safe_execute
-            logger.debug(error_msg, exc_info=True)
-            if reraise:
-                raise
-            return default_return
+        return safe_execute_through_adapter(
+            iface,
+            func,
+            default_return=default_return,
+            error_msg=error_msg,
+            reraise=reraise,
+        )
 
     @staticmethod
     def _enqueue_publish_callback(
@@ -176,7 +145,8 @@ class BLECompatibilityEventService:
                     put_nowait_callback(callback)
                     return True
                 except Full:
-                    pass
+                    # Queue is full: keep this path non-blocking.
+                    return False
         if queue_work_callback is not None:
             queue_work_callback(callback)
             return True

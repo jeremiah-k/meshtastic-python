@@ -6,8 +6,10 @@ import importlib
 import time
 from collections.abc import Awaitable, Callable
 from types import ModuleType
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 from unittest.mock import DEFAULT, Mock, NonCallableMock
+
+from meshtastic.interfaces.ble.constants import logger
 
 T = TypeVar("T")
 _UNEXPECTED_KEYWORD_FRAGMENT = "unexpected keyword argument"
@@ -145,6 +147,100 @@ def _call_factory_with_optional_kwarg(
                 on_kwarg_rejected(exc)
             return factory(*args)
         raise
+
+
+def resolve_safe_execute(iface: object) -> Callable[..., Any] | None:
+    """Resolve an error-handler safe_execute hook with underscore fallback.
+
+    Parameters
+    ----------
+    iface : object
+        Interface-like object exposing an ``error_handler`` member.
+
+    Returns
+    -------
+    Callable[..., Any] | None
+        Resolved ``safe_execute`` callable when available and configured;
+        otherwise ``None``.
+    """
+    error_handler = getattr(iface, "error_handler", None)
+    safe_execute = getattr(error_handler, "safe_execute", None)
+    if callable(safe_execute) and not _is_unconfigured_mock_callable(safe_execute):
+        return cast(Callable[..., Any], safe_execute)
+    legacy_safe_execute = getattr(error_handler, "_safe_execute", None)
+    if callable(legacy_safe_execute) and not _is_unconfigured_mock_callable(
+        legacy_safe_execute
+    ):
+        return cast(Callable[..., Any], legacy_safe_execute)
+    return None
+
+
+def safe_execute_through_adapter(
+    iface: object,
+    func: Callable[[], T],
+    *,
+    default_return: T | None = None,
+    error_msg: str,
+    reraise: bool = False,
+) -> T | None:
+    """Execute a callable through compatibility-safe ``safe_execute`` hooks.
+
+    Parameters
+    ----------
+    iface : object
+        Interface-like object exposing an ``error_handler`` member.
+    func : Callable[[], T]
+        Zero-argument callable to execute.
+    default_return : T | None
+        Value returned when execution fails and ``reraise`` is ``False``.
+    error_msg : str
+        Log message used when execution fails.
+    reraise : bool
+        When ``True``, re-raise execution exceptions after logging.
+
+    Returns
+    -------
+    T | None
+        Callable return value on success; otherwise ``default_return``.
+
+    Raises
+    ------
+    Exception
+        Re-raises failures only when ``reraise`` is ``True``.
+    """
+    safe_execute = resolve_safe_execute(iface)
+    if safe_execute is not None:
+        try:
+            return cast(
+                T | None,
+                safe_execute(
+                    func,
+                    default_return=default_return,
+                    error_msg=error_msg,
+                    reraise=reraise,
+                ),
+            )
+        except TypeError as exc:
+            if not any(
+                _is_unexpected_keyword_error(exc, kwarg_name)
+                for kwarg_name in ("default_return", "error_msg", "reraise")
+            ):
+                logger.debug(error_msg, exc_info=True)
+                if reraise:
+                    raise
+                return default_return
+        except Exception:  # noqa: BLE001 - safe-execute adapters are best effort
+            logger.debug(error_msg, exc_info=True)
+            if reraise:
+                raise
+            return default_return
+    try:
+        return func()
+    except Exception:  # noqa: BLE001 - fallback path mirrors safe_execute
+        logger.debug(error_msg, exc_info=True)
+        if reraise:
+            raise
+        return default_return
 
 
 def _thread_start_probe(thread: object) -> tuple[int | None, bool]:

@@ -3,6 +3,7 @@
 import math
 import numbers
 import re
+import subprocess as subprocess_stdlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypeVar
@@ -40,6 +41,7 @@ TRUST_COMMAND_OUTPUT_MAX_CHARS: int = 200
 TRUST_HEX_BLOB_RE = re.compile(r"\b[0-9A-Fa-f]{16,}\b")
 TRUST_TOKEN_RE = re.compile(r"\b[A-Za-z0-9+/=_-]{40,}\b")
 _DISCOVERY_FACTORY_LOG_KWARG = "log_if_no_address"
+_HEX_MAC_COLON_RE = re.compile(r"^[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}$")
 _HEX_MAC_NO_SEPARATOR_RE = re.compile(r"^[0-9A-Fa-f]{12}$")
 
 T = TypeVar("T")
@@ -85,13 +87,19 @@ def _create_management_client(
             exc_info=True,
         )
 
-    return _call_factory_with_optional_kwarg(
+    client = _call_factory_with_optional_kwarg(
         ble_client_factory,
         args=(target_address,),
         optional_kwarg=_DISCOVERY_FACTORY_LOG_KWARG,
         optional_value=False,
         on_kwarg_rejected=_log_kwarg_rejected,
     )
+    if client is None:
+        factory_name = getattr(ble_client_factory, "__name__", repr(ble_client_factory))
+        raise TypeError(
+            f"Management client factory {factory_name} returned None for {target_address!r}"
+        )
+    return client
 
 
 def _is_blank_or_malformed_address_like(address: str | None) -> bool:
@@ -101,8 +109,13 @@ def _is_blank_or_malformed_address_like(address: str | None) -> bool:
     stripped_address = address.strip()
     if not stripped_address:
         return True
+    if _HEX_MAC_COLON_RE.fullmatch(stripped_address):
+        return False
     normalized_address = sanitize_address(stripped_address)
-    if normalized_address is not None:
+    if (
+        normalized_address is not None
+        and _HEX_MAC_NO_SEPARATOR_RE.fullmatch(normalized_address) is not None
+    ):
         return False
     return (
         ":" in stripped_address
@@ -667,7 +680,7 @@ class BLEManagementCommandsService:
         timeout_exc_type = (
             timeout_exc
             if isinstance(timeout_exc, type) and issubclass(timeout_exc, BaseException)
-            else None
+            else subprocess_stdlib.TimeoutExpired
         )
         try:
             result = subprocess_module.run(  # type: ignore[attr-defined]  # noqa: S603

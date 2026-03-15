@@ -51,6 +51,7 @@ from meshtastic.interfaces.ble.runner import BLECoroutineRunner
 from meshtastic.interfaces.ble.utils import (
     _is_unexpected_keyword_error,
     _is_unconfigured_mock_callable,
+    safe_execute_through_adapter,
     with_timeout,
 )
 
@@ -287,39 +288,13 @@ class BLEClient:
         Exception
             Propagates execution errors when ``reraise`` is ``True``.
         """
-        safe_execute = self._resolve_error_handler_hook("safe_execute", "_safe_execute")
-        if safe_execute is not None:
-            try:
-                return cast(
-                    T | None,
-                    safe_execute(
-                        func,
-                        default_return=default_return,
-                        error_msg=error_msg,
-                        reraise=reraise,
-                    ),
-                )
-            except TypeError as exc:
-                if not any(
-                    _is_unexpected_keyword_error(exc, kwarg_name)
-                    for kwarg_name in ("default_return", "error_msg", "reraise")
-                ):
-                    logger.debug(error_msg, exc_info=True)
-                    if reraise:
-                        raise
-                    return default_return
-            except Exception:  # noqa: BLE001 - hook execution must remain best effort
-                logger.debug(error_msg, exc_info=True)
-                if reraise:
-                    raise
-                return default_return
-        try:
-            return func()
-        except Exception:  # noqa: BLE001 - fallback mirrors error-handler behavior
-            logger.debug(error_msg, exc_info=True)
-            if reraise:
-                raise
-            return default_return
+        return safe_execute_through_adapter(
+            self,
+            func,
+            default_return=default_return,
+            error_msg=error_msg,
+            reraise=reraise,
+        )
 
     def _error_handler_safe_cleanup(
         self, cleanup: Callable[[], Any], operation_name: str

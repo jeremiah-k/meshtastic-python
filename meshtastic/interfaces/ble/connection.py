@@ -24,6 +24,7 @@ from meshtastic.interfaces.ble.constants import (
     CONNECTION_ERROR_STATE_TRANSITION_INVALIDATED,
     DISCONNECT_TIMEOUT_SECONDS,
     ERROR_INVALID_CONNECT_TIMEOUT,
+    RECONNECTED_EVENT,
     BLEConfig,
 )
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator, ThreadLike
@@ -31,6 +32,7 @@ from meshtastic.interfaces.ble.discovery import _looks_like_ble_address
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from meshtastic.interfaces.ble.utils import (
+    _is_unexpected_keyword_error,
     _is_unconfigured_mock_callable,
     _is_unconfigured_mock_member,
     _thread_start_probe,
@@ -836,33 +838,69 @@ class ConnectionOrchestrator:
         connect_timeout: float | None,
     ) -> BLEClient:
         """Create client via public API with underscore-compatible fallback for mocks/test doubles."""
-        created_client = self._dispatch_public_or_underscore(
-            target=self.client_manager,
-            public_name="create_client",
-            underscore_name="_create_client",
-            prefer_instance_type=ClientManager,
-            call_member=True,
-            args=(device, on_disconnect_func),
-            kwargs={
-                "pair_on_connect": pair_on_connect,
-                "connect_timeout": connect_timeout,
-            },
-        )
+        kwargs_with_optionals: dict[str, object] = {
+            "pair_on_connect": pair_on_connect,
+            "connect_timeout": connect_timeout,
+        }
+        try:
+            created_client = self._dispatch_public_or_underscore(
+                target=self.client_manager,
+                public_name="create_client",
+                underscore_name="_create_client",
+                prefer_instance_type=ClientManager,
+                call_member=True,
+                args=(device, on_disconnect_func),
+                kwargs=kwargs_with_optionals,
+            )
+        except TypeError as exc:
+            unsupported_pair_kw = _is_unexpected_keyword_error(exc, "pair_on_connect")
+            unsupported_timeout_kw = _is_unexpected_keyword_error(
+                exc, "connect_timeout"
+            )
+            if not unsupported_pair_kw and not unsupported_timeout_kw:
+                raise
+            retry_kwargs: dict[str, object] = {}
+            if not unsupported_pair_kw:
+                retry_kwargs["pair_on_connect"] = pair_on_connect
+            if not unsupported_timeout_kw:
+                retry_kwargs["connect_timeout"] = connect_timeout
+            created_client = self._dispatch_public_or_underscore(
+                target=self.client_manager,
+                public_name="create_client",
+                underscore_name="_create_client",
+                prefer_instance_type=ClientManager,
+                call_member=True,
+                args=(device, on_disconnect_func),
+                kwargs=retry_kwargs,
+            )
         return cast(BLEClient, created_client)
 
     def _client_manager_connect_client(
         self, client: BLEClient, *, timeout: float | None
     ) -> None:
         """Connect client via public API with underscore-compatible fallback for mocks/test doubles."""
-        self._dispatch_public_or_underscore(
-            target=self.client_manager,
-            public_name="connect_client",
-            underscore_name="_connect_client",
-            prefer_instance_type=ClientManager,
-            call_member=True,
-            args=(client,),
-            kwargs={"timeout": timeout},
-        )
+        try:
+            self._dispatch_public_or_underscore(
+                target=self.client_manager,
+                public_name="connect_client",
+                underscore_name="_connect_client",
+                prefer_instance_type=ClientManager,
+                call_member=True,
+                args=(client,),
+                kwargs={"timeout": timeout},
+            )
+        except TypeError as exc:
+            if not _is_unexpected_keyword_error(exc, "timeout"):
+                raise
+            self._dispatch_public_or_underscore(
+                target=self.client_manager,
+                public_name="connect_client",
+                underscore_name="_connect_client",
+                prefer_instance_type=ClientManager,
+                call_member=True,
+                args=(client,),
+                kwargs={},
+            )
 
     def _client_manager_safe_close_client(self, client: BLEClient) -> None:
         """Close client via public API with underscore-compatible fallback for mocks/test doubles."""
@@ -1276,7 +1314,7 @@ class ConnectionOrchestrator:
         if emit_connected_side_effects:
             on_connected_func()
             if getattr(self.interface, "_ever_connected", False):
-                self._thread_set_event("reconnected_event")
+                self._thread_set_event(RECONNECTED_EVENT)
             normalized_device_address = sanitize_address(device_address)
             logger.info(
                 "Connection successful to %s",

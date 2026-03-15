@@ -74,6 +74,7 @@ from meshtastic.interfaces.ble.constants import (
     LOGRADIO_UUID,
     MALFORMED_NOTIFICATION_THRESHOLD,
     NOTIFICATION_START_TIMEOUT,
+    RECONNECTED_EVENT,
     SERVICE_UUID,
     TORADIO_UUID,
     UNREACHABLE_ADDRESSED_DEVICES_MSG,
@@ -131,22 +132,22 @@ ERROR_RETRY_POLICY_MISSING_SHOULD_RETRY: str = (
 )
 ERROR_RETRY_POLICY_MISSING_GET_DELAY: str = "Retry policy missing get_delay/_get_delay"
 ERROR_DISCOVERY_MANAGER_MISSING_DISCOVER_DEVICES: str = (
-    "Discovery manager is missing discover_devices"
+    "Discovery manager is missing discover_devices/_discover_devices"
 )
 ERROR_STATE_MANAGER_MISSING_BOOL_IS_CONNECTED: str = (
-    "State manager is missing bool _is_connected"
+    "State manager is missing is_connected/_is_connected boolean members"
 )
 ERROR_CONNECTION_VALIDATOR_MISSING_CHECK_EXISTING_CLIENT: str = (
-    "Connection validator is missing check_existing_client"
+    "Connection validator is missing check_existing_client/_check_existing_client"
 )
 ERROR_CONNECTION_ORCHESTRATOR_MISSING_ESTABLISH_CONNECTION: str = (
-    "Connection orchestrator is missing establish_connection"
+    "Connection orchestrator is missing establish_connection/_establish_connection"
 )
 ERROR_CLIENT_MANAGER_MISSING_SAFE_CLOSE_CLIENT: str = (
-    "Client manager is missing safe_close_client"
+    "Client manager is missing safe_close_client/_safe_close_client"
 )
 ERROR_CLIENT_MANAGER_MISSING_UPDATE_CLIENT_REFERENCE: str = (
-    "Client manager is missing update_client_reference"
+    "Client manager is missing update_client_reference/_update_client_reference"
 )
 
 
@@ -320,7 +321,7 @@ class BLEInterface(MeshInterface):
             "read_trigger"
         )  # Signals when data is available to read
         self._reconnected_event = self.thread_coordinator._create_event(
-            "reconnected_event"
+            RECONNECTED_EVENT
         )  # Signals when reconnection occurred
         self._shutdown_event = self.thread_coordinator._create_event("shutdown_event")
         # Whether FROMNUM notifications were successfully registered for the
@@ -1666,6 +1667,63 @@ class BLEInterface(MeshInterface):
         """
         return sanitize_address(address)
 
+    @staticmethod
+    def _compat_dispatch_callable(
+        target: object,
+        *,
+        public_name: str,
+        legacy_name: str,
+        fallback_attr_name: str | None,
+        error_message: str,
+        args: tuple[object, ...] = (),
+        kwargs: dict[str, object] | None = None,
+    ) -> object:
+        """Dispatch a callable through public/legacy/fallback compatibility names."""
+        kwargs = {} if kwargs is None else kwargs
+        public_member = getattr(target, public_name, None)
+        if callable(public_member) and not _is_unconfigured_mock_callable(public_member):
+            return public_member(*args, **kwargs)
+        legacy_member = getattr(target, legacy_name, None)
+        if callable(legacy_member) and not _is_unconfigured_mock_callable(legacy_member):
+            return legacy_member(*args, **kwargs)
+        if fallback_attr_name is None:
+            raise AttributeError(error_message)
+        fallback_member = getattr(target, fallback_attr_name, None)
+        if not callable(fallback_member) or _is_unconfigured_mock_callable(
+            fallback_member
+        ):
+            raise AttributeError(error_message)
+        return fallback_member(*args, **kwargs)
+
+    @staticmethod
+    def _compat_get_bool_member(
+        target: object,
+        *,
+        public_name: str,
+        legacy_name: str,
+        fallback_attr_name: str | None,
+        error_message: str,
+    ) -> bool:
+        """Resolve bool members via public/legacy/fallback compatibility names."""
+        public_member = getattr(target, public_name, None)
+        if isinstance(public_member, bool) and not _is_unconfigured_mock_member(
+            public_member
+        ):
+            return public_member
+        legacy_member = getattr(target, legacy_name, None)
+        if isinstance(legacy_member, bool) and not _is_unconfigured_mock_member(
+            legacy_member
+        ):
+            return legacy_member
+        if fallback_attr_name is None:
+            raise AttributeError(error_message)
+        fallback_member = getattr(target, fallback_attr_name, None)
+        if isinstance(fallback_member, bool) and not _is_unconfigured_mock_member(
+            fallback_member
+        ):
+            return fallback_member
+        raise AttributeError(error_message)
+
     def _discover_devices(self, address: str | None) -> list[BLEDevice]:
         # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
         """Discover devices via discovery-manager compatibility dispatch.
@@ -1689,21 +1747,17 @@ class BLEInterface(MeshInterface):
         discovery_manager = self._discovery_manager
         if discovery_manager is None:
             return []
-        discover_devices = getattr(discovery_manager, "discover_devices", None)
-        if callable(discover_devices) and not _is_unconfigured_mock_callable(
-            discover_devices
-        ):
-            return cast(list[BLEDevice], discover_devices(address))
-        legacy_discover_devices = getattr(discovery_manager, "_discover_devices", None)
-        if callable(legacy_discover_devices) and not _is_unconfigured_mock_callable(
-            legacy_discover_devices
-        ):
-            return cast(list[BLEDevice], legacy_discover_devices(address))
-        # Preserve pre-refactor failure mode for misconfigured doubles.
-        fallback_discover_devices = discovery_manager.discover_devices
-        if _is_unconfigured_mock_callable(fallback_discover_devices):
-            raise AttributeError(ERROR_DISCOVERY_MANAGER_MISSING_DISCOVER_DEVICES)
-        return fallback_discover_devices(address)
+        return cast(
+            list[BLEDevice],
+            self._compat_dispatch_callable(
+                discovery_manager,
+                public_name="discover_devices",
+                legacy_name="_discover_devices",
+                fallback_attr_name="discover_devices",
+                error_message=ERROR_DISCOVERY_MANAGER_MISSING_DISCOVER_DEVICES,
+                args=(address,),
+            ),
+        )
 
     def _state_manager_is_connected(self) -> bool:
         # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
@@ -1719,23 +1773,13 @@ class BLEInterface(MeshInterface):
         AttributeError
             If no supported connected-state member exists on the state manager.
         """
-        public_is_connected = getattr(self._state_manager, "is_connected", None)
-        if not _is_unconfigured_mock_member(public_is_connected) and isinstance(
-            public_is_connected, bool
-        ):
-            return public_is_connected
-        underscore_is_connected = getattr(self._state_manager, "_is_connected", None)
-        if not _is_unconfigured_mock_member(underscore_is_connected) and isinstance(
-            underscore_is_connected, bool
-        ):
-            return underscore_is_connected
-        # Preserve pre-refactor failure mode for misconfigured doubles.
-        fallback_is_connected = self._state_manager._is_connected
-        if _is_unconfigured_mock_member(fallback_is_connected) or not isinstance(
-            fallback_is_connected, bool
-        ):
-            raise AttributeError(ERROR_STATE_MANAGER_MISSING_BOOL_IS_CONNECTED)
-        return fallback_is_connected
+        return self._compat_get_bool_member(
+            self._state_manager,
+            public_name="is_connected",
+            legacy_name="_is_connected",
+            fallback_attr_name="_is_connected",
+            error_message=ERROR_STATE_MANAGER_MISSING_BOOL_IS_CONNECTED,
+        )
 
     def _validator_check_existing_client(
         self,
@@ -1766,43 +1810,18 @@ class BLEInterface(MeshInterface):
         AttributeError
             If neither supported validator compatibility method exists.
         """
-        check_existing_client = getattr(
-            self._connection_validator, "check_existing_client", None
-        )
-        if callable(check_existing_client) and not _is_unconfigured_mock_callable(
-            check_existing_client
-        ):
-            return bool(
-                check_existing_client(
-                    client,
-                    normalized_request,
-                    last_connection_request,
-                )
-            )
-        legacy_check_existing_client = getattr(
-            self._connection_validator, "_check_existing_client", None
-        )
-        if callable(
-            legacy_check_existing_client
-        ) and not _is_unconfigured_mock_callable(legacy_check_existing_client):
-            return bool(
-                legacy_check_existing_client(
-                    client,
-                    normalized_request,
-                    last_connection_request,
-                )
-            )
-        # Preserve pre-refactor failure mode for misconfigured doubles.
-        fallback_check_existing_client = (
-            self._connection_validator.check_existing_client
-        )
-        if _is_unconfigured_mock_callable(fallback_check_existing_client):
-            raise AttributeError(ERROR_CONNECTION_VALIDATOR_MISSING_CHECK_EXISTING_CLIENT)
         return bool(
-            fallback_check_existing_client(
-                client,
-                normalized_request,
-                last_connection_request,
+            self._compat_dispatch_callable(
+                self._connection_validator,
+                public_name="check_existing_client",
+                legacy_name="_check_existing_client",
+                fallback_attr_name="check_existing_client",
+                error_message=ERROR_CONNECTION_VALIDATOR_MISSING_CHECK_EXISTING_CLIENT,
+                args=(
+                    client,
+                    normalized_request,
+                    last_connection_request,
+                ),
             )
         )
 
@@ -1837,15 +1856,15 @@ class BLEInterface(MeshInterface):
         BLEError
             Propagated from orchestrator connection flow on failure.
         """
-        establish_connection = getattr(
-            self._connection_orchestrator, "establish_connection", None
-        )
-        if callable(establish_connection) and not _is_unconfigured_mock_callable(
-            establish_connection
-        ):
-            return cast(
-                BLEClient,
-                establish_connection(
+        return cast(
+            BLEClient,
+            self._compat_dispatch_callable(
+                self._connection_orchestrator,
+                public_name="establish_connection",
+                legacy_name="_establish_connection",
+                fallback_attr_name="establish_connection",
+                error_message=ERROR_CONNECTION_ORCHESTRATOR_MISSING_ESTABLISH_CONNECTION,
+                args=(
                     address,
                     self.address,
                     self._register_notifications,
@@ -1853,45 +1872,13 @@ class BLEInterface(MeshInterface):
                     # has been committed and verified.
                     lambda: None,
                     self._on_ble_disconnect,
-                    pair_on_connect=pair_on_connect,
-                    connect_timeout=connect_timeout,
-                    emit_connected_side_effects=False,
                 ),
-            )
-        legacy_establish_connection = getattr(
-            self._connection_orchestrator, "_establish_connection", None
-        )
-        if callable(legacy_establish_connection) and not _is_unconfigured_mock_callable(
-            legacy_establish_connection
-        ):
-            return cast(
-                BLEClient,
-                legacy_establish_connection(
-                    address,
-                    self.address,
-                    self._register_notifications,
-                    lambda: None,
-                    self._on_ble_disconnect,
-                    pair_on_connect=pair_on_connect,
-                    connect_timeout=connect_timeout,
-                    emit_connected_side_effects=False,
-                ),
-            )
-        # Preserve pre-refactor failure mode for misconfigured doubles.
-        fallback_establish_connection = (
-            self._connection_orchestrator.establish_connection
-        )
-        if _is_unconfigured_mock_callable(fallback_establish_connection):
-            raise AttributeError(ERROR_CONNECTION_ORCHESTRATOR_MISSING_ESTABLISH_CONNECTION)
-        return fallback_establish_connection(
-            address,
-            self.address,
-            self._register_notifications,
-            lambda: None,
-            self._on_ble_disconnect,
-            pair_on_connect=pair_on_connect,
-            connect_timeout=connect_timeout,
-            emit_connected_side_effects=False,
+                kwargs={
+                    "pair_on_connect": pair_on_connect,
+                    "connect_timeout": connect_timeout,
+                    "emit_connected_side_effects": False,
+                },
+            ),
         )
 
     def _client_manager_safe_close_client(self, client: BLEClient) -> None:
@@ -1913,24 +1900,14 @@ class BLEInterface(MeshInterface):
         AttributeError
             If no supported client-close helper exists on the manager.
         """
-        safe_close_client = getattr(self._client_manager, "safe_close_client", None)
-        if callable(safe_close_client) and not _is_unconfigured_mock_callable(
-            safe_close_client
-        ):
-            safe_close_client(client)
-            return
-        legacy_safe_close_client = getattr(
-            self._client_manager, "_safe_close_client", None
+        self._compat_dispatch_callable(
+            self._client_manager,
+            public_name="safe_close_client",
+            legacy_name="_safe_close_client",
+            fallback_attr_name="safe_close_client",
+            error_message=ERROR_CLIENT_MANAGER_MISSING_SAFE_CLOSE_CLIENT,
+            args=(client,),
         )
-        if callable(legacy_safe_close_client) and not _is_unconfigured_mock_callable(
-            legacy_safe_close_client
-        ):
-            legacy_safe_close_client(client)
-            return
-        fallback_safe_close_client = self._client_manager.safe_close_client
-        if _is_unconfigured_mock_callable(fallback_safe_close_client):
-            raise AttributeError(ERROR_CLIENT_MANAGER_MISSING_SAFE_CLOSE_CLIENT)
-        fallback_safe_close_client(client)
 
     def _client_manager_update_client_reference(
         self, client: BLEClient, previous_client: BLEClient
@@ -1955,26 +1932,14 @@ class BLEInterface(MeshInterface):
         AttributeError
             If no supported update-client-reference helper is available.
         """
-        update_client_reference = getattr(
-            self._client_manager, "update_client_reference", None
+        self._compat_dispatch_callable(
+            self._client_manager,
+            public_name="update_client_reference",
+            legacy_name="_update_client_reference",
+            fallback_attr_name="update_client_reference",
+            error_message=ERROR_CLIENT_MANAGER_MISSING_UPDATE_CLIENT_REFERENCE,
+            args=(client, previous_client),
         )
-        if callable(update_client_reference) and not _is_unconfigured_mock_callable(
-            update_client_reference
-        ):
-            update_client_reference(client, previous_client)
-            return
-        legacy_update_client_reference = getattr(
-            self._client_manager, "_update_client_reference", None
-        )
-        if callable(
-            legacy_update_client_reference
-        ) and not _is_unconfigured_mock_callable(legacy_update_client_reference):
-            legacy_update_client_reference(client, previous_client)
-            return
-        fallback_update_client_reference = self._client_manager.update_client_reference
-        if _is_unconfigured_mock_callable(fallback_update_client_reference):
-            raise AttributeError(ERROR_CLIENT_MANAGER_MISSING_UPDATE_CLIENT_REFERENCE)
-        fallback_update_client_reference(client, previous_client)
 
     @staticmethod
     def _retry_policy_should_retry(policy: object, attempt: int) -> bool:
@@ -1998,15 +1963,16 @@ class BLEInterface(MeshInterface):
         AttributeError
             If no supported retry helper exists on ``policy``.
         """
-        should_retry = getattr(policy, "should_retry", None)
-        if callable(should_retry) and not _is_unconfigured_mock_callable(should_retry):
-            return bool(should_retry(attempt))
-        legacy_should_retry = getattr(policy, "_should_retry", None)
-        if callable(legacy_should_retry) and not _is_unconfigured_mock_callable(
-            legacy_should_retry
-        ):
-            return bool(legacy_should_retry(attempt))
-        raise AttributeError(ERROR_RETRY_POLICY_MISSING_SHOULD_RETRY)
+        return bool(
+            BLEInterface._compat_dispatch_callable(
+                policy,
+                public_name="should_retry",
+                legacy_name="_should_retry",
+                fallback_attr_name=None,
+                error_message=ERROR_RETRY_POLICY_MISSING_SHOULD_RETRY,
+                args=(attempt,),
+            )
+        )
 
     @staticmethod
     def _retry_policy_get_delay(policy: object, attempt: int) -> float:
@@ -2030,15 +1996,16 @@ class BLEInterface(MeshInterface):
         AttributeError
             If no supported delay helper exists on ``policy``.
         """
-        get_delay = getattr(policy, "get_delay", None)
-        if callable(get_delay) and not _is_unconfigured_mock_callable(get_delay):
-            return float(get_delay(attempt))
-        legacy_get_delay = getattr(policy, "_get_delay", None)
-        if callable(legacy_get_delay) and not _is_unconfigured_mock_callable(
-            legacy_get_delay
-        ):
-            return float(legacy_get_delay(attempt))
-        raise AttributeError(ERROR_RETRY_POLICY_MISSING_GET_DELAY)
+        return float(
+            BLEInterface._compat_dispatch_callable(
+                policy,
+                public_name="get_delay",
+                legacy_name="_get_delay",
+                fallback_attr_name=None,
+                error_message=ERROR_RETRY_POLICY_MISSING_GET_DELAY,
+                args=(attempt,),
+            )
+        )
 
     @property
     def _connection_state(self) -> ConnectionState:
@@ -2871,7 +2838,7 @@ class BLEInterface(MeshInterface):
             publishing_thread=publishingThread,
         )
 
-    def _publish_connection_status(self, connected: bool) -> None:
+    def _publish_connection_status(self, *, connected: bool) -> None:
         """Enqueue legacy connection-status publication via compatibility service.
 
         Parameters
@@ -2886,7 +2853,7 @@ class BLEInterface(MeshInterface):
         """
         BLECompatibilityEventService.publish_connection_status(
             self,
-            connected,
+            connected=connected,
             publishing_thread=publishingThread,
         )
 

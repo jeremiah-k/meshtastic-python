@@ -4803,6 +4803,7 @@ def test_start_receive_thread_clears_cached_thread_when_start_fails(
     )
 
     def _raise_start_failure(_thread: object) -> None:
+        assert iface._receiveThread is thread_like
         raise RuntimeError("start failed")
 
     monkeypatch.setattr(
@@ -4856,6 +4857,7 @@ def test_start_receive_thread_facade_clears_cached_thread_when_start_fails(
     )
 
     def _raise_start_failure(_thread: object) -> None:
+        assert iface._receiveThread is thread_like
         raise RuntimeError("start failed")
 
     monkeypatch.setattr(
@@ -4906,6 +4908,7 @@ def test_start_receive_thread_clears_cached_thread_when_start_noops(
 
     def _record_noop_start(thread: object) -> None:
         start_calls.append(thread)
+        assert iface._receiveThread is thread_like
 
     monkeypatch.setattr(
         iface.thread_coordinator,
@@ -4988,8 +4991,8 @@ def test_wait_for_disconnect_notifications_skips_unconfigured_queuework(
     iface = SimpleNamespace(
         error_handler=SimpleNamespace(safe_execute=lambda func, **_kwargs: func())
     )
-    queue_work = MagicMock()
-    publishing_thread = SimpleNamespace(queueWork=queue_work)
+    publishing_thread = MagicMock()
+    queue_work = publishing_thread.queueWork
     drained: list[bool] = []
     monkeypatch.setattr(
         BLECompatibilityEventService,
@@ -5040,8 +5043,8 @@ def test_publish_connection_status_runs_directly_when_queuework_unconfigured(
     )
 
     iface = SimpleNamespace()
-    queue_work = MagicMock()
-    publishing_thread = SimpleNamespace(queueWork=queue_work)
+    publishing_thread = MagicMock()
+    queue_work = publishing_thread.queueWork
 
     BLECompatibilityEventService.publish_connection_status(
         iface,

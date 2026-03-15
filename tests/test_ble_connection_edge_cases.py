@@ -411,7 +411,9 @@ def test_client_manager_safe_close_client_falls_back_to_legacy_safe_cleanup() ->
     thread_coordinator = MagicMock()
     error_handler = MagicMock()
     error_handler.safe_cleanup = MagicMock()
-    error_handler._safe_cleanup = MagicMock(side_effect=lambda func, _name: func())
+    error_handler._safe_cleanup = MagicMock(
+        side_effect=lambda func, _name=None, **_kwargs: func()
+    )
     manager = ClientManager(state_manager, lock, thread_coordinator, error_handler)
 
     mock_client = MagicMock()

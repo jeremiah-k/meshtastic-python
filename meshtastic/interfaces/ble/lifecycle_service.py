@@ -14,6 +14,7 @@ from meshtastic.interfaces.ble.constants import (
     CONNECTION_ERROR_LOST_OWNERSHIP,
     ERROR_INTERFACE_CLOSING,
     NOTIFICATION_START_TIMEOUT,
+    RECONNECTED_EVENT,
     RECEIVE_THREAD_JOIN_TIMEOUT,
     logger,
 )
@@ -34,7 +35,6 @@ if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
 
 READ_TRIGGER_EVENT = "read_trigger"
-RECONNECTED_EVENT = "reconnected_event"
 THREAD_COORDINATOR_MISSING_FMT = "Thread coordinator is missing %s/%s"
 STATE_MANAGER_MISSING_CONNECTED_MSG = (
     "State manager is missing is_connected/_is_connected boolean members"
