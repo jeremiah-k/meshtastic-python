@@ -1,13 +1,15 @@
 """Utility functions for BLE operations."""
 
 import asyncio
+import inspect
 import importlib
 import time
 from types import ModuleType
-from typing import Awaitable, Callable, TypeVar
+from typing import Any, Awaitable, Callable, TypeVar
 from unittest.mock import DEFAULT, Mock, NonCallableMock
 
 T = TypeVar("T")
+_UNEXPECTED_KEYWORD_FRAGMENT = "unexpected keyword argument"
 
 
 def _is_unconfigured_mock_member(candidate: object) -> bool:
@@ -49,6 +51,85 @@ def _is_unconfigured_mock_callable(candidate: object) -> bool:
         ``_is_unconfigured_mock_member``.
     """
     return callable(candidate) and _is_unconfigured_mock_member(candidate)
+
+
+def _is_unexpected_keyword_error(exc: TypeError, kwarg_name: str) -> bool:
+    """Return whether a TypeError indicates an unsupported keyword argument.
+
+    Parameters
+    ----------
+    exc : TypeError
+        Exception raised by a callable invocation.
+    kwarg_name : str
+        Keyword argument name that may be unsupported by the callable.
+
+    Returns
+    -------
+    bool
+        ``True`` when ``exc`` clearly reports an unexpected ``kwarg_name``
+        keyword argument.
+    """
+    message = str(exc)
+    return _UNEXPECTED_KEYWORD_FRAGMENT in message and f"'{kwarg_name}'" in message
+
+
+def _call_factory_with_optional_kwarg(
+    factory: Callable[..., T],
+    *,
+    args: tuple[Any, ...] = (),
+    optional_kwarg: str,
+    optional_value: Any,
+    on_kwarg_rejected: Callable[[TypeError], None] | None = None,
+) -> T:
+    """Call a factory while tolerating missing support for one optional kwarg.
+
+    Parameters
+    ----------
+    factory : Callable[..., T]
+        Factory callable to invoke.
+    args : tuple[Any, ...]
+        Positional arguments passed to ``factory``.
+    optional_kwarg : str
+        Optional keyword argument name to pass when supported.
+    optional_value : Any
+        Value used for ``optional_kwarg`` when passed.
+    on_kwarg_rejected : Callable[[TypeError], None] | None
+        Optional callback invoked when the optional keyword is rejected by the
+        factory and the helper retries without it.
+
+    Returns
+    -------
+    T
+        Factory return value.
+
+    Raises
+    ------
+    TypeError
+        Propagated when the factory raises ``TypeError`` for reasons other than
+        rejecting ``optional_kwarg``.
+    """
+    try:
+        signature = inspect.signature(factory)
+    except (TypeError, ValueError):
+        signature = None
+
+    accepts_optional_kwarg = False
+    if signature is not None:
+        accepts_optional_kwarg = (optional_kwarg in signature.parameters) or any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
+        )
+        if not accepts_optional_kwarg:
+            return factory(*args)
+
+    try:
+        return factory(*args, **{optional_kwarg: optional_value})
+    except TypeError as exc:
+        if _is_unexpected_keyword_error(exc, optional_kwarg):
+            if on_kwarg_rejected is not None:
+                on_kwarg_rejected(exc)
+            return factory(*args)
+        raise
 
 
 def _thread_start_probe(thread: object) -> tuple[int | None, bool]:

@@ -1,6 +1,5 @@
 """Management command helpers for BLE interface orchestration."""
 
-import inspect
 import math
 import numbers
 import re
@@ -27,7 +26,10 @@ from meshtastic.interfaces.ble.constants import (
 from meshtastic.interfaces.ble.gating import (
     _addr_key,
 )
-from meshtastic.interfaces.ble.utils import sanitize_address
+from meshtastic.interfaces.ble.utils import (
+    _call_factory_with_optional_kwarg,
+    sanitize_address,
+)
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
@@ -38,7 +40,6 @@ TRUST_COMMAND_OUTPUT_MAX_CHARS: int = 200
 TRUST_HEX_BLOB_RE = re.compile(r"\b[0-9A-Fa-f]{16,}\b")
 TRUST_TOKEN_RE = re.compile(r"\b[A-Za-z0-9+/=_-]{40,}\b")
 _DISCOVERY_FACTORY_LOG_KWARG = "log_if_no_address"
-_UNEXPECTED_KEYWORD_FRAGMENT = "unexpected keyword argument"
 
 T = TypeVar("T")
 
@@ -51,44 +52,24 @@ class _ManagementStartContext:
     target_address: str | None
     use_existing_client_without_resolved_address: bool
 
-
-def _is_unexpected_keyword_error(exc: TypeError, kwarg_name: str) -> bool:
-    """Return True when a TypeError clearly indicates an unsupported keyword arg."""
-    message = str(exc)
-    return _UNEXPECTED_KEYWORD_FRAGMENT in message and f"'{kwarg_name}'" in message
-
-
 def _create_management_client(
     ble_client_factory: Callable[..., BLEClient], target_address: str
 ) -> BLEClient:
     """Create a temporary BLE client while tolerating factories without kwargs."""
-    try:
-        signature = inspect.signature(ble_client_factory)
-    except (TypeError, ValueError):
-        signature = None
-
-    accepts_log_kwarg = False
-    if signature is not None:
-        accepts_log_kwarg = (
-            _DISCOVERY_FACTORY_LOG_KWARG in signature.parameters
-        ) or any(
-            parameter.kind == inspect.Parameter.VAR_KEYWORD
-            for parameter in signature.parameters.values()
+    def _log_kwarg_rejected(exc: TypeError) -> None:
+        logger.debug(
+            "Management client factory rejected log_if_no_address kwarg; retrying without it: %s",
+            exc,
+            exc_info=True,
         )
-        if not accepts_log_kwarg:
-            return ble_client_factory(target_address)
 
-    try:
-        return ble_client_factory(target_address, log_if_no_address=False)
-    except TypeError as exc:
-        if _is_unexpected_keyword_error(exc, _DISCOVERY_FACTORY_LOG_KWARG):
-            logger.debug(
-                "Management client factory rejected log_if_no_address kwarg; retrying without it: %s",
-                exc,
-                exc_info=True,
-            )
-            return ble_client_factory(target_address)
-        raise
+    return _call_factory_with_optional_kwarg(
+        ble_client_factory,
+        args=(target_address,),
+        optional_kwarg=_DISCOVERY_FACTORY_LOG_KWARG,
+        optional_value=False,
+        on_kwarg_rejected=_log_kwarg_rejected,
+    )
 
 
 class BLEManagementCommandsService:

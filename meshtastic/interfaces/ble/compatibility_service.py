@@ -26,7 +26,19 @@ class BLECompatibilityEventService:
 
     @staticmethod
     def _resolve_safe_execute(iface: "BLEInterface") -> Callable[..., Any] | None:
-        """Resolve error-handler safe_execute with underscore fallback."""
+        """Resolve an error-handler ``safe_execute`` hook with underscore fallback.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing an optional ``error_handler`` attribute.
+
+        Returns
+        -------
+        Callable[..., Any] | None
+            Resolved ``safe_execute`` callable when available and configured,
+            otherwise ``None``.
+        """
         error_handler = getattr(iface, "error_handler", None)
         safe_execute = getattr(error_handler, "safe_execute", None)
         if callable(safe_execute) and not _is_unconfigured_mock_callable(safe_execute):
@@ -47,7 +59,32 @@ class BLECompatibilityEventService:
         error_msg: str,
         reraise: bool = False,
     ) -> Any:
-        """Run callable with resolved safe_execute fallback or inline best effort."""
+        """Execute a callable through resolved safe execution with best-effort fallback.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface used to resolve ``error_handler.safe_execute`` helpers.
+        func : Callable[[], Any]
+            Zero-argument callable to execute.
+        default_return : Any
+            Value returned when execution fails and ``reraise`` is ``False``.
+        error_msg : str
+            Log message used when execution fails.
+        reraise : bool
+            When ``True``, propagate execution exceptions after logging.
+
+        Returns
+        -------
+        Any
+            Callable return value on success; otherwise ``default_return`` when
+            failures are handled.
+
+        Raises
+        ------
+        Exception
+            Re-raises execution failures only when ``reraise`` is ``True``.
+        """
         safe_execute = BLECompatibilityEventService._resolve_safe_execute(iface)
         if safe_execute is not None:
             try:

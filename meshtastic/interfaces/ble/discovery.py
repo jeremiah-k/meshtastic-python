@@ -20,6 +20,8 @@ from meshtastic.interfaces.ble.constants import (
     logger,
 )
 from meshtastic.interfaces.ble.utils import (
+    _call_factory_with_optional_kwarg,
+    _is_unexpected_keyword_error,
     _is_unconfigured_mock_callable,
     resolve_ble_module,
     sanitize_address,
@@ -35,7 +37,6 @@ _BLE_ADDRESS_SHAPE_RE = re.compile(
     r")$"
 )
 _DISCOVERY_FACTORY_LOG_KWARG = "log_if_no_address"
-_UNEXPECTED_KEYWORD_FRAGMENT = "unexpected keyword argument"
 _PENDING_DISCOVERY_CLOSE_TASKS: set[asyncio.Task[None]] = set()
 _PENDING_DISCOVERY_CLOSE_TASKS_LOCK = threading.Lock()
 
@@ -102,12 +103,6 @@ def _is_discovery_client_like(client: object) -> bool:
     return callable(underscore_discover) and not _is_unconfigured_mock_callable(
         underscore_discover
     )
-
-
-def _is_unexpected_keyword_error(exc: TypeError, kwarg_name: str) -> bool:
-    """Return True when a TypeError clearly indicates an unsupported keyword arg."""
-    message = str(exc)
-    return _UNEXPECTED_KEYWORD_FRAGMENT in message and f"'{kwarg_name}'" in message
 
 
 def _looks_like_ble_address(identifier: str) -> bool:
@@ -505,34 +500,31 @@ class DiscoveryManager:
                 except (TypeError, ValueError):
                     signature = None
 
-                accepts_log_kwarg = False
-                if signature is not None:
+                def _log_kwarg_rejected(exc: TypeError) -> None:
+                    logger.debug(
+                        "Discovery client factory rejected log_if_no_address kwarg; retrying without it: %s",
+                        exc,
+                        exc_info=True,
+                    )
+
+                if signature is None:
+                    self._client = _call_factory_with_optional_kwarg(
+                        resolved_factory,
+                        optional_kwarg=_DISCOVERY_FACTORY_LOG_KWARG,
+                        optional_value=False,
+                        on_kwarg_rejected=_log_kwarg_rejected,
+                    )
+                else:
                     accepts_log_kwarg = (
                         _DISCOVERY_FACTORY_LOG_KWARG in signature.parameters
                     ) or any(
                         parameter.kind == inspect.Parameter.VAR_KEYWORD
                         for parameter in signature.parameters.values()
                     )
-
-                if signature is None:
-                    try:
+                    if accepts_log_kwarg:
                         self._client = resolved_factory(log_if_no_address=False)
-                    except TypeError as exc:
-                        if _is_unexpected_keyword_error(
-                            exc, _DISCOVERY_FACTORY_LOG_KWARG
-                        ):
-                            logger.debug(
-                                "Discovery client factory rejected log_if_no_address kwarg; retrying without it: %s",
-                                exc,
-                                exc_info=True,
-                            )
-                            self._client = resolved_factory()
-                        else:
-                            raise
-                elif accepts_log_kwarg:
-                    self._client = resolved_factory(log_if_no_address=False)
-                else:
-                    self._client = resolved_factory()
+                    else:
+                        self._client = resolved_factory()
                 # Validate factory returned a valid client (duck typing for testability)
                 if self._client is None:
                     invalid_client_error = DiscoveryClientError.factory_returned_none(

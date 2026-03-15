@@ -639,7 +639,13 @@ class BLELifecycleService:
 
     @staticmethod
     def _state_manager_is_connected(iface: "BLEInterface") -> bool:
-        """Return connected-state flag from public-first state-manager members."""
+        """Return connected-state flag from public-first state-manager members.
+
+        Raises
+        ------
+        AttributeError
+            If no valid connected-state compatibility member is available.
+        """
         public_is_connected = getattr(iface._state_manager, "is_connected", None)
         if not _is_unconfigured_mock_member(public_is_connected) and isinstance(
             public_is_connected, bool
@@ -654,7 +660,13 @@ class BLELifecycleService:
 
     @staticmethod
     def _client_is_connected(client: "BLEClient") -> bool:
-        """Return connected-state flag from public/legacy BLEClient members."""
+        """Return connected-state flag from public/legacy BLEClient members.
+
+        Raises
+        ------
+        AttributeError
+            If no valid connected-state compatibility member is available.
+        """
         for candidate_name in ("isConnected", "is_connected", "_is_connected"):
             candidate = getattr(client, candidate_name, None)
             if callable(candidate):
