@@ -43,7 +43,7 @@ class BLECompatibilityEventService:
             Resolved ``safe_execute`` callable when available and configured,
             otherwise ``None``.
         """
-        return cast(Callable[..., Any] | None, resolve_safe_execute(iface))
+        return resolve_safe_execute(iface)
 
     @staticmethod
     def _safe_execute(
@@ -218,9 +218,7 @@ class BLECompatibilityEventService:
                     alive_result = is_alive()
                 except Exception:  # noqa: BLE001 - disconnect fallback must continue
                     alive_result = False
-            thread_is_alive = (
-                alive_result if isinstance(alive_result, bool) else False
-            )
+            thread_is_alive = alive_result if isinstance(alive_result, bool) else False
             if thread_is_alive:
                 logger.debug("Timed out waiting for publish queue flush")
             else:
@@ -288,7 +286,9 @@ class BLECompatibilityEventService:
             iterations += 1
             BLECompatibilityEventService._safe_execute(
                 iface,
-                runnable, error_msg="Error in deferred publish callback", reraise=False
+                cast(Callable[[], Any], runnable),
+                error_msg="Error in deferred publish callback",
+                reraise=False,
             )
 
     @staticmethod

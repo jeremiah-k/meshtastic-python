@@ -722,9 +722,9 @@ class BLEInterface(MeshInterface):
                         report_exception = getattr(
                             self.error_handler, "_handle_unhandled_exception", None
                         )
-                    if callable(report_exception) and not _is_unconfigured_mock_callable(
+                    if callable(
                         report_exception
-                    ):
+                    ) and not _is_unconfigured_mock_callable(report_exception):
                         try:
                             report_exception(error_msg)
                         except Exception:  # noqa: BLE001 - callback error reporting is best effort
@@ -1681,10 +1681,14 @@ class BLEInterface(MeshInterface):
         """Dispatch a callable through public/legacy/fallback compatibility names."""
         kwargs = {} if kwargs is None else kwargs
         public_member = getattr(target, public_name, None)
-        if callable(public_member) and not _is_unconfigured_mock_callable(public_member):
+        if callable(public_member) and not _is_unconfigured_mock_callable(
+            public_member
+        ):
             return public_member(*args, **kwargs)
         legacy_member = getattr(target, legacy_name, None)
-        if callable(legacy_member) and not _is_unconfigured_mock_callable(legacy_member):
+        if callable(legacy_member) and not _is_unconfigured_mock_callable(
+            legacy_member
+        ):
             return legacy_member(*args, **kwargs)
         if fallback_attr_name is None:
             raise AttributeError(error_message)
@@ -1997,13 +2001,16 @@ class BLEInterface(MeshInterface):
             If no supported delay helper exists on ``policy``.
         """
         return float(
-            BLEInterface._compat_dispatch_callable(
-                policy,
-                public_name="get_delay",
-                legacy_name="_get_delay",
-                fallback_attr_name=None,
-                error_message=ERROR_RETRY_POLICY_MISSING_GET_DELAY,
-                args=(attempt,),
+            cast(
+                float,
+                BLEInterface._compat_dispatch_callable(
+                    policy,
+                    public_name="get_delay",
+                    legacy_name="_get_delay",
+                    fallback_attr_name=None,
+                    error_message=ERROR_RETRY_POLICY_MISSING_GET_DELAY,
+                    args=(attempt,),
+                ),
             )
         )
 
