@@ -214,7 +214,7 @@ class BLEClient:
 
     def _sync_address_from_bleak(self) -> None:
         """Refresh cached address from the underlying Bleak client when available."""
-        bleak_client = self.bleak_client
+        bleak_client = getattr(self, "bleak_client", None)
         if bleak_client is None:
             return
         bleak_address = getattr(bleak_client, "address", None)
@@ -285,7 +285,7 @@ class BLEClient:
             self._sync_address_from_bleak()
         return result
 
-    # INTERNAL_COMPAT: historical discovery entrypoint used by BLE discovery compatibility paths.
+    # COMPAT_STABLE_SHIM: historical discovery entrypoint used by BLE discovery compatibility paths.
     def _discover(self, **kwargs: Any) -> Any:
         """Discover nearby BLE devices.
 

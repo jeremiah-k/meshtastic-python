@@ -770,7 +770,17 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
 def test_ble_interface_pair_supports_temporary_factory_without_log_kwarg(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """pair() should support temporary BLEClient factories that only accept address."""
+    """Verify pair() supports temporary BLEClient factories without kwargs.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch temporary BLE client construction.
+
+    Returns
+    -------
+    None
+    """
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     with iface._state_lock:
         iface.client = None
@@ -2137,7 +2147,17 @@ def test_ble_interface_close_bounds_wait_on_spurious_management_wakeups(
 def test_ble_interface_implicit_trust_releases_connect_lock_before_subprocess(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Implicit trust() should release the connect lock before bluetoothctl blocks."""
+    """Verify implicit trust() releases connect lock before blocking subprocess.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch trust subprocess behavior.
+
+    Returns
+    -------
+    None
+    """
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     trust_target = "AA:BB:CC:DD:EE:FF"
     with iface._state_lock:
@@ -4499,7 +4519,17 @@ def test_transient_read_retry_uses_zero_based_delay(
 def test_receive_recovery_backoff_reaches_configured_cap_for_non_power_of_two(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Recovery backoff should reach configured max even when max is not power-of-two."""
+    """Verify recovery backoff reaches configured max for non-power-of-two caps.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch recovery timing constants.
+
+    Returns
+    -------
+    None
+    """
     import meshtastic.interfaces.ble.receive_service as receive_service_mod
 
     iface = SimpleNamespace()
@@ -4742,7 +4772,17 @@ def test_start_receive_thread_skips_when_interface_closed(
 def test_start_receive_thread_clears_cached_thread_when_start_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Start failure should clear cached receive thread reference for retry safety."""
+    """Verify start failures clear cached receive-thread references.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch thread-coordinator start behavior.
+
+    Returns
+    -------
+    None
+    """
     from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
@@ -4779,7 +4819,17 @@ def test_start_receive_thread_clears_cached_thread_when_start_fails(
 def test_start_receive_thread_clears_cached_thread_when_start_noops(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """No-op thread starts should clear stale receive thread placeholders."""
+    """Verify no-op thread starts clear stale receive-thread placeholders.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch thread start behavior.
+
+    Returns
+    -------
+    None
+    """
     from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
@@ -4839,7 +4889,12 @@ def test_find_device_direct_connect_preserves_raw_address() -> None:
 
 
 def test_find_device_direct_connect_without_discovery_manager() -> None:
-    """Direct-connect fallback should work when discovery manager is intentionally missing."""
+    """Verify direct-connect fallback works when discovery manager is missing.
+
+    Returns
+    -------
+    None
+    """
     iface = object.__new__(ble_mod.BLEInterface)
     iface._discovery_manager = None  # type: ignore[assignment]
 
@@ -4853,7 +4908,17 @@ def test_find_device_direct_connect_without_discovery_manager() -> None:
 def test_wait_for_disconnect_notifications_skips_unconfigured_queuework(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Disconnect flush should immediately use drain path when queueWork is unconfigured."""
+    """Verify disconnect flush falls back to drain when queueWork is unconfigured.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch publish queue draining behavior.
+
+    Returns
+    -------
+    None
+    """
     from meshtastic.interfaces.ble.compatibility_service import (
         BLECompatibilityEventService,
     )
@@ -4884,7 +4949,17 @@ def test_wait_for_disconnect_notifications_skips_unconfigured_queuework(
 def test_publish_connection_status_runs_directly_when_queuework_unconfigured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Status publish should run inline when queueWork is an unconfigured mock."""
+    """Verify status publish runs inline when queueWork is unconfigured.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch publish transport.
+
+    Returns
+    -------
+    None
+    """
     from meshtastic.interfaces.ble.compatibility_service import (
         BLECompatibilityEventService,
     )
@@ -4919,7 +4994,17 @@ def test_publish_connection_status_runs_directly_when_queuework_unconfigured(
 def test_publish_connection_status_falls_back_when_queuework_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Status publish should run inline when queueWork raises."""
+    """Verify status publish falls back inline when queueWork raises.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch queueWork failure behavior.
+
+    Returns
+    -------
+    None
+    """
     from meshtastic.interfaces.ble.compatibility_service import (
         BLECompatibilityEventService,
     )
@@ -5035,7 +5120,12 @@ def test_discovery_manager_rejects_non_callable_discover_method() -> None:
 
 
 def test_discovery_manager_accepts_discover_underscore_only_factory() -> None:
-    """DiscoveryManager should accept clients that expose only `_discover`."""
+    """Verify DiscoveryManager accepts clients exposing only ``_discover``.
+
+    Returns
+    -------
+    None
+    """
     filtered_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "Filtered")
     discover_result = {
         "filtered": (
@@ -5058,7 +5148,12 @@ def test_discovery_manager_accepts_discover_underscore_only_factory() -> None:
 
 
 def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> None:
-    """Discovery should ignore unconfigured mock discover() and use configured _discover()."""
+    """Verify discovery prefers configured ``_discover`` over unconfigured ``discover``.
+
+    Returns
+    -------
+    None
+    """
     filtered_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "Filtered")
     discover_result = {
         "filtered": (

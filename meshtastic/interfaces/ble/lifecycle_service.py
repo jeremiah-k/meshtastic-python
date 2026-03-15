@@ -761,31 +761,7 @@ class BLELifecycleService:
         restore_last_connection_request: str | None,
     ) -> None:
         """Publish connected state only when ownership is still valid."""
-        snapshot = BLELifecycleService._verify_ownership_snapshot(
-            iface,
-            connected_client,
-            connected_device_key,
-            connection_alias_key,
-        )
-        if not snapshot.still_owned or snapshot.lost_gate_ownership:
-            iface._raise_for_invalidated_connect_result(
-                connected_client,
-                connected_device_key,
-                connection_alias_key,
-                is_closing=snapshot.is_closing,
-                lost_gate_ownership=snapshot.lost_gate_ownership,
-                restore_address=restore_address,
-                restore_last_connection_request=restore_last_connection_request,
-            )
-
-        prior_ever_connected = snapshot.prior_ever_connected
-        snapshot = BLELifecycleService._verify_ownership_snapshot(
-            iface,
-            connected_client,
-            connected_device_key,
-            connection_alias_key,
-        )
-        if not snapshot.still_owned or snapshot.lost_gate_ownership:
+        def _raise_invalidated(snapshot: _OwnershipSnapshot) -> None:
             iface._raise_for_invalidated_connect_result(
                 connected_client,
                 connected_device_key,
@@ -807,15 +783,8 @@ class BLELifecycleService:
             or snapshot.is_closing
             or snapshot.lost_gate_ownership
         ):
-            iface._raise_for_invalidated_connect_result(
-                connected_client,
-                connected_device_key,
-                connection_alias_key,
-                is_closing=snapshot.is_closing,
-                lost_gate_ownership=snapshot.lost_gate_ownership,
-                restore_address=restore_address,
-                restore_last_connection_request=restore_last_connection_request,
-            )
+            _raise_invalidated(snapshot)
+        prior_ever_connected = snapshot.prior_ever_connected
 
         should_publish_connected = False
         with iface._state_lock:
@@ -838,12 +807,24 @@ class BLELifecycleService:
                         iface._client_publish_pending = False
                         iface._client_replacement_pending = False
                 raise
+            snapshot = BLELifecycleService._verify_ownership_snapshot(
+                iface,
+                connected_client,
+                connected_device_key,
+                connection_alias_key,
+            )
             publish_committed = False
             with iface._state_lock:
                 still_owned, is_closing = iface._get_connected_client_status_locked(
                     connected_client
                 )
-                if still_owned and not is_closing:
+                if (
+                    snapshot.still_owned
+                    and not snapshot.is_closing
+                    and not snapshot.lost_gate_ownership
+                    and still_owned
+                    and not is_closing
+                ):
                     iface._ever_connected = True
                     iface._prior_publish_was_reconnect = prior_ever_connected
                     iface._client_publish_pending = False
@@ -862,15 +843,62 @@ class BLELifecycleService:
             connected_device_key,
             connection_alias_key,
         )
-        iface._raise_for_invalidated_connect_result(
-            connected_client,
-            connected_device_key,
-            connection_alias_key,
-            is_closing=snapshot.is_closing,
-            lost_gate_ownership=snapshot.lost_gate_ownership,
-            restore_address=restore_address,
-            restore_last_connection_request=restore_last_connection_request,
+        _raise_invalidated(snapshot)
+
+    @staticmethod
+    def _cleanup_thread_coordinator(iface: "BLEInterface") -> None:
+        """Run thread coordinator cleanup using public-first compatibility dispatch."""
+        cleanup = getattr(iface.thread_coordinator, "cleanup", None)
+        if callable(cleanup) and not _is_unconfigured_mock_callable(cleanup):
+            try:
+                cleanup()
+            except Exception:  # noqa: BLE001 - shutdown cleanup is best effort
+                logger.debug("Error running thread coordinator cleanup()", exc_info=True)
+            return
+
+        legacy_cleanup = getattr(iface.thread_coordinator, "_cleanup", None)
+        if callable(legacy_cleanup) and not _is_unconfigured_mock_callable(legacy_cleanup):
+            try:
+                legacy_cleanup()
+            except Exception:  # noqa: BLE001 - shutdown cleanup is best effort
+                logger.debug("Error running thread coordinator _cleanup()", exc_info=True)
+            return
+
+        logger.debug("Thread coordinator is missing cleanup/_cleanup")
+
+    @staticmethod
+    def _close(
+        iface: "BLEInterface",
+        *,
+        management_shutdown_wait_timeout: float,
+        management_wait_poll_seconds: float,
+    ) -> None:
+        """Shut down the BLE interface and release associated resources."""
+        # Deliberately avoid _connect_lock here so close() can mark shutdown
+        # immediately and in-flight connect/pair timeouts can observe it.
+        management_wait_timed_out = BLELifecycleService._await_management_shutdown(
+            iface,
+            management_shutdown_wait_timeout=management_shutdown_wait_timeout,
+            management_wait_poll_seconds=management_wait_poll_seconds,
         )
+        if management_wait_timed_out is None:
+            return
+
+        try:
+            if iface._shutdown_event is not None:
+                iface._shutdown_event.set()
+            BLELifecycleService._shutdown_discovery(iface)
+            BLELifecycleService._shutdown_receive_thread(iface)
+            BLELifecycleService._close_mesh_interface(iface)
+            BLELifecycleService._unregister_exit_handler(iface)
+            BLELifecycleService._shutdown_client(
+                iface, management_wait_timed_out=management_wait_timed_out
+            )
+        finally:
+            try:
+                BLELifecycleService._cleanup_thread_coordinator(iface)
+            finally:
+                BLELifecycleService._finalize_close_state(iface)
 
     @staticmethod
     def _finalize_connection_gates(
@@ -1100,37 +1128,3 @@ class BLELifecycleService:
             iface._connection_alias_key = None
         close_key = _addr_key(iface.address)
         iface._mark_address_keys_disconnected(close_key, alias_key)
-
-    @staticmethod
-    def _close(
-        iface: "BLEInterface",
-        *,
-        management_shutdown_wait_timeout: float,
-        management_wait_poll_seconds: float,
-    ) -> None:
-        """Shut down the BLE interface and release associated resources."""
-        # Deliberately avoid _connect_lock here so close() can mark shutdown
-        # immediately and in-flight connect/pair timeouts can observe it.
-        management_wait_timed_out = BLELifecycleService._await_management_shutdown(
-            iface,
-            management_shutdown_wait_timeout=management_shutdown_wait_timeout,
-            management_wait_poll_seconds=management_wait_poll_seconds,
-        )
-        if management_wait_timed_out is None:
-            return
-
-        try:
-            if iface._shutdown_event is not None:
-                iface._shutdown_event.set()
-            BLELifecycleService._shutdown_discovery(iface)
-            BLELifecycleService._shutdown_receive_thread(iface)
-            BLELifecycleService._close_mesh_interface(iface)
-            BLELifecycleService._unregister_exit_handler(iface)
-            try:
-                BLELifecycleService._shutdown_client(
-                    iface, management_wait_timed_out=management_wait_timed_out
-                )
-            finally:
-                iface.thread_coordinator._cleanup()
-        finally:
-            BLELifecycleService._finalize_close_state(iface)

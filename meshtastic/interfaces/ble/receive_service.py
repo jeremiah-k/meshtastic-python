@@ -36,18 +36,46 @@ class BLEReceiveRecoveryService:
     def _handle_read_loop_disconnect(
         iface: "BLEInterface", error_message: str, previous_client: BLEClient
     ) -> bool:
-        """Return whether receive loop should continue after a disconnect."""
+        """Handle a read-loop disconnect and return continue/stop decision.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface whose disconnect handling should be invoked.
+        error_message : str
+            Disconnect context string included in the source label.
+        previous_client : BLEClient
+            Client instance that triggered the disconnect path.
+
+        Returns
+        -------
+        bool
+            ``True`` when receive-loop processing should continue, otherwise
+            ``False``.
+        """
         logger.debug("Device disconnected: %s", error_message)
         should_continue = iface._handle_disconnect(
             f"read_loop: {error_message}", client=previous_client
         )
         if not should_continue:
-            iface._set_receive_wanted(False)
+            iface._set_receive_wanted(want_receive=False)
         return should_continue
 
     @staticmethod
     def _should_poll_without_notify(iface: "BLEInterface") -> bool:
-        """Return whether polling should continue without notification trigger."""
+        """Return whether fallback polling is allowed without notify callbacks.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing notification-configuration state.
+
+        Returns
+        -------
+        bool
+            ``True`` when polling without notify callbacks should proceed,
+            otherwise ``False``.
+        """
         with iface._state_lock:
             return not iface._fromnum_notify_enabled
 
@@ -55,7 +83,22 @@ class BLEReceiveRecoveryService:
     def _coordinator_wait_for_event(
         coordinator: "ThreadCoordinator", event_name: str, *, timeout: float | None
     ) -> bool:
-        """Wait for a coordinator event using public-first compatibility dispatch."""
+        """Wait for a coordinator event using compatibility dispatch.
+
+        Parameters
+        ----------
+        coordinator : ThreadCoordinator
+            Coordinator instance exposing public or underscore wait helpers.
+        event_name : str
+            Event name to wait on.
+        timeout : float | None
+            Maximum wait time in seconds; ``None`` waits indefinitely.
+
+        Returns
+        -------
+        bool
+            ``True`` when the event was signaled, otherwise ``False``.
+        """
         wait_for_event = getattr(coordinator, "wait_for_event", None)
         if callable(wait_for_event) and not _is_unconfigured_mock_callable(wait_for_event):
             return bool(wait_for_event(event_name, timeout=timeout))
@@ -70,7 +113,21 @@ class BLEReceiveRecoveryService:
     def _coordinator_check_and_clear_event(
         coordinator: "ThreadCoordinator", event_name: str
     ) -> bool:
-        """Check and clear a coordinator event using compatibility dispatch."""
+        """Check and clear a coordinator event using compatibility dispatch.
+
+        Parameters
+        ----------
+        coordinator : ThreadCoordinator
+            Coordinator instance exposing public or underscore clear helpers.
+        event_name : str
+            Event name to check and clear.
+
+        Returns
+        -------
+        bool
+            ``True`` when the event was set before clearing, otherwise
+            ``False``.
+        """
         check_and_clear_event = getattr(coordinator, "check_and_clear_event", None)
         if callable(check_and_clear_event) and not _is_unconfigured_mock_callable(
             check_and_clear_event
@@ -89,7 +146,20 @@ class BLEReceiveRecoveryService:
     def _coordinator_clear_event(
         coordinator: "ThreadCoordinator", event_name: str
     ) -> None:
-        """Clear a coordinator event using compatibility dispatch."""
+        """Clear a coordinator event using compatibility dispatch.
+
+        Parameters
+        ----------
+        coordinator : ThreadCoordinator
+            Coordinator instance exposing public or underscore clear helpers.
+        event_name : str
+            Event name to clear.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after best-effort event clearing.
+        """
         clear_event = getattr(coordinator, "clear_event", None)
         if callable(clear_event) and not _is_unconfigured_mock_callable(clear_event):
             clear_event(event_name)
@@ -107,7 +177,23 @@ class BLEReceiveRecoveryService:
         coordinator: "ThreadCoordinator",
         wait_timeout: float,
     ) -> tuple[bool, bool]:
-        """Wait for read-trigger event and compute poll mode for this cycle."""
+        """Wait for read trigger and compute fallback poll mode.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing reconnect and notification state.
+        coordinator : ThreadCoordinator
+            Coordinator used for event waits and clear operations.
+        wait_timeout : float
+            Maximum wait time for read-trigger and reconnect events.
+
+        Returns
+        -------
+        tuple[bool, bool]
+            ``(proceed, poll_without_notify)`` where ``proceed`` indicates
+            whether the caller should continue the loop iteration.
+        """
         event_signaled = BLEReceiveRecoveryService._coordinator_wait_for_event(
             coordinator,
             READ_TRIGGER_EVENT,
@@ -133,7 +219,18 @@ class BLEReceiveRecoveryService:
     def _snapshot_client_state(
         iface: "BLEInterface",
     ) -> tuple[BLEClient | None, bool, bool, bool]:
-        """Snapshot client and gating flags needed by the read loop."""
+        """Snapshot client and gating flags needed by the read loop.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing state guarded by ``_state_lock``.
+
+        Returns
+        -------
+        tuple[BLEClient | None, bool, bool, bool]
+            ``(client, is_connecting, publish_pending, is_closing)``.
+        """
         with iface._state_lock:
             client = iface.client
             is_connecting = iface._state_manager._current_state == ConnectionState.CONNECTING
@@ -152,7 +249,31 @@ class BLEReceiveRecoveryService:
         publish_pending: bool,
         is_closing: bool,
     ) -> bool:
-        """Handle current client state and return True when loop should break."""
+        """Process current client state and decide whether to break loop.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing reconnect and lifecycle helpers.
+        coordinator : ThreadCoordinator
+            Coordinator used for reconnect wait signaling.
+        wait_timeout : float
+            Wait timeout passed to coordinator event waits.
+        client : BLEClient | None
+            Current active BLE client snapshot.
+        is_connecting : bool
+            Whether connection establishment is currently in progress.
+        publish_pending : bool
+            Whether connect publication is pending verification.
+        is_closing : bool
+            Whether the interface is closing.
+
+        Returns
+        -------
+        bool
+            ``True`` when the caller should break out of the inner receive
+            loop, otherwise ``False``.
+        """
         if publish_pending:
             logger.debug(
                 "Skipping BLE read while connect publication is pending verification."
@@ -179,14 +300,25 @@ class BLEReceiveRecoveryService:
 
         if is_closing:
             logger.debug("BLE client is None, shutting down")
-            iface._set_receive_wanted(False)
+            iface._set_receive_wanted(want_receive=False)
         else:
             logger.debug("BLE client is None; re-checking connection state")
         return True
 
     @staticmethod
     def _reset_recovery_after_stability(iface: "BLEInterface") -> None:
-        """Reset receive recovery attempts after sustained stable reads."""
+        """Reset recovery-attempt counter after sustained stable reads.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface maintaining receive-recovery counters.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after best-effort counter reset.
+        """
         now = time.monotonic()
         with iface._state_lock:
             if (
@@ -206,7 +338,22 @@ class BLEReceiveRecoveryService:
         *,
         poll_without_notify: bool,
     ) -> bool:
-        """Read one payload iteration and return True to continue inner loop."""
+        """Read a payload iteration and dispatch packet handling.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing read/retry helpers and packet handlers.
+        client : BLEClient
+            Active BLE client used for characteristic reads.
+        poll_without_notify : bool
+            Whether the current cycle is using fallback polling mode.
+
+        Returns
+        -------
+        bool
+            ``True`` to continue the inner loop, ``False`` to stop.
+        """
         payload = iface._read_from_radio_with_retries(
             client,
             retry_on_empty=not poll_without_notify,
@@ -226,7 +373,19 @@ class BLEReceiveRecoveryService:
 
     @staticmethod
     def _receive_from_radio_impl(iface: "BLEInterface") -> None:
-        """Run receive loop and dispatch radio packets."""
+        """Run the BLE receive loop and dispatch decoded radio payloads.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing receive-loop state and handlers.
+
+        Returns
+        -------
+        None
+            Returns ``None``. Fatal receive-loop failures trigger recovery or
+            close side effects before exiting.
+        """
         coordinator = iface.thread_coordinator
         wait_timeout = BLEConfig.RECEIVE_WAIT_TIMEOUT
         try:
@@ -311,7 +470,20 @@ class BLEReceiveRecoveryService:
 
     @staticmethod
     def _recover_receive_thread(iface: "BLEInterface", disconnect_reason: str) -> None:
-        """Handle receive-thread crash and guarded recovery."""
+        """Handle receive-thread crash and guarded restart behavior.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing disconnect and receive-thread lifecycle helpers.
+        disconnect_reason : str
+            Reason label passed into disconnect handling.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after scheduling recovery or stopping receive.
+        """
         if iface._is_connection_closing:
             return
         with iface._state_lock:
@@ -320,7 +492,7 @@ class BLEReceiveRecoveryService:
             disconnect_reason, client=current_client
         )
         if not should_continue:
-            iface._set_receive_wanted(False)
+            iface._set_receive_wanted(want_receive=False)
             return
         now = time.monotonic()
         with iface._state_lock:
@@ -359,7 +531,22 @@ class BLEReceiveRecoveryService:
         *,
         retry_on_empty: bool = True,
     ) -> bytes | None:
-        """Read non-empty payload from FROMRADIO characteristic with retry policy."""
+        """Read non-empty payload from FROMRADIO with retry policy.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing retry policies and warning state.
+        client : BLEClient
+            Active BLE client used for characteristic reads.
+        retry_on_empty : bool
+            When ``True``, apply empty-read retry/backoff behavior.
+
+        Returns
+        -------
+        bytes | None
+            Non-empty payload bytes when available, otherwise ``None``.
+        """
         max_retries = BLEConfig.EMPTY_READ_MAX_RETRIES if retry_on_empty else 0
         read_timeout = (
             GATT_IO_TIMEOUT if retry_on_empty else BLEConfig.RECEIVE_WAIT_TIMEOUT
@@ -377,7 +564,25 @@ class BLEReceiveRecoveryService:
 
     @staticmethod
     def _handle_transient_read_error(iface: "BLEInterface", error: BleakError) -> None:
-        """Apply transient read retry policy and raise on exhaustion."""
+        """Apply transient-read retry policy and raise on exhaustion.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing transient retry counters and policy helpers.
+        error : BleakError
+            Error that triggered retry-policy evaluation.
+
+        Returns
+        -------
+        None
+            Returns ``None`` when retry is scheduled.
+
+        Raises
+        ------
+        BLEError
+            If transient retry attempts are exhausted.
+        """
         transient_policy = iface._transient_read_policy
         if iface._retry_policy_should_retry(transient_policy, iface._read_retry_count):
             attempt_index = iface._read_retry_count
@@ -395,7 +600,18 @@ class BLEReceiveRecoveryService:
 
     @staticmethod
     def _log_empty_read_warning(iface: "BLEInterface") -> None:
-        """Emit throttled warning on repeated empty FROMRADIO reads."""
+        """Emit throttled warning on repeated empty FROMRADIO reads.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface storing empty-read warning cooldown state.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after logging or suppressing warning output.
+        """
         now = time.monotonic()
         cooldown = BLEConfig.EMPTY_READ_WARNING_COOLDOWN
         if now - iface._last_empty_read_warning >= cooldown:

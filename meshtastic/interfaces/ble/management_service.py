@@ -5,6 +5,7 @@ import math
 import numbers
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypeVar
 
 from meshtastic.interfaces.ble.client import BLEClient
@@ -40,6 +41,15 @@ _DISCOVERY_FACTORY_LOG_KWARG = "log_if_no_address"
 _UNEXPECTED_KEYWORD_FRAGMENT = "unexpected keyword argument"
 
 T = TypeVar("T")
+
+
+@dataclass(frozen=True)
+class _ManagementStartContext:
+    """Captured state from management-operation startup validation."""
+
+    expected_implicit_binding: str | None
+    target_address: str | None
+    use_existing_client_without_resolved_address: bool
 
 
 def _is_unexpected_keyword_error(exc: TypeError, kwarg_name: str) -> bool:
@@ -85,6 +95,109 @@ class BLEManagementCommandsService:
     """Service helpers for BLE management command paths."""
 
     @staticmethod
+    def _start_management_phase(
+        iface: "BLEInterface", address: str | None
+    ) -> _ManagementStartContext:
+        """Begin management operation and capture startup context."""
+        with iface._connect_lock, iface._management_lock:
+            iface._validate_management_preconditions()
+            iface._begin_management_operation_locked()
+            expected_implicit_binding = None
+            if address is None:
+                with iface._state_lock:
+                    expected_implicit_binding = (
+                        iface._get_current_implicit_management_binding_locked()
+                    )
+            existing_client = iface._get_management_client_if_available(address)
+            target_address = iface._extract_client_address(existing_client)
+            use_existing_client_without_resolved_address = (
+                existing_client is not None and target_address is None
+            )
+        return _ManagementStartContext(
+            expected_implicit_binding=expected_implicit_binding,
+            target_address=target_address,
+            use_existing_client_without_resolved_address=use_existing_client_without_resolved_address,
+        )
+
+    @staticmethod
+    def _resolve_management_target(
+        iface: "BLEInterface",
+        address: str | None,
+        start_context: _ManagementStartContext,
+    ) -> tuple[str | None, BLEClient | None]:
+        """Resolve target address or refresh an existing-client-only path."""
+        target_address = start_context.target_address
+        if (
+            target_address is None
+            and not start_context.use_existing_client_without_resolved_address
+        ):
+            target_address = iface._resolve_target_address_for_management(address)
+
+        if start_context.use_existing_client_without_resolved_address:
+            with iface._connect_lock, iface._management_lock:
+                iface._validate_management_preconditions()
+                refreshed_existing_client = iface._get_management_client_if_available(
+                    address
+                )
+                if refreshed_existing_client is None:
+                    raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
+            return target_address, refreshed_existing_client
+
+        return target_address, None
+
+    @staticmethod
+    def _acquire_client_for_target(
+        iface: "BLEInterface",
+        *,
+        address: str | None,
+        target_address: str,
+        expected_implicit_binding: str | None,
+        connected_elsewhere: Callable[[str | None, object | None], bool],
+        ble_client_factory: Callable[..., BLEClient],
+    ) -> tuple[BLEClient, BLEClient | None]:
+        """Acquire active or temporary client for a resolved management target."""
+        client_to_use: BLEClient | None = None
+        target_key: str | None = None
+        temporary_client: BLEClient | None = None
+
+        with iface._connect_lock, iface._management_lock:
+            iface._validate_management_preconditions()
+            if address is None:
+                iface._revalidate_implicit_management_target(
+                    target_address,
+                    expected_binding=expected_implicit_binding,
+                )
+            client_to_use = iface._get_management_client_for_target(
+                target_address,
+                prefer_current_client=address is None,
+            )
+            if client_to_use is None:
+                target_key = _addr_key(target_address)
+
+        if client_to_use is None:
+            if target_key is not None and connected_elsewhere(target_key, iface):
+                raise iface.BLEError(ERROR_CONNECTION_SUPPRESSED)
+            temporary_client = _create_management_client(ble_client_factory, target_address)
+            client_to_use = temporary_client
+
+        return client_to_use, temporary_client
+
+    @staticmethod
+    def _execute_with_client(
+        iface: "BLEInterface",
+        *,
+        client_to_use: BLEClient,
+        temporary_client: BLEClient | None,
+        command: Callable[[BLEClient], T],
+    ) -> T:
+        """Execute management command and close temporary client on exit."""
+        try:
+            return command(client_to_use)
+        finally:
+            if temporary_client is not None:
+                iface._client_manager_safe_close_client(temporary_client)
+
+    @staticmethod
     def execute_management_command(
         iface: "BLEInterface",
         address: str | None,
@@ -128,70 +241,41 @@ class BLEManagementCommandsService:
 
         management_started = False
         try:
-            with iface._connect_lock, iface._management_lock:
-                iface._validate_management_preconditions()
-                iface._begin_management_operation_locked()
-                management_started = True
-                expected_implicit_binding = None
-                if address is None:
-                    with iface._state_lock:
-                        expected_implicit_binding = (
-                            iface._get_current_implicit_management_binding_locked()
-                        )
-                existing_client = iface._get_management_client_if_available(address)
-                target_address = iface._extract_client_address(existing_client)
-                use_existing_client_without_resolved_address = (
-                    existing_client is not None and target_address is None
+            start_context = BLEManagementCommandsService._start_management_phase(
+                iface, address
+            )
+            management_started = True
+            target_address, refreshed_existing_client = (
+                BLEManagementCommandsService._resolve_management_target(
+                    iface,
+                    address,
+                    start_context,
                 )
-            if (
-                target_address is None
-                and not use_existing_client_without_resolved_address
-            ):
-                target_address = iface._resolve_target_address_for_management(address)
+            )
 
-            if use_existing_client_without_resolved_address:
-                with iface._connect_lock, iface._management_lock:
-                    iface._validate_management_preconditions()
-                    refreshed_existing_client = (
-                        iface._get_management_client_if_available(address)
-                    )
-                    if refreshed_existing_client is None:
-                        raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
+            if refreshed_existing_client is not None:
                 return command(refreshed_existing_client)
 
             if target_address is None:
                 raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_REQUIRED)
+
             with iface._management_target_gate(target_address):
-                client_to_use: BLEClient | None = None
-                target_key: str | None = None
-                temporary_client: BLEClient | None = None
-                with iface._connect_lock, iface._management_lock:
-                    iface._validate_management_preconditions()
-                    if address is None:
-                        iface._revalidate_implicit_management_target(
-                            target_address,
-                            expected_binding=expected_implicit_binding,
-                        )
-                    client_to_use = iface._get_management_client_for_target(
-                        target_address,
-                        prefer_current_client=address is None,
+                client_to_use, temporary_client = (
+                    BLEManagementCommandsService._acquire_client_for_target(
+                        iface,
+                        address=address,
+                        target_address=target_address,
+                        expected_implicit_binding=start_context.expected_implicit_binding,
+                        connected_elsewhere=connected_elsewhere,
+                        ble_client_factory=ble_client_factory,
                     )
-                    if client_to_use is None:
-                        target_key = _addr_key(target_address)
-
-                if client_to_use is None:
-                    if target_key is not None and connected_elsewhere(target_key, iface):
-                        raise iface.BLEError(ERROR_CONNECTION_SUPPRESSED)
-                    temporary_client = _create_management_client(
-                        ble_client_factory, target_address
-                    )
-                    client_to_use = temporary_client
-
-                try:
-                    return command(client_to_use)
-                finally:
-                    if temporary_client is not None:
-                        iface._client_manager_safe_close_client(temporary_client)
+                )
+                return BLEManagementCommandsService._execute_with_client(
+                    iface,
+                    client_to_use=client_to_use,
+                    temporary_client=temporary_client,
+                    command=command,
+                )
         finally:
             if management_started:
                 iface._finish_management_operation()

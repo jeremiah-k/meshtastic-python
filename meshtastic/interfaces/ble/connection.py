@@ -160,8 +160,6 @@ class ConnectionValidator:
         """
         if not self._client_is_connected(client):
             return False
-        if client is None:
-            return False
         normalized_request_key = sanitize_address(normalized_request)
         client_address = sanitize_address(getattr(client, "address", None))
         bleak_client = getattr(client, "bleak_client", None)
@@ -613,11 +611,10 @@ class ConnectionOrchestrator:
                     or isinstance(public_member, underscore_attr_type)
                 ):
                     return public_member
-            if underscore_attr_type is not None and isinstance(
-                underscore_member, underscore_attr_type
+            if underscore_member is not _DISPATCH_MISSING and (
+                underscore_attr_type is None
+                or isinstance(underscore_member, underscore_attr_type)
             ):
-                return underscore_member
-            if underscore_attr_type is None and underscore_member is not _DISPATCH_MISSING:
                 return underscore_member
 
         if default_if_missing is not _DISPATCH_MISSING:

@@ -16,7 +16,13 @@ if TYPE_CHECKING:
 
 
 class BLECompatibilityEventService:
-    """Service helpers for compatibility event publication paths."""
+    """Service helpers for compatibility event publication paths.
+
+    Notes
+    -----
+    All helpers in this service are best-effort and must not raise during
+    disconnect/close paths where callers are already unwinding state.
+    """
 
     @staticmethod
     def _enqueue_publish_callback(
@@ -25,7 +31,22 @@ class BLECompatibilityEventService:
         *,
         prefer_non_blocking: bool = False,
     ) -> bool:
-        """Queue callback for publishing thread, preferring non-blocking enqueue."""
+        """Queue a callback on the publish thread.
+
+        Parameters
+        ----------
+        publishing_thread : object
+            Publishing-thread façade exposing ``queueWork`` and/or ``queue``.
+        callback : Any
+            Callable to enqueue for deferred execution.
+        prefer_non_blocking : bool
+            When ``True``, prefer ``queue.put_nowait`` before ``queueWork``.
+
+        Returns
+        -------
+        bool
+            ``True`` when the callback was queued, otherwise ``False``.
+        """
         queue_work = getattr(publishing_thread, "queueWork", None)
         queue = getattr(publishing_thread, "queue", None)
         put_nowait = getattr(queue, "put_nowait", None)
@@ -41,12 +62,24 @@ class BLECompatibilityEventService:
         put_nowait_callback: Callable[[Any], object] | None = (
             cast(Callable[[Any], object], put_nowait) if can_put_nowait else None
         )
-        if prefer_non_blocking and put_nowait_callback is not None:
-            try:
-                put_nowait_callback(callback)
-                return True
-            except Full:
-                return False
+        if prefer_non_blocking:
+            thread = getattr(publishing_thread, "thread", None)
+            is_alive = getattr(thread, "is_alive", None)
+            thread_is_alive = False
+            if callable(is_alive) and not _is_unconfigured_mock_callable(is_alive):
+                try:
+                    alive_result = is_alive()
+                except Exception:  # noqa: BLE001 - enqueue path is best effort
+                    alive_result = False
+                thread_is_alive = (
+                    alive_result if isinstance(alive_result, bool) else False
+                )
+            if thread_is_alive and put_nowait_callback is not None:
+                try:
+                    put_nowait_callback(callback)
+                    return True
+                except Full:
+                    return False
         if queue_work_callback is not None:
             queue_work_callback(callback)
             return True
@@ -65,7 +98,24 @@ class BLECompatibilityEventService:
         *,
         publishing_thread: object,
     ) -> None:
-        """Wait for publishing thread to flush disconnect notifications."""
+        """Wait for queued disconnect notifications to flush.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing error-handling helpers and fallback drain logic.
+        timeout : float | None
+            Maximum seconds to wait for flush completion. ``None`` uses the
+            default disconnect timeout.
+        publishing_thread : object
+            Publishing-thread façade used to queue and drain callbacks.
+
+        Returns
+        -------
+        None
+            This method returns ``None`` and falls back to inline draining on
+            queueing or wait failures.
+        """
         if timeout is None:
             timeout = DISCONNECT_TIMEOUT_SECONDS
         flush_event = Event()
@@ -94,7 +144,12 @@ class BLECompatibilityEventService:
         if not flush_event.wait(timeout=timeout):
             thread = getattr(publishing_thread, "thread", None)
             is_alive = getattr(thread, "is_alive", None)
-            alive_result = is_alive() if callable(is_alive) else False
+            alive_result = False
+            if callable(is_alive) and not _is_unconfigured_mock_callable(is_alive):
+                try:
+                    alive_result = is_alive()
+                except Exception:  # noqa: BLE001 - disconnect fallback must continue
+                    alive_result = False
             thread_is_alive = (
                 alive_result if isinstance(alive_result, bool) else False
             )
@@ -115,7 +170,22 @@ class BLECompatibilityEventService:
     def drain_publish_queue(
         iface: "BLEInterface", flush_event: Event, *, publishing_thread: object
     ) -> None:
-        """Drain and run pending publish callbacks on the current thread."""
+        """Drain pending publish callbacks on the current thread.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing safe execution helpers.
+        flush_event : Event
+            Event set by queued flush callbacks to indicate completion.
+        publishing_thread : object
+            Publishing-thread façade exposing queue-drain internals.
+
+        Returns
+        -------
+        None
+            Drains callbacks best-effort and suppresses callback failures.
+        """
         thread = getattr(publishing_thread, "thread", None)
         thread_drain = getattr(thread, "_drain_publish_queue", None)
         if callable(thread_drain) and not _is_unconfigured_mock_callable(thread_drain):
@@ -159,7 +229,22 @@ class BLECompatibilityEventService:
     def publish_connection_status(
         iface: "BLEInterface", connected: bool, *, publishing_thread: object
     ) -> None:
-        """Publish legacy connection status event for compatibility."""
+        """Publish legacy connection-status event for compatibility.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface associated with the status event payload.
+        connected : bool
+            Connection status flag to publish.
+        publishing_thread : object
+            Publishing-thread façade used for deferred publish scheduling.
+
+        Returns
+        -------
+        None
+            Publication is best-effort; failures are logged and suppressed.
+        """
         from meshtastic import mesh_interface as mesh_iface_module
 
         mesh_pub: Any = getattr(mesh_iface_module, "pub", None)
@@ -181,7 +266,8 @@ class BLECompatibilityEventService:
 
         try:
             queued = BLECompatibilityEventService._enqueue_publish_callback(
-                publishing_thread, _publish_status
+                publishing_thread,
+                _publish_status,
             )
             if not queued:
                 _publish_status()

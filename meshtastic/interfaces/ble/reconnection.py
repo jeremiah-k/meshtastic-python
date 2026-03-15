@@ -52,6 +52,14 @@ class ReconnectPolicyMissingMethodError(AttributeError):
         super().__init__(f"ReconnectPolicy missing method '{method_name}'")
 
 
+class ThreadCoordinatorMissingMethodError(AttributeError):
+    """Raised when required thread-coordinator methods are unavailable."""
+
+    def __init__(self, methods: str) -> None:
+        """Initialize with the missing thread-coordinator method names."""
+        super().__init__(f"Thread coordinator is missing {methods}")
+
+
 class NextAttempt(NamedTuple):
     """Validated reconnect scheduling decision from policy.next_attempt()."""
 
@@ -144,9 +152,7 @@ class ReconnectScheduler:
                     daemon=daemon,
                 ),
             )
-        raise AttributeError(
-            "Thread coordinator is missing create_thread/_create_thread"
-        )
+        raise ThreadCoordinatorMissingMethodError("create_thread/_create_thread")
 
     def _thread_start_thread(self, thread: ThreadLike) -> None:
         """Start a thread via public coordinator API with underscore fallback."""
@@ -169,7 +175,7 @@ class ReconnectScheduler:
         if valid_start_thread is not None:
             valid_start_thread(thread)
             return
-        raise AttributeError("Thread coordinator is missing start_thread/_start_thread")
+        raise ThreadCoordinatorMissingMethodError("start_thread/_start_thread")
 
     def _schedule_reconnect(self, auto_reconnect: bool, shutdown_event: Event) -> bool:
         """Schedule a background BLE reconnect worker when auto-reconnect is enabled and no worker is already running.

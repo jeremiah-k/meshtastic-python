@@ -45,7 +45,19 @@ class DiscoveryClientProtocol(Protocol):
     """Minimal protocol required by DiscoveryManager for scan operations."""
 
     def discover(self, **kwargs: Any) -> Any:
-        """Run a BLE scan and return raw backend response data."""
+        """Run a BLE scan and return backend response data.
+
+        Parameters
+        ----------
+        **kwargs : Any
+            Backend-specific scan options (for example ``timeout`` and
+            filtering hints) forwarded to the underlying implementation.
+
+        Returns
+        -------
+        Any
+            Raw backend scan response consumed by discovery parsing helpers.
+        """
 
 
 @runtime_checkable
@@ -53,11 +65,36 @@ class UnderscoreDiscoveryClientProtocol(Protocol):
     """Compatibility protocol for discovery clients exposing ``_discover``."""
 
     def _discover(self, **kwargs: Any) -> Any:
-        """Run a BLE scan and return raw backend response data."""
+        """Run a BLE scan via underscore compatibility entrypoint.
+
+        Parameters
+        ----------
+        **kwargs : Any
+            Backend-specific scan options (for example ``timeout`` and
+            filtering hints) forwarded to the underlying implementation.
+
+        Returns
+        -------
+        Any
+            Raw backend scan response consumed by discovery parsing helpers.
+        """
 
 
 def _is_discovery_client_like(client: object) -> bool:
-    """Return True when a discovery client exposes a supported scan entrypoint."""
+    """Return whether a client exposes a supported discovery entrypoint.
+
+    Parameters
+    ----------
+    client : object
+        Candidate client object inspected for callable ``discover`` or
+        ``_discover`` methods.
+
+    Returns
+    -------
+    bool
+        ``True`` when the client exposes a callable supported discovery method
+        that is not an unconfigured mock callable, otherwise ``False``.
+    """
     discover = getattr(client, "discover", None)
     if callable(discover) and not _is_unconfigured_mock_callable(discover):
         return True
@@ -644,7 +681,20 @@ class DiscoveryManager:
         return devices
 
     def discover_devices(self, address: str | None) -> list[BLEDevice]:
-        """Public discovery entrypoint for BLE device scans."""
+        """Run BLE discovery and return matching devices.
+
+        Parameters
+        ----------
+        address : str | None
+            Optional target address used to filter discovery results. ``None``
+            runs a general scan.
+
+        Returns
+        -------
+        list[BLEDevice]
+            Discovered BLE devices that match the requested target/address
+            filter.
+        """
         return self._discover_devices(address)
 
     def close(self) -> None:
