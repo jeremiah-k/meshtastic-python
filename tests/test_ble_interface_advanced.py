@@ -382,81 +382,107 @@ def test_auto_reconnect_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(iface, "close", _track_close)
 
-    # Simulate disconnection by calling _on_ble_disconnect directly
-    # This simulates what happens when bleak calls disconnected callback
-    disconnect_client = iface.client
-    if disconnect_client and hasattr(disconnect_client, "bleak_client"):
-        iface._on_ble_disconnect(disconnect_client.bleak_client)  # type: ignore[arg-type]
+    try:
+        # Simulate disconnection by calling _on_ble_disconnect directly
+        # This simulates what happens when bleak calls disconnected callback
+        disconnect_client = iface.client
+        if disconnect_client and hasattr(disconnect_client, "bleak_client"):
+            iface._on_ble_disconnect(disconnect_client.bleak_client)  # type: ignore[arg-type]
 
-    # Allow time for auto-reconnect thread to run
-    for _ in range(50):
-        if (
+        # Allow time for auto-reconnect thread to run
+        for _ in range(50):
+            if (
+                len(_get_connect_stub_calls(iface)) >= 2
+                and cast(object, iface.client) is client
+            ):
+                break
+            time.sleep(0.01)
+
+        # Assertions
+        # 1. BLEInterface.close() should NOT be called when auto_reconnect=True
+        assert (
+            len(close_called) == 0
+        ), "close() should not be called when auto_reconnect=True"
+
+        # 2. Connection status event should be published with connected=False
+        disconnect_events: list[tuple[Any, dict[str, Any]]] = []
+        for _ in range(100):
+            disconnect_events = [
+                (topic, kw)
+                for topic, kw in published_events
+                if topic == "meshtastic.connection.status"
+                and kw.get("connected") is False
+            ]
+            if disconnect_events:
+                break
+            time.sleep(0.01)
+        for _ in range(10):
+            time.sleep(0.01)
+        disconnect_events = [
+            (topic, kw)
+            for topic, kw in published_events
+            if topic == "meshtastic.connection.status" and kw.get("connected") is False
+        ]
+        assert (
+            len(disconnect_events) == 1
+        ), f"Expected exactly one disconnect event, got {len(disconnect_events)}"
+
+        # 3. Auto-reconnect should have attempted a reconnect and restored the client
+        assert (
             len(_get_connect_stub_calls(iface)) >= 2
-            and cast(object, iface.client) is client
-        ):
-            break
-        time.sleep(0.01)
+        ), f"Expected at least 2 connect calls, got {len(_get_connect_stub_calls(iface))}"
+        assert (
+            cast(object, iface.client) is client
+        ), "client should be restored after successful auto-reconnect"
 
-    # Assertions
-    # 1. BLEInterface.close() should NOT be called when auto_reconnect=True
-    assert (
-        len(close_called) == 0
-    ), "close() should not be called when auto_reconnect=True"
+        # Simulate config completion to publish connected=True and verify it was emitted
+        iface.isConnected.clear()
+        monkeypatch.setattr(iface, "_start_heartbeat", lambda: None)
+        iface._connected()
+        reconnect_events: list[tuple[Any, dict[str, Any]]] = []
+        for _ in range(100):
+            reconnect_events = [
+                (topic, kw)
+                for topic, kw in published_events
+                if topic == "meshtastic.connection.status"
+                and kw.get("connected") is True
+            ]
+            if reconnect_events:
+                break
+            time.sleep(0.01)
+        for _ in range(10):
+            time.sleep(0.01)
+        reconnect_events = [
+            (topic, kw)
+            for topic, kw in published_events
+            if topic == "meshtastic.connection.status" and kw.get("connected") is True
+        ]
+        assert (
+            len(reconnect_events) == 1
+        ), f"Expected exactly one reconnect event, got {len(reconnect_events)}"
 
-    # 2. Connection status event should be published with connected=False
-    disconnect_events = [
-        (topic, kw)
-        for topic, kw in published_events
-        if topic == "meshtastic.connection.status" and kw.get("connected") is False
-    ]
-    assert (
-        len(disconnect_events) == 1
-    ), f"Expected exactly one disconnect event, got {len(disconnect_events)}"
+        # 4. Ensure disconnect flag resets for future disconnect handling
+        assert (
+            not iface._disconnect_notified
+        ), "_disconnect_notified should reset after auto-reconnect"
 
-    # 3. Auto-reconnect should have attempted a reconnect and restored the client
-    assert (
-        len(_get_connect_stub_calls(iface)) >= 2
-    ), f"Expected at least 2 connect calls, got {len(_get_connect_stub_calls(iface))}"
-    assert (
-        cast(object, iface.client) is client
-    ), "client should be restored after successful auto-reconnect"
-
-    # Simulate config completion to publish connected=True and verify it was emitted
-    iface.isConnected.clear()
-    monkeypatch.setattr(iface, "_start_heartbeat", lambda: None)
-    iface._connected()
-    reconnect_events = [
-        (topic, kw)
-        for topic, kw in published_events
-        if topic == "meshtastic.connection.status" and kw.get("connected") is True
-    ]
-    assert (
-        len(reconnect_events) == 1
-    ), f"Expected exactly one reconnect event, got {len(reconnect_events)}"
-
-    # 4. Ensure disconnect flag resets for future disconnect handling
-    assert (
-        not iface._disconnect_notified
-    ), "_disconnect_notified should reset after auto-reconnect"
-
-    # 5. Receive thread should remain alive, waiting for new connection
-    # Check that _want_receive is still True and receive thread is alive
-    assert (
-        iface._want_receive is True
-    ), "_want_receive should remain True for auto_reconnect"
-    assert iface._receiveThread is not None, "receive thread should still exist"
-    # Wait up to ~1s for receive thread to be alive
-    for _ in range(100):
-        t = getattr(iface, "_receiveThread", None)
-        if t and t.is_alive():
-            break
-        time.sleep(0.01)
-    assert iface._receiveThread is not None, "receive thread should still exist"
-    assert iface._receiveThread.is_alive(), "receive thread should remain alive"
-
-    # Clean up
-    iface.auto_reconnect = False  # Disable auto_reconnect for proper cleanup
-    iface.close()
+        # 5. Receive thread should remain alive, waiting for new connection
+        # Check that _want_receive is still True and receive thread is alive
+        assert (
+            iface._want_receive is True
+        ), "_want_receive should remain True for auto_reconnect"
+        assert iface._receiveThread is not None, "receive thread should still exist"
+        # Wait up to ~1s for receive thread to be alive
+        for _ in range(100):
+            t = getattr(iface, "_receiveThread", None)
+            if t and t.is_alive():
+                break
+            time.sleep(0.01)
+        assert iface._receiveThread is not None, "receive thread should still exist"
+        assert iface._receiveThread.is_alive(), "receive thread should remain alive"
+    finally:
+        iface.auto_reconnect = False
+        original_close()
 
 
 def test_send_to_radio_specific_exceptions(
@@ -1184,28 +1210,15 @@ def test_wait_for_disconnect_notifications_exceptions(
     client = DummyClient()
     iface = _build_interface(monkeypatch, client)
 
-    # Mock publishingThread to raise RuntimeError
-    # meshtastic.ble_interface already imported at top as ble_mod
-
     class MockPublishingThread:
-        """Mock publishingThread that raises RuntimeError in queueWork."""
+        """Mock publishingThread that raises RuntimeError in queue.put_nowait."""
 
-        def queueWork(self, _callback: Any) -> None:
-            """Simulate a publishing thread failure by raising a RuntimeError.
+        class _FailingQueue:
+            @staticmethod
+            def put_nowait(_callback: Any) -> None:
+                raise RuntimeError("thread error in put_nowait")  # noqa: TRY003
 
-            This mock implementation ignores the provided callback and unconditionally raises an error to emulate a thread failure.
-
-            Parameters
-            ----------
-            _callback : callable
-                Work callback to queue; ignored by this mock.
-
-            Raises
-            ------
-            RuntimeError
-                Always raised with the message "thread error in queueWork".
-            """
-            raise RuntimeError("thread error in queueWork")  # noqa: TRY003
+        queue = _FailingQueue()
 
     monkeypatch.setattr(
         "meshtastic.interfaces.ble.interface.publishingThread",
@@ -1219,24 +1232,15 @@ def test_wait_for_disconnect_notifications_exceptions(
     # Clear caplog
     caplog.clear()
 
-    # Mock publishingThread to raise ValueError
     class MockPublishingThread2:
-        """Mock publishingThread that raises ValueError in queueWork."""
+        """Mock publishingThread that raises ValueError in queue.put_nowait."""
 
-        def queueWork(self, _callback: Any) -> None:
-            """Refuse enqueued callbacks by always raising a ValueError with message "invalid state".
+        class _FailingQueue:
+            @staticmethod
+            def put_nowait(_callback: Any) -> None:
+                raise ValueError("invalid state")  # noqa: TRY003
 
-            Parameters
-            ----------
-            _callback : Any
-                The callback that would have been queued (ignored).
-
-            Raises
-            ------
-            ValueError
-                Always raised with the message "invalid state".
-            """
-            raise ValueError("invalid state")  # noqa: TRY003
+        queue = _FailingQueue()
 
     monkeypatch.setattr(
         "meshtastic.interfaces.ble.interface.publishingThread",

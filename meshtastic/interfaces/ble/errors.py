@@ -31,10 +31,11 @@ T = TypeVar("T")
 
 
 class BLEErrorHandler:
-    """Internal helper class for consistent BLE error handling patterns.
+    """Shared helper class for consistent BLE error handling patterns.
 
-    Static methods are intentionally underscore-prefixed because they are internal
-    orchestration helpers, not public BLE interface APIs.
+    The underscore-prefixed methods implement canonical behavior, and
+    ``safe_execute`` / ``safe_cleanup`` provide stable public compatibility
+    aliases that delegate to those internal helpers.
     """
 
     @staticmethod
@@ -104,6 +105,47 @@ class BLEErrorHandler:
                 raise
             return default_return
 
+    # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _safe_execute.
+    @staticmethod
+    def safe_execute(
+        func: Callable[[], T],
+        default_return: T | None = None,
+        log_error: bool = True,
+        error_msg: str = "Error in operation",
+        reraise: bool = False,
+    ) -> T | None:
+        """Execute a callable with standardized guarded BLE error handling.
+
+        Parameters
+        ----------
+        func : Callable[[], T]
+            Zero-argument callable to execute.
+        default_return : T | None
+            Value returned when a handled exception occurs and ``reraise`` is
+            False. (Default value = None)
+        log_error : bool
+            Whether caught exceptions should be logged. (Default value = True)
+        error_msg : str
+            Message prefix used for logging when an exception is handled.
+            (Default value = "Error in operation")
+        reraise : bool
+            When True, handled exceptions are re-raised after logging.
+            (Default value = False)
+
+        Returns
+        -------
+        T | None
+            Return value from ``func`` on success, otherwise ``default_return``
+            when a handled exception occurs and ``reraise`` is False.
+        """
+        return BLEErrorHandler._safe_execute(
+            func=func,
+            default_return=default_return,
+            log_error=log_error,
+            error_msg=error_msg,
+            reraise=reraise,
+        )
+
     @staticmethod
     def _safe_cleanup(
         func: Callable[[], Any], cleanup_name: str = "cleanup operation"
@@ -140,3 +182,25 @@ class BLEErrorHandler:
             return False
         else:
             return True
+
+    # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _safe_cleanup.
+    @staticmethod
+    def safe_cleanup(
+        func: Callable[[], Any], cleanup_name: str = "cleanup operation"
+    ) -> bool:
+        """Run a cleanup callable and suppress non-fatal cleanup exceptions.
+
+        Parameters
+        ----------
+        func : Callable[[], Any]
+            Cleanup callback invoked with no arguments.
+        cleanup_name : str
+            Human-readable operation label included in debug logs when cleanup
+            fails. (Default value = "cleanup operation")
+
+        Returns
+        -------
+        bool
+            True when cleanup completed without exceptions, otherwise False.
+        """
+        return BLEErrorHandler._safe_cleanup(func=func, cleanup_name=cleanup_name)

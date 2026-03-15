@@ -213,6 +213,12 @@ class ThreadCoordinator:
         thread : ThreadLike
             Thread previously registered with this coordinator via _create_thread.
         """
+        if isinstance(thread, _InertThread):
+            logger.debug(
+                "Ignoring start request for inert thread '%s' after coordinator cleanup",
+                thread.name,
+            )
+            return
         should_start = False
         must_join_after_start = False
         with self._lock:
