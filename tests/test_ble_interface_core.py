@@ -11,6 +11,7 @@ from collections.abc import Iterator
 from queue import Queue
 from types import SimpleNamespace, TracebackType
 from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, cast
+from unittest.mock import MagicMock
 
 import pytest
 from bleak.backends.device import BLEDevice
@@ -766,6 +767,64 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
     iface.close()
 
 
+def test_ble_interface_pair_supports_temporary_factory_without_log_kwarg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify pair() supports temporary BLEClient factories without kwargs.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch temporary BLE client construction.
+
+    Returns
+    -------
+    None
+    """
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    with iface._state_lock:
+        iface.client = None
+        iface._state_manager._reset_to_disconnected()
+    monkeypatch.setattr(
+        iface,
+        "findDevice",
+        lambda _address: _create_ble_device("AA:BB:CC:DD:EE:FF", "Meshtastic"),
+    )
+
+    pair_kwargs: list[dict[str, object]] = []
+    pair_await_timeouts: list[float | None] = []
+
+    def _pair(*, await_timeout: float | None = None, **kwargs: object) -> None:
+        pair_await_timeouts.append(await_timeout)
+        pair_kwargs.append(dict(kwargs))
+
+    temp_client = SimpleNamespace(
+        pair=_pair,
+        bleak_client=SimpleNamespace(address="AA:BB:CC:DD:EE:FF"),
+    )
+    cleanup_calls: list[Any] = []
+
+    def _temp_client_factory_without_kwargs(_address: str) -> SimpleNamespace:
+        return temp_client
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.BLEClient",
+        _temp_client_factory_without_kwargs,
+    )
+    monkeypatch.setattr(
+        iface._client_manager,
+        "_safe_close_client",
+        lambda client: cleanup_calls.append(client),
+    )
+
+    iface.pair("mesh-node", confirm=True, await_timeout=7.0)
+
+    assert pair_kwargs == [{"confirm": True}]
+    assert pair_await_timeouts == [7.0]
+    assert cleanup_calls == [temp_client]
+    iface.close()
+
+
 def test_ble_interface_close_waits_for_temporary_pair_operation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -910,9 +969,35 @@ def test_ble_interface_management_rejects_temp_client_when_target_owned_elsewher
         "findDevice",
         lambda _address: _create_ble_device("AA:BB:CC:DD:EE:FF", "Meshtastic"),
     )
+    lock_states: list[tuple[bool, bool]] = []
+
+    def _connected_elsewhere_probe(
+        key: str | None, owner: object | None = None
+    ) -> bool:
+        probe_done = threading.Event()
+        probe_result: list[tuple[bool, bool]] = []
+
+        def _probe_lock_ownership() -> None:
+            connect_lock_was_free = iface._connect_lock.acquire(blocking=False)
+            if connect_lock_was_free:
+                iface._connect_lock.release()
+            management_lock_was_free = iface._management_lock.acquire(blocking=False)
+            if management_lock_was_free:
+                iface._management_lock.release()
+            probe_result.append((connect_lock_was_free, management_lock_was_free))
+            probe_done.set()
+
+        probe_thread = threading.Thread(target=_probe_lock_ownership, daemon=True)
+        probe_thread.start()
+        assert probe_done.wait(timeout=1.0)
+        probe_thread.join(timeout=1.0)
+        assert probe_result
+        lock_states.append(probe_result[0])
+        return key == "aabbccddeeff" and owner is iface
+
     monkeypatch.setattr(
         "meshtastic.interfaces.ble.interface._is_currently_connected_elsewhere",
-        lambda key, owner=None: key == "aabbccddeeff" and owner is iface,
+        _connected_elsewhere_probe,
     )
     monkeypatch.setattr(
         "meshtastic.interfaces.ble.interface.BLEClient",
@@ -928,6 +1013,8 @@ def test_ble_interface_management_rejects_temp_client_when_target_owned_elsewher
         with pytest.raises(BLEInterface.BLEError, match=ERROR_CONNECTION_SUPPRESSED):
             iface.unpair("mesh-node", await_timeout=7.0)
 
+    assert lock_states
+    assert all(state == (True, True) for state in lock_states)
     iface.close()
 
 
@@ -2059,10 +2146,20 @@ def test_ble_interface_close_bounds_wait_on_spurious_management_wakeups(
     assert any("Timed out waiting" in record.message for record in caplog.records)
 
 
-def test_ble_interface_implicit_trust_holds_connect_lock_during_subprocess(
+def test_ble_interface_implicit_trust_releases_connect_lock_before_subprocess(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Implicit trust() should hold the connect lock until bluetoothctl returns."""
+    """Verify implicit trust() releases connect lock before blocking subprocess.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch trust subprocess behavior.
+
+    Returns
+    -------
+    None
+    """
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     trust_target = "AA:BB:CC:DD:EE:FF"
     with iface._state_lock:
@@ -2093,12 +2190,15 @@ def test_ble_interface_implicit_trust_holds_connect_lock_during_subprocess(
 
     trust_thread = threading.Thread(target=_run_trust, daemon=True)
     trust_thread.start()
-    assert run_started.wait(timeout=1.0)
+    try:
+        assert run_started.wait(timeout=1.0)
 
-    assert iface._connect_lock.acquire(blocking=False) is False
-
-    allow_run_return.set()
-    trust_thread.join(timeout=2.0)
+        assert iface._connect_lock.acquire(blocking=False) is True
+        iface._connect_lock.release()
+    finally:
+        allow_run_return.set()
+        if trust_thread.is_alive():
+            trust_thread.join(timeout=2.0)
 
     assert not trust_thread.is_alive()
     assert trust_errors == []
@@ -4420,6 +4520,59 @@ def test_transient_read_retry_uses_zero_based_delay(
     iface.close()
 
 
+def test_receive_recovery_backoff_reaches_configured_cap_for_non_power_of_two(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify recovery backoff reaches configured max for non-power-of-two caps.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch recovery timing constants.
+
+    Returns
+    -------
+    None
+    """
+    import meshtastic.interfaces.ble.receive_service as receive_service_mod
+
+    iface = SimpleNamespace()
+    iface._is_connection_closing = False
+    iface._state_lock = threading.RLock()
+    iface.client = None
+    iface._handle_disconnect = lambda *_args, **_kwargs: True
+    iface._set_receive_wanted = lambda *_args, **_kwargs: None
+    iface._receive_recovery_attempts = 4
+    iface._last_recovery_time = 100.0
+    iface._read_retry_count = 7
+    iface._should_run_receive_loop = lambda: True
+    iface._start_receive_thread = MagicMock()
+    iface._shutdown_event = MagicMock()
+    iface._shutdown_event.wait.return_value = True
+
+    monkeypatch.setattr(
+        receive_service_mod,
+        "RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD",
+        0,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        receive_service_mod,
+        "RECEIVE_RECOVERY_MAX_BACKOFF_SEC",
+        30.0,
+        raising=True,
+    )
+    monkeypatch.setattr(receive_service_mod.time, "monotonic", lambda: 100.0)
+
+    receive_service_mod.BLEReceiveRecoveryService._recover_receive_thread(
+        iface, "receive_thread_fatal"
+    )
+
+    iface._shutdown_event.wait.assert_called_once_with(timeout=30.0)
+    assert iface._read_retry_count == 7
+    iface._start_receive_thread.assert_not_called()
+
+
 def test_receive_loop_outer_catch_routes_to_disconnect_handler(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -4620,6 +4773,158 @@ def test_start_receive_thread_skips_when_interface_closed(
     iface._start_receive_thread(name="BLEReceiveAfterClose")
 
 
+def test_start_receive_thread_clears_cached_thread_when_start_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify start failures clear cached receive-thread references.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch thread-coordinator start behavior.
+
+    Returns
+    -------
+    None
+    """
+    from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
+
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    with iface._state_lock:
+        iface._want_receive = True
+    thread_like = SimpleNamespace(
+        name="BLEReceiveStartFailure",
+        ident=None,
+        is_alive=lambda: False,
+    )
+    monkeypatch.setattr(
+        iface.thread_coordinator,
+        "_create_thread",
+        lambda **_kwargs: thread_like,
+        raising=True,
+    )
+
+    def _raise_start_failure(_thread: object) -> None:
+        assert iface._receiveThread is thread_like
+        raise RuntimeError("start failed")
+
+    monkeypatch.setattr(
+        iface.thread_coordinator,
+        "_start_thread",
+        _raise_start_failure,
+        raising=True,
+    )
+
+    with pytest.raises(RuntimeError, match="start failed"):
+        BLELifecycleService._start_receive_thread(iface, name="BLEReceiveStartFailure")
+
+    assert iface._receiveThread is None
+
+
+def test_start_receive_thread_facade_clears_cached_thread_when_start_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify facade start failures clear cached receive-thread references.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch thread-coordinator start behavior.
+
+    Returns
+    -------
+    None
+    """
+    from meshtastic.interfaces.ble.interface import BLEInterface
+
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    monkeypatch.setattr(
+        type(iface),
+        "_start_receive_thread",
+        BLEInterface._start_receive_thread,
+        raising=True,
+    )
+    with iface._state_lock:
+        iface._want_receive = True
+    thread_like = SimpleNamespace(
+        name="BLEReceiveStartFailure",
+        ident=None,
+        is_alive=lambda: False,
+    )
+    monkeypatch.setattr(
+        iface.thread_coordinator,
+        "_create_thread",
+        lambda **_kwargs: thread_like,
+        raising=True,
+    )
+
+    def _raise_start_failure(_thread: object) -> None:
+        assert iface._receiveThread is thread_like
+        raise RuntimeError("start failed")
+
+    monkeypatch.setattr(
+        iface.thread_coordinator,
+        "_start_thread",
+        _raise_start_failure,
+        raising=True,
+    )
+
+    with pytest.raises(RuntimeError, match="start failed"):
+        iface._start_receive_thread(name="BLEReceiveStartFailure")
+
+    assert iface._receiveThread is None
+
+
+def test_start_receive_thread_clears_cached_thread_when_start_noops(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify no-op thread starts clear stale receive-thread placeholders.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch thread start behavior.
+
+    Returns
+    -------
+    None
+    """
+    from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
+
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    with iface._state_lock:
+        iface._want_receive = True
+    thread_like = SimpleNamespace(
+        name="BLEReceiveStartNoop",
+        ident=None,
+        is_alive=lambda: False,
+    )
+    monkeypatch.setattr(
+        iface.thread_coordinator,
+        "_create_thread",
+        lambda **_kwargs: thread_like,
+        raising=True,
+    )
+
+    start_calls: list[object] = []
+
+    def _record_noop_start(thread: object) -> None:
+        start_calls.append(thread)
+        assert iface._receiveThread is thread_like
+
+    monkeypatch.setattr(
+        iface.thread_coordinator,
+        "_start_thread",
+        _record_noop_start,
+        raising=True,
+    )
+
+    BLELifecycleService._start_receive_thread(iface, name="BLEReceiveStartNoop")
+
+    assert start_calls == [thread_like]
+    assert iface._receiveThread is None
+
+
 def test_find_device_multiple_matches_raises() -> None:
     """Providing an address that matches multiple devices should raise BLEError."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
@@ -4648,6 +4953,161 @@ def test_find_device_direct_connect_preserves_raw_address() -> None:
 
     assert direct_device.address == address
     assert direct_device.name == address
+
+
+def test_find_device_direct_connect_without_discovery_manager() -> None:
+    """Verify direct-connect fallback works when discovery manager is missing.
+
+    Returns
+    -------
+    None
+    """
+    iface = object.__new__(ble_mod.BLEInterface)
+    iface._discovery_manager = None  # type: ignore[assignment]
+
+    address = "AA:BB:CC:DD:EE:FF"
+    direct_device = BLEInterface.findDevice(iface, address)
+
+    assert direct_device.address == address
+    assert direct_device.name == address
+
+
+def test_wait_for_disconnect_notifications_skips_unconfigured_queuework(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify disconnect flush falls back to drain when queueWork is unconfigured.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch publish queue draining behavior.
+
+    Returns
+    -------
+    None
+    """
+    from meshtastic.interfaces.ble.compatibility_service import (
+        BLECompatibilityEventService,
+    )
+
+    iface = SimpleNamespace(
+        error_handler=SimpleNamespace(safe_execute=lambda func, **_kwargs: func())
+    )
+    publishing_thread = MagicMock()
+    queue_work = publishing_thread.queueWork
+    drained: list[bool] = []
+    monkeypatch.setattr(
+        BLECompatibilityEventService,
+        "drain_publish_queue",
+        lambda *_args, **_kwargs: drained.append(True),
+        raising=True,
+    )
+
+    BLECompatibilityEventService.wait_for_disconnect_notifications(
+        iface,
+        timeout=0.01,
+        publishing_thread=publishing_thread,
+    )
+
+    assert drained == [True]
+    queue_work.assert_not_called()
+
+
+def test_publish_connection_status_runs_directly_when_queuework_unconfigured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify status publish runs inline when queueWork is unconfigured.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch publish transport.
+
+    Returns
+    -------
+    None
+    """
+    from meshtastic import mesh_interface as mesh_iface_module
+    from meshtastic.interfaces.ble.compatibility_service import (
+        BLECompatibilityEventService,
+    )
+
+    sent: list[tuple[str, object, bool]] = []
+
+    def _send_message(topic: str, *, interface: object, connected: bool) -> None:
+        sent.append((topic, interface, connected))
+
+    monkeypatch.setattr(
+        mesh_iface_module,
+        "pub",
+        SimpleNamespace(sendMessage=_send_message),
+        raising=True,
+    )
+
+    iface = SimpleNamespace()
+    publishing_thread = MagicMock()
+    queue_work = publishing_thread.queueWork
+
+    BLECompatibilityEventService.publish_connection_status(
+        iface,
+        connected=True,
+        publishing_thread=publishing_thread,
+    )
+
+    assert sent == [("meshtastic.connection.status", iface, True)]
+    queue_work.assert_not_called()
+
+
+def test_publish_connection_status_falls_back_inline_when_non_blocking_enqueue_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify status publish falls back inline when non-blocking enqueue is unavailable.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch queueWork failure behavior.
+
+    Returns
+    -------
+    None
+    """
+    from meshtastic import mesh_interface as mesh_iface_module
+    from meshtastic.interfaces.ble.compatibility_service import (
+        BLECompatibilityEventService,
+    )
+
+    sent: list[tuple[str, object, bool]] = []
+
+    def _send_message(topic: str, *, interface: object, connected: bool) -> None:
+        sent.append((topic, interface, connected))
+
+    monkeypatch.setattr(
+        mesh_iface_module,
+        "pub",
+        SimpleNamespace(sendMessage=_send_message),
+        raising=True,
+    )
+
+    queue_attempts: list[object] = []
+
+    class _FailingPublishingThread:
+        def queueWork(self, callback: object) -> None:
+            queue_attempts.append(callback)
+            raise RuntimeError("queue failure")
+
+    iface = SimpleNamespace()
+    publishing_thread = _FailingPublishingThread()
+
+    BLECompatibilityEventService.publish_connection_status(
+        iface,
+        connected=False,
+        publishing_thread=publishing_thread,
+    )
+
+    assert len(queue_attempts) == 1
+    assert callable(queue_attempts[0])
+    assert sent == [("meshtastic.connection.status", iface, False)]
 
 
 def test_discovery_manager_filters_meshtastic_devices(
@@ -4716,7 +5176,12 @@ def test_discovery_manager_filters_targeted_scan_to_whitelist_match(
 
 
 def test_discovery_manager_rejects_non_callable_discover_method() -> None:
-    """DiscoveryManager should reject duck-typed clients whose _discover is not callable."""
+    """DiscoveryManager should reject clients missing callable discover entrypoints.
+
+    Returns
+    -------
+    None
+    """
 
     class InvalidDiscoveryClient:
         _discover = None
@@ -4725,10 +5190,65 @@ def test_discovery_manager_rejects_non_callable_discover_method() -> None:
         client_factory=lambda **_kwargs: InvalidDiscoveryClient()
     )
 
-    with pytest.raises(DiscoveryClientError, match="_discover"):
+    with pytest.raises(DiscoveryClientError, match=r"discover|_discover"):
         manager._discover_devices(address=None)
 
     assert manager._client is None
+
+
+def test_discovery_manager_accepts_discover_underscore_only_factory() -> None:
+    """Verify DiscoveryManager accepts clients exposing only ``_discover``.
+
+    Returns
+    -------
+    None
+    """
+    filtered_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "Filtered")
+    discover_result = {
+        "filtered": (
+            filtered_device,
+            SimpleNamespace(service_uuids=[SERVICE_UUID]),
+        ),
+    }
+
+    class UnderscoreDiscoveryClient:
+        @staticmethod
+        def _discover(**_kwargs: object) -> dict[str, Any]:
+            return discover_result
+
+    manager = DiscoveryManager(
+        client_factory=lambda **_kwargs: UnderscoreDiscoveryClient()
+    )
+    devices = manager._discover_devices(address=None)
+
+    assert devices == [filtered_device]
+
+
+def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> (
+    None
+):
+    """Verify discovery prefers configured ``_discover`` over unconfigured ``discover``.
+
+    Returns
+    -------
+    None
+    """
+    filtered_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "Filtered")
+    discover_result = {
+        "filtered": (
+            filtered_device,
+            SimpleNamespace(service_uuids=[SERVICE_UUID]),
+        ),
+    }
+    client = MagicMock()
+    client._discover.return_value = discover_result
+    manager = DiscoveryManager(client_factory=lambda **_kwargs: client)
+
+    devices = manager.discover_devices(address=None)
+
+    assert devices == [filtered_device]
+    client._discover.assert_called_once()
+    client.discover.assert_not_called()
 
 
 def test_discovery_manager_supports_factory_without_log_if_no_address_kwarg() -> None:
@@ -4772,7 +5292,7 @@ def test_discovery_manager_uses_default_bleclient_when_ble_module_missing(
             self.bleak_client = None
 
         @staticmethod
-        def _discover(**_kwargs: Any) -> dict[str, Any]:
+        def _discover(**_kwargs: object) -> dict[str, Any]:
             return discover_result
 
     monkeypatch.setattr(discovery_mod, "resolve_ble_module", lambda: None)

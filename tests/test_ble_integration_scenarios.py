@@ -119,6 +119,15 @@ def test_client_manager_handles_concurrent_updates() -> None:
     state_manager = BLEStateManager()
     lock = RLock()
     thread_coordinator = MagicMock()
+
+    def _started_thread() -> MagicMock:
+        thread = MagicMock()
+        thread.ident = 1
+        thread.is_alive.return_value = True
+        return thread
+
+    thread_coordinator._create_thread.side_effect = lambda **_kwargs: _started_thread()
+    thread_coordinator._start_thread.side_effect = lambda _thread: None
     error_handler = MagicMock()
 
     manager = ClientManager(state_manager, lock, thread_coordinator, error_handler)

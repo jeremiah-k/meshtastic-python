@@ -20,6 +20,9 @@ from meshtastic.interfaces.ble.constants import (
     logger,
 )
 from meshtastic.interfaces.ble.utils import (
+    _call_factory_with_optional_kwarg,
+    _is_unconfigured_mock_callable,
+    _is_unexpected_keyword_error,
     resolve_ble_module,
     sanitize_address,
 )
@@ -34,7 +37,6 @@ _BLE_ADDRESS_SHAPE_RE = re.compile(
     r")$"
 )
 _DISCOVERY_FACTORY_LOG_KWARG = "log_if_no_address"
-_UNEXPECTED_KEYWORD_FRAGMENT = "unexpected keyword argument"
 _PENDING_DISCOVERY_CLOSE_TASKS: set[asyncio.Task[None]] = set()
 _PENDING_DISCOVERY_CLOSE_TASKS_LOCK = threading.Lock()
 
@@ -43,14 +45,64 @@ _PENDING_DISCOVERY_CLOSE_TASKS_LOCK = threading.Lock()
 class DiscoveryClientProtocol(Protocol):
     """Minimal protocol required by DiscoveryManager for scan operations."""
 
-    def _discover(self, **kwargs: Any) -> Any:
-        """Run a BLE scan and return raw backend response data."""
+    def discover(self, **kwargs: object) -> object:
+        """Run a BLE scan and return backend response data.
+
+        Parameters
+        ----------
+        **kwargs : object
+            Backend-specific scan options (for example ``timeout`` and
+            filtering hints) forwarded to the underlying implementation.
+
+        Returns
+        -------
+        object
+            Raw backend scan response consumed by discovery parsing helpers.
+        """
 
 
-def _is_unexpected_keyword_error(exc: TypeError, kwarg_name: str) -> bool:
-    """Return True when a TypeError clearly indicates an unsupported keyword arg."""
-    message = str(exc)
-    return _UNEXPECTED_KEYWORD_FRAGMENT in message and f"'{kwarg_name}'" in message
+@runtime_checkable
+class UnderscoreDiscoveryClientProtocol(Protocol):
+    """Compatibility protocol for discovery clients exposing ``_discover``."""
+
+    def _discover(self, **kwargs: object) -> object:
+        """Run a BLE scan via underscore compatibility entrypoint.
+
+        Parameters
+        ----------
+        **kwargs : object
+            Backend-specific scan options (for example ``timeout`` and
+            filtering hints) forwarded to the underlying implementation.
+
+        Returns
+        -------
+        object
+            Raw backend scan response consumed by discovery parsing helpers.
+        """
+
+
+def _is_discovery_client_like(client: object) -> bool:
+    """Return whether a client exposes a supported discovery entrypoint.
+
+    Parameters
+    ----------
+    client : object
+        Candidate client object inspected for callable ``discover`` or
+        ``_discover`` methods.
+
+    Returns
+    -------
+    bool
+        ``True`` when the client exposes a callable supported discovery method
+        that is not an unconfigured mock callable, otherwise ``False``.
+    """
+    discover = getattr(client, "discover", None)
+    if callable(discover) and not _is_unconfigured_mock_callable(discover):
+        return True
+    underscore_discover = getattr(client, "_discover", None)
+    return callable(underscore_discover) and not _is_unconfigured_mock_callable(
+        underscore_discover
+    )
 
 
 def _looks_like_ble_address(identifier: str) -> bool:
@@ -361,9 +413,16 @@ class DiscoveryManager:
         """
         # Allow test overrides via meshtastic.ble_interface monkeypatch (backwards compatibility)
         self.client_factory = client_factory
-        self._client: BLEClient | DiscoveryClientProtocol | None = None
+        self._client: (
+            BLEClient
+            | DiscoveryClientProtocol
+            | UnderscoreDiscoveryClientProtocol
+            | None
+        ) = None
         self._client_lock = threading.RLock()
 
+    # COMPAT_STABLE_SHIM: retained compatibility entrypoint for callers still
+    # using underscore-prefixed discovery manager APIs.
     def _discover_devices(self, address: str | None) -> list[BLEDevice]:
         """Discover BLE devices advertising the configured service UUID.
 
@@ -437,63 +496,53 @@ class DiscoveryManager:
                     Callable[..., Any],
                     self.client_factory or getattr(ble_mod, "BLEClient", BLEClient),
                 )
-                # Prefer signature-based compatibility checks so real factory
-                # TypeErrors are not misclassified as kwarg mismatch.
-                try:
-                    signature = inspect.signature(resolved_factory)
-                except (TypeError, ValueError):
-                    signature = None
 
-                accepts_log_kwarg = False
-                if signature is not None:
-                    accepts_log_kwarg = (
-                        _DISCOVERY_FACTORY_LOG_KWARG in signature.parameters
-                    ) or any(
-                        parameter.kind == inspect.Parameter.VAR_KEYWORD
-                        for parameter in signature.parameters.values()
+                def _log_kwarg_rejected(exc: TypeError) -> None:
+                    logger.debug(
+                        "Discovery client factory rejected log_if_no_address kwarg; retrying without it: %s",
+                        exc,
+                        exc_info=True,
                     )
 
-                if signature is None:
-                    try:
-                        self._client = resolved_factory(log_if_no_address=False)
-                    except TypeError as exc:
-                        if _is_unexpected_keyword_error(
-                            exc, _DISCOVERY_FACTORY_LOG_KWARG
-                        ):
-                            logger.debug(
-                                "Discovery client factory rejected log_if_no_address kwarg; retrying without it: %s",
-                                exc,
-                                exc_info=True,
-                            )
-                            self._client = resolved_factory()
-                        else:
-                            raise
-                elif accepts_log_kwarg:
-                    self._client = resolved_factory(log_if_no_address=False)
-                else:
-                    self._client = resolved_factory()
+                self._client = _call_factory_with_optional_kwarg(
+                    resolved_factory,
+                    optional_kwarg=_DISCOVERY_FACTORY_LOG_KWARG,
+                    optional_value=False,
+                    on_kwarg_rejected=_log_kwarg_rejected,
+                )
                 # Validate factory returned a valid client (duck typing for testability)
                 if self._client is None:
                     invalid_client_error = DiscoveryClientError.factory_returned_none(
                         resolved_factory
                     )
-                # Accept BLEClient instances or runtime-checkable protocol implementations
-                # so tests can provide minimal discovery doubles.
-                elif not isinstance(self._client, (BLEClient, DiscoveryClientProtocol)):
+                # Accept concrete BLE clients or discovery-like doubles.
+                elif not isinstance(
+                    self._client, BLEClient
+                ) and not _is_discovery_client_like(self._client):
                     invalid_client = self._client
                     _discard_cached_client()
                     invalid_client_error = DiscoveryClientError.invalid_client(
                         resolved_factory,
                         type(invalid_client),
-                        ["_discover"],
+                        ["discover", "_discover"],
                     )
 
-            client: BLEClient | DiscoveryClientProtocol | None = None
+            client: (
+                BLEClient
+                | DiscoveryClientProtocol
+                | UnderscoreDiscoveryClientProtocol
+                | None
+            ) = None
             if self._client is None:
                 if invalid_client_error is None:
                     raise DiscoveryClientError.factory_returned_none(resolved_factory)
             else:
-                client = cast(BLEClient | DiscoveryClientProtocol, self._client)
+                client = cast(
+                    BLEClient
+                    | DiscoveryClientProtocol
+                    | UnderscoreDiscoveryClientProtocol,
+                    self._client,
+                )
 
         seen_stale_ids: set[int] = set()
         for stale_client in stale_clients:
@@ -505,7 +554,10 @@ class DiscoveryManager:
 
         if invalid_client_error is not None:
             raise invalid_client_error
-        client = cast(BLEClient | DiscoveryClientProtocol, client)
+        client = cast(
+            BLEClient | DiscoveryClientProtocol | UnderscoreDiscoveryClientProtocol,
+            client,
+        )
         devices: list[BLEDevice] = []
         target_identifier = address.strip() if address else None
         try:
@@ -524,7 +576,107 @@ class DiscoveryManager:
             if not target_identifier:
                 discover_kwargs["service_uuids"] = [SERVICE_UUID]
 
-            response = client._discover(**discover_kwargs)
+            discover = getattr(client, "discover", None)
+            if not callable(discover) or _is_unconfigured_mock_callable(discover):
+                # Compatibility for minimal test doubles that still expose
+                # underscore-prefixed discover helpers.
+                discover = getattr(client, "_discover", None)
+            if not callable(discover) or _is_unconfigured_mock_callable(discover):
+                discarded_client: (
+                    BLEClient
+                    | DiscoveryClientProtocol
+                    | UnderscoreDiscoveryClientProtocol
+                    | None
+                ) = None
+                with self._client_lock:
+                    if self._client is client:
+                        discarded_client = self._client
+                        self._client = None
+                if discarded_client is not None:
+                    _close_discovery_client_best_effort(discarded_client)
+                raise DiscoveryClientError.invalid_client(
+                    resolved_factory,
+                    type(client),
+                    ["discover", "_discover"],
+                )
+            try:
+                response = discover(**discover_kwargs)
+            except TypeError as exc:
+                if any(
+                    _is_unexpected_keyword_error(exc, kwarg_name)
+                    for kwarg_name in discover_kwargs
+                ):
+                    logger.warning(
+                        "Discovery client rejected expected discover kwargs; discarding cached client: %s",
+                        exc,
+                        exc_info=True,
+                    )
+                    discarded_kwarg_client: (
+                        BLEClient
+                        | DiscoveryClientProtocol
+                        | UnderscoreDiscoveryClientProtocol
+                        | None
+                    ) = None
+                    with self._client_lock:
+                        if self._client is client:
+                            discarded_kwarg_client = self._client
+                            self._client = None
+                    if discarded_kwarg_client is not None:
+                        _close_discovery_client_best_effort(discarded_kwarg_client)
+                    raise DiscoveryClientError.invalid_client(
+                        resolved_factory,
+                        type(client),
+                        ["discover", "_discover"],
+                    ) from exc
+                raise
+            if inspect.isawaitable(response):
+                await_bridge = getattr(client, "async_await", None)
+                if not callable(await_bridge) or _is_unconfigured_mock_callable(
+                    await_bridge
+                ):
+                    await_bridge = getattr(client, "_async_await", None)
+                if callable(await_bridge) and not _is_unconfigured_mock_callable(
+                    await_bridge
+                ):
+                    response = await_bridge(response)
+                if inspect.isawaitable(response):
+                    if inspect.iscoroutine(response):
+                        response.close()
+                    discarded_awaitable_client: (
+                        BLEClient
+                        | DiscoveryClientProtocol
+                        | UnderscoreDiscoveryClientProtocol
+                        | None
+                    ) = None
+                    with self._client_lock:
+                        if self._client is client:
+                            discarded_awaitable_client = self._client
+                            self._client = None
+                    if discarded_awaitable_client is not None:
+                        _close_discovery_client_best_effort(discarded_awaitable_client)
+                    raise DiscoveryClientError.invalid_client(
+                        resolved_factory,
+                        type(client),
+                        ["async_await", "_async_await"],
+                    )
+            if not isinstance(response, dict):
+                discarded_response_client: (
+                    BLEClient
+                    | DiscoveryClientProtocol
+                    | UnderscoreDiscoveryClientProtocol
+                    | None
+                ) = None
+                with self._client_lock:
+                    if self._client is client:
+                        discarded_response_client = self._client
+                        self._client = None
+                if discarded_response_client is not None:
+                    _close_discovery_client_best_effort(discarded_response_client)
+                raise DiscoveryClientError.invalid_client(
+                    resolved_factory,
+                    type(client),
+                    ["return_adv"],
+                )
             logger.debug(
                 "Scan completed in %.2f seconds", time.monotonic() - scan_start
             )
@@ -541,6 +693,8 @@ class DiscoveryManager:
         except (BleakError, RuntimeError) as e:
             logger.warning("Device discovery failed: %s", e, exc_info=True)
             devices = []
+        except DiscoveryClientError:
+            raise
         except Exception as e:  # pragma: no cover  # noqa: BLE001
             # Defensive last resort to keep discovery best-effort
             logger.warning(
@@ -549,6 +703,23 @@ class DiscoveryManager:
             devices = []
 
         return devices
+
+    def discover_devices(self, address: str | None) -> list[BLEDevice]:
+        """Run BLE discovery and return matching devices.
+
+        Parameters
+        ----------
+        address : str | None
+            Optional target address used to filter discovery results. ``None``
+            runs a general scan.
+
+        Returns
+        -------
+        list[BLEDevice]
+            Discovered BLE devices that match the requested target/address
+            filter.
+        """
+        return self._discover_devices(address)
 
     def close(self) -> None:
         """Close the manager's persistent discovery client and clear the internal reference.

@@ -20,6 +20,25 @@ recommended patterns for code that embeds `meshtastic-python`.
 | `ClientManager`                          | Owns `BLEClient` lifecycle and safe-close operations                                          |
 | `ConnectionOrchestrator`                 | Coordinates a full connection attempt: validate → discover → connect → register notifications |
 | `ReconnectScheduler` / `ReconnectWorker` | Policy-driven background reconnect loop                                                       |
+| `BLELifecycleService`                    | Lifecycle/threading adapters used by `BLEInterface` for receive thread and reconnect triggers |
+| `BLEReceiveRecoveryService`              | Receive-loop, transient read retry, and receive-thread recovery runtime logic                 |
+| `BLEManagementCommandsService`           | Pair/unpair/trust command execution and temporary-client management                           |
+| `BLECompatibilityEventService`           | Legacy event publication and publish-queue drain/flush behavior                               |
+
+### Boundary contract (current)
+
+- BLE orchestration paths should prefer collaborator entrypoints over direct
+  cross-module private calls when wrappers exist.
+- Underscore-prefixed methods are canonical for internal orchestration
+  collaborators (`state`, `coordination`, lifecycle services).
+- `BLEInterface` remains the compatibility boundary: patch-sensitive
+  collaborators (for example `publishingThread`, `BLEClient`,
+  `_is_currently_connected_elsewhere`, `sys/shutil/subprocess`) are delegated
+  from the interface so existing tests/integrations that monkeypatch
+  `meshtastic.interfaces.ble.interface.*` continue to work.
+- Some service helpers still read interface-private state directly where
+  dedicated wrappers are not yet extracted; that boundary cleanup is in
+  progress and should not be treated as stable external API.
 
 ### Key design choices
 
@@ -92,7 +111,7 @@ from meshtastic.interfaces.ble.errors import BLEErrorHandler
 handler = BLEErrorHandler()
 
 # Execute a callable; return a fallback on any handled exception.
-result = handler._safe_execute(
+result = handler.safe_execute(
     lambda: risky_call(),
     default_return=None,
     error_msg="risky_call failed",
@@ -100,12 +119,15 @@ result = handler._safe_execute(
 )
 
 # Best-effort cleanup: suppresses all non-exit exceptions, returns bool.
-ok = handler._safe_cleanup(lambda: resource.close(), "resource close")
+ok = handler.safe_cleanup(lambda: resource.close(), "resource close")
 ```
 
-`_safe_execute` swallows `BleakError`, `DecodeError`, and
+`safe_execute` swallows `BleakError`, `DecodeError`, and
 `concurrent.futures.TimeoutError`; other exceptions are also caught unless
 `reraise=True`. `SystemExit` and `KeyboardInterrupt` always propagate.
+
+Compatibility note: underscore methods (`_safe_execute`, `_safe_cleanup`) are
+still available for legacy/internal call sites.
 
 ### `NotificationManager`
 
@@ -133,24 +155,41 @@ mgr._resubscribe_all(client, timeout=5.0)
 mgr._cleanup_all()
 ```
 
+Compatibility note: these underscore names are the canonical internal methods.
+
 ### `RetryPolicy` / `ReconnectPolicy`
 
 The BLE read loop and auto-reconnect use policies from
 [`meshtastic/interfaces/ble/policies.py`](meshtastic/interfaces/ble/policies.py).
 
-`ReconnectPolicy` is an internal BLE policy utility and uses
-underscore-prefixed snake_case helpers in the BLE subsystem:
+Use `RetryPolicy` for bounded retry decisions in the receive/read paths.
 
 ```python
 from meshtastic.interfaces.ble.policies import RetryPolicy
 
+# Use descriptor presets that return fresh policy instances (preferred):
+policy = RetryPolicy.EMPTY_READ  # TRANSIENT_ERROR / AUTO_RECONNECT
+# or use factory methods:
 policy = RetryPolicy._empty_read()  # or ._transient_error() / ._auto_reconnect()
 
-delay = policy._get_delay(attempt)       # float, jittered exponential backoff
-should_go = policy._should_retry(count)  # bool, respects max_retries
-delay, ok = policy.next_attempt()        # canonical: compute delay + advance counter
-attempt_count = policy.get_attempt_count()  # int, current retry attempt number
+delay = policy._get_delay(attempt)         # float, jittered exponential backoff
+should_go = policy._should_retry(count)    # bool, respects max_retries
 ```
+
+`ReconnectPolicy` remains an internal BLE policy utility used by reconnect
+workers/schedulers:
+
+```python
+from meshtastic.interfaces.ble.policies import ReconnectPolicy
+
+policy = ReconnectPolicy(initial_delay=5.0, max_delay=120.0, backoff=2.0, jitter_ratio=0.2)
+delay, should_retry = policy.next_attempt()   # compute delay and advance attempt counter
+attempt_count = policy.get_attempt_count()    # read current attempt counter
+```
+
+Compatibility note: underscore variants (`_empty_read`, `_get_delay`,
+`_should_retry`, etc.) are still supported for legacy test doubles and
+transitional internal code.
 
 Compatibility note: the core library does not currently expose camelCase policy
 aliases (`emptyRead`, `transientError`, `autoReconnect`) on `RetryPolicy`.
@@ -168,8 +207,8 @@ Contributor rule for naming updates:
 1. Keep legacy snake_case BLE public methods callable.
 2. Keep only the approved BLE camelCase promotions callable:
    `findDevice`, `isConnected`, and `stopNotify`.
-3. Route compatibility names to one implementation (prefer internal
-   underscore-prefixed helpers).
+3. Route compatibility names to one implementation, preferring stable
+   canonical helpers.
 4. Do not add new BLE aliases unless there is an explicit compatibility need.
 5. Do not remove compatibility wrappers unless there is an explicit breaking
    change decision.
