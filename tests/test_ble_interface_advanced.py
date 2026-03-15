@@ -444,7 +444,8 @@ def test_auto_reconnect_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
             reconnect_events = [
                 (topic, kw)
                 for topic, kw in published_events
-                if topic == "meshtastic.connection.status" and kw.get("connected") is True
+                if topic == "meshtastic.connection.status"
+                and kw.get("connected") is True
             ]
             if reconnect_events:
                 break

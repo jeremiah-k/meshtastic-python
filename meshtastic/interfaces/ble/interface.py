@@ -100,6 +100,8 @@ from meshtastic.interfaces.ble.gating import (
 from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
 from meshtastic.interfaces.ble.management_service import (
     BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS as _BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS,
+)
+from meshtastic.interfaces.ble.management_service import (
     BLEManagementCommandsService,
 )
 from meshtastic.interfaces.ble.notifications import NotificationManager
@@ -712,7 +714,9 @@ class BLEInterface(MeshInterface):
             ):
                 try:
                     handler(sender, data)
-                except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
+                except (
+                    Exception
+                ):  # noqa: BLE001 - notification callbacks must stay best effort
                     report_exception = getattr(
                         self.error_handler, "handle_unhandled_exception", None
                     )
@@ -727,7 +731,9 @@ class BLEInterface(MeshInterface):
                     ) and not _is_unconfigured_mock_callable(report_exception):
                         try:
                             report_exception(error_msg)
-                        except Exception:  # noqa: BLE001 - callback error reporting is best effort
+                        except (
+                            Exception
+                        ):  # noqa: BLE001 - callback error reporting is best effort
                             logger.debug(error_msg, exc_info=True)
                     else:
                         logger.debug(error_msg, exc_info=True)
@@ -1019,8 +1025,7 @@ class BLEInterface(MeshInterface):
             awaitable,
             timeout,
             label,
-            timeout_error_factory=lambda timeout_label,
-            timeout_seconds: BLEInterface.BLEError(
+            timeout_error_factory=lambda timeout_label, timeout_seconds: BLEInterface.BLEError(
                 ERROR_TIMEOUT.format(timeout_label, timeout_seconds)
             ),
         )

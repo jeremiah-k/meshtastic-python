@@ -14,17 +14,20 @@ from meshtastic.interfaces.ble.constants import (
     CONNECTION_ERROR_LOST_OWNERSHIP,
     ERROR_INTERFACE_CLOSING,
     NOTIFICATION_START_TIMEOUT,
-    RECONNECTED_EVENT,
     RECEIVE_THREAD_JOIN_TIMEOUT,
+    RECONNECTED_EVENT,
     logger,
 )
 from meshtastic.interfaces.ble.coordination import ThreadLike
-from meshtastic.interfaces.ble.gating import _addr_key, _is_currently_connected_elsewhere
+from meshtastic.interfaces.ble.gating import (
+    _addr_key,
+    _is_currently_connected_elsewhere,
+)
 from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import (
-    _is_unexpected_keyword_error,
     _is_unconfigured_mock_callable,
     _is_unconfigured_mock_member,
+    _is_unexpected_keyword_error,
     _thread_start_probe,
     sanitize_address,
 )
@@ -152,7 +155,9 @@ class BLELifecycleService:
     ) -> ThreadLike:
         """Create thread using public-first coordinator dispatch."""
         create_thread = getattr(iface.thread_coordinator, "create_thread", None)
-        if callable(create_thread) and not _is_unconfigured_mock_callable(create_thread):
+        if callable(create_thread) and not _is_unconfigured_mock_callable(
+            create_thread
+        ):
             return cast(
                 ThreadLike,
                 create_thread(
@@ -178,8 +183,7 @@ class BLELifecycleService:
                 ),
             )
         raise AttributeError(
-            THREAD_COORDINATOR_MISSING_FMT
-            % ("create_thread", "_create_thread")
+            THREAD_COORDINATOR_MISSING_FMT % ("create_thread", "_create_thread")
         )
 
     @staticmethod
@@ -196,8 +200,7 @@ class BLELifecycleService:
             legacy_start_thread(thread)
             return
         raise AttributeError(
-            THREAD_COORDINATOR_MISSING_FMT
-            % ("start_thread", "_start_thread")
+            THREAD_COORDINATOR_MISSING_FMT % ("start_thread", "_start_thread")
         )
 
     @staticmethod
@@ -248,11 +251,11 @@ class BLELifecycleService:
         logger.debug("Thread coordinator is missing clear_events/_clear_events")
 
     @staticmethod
-    def _thread_wake_waiting_threads(
-        iface: "BLEInterface", *event_names: str
-    ) -> None:
+    def _thread_wake_waiting_threads(iface: "BLEInterface", *event_names: str) -> None:
         """Wake waiting threads using public-first coordinator dispatch."""
-        wake_waiting_threads = getattr(iface.thread_coordinator, "wake_waiting_threads", None)
+        wake_waiting_threads = getattr(
+            iface.thread_coordinator, "wake_waiting_threads", None
+        )
         if callable(wake_waiting_threads) and not _is_unconfigured_mock_callable(
             wake_waiting_threads
         ):
@@ -309,7 +312,9 @@ class BLELifecycleService:
             iface._receiveThread = thread
         try:
             BLELifecycleService._thread_start_thread(iface, thread)
-        except Exception:  # noqa: BLE001 - start failure must clear stale thread reference
+        except (
+            Exception
+        ):  # noqa: BLE001 - start failure must clear stale thread reference
             with iface._state_lock:
                 if iface._receiveThread is thread:
                     iface._receiveThread = None
@@ -379,9 +384,15 @@ class BLELifecycleService:
             if previous_client is not None:
                 previous_address = getattr(previous_client, "address", iface.address)
                 device_key = _addr_key(previous_address) if previous_address else None
-                return iface._sorted_address_keys(device_key, alias_key), should_schedule_reconnect
+                return (
+                    iface._sorted_address_keys(device_key, alias_key),
+                    should_schedule_reconnect,
+                )
             fallback_key = _addr_key(iface.address)
-            return iface._sorted_address_keys(fallback_key, alias_key), should_schedule_reconnect
+            return (
+                iface._sorted_address_keys(fallback_key, alias_key),
+                should_schedule_reconnect,
+            )
 
         # Guard against sentinel "unknown" address; prefer previous active
         # address because callback metadata can be stale.
@@ -391,7 +402,10 @@ class BLELifecycleService:
             else (address if address != "unknown" else iface.address)
         )
         addr_disconnect_key = _addr_key(address_for_registry)
-        return iface._sorted_address_keys(addr_disconnect_key, alias_key), should_schedule_reconnect
+        return (
+            iface._sorted_address_keys(addr_disconnect_key, alias_key),
+            should_schedule_reconnect,
+        )
 
     @staticmethod
     def _resolve_disconnect_target(
@@ -405,7 +419,9 @@ class BLELifecycleService:
         with iface._state_lock:
             current_state = iface._state_manager._current_state
             current_client = iface.client
-            is_closing = BLELifecycleService._state_manager_is_closing(iface) or iface._closed
+            is_closing = (
+                BLELifecycleService._state_manager_is_closing(iface) or iface._closed
+            )
             was_publish_pending = iface._client_publish_pending
             was_replacement_pending = iface._client_replacement_pending
 
@@ -550,7 +566,9 @@ class BLELifecycleService:
         if skip_side_effects:
             if stale_disconnect_keys:
                 iface._mark_address_keys_disconnected(*stale_disconnect_keys)
-            BLELifecycleService._close_previous_client_async(iface, plan.previous_client)
+            BLELifecycleService._close_previous_client_async(
+                iface, plan.previous_client
+            )
             logger.debug(
                 "Skipping stale disconnect side-effects from %s: newer client already active.",
                 source,
@@ -772,7 +790,9 @@ class BLELifecycleService:
                 if isinstance(connected, bool):
                     return connected
                 continue
-            if isinstance(candidate, bool) and not _is_unconfigured_mock_member(candidate):
+            if isinstance(candidate, bool) and not _is_unconfigured_mock_member(
+                candidate
+            ):
                 return candidate
         raise AttributeError(CLIENT_MISSING_CONNECTED_MSG)
 
@@ -781,7 +801,9 @@ class BLELifecycleService:
         iface: "BLEInterface", client: "BLEClient"
     ) -> tuple[bool, bool]:
         """Return owned/closing status for a connected client while holding state lock."""
-        is_closing = BLELifecycleService._state_manager_is_closing(iface) or iface._closed
+        is_closing = (
+            BLELifecycleService._state_manager_is_closing(iface) or iface._closed
+        )
         state_connected = BLELifecycleService._state_manager_is_connected(iface)
         client_connected = BLELifecycleService._client_is_connected(client)
         is_owned = (
@@ -798,7 +820,9 @@ class BLELifecycleService:
     ) -> tuple[bool, bool]:
         """Return whether interface owns `client` and whether shutdown has started."""
         with iface._state_lock:
-            return BLELifecycleService._get_connected_client_status_locked(iface, client)
+            return BLELifecycleService._get_connected_client_status_locked(
+                iface, client
+            )
 
     @staticmethod
     def _has_lost_gate_ownership(iface: "BLEInterface", *keys: str | None) -> bool:
@@ -882,6 +906,7 @@ class BLELifecycleService:
         restore_last_connection_request: str | None,
     ) -> None:
         """Publish connected state only when ownership is still valid."""
+
         def _raise_invalidated(snapshot: _OwnershipSnapshot) -> None:
             iface._raise_for_invalidated_connect_result(
                 connected_client,
@@ -959,15 +984,21 @@ class BLELifecycleService:
             try:
                 cleanup()
             except Exception:  # noqa: BLE001 - shutdown cleanup is best effort
-                logger.debug("Error running thread coordinator cleanup()", exc_info=True)
+                logger.debug(
+                    "Error running thread coordinator cleanup()", exc_info=True
+                )
             return
 
         legacy_cleanup = getattr(iface.thread_coordinator, "_cleanup", None)
-        if callable(legacy_cleanup) and not _is_unconfigured_mock_callable(legacy_cleanup):
+        if callable(legacy_cleanup) and not _is_unconfigured_mock_callable(
+            legacy_cleanup
+        ):
             try:
                 legacy_cleanup()
             except Exception:  # noqa: BLE001 - shutdown cleanup is best effort
-                logger.debug("Error running thread coordinator _cleanup()", exc_info=True)
+                logger.debug(
+                    "Error running thread coordinator _cleanup()", exc_info=True
+                )
             return
 
         logger.debug("Thread coordinator is missing cleanup/_cleanup")
@@ -1080,9 +1111,7 @@ class BLELifecycleService:
             )
 
     @staticmethod
-    def _is_owned_connected_client(
-        iface: "BLEInterface", client: "BLEClient"
-    ) -> bool:
+    def _is_owned_connected_client(iface: "BLEInterface", client: "BLEClient") -> bool:
         """Return whether the interface still owns the provided connected client."""
         is_owned, _ = iface._get_connected_client_status(client)
         return is_owned
@@ -1193,7 +1222,9 @@ class BLELifecycleService:
             iface._exit_handler = None
 
     @staticmethod
-    def _detach_client_for_shutdown(iface: "BLEInterface") -> tuple["BLEClient | None", bool]:
+    def _detach_client_for_shutdown(
+        iface: "BLEInterface",
+    ) -> tuple["BLEClient | None", bool]:
         """Detach active client reference and return detached client plus publish state."""
         with iface._state_lock:
             client = iface.client

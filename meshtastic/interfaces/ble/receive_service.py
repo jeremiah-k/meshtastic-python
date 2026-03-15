@@ -11,10 +11,10 @@ from meshtastic.interfaces.ble.constants import (
     ERROR_READING_BLE,
     FROMRADIO_UUID,
     GATT_IO_TIMEOUT,
-    RECONNECTED_EVENT,
     RECEIVE_RECOVERY_MAX_BACKOFF_SEC,
     RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD,
     RECEIVE_RECOVERY_STABILITY_RESET_SEC,
+    RECONNECTED_EVENT,
     BLEConfig,
     logger,
 )
@@ -102,7 +102,9 @@ class BLEReceiveRecoveryService:
             ``True`` when the event was signaled, otherwise ``False``.
         """
         wait_for_event = getattr(coordinator, "wait_for_event", None)
-        if callable(wait_for_event) and not _is_unconfigured_mock_callable(wait_for_event):
+        if callable(wait_for_event) and not _is_unconfigured_mock_callable(
+            wait_for_event
+        ):
             return bool(wait_for_event(event_name, timeout=timeout))
         legacy_wait_for_event = getattr(coordinator, "_wait_for_event", None)
         if callable(legacy_wait_for_event) and not _is_unconfigured_mock_callable(
@@ -142,9 +144,9 @@ class BLEReceiveRecoveryService:
         legacy_check_and_clear_event = getattr(
             coordinator, "_check_and_clear_event", None
         )
-        if callable(legacy_check_and_clear_event) and not _is_unconfigured_mock_callable(
+        if callable(
             legacy_check_and_clear_event
-        ):
+        ) and not _is_unconfigured_mock_callable(legacy_check_and_clear_event):
             return bool(legacy_check_and_clear_event(event_name))
         return False
 
@@ -207,9 +209,12 @@ class BLEReceiveRecoveryService:
         )
         poll_without_notify = False
         if not event_signaled:
-            if iface._ever_connected and BLEReceiveRecoveryService._coordinator_check_and_clear_event(
-                coordinator,
-                RECONNECTED_EVENT,
+            if (
+                iface._ever_connected
+                and BLEReceiveRecoveryService._coordinator_check_and_clear_event(
+                    coordinator,
+                    RECONNECTED_EVENT,
+                )
             ):
                 logger.debug("Detected reconnection, resuming normal operation")
             poll_without_notify = BLEReceiveRecoveryService._should_poll_without_notify(
@@ -218,7 +223,9 @@ class BLEReceiveRecoveryService:
             # Proceed only when fallback polling is viable without notify callbacks.
             return poll_without_notify, poll_without_notify
 
-        BLEReceiveRecoveryService._coordinator_clear_event(coordinator, READ_TRIGGER_EVENT)
+        BLEReceiveRecoveryService._coordinator_clear_event(
+            coordinator, READ_TRIGGER_EVENT
+        )
         return True, poll_without_notify
 
     @staticmethod
@@ -239,7 +246,9 @@ class BLEReceiveRecoveryService:
         """
         with iface._state_lock:
             client = iface.client
-            is_connecting = iface._state_manager._current_state == ConnectionState.CONNECTING
+            is_connecting = (
+                iface._state_manager._current_state == ConnectionState.CONNECTING
+            )
             publish_pending = iface._client_publish_pending
             is_closing = iface._state_manager._is_closing or iface._closed
         return client, is_connecting, publish_pending, is_closing
@@ -295,7 +304,9 @@ class BLEReceiveRecoveryService:
             return False
 
         if iface.auto_reconnect or is_connecting:
-            wait_reason = "connection establishment" if is_connecting else "auto-reconnect"
+            wait_reason = (
+                "connection establishment" if is_connecting else "auto-reconnect"
+            )
             logger.debug("BLE client is None; waiting for %s", wait_reason)
             BLEReceiveRecoveryService._coordinator_wait_for_event(
                 coordinator,
@@ -329,7 +340,8 @@ class BLEReceiveRecoveryService:
         with iface._state_lock:
             if (
                 iface._receive_recovery_attempts > 0
-                and now - iface._last_recovery_time >= RECEIVE_RECOVERY_STABILITY_RESET_SEC
+                and now - iface._last_recovery_time
+                >= RECEIVE_RECOVERY_STABILITY_RESET_SEC
             ):
                 logger.debug(
                     "Resetting receive recovery attempts after %.1fs of stability.",
@@ -467,10 +479,12 @@ class BLEReceiveRecoveryService:
             read path requested immediate receive-loop stop.
         """
         while iface._should_run_receive_loop():
-            proceed, poll_without_notify = BLEReceiveRecoveryService._wait_for_read_trigger(
-                iface,
-                coordinator=coordinator,
-                wait_timeout=wait_timeout,
+            proceed, poll_without_notify = (
+                BLEReceiveRecoveryService._wait_for_read_trigger(
+                    iface,
+                    coordinator=coordinator,
+                    wait_timeout=wait_timeout,
+                )
             )
             if not proceed:
                 continue

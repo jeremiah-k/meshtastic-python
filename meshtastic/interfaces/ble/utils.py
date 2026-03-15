@@ -1,8 +1,8 @@
 """Utility functions for BLE operations."""
 
 import asyncio
-import inspect
 import importlib
+import inspect
 import time
 from collections.abc import Awaitable, Callable
 from types import ModuleType

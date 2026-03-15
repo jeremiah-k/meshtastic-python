@@ -49,8 +49,8 @@ from meshtastic.interfaces.ble.constants import (
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.runner import BLECoroutineRunner
 from meshtastic.interfaces.ble.utils import (
-    _is_unexpected_keyword_error,
     _is_unconfigured_mock_callable,
+    _is_unexpected_keyword_error,
     safe_execute_through_adapter,
     with_timeout,
 )
@@ -528,7 +528,8 @@ class BLEClient:
         self._run_management_call(
             (
                 None
-                if not callable(pair_method) or _is_unconfigured_mock_callable(pair_method)
+                if not callable(pair_method)
+                or _is_unconfigured_mock_callable(pair_method)
                 else lambda: pair_method(**kwargs)
             ),
             await_timeout=await_timeout,

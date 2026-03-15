@@ -21,8 +21,8 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.utils import (
     _call_factory_with_optional_kwarg,
-    _is_unexpected_keyword_error,
     _is_unconfigured_mock_callable,
+    _is_unexpected_keyword_error,
     resolve_ble_module,
     sanitize_address,
 )
@@ -414,7 +414,10 @@ class DiscoveryManager:
         # Allow test overrides via meshtastic.ble_interface monkeypatch (backwards compatibility)
         self.client_factory = client_factory
         self._client: (
-            BLEClient | DiscoveryClientProtocol | UnderscoreDiscoveryClientProtocol | None
+            BLEClient
+            | DiscoveryClientProtocol
+            | UnderscoreDiscoveryClientProtocol
+            | None
         ) = None
         self._client_lock = threading.RLock()
 
@@ -513,9 +516,9 @@ class DiscoveryManager:
                         resolved_factory
                     )
                 # Accept concrete BLE clients or discovery-like doubles.
-                elif not isinstance(self._client, BLEClient) and not _is_discovery_client_like(
-                    self._client
-                ):
+                elif not isinstance(
+                    self._client, BLEClient
+                ) and not _is_discovery_client_like(self._client):
                     invalid_client = self._client
                     _discard_cached_client()
                     invalid_client_error = DiscoveryClientError.invalid_client(

@@ -32,9 +32,9 @@ from meshtastic.interfaces.ble.discovery import _looks_like_ble_address
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from meshtastic.interfaces.ble.utils import (
-    _is_unexpected_keyword_error,
     _is_unconfigured_mock_callable,
     _is_unconfigured_mock_member,
+    _is_unexpected_keyword_error,
     _thread_start_probe,
     sanitize_address,
 )
@@ -152,7 +152,9 @@ class ConnectionValidator:
                 if isinstance(connected, bool):
                     return connected
                 continue
-            if isinstance(candidate, bool) and not _is_unconfigured_mock_member(candidate):
+            if isinstance(candidate, bool) and not _is_unconfigured_mock_member(
+                candidate
+            ):
                 return candidate
         return False
 
@@ -281,7 +283,8 @@ class ClientManager:
         legacy_create_thread = getattr(self.thread_coordinator, "_create_thread", None)
         valid_create_thread = (
             create_thread
-            if callable(create_thread) and not _is_unconfigured_mock_callable(create_thread)
+            if callable(create_thread)
+            and not _is_unconfigured_mock_callable(create_thread)
             else None
         )
         valid_legacy_create_thread = (
@@ -320,7 +323,8 @@ class ClientManager:
         legacy_start_thread = getattr(self.thread_coordinator, "_start_thread", None)
         valid_start_thread = (
             start_thread
-            if callable(start_thread) and not _is_unconfigured_mock_callable(start_thread)
+            if callable(start_thread)
+            and not _is_unconfigured_mock_callable(start_thread)
             else None
         )
         valid_legacy_start_thread = (
@@ -695,6 +699,7 @@ class ConnectionOrchestrator:
             checked first; underscore member is used as fallback when available.
         default_if_missing : object
             Default value returned when neither member is available.
+
         Returns
         -------
         object
@@ -744,9 +749,8 @@ class ConnectionOrchestrator:
                 return underscore_member(*args, **kwargs)
         else:
             if public_member is not _DISPATCH_MISSING:
-                if (
-                    underscore_attr_type is None
-                    or isinstance(public_member, underscore_attr_type)
+                if underscore_attr_type is None or isinstance(
+                    public_member, underscore_attr_type
                 ):
                     return public_member
             if underscore_member is not _DISPATCH_MISSING and (

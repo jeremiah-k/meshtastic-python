@@ -293,7 +293,9 @@ class BLEManagementCommandsService:
         if client_to_use is None:
             if target_key is not None and connected_elsewhere(target_key, iface):
                 raise iface.BLEError(ERROR_CONNECTION_SUPPRESSED)
-            temporary_client = _create_management_client(ble_client_factory, target_address)
+            temporary_client = _create_management_client(
+                ble_client_factory, target_address
+            )
             client_to_use = temporary_client
 
         return client_to_use, temporary_client
@@ -561,7 +563,7 @@ class BLEManagementCommandsService:
         """
         validated_timeout = (
             BLEManagementCommandsService._validate_management_await_timeout(
-            iface, await_timeout
+                iface, await_timeout
             )
         )
         BLEManagementCommandsService._execute_management_command(
@@ -603,7 +605,7 @@ class BLEManagementCommandsService:
         """
         validated_timeout = (
             BLEManagementCommandsService._validate_management_await_timeout(
-            iface, await_timeout
+                iface, await_timeout
             )
         )
         BLEManagementCommandsService._execute_management_command(
@@ -690,7 +692,9 @@ class BLEManagementCommandsService:
                 check=False,
                 timeout=validated_timeout,
             )
-        except Exception as exc:  # noqa: BLE001 - preserve injected module compatibility
+        except (
+            Exception
+        ) as exc:  # noqa: BLE001 - preserve injected module compatibility
             if timeout_exc_type is not None and isinstance(exc, timeout_exc_type):
                 raise iface.BLEError(
                     ERROR_TRUST_COMMAND_TIMEOUT.format(

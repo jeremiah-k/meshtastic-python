@@ -971,7 +971,9 @@ def test_ble_interface_management_rejects_temp_client_when_target_owned_elsewher
     )
     lock_states: list[tuple[bool, bool]] = []
 
-    def _connected_elsewhere_probe(key: str | None, owner: object | None = None) -> bool:
+    def _connected_elsewhere_probe(
+        key: str | None, owner: object | None = None
+    ) -> bool:
         probe_done = threading.Event()
         probe_result: list[tuple[bool, bool]] = []
 
@@ -5025,10 +5027,10 @@ def test_publish_connection_status_runs_directly_when_queuework_unconfigured(
     -------
     None
     """
+    from meshtastic import mesh_interface as mesh_iface_module
     from meshtastic.interfaces.ble.compatibility_service import (
         BLECompatibilityEventService,
     )
-    from meshtastic import mesh_interface as mesh_iface_module
 
     sent: list[tuple[str, object, bool]] = []
 
@@ -5070,10 +5072,10 @@ def test_publish_connection_status_falls_back_inline_when_non_blocking_enqueue_u
     -------
     None
     """
+    from meshtastic import mesh_interface as mesh_iface_module
     from meshtastic.interfaces.ble.compatibility_service import (
         BLECompatibilityEventService,
     )
-    from meshtastic import mesh_interface as mesh_iface_module
 
     sent: list[tuple[str, object, bool]] = []
 
@@ -5222,7 +5224,9 @@ def test_discovery_manager_accepts_discover_underscore_only_factory() -> None:
     assert devices == [filtered_device]
 
 
-def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> None:
+def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> (
+    None
+):
     """Verify discovery prefers configured ``_discover`` over unconfigured ``discover``.
 
     Returns
