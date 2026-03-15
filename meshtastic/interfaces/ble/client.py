@@ -49,6 +49,7 @@ from meshtastic.interfaces.ble.constants import (
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.runner import BLECoroutineRunner
 from meshtastic.interfaces.ble.utils import (
+    _is_unexpected_keyword_error,
     _is_unconfigured_mock_callable,
     with_timeout,
 )
@@ -288,15 +289,30 @@ class BLEClient:
         """
         safe_execute = self._resolve_error_handler_hook("safe_execute", "_safe_execute")
         if safe_execute is not None:
-            return cast(
-                T | None,
-                safe_execute(
-                    func,
-                    default_return=default_return,
-                    error_msg=error_msg,
-                    reraise=reraise,
-                ),
-            )
+            try:
+                return cast(
+                    T | None,
+                    safe_execute(
+                        func,
+                        default_return=default_return,
+                        error_msg=error_msg,
+                        reraise=reraise,
+                    ),
+                )
+            except TypeError as exc:
+                if not any(
+                    _is_unexpected_keyword_error(exc, kwarg_name)
+                    for kwarg_name in ("default_return", "error_msg", "reraise")
+                ):
+                    logger.debug(error_msg, exc_info=True)
+                    if reraise:
+                        raise
+                    return default_return
+            except Exception:  # noqa: BLE001 - hook execution must remain best effort
+                logger.debug(error_msg, exc_info=True)
+                if reraise:
+                    raise
+                return default_return
         try:
             return func()
         except Exception:  # noqa: BLE001 - fallback mirrors error-handler behavior
@@ -324,8 +340,16 @@ class BLEClient:
         """
         safe_cleanup = self._resolve_error_handler_hook("safe_cleanup", "_safe_cleanup")
         if safe_cleanup is not None:
-            safe_cleanup(cleanup, operation_name)
-            return
+            try:
+                safe_cleanup(cleanup, operation_name=operation_name)
+                return
+            except TypeError as exc:
+                if not _is_unexpected_keyword_error(exc, "operation_name"):
+                    logger.debug("Error during %s", operation_name, exc_info=True)
+                    return
+            except Exception:  # noqa: BLE001 - cleanup paths are best effort
+                logger.debug("Error during %s", operation_name, exc_info=True)
+                return
         try:
             cleanup()
         except Exception:  # noqa: BLE001 - cleanup paths are best effort
@@ -525,11 +549,12 @@ class BLEClient:
         bleak_client = self._require_bleak_client(
             BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED
         )
+        pair_method = getattr(bleak_client, "pair", None)
         self._run_management_call(
             (
                 None
-                if not callable(getattr(bleak_client, "pair", None))
-                else lambda: bleak_client.pair(**kwargs)
+                if not callable(pair_method) or _is_unconfigured_mock_callable(pair_method)
+                else lambda: pair_method(**kwargs)
             ),
             await_timeout=await_timeout,
             not_initialized_error=BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED,
@@ -562,11 +587,13 @@ class BLEClient:
         bleak_client = self._require_bleak_client(
             BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED
         )
+        unpair_method = getattr(bleak_client, "unpair", None)
         self._run_management_call(
             (
                 None
-                if not callable(getattr(bleak_client, "unpair", None))
-                else lambda: bleak_client.unpair()
+                if not callable(unpair_method)
+                or _is_unconfigured_mock_callable(unpair_method)
+                else lambda: unpair_method()
             ),
             await_timeout=await_timeout,
             not_initialized_error=BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED,

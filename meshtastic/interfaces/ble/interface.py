@@ -1689,11 +1689,6 @@ class BLEInterface(MeshInterface):
         discovery_manager = self._discovery_manager
         if discovery_manager is None:
             return []
-        discover_devices = getattr(discovery_manager, "discoverDevices", None)
-        if callable(discover_devices) and not _is_unconfigured_mock_callable(
-            discover_devices
-        ):
-            return cast(list[BLEDevice], discover_devices(address))
         discover_devices = getattr(discovery_manager, "discover_devices", None)
         if callable(discover_devices) and not _is_unconfigured_mock_callable(
             discover_devices

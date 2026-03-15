@@ -701,7 +701,7 @@ class DiscoveryManager:
 
         return devices
 
-    def discoverDevices(self, address: str | None) -> list[BLEDevice]:
+    def discover_devices(self, address: str | None) -> list[BLEDevice]:
         """Run BLE discovery and return matching devices.
 
         Parameters
@@ -717,11 +717,6 @@ class DiscoveryManager:
             filter.
         """
         return self._discover_devices(address)
-
-    # COMPAT_STABLE_SHIM: snake_case alias retained for collaborator migration.
-    def discover_devices(self, address: str | None) -> list[BLEDevice]:
-        """Backward-compatible snake_case alias for ``discoverDevices``."""
-        return self.discoverDevices(address)
 
     def close(self) -> None:
         """Close the manager's persistent discovery client and clear the internal reference.

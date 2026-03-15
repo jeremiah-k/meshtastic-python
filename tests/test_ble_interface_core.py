@@ -5100,7 +5100,8 @@ def test_publish_connection_status_falls_back_inline_when_non_blocking_enqueue_u
         publishing_thread=publishing_thread,
     )
 
-    assert len(queue_attempts) == 0
+    assert len(queue_attempts) == 1
+    assert callable(queue_attempts[0])
     assert sent == [("meshtastic.connection.status", iface, False)]
 
 
@@ -5236,7 +5237,7 @@ def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigu
     client._discover.return_value = discover_result
     manager = DiscoveryManager(client_factory=lambda **_kwargs: client)
 
-    devices = manager.discoverDevices(address=None)
+    devices = manager.discover_devices(address=None)
 
     assert devices == [filtered_device]
     client._discover.assert_called_once()

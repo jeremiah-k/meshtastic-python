@@ -345,7 +345,7 @@ class BLELifecycleService:
                     "Skipping auto-reconnect scheduling because interface is closed."
                 )
                 return
-            if iface._state_manager._is_closing:
+            if BLELifecycleService._state_manager_is_closing(iface):
                 logger.debug(
                     "Skipping auto-reconnect scheduling because interface is closing."
                 )
@@ -405,7 +405,7 @@ class BLELifecycleService:
         with iface._state_lock:
             current_state = iface._state_manager._current_state
             current_client = iface.client
-            is_closing = iface._state_manager._is_closing or iface._closed
+            is_closing = BLELifecycleService._state_manager_is_closing(iface) or iface._closed
             was_publish_pending = iface._client_publish_pending
             was_replacement_pending = iface._client_replacement_pending
 
@@ -604,7 +604,7 @@ class BLELifecycleService:
                 return (
                     iface.auto_reconnect
                     and not iface._closed
-                    and not iface._state_manager._is_closing
+                    and not BLELifecycleService._state_manager_is_closing(iface)
                 )
 
         disconnect_lock_released = False
@@ -669,7 +669,10 @@ class BLELifecycleService:
         is_closing = False
         with iface._state_lock:
             if iface.client is client:
-                is_closing = iface._state_manager._is_closing or iface._closed
+                is_closing = (
+                    BLELifecycleService._state_manager_is_closing(iface)
+                    or iface._closed
+                )
                 iface.client = None
                 iface._client_publish_pending = False
                 iface._client_replacement_pending = False
@@ -690,7 +693,10 @@ class BLELifecycleService:
                 # not remain stuck in ERROR_MANAGEMENT_CONNECTING.
                 iface._client_publish_pending = False
                 iface._client_replacement_pending = False
-                is_closing = iface._state_manager._is_closing or iface._closed
+                is_closing = (
+                    BLELifecycleService._state_manager_is_closing(iface)
+                    or iface._closed
+                )
                 if not is_closing:
                     iface.address = restored_address
                     iface._last_connection_request = restore_last_connection_request
@@ -727,6 +733,28 @@ class BLELifecycleService:
         raise AttributeError(STATE_MANAGER_MISSING_CONNECTED_MSG)
 
     @staticmethod
+    def _state_manager_is_closing(iface: "BLEInterface") -> bool:
+        """Return closing-state flag from public-first state-manager members.
+
+        Returns
+        -------
+        bool
+            ``True`` when the state manager reports an active close/shutdown
+            transition, otherwise ``False``.
+        """
+        public_is_closing = getattr(iface._state_manager, "is_closing", None)
+        if not _is_unconfigured_mock_member(public_is_closing) and isinstance(
+            public_is_closing, bool
+        ):
+            return public_is_closing
+        legacy_is_closing = getattr(iface._state_manager, "_is_closing", None)
+        if not _is_unconfigured_mock_member(legacy_is_closing) and isinstance(
+            legacy_is_closing, bool
+        ):
+            return legacy_is_closing
+        return False
+
+    @staticmethod
     def _client_is_connected(client: "BLEClient") -> bool:
         """Return connected-state flag from public/legacy BLEClient members.
 
@@ -753,7 +781,7 @@ class BLELifecycleService:
         iface: "BLEInterface", client: "BLEClient"
     ) -> tuple[bool, bool]:
         """Return owned/closing status for a connected client while holding state lock."""
-        is_closing = iface._state_manager._is_closing or iface._closed
+        is_closing = BLELifecycleService._state_manager_is_closing(iface) or iface._closed
         state_connected = BLELifecycleService._state_manager_is_connected(iface)
         client_connected = BLELifecycleService._client_is_connected(client)
         is_owned = (
@@ -989,6 +1017,32 @@ class BLELifecycleService:
         still_active, is_closing = iface._get_connected_client_status(connected_client)
 
         if still_active:
+            with iface._state_lock:
+                still_active, is_closing = iface._get_connected_client_status_locked(
+                    connected_client
+                )
+                if still_active:
+                    # Publish alias key before claiming address gates so a
+                    # concurrent disconnect can clear both keys consistently.
+                    iface._connection_alias_key = connection_alias_key
+                else:
+                    iface._connection_alias_key = None
+            if not still_active:
+                if is_closing:
+                    logger.debug(
+                        "Interface closed during connect(), cleaning up gate claim for %s",
+                        getattr(connected_client, "address", "unknown"),
+                    )
+                else:
+                    logger.debug(
+                        "Interface lost ownership during connect(), cleaning up gate claim for %s",
+                        getattr(connected_client, "address", "unknown"),
+                    )
+                iface._mark_address_keys_disconnected(
+                    connected_device_key, connection_alias_key
+                )
+                return
+
             iface._mark_address_keys_connected(
                 connected_device_key, connection_alias_key
             )
@@ -997,9 +1051,7 @@ class BLELifecycleService:
                 still_active, is_closing = iface._get_connected_client_status_locked(
                     connected_client
                 )
-                if still_active:
-                    iface._connection_alias_key = connection_alias_key
-                else:
+                if not still_active:
                     if is_closing:
                         logger.debug(
                             "Interface closed during connect(), cleaning up gate claim for %s",
@@ -1052,7 +1104,7 @@ class BLELifecycleService:
                         "BLEInterface.close called on already closed interface; ignoring"
                     )
                     return None
-                was_closing = iface._state_manager._is_closing
+                was_closing = BLELifecycleService._state_manager_is_closing(iface)
                 iface._closed = True
                 if was_closing:
                     logger.debug(
@@ -1100,6 +1152,15 @@ class BLELifecycleService:
         )
         receive_thread = iface._receiveThread
         if receive_thread is None:
+            return
+        thread_ident, thread_is_alive = _thread_start_probe(receive_thread)
+        if thread_ident is None and not thread_is_alive:
+            with iface._state_lock:
+                if iface._receiveThread is receive_thread:
+                    iface._receiveThread = None
+            logger.debug(
+                "Skipping receive thread join during close: worker never started."
+            )
             return
         if receive_thread is threading.current_thread():
             logger.debug("close() called from receive thread; skipping self-join")
