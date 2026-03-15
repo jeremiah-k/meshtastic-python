@@ -145,6 +145,15 @@ class BLEManagementCommandsService:
                 )
                 if refreshed_existing_client is None:
                     raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
+                if address is None:
+                    with iface._state_lock:
+                        current_binding = (
+                            iface._get_current_implicit_management_binding_locked()
+                        )
+                    if sanitize_address(current_binding) != sanitize_address(
+                        start_context.expected_implicit_binding
+                    ):
+                        raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
             return target_address, refreshed_existing_client
 
         return target_address, None
@@ -202,7 +211,7 @@ class BLEManagementCommandsService:
                 iface._client_manager_safe_close_client(temporary_client)
 
     @staticmethod
-    def execute_management_command(
+    def _execute_management_command(
         iface: "BLEInterface",
         address: str | None,
         command: Callable[[BLEClient], T],
@@ -285,7 +294,7 @@ class BLEManagementCommandsService:
                 iface._finish_management_operation()
 
     @staticmethod
-    def validate_management_await_timeout(
+    def _validate_management_await_timeout(
         iface: "BLEInterface", await_timeout: object
     ) -> float:
         """Validate and return bounded await timeout for management operations.
@@ -318,7 +327,7 @@ class BLEManagementCommandsService:
         return float(await_timeout)
 
     @staticmethod
-    def validate_trust_timeout(iface: "BLEInterface", timeout: object) -> float:
+    def _validate_trust_timeout(iface: "BLEInterface", timeout: object) -> float:
         """Validate and return bounded timeout for trust command.
 
         Parameters
@@ -348,7 +357,7 @@ class BLEManagementCommandsService:
         return float(timeout)
 
     @staticmethod
-    def validate_connect_timeout_override(
+    def _validate_connect_timeout_override(
         iface: "BLEInterface",
         connect_timeout: object,
         *,
@@ -424,10 +433,12 @@ class BLEManagementCommandsService:
         -------
         None
         """
-        validated_timeout = BLEManagementCommandsService.validate_management_await_timeout(
+        validated_timeout = (
+            BLEManagementCommandsService._validate_management_await_timeout(
             iface, await_timeout
+            )
         )
-        BLEManagementCommandsService.execute_management_command(
+        BLEManagementCommandsService._execute_management_command(
             iface,
             address,
             lambda client: client.pair(await_timeout=validated_timeout, **kwargs),
@@ -464,10 +475,12 @@ class BLEManagementCommandsService:
         -------
         None
         """
-        validated_timeout = BLEManagementCommandsService.validate_management_await_timeout(
+        validated_timeout = (
+            BLEManagementCommandsService._validate_management_await_timeout(
             iface, await_timeout
+            )
         )
-        BLEManagementCommandsService.execute_management_command(
+        BLEManagementCommandsService._execute_management_command(
             iface,
             address,
             lambda client: client.unpair(await_timeout=validated_timeout),
@@ -476,7 +489,7 @@ class BLEManagementCommandsService:
         )
 
     @staticmethod
-    def run_bluetoothctl_trust_command(
+    def _run_bluetoothctl_trust_command(
         iface: "BLEInterface",
         bluetoothctl_path: str,
         canonical_address: str,
@@ -632,16 +645,9 @@ class BLEManagementCommandsService:
         if address is not None and sanitize_address(address) is None:
             raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
 
-        with iface._connect_lock, iface._management_lock:
-            iface._validate_management_preconditions()
-            expected_implicit_binding = None
-            if address is None:
-                with iface._state_lock:
-                    expected_implicit_binding = (
-                        iface._get_current_implicit_management_binding_locked()
-                    )
+        expected_implicit_binding = None
 
-        validated_timeout = BLEManagementCommandsService.validate_trust_timeout(
+        validated_timeout = BLEManagementCommandsService._validate_trust_timeout(
             iface, timeout
         )
         if not sys_module.platform.startswith("linux"):  # type: ignore[attr-defined]
@@ -656,6 +662,11 @@ class BLEManagementCommandsService:
                 iface._validate_management_preconditions()
                 iface._begin_management_operation_locked()
                 management_started = True
+                if address is None:
+                    with iface._state_lock:
+                        expected_implicit_binding = (
+                            iface._get_current_implicit_management_binding_locked()
+                        )
             target_address = iface._resolve_target_address_for_management(address)
             canonical_address = iface._format_bluetoothctl_address(target_address)
             with iface._management_target_gate(target_address):
@@ -669,7 +680,7 @@ class BLEManagementCommandsService:
                 else:
                     with iface._connect_lock, iface._management_lock:
                         iface._validate_management_preconditions()
-                BLEManagementCommandsService.run_bluetoothctl_trust_command(
+                BLEManagementCommandsService._run_bluetoothctl_trust_command(
                     iface,
                     bluetoothctl_path,
                     canonical_address,

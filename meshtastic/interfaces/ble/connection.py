@@ -932,14 +932,18 @@ class ConnectionOrchestrator:
             self._client_manager_safe_close_client(client)
             return None, skip_discovery_scan
 
-        self._raise_if_interface_closing()
-        self._finalize_connection(
-            client,
-            target_address,
-            register_notifications_func,
-            on_connected_func,
-            emit_connected_side_effects=emit_connected_side_effects,
-        )
+        try:
+            self._raise_if_interface_closing()
+            self._finalize_connection(
+                client,
+                target_address,
+                register_notifications_func,
+                on_connected_func,
+                emit_connected_side_effects=emit_connected_side_effects,
+            )
+        except BaseException:
+            self._client_manager_safe_close_client(client)
+            raise
         return client, False
 
     def _resolve_retry_target(
@@ -1044,13 +1048,7 @@ class ConnectionOrchestrator:
             underscore_find_device
         ):
             return cast(BLEDevice, underscore_find_device(target_address))
-
-        fallback_find_device = getattr(self.interface, "findDevice", None)
-        if not callable(fallback_find_device) or _is_unconfigured_mock_callable(
-            fallback_find_device
-        ):
-            raise AttributeError("Interface is missing findDevice/find_device/_find_device")
-        return cast(BLEDevice, fallback_find_device(target_address))
+        raise AttributeError("Interface is missing findDevice/find_device/_find_device")
 
     def _finalize_connection(
         self,
@@ -1116,7 +1114,7 @@ class ConnectionOrchestrator:
             # Post-registration check: verify client is still connected.
             # This catches disconnects that occurred during notification registration
             # which may have been ignored by _handle_disconnect due to CONNECTING state.
-            if not self.validator._client_is_connected(client):
+            if not ConnectionValidator._client_is_connected(client):
                 logger.debug(
                     "Connection finalization aborted: client disconnected during notification registration"
                 )

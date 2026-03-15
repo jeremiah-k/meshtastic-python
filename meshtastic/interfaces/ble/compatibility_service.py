@@ -25,6 +25,45 @@ class BLECompatibilityEventService:
     """
 
     @staticmethod
+    def _resolve_safe_execute(iface: "BLEInterface") -> Callable[..., Any] | None:
+        """Resolve error-handler safe_execute with underscore fallback."""
+        safe_execute = getattr(iface.error_handler, "safe_execute", None)
+        if callable(safe_execute) and not _is_unconfigured_mock_callable(safe_execute):
+            return cast(Callable[..., Any], safe_execute)
+        legacy_safe_execute = getattr(iface.error_handler, "_safe_execute", None)
+        if callable(legacy_safe_execute) and not _is_unconfigured_mock_callable(
+            legacy_safe_execute
+        ):
+            return cast(Callable[..., Any], legacy_safe_execute)
+        return None
+
+    @staticmethod
+    def _safe_execute(
+        iface: "BLEInterface",
+        func: Callable[[], Any],
+        *,
+        default_return: Any = None,
+        error_msg: str,
+        reraise: bool = False,
+    ) -> Any:
+        """Run callable with resolved safe_execute fallback or inline best effort."""
+        safe_execute = BLECompatibilityEventService._resolve_safe_execute(iface)
+        if safe_execute is not None:
+            return safe_execute(
+                func,
+                default_return=default_return,
+                error_msg=error_msg,
+                reraise=reraise,
+            )
+        try:
+            return func()
+        except Exception:  # noqa: BLE001 - fallback path mirrors safe_execute
+            logger.debug(error_msg, exc_info=True)
+            if reraise:
+                raise
+            return default_return
+
+    @staticmethod
     def _enqueue_publish_callback(
         publishing_thread: object,
         callback: Any,
@@ -62,21 +101,21 @@ class BLECompatibilityEventService:
         put_nowait_callback: Callable[[Any], object] | None = (
             cast(Callable[[Any], object], put_nowait) if can_put_nowait else None
         )
+        thread = getattr(publishing_thread, "thread", None)
+        is_alive = getattr(thread, "is_alive", None)
         thread_is_alive: bool | None = None
-        if prefer_non_blocking:
-            thread = getattr(publishing_thread, "thread", None)
-            is_alive = getattr(thread, "is_alive", None)
-            if callable(is_alive) and not _is_unconfigured_mock_callable(is_alive):
-                try:
-                    alive_result = is_alive()
-                except Exception:  # noqa: BLE001 - enqueue path is best effort
-                    alive_result = False
-                thread_is_alive = (
-                    alive_result if isinstance(alive_result, bool) else False
-                )
+        if callable(is_alive) and not _is_unconfigured_mock_callable(is_alive):
+            try:
+                alive_result = is_alive()
+            except Exception:  # noqa: BLE001 - enqueue path is best effort
+                alive_result = False
+            thread_is_alive = alive_result if isinstance(alive_result, bool) else False
             if thread_is_alive is False:
                 return False
-            if thread_is_alive and put_nowait_callback is not None:
+        if prefer_non_blocking:
+            if thread_is_alive is False:
+                return False
+            if put_nowait_callback is not None:
                 try:
                     put_nowait_callback(callback)
                     return True
@@ -129,7 +168,8 @@ class BLECompatibilityEventService:
                 prefer_non_blocking=True,
             )
 
-        queued = iface.error_handler.safe_execute(
+        queued = BLECompatibilityEventService._safe_execute(
+            iface,
             _queue_flush_notification,
             default_return=False,
             error_msg="Runtime error during disconnect notification flush (possible threading issue)",
@@ -155,11 +195,7 @@ class BLECompatibilityEventService:
             thread_is_alive = (
                 alive_result if isinstance(alive_result, bool) else False
             )
-            if (
-                callable(is_alive)
-                and not _is_unconfigured_mock_callable(is_alive)
-                and thread_is_alive
-            ):
+            if thread_is_alive:
                 logger.debug("Timed out waiting for publish queue flush")
             else:
                 BLECompatibilityEventService.drain_publish_queue(
@@ -191,7 +227,8 @@ class BLECompatibilityEventService:
         thread = getattr(publishing_thread, "thread", None)
         thread_drain = getattr(thread, "_drain_publish_queue", None)
         if callable(thread_drain) and not _is_unconfigured_mock_callable(thread_drain):
-            iface.error_handler.safe_execute(
+            BLECompatibilityEventService._safe_execute(
+                iface,
                 lambda: thread_drain(flush_event),
                 error_msg="Error draining publish queue via publishing thread",
                 reraise=False,
@@ -223,7 +260,8 @@ class BLECompatibilityEventService:
             except Empty:
                 break
             iterations += 1
-            iface.error_handler.safe_execute(
+            BLECompatibilityEventService._safe_execute(
+                iface,
                 runnable, error_msg="Error in deferred publish callback", reraise=False
             )
 

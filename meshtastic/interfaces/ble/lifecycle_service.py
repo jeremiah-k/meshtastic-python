@@ -283,7 +283,7 @@ class BLELifecycleService:
             # Keep clear() under the state lock so reconnect scheduling starts a
             # fresh cycle against a non-signaled shutdown event.
             iface._shutdown_event.clear()
-        iface._reconnect_scheduler.schedule_reconnect(
+        iface._reconnect_scheduler._schedule_reconnect(
             iface.auto_reconnect, iface._shutdown_event
         )
 
@@ -798,24 +798,14 @@ class BLELifecycleService:
                     iface._client_publish_pending = True
                     iface._client_replacement_pending = False
                 should_publish_connected = True
-        if should_publish_connected:
-            try:
-                iface._connected()
-            except Exception:
-                with iface._state_lock:
-                    if iface.client is connected_client:
-                        iface._client_publish_pending = False
-                        iface._client_replacement_pending = False
-                raise
-
         snapshot = BLELifecycleService._verify_ownership_snapshot(
             iface,
             connected_client,
             connected_device_key,
             connection_alias_key,
         )
+        publish_committed = False
         if should_publish_connected:
-            publish_committed = False
             with iface._state_lock:
                 still_owned, is_closing = iface._get_connected_client_status_locked(
                     connected_client
@@ -829,13 +819,12 @@ class BLELifecycleService:
                 ):
                     iface._ever_connected = True
                     iface._prior_publish_was_reconnect = prior_ever_connected
-                    iface._client_publish_pending = False
-                    iface._client_replacement_pending = False
                     publish_committed = True
-                elif iface.client is connected_client:
+                if iface.client is connected_client:
                     iface._client_publish_pending = False
                     iface._client_replacement_pending = False
             if publish_committed:
+                iface._connected()
                 iface._emit_verified_connection_side_effects(connected_client)
                 return
 
@@ -1085,6 +1074,20 @@ class BLELifecycleService:
         """Shutdown active client, notifications, and disconnect publication state."""
         client, publish_pending = BLELifecycleService._detach_client_for_shutdown(iface)
         client_address = iface._extract_client_address(client)
+        notification_manager = iface._notification_manager
+
+        def _resolve_notification_cleanup(
+            public_name: str, legacy_name: str
+        ) -> Callable[..., object] | None:
+            method = getattr(notification_manager, public_name, None)
+            if callable(method) and not _is_unconfigured_mock_callable(method):
+                return cast(Callable[..., object], method)
+            legacy_method = getattr(notification_manager, legacy_name, None)
+            if callable(legacy_method) and not _is_unconfigured_mock_callable(
+                legacy_method
+            ):
+                return cast(Callable[..., object], legacy_method)
+            return None
 
         if client is not None:
             gate_context = (
@@ -1095,20 +1098,32 @@ class BLELifecycleService:
                 else contextlib.nullcontext()
             )
             with gate_context:
-                iface.error_handler.safe_cleanup(
-                    lambda: iface._notification_manager._unsubscribe_all(
-                        client, timeout=NOTIFICATION_START_TIMEOUT
-                    ),
-                    "notification unsubscribe_all",
+                unsubscribe_all = _resolve_notification_cleanup(
+                    "unsubscribe_all", "_unsubscribe_all"
                 )
+                if unsubscribe_all is not None:
+                    iface.error_handler.safe_cleanup(
+                        lambda: unsubscribe_all(
+                            client, timeout=NOTIFICATION_START_TIMEOUT
+                        ),
+                        "notification unsubscribe_all",
+                    )
+                else:
+                    logger.debug(
+                        "Notification manager is missing unsubscribe_all/_unsubscribe_all"
+                    )
                 iface.error_handler.safe_cleanup(
                     lambda: iface._disconnect_and_close_client(client),
                     "BLE client disconnect/close",
                 )
-        iface.error_handler.safe_cleanup(
-            iface._notification_manager._cleanup_all,
-            "notification manager cleanup",
-        )
+        cleanup_all = _resolve_notification_cleanup("cleanup_all", "_cleanup_all")
+        if cleanup_all is not None:
+            iface.error_handler.safe_cleanup(
+                cleanup_all,
+                "notification manager cleanup",
+            )
+        else:
+            logger.debug("Notification manager is missing cleanup_all/_cleanup_all")
 
         if BLELifecycleService._consume_disconnect_notification_state(iface):
             iface._disconnected()

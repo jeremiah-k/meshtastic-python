@@ -4899,15 +4899,22 @@ def test_start_receive_thread_clears_cached_thread_when_start_noops(
         lambda **_kwargs: thread_like,
         raising=True,
     )
+
+    start_calls: list[object] = []
+
+    def _record_noop_start(thread: object) -> None:
+        start_calls.append(thread)
+
     monkeypatch.setattr(
         iface.thread_coordinator,
         "_start_thread",
-        lambda _thread: None,
+        _record_noop_start,
         raising=True,
     )
 
     BLELifecycleService._start_receive_thread(iface, name="BLEReceiveStartNoop")
 
+    assert start_calls == [thread_like]
     assert iface._receiveThread is None
 
 
@@ -5075,8 +5082,11 @@ def test_publish_connection_status_falls_back_when_queuework_raises(
         raising=True,
     )
 
+    queue_attempts: list[object] = []
+
     class _FailingPublishingThread:
-        def queueWork(self, _callback: object) -> None:
+        def queueWork(self, callback: object) -> None:
+            queue_attempts.append(callback)
             raise RuntimeError("queue failure")
 
     iface = SimpleNamespace()
@@ -5088,6 +5098,7 @@ def test_publish_connection_status_falls_back_when_queuework_raises(
         publishing_thread=publishing_thread,
     )
 
+    assert len(queue_attempts) == 1
     assert sent == [("meshtastic.connection.status", iface, False)]
 
 

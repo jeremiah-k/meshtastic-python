@@ -221,6 +221,59 @@ class BLEClient:
         if isinstance(bleak_address, str) and bleak_address:
             self.address = bleak_address
 
+    def _resolve_error_handler_hook(
+        self, public_name: str, legacy_name: str
+    ) -> Callable[..., Any] | None:
+        """Resolve error-handler hook with public-first, underscore fallback."""
+        hook = getattr(self.error_handler, public_name, None)
+        if callable(hook):
+            return cast(Callable[..., Any], hook)
+        legacy_hook = getattr(self.error_handler, legacy_name, None)
+        if callable(legacy_hook):
+            return cast(Callable[..., Any], legacy_hook)
+        return None
+
+    def _error_handler_safe_execute(
+        self,
+        func: Callable[[], T],
+        *,
+        default_return: T | None = None,
+        error_msg: str = "Error in operation",
+        reraise: bool = False,
+    ) -> T | None:
+        """Run callable via error handler safe_execute fallback."""
+        safe_execute = self._resolve_error_handler_hook("safe_execute", "_safe_execute")
+        if safe_execute is not None:
+            return cast(
+                T | None,
+                safe_execute(
+                    func,
+                    default_return=default_return,
+                    error_msg=error_msg,
+                    reraise=reraise,
+                ),
+            )
+        try:
+            return func()
+        except Exception:  # noqa: BLE001 - fallback mirrors error-handler behavior
+            logger.debug(error_msg, exc_info=True)
+            if reraise:
+                raise
+            return default_return
+
+    def _error_handler_safe_cleanup(
+        self, cleanup: Callable[[], Any], operation_name: str
+    ) -> None:
+        """Run cleanup via error handler safe_cleanup fallback."""
+        safe_cleanup = self._resolve_error_handler_hook("safe_cleanup", "_safe_cleanup")
+        if safe_cleanup is not None:
+            safe_cleanup(cleanup, operation_name)
+            return
+        try:
+            cleanup()
+        except Exception:  # noqa: BLE001 - cleanup paths are best effort
+            logger.debug("Error during %s", operation_name, exc_info=True)
+
     def _require_bleak_client(self, error_message: str) -> BleakRootClient:
         """Return active Bleak client or raise BLEError for uninitialized transport.
 
@@ -242,7 +295,7 @@ class BLEClient:
         bleak_client = getattr(self, "bleak_client", None)
         if bleak_client is None:
             raise self.BLEError(error_message)
-        return bleak_client
+        return cast(BleakRootClient, bleak_client)
 
     def _run_transport_operation(
         self,
@@ -519,7 +572,7 @@ class BLEClient:
                 connected = connected()  # pylint: disable=E1102
             return bool(connected)
 
-        result = self.error_handler.safe_execute(
+        result = self._error_handler_safe_execute(
             _check_connection,
             default_return=False,
             error_msg="Unable to read bleak connection state",
@@ -674,7 +727,7 @@ class BLEClient:
         bool
             `True` if the characteristic is present, `False` otherwise.
         """
-        bleak_client = self.bleak_client
+        bleak_client = getattr(self, "bleak_client", None)
         if bleak_client is None:
             return False
 
@@ -687,7 +740,7 @@ class BLEClient:
 
         def _refresh_services(error_msg: str) -> Any:
             """Refresh services via _get_services() and fallback property read."""
-            services = self.error_handler.safe_execute(
+            services = self._error_handler_safe_execute(
                 lambda: self._get_services(),
                 error_msg=error_msg,
                 reraise=False,
@@ -805,7 +858,7 @@ class BLEClient:
 
             # Best effort: disconnect active transport before closing this wrapper.
             if getattr(self, "bleak_client", None) is not None and self.is_connected():
-                self.error_handler.safe_cleanup(
+                self._error_handler_safe_cleanup(
                     lambda: self.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS),
                     "client disconnect during close",
                 )

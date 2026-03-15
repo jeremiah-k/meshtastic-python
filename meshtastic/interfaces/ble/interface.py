@@ -679,7 +679,17 @@ class BLEInterface(MeshInterface):
             error_msg : str
                 Message given to the error handler if the handler raises an exception.
             """
-            self.error_handler.safe_execute(
+            safe_execute = getattr(self.error_handler, "safe_execute", None)
+            if not callable(safe_execute) or _is_unconfigured_mock_callable(
+                safe_execute
+            ):
+                safe_execute = getattr(self.error_handler, "_safe_execute", None)
+            if not callable(safe_execute) or _is_unconfigured_mock_callable(
+                safe_execute
+            ):
+                handler(sender, data)
+                return
+            safe_execute(
                 lambda: handler(sender, data),
                 error_msg=error_msg,
             )
@@ -1359,7 +1369,7 @@ class BLEInterface(MeshInterface):
         T
             Command return value.
         """
-        return BLEManagementCommandsService.execute_management_command(
+        return BLEManagementCommandsService._execute_management_command(
             self,
             address,
             command,
@@ -1408,7 +1418,7 @@ class BLEInterface(MeshInterface):
             If `await_timeout` is None, a boolean, non-numeric, non-finite,
             zero, or negative.
         """
-        return BLEManagementCommandsService.validate_management_await_timeout(
+        return BLEManagementCommandsService._validate_management_await_timeout(
             self, await_timeout
         )
 
@@ -1431,7 +1441,7 @@ class BLEInterface(MeshInterface):
             If `timeout` is a boolean, non-numeric, non-finite, zero, or
             negative.
         """
-        return BLEManagementCommandsService.validate_trust_timeout(self, timeout)
+        return BLEManagementCommandsService._validate_trust_timeout(self, timeout)
 
     def _validate_connect_timeout_override(
         self,
@@ -1440,7 +1450,7 @@ class BLEInterface(MeshInterface):
         pair_on_connect: bool,
     ) -> None:
         """Validate a connect timeout override before connection orchestration."""
-        BLEManagementCommandsService.validate_connect_timeout_override(
+        BLEManagementCommandsService._validate_connect_timeout_override(
             self,
             connect_timeout,
             pair_on_connect=pair_on_connect,
@@ -1525,7 +1535,7 @@ class BLEInterface(MeshInterface):
         validated_timeout: float,
     ) -> None:
         """Run `bluetoothctl trust` and translate subprocess failures into BLEError."""
-        BLEManagementCommandsService.run_bluetoothctl_trust_command(
+        BLEManagementCommandsService._run_bluetoothctl_trust_command(
             self,
             bluetoothctl_path,
             canonical_address,

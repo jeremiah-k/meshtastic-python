@@ -365,6 +365,7 @@ class BLEReceiveRecoveryService:
             retry_on_empty=not poll_without_notify,
         )
         if not payload:
+            iface._read_retry_count = 0
             return False
         logger.debug("FROMRADIO read: %s", payload.hex())
         try:

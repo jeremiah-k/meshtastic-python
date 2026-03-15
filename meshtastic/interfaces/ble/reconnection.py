@@ -106,6 +106,22 @@ class ReconnectScheduler:
         self._reconnect_worker = ReconnectWorker(interface, self._reconnect_policy)
         self._reconnect_thread: ThreadLike | None = None
 
+    def _resolve_thread_coordinator_hook(
+        self,
+        public_name: str,
+        legacy_name: str,
+    ) -> Callable[..., object]:
+        """Resolve a coordinator hook with public-first, underscore fallback."""
+        public_hook = getattr(self.thread_coordinator, public_name, None)
+        if callable(public_hook) and not _is_unconfigured_mock_callable(public_hook):
+            return cast(Callable[..., object], public_hook)
+
+        legacy_hook = getattr(self.thread_coordinator, legacy_name, None)
+        if callable(legacy_hook) and not _is_unconfigured_mock_callable(legacy_hook):
+            return cast(Callable[..., object], legacy_hook)
+
+        raise ThreadCoordinatorMissingMethodError(f"{public_name}/{legacy_name}")
+
     def _thread_create_thread(
         self,
         *,
@@ -116,66 +132,27 @@ class ReconnectScheduler:
         daemon: bool,
     ) -> ThreadLike:
         """Create a thread via public coordinator API with underscore fallback."""
-        create_thread = getattr(self.thread_coordinator, "create_thread", None)
-        legacy_create_thread = getattr(self.thread_coordinator, "_create_thread", None)
-        valid_create_thread = (
-            create_thread
-            if callable(create_thread)
-            and not _is_unconfigured_mock_callable(create_thread)
-            else None
+        create_thread = self._resolve_thread_coordinator_hook(
+            "create_thread", "_create_thread"
         )
-        valid_legacy_create_thread = (
-            legacy_create_thread
-            if callable(legacy_create_thread)
-            and not _is_unconfigured_mock_callable(legacy_create_thread)
-            else None
+        return cast(
+            ThreadLike,
+            create_thread(
+                target=target,
+                args=args,
+                kwargs=kwargs,
+                name=name,
+                daemon=daemon,
+            ),
         )
-        if valid_create_thread is None and valid_legacy_create_thread is not None:
-            return cast(
-                ThreadLike,
-                valid_legacy_create_thread(
-                    target=target,
-                    args=args,
-                    kwargs=kwargs,
-                    name=name,
-                    daemon=daemon,
-                ),
-            )
-        if valid_create_thread is not None:
-            return cast(
-                ThreadLike,
-                valid_create_thread(
-                    target=target,
-                    args=args,
-                    kwargs=kwargs,
-                    name=name,
-                    daemon=daemon,
-                ),
-            )
-        raise ThreadCoordinatorMissingMethodError("create_thread/_create_thread")
 
     def _thread_start_thread(self, thread: ThreadLike) -> None:
         """Start a thread via public coordinator API with underscore fallback."""
-        start_thread = getattr(self.thread_coordinator, "start_thread", None)
-        legacy_start_thread = getattr(self.thread_coordinator, "_start_thread", None)
-        valid_start_thread = (
-            start_thread
-            if callable(start_thread) and not _is_unconfigured_mock_callable(start_thread)
-            else None
+        start_thread = cast(
+            Callable[[ThreadLike], None],
+            self._resolve_thread_coordinator_hook("start_thread", "_start_thread"),
         )
-        valid_legacy_start_thread = (
-            legacy_start_thread
-            if callable(legacy_start_thread)
-            and not _is_unconfigured_mock_callable(legacy_start_thread)
-            else None
-        )
-        if valid_start_thread is None and valid_legacy_start_thread is not None:
-            valid_legacy_start_thread(thread)
-            return
-        if valid_start_thread is not None:
-            valid_start_thread(thread)
-            return
-        raise ThreadCoordinatorMissingMethodError("start_thread/_start_thread")
+        start_thread(thread)
 
     def _schedule_reconnect(self, auto_reconnect: bool, shutdown_event: Event) -> bool:
         """Schedule a background BLE reconnect worker when auto-reconnect is enabled and no worker is already running.
@@ -212,7 +189,7 @@ class ReconnectScheduler:
             thread = self._thread_create_thread(
                 target=self._reconnect_worker._attempt_reconnect_loop,
                 args=(shutdown_event,),
-                kwargs={"on_exit": self.clear_thread_reference},
+                kwargs={"on_exit": self._clear_thread_reference},
                 name="BLEAutoReconnect",
                 daemon=True,
             )
@@ -234,25 +211,6 @@ class ReconnectScheduler:
             raise
         return True
 
-    # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _schedule_reconnect.
-    def schedule_reconnect(self, auto_reconnect: bool, shutdown_event: Event) -> bool:
-        """Schedule reconnect worker startup through the public compatibility wrapper.
-
-        Parameters
-        ----------
-        auto_reconnect : bool
-            Whether auto-reconnect is enabled for the current interface.
-        shutdown_event : Event
-            Event observed by the worker loop to stop reconnect attempts during
-            shutdown.
-
-        Returns
-        -------
-        bool
-            True when a reconnect worker was scheduled, otherwise False.
-        """
-        return self._schedule_reconnect(auto_reconnect, shutdown_event)
-
     def _clear_thread_reference(self) -> None:
         """Clear the internal reference to the running reconnect thread.
 
@@ -267,18 +225,6 @@ class ReconnectScheduler:
         with self.state_lock:
             # Always clear the reference once the worker loop exits to match legacy behavior.
             self._reconnect_thread = None
-
-    # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _clear_thread_reference.
-    def clear_thread_reference(self) -> None:
-        """Clear reconnect thread state through the public compatibility wrapper.
-
-        Returns
-        -------
-        None
-            Always returns None after clearing the cached reconnect thread
-            reference.
-        """
-        self._clear_thread_reference()
 
 
 class ReconnectWorker:
