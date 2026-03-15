@@ -48,7 +48,10 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.runner import BLECoroutineRunner
-from meshtastic.interfaces.ble.utils import with_timeout
+from meshtastic.interfaces.ble.utils import (
+    _is_unconfigured_mock_callable,
+    with_timeout,
+)
 
 T = TypeVar("T")
 
@@ -225,11 +228,15 @@ class BLEClient:
         self, public_name: str, legacy_name: str
     ) -> Callable[..., Any] | None:
         """Resolve error-handler hook with public-first, underscore fallback."""
-        hook = getattr(self.error_handler, public_name, None)
-        if callable(hook):
+        error_handler = getattr(self, "error_handler", None)
+        if error_handler is None:
+            return None
+
+        hook = getattr(error_handler, public_name, None)
+        if callable(hook) and not _is_unconfigured_mock_callable(hook):
             return cast(Callable[..., Any], hook)
-        legacy_hook = getattr(self.error_handler, legacy_name, None)
-        if callable(legacy_hook):
+        legacy_hook = getattr(error_handler, legacy_name, None)
+        if callable(legacy_hook) and not _is_unconfigured_mock_callable(legacy_hook):
             return cast(Callable[..., Any], legacy_hook)
         return None
 

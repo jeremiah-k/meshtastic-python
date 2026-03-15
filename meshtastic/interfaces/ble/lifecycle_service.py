@@ -34,6 +34,13 @@ if TYPE_CHECKING:
 
 READ_TRIGGER_EVENT = "read_trigger"
 RECONNECTED_EVENT = "reconnected_event"
+THREAD_COORDINATOR_MISSING_FMT = "Thread coordinator is missing %s/%s"
+STATE_MANAGER_MISSING_CONNECTED_MSG = (
+    "State manager is missing is_connected/_is_connected boolean members"
+)
+CLIENT_MISSING_CONNECTED_MSG = (
+    "BLE client is missing isConnected/is_connected/_is_connected members"
+)
 
 
 @dataclass(frozen=True)
@@ -113,7 +120,10 @@ class BLELifecycleService:
                     kwargs=kwargs,
                 ),
             )
-        raise AttributeError("Thread coordinator is missing create_thread/_create_thread")
+        raise AttributeError(
+            THREAD_COORDINATOR_MISSING_FMT
+            % ("create_thread", "_create_thread")
+        )
 
     @staticmethod
     def _thread_start_thread(iface: "BLEInterface", thread: object) -> None:
@@ -128,7 +138,10 @@ class BLELifecycleService:
         ):
             legacy_start_thread(thread)
             return
-        raise AttributeError("Thread coordinator is missing start_thread/_start_thread")
+        raise AttributeError(
+            THREAD_COORDINATOR_MISSING_FMT
+            % ("start_thread", "_start_thread")
+        )
 
     @staticmethod
     def _thread_join_thread(
@@ -637,7 +650,7 @@ class BLELifecycleService:
             legacy_is_connected, bool
         ):
             return legacy_is_connected
-        return False
+        raise AttributeError(STATE_MANAGER_MISSING_CONNECTED_MSG)
 
     @staticmethod
     def _client_is_connected(client: "BLEClient") -> bool:
@@ -653,7 +666,7 @@ class BLELifecycleService:
                 continue
             if isinstance(candidate, bool) and not _is_unconfigured_mock_member(candidate):
                 return candidate
-        return False
+        raise AttributeError(CLIENT_MISSING_CONNECTED_MSG)
 
     @staticmethod
     def _get_connected_client_status_locked(
@@ -1064,7 +1077,7 @@ class BLELifecycleService:
                     notify = True
             elif not iface._disconnect_notified:
                 iface._disconnect_notified = True
-                notify = True
+                notify = iface._ever_connected
         return notify
 
     @staticmethod

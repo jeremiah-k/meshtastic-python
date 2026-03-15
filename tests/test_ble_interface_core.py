@@ -2188,13 +2188,15 @@ def test_ble_interface_implicit_trust_releases_connect_lock_before_subprocess(
 
     trust_thread = threading.Thread(target=_run_trust, daemon=True)
     trust_thread.start()
-    assert run_started.wait(timeout=1.0)
+    try:
+        assert run_started.wait(timeout=1.0)
 
-    assert iface._connect_lock.acquire(blocking=False) is True
-    iface._connect_lock.release()
-
-    allow_run_return.set()
-    trust_thread.join(timeout=2.0)
+        assert iface._connect_lock.acquire(blocking=False) is True
+        iface._connect_lock.release()
+    finally:
+        allow_run_return.set()
+        if trust_thread.is_alive():
+            trust_thread.join(timeout=2.0)
 
     assert not trust_thread.is_alive()
     assert trust_errors == []
@@ -5051,10 +5053,10 @@ def test_publish_connection_status_runs_directly_when_queuework_unconfigured(
     queue_work.assert_not_called()
 
 
-def test_publish_connection_status_falls_back_when_queuework_raises(
+def test_publish_connection_status_falls_back_inline_when_non_blocking_enqueue_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify status publish falls back inline when queueWork raises.
+    """Verify status publish falls back inline when non-blocking enqueue is unavailable.
 
     Parameters
     ----------
@@ -5098,7 +5100,7 @@ def test_publish_connection_status_falls_back_when_queuework_raises(
         publishing_thread=publishing_thread,
     )
 
-    assert len(queue_attempts) == 1
+    assert len(queue_attempts) == 0
     assert sent == [("meshtastic.connection.status", iface, False)]
 
 
@@ -5168,7 +5170,12 @@ def test_discovery_manager_filters_targeted_scan_to_whitelist_match(
 
 
 def test_discovery_manager_rejects_non_callable_discover_method() -> None:
-    """DiscoveryManager should reject clients missing callable discover entrypoints."""
+    """DiscoveryManager should reject clients missing callable discover entrypoints.
+
+    Returns
+    -------
+    None
+    """
 
     class InvalidDiscoveryClient:
         _discover = None

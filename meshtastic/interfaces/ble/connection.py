@@ -931,6 +931,9 @@ class ConnectionOrchestrator:
                 )
             self._client_manager_safe_close_client(client)
             return None, skip_discovery_scan
+        except Exception:
+            self._client_manager_safe_close_client(client)
+            raise
 
         try:
             self._raise_if_interface_closing()
@@ -1025,9 +1028,12 @@ class ConnectionOrchestrator:
                     client,
                     timeout=discovery_connect_timeout,
                 )
-            except Exception:
+            except BaseException:
                 self._client_manager_safe_close_client(client)
                 raise
+        except Exception:
+            self._client_manager_safe_close_client(client)
+            raise
 
         return client, resolved_address
 

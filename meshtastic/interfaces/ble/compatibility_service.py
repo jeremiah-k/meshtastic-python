@@ -27,10 +27,11 @@ class BLECompatibilityEventService:
     @staticmethod
     def _resolve_safe_execute(iface: "BLEInterface") -> Callable[..., Any] | None:
         """Resolve error-handler safe_execute with underscore fallback."""
-        safe_execute = getattr(iface.error_handler, "safe_execute", None)
+        error_handler = getattr(iface, "error_handler", None)
+        safe_execute = getattr(error_handler, "safe_execute", None)
         if callable(safe_execute) and not _is_unconfigured_mock_callable(safe_execute):
             return cast(Callable[..., Any], safe_execute)
-        legacy_safe_execute = getattr(iface.error_handler, "_safe_execute", None)
+        legacy_safe_execute = getattr(error_handler, "_safe_execute", None)
         if callable(legacy_safe_execute) and not _is_unconfigured_mock_callable(
             legacy_safe_execute
         ):
@@ -49,12 +50,18 @@ class BLECompatibilityEventService:
         """Run callable with resolved safe_execute fallback or inline best effort."""
         safe_execute = BLECompatibilityEventService._resolve_safe_execute(iface)
         if safe_execute is not None:
-            return safe_execute(
-                func,
-                default_return=default_return,
-                error_msg=error_msg,
-                reraise=reraise,
-            )
+            try:
+                return safe_execute(
+                    func,
+                    default_return=default_return,
+                    error_msg=error_msg,
+                    reraise=reraise,
+                )
+            except Exception:  # noqa: BLE001 - disconnect paths must remain best effort
+                logger.debug(error_msg, exc_info=True)
+                if reraise:
+                    raise
+                return default_return
         try:
             return func()
         except Exception:  # noqa: BLE001 - fallback path mirrors safe_execute
@@ -115,12 +122,13 @@ class BLECompatibilityEventService:
         if prefer_non_blocking:
             if thread_is_alive is False:
                 return False
-            if put_nowait_callback is not None:
-                try:
-                    put_nowait_callback(callback)
-                    return True
-                except Full:
-                    return False
+            if put_nowait_callback is None:
+                return False
+            try:
+                put_nowait_callback(callback)
+                return True
+            except Full:
+                return False
         if queue_work_callback is not None:
             queue_work_callback(callback)
             return True
@@ -308,6 +316,7 @@ class BLECompatibilityEventService:
             queued = BLECompatibilityEventService._enqueue_publish_callback(
                 publishing_thread,
                 _publish_status,
+                prefer_non_blocking=True,
             )
             if not queued:
                 _publish_status()

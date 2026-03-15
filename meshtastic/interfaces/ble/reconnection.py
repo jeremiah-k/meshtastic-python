@@ -111,7 +111,25 @@ class ReconnectScheduler:
         public_name: str,
         legacy_name: str,
     ) -> Callable[..., object]:
-        """Resolve a coordinator hook with public-first, underscore fallback."""
+        """Resolve a coordinator hook with public-first, underscore fallback.
+
+        Parameters
+        ----------
+        public_name : str
+            Public hook name to try first on ``thread_coordinator``.
+        legacy_name : str
+            Underscored fallback hook name to try when public hook is missing.
+
+        Returns
+        -------
+        Callable[..., object]
+            Resolved coordinator hook callable.
+
+        Raises
+        ------
+        ThreadCoordinatorMissingMethodError
+            If neither hook is available and callable.
+        """
         public_hook = getattr(self.thread_coordinator, public_name, None)
         if callable(public_hook) and not _is_unconfigured_mock_callable(public_hook):
             return cast(Callable[..., object], public_hook)
@@ -131,7 +149,33 @@ class ReconnectScheduler:
         name: str,
         daemon: bool,
     ) -> ThreadLike:
-        """Create a thread via public coordinator API with underscore fallback."""
+        """Create a thread via public coordinator API with underscore fallback.
+
+        Parameters
+        ----------
+        target : Callable[..., object]
+            Worker entrypoint for the created thread.
+        args : tuple[object, ...]
+            Positional arguments passed to ``target``.
+        kwargs : dict[str, object]
+            Keyword arguments passed to ``target``.
+        name : str
+            Thread name for diagnostics and debug output.
+        daemon : bool
+            Whether the thread should run as a daemon.
+
+        Returns
+        -------
+        ThreadLike
+            Created thread-like object.
+
+        Raises
+        ------
+        ThreadCoordinatorMissingMethodError
+            If neither create hook is available.
+        Exception
+            Any exception raised by the coordinator's create hook.
+        """
         create_thread = self._resolve_thread_coordinator_hook(
             "create_thread", "_create_thread"
         )
@@ -147,7 +191,24 @@ class ReconnectScheduler:
         )
 
     def _thread_start_thread(self, thread: ThreadLike) -> None:
-        """Start a thread via public coordinator API with underscore fallback."""
+        """Start a thread via public coordinator API with underscore fallback.
+
+        Parameters
+        ----------
+        thread : ThreadLike
+            Thread-like object to start.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        ThreadCoordinatorMissingMethodError
+            If neither start hook is available.
+        Exception
+            Any exception raised by the coordinator's start hook.
+        """
         start_thread = cast(
             Callable[[ThreadLike], None],
             self._resolve_thread_coordinator_hook("start_thread", "_start_thread"),

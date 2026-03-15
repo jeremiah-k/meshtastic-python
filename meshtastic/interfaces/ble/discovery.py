@@ -622,7 +622,36 @@ class DiscoveryManager:
                     type(client),
                     ["discover", "_discover"],
                 )
-            response = discover(**discover_kwargs)
+            try:
+                response = discover(**discover_kwargs)
+            except TypeError as exc:
+                if any(
+                    _is_unexpected_keyword_error(exc, kwarg_name)
+                    for kwarg_name in discover_kwargs
+                ):
+                    logger.warning(
+                        "Discovery client rejected expected discover kwargs; discarding cached client: %s",
+                        exc,
+                        exc_info=True,
+                    )
+                    discarded_kwarg_client: (
+                        BLEClient
+                        | DiscoveryClientProtocol
+                        | UnderscoreDiscoveryClientProtocol
+                        | None
+                    ) = None
+                    with self._client_lock:
+                        if self._client is client:
+                            discarded_kwarg_client = self._client
+                            self._client = None
+                    if discarded_kwarg_client is not None:
+                        _close_discovery_client_best_effort(discarded_kwarg_client)
+                    raise DiscoveryClientError.invalid_client(
+                        resolved_factory,
+                        type(client),
+                        ["discover", "_discover"],
+                    ) from exc
+                raise
             if inspect.isawaitable(response):
                 await_bridge = getattr(client, "async_await", None)
                 if not callable(await_bridge) or _is_unconfigured_mock_callable(

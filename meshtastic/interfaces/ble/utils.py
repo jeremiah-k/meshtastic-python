@@ -72,7 +72,12 @@ def _thread_start_probe(thread: object) -> tuple[int | None, bool]:
     ):
         thread_ident = None
     is_alive = getattr(thread, "is_alive", None)
-    alive_result = is_alive() if callable(is_alive) else False
+    alive_result = False
+    if callable(is_alive):
+        try:
+            alive_result = is_alive()
+        except Exception:  # noqa: BLE001 - startup probe must remain best effort
+            alive_result = False
     thread_is_alive = alive_result if isinstance(alive_result, bool) else False
     return thread_ident, thread_is_alive
 

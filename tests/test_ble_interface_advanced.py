@@ -425,11 +425,16 @@ def test_auto_reconnect_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
     iface.isConnected.clear()
     monkeypatch.setattr(iface, "_start_heartbeat", lambda: None)
     iface._connected()
-    reconnect_events = [
-        (topic, kw)
-        for topic, kw in published_events
-        if topic == "meshtastic.connection.status" and kw.get("connected") is True
-    ]
+    reconnect_events: list[tuple[Any, dict[str, Any]]] = []
+    for _ in range(100):
+        reconnect_events = [
+            (topic, kw)
+            for topic, kw in published_events
+            if topic == "meshtastic.connection.status" and kw.get("connected") is True
+        ]
+        if reconnect_events:
+            break
+        time.sleep(0.01)
     assert (
         len(reconnect_events) == 1
     ), f"Expected exactly one reconnect event, got {len(reconnect_events)}"
@@ -1184,28 +1189,15 @@ def test_wait_for_disconnect_notifications_exceptions(
     client = DummyClient()
     iface = _build_interface(monkeypatch, client)
 
-    # Mock publishingThread to raise RuntimeError
-    # meshtastic.ble_interface already imported at top as ble_mod
-
     class MockPublishingThread:
-        """Mock publishingThread that raises RuntimeError in queueWork."""
+        """Mock publishingThread that raises RuntimeError in queue.put_nowait."""
 
-        def queueWork(self, _callback: Any) -> None:
-            """Simulate a publishing thread failure by raising a RuntimeError.
+        class _FailingQueue:
+            @staticmethod
+            def put_nowait(_callback: Any) -> None:
+                raise RuntimeError("thread error in put_nowait")  # noqa: TRY003
 
-            This mock implementation ignores the provided callback and unconditionally raises an error to emulate a thread failure.
-
-            Parameters
-            ----------
-            _callback : callable
-                Work callback to queue; ignored by this mock.
-
-            Raises
-            ------
-            RuntimeError
-                Always raised with the message "thread error in queueWork".
-            """
-            raise RuntimeError("thread error in queueWork")  # noqa: TRY003
+        queue = _FailingQueue()
 
     monkeypatch.setattr(
         "meshtastic.interfaces.ble.interface.publishingThread",
@@ -1219,24 +1211,15 @@ def test_wait_for_disconnect_notifications_exceptions(
     # Clear caplog
     caplog.clear()
 
-    # Mock publishingThread to raise ValueError
     class MockPublishingThread2:
-        """Mock publishingThread that raises ValueError in queueWork."""
+        """Mock publishingThread that raises ValueError in queue.put_nowait."""
 
-        def queueWork(self, _callback: Any) -> None:
-            """Refuse enqueued callbacks by always raising a ValueError with message "invalid state".
+        class _FailingQueue:
+            @staticmethod
+            def put_nowait(_callback: Any) -> None:
+                raise ValueError("invalid state")  # noqa: TRY003
 
-            Parameters
-            ----------
-            _callback : Any
-                The callback that would have been queued (ignored).
-
-            Raises
-            ------
-            ValueError
-                Always raised with the message "invalid state".
-            """
-            raise ValueError("invalid state")  # noqa: TRY003
+        queue = _FailingQueue()
 
     monkeypatch.setattr(
         "meshtastic.interfaces.ble.interface.publishingThread",

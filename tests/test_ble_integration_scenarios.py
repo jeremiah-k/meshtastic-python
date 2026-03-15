@@ -119,8 +119,15 @@ def test_client_manager_handles_concurrent_updates() -> None:
     state_manager = BLEStateManager()
     lock = RLock()
     thread_coordinator = MagicMock()
-    thread_coordinator.create_thread.side_effect = lambda **_kwargs: MagicMock()
-    thread_coordinator.start_thread.side_effect = lambda _thread: None
+
+    def _started_thread() -> MagicMock:
+        thread = MagicMock()
+        thread.ident = 1
+        thread.is_alive.return_value = True
+        return thread
+
+    thread_coordinator._create_thread.side_effect = lambda **_kwargs: _started_thread()
+    thread_coordinator._start_thread.side_effect = lambda _thread: None
     error_handler = MagicMock()
 
     manager = ClientManager(state_manager, lock, thread_coordinator, error_handler)
@@ -132,8 +139,8 @@ def test_client_manager_handles_concurrent_updates() -> None:
         manager._update_client_reference(clients[i], clients[i - 1])
 
     # Should have scheduled close for each old client
-    assert thread_coordinator.create_thread.call_count == 4
-    assert thread_coordinator.start_thread.call_count == 4
+    assert thread_coordinator._create_thread.call_count == 4
+    assert thread_coordinator._start_thread.call_count == 4
 
 
 @pytest.mark.unit

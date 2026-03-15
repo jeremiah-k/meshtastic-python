@@ -440,7 +440,7 @@ def test_client_manager_update_client_reference_same_client() -> None:
 
     # Should not create thread when old and new are the same
     manager._update_client_reference(mock_client, mock_client)
-    thread_coordinator.create_thread.assert_not_called()
+    thread_coordinator._create_thread.assert_not_called()
 
 
 @pytest.mark.unit
@@ -456,14 +456,14 @@ def test_client_manager_update_client_reference_schedules_close() -> None:
     old_client = MagicMock()
     new_client = MagicMock()
     thread_like = MagicMock()
-    thread_coordinator.create_thread.return_value = thread_like
-    thread_coordinator.start_thread.return_value = None
+    thread_coordinator._create_thread.return_value = thread_like
+    thread_coordinator._start_thread.return_value = None
 
     manager._update_client_reference(new_client, old_client)
 
     # Should have created and started a thread
-    thread_coordinator.create_thread.assert_called_once()
-    thread_coordinator.start_thread.assert_called_once_with(thread_like)
+    thread_coordinator._create_thread.assert_called_once()
+    thread_coordinator._start_thread.assert_called_once_with(thread_like)
 
 
 @pytest.mark.unit
@@ -647,7 +647,7 @@ def test_finalize_connection_sets_reconnected_event_and_logs_normalized_address(
     interface.BLEError = MockBLEError
     interface._ever_connected = True
     thread_coordinator = MagicMock()
-    thread_coordinator.set_event.return_value = None
+    thread_coordinator._set_event.return_value = None
     orchestrator = ConnectionOrchestrator(
         interface=interface,
         validator=validator,
@@ -674,7 +674,7 @@ def test_finalize_connection_sets_reconnected_event_and_logs_normalized_address(
         )
 
     on_connected.assert_called_once_with()
-    thread_coordinator.set_event.assert_called_once_with("reconnected_event")
+    thread_coordinator._set_event.assert_called_once_with("reconnected_event")
 
 
 @pytest.mark.unit
@@ -688,7 +688,7 @@ def test_finalize_connection_can_defer_connected_side_effects() -> None:
     interface.BLEError = MockBLEError
     interface._ever_connected = True
     thread_coordinator = MagicMock()
-    thread_coordinator.set_event.return_value = None
+    thread_coordinator._set_event.return_value = None
     orchestrator = ConnectionOrchestrator(
         interface=interface,
         validator=validator,
@@ -711,7 +711,7 @@ def test_finalize_connection_can_defer_connected_side_effects() -> None:
     )
 
     on_connected.assert_not_called()
-    thread_coordinator.set_event.assert_not_called()
+    thread_coordinator._set_event.assert_not_called()
 
 
 @pytest.mark.unit
@@ -1394,7 +1394,7 @@ def test_connection_orchestrator_uses_discovery_for_non_address_identifier_after
 
 
 @pytest.mark.unit
-def test_connection_orchestrator_fallbacks_to_find_device_when_findDevice_missing() -> (
+def test_connection_orchestrator_falls_back_to_find_device_when_findDevice_missing() -> (
     None
 ):
     """Explicit-address retry should use find_device() when findDevice() is absent."""
@@ -1447,7 +1447,7 @@ def test_connection_orchestrator_fallbacks_to_find_device_when_findDevice_missin
 
 
 @pytest.mark.unit
-def test_connection_orchestrator_fallbacks_to_underscore_find_device() -> None:
+def test_connection_orchestrator_falls_back_to_underscore_find_device() -> None:
     """Explicit-address retry should use _find_device() when other names are absent."""
     state_manager = BLEStateManager()
     state_lock = RLock()

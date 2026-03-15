@@ -550,6 +550,12 @@ class BLEManagementCommandsService:
             [bluetoothctl_path, "trust", canonical_address],
             validated_timeout,
         )
+        timeout_exc = getattr(subprocess_module, "TimeoutExpired", None)
+        timeout_exc_type = (
+            timeout_exc
+            if isinstance(timeout_exc, type) and issubclass(timeout_exc, BaseException)
+            else None
+        )
         try:
             result = subprocess_module.run(  # type: ignore[attr-defined]  # noqa: S603
                 [bluetoothctl_path, "trust", canonical_address],
@@ -558,13 +564,15 @@ class BLEManagementCommandsService:
                 check=False,
                 timeout=validated_timeout,
             )
-        except subprocess_module.TimeoutExpired as exc:  # type: ignore[attr-defined]
-            raise iface.BLEError(
-                ERROR_TRUST_COMMAND_TIMEOUT.format(
-                    timeout=validated_timeout, address=canonical_address
-                )
-            ) from exc
-        except OSError as exc:
+        except Exception as exc:  # noqa: BLE001 - preserve injected module compatibility
+            if timeout_exc_type is not None and isinstance(exc, timeout_exc_type):
+                raise iface.BLEError(
+                    ERROR_TRUST_COMMAND_TIMEOUT.format(
+                        timeout=validated_timeout, address=canonical_address
+                    )
+                ) from exc
+            if not isinstance(exc, OSError):
+                raise
             detail = _sanitize_trust_command_output(str(exc))
             raise iface.BLEError(
                 ERROR_TRUST_COMMAND_FAILED.format(

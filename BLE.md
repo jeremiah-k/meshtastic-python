@@ -140,23 +140,22 @@ from meshtastic.interfaces.ble.notifications import NotificationManager
 mgr = NotificationManager()
 
 # Register a callback for a characteristic UUID; returns an opaque token.
-token = mgr.subscribe(uuid, callback)
+token = mgr._subscribe(uuid, callback)
 
 # Retrieve the most-recently-registered callback for a UUID.
-cb = mgr.get_callback(uuid)
+cb = mgr._get_callback(uuid)
 
 # Stop all notifications through a BLEClient (e.g. during shutdown).
-mgr.unsubscribe_all(client, timeout=5.0)
+mgr._unsubscribe_all(client, timeout=5.0)
 
 # Re-register all subscriptions on a new client (e.g. after reconnect).
-mgr.resubscribe_all(client, timeout=5.0)
+mgr._resubscribe_all(client, timeout=5.0)
 
 # Clear internal subscription state (called after full disconnect + cleanup).
-mgr.cleanup_all()
+mgr._cleanup_all()
 ```
 
-Compatibility note: underscore methods are still available for legacy/internal
-call sites.
+Compatibility note: these underscore names are the canonical internal methods.
 
 ### `RetryPolicy` / `ReconnectPolicy`
 
@@ -168,10 +167,12 @@ Use `RetryPolicy` for bounded retry decisions in the receive/read paths.
 ```python
 from meshtastic.interfaces.ble.policies import RetryPolicy
 
-policy = RetryPolicy.empty_read()  # or .transient_error() / .auto_reconnect()
+policy = RetryPolicy._empty_read()  # or ._transient_error() / ._auto_reconnect()
+# or use descriptor presets that return fresh policy instances:
+policy = RetryPolicy.EMPTY_READ  # TRANSIENT_ERROR / AUTO_RECONNECT
 
-delay = policy.get_delay(attempt)          # float, jittered exponential backoff
-should_go = policy.should_retry(count)     # bool, respects max_retries
+delay = policy._get_delay(attempt)         # float, jittered exponential backoff
+should_go = policy._should_retry(count)    # bool, respects max_retries
 ```
 
 `ReconnectPolicy` remains an internal BLE policy utility used by reconnect
