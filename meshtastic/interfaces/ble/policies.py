@@ -157,22 +157,6 @@ class ReconnectPolicy:
             self.max_delay, max(effective_lower, delay + jitter)
         )  # Clamp to [effective_lower, max_delay]
 
-    def get_delay(self, attempt: int | None = None) -> float:
-        """Return retry delay through the public compatibility wrapper.
-
-        Parameters
-        ----------
-        attempt : int | None
-            Optional zero-based attempt index; when omitted, the internal
-            attempt counter is used. (Default value = None)
-
-        Returns
-        -------
-        float
-            Jittered retry delay in seconds.
-        """
-        return self._get_delay(attempt)
-
     def _should_retry(self, attempt: int | None = None) -> bool:
         """Return whether another retry attempt is permitted.
 
@@ -189,22 +173,6 @@ class ReconnectPolicy:
         if attempt is None:
             attempt = self._attempt_count
         return self.max_retries is None or attempt < self.max_retries
-
-    def should_retry(self, attempt: int | None = None) -> bool:
-        """Return retry eligibility through the public compatibility wrapper.
-
-        Parameters
-        ----------
-        attempt : int | None
-            Optional zero-based attempt index to evaluate; when omitted, the
-            internal attempt counter is used. (Default value = None)
-
-        Returns
-        -------
-        bool
-            True when another retry is allowed, otherwise False.
-        """
-        return self._should_retry(attempt)
 
     def next_attempt(self) -> tuple[float, bool]:
         """Compute delay for the current retry attempt and report whether that consumed attempt is permitted.
@@ -326,17 +294,6 @@ class RetryPolicy:
         )
 
     @staticmethod
-    def empty_read() -> ReconnectPolicy:
-        """Return the public empty-read retry preset.
-
-        Returns
-        -------
-        ReconnectPolicy
-            Policy configured for empty read retry/backoff behavior.
-        """
-        return RetryPolicy._empty_read()
-
-    @staticmethod
     def _transient_error() -> ReconnectPolicy:
         """Create a ReconnectPolicy tuned for transient BLE read errors.
 
@@ -354,17 +311,6 @@ class RetryPolicy:
         )
 
     @staticmethod
-    def transient_error() -> ReconnectPolicy:
-        """Return the public transient-read retry preset.
-
-        Returns
-        -------
-        ReconnectPolicy
-            Policy configured for transient read retry/backoff behavior.
-        """
-        return RetryPolicy._transient_error()
-
-    @staticmethod
     def _auto_reconnect() -> ReconnectPolicy:
         """Create a ReconnectPolicy preset for automatic BLE reconnection.
 
@@ -380,14 +326,3 @@ class RetryPolicy:
             jitter_ratio=BLEConfig.AUTO_RECONNECT_JITTER_RATIO,
             max_retries=None,
         )
-
-    @staticmethod
-    def auto_reconnect() -> ReconnectPolicy:
-        """Return the public auto-reconnect retry preset.
-
-        Returns
-        -------
-        ReconnectPolicy
-            Policy configured for automatic reconnect backoff behavior.
-        """
-        return RetryPolicy._auto_reconnect()

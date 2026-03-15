@@ -651,7 +651,7 @@ class DiscoveryManager:
                     raise DiscoveryClientError.invalid_client(
                         resolved_factory,
                         type(client),
-                        ["discover", "_discover"],
+                        ["async_await", "_async_await"],
                     )
             logger.debug(
                 "Scan completed in %.2f seconds", time.monotonic() - scan_start

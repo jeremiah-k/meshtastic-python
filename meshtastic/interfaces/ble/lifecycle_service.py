@@ -807,12 +807,14 @@ class BLELifecycleService:
                         iface._client_publish_pending = False
                         iface._client_replacement_pending = False
                 raise
-            snapshot = BLELifecycleService._verify_ownership_snapshot(
-                iface,
-                connected_client,
-                connected_device_key,
-                connection_alias_key,
-            )
+
+        snapshot = BLELifecycleService._verify_ownership_snapshot(
+            iface,
+            connected_client,
+            connected_device_key,
+            connection_alias_key,
+        )
+        if should_publish_connected:
             publish_committed = False
             with iface._state_lock:
                 still_owned, is_closing = iface._get_connected_client_status_locked(
@@ -837,12 +839,6 @@ class BLELifecycleService:
                 iface._emit_verified_connection_side_effects(connected_client)
                 return
 
-        snapshot = BLELifecycleService._verify_ownership_snapshot(
-            iface,
-            connected_client,
-            connected_device_key,
-            connection_alias_key,
-        )
         _raise_invalidated(snapshot)
 
     @staticmethod
@@ -1100,7 +1096,7 @@ class BLELifecycleService:
             )
             with gate_context:
                 iface.error_handler.safe_cleanup(
-                    lambda: iface._notification_manager.unsubscribe_all(
+                    lambda: iface._notification_manager._unsubscribe_all(
                         client, timeout=NOTIFICATION_START_TIMEOUT
                     ),
                     "notification unsubscribe_all",
@@ -1110,7 +1106,7 @@ class BLELifecycleService:
                     "BLE client disconnect/close",
                 )
         iface.error_handler.safe_cleanup(
-            iface._notification_manager.cleanup_all,
+            iface._notification_manager._cleanup_all,
             "notification manager cleanup",
         )
 

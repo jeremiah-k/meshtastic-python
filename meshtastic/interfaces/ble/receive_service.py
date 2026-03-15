@@ -27,6 +27,8 @@ if TYPE_CHECKING:
 
 READ_TRIGGER_EVENT = "read_trigger"
 RECONNECTED_EVENT = "reconnected_event"
+COORDINATOR_WAIT_FALLBACK_SLEEP_SEC = 0.001
+RECEIVE_THREAD_FATAL_REASON = "receive_thread_fatal"
 
 
 class BLEReceiveRecoveryService:
@@ -107,6 +109,10 @@ class BLEReceiveRecoveryService:
             legacy_wait_for_event
         ):
             return bool(legacy_wait_for_event(event_name, timeout=timeout))
+        if timeout is None:
+            _sleep(COORDINATOR_WAIT_FALLBACK_SLEEP_SEC)
+        elif timeout > 0:
+            _sleep(min(timeout, COORDINATOR_WAIT_FALLBACK_SLEEP_SEC))
         return False
 
     @staticmethod
@@ -372,6 +378,134 @@ class BLEReceiveRecoveryService:
         return True
 
     @staticmethod
+    def _handle_payload_read(
+        iface: "BLEInterface",
+        client: BLEClient,
+        *,
+        poll_without_notify: bool,
+    ) -> tuple[bool, bool]:
+        """Handle one payload-read attempt and classify loop control flow.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing payload handlers and retry/disconnect helpers.
+        client : BLEClient
+            Active BLE client used for current read iteration.
+        poll_without_notify : bool
+            Whether the current cycle is running in polling fallback mode.
+
+        Returns
+        -------
+        tuple[bool, bool]
+            ``(break_inner_loop, stop_receive_loop)``.
+
+        Raises
+        ------
+        SystemExit
+            Propagated when process termination is requested.
+        KeyboardInterrupt
+            Propagated when process termination is requested.
+        """
+        try:
+            if not BLEReceiveRecoveryService._read_and_handle_payload(
+                iface,
+                client,
+                poll_without_notify=poll_without_notify,
+            ):
+                return True, False
+            return False, False
+        except (BleakDBusError, BLEClient.BLEError) as exc:
+            if iface._handle_read_loop_disconnect(repr(exc), client):
+                return True, False
+            return True, True
+        except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
+            raise
+        except BleakError as exc:
+            try:
+                iface._handle_transient_read_error(exc)
+                return False, False
+            except iface.BLEError:
+                logger.error("Fatal BLE read error after retries: %s", exc)
+                if not iface._is_connection_closing:
+                    iface.close()
+                return True, True
+        except (RuntimeError, OSError) as exc:
+            logger.error("Fatal error in BLE receive thread: %s", exc)
+            if not iface._is_connection_closing:
+                iface.close()
+            return True, True
+        except Exception as exc:  # noqa: BLE001  # pragma: no cover
+            logger.exception("Unexpected error in BLE read loop")
+            if iface._handle_read_loop_disconnect(repr(exc), client):
+                return True, False
+            return True, True
+
+    @staticmethod
+    def _run_receive_cycle(
+        iface: "BLEInterface",
+        *,
+        coordinator: "ThreadCoordinator",
+        wait_timeout: float,
+    ) -> bool:
+        """Run receive-loop orchestration until shutdown or fatal stop.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface whose receive loop is being executed.
+        coordinator : ThreadCoordinator
+            Coordinator used for trigger/reconnect event waits.
+        wait_timeout : float
+            Wait timeout passed to coordinator waits for each cycle.
+
+        Returns
+        -------
+        bool
+            ``True`` when the loop exited naturally, ``False`` when a fatal
+            read path requested immediate receive-loop stop.
+        """
+        while iface._should_run_receive_loop():
+            proceed, poll_without_notify = BLEReceiveRecoveryService._wait_for_read_trigger(
+                iface,
+                coordinator=coordinator,
+                wait_timeout=wait_timeout,
+            )
+            if not proceed:
+                continue
+
+            while iface._should_run_receive_loop():
+                client, is_connecting, publish_pending, is_closing = (
+                    BLEReceiveRecoveryService._snapshot_client_state(iface)
+                )
+                if BLEReceiveRecoveryService._process_client_state(
+                    iface,
+                    coordinator=coordinator,
+                    wait_timeout=wait_timeout,
+                    client=client,
+                    is_connecting=is_connecting,
+                    publish_pending=publish_pending,
+                    is_closing=is_closing,
+                ):
+                    break
+
+                if client is None:  # pragma: no cover
+                    break
+
+                break_inner_loop, stop_receive_loop = (
+                    BLEReceiveRecoveryService._handle_payload_read(
+                        iface,
+                        client,
+                        poll_without_notify=poll_without_notify,
+                    )
+                )
+                if stop_receive_loop:
+                    return False
+                if break_inner_loop:
+                    break
+        return True
+
+    @staticmethod
     def _receive_from_radio_impl(iface: "BLEInterface") -> None:
         """Run the BLE receive loop and dispatch decoded radio payloads.
 
@@ -389,69 +523,13 @@ class BLEReceiveRecoveryService:
         coordinator = iface.thread_coordinator
         wait_timeout = BLEConfig.RECEIVE_WAIT_TIMEOUT
         try:
-            while iface._should_run_receive_loop():
-                proceed, poll_without_notify = (
-                    BLEReceiveRecoveryService._wait_for_read_trigger(
-                        iface,
-                        coordinator=coordinator,
-                        wait_timeout=wait_timeout,
-                    )
-                )
-                if not proceed:
-                    continue
-
-                while iface._should_run_receive_loop():
-                    client, is_connecting, publish_pending, is_closing = (
-                        BLEReceiveRecoveryService._snapshot_client_state(iface)
-                    )
-                    if BLEReceiveRecoveryService._process_client_state(
-                        iface,
-                        coordinator=coordinator,
-                        wait_timeout=wait_timeout,
-                        client=client,
-                        is_connecting=is_connecting,
-                        publish_pending=publish_pending,
-                        is_closing=is_closing,
-                    ):
-                        break
-
-                    if client is None:  # pragma: no cover
-                        break
-                    try:
-                        if not BLEReceiveRecoveryService._read_and_handle_payload(
-                            iface,
-                            client,
-                            poll_without_notify=poll_without_notify,
-                        ):
-                            break
-                        continue
-                    except (BleakDBusError, BLEClient.BLEError) as exc:
-                        if iface._handle_read_loop_disconnect(repr(exc), client):
-                            break
-                        return
-                    except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
-                        raise
-                    except BleakError as exc:
-                        try:
-                            iface._handle_transient_read_error(exc)
-                            continue
-                        except iface.BLEError:
-                            logger.error(
-                                "Fatal BLE read error after retries: %s", exc
-                            )
-                            if not iface._is_connection_closing:
-                                iface.close()
-                            return
-                    except (RuntimeError, OSError) as exc:
-                        logger.error("Fatal error in BLE receive thread: %s", exc)
-                        if not iface._is_connection_closing:
-                            iface.close()
-                        return
-                    except Exception as exc:  # noqa: BLE001  # pragma: no cover
-                        logger.exception("Unexpected error in BLE read loop")
-                        if iface._handle_read_loop_disconnect(repr(exc), client):
-                            break
-                        return
+            should_continue = BLEReceiveRecoveryService._run_receive_cycle(
+                iface,
+                coordinator=coordinator,
+                wait_timeout=wait_timeout,
+            )
+            if not should_continue:
+                return
         except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
             raise
         except (
@@ -463,10 +541,10 @@ class BLEReceiveRecoveryService:
             OSError,
         ):
             logger.exception("Fatal error in BLE receive thread")
-            iface._recover_receive_thread("receive_thread_fatal")
+            iface._recover_receive_thread(RECEIVE_THREAD_FATAL_REASON)
         except Exception:  # noqa: BLE001
             logger.exception("Unexpected fatal error in BLE receive thread")
-            iface._recover_receive_thread("receive_thread_fatal")
+            iface._recover_receive_thread(RECEIVE_THREAD_FATAL_REASON)
 
     @staticmethod
     def _recover_receive_thread(iface: "BLEInterface", disconnect_reason: str) -> None:

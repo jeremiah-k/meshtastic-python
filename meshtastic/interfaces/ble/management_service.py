@@ -102,17 +102,21 @@ class BLEManagementCommandsService:
         with iface._connect_lock, iface._management_lock:
             iface._validate_management_preconditions()
             iface._begin_management_operation_locked()
-            expected_implicit_binding = None
-            if address is None:
-                with iface._state_lock:
-                    expected_implicit_binding = (
-                        iface._get_current_implicit_management_binding_locked()
-                    )
-            existing_client = iface._get_management_client_if_available(address)
-            target_address = iface._extract_client_address(existing_client)
-            use_existing_client_without_resolved_address = (
-                existing_client is not None and target_address is None
-            )
+            try:
+                expected_implicit_binding = None
+                if address is None:
+                    with iface._state_lock:
+                        expected_implicit_binding = (
+                            iface._get_current_implicit_management_binding_locked()
+                        )
+                existing_client = iface._get_management_client_if_available(address)
+                target_address = iface._extract_client_address(existing_client)
+                use_existing_client_without_resolved_address = (
+                    existing_client is not None and target_address is None
+                )
+            except BaseException:
+                iface._finish_management_operation()
+                raise
         return _ManagementStartContext(
             expected_implicit_binding=expected_implicit_binding,
             target_address=target_address,

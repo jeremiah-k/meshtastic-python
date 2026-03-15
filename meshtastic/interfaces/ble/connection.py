@@ -557,8 +557,8 @@ class ConnectionOrchestrator:
         kwargs : dict[str, object] | None
             Keyword arguments used when ``call_member`` is True.
         underscore_attr_type : type[object] | None
-            When returning an attribute, prefer underscore member if it matches
-            this type.
+            Type guard used for attribute-return mode. The public member is
+            checked first; underscore member is used as fallback when available.
         default_if_missing : object
             Default value returned when neither member is available.
         Returns
@@ -1045,8 +1045,10 @@ class ConnectionOrchestrator:
         ):
             return cast(BLEDevice, underscore_find_device(target_address))
 
-        fallback_find_device = getattr(self.interface, "findDevice")
-        if _is_unconfigured_mock_callable(fallback_find_device):
+        fallback_find_device = getattr(self.interface, "findDevice", None)
+        if not callable(fallback_find_device) or _is_unconfigured_mock_callable(
+            fallback_find_device
+        ):
             raise AttributeError("Interface is missing findDevice/find_device/_find_device")
         return cast(BLEDevice, fallback_find_device(target_address))
 

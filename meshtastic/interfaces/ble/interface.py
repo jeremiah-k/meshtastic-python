@@ -343,8 +343,8 @@ class BLEInterface(MeshInterface):
 
         # Initialize retry counter for transient read errors
         # Policies are immutable presets; cache instances to avoid churn in hot loops.
-        self._empty_read_policy = RetryPolicy.empty_read()
-        self._transient_read_policy = RetryPolicy.transient_error()
+        self._empty_read_policy = RetryPolicy._empty_read()
+        self._transient_read_policy = RetryPolicy._transient_error()
         self._read_retry_count = 0
         self._last_empty_read_warning = 0.0
         self._suppressed_empty_read_warnings = 0
@@ -752,10 +752,10 @@ class BLEInterface(MeshInterface):
             Callable[[Any, Any], None]
                 The existing or newly created notification handler.
             """
-            handler = self._notification_manager.get_callback(uuid)
+            handler = self._notification_manager._get_callback(uuid)
             if handler is None:
                 handler = factory()
-                self._notification_manager.subscribe(uuid, handler)
+                self._notification_manager._subscribe(uuid, handler)
             return handler
 
         def _is_notify_acquired_error(err: BaseException) -> bool:
@@ -1617,16 +1617,16 @@ class BLEInterface(MeshInterface):
 
     def _state_manager_is_connected(self) -> bool:
         """Read connected state with fallback for underscore/mocked state managers."""
-        underscore_is_connected = getattr(self._state_manager, "_is_connected", None)
-        if not _is_unconfigured_mock_member(underscore_is_connected) and isinstance(
-            underscore_is_connected, bool
-        ):
-            return underscore_is_connected
         public_is_connected = getattr(self._state_manager, "is_connected", None)
         if not _is_unconfigured_mock_member(public_is_connected) and isinstance(
             public_is_connected, bool
         ):
             return public_is_connected
+        underscore_is_connected = getattr(self._state_manager, "_is_connected", None)
+        if not _is_unconfigured_mock_member(underscore_is_connected) and isinstance(
+            underscore_is_connected, bool
+        ):
+            return underscore_is_connected
         # Preserve pre-refactor failure mode for misconfigured doubles.
         fallback_is_connected = self._state_manager._is_connected
         if _is_unconfigured_mock_member(fallback_is_connected) or not isinstance(

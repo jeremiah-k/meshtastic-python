@@ -239,7 +239,7 @@ class BLEClient:
         BLEError
             If ``self.bleak_client`` is not initialized.
         """
-        bleak_client = self.bleak_client
+        bleak_client = getattr(self, "bleak_client", None)
         if bleak_client is None:
             raise self.BLEError(error_message)
         return bleak_client

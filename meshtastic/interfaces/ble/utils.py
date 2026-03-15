@@ -67,7 +67,9 @@ def _thread_start_probe(thread: object) -> tuple[int | None, bool]:
         returns a real ``bool``.
     """
     thread_ident = getattr(thread, "ident", None)
-    if thread_ident is not None and not isinstance(thread_ident, int):
+    if thread_ident is not None and (
+        not isinstance(thread_ident, int) or isinstance(thread_ident, bool)
+    ):
         thread_ident = None
     is_alive = getattr(thread, "is_alive", None)
     alive_result = is_alive() if callable(is_alive) else False

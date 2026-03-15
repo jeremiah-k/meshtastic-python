@@ -62,10 +62,10 @@ class BLECompatibilityEventService:
         put_nowait_callback: Callable[[Any], object] | None = (
             cast(Callable[[Any], object], put_nowait) if can_put_nowait else None
         )
+        thread_is_alive: bool | None = None
         if prefer_non_blocking:
             thread = getattr(publishing_thread, "thread", None)
             is_alive = getattr(thread, "is_alive", None)
-            thread_is_alive = False
             if callable(is_alive) and not _is_unconfigured_mock_callable(is_alive):
                 try:
                     alive_result = is_alive()
@@ -74,6 +74,8 @@ class BLECompatibilityEventService:
                 thread_is_alive = (
                     alive_result if isinstance(alive_result, bool) else False
                 )
+            if thread_is_alive is False:
+                return False
             if thread_is_alive and put_nowait_callback is not None:
                 try:
                     put_nowait_callback(callback)
