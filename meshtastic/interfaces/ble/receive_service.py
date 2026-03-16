@@ -62,6 +62,7 @@ class BLEReceiveRecoveryService:
         should_continue = iface._handle_disconnect(
             f"read_loop: {error_message}", client=previous_client
         )
+        iface._read_retry_count = 0
         if not should_continue:
             iface._set_receive_wanted(want_receive=False)
         return should_continue

@@ -589,7 +589,27 @@ class ClientManager:
             """Run cleanup through hook when available, otherwise inline best effort."""
             if safe_cleanup_hook is not None:
                 try:
-                    return bool(safe_cleanup_hook(func, cleanup_name))
+                    return bool(
+                        safe_cleanup_hook(func=func, cleanup_name=cleanup_name)
+                    )
+                except TypeError as exc:
+                    if _is_unexpected_keyword_error(
+                        exc, "func"
+                    ) or _is_unexpected_keyword_error(exc, "cleanup_name"):
+                        try:
+                            return bool(safe_cleanup_hook(func, cleanup_name))
+                        except Exception:  # noqa: BLE001 - cleanup path must stay best-effort
+                            logger.debug(
+                                "Error running safe_cleanup hook for %s",
+                                cleanup_name,
+                                exc_info=True,
+                            )
+                    else:
+                        logger.debug(
+                            "Error running safe_cleanup hook for %s",
+                            cleanup_name,
+                            exc_info=True,
+                        )
                 except Exception:  # noqa: BLE001 - cleanup path must stay best-effort
                     logger.debug(
                         "Error running safe_cleanup hook for %s",
@@ -868,42 +888,32 @@ class ConnectionOrchestrator:
         connect_timeout: float | None,
     ) -> BLEClient:
         """Create client via public API with underscore-compatible fallback for mocks/test doubles."""
-        kwargs_with_optionals: dict[str, object] = {
+        retry_kwargs: dict[str, object] = {
             "pair_on_connect": pair_on_connect,
             "connect_timeout": connect_timeout,
         }
-        try:
-            created_client = self._dispatch_public_or_underscore(
-                target=self.client_manager,
-                public_name="create_client",
-                underscore_name="_create_client",
-                prefer_instance_type=ClientManager,
-                call_member=True,
-                args=(device, on_disconnect_func),
-                kwargs=kwargs_with_optionals,
-            )
-        except TypeError as exc:
-            unsupported_pair_kw = _is_unexpected_keyword_error(exc, "pair_on_connect")
-            unsupported_timeout_kw = _is_unexpected_keyword_error(
-                exc, "connect_timeout"
-            )
-            if not unsupported_pair_kw and not unsupported_timeout_kw:
-                raise
-            retry_kwargs: dict[str, object] = {}
-            if not unsupported_pair_kw:
-                retry_kwargs["pair_on_connect"] = pair_on_connect
-            if not unsupported_timeout_kw:
-                retry_kwargs["connect_timeout"] = connect_timeout
-            created_client = self._dispatch_public_or_underscore(
-                target=self.client_manager,
-                public_name="create_client",
-                underscore_name="_create_client",
-                prefer_instance_type=ClientManager,
-                call_member=True,
-                args=(device, on_disconnect_func),
-                kwargs=retry_kwargs,
-            )
-        return cast(BLEClient, created_client)
+        while True:
+            try:
+                created_client = self._dispatch_public_or_underscore(
+                    target=self.client_manager,
+                    public_name="create_client",
+                    underscore_name="_create_client",
+                    prefer_instance_type=ClientManager,
+                    call_member=True,
+                    args=(device, on_disconnect_func),
+                    kwargs=retry_kwargs,
+                )
+                return cast(BLEClient, created_client)
+            except TypeError as exc:
+                removed_kwarg = False
+                for kwarg_name in ("pair_on_connect", "connect_timeout"):
+                    if kwarg_name in retry_kwargs and _is_unexpected_keyword_error(
+                        exc, kwarg_name
+                    ):
+                        retry_kwargs.pop(kwarg_name)
+                        removed_kwarg = True
+                if not removed_kwarg:
+                    raise
 
     def _client_manager_connect_client(
         self, client: BLEClient, *, timeout: float | None

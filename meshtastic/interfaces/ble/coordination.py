@@ -212,16 +212,11 @@ class ThreadCoordinator:
         ----------
         thread : ThreadLike
             Thread previously registered with this coordinator via _create_thread.
-
-        Raises
-        ------
-        RuntimeError
-            If an inert post-cleanup placeholder thread is provided.
         """
         if isinstance(thread, _InertThread):
             message = _INERT_THREAD_START_ERROR.format(name=thread.name)
             logger.warning(message)
-            raise RuntimeError(message)
+            return
         should_start = False
         must_join_after_start = False
         with self._lock:

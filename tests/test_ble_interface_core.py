@@ -64,6 +64,7 @@ pytestmark = pytest.mark.unit
 
 _MAX_SPURIOUS_CONNECT_WAIT_CALLS_BEFORE_FAIL = 10
 _MAX_SPURIOUS_CLOSE_WAIT_CALLS_BEFORE_FAIL = 50
+START_FAILED_MSG = "start failed"
 
 
 def _pin_trust_environment(
@@ -4777,7 +4778,7 @@ def test_start_receive_thread_clears_cached_thread_when_start_fails(
 
     def _raise_start_failure(_thread: object) -> None:
         assert iface._receiveThread is thread_like
-        raise RuntimeError("start failed")
+        raise RuntimeError(START_FAILED_MSG)
 
     monkeypatch.setattr(
         iface.thread_coordinator,
@@ -4786,7 +4787,7 @@ def test_start_receive_thread_clears_cached_thread_when_start_fails(
         raising=True,
     )
 
-    with pytest.raises(RuntimeError, match="start failed"):
+    with pytest.raises(RuntimeError, match=START_FAILED_MSG):
         BLELifecycleService._start_receive_thread(iface, name="BLEReceiveStartFailure")
 
     assert iface._receiveThread is None
@@ -4831,7 +4832,7 @@ def test_start_receive_thread_facade_clears_cached_thread_when_start_fails(
 
     def _raise_start_failure(_thread: object) -> None:
         assert iface._receiveThread is thread_like
-        raise RuntimeError("start failed")
+        raise RuntimeError(START_FAILED_MSG)
 
     monkeypatch.setattr(
         iface.thread_coordinator,
@@ -4840,7 +4841,7 @@ def test_start_receive_thread_facade_clears_cached_thread_when_start_fails(
         raising=True,
     )
 
-    with pytest.raises(RuntimeError, match="start failed"):
+    with pytest.raises(RuntimeError, match=START_FAILED_MSG):
         iface._start_receive_thread(name="BLEReceiveStartFailure")
 
     assert iface._receiveThread is None

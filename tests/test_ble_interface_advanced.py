@@ -358,7 +358,6 @@ def test_auto_reconnect_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "meshtastic.mesh_interface.publishingThread.queue.put_nowait",
         lambda callback: callback() if callback else None,
-        raising=False,
     )
 
     # Create a client that can simulate disconnection

@@ -527,7 +527,7 @@ class BLEClient:
         None
             Management operation is performed for side effects only.
         """
-        bleak_client = self._require_bleak_client(not_initialized_error)
+        bleak_client = getattr(self, "bleak_client", None)
         operation = getattr(bleak_client, method_name, None)
         self._run_management_call(
             (
