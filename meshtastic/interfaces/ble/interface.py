@@ -2040,13 +2040,16 @@ class BLEInterface(MeshInterface):
             If no supported delay helper exists on ``policy``.
         """
         return float(
-            BLEInterface._compat_dispatch_callable(
-                policy,
-                public_name="get_delay",
-                legacy_name="_get_delay",
-                fallback_attr_name=None,
-                error_message=ERROR_RETRY_POLICY_MISSING_GET_DELAY,
-                args=(attempt,),
+            cast(
+                float,
+                BLEInterface._compat_dispatch_callable(
+                    policy,
+                    public_name="get_delay",
+                    legacy_name="_get_delay",
+                    fallback_attr_name=None,
+                    error_message=ERROR_RETRY_POLICY_MISSING_GET_DELAY,
+                    args=(attempt,),
+                ),
             )
         )
 
