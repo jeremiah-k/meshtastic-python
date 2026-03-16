@@ -719,9 +719,7 @@ class BLEInterface(MeshInterface):
                 if report_exception is not None:
                     try:
                         report_exception(error_msg)
-                    except (
-                        Exception
-                    ):  # noqa: BLE001 - callback error reporting is best effort
+                    except Exception:  # noqa: BLE001 - callback error reporting is best effort
                         logger.debug(error_msg, exc_info=True)
                 else:
                     logger.debug(error_msg, exc_info=True)
@@ -736,9 +734,7 @@ class BLEInterface(MeshInterface):
             ):
                 try:
                     handler(sender, data)
-                except (
-                    Exception
-                ):  # noqa: BLE001 - notification callbacks must stay best effort
+                except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
                     _report_notification_error()
                 return
             try:
@@ -756,17 +752,11 @@ class BLEInterface(MeshInterface):
                         return
                     try:
                         safe_execute(lambda: handler(sender, data))
-                    except (
-                        Exception
-                    ):  # noqa: BLE001 - notification callbacks must stay best effort
+                    except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
                         _report_notification_error()
-                except (
-                    Exception
-                ):  # noqa: BLE001 - notification callbacks must stay best effort
+                except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
                     _report_notification_error()
-            except (
-                Exception
-            ):  # noqa: BLE001 - notification callbacks must stay best effort
+            except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
                 _report_notification_error()
 
         def _safe_legacy_handler(sender: Any, data: bytes | bytearray) -> None:
@@ -1051,7 +1041,8 @@ class BLEInterface(MeshInterface):
             awaitable,
             timeout,
             label,
-            timeout_error_factory=lambda timeout_label, timeout_seconds: BLEInterface.BLEError(
+            timeout_error_factory=lambda timeout_label,
+            timeout_seconds: BLEInterface.BLEError(
                 ERROR_TIMEOUT.format(timeout_label, timeout_seconds)
             ),
         )
@@ -2048,7 +2039,8 @@ class BLEInterface(MeshInterface):
         AttributeError
             If no supported delay helper exists on ``policy``.
         """
-        return float(
+        return cast(
+            float,
             BLEInterface._compat_dispatch_callable(
                 policy,
                 public_name="get_delay",
@@ -2056,7 +2048,7 @@ class BLEInterface(MeshInterface):
                 fallback_attr_name=None,
                 error_message=ERROR_RETRY_POLICY_MISSING_GET_DELAY,
                 args=(attempt,),
-            )
+            ),
         )
 
     @property
