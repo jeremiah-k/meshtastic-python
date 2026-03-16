@@ -1900,7 +1900,7 @@ class BLEInterface(MeshInterface):
             lambda: None,
             self._on_ble_disconnect,
         )
-        kwargs = {
+        kwargs: dict[str, object] = {
             "pair_on_connect": pair_on_connect,
             "connect_timeout": connect_timeout,
             "emit_connected_side_effects": False,
@@ -1918,7 +1918,7 @@ class BLEInterface(MeshInterface):
         except TypeError as exc:
             if not _is_unexpected_keyword_error(exc, "emit_connected_side_effects"):
                 raise
-            legacy_kwargs = {
+            legacy_kwargs: dict[str, object] = {
                 "pair_on_connect": pair_on_connect,
                 "connect_timeout": connect_timeout,
             }
@@ -2754,14 +2754,16 @@ class BLEInterface(MeshInterface):
             self, client, retry_on_empty=retry_on_empty
         )
 
-    def _handle_transient_read_error(self, error: BleakError) -> None:
+    def _handle_transient_read_error(
+        self, error: BleakError | BLEClient.BLEError
+    ) -> None:
         """Apply the transient-read retry policy for a BLE read error.
 
         If the policy allows another retry, increments the internal retry counter and sleeps the configured delay to permit a retry. If retries are exhausted, resets the counter and raises BLEInterface.BLEError(ERROR_READING_BLE).
 
         Parameters
         ----------
-        error : BleakError
+        error : BleakError | BLEClient.BLEError
             The transient BLE read error that triggered the retry policy.
 
         Raises

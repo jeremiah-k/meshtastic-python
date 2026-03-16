@@ -155,7 +155,10 @@ mgr._resubscribe_all(client, timeout=5.0)
 mgr._cleanup_all()
 ```
 
-Compatibility note: these underscore names are the canonical internal methods.
+Compatibility note: `NotificationManager` currently exposes underscore methods
+as its canonical API surface (`_subscribe`, `_get_callback`,
+`_unsubscribe_all`, `_resubscribe_all`, `_cleanup_all`); non-underscore
+wrappers are not currently provided.
 
 ### `RetryPolicy` / `ReconnectPolicy`
 
@@ -187,9 +190,10 @@ delay, should_retry = policy.next_attempt()   # compute delay and advance attemp
 attempt_count = policy.get_attempt_count()    # read current attempt counter
 ```
 
-Compatibility note: underscore variants (`_empty_read`, `_get_delay`,
-`_should_retry`, etc.) are still supported for legacy test doubles and
-transitional internal code.
+Compatibility note: `RetryPolicy` currently exposes underscore factory and
+instance methods (`_empty_read`, `_get_delay`, `_should_retry`, etc.) as its
+active API surface; these remain required by current internal code and legacy
+test doubles.
 
 Compatibility note: the core library does not currently expose camelCase policy
 aliases (`emptyRead`, `transientError`, `autoReconnect`) on `RetryPolicy`.

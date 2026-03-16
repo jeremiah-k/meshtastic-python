@@ -355,6 +355,11 @@ def test_auto_reconnect_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
         "meshtastic.mesh_interface.publishingThread.queueWork",
         lambda callback: callback() if callback else None,
     )
+    monkeypatch.setattr(
+        "meshtastic.mesh_interface.publishingThread.queue.put_nowait",
+        lambda callback: callback() if callback else None,
+        raising=False,
+    )
 
     # Create a client that can simulate disconnection
     client = DummyClient()
@@ -407,6 +412,7 @@ def test_auto_reconnect_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
         # 2. Connection status event should be published with connected=False
         disconnect_events: list[tuple[Any, dict[str, Any]]] = []
         disconnect_deadline = time.monotonic() + 1.0
+        first_disconnect_seen_at: float | None = None
         while time.monotonic() < disconnect_deadline:
             disconnect_events = [
                 (topic, kw)
@@ -414,9 +420,14 @@ def test_auto_reconnect_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
                 if topic == "meshtastic.connection.status"
                 and kw.get("connected") is False
             ]
-            if disconnect_events:
+            if disconnect_events and first_disconnect_seen_at is None:
+                first_disconnect_seen_at = time.monotonic()
+            if (
+                first_disconnect_seen_at is not None
+                and time.monotonic() - first_disconnect_seen_at >= 0.05
+            ):
                 break
-            time.sleep(0.01)
+            time.sleep(0.005)
         assert (
             len(disconnect_events) == 1
         ), f"Expected exactly one disconnect event, got {len(disconnect_events)}"
@@ -434,23 +445,23 @@ def test_auto_reconnect_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(iface, "_start_heartbeat", lambda: None)
         iface._connected()
         reconnect_events: list[tuple[Any, dict[str, Any]]] = []
-        for _ in range(100):
+        reconnect_deadline = time.monotonic() + 1.0
+        first_reconnect_seen_at: float | None = None
+        while time.monotonic() < reconnect_deadline:
             reconnect_events = [
                 (topic, kw)
                 for topic, kw in published_events
                 if topic == "meshtastic.connection.status"
                 and kw.get("connected") is True
             ]
-            if reconnect_events:
+            if reconnect_events and first_reconnect_seen_at is None:
+                first_reconnect_seen_at = time.monotonic()
+            if (
+                first_reconnect_seen_at is not None
+                and time.monotonic() - first_reconnect_seen_at >= 0.05
+            ):
                 break
-            time.sleep(0.01)
-        for _ in range(10):
-            time.sleep(0.01)
-        reconnect_events = [
-            (topic, kw)
-            for topic, kw in published_events
-            if topic == "meshtastic.connection.status" and kw.get("connected") is True
-        ]
+            time.sleep(0.005)
         assert (
             len(reconnect_events) == 1
         ), f"Expected exactly one reconnect event, got {len(reconnect_events)}"

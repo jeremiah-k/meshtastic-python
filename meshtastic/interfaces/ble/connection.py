@@ -519,8 +519,20 @@ class ClientManager:
                 self._thread_start_thread(close_thread)
                 thread_ident, thread_is_alive = _thread_start_probe(close_thread)
                 if thread_ident is None and not thread_is_alive:
+                    logger.debug(
+                        "BLEClientClose thread failed to start (ident=%s, alive=%s); closing retired client inline.",
+                        thread_ident,
+                        thread_is_alive,
+                    )
                     self._safe_close_client(client_to_close)
+            except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
+                self._safe_close_client(client_to_close)
+                raise
             except Exception:
+                logger.debug(
+                    "Failed to schedule BLEClientClose thread; closing retired client inline.",
+                    exc_info=True,
+                )
                 self._safe_close_client(client_to_close)
 
     def update_client_reference(

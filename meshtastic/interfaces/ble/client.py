@@ -327,10 +327,8 @@ class BLEClient:
                         logger.debug("Error during %s", operation_name, exc_info=True)
                 else:
                     logger.debug("Error during %s", operation_name, exc_info=True)
-                    return
             except Exception:  # noqa: BLE001 - cleanup paths are best effort
                 logger.debug("Error during %s", operation_name, exc_info=True)
-                return
         try:
             cleanup()
         except Exception:  # noqa: BLE001 - cleanup paths are best effort

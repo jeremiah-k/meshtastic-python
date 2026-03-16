@@ -656,14 +656,16 @@ class BLEReceiveRecoveryService:
         return None
 
     @staticmethod
-    def _handle_transient_read_error(iface: "BLEInterface", error: BleakError) -> None:
+    def _handle_transient_read_error(
+        iface: "BLEInterface", error: BleakError | BLEClient.BLEError
+    ) -> None:
         """Apply transient-read retry policy and raise on exhaustion.
 
         Parameters
         ----------
         iface : BLEInterface
             Interface providing transient retry counters and policy helpers.
-        error : BleakError
+        error : BleakError | BLEClient.BLEError
             Error that triggered retry-policy evaluation.
 
         Returns

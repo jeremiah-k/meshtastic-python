@@ -545,6 +545,14 @@ class BLELifecycleService:
         """Close previous client asynchronously, with inline fallback on start failure."""
         if previous_client is None:
             return
+
+        def _close_inline() -> None:
+            BLELifecycleService._error_handler_safe_cleanup(
+                iface,
+                lambda: iface._client_manager_safe_close_client(previous_client),
+                "BLE client close during disconnect",
+            )
+
         try:
             close_thread = BLELifecycleService._thread_create_thread(
                 iface,
@@ -560,13 +568,13 @@ class BLELifecycleService:
                     "BLE client close thread did not start; closing inline.",
                     exc_info=False,
                 )
-                iface._client_manager_safe_close_client(previous_client)
+                _close_inline()
         except Exception:  # noqa: BLE001 - cleanup must not abort disconnect flow
             logger.warning(
                 "Failed to start async BLE client close; closing inline.",
                 exc_info=True,
             )
-            iface._client_manager_safe_close_client(previous_client)
+            _close_inline()
 
     @staticmethod
     def _execute_disconnect_side_effects(
@@ -998,16 +1006,40 @@ class BLELifecycleService:
                 ):
                     iface._ever_connected = True
                     iface._prior_publish_was_reconnect = prior_ever_connected
+                    if iface.client is connected_client:
+                        iface._client_publish_pending = False
+                        iface._client_replacement_pending = False
                     publish_committed = True
             if publish_committed:
-                try:
-                    iface._connected()
-                    iface._emit_verified_connection_side_effects(connected_client)
-                finally:
-                    with iface._state_lock:
-                        if iface.client is connected_client:
-                            iface._client_publish_pending = False
-                            iface._client_replacement_pending = False
+                with iface._state_lock:
+                    still_owned_now, is_closing_now = (
+                        BLELifecycleService._get_connected_client_status_locked(
+                            iface, connected_client
+                        )
+                    )
+                if not still_owned_now or is_closing_now:
+                    _raise_invalidated(
+                        BLELifecycleService._verify_ownership_snapshot(
+                            iface,
+                            connected_client,
+                            connected_device_key,
+                            connection_alias_key,
+                        )
+                    )
+                iface._connected()
+                iface._emit_verified_connection_side_effects(connected_client)
+                with iface._state_lock:
+                    still_owned_after, is_closing_after = (
+                        BLELifecycleService._get_connected_client_status_locked(
+                            iface, connected_client
+                        )
+                    )
+                    disconnect_notified = iface._disconnect_notified
+                if not still_owned_after and disconnect_notified and not is_closing_after:
+                    logger.debug(
+                        "Connected publication raced with disconnect; emitting compensating disconnect event."
+                    )
+                    iface._disconnected()
                 return
 
         _raise_invalidated(snapshot)

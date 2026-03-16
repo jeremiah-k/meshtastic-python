@@ -22,6 +22,7 @@ from meshtastic.interfaces.ble.constants import (
 from meshtastic.interfaces.ble.utils import (
     _call_factory_with_optional_kwarg,
     _is_unconfigured_mock_callable,
+    _is_unconfigured_mock_member,
     _is_unexpected_keyword_error,
     resolve_ble_module,
     sanitize_address,
@@ -454,6 +455,28 @@ class DiscoveryManager:
         )
         with self._client_lock:
 
+            def _probe_connected_state(candidate: object) -> bool | None:
+                for method_name in ("isConnected", "is_connected"):
+                    probe = getattr(candidate, method_name, None)
+                    if callable(probe) and not _is_unconfigured_mock_callable(probe):
+                        try:
+                            result = probe()
+                        except Exception:  # noqa: BLE001 - defensive probe path
+                            logger.debug(
+                                "Cached discovery client %s() probe failed; discarding client.",
+                                method_name,
+                                exc_info=True,
+                            )
+                            return None
+                        if isinstance(result, bool):
+                            return result
+                member_probe = getattr(candidate, "is_connected", None)
+                if isinstance(member_probe, bool) and not _is_unconfigured_mock_member(
+                    member_probe
+                ):
+                    return member_probe
+                return None
+
             def _discard_cached_client() -> None:
                 cached_client = self._client
                 if cached_client is not None:
@@ -465,25 +488,16 @@ class DiscoveryManager:
             if self._client is not None:
                 bleak = getattr(self._client, "bleak_client", None)
                 if bleak is not None:
-                    is_connected_method = getattr(self._client, "isConnected", None)
-                    if not callable(is_connected_method):
+                    connected_state = _probe_connected_state(self._client)
+                    if connected_state is None:
+                        connected_state = _probe_connected_state(bleak)
+                    if connected_state is None:
                         logger.debug(
-                            "Cached discovery client lacks isConnected(); discarding client."
+                            "Cached discovery client lacks isConnected()/is_connected(); discarding client."
                         )
                         _discard_cached_client()
-                    else:
-                        is_connected = cast(Any, is_connected_method)
-                        try:
-                            if not is_connected():  # pylint: disable=not-callable
-                                _discard_cached_client()
-                        except (
-                            Exception
-                        ):  # noqa: BLE001 - defensive path for flaky clients
-                            logger.debug(
-                                "Cached discovery client isConnected() failed; discarding client.",
-                                exc_info=True,
-                            )
-                            _discard_cached_client()
+                    elif not connected_state:
+                        _discard_cached_client()
             if self._client is None:
                 # Factory resolution precedence (back-compat and testability):
                 #   1. Explicit self.client_factory (injected for testing)

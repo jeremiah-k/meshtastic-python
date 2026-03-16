@@ -39,10 +39,16 @@ class MockBLEError(Exception):
 def _make_orchestrator_client_manager() -> MagicMock:
     """Return a client-manager mock configured for public-orchestrator adapters."""
     client_manager = MagicMock(
-        spec_set=["create_client", "connect_client", "safe_close_client"]
+        spec_set=[
+            "create_client",
+            "connect_client",
+            "safe_close_client",
+            "update_client_reference",
+        ]
     )
     client_manager.connect_client.return_value = None
     client_manager.safe_close_client.return_value = None
+    client_manager.update_client_reference.return_value = None
     return client_manager
 
 
@@ -404,8 +410,8 @@ def test_client_manager_safe_close_client_already_closed() -> None:
 
 
 @pytest.mark.unit
-def test_client_manager_safe_close_client_falls_back_to_legacy_safe_cleanup() -> None:
-    """_safe_close_client should use _safe_cleanup when safe_cleanup is unconfigured."""
+def test_client_manager_safe_close_client_prefers_internal_safe_cleanup() -> None:
+    """_safe_close_client should prefer internal ``_safe_cleanup`` over ``safe_cleanup``."""
     state_manager = BLEStateManager()
     lock = RLock()
     thread_coordinator = MagicMock()

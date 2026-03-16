@@ -147,6 +147,7 @@ class BLECompatibilityEventService:
                 except Full:
                     # Queue is full: keep this path non-blocking.
                     return False
+            return False
         if queue_work_callback is not None:
             queue_work_callback(callback)
             return True
@@ -353,7 +354,22 @@ class BLECompatibilityEventService:
     def publish_connection_status_legacy(
         iface: "BLEInterface", connected: bool, *, publishing_thread: object
     ) -> None:
-        """Backward-compatible alias for ``publish_connection_status``."""
+        """Backward-compatible alias for ``publish_connection_status``.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface whose connection status is being published.
+        connected : bool
+            ``True`` for connected status and ``False`` for disconnected.
+        publishing_thread : object
+            Publishing-thread facade used to enqueue/send the legacy message.
+
+        Returns
+        -------
+        None
+            This compatibility alias returns ``None``.
+        """
         BLECompatibilityEventService.publish_connection_status(
             iface,
             connected,

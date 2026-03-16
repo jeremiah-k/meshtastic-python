@@ -727,7 +727,20 @@ def test_ble_interface_pair_uses_existing_client_when_request_matches(
 def test_ble_interface_pair_uses_temporary_client_when_disconnected(
     monkeypatch: pytest.MonkeyPatch, factory_mode: str
 ) -> None:
-    """pair() should use temporary BLEClient factories with or without kwargs."""
+    """pair() should use temporary BLEClient factories with or without kwargs.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch BLE client construction and cleanup hooks.
+    factory_mode : str
+        Factory signature variant under test:
+        ``"with_optional_kwargs"`` or ``"without_optional_kwargs"``.
+
+    Returns
+    -------
+    None
+    """
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     with iface._state_lock:
         iface.client = None
@@ -5063,8 +5076,7 @@ def test_publish_connection_status_falls_back_inline_when_non_blocking_enqueue_u
         publishing_thread=publishing_thread,
     )
 
-    assert len(queue_attempts) == 1
-    assert callable(queue_attempts[0])
+    assert len(queue_attempts) == 0
     assert sent == [("meshtastic.connection.status", iface, False)]
 
 
