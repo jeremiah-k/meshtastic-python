@@ -587,9 +587,18 @@ class BLELifecycleService:
             # Keep clear() under the state lock so reconnect scheduling starts a
             # fresh cycle against a non-signaled shutdown event.
             iface._shutdown_event.clear()
-        iface._reconnect_scheduler._schedule_reconnect(
-            iface.auto_reconnect, iface._shutdown_event
-        )
+        schedule_reconnect = getattr(iface._reconnect_scheduler, "schedule_reconnect", None)
+        if not callable(schedule_reconnect) or _is_unconfigured_mock_callable(
+            schedule_reconnect
+        ):
+            schedule_reconnect = getattr(iface._reconnect_scheduler, "_schedule_reconnect", None)
+        if not callable(schedule_reconnect) or _is_unconfigured_mock_callable(
+            schedule_reconnect
+        ):
+            raise AttributeError(
+                "Reconnect scheduler is missing schedule_reconnect/_schedule_reconnect"
+            )
+        schedule_reconnect(iface.auto_reconnect, iface._shutdown_event)
 
     @staticmethod
     def _disconnect_and_close_client(
@@ -708,7 +717,21 @@ class BLELifecycleService:
             iface._client_replacement_pending = False
             iface._disconnect_notified = True
             iface._connection_alias_key = None
-            iface._state_manager._transition_to(ConnectionState.DISCONNECTED)
+            if not iface._state_manager._transition_to(ConnectionState.DISCONNECTED):
+                logger.error(
+                    "Failed state transition to %s during disconnect target resolution (alias=%s current=%s); forcing reset.",
+                    ConnectionState.DISCONNECTED.value,
+                    alias_key,
+                    getattr(current_state, "value", current_state),
+                )
+                if not iface._state_manager._reset_to_disconnected():
+                    fallback_state = iface._state_manager._current_state
+                    logger.error(
+                        "Failed forced reset to %s during disconnect target resolution (alias=%s current=%s).",
+                        ConnectionState.DISCONNECTED.value,
+                        alias_key,
+                        getattr(fallback_state, "value", fallback_state),
+                    )
             should_reconnect = iface.auto_reconnect
 
             address = "unknown"
@@ -976,7 +999,24 @@ class BLELifecycleService:
         finally:
             if should_reset_state:
                 with iface._state_lock:
-                    iface._state_manager._reset_to_disconnected()
+                    if not iface._state_manager._reset_to_disconnected():
+                        current_state = iface._state_manager._current_state
+                        logger.error(
+                            "Failed to reset state after invalidated connect result (alias=%s current=%s); forcing transition to %s.",
+                            iface._connection_alias_key,
+                            getattr(current_state, "value", current_state),
+                            ConnectionState.DISCONNECTED.value,
+                        )
+                        if not iface._state_manager._transition_to(
+                            ConnectionState.DISCONNECTED
+                        ):
+                            fallback_state = iface._state_manager._current_state
+                            logger.error(
+                                "Failed forced transition to %s after invalidated connect result (alias=%s current=%s).",
+                                ConnectionState.DISCONNECTED.value,
+                                iface._connection_alias_key,
+                                getattr(fallback_state, "value", fallback_state),
+                            )
 
     @staticmethod
     def _state_manager_is_connected(iface: "BLEInterface") -> bool:
@@ -1432,7 +1472,27 @@ class BLELifecycleService:
                     ConnectionState.DISCONNECTED,
                     ConnectionState.DISCONNECTING,
                 ):
-                    iface._state_manager._transition_to(ConnectionState.DISCONNECTING)
+                    if not iface._state_manager._transition_to(
+                        ConnectionState.DISCONNECTING
+                    ):
+                        current_state = iface._state_manager._current_state
+                        logger.error(
+                            "Failed state transition to %s during shutdown (alias=%s current=%s); forcing reset.",
+                            ConnectionState.DISCONNECTING.value,
+                            iface._connection_alias_key,
+                            getattr(current_state, "value", current_state),
+                        )
+                        if not iface._state_manager._reset_to_disconnected():
+                            if not iface._state_manager._transition_to(
+                                ConnectionState.DISCONNECTED
+                            ):
+                                fallback_state = iface._state_manager._current_state
+                                logger.error(
+                                    "Failed forced transition to %s during shutdown fallback (alias=%s current=%s).",
+                                    ConnectionState.DISCONNECTED.value,
+                                    iface._connection_alias_key,
+                                    getattr(fallback_state, "value", fallback_state),
+                                )
             while iface._management_inflight > 0:
                 elapsed = time.monotonic() - management_wait_started
                 if elapsed >= management_shutdown_wait_timeout:
@@ -1616,7 +1676,25 @@ class BLELifecycleService:
         """Persist terminal disconnected state and clear address registry claims."""
         with iface._state_lock:
             # Record final state as DISCONNECTED for observers; instance remains closed.
-            iface._state_manager._transition_to(ConnectionState.DISCONNECTED)
+            if not iface._state_manager._transition_to(ConnectionState.DISCONNECTED):
+                current_state = iface._state_manager._current_state
+                logger.error(
+                    "Failed state transition to %s during close finalization (alias=%s current=%s); forcing reset.",
+                    ConnectionState.DISCONNECTED.value,
+                    iface._connection_alias_key,
+                    getattr(current_state, "value", current_state),
+                )
+                if not iface._state_manager._reset_to_disconnected():
+                    if not iface._state_manager._transition_to(
+                        ConnectionState.DISCONNECTED
+                    ):
+                        fallback_state = iface._state_manager._current_state
+                        logger.error(
+                            "Failed forced transition to %s during close finalization (alias=%s current=%s).",
+                            ConnectionState.DISCONNECTED.value,
+                            iface._connection_alias_key,
+                            getattr(fallback_state, "value", fallback_state),
+                        )
             alias_key = iface._connection_alias_key
             iface._connection_alias_key = None
         close_key = _addr_key(iface.address)

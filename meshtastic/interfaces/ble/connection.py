@@ -575,25 +575,39 @@ class ClientManager:
         """
         is_finalizing = getattr(sys, "is_finalizing", None)
         skip_disconnect = bool(is_finalizing()) if callable(is_finalizing) else False
-        safe_cleanup = getattr(self.error_handler, "safe_cleanup", None)
-        if not callable(safe_cleanup) or _is_unconfigured_mock_callable(safe_cleanup):
-            safe_cleanup = getattr(self.error_handler, "_safe_cleanup", None)
-        if not callable(safe_cleanup) or _is_unconfigured_mock_callable(safe_cleanup):
-            # Preserve best-effort close behavior for minimal test doubles that do
-            # not expose either cleanup helper.
-            def safe_cleanup(func: Callable[[], object], _cleanup_name: str) -> bool:
+        safe_cleanup_hook = getattr(self.error_handler, "safe_cleanup", None)
+        if not callable(safe_cleanup_hook) or _is_unconfigured_mock_callable(
+            safe_cleanup_hook
+        ):
+            safe_cleanup_hook = getattr(self.error_handler, "_safe_cleanup", None)
+        if not callable(safe_cleanup_hook) or _is_unconfigured_mock_callable(
+            safe_cleanup_hook
+        ):
+            safe_cleanup_hook = None
+
+        def run_safe_cleanup(func: Callable[[], object], cleanup_name: str) -> bool:
+            """Run cleanup through hook when available, otherwise inline best effort."""
+            if safe_cleanup_hook is not None:
                 try:
-                    func()
+                    return bool(safe_cleanup_hook(func, cleanup_name))
                 except Exception:  # noqa: BLE001 - cleanup path must stay best-effort
-                    return False
-                return True
+                    logger.debug(
+                        "Error running safe_cleanup hook for %s",
+                        cleanup_name,
+                        exc_info=True,
+                    )
+            try:
+                func()
+            except Exception:  # noqa: BLE001 - cleanup path must stay best-effort
+                return False
+            return True
 
         if (
             not skip_disconnect
             and not getattr(client, "_closed", False)
             and getattr(client, "bleak_client", None)
         ):
-            safe_cleanup(
+            run_safe_cleanup(
                 lambda: client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS),
                 "client disconnect",
             )
@@ -602,7 +616,7 @@ class ClientManager:
                 "Skipping BLE client disconnect during interpreter finalization."
             )
         if not skip_disconnect:
-            safe_cleanup(client.close, "client close")
+            run_safe_cleanup(client.close, "client close")
         else:
             logger.debug("Skipping BLE client close during interpreter finalization.")
         if event:

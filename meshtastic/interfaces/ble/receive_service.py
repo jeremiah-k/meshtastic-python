@@ -22,7 +22,6 @@ from meshtastic.interfaces.ble.errors import DecodeError
 from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
-    _is_unconfigured_mock_member,
     _sleep,
 )
 
@@ -258,25 +257,15 @@ class BLEReceiveRecoveryService:
         tuple[BLEClient | None, bool, bool, bool]
             ``(client, is_connecting, publish_pending, is_closing)``.
         """
+        from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
+
         with iface._state_lock:
             client = iface.client
             is_connecting = (
                 iface._state_manager._current_state == ConnectionState.CONNECTING
             )
             publish_pending = iface._client_publish_pending
-            public_is_closing = getattr(iface._state_manager, "is_closing", None)
-            if not _is_unconfigured_mock_member(public_is_closing) and isinstance(
-                public_is_closing, bool
-            ):
-                state_is_closing = public_is_closing
-            else:
-                legacy_is_closing = getattr(iface._state_manager, "_is_closing", None)
-                if not _is_unconfigured_mock_member(legacy_is_closing) and isinstance(
-                    legacy_is_closing, bool
-                ):
-                    state_is_closing = legacy_is_closing
-                else:
-                    state_is_closing = False
+            state_is_closing = BLELifecycleService._state_manager_is_closing(iface)
             is_closing = state_is_closing or iface._closed
         return client, is_connecting, publish_pending, is_closing
 

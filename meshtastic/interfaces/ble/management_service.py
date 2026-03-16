@@ -103,7 +103,19 @@ def _create_management_client(
 
 
 def _is_blank_or_malformed_address_like(address: str | None) -> bool:
-    """Return whether an address input is blank or malformed address-like text."""
+    """Return whether an input is blank or malformed address-like text.
+
+    Parameters
+    ----------
+    address : str | None
+        Explicit management-target input provided by the caller.
+
+    Returns
+    -------
+    bool
+        ``True`` when ``address`` is blank or appears address-like but is
+        malformed; otherwise ``False``.
+    """
     if address is None:
         return False
     stripped_address = address.strip()

@@ -50,6 +50,7 @@ from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.runner import BLECoroutineRunner
 from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
+    _is_unconfigured_mock_member,
     _is_unexpected_keyword_error,
     safe_execute_through_adapter,
     with_timeout,
@@ -659,8 +660,12 @@ class BLEClient:
             """
             connected = getattr(bleak_client, "is_connected", False)
             if callable(connected):
+                if _is_unconfigured_mock_callable(connected):
+                    return False
                 connected = connected()  # pylint: disable=E1102
-            return bool(connected)
+            if _is_unconfigured_mock_member(connected):
+                return False
+            return connected if isinstance(connected, bool) else False
 
         result = self._error_handler_safe_execute(
             _check_connection,

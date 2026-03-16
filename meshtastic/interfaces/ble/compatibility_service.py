@@ -289,6 +289,12 @@ class BLECompatibilityEventService:
                 runnable = get_nowait()
             except Empty:
                 break
+            except Exception:  # noqa: BLE001 - direct drain must stay best effort
+                logger.debug(
+                    "Error reading deferred publish queue during direct drain",
+                    exc_info=True,
+                )
+                break
             iterations += 1
             BLECompatibilityEventService._safe_execute(
                 iface,

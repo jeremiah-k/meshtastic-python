@@ -2039,8 +2039,7 @@ class BLEInterface(MeshInterface):
         AttributeError
             If no supported delay helper exists on ``policy``.
         """
-        return cast(
-            float,
+        return float(
             BLEInterface._compat_dispatch_callable(
                 policy,
                 public_name="get_delay",
@@ -2048,7 +2047,7 @@ class BLEInterface(MeshInterface):
                 fallback_attr_name=None,
                 error_message=ERROR_RETRY_POLICY_MISSING_GET_DELAY,
                 args=(attempt,),
-            ),
+            )
         )
 
     @property
