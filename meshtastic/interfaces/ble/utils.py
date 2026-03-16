@@ -374,8 +374,8 @@ def resolve_ble_module() -> ModuleType | None:
         The imported BLE module if found, otherwise `None`.
     """
     for module_name in (
-        "meshtastic.interfaces.ble",
         "meshtastic.ble_interface",
+        "meshtastic.interfaces.ble",
     ):
         try:
             return importlib.import_module(module_name)

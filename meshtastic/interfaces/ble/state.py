@@ -200,6 +200,7 @@ class BLEStateManager:
             ConnectionState.RECONNECTING,
         )
 
+    # COMPAT_STABLE_SHIM: public alias for `_is_connecting`.
     @property
     def is_connecting(self) -> bool:
         """Public-first compatibility alias for ``_is_connecting``.

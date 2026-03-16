@@ -4521,8 +4521,22 @@ def test_receive_recovery_backoff_reaches_configured_cap_for_non_power_of_two(
     iface._read_retry_count = 7
     iface._should_run_receive_loop = lambda: True
     iface._start_receive_thread = MagicMock()
-    iface._shutdown_event = MagicMock()
-    iface._shutdown_event.wait.return_value = True
+
+    wait_calls: list[float | None] = []
+
+    class _ShutdownEvent:
+        def __init__(self) -> None:
+            self._set = False
+
+        def is_set(self) -> bool:
+            return self._set
+
+        def wait(self, timeout: float | None = None) -> bool:
+            wait_calls.append(timeout)
+            self._set = True
+            return True
+
+    iface._shutdown_event = _ShutdownEvent()
 
     monkeypatch.setattr(
         receive_service_mod,
@@ -4542,7 +4556,7 @@ def test_receive_recovery_backoff_reaches_configured_cap_for_non_power_of_two(
         iface, "receive_thread_fatal"
     )
 
-    iface._shutdown_event.wait.assert_called_once_with(timeout=30.0)
+    assert wait_calls == [30.0]
     assert iface._read_retry_count == 7
     iface._start_receive_thread.assert_not_called()
 
@@ -4779,6 +4793,7 @@ def test_start_receive_thread_clears_cached_thread_when_start_fails(
     )
 
     def _raise_start_failure(_thread: object) -> None:
+        assert _thread is thread_like
         assert iface._receiveThread is thread_like
         raise RuntimeError(START_FAILED_MSG)
 
@@ -4833,6 +4848,7 @@ def test_start_receive_thread_facade_clears_cached_thread_when_start_fails(
     )
 
     def _raise_start_failure(_thread: object) -> None:
+        assert _thread is thread_like
         assert iface._receiveThread is thread_like
         raise RuntimeError(START_FAILED_MSG)
 
@@ -5082,7 +5098,7 @@ def test_publish_connection_status_falls_back_inline_when_non_blocking_enqueue_u
         publishing_thread=publishing_thread,
     )
 
-    assert len(queue_attempts) == 1
+    assert len(queue_attempts) == 0
     assert sent == [("meshtastic.connection.status", iface, False)]
 
 
@@ -5104,15 +5120,9 @@ def test_discovery_manager_filters_meshtastic_devices(
             SimpleNamespace(service_uuids=["some-other-service"]),
         ),
     }
-    monkeypatch.setattr(
-        ble_mod,
-        "BLEClient",
-        lambda **_kwargs: _FakeDiscoveryClient(
-            discover_result,
-        ),
+    manager = DiscoveryManager(
+        client_factory=lambda **_kwargs: _FakeDiscoveryClient(discover_result)
     )
-
-    manager = DiscoveryManager()
 
     devices = manager._discover_devices(address=None)
 
@@ -5137,15 +5147,9 @@ def test_discovery_manager_filters_targeted_scan_to_whitelist_match(
             SimpleNamespace(service_uuids=[SERVICE_UUID]),
         ),
     }
-    monkeypatch.setattr(
-        ble_mod,
-        "BLEClient",
-        lambda **_kwargs: _FakeDiscoveryClient(
-            discover_result,
-        ),
+    manager = DiscoveryManager(
+        client_factory=lambda **_kwargs: _FakeDiscoveryClient(discover_result)
     )
-
-    manager = DiscoveryManager()
     devices = manager._discover_devices(address="AA:BB:CC:DD:EE:FF")
 
     assert devices == [target_device]
@@ -5237,12 +5241,15 @@ def test_discovery_manager_discards_cached_client_on_non_kwarg_typeerror(
     """Non-kwarg TypeError from discover should invalidate the cached discovery client."""
 
     class _TypeErrorDiscoveryClient:
+        class _DiscoveryTypeError(TypeError):
+            """Raised by this test stub to emulate discovery call failures."""
+
         def __init__(self) -> None:
             self.bleak_client = object()
 
         @staticmethod
         def _discover(**_kwargs: object) -> dict[str, Any]:
-            raise TypeError("discovery invocation failed")
+            raise _TypeErrorDiscoveryClient._DiscoveryTypeError
 
     client = _TypeErrorDiscoveryClient()
     manager = DiscoveryManager(client_factory=lambda **_kwargs: client)

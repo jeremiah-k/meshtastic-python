@@ -14,6 +14,7 @@ from meshtastic.interfaces.ble.constants import (
     CONNECTION_ERROR_LOST_OWNERSHIP,
     ERROR_INTERFACE_CLOSING,
     NOTIFICATION_START_TIMEOUT,
+    READ_TRIGGER_EVENT,
     RECEIVE_THREAD_JOIN_TIMEOUT,
     RECONNECTED_EVENT,
     logger,
@@ -37,7 +38,6 @@ if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
     from meshtastic.interfaces.ble.interface import BLEInterface
 
-READ_TRIGGER_EVENT = "read_trigger"
 THREAD_COORDINATOR_MISSING_FMT = "Thread coordinator is missing %s/%s"
 RECONNECT_SCHEDULER_MISSING_MSG = (
     "Reconnect scheduler is missing schedule_reconnect/_schedule_reconnect"
@@ -146,9 +146,24 @@ class BLELifecycleService:
         safe_cleanup = BLELifecycleService._resolve_error_handler_hook(
             iface, "safe_cleanup", "_safe_cleanup"
         )
+        cleanup_ran = False
+
+        def _tracked_cleanup() -> object:
+            nonlocal cleanup_ran
+            cleanup_ran = True
+            return cleanup()
+
         if safe_cleanup is not None:
             try:
-                safe_cleanup(cleanup, operation_name)
+                try:
+                    safe_cleanup(func=_tracked_cleanup, cleanup_name=operation_name)
+                except TypeError as exc:
+                    if not (
+                        _is_unexpected_keyword_error(exc, "func")
+                        or _is_unexpected_keyword_error(exc, "cleanup_name")
+                    ):
+                        raise
+                    safe_cleanup(_tracked_cleanup, operation_name)
                 return
             except Exception:  # noqa: BLE001 - hook failure must not abort shutdown
                 logger.debug(
@@ -156,6 +171,8 @@ class BLELifecycleService:
                     operation_name,
                     exc_info=True,
                 )
+                if cleanup_ran:
+                    return
         try:
             cleanup()
         except Exception:  # noqa: BLE001 - shutdown cleanup must remain best effort
@@ -192,29 +209,46 @@ class BLELifecycleService:
         safe_execute = BLELifecycleService._resolve_error_handler_hook(
             iface, "safe_execute", "_safe_execute"
         )
+        func_ran = False
+
+        def _tracked_func() -> object:
+            nonlocal func_ran
+            func_ran = True
+            return func()
+
         if safe_execute is not None:
             try:
-                return safe_execute(func, error_msg=error_msg)
+                return safe_execute(_tracked_func, error_msg=error_msg)
             except TypeError as exc:
                 if not _is_unexpected_keyword_error(exc, "error_msg"):
                     logger.debug(error_msg, exc_info=True)
+                    if func_ran:
+                        return None
                 else:
                     try:
-                        return safe_execute(func, error_msg)
+                        return safe_execute(_tracked_func, error_msg)
                     except TypeError as positional_exc:
                         if "positional argument" not in str(positional_exc):
                             logger.debug(error_msg, exc_info=True)
+                            if func_ran:
+                                return None
                             return None
                         try:
-                            return safe_execute(func)
+                            return safe_execute(_tracked_func)
                         except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
                             logger.debug(error_msg, exc_info=True)
+                            if func_ran:
+                                return None
                             return None
                     except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
                         logger.debug(error_msg, exc_info=True)
+                        if func_ran:
+                            return None
                         return None
             except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
                 logger.debug(error_msg, exc_info=True)
+                if func_ran:
+                    return None
         try:
             return func()
         except Exception:  # noqa: BLE001 - shutdown execution must remain best effort
@@ -1371,7 +1405,7 @@ class BLELifecycleService:
         raw_ever_connected = getattr(iface, "_ever_connected", False)
         if _is_unconfigured_mock_member(raw_ever_connected):
             return False
-        return bool(raw_ever_connected) if isinstance(raw_ever_connected, bool) else False
+        return raw_ever_connected is True
 
     @staticmethod
     def _verify_and_publish_connected(
@@ -1447,21 +1481,18 @@ class BLELifecycleService:
                 ):
                     publish_committed = True
             if publish_committed:
-                with iface._state_lock:
-                    still_owned_now, is_closing_now = (
-                        BLELifecycleService._get_connected_client_status_locked(
-                            iface, connected_client
-                        )
-                    )
-                if not still_owned_now or is_closing_now:
-                    _raise_invalidated(
-                        BLELifecycleService._verify_ownership_snapshot(
-                            iface,
-                            connected_client,
-                            connected_device_key,
-                            connection_alias_key,
-                        )
-                    )
+                post_commit_snapshot = BLELifecycleService._verify_ownership_snapshot(
+                    iface,
+                    connected_client,
+                    connected_device_key,
+                    connection_alias_key,
+                )
+                if (
+                    not post_commit_snapshot.still_owned
+                    or post_commit_snapshot.is_closing
+                    or post_commit_snapshot.lost_gate_ownership
+                ):
+                    _raise_invalidated(post_commit_snapshot)
                 iface._connected()
                 with iface._state_lock:
                     iface._ever_connected = True

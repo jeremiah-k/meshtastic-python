@@ -107,7 +107,7 @@ class BLEErrorHandler:
 
     # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _safe_execute.
     @staticmethod
-    def safe_execute(
+    def safe_execute(  # noqa: FBT001,FBT002 - compatibility shim intentionally preserves legacy positional booleans.
         func: Callable[[], T],
         default_return: T | None = None,
         log_error: bool = True,

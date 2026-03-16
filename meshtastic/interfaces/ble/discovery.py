@@ -657,6 +657,11 @@ class DiscoveryManager:
                         type(client),
                         ["discover", "_discover"],
                     ) from exc
+                logger.warning(
+                    "Discovery client raised TypeError during discover call; discarding cached client as invalid: %s",
+                    exc,
+                    exc_info=True,
+                )
                 discarded_typeerror_client: (
                     BLEClient
                     | DiscoveryClientProtocol

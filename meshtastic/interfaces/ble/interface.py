@@ -74,6 +74,7 @@ from meshtastic.interfaces.ble.constants import (
     LOGRADIO_UUID,
     MALFORMED_NOTIFICATION_THRESHOLD,
     NOTIFICATION_START_TIMEOUT,
+    READ_TRIGGER_EVENT,
     RECONNECTED_EVENT,
     SERVICE_UUID,
     TORADIO_UUID,
@@ -321,7 +322,7 @@ class BLEInterface(MeshInterface):
 
         # Event coordination for reconnection and read operations
         self._read_trigger = self.thread_coordinator._create_event(
-            "read_trigger"
+            READ_TRIGGER_EVENT
         )  # Signals when data is available to read
         self._reconnected_event = self.thread_coordinator._create_event(
             RECONNECTED_EVENT
@@ -629,7 +630,7 @@ class BLEInterface(MeshInterface):
     def _from_num_handler(self, _: Any, b: bytes | bytearray) -> None:
         """Process a FROMNUM characteristic notification and wake the receive loop.
 
-        Parses a 4-byte little-endian unsigned 32-bit integer from the notification payload. On successful parse the internal malformed-notification counter is reset and the parsed value is logged. On parse failure or unexpected length the malformed-notification counter is incremented via _handle_malformed_fromnum and a warning may be emitted when a threshold is reached. Always triggers the thread coordinator's "read_trigger" event to wake the read loop.
+        Parses a 4-byte little-endian unsigned 32-bit integer from the notification payload. On successful parse the internal malformed-notification counter is reset and the parsed value is logged. On parse failure or unexpected length the malformed-notification counter is incremented via _handle_malformed_fromnum and a warning may be emitted when a threshold is reached. Always triggers the thread coordinator's read-trigger event to wake the read loop.
 
         Parameters
         ----------
@@ -655,7 +656,7 @@ class BLEInterface(MeshInterface):
             )
             return
         finally:
-            self.thread_coordinator._set_event("read_trigger")
+            self.thread_coordinator._set_event(READ_TRIGGER_EVENT)
 
     # COMPAT_STABLE_SHIM (2.7.7): historical public BLEInterface callback.
     # Keep callable without deprecation warning.
@@ -2878,7 +2879,7 @@ class BLEInterface(MeshInterface):
             # Brief delay to allow write to propagate before triggering read
             _sleep(BLEConfig.SEND_PROPAGATION_DELAY)
             self.thread_coordinator._set_event(
-                "read_trigger"
+                READ_TRIGGER_EVENT
             )  # Wake receive loop to process any response
 
     def close(self) -> None:

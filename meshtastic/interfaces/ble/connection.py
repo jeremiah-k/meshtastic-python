@@ -871,6 +871,7 @@ class ConnectionOrchestrator:
 
     def _thread_set_event(self, name: str) -> None:
         """Set thread-coordinator event with underscore-compatible fallback for test doubles."""
+        missing_event_dispatch = object()
         try:
             result = self._dispatch_public_or_underscore(
                 target=self.thread_coordinator,
@@ -878,7 +879,7 @@ class ConnectionOrchestrator:
                 underscore_name="_set_event",
                 call_member=True,
                 args=(name,),
-                default_if_missing=_DISPATCH_MISSING,
+                default_if_missing=missing_event_dispatch,
             )
         except Exception:  # noqa: BLE001 - reconnect signaling is best effort
             logger.debug(
@@ -887,7 +888,7 @@ class ConnectionOrchestrator:
                 exc_info=True,
             )
             return
-        if result is _DISPATCH_MISSING:
+        if result is missing_event_dispatch:
             logger.debug(
                 "Thread coordinator is missing set_event/_set_event; skipping %s.",
                 name,
@@ -1526,7 +1527,7 @@ class ConnectionOrchestrator:
             prior_ever_connected = (
                 False
                 if _is_unconfigured_mock_member(raw_ever_connected)
-                else bool(raw_ever_connected) if isinstance(raw_ever_connected, bool) else False
+                else raw_ever_connected if isinstance(raw_ever_connected, bool) else False
             )
             on_connected_func()
             if prior_ever_connected:

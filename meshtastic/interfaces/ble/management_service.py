@@ -129,12 +129,7 @@ def _is_blank_or_malformed_address_like(address: str | None) -> bool:
         and _HEX_MAC_NO_SEPARATOR_RE.fullmatch(normalized_address) is not None
     ):
         return False
-    # sanitize_address() can reject/alter edge-case inputs, so preserve a
-    # raw-shape check for 12-hex strings and colon-delimited address-like text.
-    return (
-        ":" in stripped_address
-        or _HEX_MAC_NO_SEPARATOR_RE.fullmatch(stripped_address) is not None
-    )
+    return ":" in stripped_address
 
 
 class BLEManagementCommandsService:
@@ -167,16 +162,15 @@ class BLEManagementCommandsService:
             operation token.
         """
         expected_implicit_binding: str | None = None
-        if address is None:
-            with iface._state_lock:
-                expected_implicit_binding = (
-                    iface._get_current_implicit_management_binding_locked()
-                )
-
         with iface._connect_lock, iface._management_lock:
             iface._validate_management_preconditions()
             iface._begin_management_operation_locked()
             try:
+                if address is None:
+                    with iface._state_lock:
+                        expected_implicit_binding = (
+                            iface._get_current_implicit_management_binding_locked()
+                        )
                 existing_client = iface._get_management_client_if_available(address)
                 target_address = iface._extract_client_address(existing_client)
                 use_existing_client_without_resolved_address = (
@@ -230,11 +224,6 @@ class BLEManagementCommandsService:
 
         if start_context.use_existing_client_without_resolved_address:
             current_binding: str | None = None
-            if address is None:
-                with iface._state_lock:
-                    current_binding = (
-                        iface._get_current_implicit_management_binding_locked()
-                    )
             with iface._connect_lock, iface._management_lock:
                 iface._validate_management_preconditions()
                 refreshed_existing_client = iface._get_management_client_if_available(
@@ -243,6 +232,10 @@ class BLEManagementCommandsService:
                 if refreshed_existing_client is None:
                     raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
                 if address is None:
+                    with iface._state_lock:
+                        current_binding = (
+                            iface._get_current_implicit_management_binding_locked()
+                        )
                     if sanitize_address(current_binding) != sanitize_address(
                         start_context.expected_implicit_binding
                     ):
