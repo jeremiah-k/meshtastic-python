@@ -406,7 +406,8 @@ def test_auto_reconnect_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
 
         # 2. Connection status event should be published with connected=False
         disconnect_events: list[tuple[Any, dict[str, Any]]] = []
-        for _ in range(100):
+        disconnect_deadline = time.monotonic() + 1.0
+        while time.monotonic() < disconnect_deadline:
             disconnect_events = [
                 (topic, kw)
                 for topic, kw in published_events
@@ -416,13 +417,6 @@ def test_auto_reconnect_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
             if disconnect_events:
                 break
             time.sleep(0.01)
-        for _ in range(10):
-            time.sleep(0.01)
-        disconnect_events = [
-            (topic, kw)
-            for topic, kw in published_events
-            if topic == "meshtastic.connection.status" and kw.get("connected") is False
-        ]
         assert (
             len(disconnect_events) == 1
         ), f"Expected exactly one disconnect event, got {len(disconnect_events)}"

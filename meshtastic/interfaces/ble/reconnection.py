@@ -331,13 +331,15 @@ class ReconnectWorker:
 
         for candidate_name in candidate_names:
             candidate_method = getattr(self.reconnect_policy, candidate_name, None)
-            if callable(candidate_method):
+            if callable(candidate_method) and not _is_unconfigured_mock_callable(
+                candidate_method
+            ):
                 return candidate_method(*args)
 
         # Backward compatibility for test doubles that only expose underscored methods.
         for candidate_name in candidate_names:
             fallback = getattr(self.reconnect_policy, f"_{candidate_name}", None)
-            if callable(fallback):
+            if callable(fallback) and not _is_unconfigured_mock_callable(fallback):
                 return fallback(*args)
         raise ReconnectPolicyMissingMethodError(method_name)
 

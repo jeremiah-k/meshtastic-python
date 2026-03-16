@@ -163,7 +163,6 @@ Semantic deprecation:
 | `meshtastic.interfaces.ble.client`    | `async_run()`                | `_async_run()`                |
 | `meshtastic.interfaces.ble.errors`    | `safe_execute()`             | `_safe_execute()`             |
 | `meshtastic.interfaces.ble.errors`    | `safe_cleanup()`             | `_safe_cleanup()`             |
-| `meshtastic.interfaces.ble.discovery` | `_discover_devices()`        | `discover_devices()`          |
 | `meshtastic.interfaces.ble.interface` | `find_device()`              | `findDevice()`                |
 | `meshtastic.interfaces.ble.interface` | `from_num_handler()`         | `_from_num_handler()`         |
 | `meshtastic.interfaces.ble.interface` | `log_radio_handler()`        | `_log_radio_handler()`        |

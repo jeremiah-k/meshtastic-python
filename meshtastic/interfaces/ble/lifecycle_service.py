@@ -100,8 +100,15 @@ class BLELifecycleService:
             iface, "safe_cleanup", "_safe_cleanup"
         )
         if safe_cleanup is not None:
-            safe_cleanup(cleanup, operation_name)
-            return
+            try:
+                safe_cleanup(cleanup, operation_name)
+                return
+            except Exception:  # noqa: BLE001 - hook failure must not abort shutdown
+                logger.debug(
+                    "Error running safe_cleanup hook for %s",
+                    operation_name,
+                    exc_info=True,
+                )
         try:
             cleanup()
         except Exception:  # noqa: BLE001 - shutdown cleanup must remain best effort
@@ -124,7 +131,23 @@ class BLELifecycleService:
             except TypeError as exc:
                 if not _is_unexpected_keyword_error(exc, "error_msg"):
                     logger.debug(error_msg, exc_info=True)
-                    return None
+                else:
+                    try:
+                        return safe_execute(func, error_msg)
+                    except TypeError as positional_exc:
+                        if "positional argument" not in str(positional_exc):
+                            logger.debug(error_msg, exc_info=True)
+                            return None
+                        try:
+                            return safe_execute(func)
+                        except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
+                            logger.debug(error_msg, exc_info=True)
+                            return None
+                    except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
+                        logger.debug(error_msg, exc_info=True)
+                        return None
+            except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
+                logger.debug(error_msg, exc_info=True)
         try:
             return func()
         except Exception:  # noqa: BLE001 - shutdown execution must remain best effort
@@ -217,6 +240,10 @@ class BLELifecycleService:
             legacy_join_thread
         ):
             legacy_join_thread(thread, timeout=timeout)
+            return
+        thread_join = getattr(thread, "join", None)
+        if callable(thread_join) and not _is_unconfigured_mock_callable(thread_join):
+            thread_join(timeout=timeout)
             return
         logger.debug("Thread coordinator is missing join_thread/_join_thread")
 
@@ -884,8 +911,10 @@ class BLELifecycleService:
             connection_alias_key,
         )
         with iface._state_lock:
-            still_owned, is_closing = iface._get_connected_client_status_locked(
-                connected_client
+            still_owned, is_closing = (
+                BLELifecycleService._get_connected_client_status_locked(
+                    iface, connected_client
+                )
             )
             prior_ever_connected = iface._ever_connected
         return _OwnershipSnapshot(
@@ -934,8 +963,10 @@ class BLELifecycleService:
 
         should_publish_connected = False
         with iface._state_lock:
-            still_owned, is_closing = iface._get_connected_client_status_locked(
-                connected_client
+            still_owned, is_closing = (
+                BLELifecycleService._get_connected_client_status_locked(
+                    iface, connected_client
+                )
             )
             if still_owned and not is_closing:
                 if not iface._client_publish_pending:
@@ -953,8 +984,10 @@ class BLELifecycleService:
         publish_committed = False
         if should_publish_connected:
             with iface._state_lock:
-                still_owned, is_closing = iface._get_connected_client_status_locked(
-                    connected_client
+                still_owned, is_closing = (
+                    BLELifecycleService._get_connected_client_status_locked(
+                        iface, connected_client
+                    )
                 )
                 if (
                     snapshot.still_owned
@@ -966,12 +999,15 @@ class BLELifecycleService:
                     iface._ever_connected = True
                     iface._prior_publish_was_reconnect = prior_ever_connected
                     publish_committed = True
-                if iface.client is connected_client:
-                    iface._client_publish_pending = False
-                    iface._client_replacement_pending = False
             if publish_committed:
-                iface._connected()
-                iface._emit_verified_connection_side_effects(connected_client)
+                try:
+                    iface._connected()
+                    iface._emit_verified_connection_side_effects(connected_client)
+                finally:
+                    with iface._state_lock:
+                        if iface.client is connected_client:
+                            iface._client_publish_pending = False
+                            iface._client_replacement_pending = False
                 return
 
         _raise_invalidated(snapshot)
@@ -1045,12 +1081,16 @@ class BLELifecycleService:
         connection_alias_key: str | None,
     ) -> None:
         """Finalize post-connection gating and cleanup stale claims."""
-        still_active, is_closing = iface._get_connected_client_status(connected_client)
+        still_active, is_closing = BLELifecycleService._get_connected_client_status(
+            iface, connected_client
+        )
 
         if still_active:
             with iface._state_lock:
-                still_active, is_closing = iface._get_connected_client_status_locked(
-                    connected_client
+                still_active, is_closing = (
+                    BLELifecycleService._get_connected_client_status_locked(
+                        iface, connected_client
+                    )
                 )
                 if still_active:
                     # Publish alias key before claiming address gates so a
@@ -1079,8 +1119,10 @@ class BLELifecycleService:
             )
             needs_cleanup = False
             with iface._state_lock:
-                still_active, is_closing = iface._get_connected_client_status_locked(
-                    connected_client
+                still_active, is_closing = (
+                    BLELifecycleService._get_connected_client_status_locked(
+                        iface, connected_client
+                    )
                 )
                 if not still_active:
                     if is_closing:
@@ -1113,7 +1155,7 @@ class BLELifecycleService:
     @staticmethod
     def _is_owned_connected_client(iface: "BLEInterface", client: "BLEClient") -> bool:
         """Return whether the interface still owns the provided connected client."""
-        is_owned, _ = iface._get_connected_client_status(client)
+        is_owned, _ = BLELifecycleService._get_connected_client_status(iface, client)
         return is_owned
 
     @staticmethod

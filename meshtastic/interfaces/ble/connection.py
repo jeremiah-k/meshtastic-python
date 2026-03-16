@@ -8,7 +8,7 @@ import sys
 from collections.abc import Callable
 from threading import Event, RLock
 from typing import TYPE_CHECKING, cast
-from unittest.mock import Mock
+from unittest.mock import Mock, NonCallableMock
 
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
@@ -728,7 +728,7 @@ class ConnectionOrchestrator:
         if (
             prefer_instance_type is not None
             and isinstance(target, prefer_instance_type)
-            and not isinstance(target, Mock)
+            and not isinstance(target, (Mock, NonCallableMock))
         ):
             if public_member is _DISPATCH_MISSING:
                 raise AttributeError(
@@ -1012,7 +1012,26 @@ class ConnectionOrchestrator:
         address: str | None,
         current_address: str | None,
     ) -> tuple[str | None, str | None]:
-        """Resolve and validate the connection target address for this attempt."""
+        """Resolve and validate the connection target address for this attempt.
+
+        Parameters
+        ----------
+        address : str | None
+            Explicit caller-supplied connection target.
+        current_address : str | None
+            Existing interface address used when ``address`` is ``None``.
+
+        Returns
+        -------
+        tuple[str | None, str | None]
+            Tuple of ``(target_address, normalized_target)`` where
+            ``normalized_target`` is produced by :func:`sanitize_address`.
+
+        Raises
+        ------
+        BLEError
+            If an explicitly supplied address is blank after trimming.
+        """
         target_address = address if address is not None else current_address
         if target_address is not None:
             target_address = target_address.strip()
@@ -1034,7 +1053,25 @@ class ConnectionOrchestrator:
         pair_on_connect: bool,
         connect_timeout: float | None,
     ) -> tuple[float, float]:
-        """Compute direct and discovery connect timeout budgets for the attempt."""
+        """Compute direct and discovery connect timeout budgets for the attempt.
+
+        Parameters
+        ----------
+        pair_on_connect : bool
+            Whether pairing is requested during connect.
+        connect_timeout : float | None
+            Optional explicit timeout override in seconds.
+
+        Returns
+        -------
+        tuple[float, float]
+            ``(direct_connect_timeout, discovery_connect_timeout)`` in seconds.
+
+        Raises
+        ------
+        BLEError
+            If ``connect_timeout`` is invalid.
+        """
         try:
             direct_connect_timeout = self._resolve_connect_timeout(
                 pair_on_connect=pair_on_connect,
@@ -1067,7 +1104,47 @@ class ConnectionOrchestrator:
         on_connected_func: Callable[[], None],
         emit_connected_side_effects: bool,
     ) -> tuple[BLEClient | None, bool]:
-        """Try explicit-address direct connection; return client or fallback hint."""
+        """Try explicit-address direct connection and return fallback guidance.
+
+        Parameters
+        ----------
+        target_address : str | None
+            Explicit address to connect, or ``None`` for discovery mode.
+        normalized_target : str | None
+            Sanitized logging form of ``target_address``.
+        on_disconnect_func : Callable[[BleakRootClient], None]
+            Disconnect callback passed to client creation.
+        pair_on_connect : bool
+            Whether pairing should be attempted during connect.
+        direct_connect_timeout : float
+            Timeout for direct connect attempts.
+        register_notifications_func : Callable[[BLEClient], None]
+            Notification registration callback used during finalization.
+        on_connected_func : Callable[[], None]
+            Connected callback used during finalization.
+        emit_connected_side_effects : bool
+            Whether finalization should emit connected side effects immediately.
+
+        Returns
+        -------
+        tuple[BLEClient | None, bool]
+            ``(client, skip_discovery_scan)`` where ``client`` is non-``None``
+            on success. When ``client`` is ``None``, ``skip_discovery_scan``
+            indicates whether retry should bypass discovery.
+
+        Raises
+        ------
+        BleakDBusError
+            Propagated for DBus-level failures to allow upstream backoff.
+        BleakError
+            Propagated for non-recoverable direct-connect errors.
+        BLEError
+            Propagated when interface shutdown races with connect flow.
+        OSError
+            Propagated for transport-level failures.
+        TimeoutError
+            Propagated for non-recoverable timeout failures.
+        """
         if not target_address:
             return None, False
 
@@ -1135,7 +1212,31 @@ class ConnectionOrchestrator:
         direct_connect_timeout: float,
         discovery_connect_timeout: float,
     ) -> tuple[BLEDevice | str, str, float]:
-        """Resolve retry connection target from direct or discovery path."""
+        """Resolve retry connection target from direct or discovery path.
+
+        Parameters
+        ----------
+        target_address : str | None
+            Original target address, if one was supplied.
+        skip_discovery_scan : bool
+            Whether retry should skip discovery and retry direct address connect.
+        direct_connect_timeout : float
+            Timeout used for direct retry attempts.
+        discovery_connect_timeout : float
+            Timeout used for discovery-resolved retry attempts.
+
+        Returns
+        -------
+        tuple[BLEDevice | str, str, float]
+            ``(connection_target, resolved_address, retry_connect_timeout)``.
+
+        Raises
+        ------
+        BLEError
+            If shutdown begins before target resolution completes.
+        AttributeError
+            If interface find-device compatibility entrypoints are unavailable.
+        """
         if skip_discovery_scan and target_address is not None:
             return target_address, target_address, direct_connect_timeout
 
@@ -1155,7 +1256,45 @@ class ConnectionOrchestrator:
         retry_connect_timeout: float,
         discovery_connect_timeout: float,
     ) -> tuple[BLEClient, str]:
-        """Connect to retry target with explicit-address fallback to discovery."""
+        """Connect retry target with optional discovery fallback after direct retry.
+
+        Parameters
+        ----------
+        connection_target : BLEDevice | str
+            Target returned by :meth:`_resolve_retry_target`.
+        resolved_address : str
+            Address associated with ``connection_target`` for logging/state.
+        target_address : str | None
+            Original explicit target address.
+        skip_discovery_scan : bool
+            Whether retry started in skip-discovery mode.
+        on_disconnect_func : Callable[[BleakRootClient], None]
+            Disconnect callback for newly created clients.
+        pair_on_connect : bool
+            Whether pairing should be requested during connect.
+        retry_connect_timeout : float
+            Timeout for the initial retry connect.
+        discovery_connect_timeout : float
+            Timeout for discovery-fallback connect.
+
+        Returns
+        -------
+        tuple[BLEClient, str]
+            Connected client and its resolved address.
+
+        Raises
+        ------
+        BleakDBusError
+            Propagated for DBus-level failures.
+        BleakError
+            Propagated when retry connect fails without eligible fallback.
+        BLEError
+            Propagated when interface shutdown races with retry flow.
+        OSError
+            Propagated for transport failures.
+        TimeoutError
+            Propagated for non-recoverable timeout failures.
+        """
         self._raise_if_interface_closing()
         client = self._client_manager_create_client(
             connection_target,
@@ -1163,7 +1302,6 @@ class ConnectionOrchestrator:
             pair_on_connect=pair_on_connect,
             connect_timeout=retry_connect_timeout,
         )
-        self._raise_if_interface_closing()
         try:
             self._raise_if_interface_closing()
             self._client_manager_connect_client(client, timeout=retry_connect_timeout)
@@ -1203,7 +1341,6 @@ class ConnectionOrchestrator:
                 pair_on_connect=pair_on_connect,
                 connect_timeout=discovery_connect_timeout,
             )
-            self._raise_if_interface_closing()
             try:
                 self._raise_if_interface_closing()
                 self._client_manager_connect_client(
@@ -1220,7 +1357,23 @@ class ConnectionOrchestrator:
         return client, resolved_address
 
     def _compat_find_device(self, target_address: str | None) -> BLEDevice:
-        """Resolve find-device lookup with historical method-name compatibility."""
+        """Resolve find-device lookup with historical method-name compatibility.
+
+        Parameters
+        ----------
+        target_address : str | None
+            Address/identifier to locate, or ``None`` for discovery-mode lookup.
+
+        Returns
+        -------
+        BLEDevice
+            Matching BLE device resolved by interface find-device helpers.
+
+        Raises
+        ------
+        AttributeError
+            If no supported find-device compatibility helper exists.
+        """
         find_device = getattr(self.interface, "findDevice", None)
         if callable(find_device) and not _is_unconfigured_mock_callable(find_device):
             return cast(BLEDevice, find_device(target_address))

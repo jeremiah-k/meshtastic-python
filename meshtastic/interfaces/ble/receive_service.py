@@ -428,13 +428,13 @@ class BLEReceiveRecoveryService:
             ):
                 return True, False
             return False, False
-        except (BleakDBusError, BLEClient.BLEError) as exc:
+        except BleakDBusError as exc:
             if iface._handle_read_loop_disconnect(repr(exc), client):
                 return True, False
             return True, True
         except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
             raise
-        except BleakError as exc:
+        except (BleakError, BLEClient.BLEError) as exc:
             try:
                 iface._handle_transient_read_error(exc)
                 return False, False

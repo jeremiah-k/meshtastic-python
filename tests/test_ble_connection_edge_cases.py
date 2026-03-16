@@ -572,6 +572,8 @@ def test_connection_orchestrator_aborts_fallback_when_interface_closing() -> Non
     interface._closed = False
     discovered_device = BLEDevice("AA:BB:CC:DD:EE:FF", "Mesh", details=None)
     interface.findDevice.return_value = discovered_device
+    interface.find_device = MagicMock(return_value=discovered_device)
+    interface._find_device = MagicMock(return_value=discovered_device)
 
     connect_attempts = 0
 
@@ -606,6 +608,8 @@ def test_connection_orchestrator_aborts_fallback_when_interface_closing() -> Non
 
     assert connect_attempts == 1
     interface.findDevice.assert_not_called()
+    interface.find_device.assert_not_called()
+    interface._find_device.assert_not_called()
     client_manager.safe_close_client.assert_called_once_with(direct_client)
     assert state_manager._current_state == ConnectionState.DISCONNECTED
 

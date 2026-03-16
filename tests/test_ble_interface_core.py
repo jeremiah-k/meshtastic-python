@@ -720,10 +720,14 @@ def test_ble_interface_pair_uses_existing_client_when_request_matches(
     iface.close()
 
 
+@pytest.mark.parametrize(
+    "factory_mode",
+    ["with_optional_kwargs", "without_optional_kwargs"],
+)
 def test_ble_interface_pair_uses_temporary_client_when_disconnected(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, factory_mode: str
 ) -> None:
-    """pair() should create and clean up a temporary BLEClient when no active client matches."""
+    """pair() should use temporary BLEClient factories with or without kwargs."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     with iface._state_lock:
         iface.client = None
@@ -747,8 +751,12 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
     )
     cleanup_calls: list[Any] = []
 
-    def _temp_client_factory(_address: str, **_kwargs: object) -> SimpleNamespace:
-        return temp_client
+    if factory_mode == "with_optional_kwargs":
+        def _temp_client_factory(_address: str, **_kwargs: object) -> SimpleNamespace:
+            return temp_client
+    else:
+        def _temp_client_factory(_address: str) -> SimpleNamespace:
+            return temp_client
 
     monkeypatch.setattr(
         "meshtastic.interfaces.ble.interface.BLEClient",
@@ -761,64 +769,6 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
     )
 
     iface.pair("mesh-node", confirm=True, await_timeout=7.0)
-    assert pair_kwargs == [{"confirm": True}]
-    assert pair_await_timeouts == [7.0]
-    assert cleanup_calls == [temp_client]
-    iface.close()
-
-
-def test_ble_interface_pair_supports_temporary_factory_without_log_kwarg(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Verify pair() supports temporary BLEClient factories without kwargs.
-
-    Parameters
-    ----------
-    monkeypatch : pytest.MonkeyPatch
-        Fixture used to patch temporary BLE client construction.
-
-    Returns
-    -------
-    None
-    """
-    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-    with iface._state_lock:
-        iface.client = None
-        iface._state_manager._reset_to_disconnected()
-    monkeypatch.setattr(
-        iface,
-        "findDevice",
-        lambda _address: _create_ble_device("AA:BB:CC:DD:EE:FF", "Meshtastic"),
-    )
-
-    pair_kwargs: list[dict[str, object]] = []
-    pair_await_timeouts: list[float | None] = []
-
-    def _pair(*, await_timeout: float | None = None, **kwargs: object) -> None:
-        pair_await_timeouts.append(await_timeout)
-        pair_kwargs.append(dict(kwargs))
-
-    temp_client = SimpleNamespace(
-        pair=_pair,
-        bleak_client=SimpleNamespace(address="AA:BB:CC:DD:EE:FF"),
-    )
-    cleanup_calls: list[Any] = []
-
-    def _temp_client_factory_without_kwargs(_address: str) -> SimpleNamespace:
-        return temp_client
-
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.BLEClient",
-        _temp_client_factory_without_kwargs,
-    )
-    monkeypatch.setattr(
-        iface._client_manager,
-        "_safe_close_client",
-        lambda client: cleanup_calls.append(client),
-    )
-
-    iface.pair("mesh-node", confirm=True, await_timeout=7.0)
-
     assert pair_kwargs == [{"confirm": True}]
     assert pair_await_timeouts == [7.0]
     assert cleanup_calls == [temp_client]
@@ -3321,20 +3271,22 @@ def test_finalize_connection_gates_cleans_up_when_client_loses_ownership_mid_fin
     is_closing: bool,
 ) -> None:
     """Gate finalization should clean up provisional claims when ownership disappears mid-finalize."""
+    from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
+
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     connected_client = DummyClient()
     cleanup_calls: list[tuple[str | None, str | None]] = []
 
     monkeypatch.setattr(
-        iface,
+        BLELifecycleService,
         "_get_connected_client_status",
-        lambda _client: (True, False),
+        lambda _iface, _client: (True, False),
         raising=True,
     )
     monkeypatch.setattr(
-        iface,
+        BLELifecycleService,
         "_get_connected_client_status_locked",
-        lambda _client: (False, is_closing),
+        lambda _iface, _client: (False, is_closing),
         raising=True,
     )
     monkeypatch.setattr(iface, "_mark_address_keys_connected", lambda *_keys: None)
@@ -3359,15 +3311,17 @@ def test_finalize_connection_gates_logs_when_result_is_already_stale(
     is_closing: bool,
 ) -> None:
     """Gate finalization should no-op when initial ownership check already reports stale result."""
+    from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
+
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     connected_client = DummyClient()
     mark_connected_calls: list[tuple[str | None, str | None]] = []
     mark_disconnected_calls: list[tuple[str | None, str | None]] = []
 
     monkeypatch.setattr(
-        iface,
+        BLELifecycleService,
         "_get_connected_client_status",
-        lambda _client: (False, is_closing),
+        lambda _iface, _client: (False, is_closing),
         raising=True,
     )
     monkeypatch.setattr(
@@ -3400,12 +3354,14 @@ def test_is_owned_connected_client_reads_status_tuple(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Owned-client helper should return the first element of status tuple."""
+    from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
+
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     client = cast(BLEClient, DummyClient())
     monkeypatch.setattr(
-        iface,
+        BLELifecycleService,
         "_get_connected_client_status",
-        lambda _client: (True, False),
+        lambda _iface, _client: (True, False),
         raising=True,
     )
     assert iface._is_owned_connected_client(client) is True
@@ -4307,6 +4263,8 @@ def test_connect_rechecks_ownership_before_publishing_connected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """connect() should discard a client that becomes stale after the first check."""
+    from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
+
     target_address = "AA:BB:CC:DD:EE:12"
     iface = _build_minimal_connect_test_interface()
     connected_client = DummyClient()
@@ -4338,9 +4296,9 @@ def test_connect_rechecks_ownership_before_publishing_connected(
         raising=True,
     )
     monkeypatch.setattr(
-        iface,
+        BLELifecycleService,
         "_get_connected_client_status_locked",
-        lambda _client: next(status_checks),
+        lambda _iface, _client: next(status_checks),
         raising=True,
     )
     monkeypatch.setattr(
@@ -5224,9 +5182,7 @@ def test_discovery_manager_accepts_discover_underscore_only_factory() -> None:
     assert devices == [filtered_device]
 
 
-def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> (
-    None
-):
+def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> None:
     """Verify discovery prefers configured ``_discover`` over unconfigured ``discover``.
 
     Returns
@@ -5244,7 +5200,7 @@ def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigu
     client._discover.return_value = discover_result
     manager = DiscoveryManager(client_factory=lambda **_kwargs: client)
 
-    devices = manager.discover_devices(address=None)
+    devices = manager._discover_devices(address=None)
 
     assert devices == [filtered_device]
     client._discover.assert_called_once()

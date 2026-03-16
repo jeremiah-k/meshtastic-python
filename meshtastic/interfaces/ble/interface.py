@@ -112,6 +112,7 @@ from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
     _is_unconfigured_mock_member,
+    _is_unexpected_keyword_error,
     _sleep,
     sanitize_address,
     with_timeout,
@@ -704,6 +705,27 @@ class BLEInterface(MeshInterface):
             error_msg : str
                 Message given to the error handler if the handler raises an exception.
             """
+
+            def _report_notification_error() -> None:
+                report_exception: Callable[[str], Any] | None = None
+                for hook_name in (
+                    "handle_unhandled_exception",
+                    "_handle_unhandled_exception",
+                ):
+                    hook = getattr(self.error_handler, hook_name, None)
+                    if callable(hook) and not _is_unconfigured_mock_callable(hook):
+                        report_exception = cast(Callable[[str], Any], hook)
+                        break
+                if report_exception is not None:
+                    try:
+                        report_exception(error_msg)
+                    except (
+                        Exception
+                    ):  # noqa: BLE001 - callback error reporting is best effort
+                        logger.debug(error_msg, exc_info=True)
+                else:
+                    logger.debug(error_msg, exc_info=True)
+
             safe_execute = getattr(self.error_handler, "safe_execute", None)
             if not callable(safe_execute) or _is_unconfigured_mock_callable(
                 safe_execute
@@ -717,31 +739,35 @@ class BLEInterface(MeshInterface):
                 except (
                     Exception
                 ):  # noqa: BLE001 - notification callbacks must stay best effort
-                    report_exception = getattr(
-                        self.error_handler, "handle_unhandled_exception", None
-                    )
-                    if not callable(report_exception) or _is_unconfigured_mock_callable(
-                        report_exception
-                    ):
-                        report_exception = getattr(
-                            self.error_handler, "_handle_unhandled_exception", None
-                        )
-                    if callable(
-                        report_exception
-                    ) and not _is_unconfigured_mock_callable(report_exception):
-                        try:
-                            report_exception(error_msg)
-                        except (
-                            Exception
-                        ):  # noqa: BLE001 - callback error reporting is best effort
-                            logger.debug(error_msg, exc_info=True)
-                    else:
-                        logger.debug(error_msg, exc_info=True)
+                    _report_notification_error()
                 return
-            safe_execute(
-                lambda: handler(sender, data),
-                error_msg=error_msg,
-            )
+            try:
+                safe_execute(lambda: handler(sender, data), error_msg=error_msg)
+            except TypeError as exc:
+                if not _is_unexpected_keyword_error(exc, "error_msg"):
+                    _report_notification_error()
+                    return
+                try:
+                    safe_execute(lambda: handler(sender, data), error_msg)
+                except TypeError as positional_exc:
+                    # Some legacy hooks accept only the callable argument.
+                    if "positional argument" not in str(positional_exc):
+                        _report_notification_error()
+                        return
+                    try:
+                        safe_execute(lambda: handler(sender, data))
+                    except (
+                        Exception
+                    ):  # noqa: BLE001 - notification callbacks must stay best effort
+                        _report_notification_error()
+                except (
+                    Exception
+                ):  # noqa: BLE001 - notification callbacks must stay best effort
+                    _report_notification_error()
+            except (
+                Exception
+            ):  # noqa: BLE001 - notification callbacks must stay best effort
+                _report_notification_error()
 
         def _safe_legacy_handler(sender: Any, data: bytes | bytearray) -> None:
             """Invoke the legacy log-radio notification handler for a BLE notification and suppress any exceptions raised by the handler.
@@ -1865,30 +1891,47 @@ class BLEInterface(MeshInterface):
         BLEError
             Propagated from orchestrator connection flow on failure.
         """
-        return cast(
-            BLEClient,
-            self._compat_dispatch_callable(
+        args = (
+            address,
+            self.address,
+            self._register_notifications,
+            # Defer _connected() publication until interface ownership
+            # has been committed and verified.
+            lambda: None,
+            self._on_ble_disconnect,
+        )
+        kwargs = {
+            "pair_on_connect": pair_on_connect,
+            "connect_timeout": connect_timeout,
+            "emit_connected_side_effects": False,
+        }
+        try:
+            result = self._compat_dispatch_callable(
                 self._connection_orchestrator,
                 public_name="establish_connection",
                 legacy_name="_establish_connection",
                 fallback_attr_name="establish_connection",
                 error_message=ERROR_CONNECTION_ORCHESTRATOR_MISSING_ESTABLISH_CONNECTION,
-                args=(
-                    address,
-                    self.address,
-                    self._register_notifications,
-                    # Defer _connected() publication until interface ownership
-                    # has been committed and verified.
-                    lambda: None,
-                    self._on_ble_disconnect,
-                ),
-                kwargs={
-                    "pair_on_connect": pair_on_connect,
-                    "connect_timeout": connect_timeout,
-                    "emit_connected_side_effects": False,
-                },
-            ),
-        )
+                args=args,
+                kwargs=kwargs,
+            )
+        except TypeError as exc:
+            if not _is_unexpected_keyword_error(exc, "emit_connected_side_effects"):
+                raise
+            legacy_kwargs = {
+                "pair_on_connect": pair_on_connect,
+                "connect_timeout": connect_timeout,
+            }
+            result = self._compat_dispatch_callable(
+                self._connection_orchestrator,
+                public_name="establish_connection",
+                legacy_name="_establish_connection",
+                fallback_attr_name="establish_connection",
+                error_message=ERROR_CONNECTION_ORCHESTRATOR_MISSING_ESTABLISH_CONNECTION,
+                args=args,
+                kwargs=legacy_kwargs,
+            )
+        return cast(BLEClient, result)
 
     def _client_manager_safe_close_client(self, client: BLEClient) -> None:
         # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.

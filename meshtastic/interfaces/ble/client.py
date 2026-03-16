@@ -316,10 +316,16 @@ class BLEClient:
         safe_cleanup = self._resolve_error_handler_hook("safe_cleanup", "_safe_cleanup")
         if safe_cleanup is not None:
             try:
-                safe_cleanup(cleanup, operation_name=operation_name)
+                safe_cleanup(cleanup, cleanup_name=operation_name)
                 return
             except TypeError as exc:
-                if not _is_unexpected_keyword_error(exc, "operation_name"):
+                if _is_unexpected_keyword_error(exc, "cleanup_name"):
+                    try:
+                        safe_cleanup(cleanup, operation_name)
+                        return
+                    except Exception:  # noqa: BLE001 - cleanup paths are best effort
+                        logger.debug("Error during %s", operation_name, exc_info=True)
+                else:
                     logger.debug("Error during %s", operation_name, exc_info=True)
                     return
             except Exception:  # noqa: BLE001 - cleanup paths are best effort

@@ -251,13 +251,16 @@ class BLECompatibilityEventService:
         thread = getattr(publishing_thread, "thread", None)
         thread_drain = getattr(thread, "_drain_publish_queue", None)
         if callable(thread_drain) and not _is_unconfigured_mock_callable(thread_drain):
-            BLECompatibilityEventService._safe_execute(
-                iface,
-                lambda: thread_drain(flush_event),
-                error_msg="Error draining publish queue via publishing thread",
-                reraise=False,
-            )
-            return
+            try:
+                BLECompatibilityEventService._safe_execute(
+                    iface,
+                    lambda: thread_drain(flush_event),
+                    error_msg="Error draining publish queue via publishing thread",
+                    reraise=True,
+                )
+                return
+            except Exception:  # noqa: BLE001 - fall back to direct draining path
+                pass
 
         # Do not call iface._drain_publish_queue here - it would recursively
         # call this method again. Instead, fall through to the direct queue

@@ -704,23 +704,6 @@ class DiscoveryManager:
 
         return devices
 
-    def discover_devices(self, address: str | None) -> list[BLEDevice]:
-        """Run BLE discovery and return matching devices.
-
-        Parameters
-        ----------
-        address : str | None
-            Optional target address used to filter discovery results. ``None``
-            runs a general scan.
-
-        Returns
-        -------
-        list[BLEDevice]
-            Discovered BLE devices that match the requested target/address
-            filter.
-        """
-        return self._discover_devices(address)
-
     def close(self) -> None:
         """Close the manager's persistent discovery client and clear the internal reference.
 
