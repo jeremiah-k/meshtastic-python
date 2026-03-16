@@ -1346,13 +1346,32 @@ class BLELifecycleService:
                     iface, connected_client
                 )
             )
-            prior_ever_connected = iface._ever_connected
+            prior_ever_connected = BLELifecycleService._ever_connected_flag(iface)
         return _OwnershipSnapshot(
             still_owned=still_owned,
             is_closing=is_closing,
             lost_gate_ownership=lost_gate_ownership,
             prior_ever_connected=prior_ever_connected,
         )
+
+    @staticmethod
+    def _ever_connected_flag(iface: "BLEInterface") -> bool:
+        """Return a mock-safe boolean view of ``iface._ever_connected``.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface containing connection publication state.
+
+        Returns
+        -------
+        bool
+            ``True`` only when ``_ever_connected`` is explicitly boolean true.
+        """
+        raw_ever_connected = getattr(iface, "_ever_connected", False)
+        if _is_unconfigured_mock_member(raw_ever_connected):
+            return False
+        return bool(raw_ever_connected) if isinstance(raw_ever_connected, bool) else False
 
     @staticmethod
     def _verify_and_publish_connected(
@@ -1808,7 +1827,7 @@ class BLELifecycleService:
                     notify = True
             elif not iface._disconnect_notified:
                 iface._disconnect_notified = True
-                notify = iface._ever_connected
+                notify = BLELifecycleService._ever_connected_flag(iface)
         return notify
 
     @staticmethod

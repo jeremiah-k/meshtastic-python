@@ -104,8 +104,8 @@ class BLECompatibilityEventService:
         callback : Any
             Callable to enqueue for deferred execution.
         prefer_non_blocking : bool
-            When ``True``, require ``queue.put_nowait`` and do not fall back to
-            potentially blocking ``queueWork``.
+            When ``True``, attempt ``queue.put_nowait`` first before falling
+            back to ``queueWork`` when needed.
 
         Returns
         -------
@@ -141,14 +141,13 @@ class BLECompatibilityEventService:
         if prefer_non_blocking:
             if thread_is_alive is False:
                 return False
-            if put_nowait_callback is None:
-                return False
-            try:
-                put_nowait_callback(callback)
-                return True
-            except Full:
-                # Strict non-blocking mode: do not fall back to queueWork().
-                return False
+            if put_nowait_callback is not None:
+                try:
+                    put_nowait_callback(callback)
+                    return True
+                except Full:
+                    # Queue is full: fall through to queueWork fallback.
+                    pass
         if queue_work_callback is not None:
             queue_work_callback(callback)
             return True

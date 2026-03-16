@@ -575,11 +575,11 @@ class ClientManager:
         """
         is_finalizing = getattr(sys, "is_finalizing", None)
         skip_disconnect = bool(is_finalizing()) if callable(is_finalizing) else False
-        safe_cleanup_hook = getattr(self.error_handler, "safe_cleanup", None)
+        safe_cleanup_hook = getattr(self.error_handler, "_safe_cleanup", None)
         if not callable(safe_cleanup_hook) or _is_unconfigured_mock_callable(
             safe_cleanup_hook
         ):
-            safe_cleanup_hook = getattr(self.error_handler, "_safe_cleanup", None)
+            safe_cleanup_hook = getattr(self.error_handler, "safe_cleanup", None)
         if not callable(safe_cleanup_hook) or _is_unconfigured_mock_callable(
             safe_cleanup_hook
         ):
@@ -871,13 +871,27 @@ class ConnectionOrchestrator:
 
     def _thread_set_event(self, name: str) -> None:
         """Set thread-coordinator event with underscore-compatible fallback for test doubles."""
-        self._dispatch_public_or_underscore(
-            target=self.thread_coordinator,
-            public_name="set_event",
-            underscore_name="_set_event",
-            call_member=True,
-            args=(name,),
-        )
+        try:
+            result = self._dispatch_public_or_underscore(
+                target=self.thread_coordinator,
+                public_name="set_event",
+                underscore_name="_set_event",
+                call_member=True,
+                args=(name,),
+                default_if_missing=_DISPATCH_MISSING,
+            )
+        except Exception:  # noqa: BLE001 - reconnect signaling is best effort
+            logger.debug(
+                "Failed to signal thread event %s via set_event/_set_event.",
+                name,
+                exc_info=True,
+            )
+            return
+        if result is _DISPATCH_MISSING:
+            logger.debug(
+                "Thread coordinator is missing set_event/_set_event; skipping %s.",
+                name,
+            )
 
     def _client_manager_create_client(
         self,
@@ -1508,7 +1522,12 @@ class ConnectionOrchestrator:
                 )
 
         if emit_connected_side_effects:
-            prior_ever_connected = bool(getattr(self.interface, "_ever_connected", False))
+            raw_ever_connected = getattr(self.interface, "_ever_connected", False)
+            prior_ever_connected = (
+                False
+                if _is_unconfigured_mock_member(raw_ever_connected)
+                else bool(raw_ever_connected) if isinstance(raw_ever_connected, bool) else False
+            )
             on_connected_func()
             if prior_ever_connected:
                 self._thread_set_event(RECONNECTED_EVENT)

@@ -772,7 +772,7 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
         def _temp_client_factory(_address: str) -> SimpleNamespace:
             return temp_client
     else:
-        raise ValueError(f"Unexpected factory_mode: {factory_mode}")
+        pytest.fail(f"Unexpected factory_mode: {factory_mode}")
 
     monkeypatch.setattr(
         "meshtastic.interfaces.ble.interface.BLEClient",
@@ -5082,7 +5082,7 @@ def test_publish_connection_status_falls_back_inline_when_non_blocking_enqueue_u
         publishing_thread=publishing_thread,
     )
 
-    assert len(queue_attempts) == 0
+    assert len(queue_attempts) == 1
     assert sent == [("meshtastic.connection.status", iface, False)]
 
 
@@ -5223,6 +5223,44 @@ def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigu
     assert devices == [filtered_device]
     client._discover.assert_called_once()
     client.discover.assert_not_called()
+
+    client._discover.reset_mock()
+    devices = manager.discover_devices(address=None)
+    assert devices == [filtered_device]
+    client._discover.assert_called_once()
+    client.discover.assert_not_called()
+
+
+def test_discovery_manager_discards_cached_client_on_non_kwarg_typeerror(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-kwarg TypeError from discover should invalidate the cached discovery client."""
+
+    class _TypeErrorDiscoveryClient:
+        def __init__(self) -> None:
+            self.bleak_client = object()
+
+        @staticmethod
+        def _discover(**_kwargs: object) -> dict[str, Any]:
+            raise TypeError("discovery invocation failed")
+
+    client = _TypeErrorDiscoveryClient()
+    manager = DiscoveryManager(client_factory=lambda **_kwargs: client)
+    manager._client = cast(Any, client)
+
+    closed_clients: list[object] = []
+    monkeypatch.setattr(
+        discovery_mod,
+        "_close_discovery_client_best_effort",
+        lambda stale_client: closed_clients.append(stale_client),
+        raising=True,
+    )
+
+    with pytest.raises(DiscoveryClientError, match="invalid type"):
+        manager._discover_devices(address=None)
+
+    assert manager._client is None
+    assert client in closed_clients
 
 
 def test_discovery_manager_supports_factory_without_log_if_no_address_kwarg() -> None:

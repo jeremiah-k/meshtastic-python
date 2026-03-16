@@ -416,7 +416,9 @@ def test_client_manager_safe_close_client_prefers_internal_safe_cleanup() -> Non
     lock = RLock()
     thread_coordinator = MagicMock()
     error_handler = MagicMock()
-    error_handler.safe_cleanup = MagicMock()
+    error_handler.safe_cleanup = MagicMock(
+        side_effect=AssertionError("safe_cleanup should not be called")
+    )
     error_handler._safe_cleanup = MagicMock(
         side_effect=lambda func, _name=None, **_kwargs: func()
     )

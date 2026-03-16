@@ -91,7 +91,7 @@ def _call_factory_with_optional_kwarg(
     *,
     args: tuple[Any, ...] = (),
     optional_kwarg: str,
-    optional_value: Any,
+    optional_value: object,
     on_kwarg_rejected: Callable[[TypeError], None] | None = None,
 ) -> T:
     """Call a factory while tolerating missing support for one optional kwarg.
@@ -104,7 +104,7 @@ def _call_factory_with_optional_kwarg(
         Positional arguments passed to ``factory``.
     optional_kwarg : str
         Optional keyword argument name to pass when supported.
-    optional_value : Any
+    optional_value : object
         Value used for ``optional_kwarg`` when passed.
     on_kwarg_rejected : Callable[[TypeError], None] | None
         Optional callback invoked when the optional keyword is rejected by the

@@ -434,11 +434,34 @@ class BLEClient:
 
     # COMPAT_STABLE_SHIM: historical BLE snake_case name.
     def find_device(self, **kwargs: Any) -> Any:
-        """Backward-compatible snake_case alias for findDevice()."""
+        """Backward-compatible snake_case alias for ``findDevice``.
+
+        Parameters
+        ----------
+        **kwargs : Any
+            Keyword arguments forwarded to ``self.discover(**kwargs)`` via
+            ``findDevice``.
+
+        Returns
+        -------
+        Any
+            Discovery result returned by ``self.discover(**kwargs)``.
+        """
         return self.findDevice(**kwargs)
 
     def findDevice(self, **kwargs: Any) -> Any:
-        """Promoted camelCase alias for discover()."""
+        """Promoted camelCase alias for ``discover``.
+
+        Parameters
+        ----------
+        **kwargs : Any
+            Keyword arguments forwarded to ``self.discover(**kwargs)``.
+
+        Returns
+        -------
+        Any
+            Discovery result returned by ``self.discover(**kwargs)``.
+        """
         return self.discover(**kwargs)
 
     def _run_management_call(

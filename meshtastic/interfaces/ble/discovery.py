@@ -422,6 +422,21 @@ class DiscoveryManager:
         ) = None
         self._client_lock = threading.RLock()
 
+    def discover_devices(self, address: str | None) -> list[BLEDevice]:
+        """Discover BLE devices advertising the configured service UUID.
+
+        Parameters
+        ----------
+        address : str | None
+            Bluetooth address or device name to filter results.
+
+        Returns
+        -------
+        list[BLEDevice]
+            Devices found by the scan, possibly an empty list.
+        """
+        return self._discover_devices(address)
+
     # COMPAT_STABLE_SHIM: retained compatibility entrypoint for callers still
     # using underscore-prefixed discovery manager APIs.
     def _discover_devices(self, address: str | None) -> list[BLEDevice]:
@@ -642,7 +657,23 @@ class DiscoveryManager:
                         type(client),
                         ["discover", "_discover"],
                     ) from exc
-                raise
+                discarded_typeerror_client: (
+                    BLEClient
+                    | DiscoveryClientProtocol
+                    | UnderscoreDiscoveryClientProtocol
+                    | None
+                ) = None
+                with self._client_lock:
+                    if self._client is client:
+                        discarded_typeerror_client = self._client
+                        self._client = None
+                if discarded_typeerror_client is not None:
+                    _close_discovery_client_best_effort(discarded_typeerror_client)
+                raise DiscoveryClientError.invalid_client(
+                    resolved_factory,
+                    type(client),
+                    ["discover", "_discover"],
+                ) from exc
             if inspect.isawaitable(response):
                 await_bridge = getattr(client, "async_await", None)
                 if not callable(await_bridge) or _is_unconfigured_mock_callable(

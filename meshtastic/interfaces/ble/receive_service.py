@@ -19,9 +19,9 @@ from meshtastic.interfaces.ble.constants import (
     logger,
 )
 from meshtastic.interfaces.ble.errors import DecodeError
-from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
+    _is_unconfigured_mock_member,
     _sleep,
 )
 
@@ -98,7 +98,10 @@ class BLEReceiveRecoveryService:
         event_name : str
             Event name to wait on.
         timeout : float | None
-            Maximum wait time in seconds; ``None`` waits indefinitely.
+            Maximum wait time in seconds. ``None`` waits indefinitely when the
+            coordinator exposes ``wait_for_event``/``_wait_for_event``; when no
+            wait hook is available, fallback behavior sleeps briefly using
+            ``_sleep(COORDINATOR_WAIT_FALLBACK_SLEEP_SEC)`` and returns.
 
         Returns
         -------
@@ -222,9 +225,15 @@ class BLEReceiveRecoveryService:
             timeout=wait_timeout,
         )
         poll_without_notify = False
+        raw_ever_connected = getattr(iface, "_ever_connected", False)
+        ever_connected = (
+            False
+            if _is_unconfigured_mock_member(raw_ever_connected)
+            else bool(raw_ever_connected) if isinstance(raw_ever_connected, bool) else False
+        )
         if not event_signaled:
             if (
-                iface._ever_connected
+                ever_connected
                 and BLEReceiveRecoveryService._coordinator_check_and_clear_event(
                     coordinator,
                     RECONNECTED_EVENT,
@@ -262,9 +271,35 @@ class BLEReceiveRecoveryService:
 
         with iface._state_lock:
             client = iface.client
-            is_connecting = (
-                iface._state_manager._current_state == ConnectionState.CONNECTING
-            )
+            state_is_connecting = getattr(iface._state_manager, "is_connecting", None)
+            if callable(state_is_connecting) and not _is_unconfigured_mock_callable(
+                state_is_connecting
+            ):
+                connecting_result = state_is_connecting()
+                is_connecting = (
+                    connecting_result if isinstance(connecting_result, bool) else False
+                )
+            elif not _is_unconfigured_mock_member(
+                state_is_connecting
+            ) and isinstance(state_is_connecting, bool):
+                is_connecting = state_is_connecting
+            else:
+                legacy_is_connecting = getattr(iface._state_manager, "_is_connecting", None)
+                if callable(legacy_is_connecting) and not _is_unconfigured_mock_callable(
+                    legacy_is_connecting
+                ):
+                    connecting_result = legacy_is_connecting()
+                    is_connecting = (
+                        connecting_result
+                        if isinstance(connecting_result, bool)
+                        else False
+                    )
+                elif not _is_unconfigured_mock_member(
+                    legacy_is_connecting
+                ) and isinstance(legacy_is_connecting, bool):
+                    is_connecting = legacy_is_connecting
+                else:
+                    is_connecting = False
             publish_pending = iface._client_publish_pending
             state_is_closing = BLELifecycleService._state_manager_is_closing(iface)
             is_closing = state_is_closing or iface._closed
@@ -306,6 +341,11 @@ class BLEReceiveRecoveryService:
             ``True`` when the caller should break out of the inner receive
             loop, otherwise ``False``.
         """
+        if client is None and is_closing:
+            logger.debug("BLE client is None, shutting down")
+            iface._set_receive_wanted(want_receive=False)
+            return True
+
         if publish_pending:
             logger.debug(
                 "Skipping BLE read while connect publication is pending verification."
@@ -332,11 +372,7 @@ class BLEReceiveRecoveryService:
             )
             return True
 
-        if is_closing:
-            logger.debug("BLE client is None, shutting down")
-            iface._set_receive_wanted(want_receive=False)
-        else:
-            logger.debug("BLE client is None; re-checking connection state")
+        logger.debug("BLE client is None; re-checking connection state")
         return True
 
     @staticmethod

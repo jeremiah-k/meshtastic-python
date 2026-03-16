@@ -356,7 +356,13 @@ class BLEManagementCommandsService:
             return command(client_to_use)
         finally:
             if temporary_client is not None:
-                iface._client_manager_safe_close_client(temporary_client)
+                try:
+                    iface._client_manager_safe_close_client(temporary_client)
+                except Exception:  # noqa: BLE001 - best-effort cleanup must not mask command outcome
+                    logger.debug(
+                        "Failed to close temporary management client.",
+                        exc_info=True,
+                    )
 
     @staticmethod
     def _execute_management_command(

@@ -201,6 +201,17 @@ class BLEStateManager:
         )
 
     @property
+    def is_connecting(self) -> bool:
+        """Public-first compatibility alias for ``_is_connecting``.
+
+        Returns
+        -------
+        bool
+            ``True`` when the manager is in CONNECTING or RECONNECTING.
+        """
+        return self._is_connecting
+
+    @property
     def _is_active(self) -> bool:
         """Return whether the BLE interface currently has an active or pending connection.
 
