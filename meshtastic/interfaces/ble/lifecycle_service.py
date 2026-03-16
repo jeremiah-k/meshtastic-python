@@ -211,13 +211,37 @@ class BLELifecycleService:
 
     @staticmethod
     def _set_receive_wanted(iface: "BLEInterface", *, want_receive: bool) -> None:
-        """Request or clear the background receive loop."""
+        """Request or clear the background receive loop.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface owning receive-loop state.
+        want_receive : bool
+            Desired receive-loop intent flag.
+
+        Returns
+        -------
+        None
+            Always returns ``None``.
+        """
         with iface._state_lock:
             iface._want_receive = want_receive
 
     @staticmethod
     def _should_run_receive_loop(iface: "BLEInterface") -> bool:
-        """Return whether the receive loop should run."""
+        """Return whether the receive loop should run.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface owning receive-loop state.
+
+        Returns
+        -------
+        bool
+            ``True`` when receive is requested and shutdown has not started.
+        """
         with iface._state_lock:
             return iface._want_receive and not iface._closed
 
@@ -231,7 +255,33 @@ class BLELifecycleService:
         args: tuple[object, ...] = (),
         kwargs: dict[str, object] | None = None,
     ) -> ThreadLike:
-        """Create thread using public-first coordinator dispatch."""
+        """Create a thread via public-first coordinator compatibility dispatch.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface exposing ``thread_coordinator``.
+        target : Callable[..., object]
+            Thread target callable.
+        name : str
+            Thread name.
+        daemon : bool
+            Whether the created thread should be daemonized.
+        args : tuple[object, ...]
+            Positional arguments forwarded to the thread target.
+        kwargs : dict[str, object] | None
+            Optional keyword arguments forwarded to the thread target.
+
+        Returns
+        -------
+        ThreadLike
+            Created thread-like object.
+
+        Raises
+        ------
+        AttributeError
+            If no compatible thread-creation method exists on the coordinator.
+        """
         create_thread = getattr(iface.thread_coordinator, "create_thread", None)
         if callable(create_thread) and not _is_unconfigured_mock_callable(
             create_thread
@@ -266,7 +316,25 @@ class BLELifecycleService:
 
     @staticmethod
     def _thread_start_thread(iface: "BLEInterface", thread: object) -> None:
-        """Start thread using public-first coordinator dispatch."""
+        """Start a thread via public-first coordinator compatibility dispatch.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface exposing ``thread_coordinator``.
+        thread : object
+            Thread-like object to start.
+
+        Returns
+        -------
+        None
+            Always returns ``None``.
+
+        Raises
+        ------
+        AttributeError
+            If no compatible thread-start method exists on the coordinator.
+        """
         start_thread = getattr(iface.thread_coordinator, "start_thread", None)
         if callable(start_thread) and not _is_unconfigured_mock_callable(start_thread):
             start_thread(thread)
@@ -285,7 +353,22 @@ class BLELifecycleService:
     def _thread_join_thread(
         iface: "BLEInterface", thread: object, *, timeout: float | None
     ) -> None:
-        """Join thread using public-first coordinator dispatch."""
+        """Join a thread via public-first coordinator compatibility dispatch.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface exposing ``thread_coordinator``.
+        thread : object
+            Thread-like object to join.
+        timeout : float | None
+            Join timeout in seconds.
+
+        Returns
+        -------
+        None
+            Always returns ``None``.
+        """
         join_thread = getattr(iface.thread_coordinator, "join_thread", None)
         if callable(join_thread) and not _is_unconfigured_mock_callable(join_thread):
             join_thread(thread, timeout=timeout)
@@ -304,7 +387,20 @@ class BLELifecycleService:
 
     @staticmethod
     def _thread_set_event(iface: "BLEInterface", event_name: str) -> None:
-        """Set event using public-first coordinator dispatch."""
+        """Set a coordinator event via public-first compatibility dispatch.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface exposing ``thread_coordinator``.
+        event_name : str
+            Event name to set.
+
+        Returns
+        -------
+        None
+            Always returns ``None``.
+        """
         set_event = getattr(iface.thread_coordinator, "set_event", None)
         if callable(set_event) and not _is_unconfigured_mock_callable(set_event):
             set_event(event_name)
@@ -319,7 +415,20 @@ class BLELifecycleService:
 
     @staticmethod
     def _thread_clear_events(iface: "BLEInterface", *event_names: str) -> None:
-        """Clear events using public-first coordinator dispatch."""
+        """Clear coordinator events via public-first compatibility dispatch.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface exposing ``thread_coordinator``.
+        *event_names : str
+            Event names to clear.
+
+        Returns
+        -------
+        None
+            Always returns ``None``.
+        """
         clear_events = getattr(iface.thread_coordinator, "clear_events", None)
         if callable(clear_events) and not _is_unconfigured_mock_callable(clear_events):
             clear_events(*event_names)
@@ -334,7 +443,20 @@ class BLELifecycleService:
 
     @staticmethod
     def _thread_wake_waiting_threads(iface: "BLEInterface", *event_names: str) -> None:
-        """Wake waiting threads using public-first coordinator dispatch."""
+        """Wake coordinator waiters via public-first compatibility dispatch.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface exposing ``thread_coordinator``.
+        *event_names : str
+            Event names used to wake waiting threads.
+
+        Returns
+        -------
+        None
+            Always returns ``None``.
+        """
         wake_waiting_threads = getattr(
             iface.thread_coordinator, "wake_waiting_threads", None
         )
@@ -359,7 +481,27 @@ class BLELifecycleService:
     def _start_receive_thread(
         iface: "BLEInterface", *, name: str, reset_recovery: bool = True
     ) -> None:
-        """Create and start the background receive thread."""
+        """Create and start the background receive thread.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface owning receive-thread state.
+        name : str
+            Name assigned to the receive thread.
+        reset_recovery : bool
+            Whether to reset recovery-attempt counters after a successful start.
+
+        Returns
+        -------
+        None
+            Always returns ``None``.
+
+        Raises
+        ------
+        Exception
+            Propagates thread-start failures after clearing stale thread state.
+        """
         with iface._state_lock:
             # Avoid reviving the receive loop after shutdown has begun.
             if iface._closed or not iface._want_receive:
@@ -394,6 +536,11 @@ class BLELifecycleService:
             iface._receiveThread = thread
         try:
             BLELifecycleService._thread_start_thread(iface, thread)
+        except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
+            with iface._state_lock:
+                if iface._receiveThread is thread:
+                    iface._receiveThread = None
+            raise
         except (
             Exception
         ):  # noqa: BLE001 - start failure must clear stale thread reference
@@ -1071,8 +1218,6 @@ class BLELifecycleService:
                     and still_owned
                     and not is_closing
                 ):
-                    iface._ever_connected = True
-                    iface._prior_publish_was_reconnect = prior_ever_connected
                     publish_committed = True
             if publish_committed:
                 with iface._state_lock:
@@ -1091,6 +1236,9 @@ class BLELifecycleService:
                         )
                     )
                 iface._connected()
+                with iface._state_lock:
+                    iface._ever_connected = True
+                    iface._prior_publish_was_reconnect = prior_ever_connected
                 iface._emit_verified_connection_side_effects(connected_client)
                 with iface._state_lock:
                     if iface.client is connected_client:

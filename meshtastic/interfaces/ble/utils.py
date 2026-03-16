@@ -210,25 +210,32 @@ def safe_execute_through_adapter(
     """
     safe_execute = resolve_safe_execute(iface)
     if safe_execute is not None:
+        adapter_kwargs: dict[str, object] = {
+            "default_return": default_return,
+            "error_msg": error_msg,
+            "reraise": reraise,
+        }
         try:
-            return cast(
-                T | None,
-                safe_execute(
-                    func,
-                    default_return=default_return,
-                    error_msg=error_msg,
-                    reraise=reraise,
-                ),
-            )
-        except TypeError as exc:
-            if not any(
-                _is_unexpected_keyword_error(exc, kwarg_name)
-                for kwarg_name in ("default_return", "error_msg", "reraise")
-            ):
-                logger.debug(error_msg, exc_info=True)
-                if reraise:
-                    raise
-                return default_return
+            while True:
+                try:
+                    return cast(T | None, safe_execute(func, **adapter_kwargs))
+                except TypeError as exc:
+                    rejected_kwarg = next(
+                        (
+                            kwarg_name
+                            for kwarg_name in tuple(adapter_kwargs)
+                            if _is_unexpected_keyword_error(exc, kwarg_name)
+                        ),
+                        None,
+                    )
+                    if rejected_kwarg is None:
+                        raise
+                    adapter_kwargs.pop(rejected_kwarg)
+        except TypeError:
+            logger.debug(error_msg, exc_info=True)
+            if reraise:
+                raise
+            return default_return
         except Exception:  # noqa: BLE001 - safe-execute adapters are best effort
             logger.debug(error_msg, exc_info=True)
             if reraise:

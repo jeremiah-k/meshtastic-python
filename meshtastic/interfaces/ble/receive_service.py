@@ -20,7 +20,11 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.errors import DecodeError
 from meshtastic.interfaces.ble.state import ConnectionState
-from meshtastic.interfaces.ble.utils import _is_unconfigured_mock_callable, _sleep
+from meshtastic.interfaces.ble.utils import (
+    _is_unconfigured_mock_callable,
+    _is_unconfigured_mock_member,
+    _sleep,
+)
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.coordination import ThreadCoordinator
@@ -168,6 +172,16 @@ class BLEReceiveRecoveryService:
         None
             Returns ``None`` after best-effort event clearing.
         """
+        clear_events = getattr(coordinator, "clear_events", None)
+        if callable(clear_events) and not _is_unconfigured_mock_callable(clear_events):
+            clear_events(event_name)
+            return
+        legacy_clear_events = getattr(coordinator, "_clear_events", None)
+        if callable(legacy_clear_events) and not _is_unconfigured_mock_callable(
+            legacy_clear_events
+        ):
+            legacy_clear_events(event_name)
+            return
         clear_event = getattr(coordinator, "clear_event", None)
         if callable(clear_event) and not _is_unconfigured_mock_callable(clear_event):
             clear_event(event_name)
@@ -250,7 +264,20 @@ class BLEReceiveRecoveryService:
                 iface._state_manager._current_state == ConnectionState.CONNECTING
             )
             publish_pending = iface._client_publish_pending
-            is_closing = iface._state_manager._is_closing or iface._closed
+            public_is_closing = getattr(iface._state_manager, "is_closing", None)
+            if not _is_unconfigured_mock_member(public_is_closing) and isinstance(
+                public_is_closing, bool
+            ):
+                state_is_closing = public_is_closing
+            else:
+                legacy_is_closing = getattr(iface._state_manager, "_is_closing", None)
+                if not _is_unconfigured_mock_member(legacy_is_closing) and isinstance(
+                    legacy_is_closing, bool
+                ):
+                    state_is_closing = legacy_is_closing
+                else:
+                    state_is_closing = False
+            is_closing = state_is_closing or iface._closed
         return client, is_connecting, publish_pending, is_closing
 
     @staticmethod

@@ -5076,7 +5076,7 @@ def test_publish_connection_status_falls_back_inline_when_non_blocking_enqueue_u
         publishing_thread=publishing_thread,
     )
 
-    assert len(queue_attempts) == 0
+    assert len(queue_attempts) == 1
     assert sent == [("meshtastic.connection.status", iface, False)]
 
 

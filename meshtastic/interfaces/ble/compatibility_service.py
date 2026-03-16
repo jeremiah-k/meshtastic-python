@@ -145,9 +145,8 @@ class BLECompatibilityEventService:
                     put_nowait_callback(callback)
                     return True
                 except Full:
-                    # Queue is full: keep this path non-blocking.
-                    return False
-            return False
+                    # Queue is full: fall through to queueWork fallback.
+                    pass
         if queue_work_callback is not None:
             queue_work_callback(callback)
             return True
@@ -261,7 +260,10 @@ class BLECompatibilityEventService:
                 )
                 return
             except Exception:  # noqa: BLE001 - fall back to direct draining path
-                pass
+                logger.debug(
+                    "Error draining publish queue via publishing thread; falling back to direct drain.",
+                    exc_info=True,
+                )
 
         # Do not call iface._drain_publish_queue here - it would recursively
         # call this method again. Instead, fall through to the direct queue

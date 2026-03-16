@@ -58,7 +58,7 @@ _CONNECT_TIMEOUT_INVALID_MSG: str = (
     "connect_timeout must be a finite positive number of seconds."
 )
 _CONNECT_TIMEOUT_FALLBACK_SECONDS: float = 10.0
-_DISPATCH_MISSING = object()
+_DISPATCH_MISSING: object = object()
 
 
 def _is_device_not_found_error(err: Exception) -> bool:
@@ -1044,13 +1044,16 @@ class ConnectionOrchestrator:
         BLEError
             If an explicitly supplied address is blank after trimming.
         """
-        target_address = address if address is not None else current_address
+        explicit_address = address is not None
+        target_address = address if explicit_address else current_address
         if target_address is not None:
             target_address = target_address.strip()
         # Allow None target_address for discovery mode - findDevice() handles this.
         # Only reject empty/whitespace-only strings that are explicitly provided.
-        if target_address is not None and not target_address:
+        if explicit_address and not target_address:
             raise self.interface.BLEError(CONNECTION_ERROR_EMPTY_ADDRESS)
+        if not explicit_address and not target_address:
+            target_address = None
 
         normalized_target = sanitize_address(target_address)
         if target_address:

@@ -216,6 +216,7 @@ class BLEManagementCommandsService:
             target_address = iface._resolve_target_address_for_management(address)
 
         if start_context.use_existing_client_without_resolved_address:
+            current_binding: str | None = None
             with iface._connect_lock, iface._management_lock:
                 iface._validate_management_preconditions()
                 refreshed_existing_client = iface._get_management_client_if_available(
@@ -232,6 +233,9 @@ class BLEManagementCommandsService:
                         start_context.expected_implicit_binding
                     ):
                         raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
+            target_candidate = address if address is not None else current_binding
+            if target_candidate is not None:
+                target_address = target_candidate.strip() or None
             return target_address, refreshed_existing_client
 
         return target_address, None
@@ -396,13 +400,21 @@ class BLEManagementCommandsService:
                 )
             )
 
-            if refreshed_existing_client is not None:
-                return command(refreshed_existing_client)
-
             if target_address is None:
+                if refreshed_existing_client is not None:
+                    return command(refreshed_existing_client)
                 raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_REQUIRED)
 
             with iface._management_target_gate(target_address):
+                if refreshed_existing_client is not None:
+                    with iface._connect_lock, iface._management_lock:
+                        iface._validate_management_preconditions()
+                        if address is None:
+                            iface._revalidate_implicit_management_target(
+                                target_address,
+                                expected_binding=start_context.expected_implicit_binding,
+                            )
+                    return command(refreshed_existing_client)
                 client_to_use, temporary_client = (
                     BLEManagementCommandsService._acquire_client_for_target(
                         iface,
