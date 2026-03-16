@@ -11,8 +11,8 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
-    resolve_safe_execute,
-    safe_execute_through_adapter,
+    _resolve_safe_execute as _resolve_safe_execute_hook,
+    _safe_execute_through_adapter,
 )
 
 if TYPE_CHECKING:
@@ -43,7 +43,7 @@ class BLECompatibilityEventService:
             Resolved ``safe_execute`` callable when available and configured,
             otherwise ``None``.
         """
-        return resolve_safe_execute(iface)
+        return _resolve_safe_execute_hook(iface)
 
     @staticmethod
     def _safe_execute(
@@ -80,7 +80,7 @@ class BLECompatibilityEventService:
         Exception
             Re-raises execution failures only when ``reraise`` is ``True``.
         """
-        return safe_execute_through_adapter(
+        return _safe_execute_through_adapter(
             iface,
             func,
             default_return=default_return,
@@ -104,7 +104,8 @@ class BLECompatibilityEventService:
         callback : Any
             Callable to enqueue for deferred execution.
         prefer_non_blocking : bool
-            When ``True``, prefer ``queue.put_nowait`` before ``queueWork``.
+            When ``True``, require ``queue.put_nowait`` and do not fall back to
+            potentially blocking ``queueWork``.
 
         Returns
         -------
@@ -140,13 +141,14 @@ class BLECompatibilityEventService:
         if prefer_non_blocking:
             if thread_is_alive is False:
                 return False
-            if put_nowait_callback is not None:
-                try:
-                    put_nowait_callback(callback)
-                    return True
-                except Full:
-                    # Queue is full: fall through to queueWork fallback.
-                    pass
+            if put_nowait_callback is None:
+                return False
+            try:
+                put_nowait_callback(callback)
+                return True
+            except Full:
+                # Strict non-blocking mode: do not fall back to queueWork().
+                return False
         if queue_work_callback is not None:
             queue_work_callback(callback)
             return True

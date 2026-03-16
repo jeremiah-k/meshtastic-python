@@ -52,7 +52,7 @@ from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
     _is_unconfigured_mock_member,
     _is_unexpected_keyword_error,
-    safe_execute_through_adapter,
+    _safe_execute_through_adapter,
     with_timeout,
 )
 
@@ -289,7 +289,7 @@ class BLEClient:
         Exception
             Propagates execution errors when ``reraise`` is ``True``.
         """
-        return safe_execute_through_adapter(
+        return _safe_execute_through_adapter(
             self,
             func,
             default_return=default_return,
@@ -434,12 +434,12 @@ class BLEClient:
 
     # COMPAT_STABLE_SHIM: historical BLE snake_case name.
     def find_device(self, **kwargs: Any) -> Any:
-        """Backward-compatible snake_case alias for discover()."""
-        return self.discover(**kwargs)
+        """Backward-compatible snake_case alias for findDevice()."""
+        return self.findDevice(**kwargs)
 
     def findDevice(self, **kwargs: Any) -> Any:
-        """Promoted camelCase alias for find_device()."""
-        return self.find_device(**kwargs)
+        """Promoted camelCase alias for discover()."""
+        return self.discover(**kwargs)
 
     def _run_management_call(
         self,

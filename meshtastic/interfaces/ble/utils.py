@@ -149,7 +149,7 @@ def _call_factory_with_optional_kwarg(
         raise
 
 
-def resolve_safe_execute(iface: object) -> Callable[..., Any] | None:
+def _resolve_safe_execute(iface: object) -> Callable[..., Any] | None:
     """Resolve an error-handler safe_execute hook with underscore fallback.
 
     Parameters
@@ -175,7 +175,7 @@ def resolve_safe_execute(iface: object) -> Callable[..., Any] | None:
     return None
 
 
-def safe_execute_through_adapter(
+def _safe_execute_through_adapter(
     iface: object,
     func: Callable[[], T],
     *,
@@ -208,7 +208,7 @@ def safe_execute_through_adapter(
     Exception
         Re-raises failures only when ``reraise`` is ``True``.
     """
-    safe_execute = resolve_safe_execute(iface)
+    safe_execute = _resolve_safe_execute(iface)
     if safe_execute is not None:
         adapter_kwargs: dict[str, object] = {
             "default_return": default_return,

@@ -768,9 +768,11 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
     if factory_mode == "with_optional_kwargs":
         def _temp_client_factory(_address: str, **_kwargs: object) -> SimpleNamespace:
             return temp_client
-    else:
+    elif factory_mode == "without_optional_kwargs":
         def _temp_client_factory(_address: str) -> SimpleNamespace:
             return temp_client
+    else:
+        raise ValueError(f"Unexpected factory_mode: {factory_mode}")
 
     monkeypatch.setattr(
         "meshtastic.interfaces.ble.interface.BLEClient",
@@ -5064,9 +5066,12 @@ def test_publish_connection_status_falls_back_inline_when_non_blocking_enqueue_u
     queue_attempts: list[object] = []
 
     class _FailingPublishingThread:
+        class QueueFailure(Exception):
+            """Raised when queueWork fails in this test double."""
+
         def queueWork(self, callback: object) -> None:
             queue_attempts.append(callback)
-            raise RuntimeError("queue failure")
+            raise self.QueueFailure
 
     iface = SimpleNamespace()
     publishing_thread = _FailingPublishingThread()
@@ -5077,7 +5082,7 @@ def test_publish_connection_status_falls_back_inline_when_non_blocking_enqueue_u
         publishing_thread=publishing_thread,
     )
 
-    assert len(queue_attempts) == 1
+    assert len(queue_attempts) == 0
     assert sent == [("meshtastic.connection.status", iface, False)]
 
 

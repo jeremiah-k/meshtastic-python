@@ -155,7 +155,7 @@ Semantic deprecation:
 
 | Module                                | Compatibility symbol         | Canonical symbol              |
 | ------------------------------------- | ---------------------------- | ----------------------------- |
-| `meshtastic.interfaces.ble.client`    | `find_device()`              | `discover()`                  |
+| `meshtastic.interfaces.ble.client`    | `find_device()`              | `findDevice()`                |
 | `meshtastic.interfaces.ble.client`    | `_discover()`                | `discover()`                  |
 | `meshtastic.interfaces.ble.client`    | `is_connected()`             | `isConnected()`               |
 | `meshtastic.interfaces.ble.client`    | `stop_notify()`              | `stopNotify()`                |

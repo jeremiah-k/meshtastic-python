@@ -396,7 +396,7 @@ def test_bleclient_find_device_aliases_delegate_to_expected_targets(
     monkeypatch: pytest.MonkeyPatch,
     ble_client: BLEClient,
 ) -> None:
-    """find_device and findDevice aliases should delegate to discover/find_device respectively."""
+    """find_device and findDevice aliases should delegate to findDevice/discover."""
     discover_calls: list[dict[str, Any]] = []
     find_device_calls: list[dict[str, Any]] = []
 
@@ -409,11 +409,11 @@ def test_bleclient_find_device_aliases_delegate_to_expected_targets(
         return ["found"]
 
     monkeypatch.setattr(ble_client, "discover", _discover_stub)
-    assert ble_client.find_device(address="AA:BB") == ["discovered"]
+    assert ble_client.findDevice(address="AA:BB") == ["discovered"]
     assert discover_calls == [{"address": "AA:BB"}]
 
-    monkeypatch.setattr(ble_client, "find_device", _find_device_stub)
-    assert ble_client.findDevice(name="node") == ["found"]
+    monkeypatch.setattr(ble_client, "findDevice", _find_device_stub)
+    assert ble_client.find_device(name="node") == ["found"]
     assert find_device_calls == [{"name": "node"}]
 
 

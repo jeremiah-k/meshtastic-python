@@ -577,12 +577,41 @@ class BLELifecycleService:
 
     @staticmethod
     def _on_ble_disconnect(iface: "BLEInterface", client: BleakRootClient) -> None:
-        """Handle Bleak client disconnect callback."""
+        """Handle a Bleak disconnect callback from the active transport client.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface receiving the disconnect callback.
+        client : BleakRootClient
+            Bleak client object that triggered the callback.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after delegating to disconnect handling.
+        """
         iface._handle_disconnect("bleak_callback", bleak_client=client)
 
     @staticmethod
     def _schedule_auto_reconnect(iface: "BLEInterface") -> None:
-        """Schedule background auto-reconnect attempts when enabled."""
+        """Schedule background auto-reconnect work when reconnect is enabled.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing reconnect scheduler and shutdown state.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after scheduling or skipping reconnect work.
+
+        Raises
+        ------
+        AttributeError
+            If reconnect scheduler dispatch methods are missing.
+        """
         if not iface.auto_reconnect:
             return
         with iface._state_lock:
@@ -614,7 +643,20 @@ class BLELifecycleService:
     def _disconnect_and_close_client(
         iface: "BLEInterface", client: "BLEClient"
     ) -> None:
-        """Ensure BLE client resources are released."""
+        """Release BLE client resources with best-effort disconnect/close handling.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface exposing client-manager cleanup helpers.
+        client : BLEClient
+            Client to disconnect and close.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after cleanup is attempted.
+        """
         iface._client_manager_safe_close_client(client)
 
     @staticmethod
@@ -626,7 +668,27 @@ class BLELifecycleService:
         should_reconnect: bool,
         address: str,
     ) -> tuple[list[str], bool]:
-        """Compute disconnect registry keys and reconnect scheduling intent."""
+        """Compute disconnect registry keys and reconnect scheduling intent.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface used to normalize and sort address keys.
+        previous_client : BLEClient | None
+            Previously owned client at disconnect start, when available.
+        alias_key : str | None
+            Connection alias key tracked for ownership gating.
+        should_reconnect : bool
+            Whether reconnect behavior is enabled for this disconnect.
+        address : str
+            Best-effort callback address value for key derivation.
+
+        Returns
+        -------
+        tuple[list[str], bool]
+            Sorted registry keys to mark disconnected and whether reconnect
+            scheduling should proceed.
+        """
         should_schedule_reconnect = should_reconnect and not iface._closed
         if should_reconnect:
             if previous_client is not None:
@@ -662,7 +724,24 @@ class BLELifecycleService:
         client: "BLEClient | None",
         bleak_client: BleakRootClient | None,
     ) -> _DisconnectPlan:
-        """Resolve disconnect ownership, mutate state, and build side-effect plan."""
+        """Resolve disconnect ownership, mutate state, and build side-effect plan.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface owning client/state references for disconnect handling.
+        source : str
+            Logical callback source label used for debug logging.
+        client : BLEClient | None
+            Optional explicit client associated with the disconnect signal.
+        bleak_client : BleakRootClient | None
+            Optional raw Bleak client associated with the disconnect signal.
+
+        Returns
+        -------
+        _DisconnectPlan
+            Planned side effects and ownership metadata for disconnect flow.
+        """
         target_client = client
         with iface._state_lock:
             current_state = BLELifecycleService._state_manager_current_state(iface)
@@ -1422,7 +1501,22 @@ class BLELifecycleService:
         management_shutdown_wait_timeout: float,
         management_wait_poll_seconds: float,
     ) -> None:
-        """Shut down the BLE interface and release associated resources."""
+        """Shut down BLE interface resources and finalize lifecycle state.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface instance being closed.
+        management_shutdown_wait_timeout : float
+            Maximum seconds to wait for inflight management operations.
+        management_wait_poll_seconds : float
+            Poll interval used while waiting for management completion.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after best-effort shutdown cleanup.
+        """
         # Deliberately avoid _connect_lock here so close() can mark shutdown
         # immediately and in-flight connect/pair timeouts can observe it.
         management_wait_timed_out = BLELifecycleService._await_management_shutdown(
@@ -1611,7 +1705,18 @@ class BLELifecycleService:
 
     @staticmethod
     def _shutdown_discovery(iface: "BLEInterface") -> None:
-        """Close discovery resources and stop receive-loop intent."""
+        """Close discovery resources and clear receive-loop intent.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing discovery manager and receive intent state.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after discovery cleanup is attempted.
+        """
         discovery_manager = iface._discovery_manager
         iface._discovery_manager = None
         if discovery_manager is not None:
@@ -1710,7 +1815,20 @@ class BLELifecycleService:
     def _shutdown_client(
         iface: "BLEInterface", *, management_wait_timed_out: bool
     ) -> None:
-        """Shutdown active client, notifications, and disconnect publication state."""
+        """Shutdown active client resources and notification publication state.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing client, notification, and gate helpers.
+        management_wait_timed_out : bool
+            Whether shutdown skipped management-target gating due timeout.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after best-effort shutdown cleanup.
+        """
         client, publish_pending = BLELifecycleService._detach_client_for_shutdown(iface)
         client_address = iface._extract_client_address(client)
         notification_manager = iface._notification_manager
@@ -1773,7 +1891,18 @@ class BLELifecycleService:
 
     @staticmethod
     def _finalize_close_state(iface: "BLEInterface") -> None:
-        """Persist terminal disconnected state and clear address registry claims."""
+        """Persist terminal disconnected state and clear address registry claims.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface whose lifecycle state is being finalized.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after final state and ownership cleanup.
+        """
         with iface._state_lock:
             # Record final state as DISCONNECTED for observers; instance remains closed.
             if not BLELifecycleService._state_manager_transition_to(
