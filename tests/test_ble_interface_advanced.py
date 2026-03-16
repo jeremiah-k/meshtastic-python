@@ -1220,7 +1220,7 @@ def test_wait_for_disconnect_notifications_exceptions(
 
         class _FailingQueue:
             @staticmethod
-            def put_nowait(_callback: Any) -> None:
+            def put_nowait(_callback: object) -> None:
                 raise RuntimeError("thread error in put_nowait")  # noqa: TRY003
 
         queue = _FailingQueue()
@@ -1242,7 +1242,7 @@ def test_wait_for_disconnect_notifications_exceptions(
 
         class _FailingQueue:
             @staticmethod
-            def put_nowait(_callback: Any) -> None:
+            def put_nowait(_callback: object) -> None:
                 raise ValueError("invalid state")  # noqa: TRY003
 
         queue = _FailingQueue()

@@ -79,7 +79,22 @@ class BLELifecycleService:
     def _resolve_error_handler_hook(
         iface: "BLEInterface", public_name: str, legacy_name: str
     ) -> Callable[..., object] | None:
-        """Resolve an error-handler hook with public-first fallback behavior."""
+        """Resolve an error-handler hook with public-first fallback behavior.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing the error-handler collaborator.
+        public_name : str
+            Preferred public hook name to resolve first.
+        legacy_name : str
+            Legacy fallback hook name used when the public hook is unavailable.
+
+        Returns
+        -------
+        Callable[..., object] | None
+            Resolved callable hook when available; otherwise ``None``.
+        """
         error_handler = getattr(iface, "error_handler", None)
         hook = getattr(error_handler, public_name, None)
         if callable(hook) and not _is_unconfigured_mock_callable(hook):
@@ -95,7 +110,27 @@ class BLELifecycleService:
         cleanup: Callable[[], object],
         operation_name: str,
     ) -> None:
-        """Run cleanup via resolved error-handler hook with best-effort fallback."""
+        """Run cleanup via resolved error-handler hook with best-effort fallback.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing error-handler hook resolution.
+        cleanup : Callable[[], object]
+            Cleanup callable to execute.
+        operation_name : str
+            Operation label used in fallback diagnostics.
+
+        Returns
+        -------
+        None
+            Always returns ``None``.
+
+        Raises
+        ------
+        None
+            Exceptions are suppressed to preserve shutdown progress.
+        """
         safe_cleanup = BLELifecycleService._resolve_error_handler_hook(
             iface, "safe_cleanup", "_safe_cleanup"
         )
@@ -121,7 +156,27 @@ class BLELifecycleService:
         *,
         error_msg: str,
     ) -> object | None:
-        """Run callable via resolved error-handler execute hook with fallback."""
+        """Run callable via resolved error-handler execute hook with fallback.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing error-handler hook resolution.
+        func : Callable[[], object]
+            Callable to execute.
+        error_msg : str
+            Error message used in fallback diagnostics.
+
+        Returns
+        -------
+        object | None
+            Callable return value on success; otherwise ``None``.
+
+        Raises
+        ------
+        None
+            Exceptions are suppressed to preserve shutdown progress.
+        """
         safe_execute = BLELifecycleService._resolve_error_handler_hook(
             iface, "safe_execute", "_safe_execute"
         )
@@ -569,6 +624,13 @@ class BLELifecycleService:
                     exc_info=False,
                 )
                 _close_inline()
+        except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
+            logger.warning(
+                "Failed to start async BLE client close; closing inline.",
+                exc_info=True,
+            )
+            _close_inline()
+            raise
         except Exception:  # noqa: BLE001 - cleanup must not abort disconnect flow
             logger.warning(
                 "Failed to start async BLE client close; closing inline.",
@@ -758,11 +820,16 @@ class BLELifecycleService:
                 else:
                     iface._last_connection_request = None
 
-        iface._client_manager_safe_close_client(client)
-
-        if should_reset_state:
-            with iface._state_lock:
-                iface._state_manager._reset_to_disconnected()
+        try:
+            BLELifecycleService._error_handler_safe_cleanup(
+                iface,
+                lambda: iface._client_manager_safe_close_client(client),
+                "BLE client close for invalidated connection result",
+            )
+        finally:
+            if should_reset_state:
+                with iface._state_lock:
+                    iface._state_manager._reset_to_disconnected()
 
     @staticmethod
     def _state_manager_is_connected(iface: "BLEInterface") -> bool:
@@ -1006,9 +1073,6 @@ class BLELifecycleService:
                 ):
                     iface._ever_connected = True
                     iface._prior_publish_was_reconnect = prior_ever_connected
-                    if iface.client is connected_client:
-                        iface._client_publish_pending = False
-                        iface._client_replacement_pending = False
                     publish_committed = True
             if publish_committed:
                 with iface._state_lock:
@@ -1029,6 +1093,9 @@ class BLELifecycleService:
                 iface._connected()
                 iface._emit_verified_connection_side_effects(connected_client)
                 with iface._state_lock:
+                    if iface.client is connected_client:
+                        iface._client_publish_pending = False
+                        iface._client_replacement_pending = False
                     still_owned_after, is_closing_after = (
                         BLELifecycleService._get_connected_client_status_locked(
                             iface, connected_client

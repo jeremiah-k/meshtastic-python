@@ -766,6 +766,9 @@ def test_connection_orchestrator_rejects_direct_connect_when_interface_already_c
     interface = MagicMock()
     interface.BLEError = MockBLEError
     interface._closed = True
+    interface.findDevice = MagicMock()
+    interface.find_device = MagicMock()
+    interface._find_device = MagicMock()
     orchestrator = ConnectionOrchestrator(
         interface=interface,
         validator=validator,
@@ -788,6 +791,8 @@ def test_connection_orchestrator_rejects_direct_connect_when_interface_already_c
     client_manager.create_client.assert_not_called()
     client_manager.connect_client.assert_not_called()
     interface.findDevice.assert_not_called()
+    interface.find_device.assert_not_called()
+    interface._find_device.assert_not_called()
 
 
 @pytest.mark.unit
@@ -803,6 +808,9 @@ def test_connection_orchestrator_raises_when_connect_state_transition_fails() ->
     interface = MagicMock()
     interface.BLEError = MockBLEError
     interface._closed = False
+    interface.findDevice = MagicMock()
+    interface.find_device = MagicMock()
+    interface._find_device = MagicMock()
     orchestrator = ConnectionOrchestrator(
         interface=interface,
         validator=validator,
@@ -913,6 +921,8 @@ def test_connection_orchestrator_returns_after_successful_direct_connect() -> No
 
     assert result is direct_client
     interface.findDevice.assert_not_called()
+    interface.find_device.assert_not_called()
+    interface._find_device.assert_not_called()
     orchestrator._finalize_connection.assert_called_once()
 
 
@@ -929,6 +939,9 @@ def test_connection_orchestrator_forwards_pair_on_connect_to_client_creation() -
     interface = MagicMock()
     interface.BLEError = MockBLEError
     interface._closed = False
+    interface.findDevice = MagicMock()
+    interface.find_device = MagicMock()
+    interface._find_device = MagicMock()
 
     orchestrator = ConnectionOrchestrator(
         interface=interface,
@@ -1313,6 +1326,8 @@ def test_connection_orchestrator_skips_scan_after_direct_device_not_found_for_ex
 
     assert result is retry_client
     interface.findDevice.assert_not_called()
+    interface.find_device.assert_not_called()
+    interface._find_device.assert_not_called()
     assert client_manager.connect_client.call_count == 2
     direct_timeout = min(DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT)
     assert (

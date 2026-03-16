@@ -117,6 +117,8 @@ def _is_blank_or_malformed_address_like(address: str | None) -> bool:
         and _HEX_MAC_NO_SEPARATOR_RE.fullmatch(normalized_address) is not None
     ):
         return False
+    # sanitize_address() can reject/alter edge-case inputs, so preserve a
+    # raw-shape check for 12-hex strings and colon-delimited address-like text.
     return (
         ":" in stripped_address
         or _HEX_MAC_NO_SEPARATOR_RE.fullmatch(stripped_address) is not None
@@ -695,7 +697,7 @@ class BLEManagementCommandsService:
         except (
             Exception
         ) as exc:  # noqa: BLE001 - preserve injected module compatibility
-            if timeout_exc_type is not None and isinstance(exc, timeout_exc_type):
+            if isinstance(exc, timeout_exc_type):
                 raise iface.BLEError(
                     ERROR_TRUST_COMMAND_TIMEOUT.format(
                         timeout=validated_timeout, address=canonical_address
@@ -783,8 +785,6 @@ class BLEManagementCommandsService:
         if _is_blank_or_malformed_address_like(address):
             raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
 
-        expected_implicit_binding = None
-
         validated_timeout = BLEManagementCommandsService._validate_trust_timeout(
             iface, timeout
         )
@@ -796,28 +796,26 @@ class BLEManagementCommandsService:
 
         management_started = False
         try:
-            with iface._connect_lock, iface._management_lock:
-                iface._validate_management_preconditions()
-                iface._begin_management_operation_locked()
-                management_started = True
-                if address is None:
-                    with iface._state_lock:
-                        expected_implicit_binding = (
-                            iface._get_current_implicit_management_binding_locked()
-                        )
-            target_address = iface._resolve_target_address_for_management(address)
+            start_context = BLEManagementCommandsService._start_management_phase(
+                iface, address
+            )
+            management_started = True
+            target_address, _ = BLEManagementCommandsService._resolve_management_target(
+                iface,
+                address,
+                start_context,
+            )
+            if target_address is None:
+                raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_REQUIRED)
             canonical_address = iface._format_bluetoothctl_address(target_address)
             with iface._management_target_gate(target_address):
-                if address is None:
-                    with iface._connect_lock, iface._management_lock:
-                        iface._validate_management_preconditions()
+                with iface._connect_lock, iface._management_lock:
+                    iface._validate_management_preconditions()
+                    if address is None:
                         iface._revalidate_implicit_management_target(
                             target_address,
-                            expected_binding=expected_implicit_binding,
+                            expected_binding=start_context.expected_implicit_binding,
                         )
-                else:
-                    with iface._connect_lock, iface._management_lock:
-                        iface._validate_management_preconditions()
                 BLEManagementCommandsService._run_bluetoothctl_trust_command(
                     iface,
                     bluetoothctl_path,

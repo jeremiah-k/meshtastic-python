@@ -1481,8 +1481,9 @@ class ConnectionOrchestrator:
                 )
 
         if emit_connected_side_effects:
+            prior_ever_connected = bool(getattr(self.interface, "_ever_connected", False))
             on_connected_func()
-            if getattr(self.interface, "_ever_connected", False):
+            if prior_ever_connected:
                 self._thread_set_event(RECONNECTED_EVENT)
             normalized_device_address = sanitize_address(device_address)
             logger.info(

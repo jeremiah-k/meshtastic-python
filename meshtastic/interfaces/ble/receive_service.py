@@ -592,6 +592,11 @@ class BLEReceiveRecoveryService:
             iface._receive_recovery_attempts += 1
             attempts = iface._receive_recovery_attempts
             last_recovery = iface._last_recovery_time
+        logger.debug(
+            "BLE receive recovery attempt scheduled: attempts=%d last_recovery_time=%.3f",
+            attempts,
+            last_recovery,
+        )
         if attempts > RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD:
             max_exponent = max(
                 math.ceil(math.log2(max(RECEIVE_RECOVERY_MAX_BACKOFF_SEC, 1.0))),
@@ -609,13 +614,54 @@ class BLEReceiveRecoveryService:
                     remaining_wait,
                     attempts,
                 )
+                logger.debug(
+                    "BLE receive recovery backoff: attempts=%d backoff=%.3f remaining_wait=%.3f",
+                    attempts,
+                    backoff,
+                    remaining_wait,
+                )
                 if iface._shutdown_event.wait(timeout=remaining_wait):
+                    logger.debug(
+                        "BLE receive recovery aborted by shutdown during backoff wait (attempt %d)",
+                        attempts,
+                    )
                     return
+                logger.debug(
+                    "BLE receive recovery backoff wait elapsed; retrying restart (attempt %d)",
+                    attempts,
+                )
         with iface._state_lock:
             iface._last_recovery_time = time.monotonic()
+            updated_last_recovery_time = iface._last_recovery_time
         iface._read_retry_count = 0
-        if iface._should_run_receive_loop():
-            iface._start_receive_thread(name="BLEReceiveRecovery", reset_recovery=False)
+        logger.debug(
+            "BLE receive recovery timestamp updated: attempts=%d last_recovery_time=%.3f",
+            attempts,
+            updated_last_recovery_time,
+        )
+        should_restart = iface._should_run_receive_loop()
+        logger.debug(
+            "BLE receive recovery restart decision: attempts=%d should_restart=%s reset_recovery=%s",
+            attempts,
+            should_restart,
+            False,
+        )
+        if should_restart:
+            try:
+                iface._start_receive_thread(
+                    name="BLEReceiveRecovery", reset_recovery=False
+                )
+            except Exception:  # noqa: BLE001 - preserve existing failure behavior
+                logger.warning(
+                    "BLE receive recovery restart failed (attempt %d)",
+                    attempts,
+                    exc_info=True,
+                )
+                raise
+            logger.debug(
+                "BLE receive recovery restart started (attempt %d)",
+                attempts,
+            )
 
     @staticmethod
     def _read_from_radio_with_retries(

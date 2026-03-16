@@ -2049,16 +2049,13 @@ class BLEInterface(MeshInterface):
             If no supported delay helper exists on ``policy``.
         """
         return float(
-            cast(
-                float,
-                BLEInterface._compat_dispatch_callable(
-                    policy,
-                    public_name="get_delay",
-                    legacy_name="_get_delay",
-                    fallback_attr_name=None,
-                    error_message=ERROR_RETRY_POLICY_MISSING_GET_DELAY,
-                    args=(attempt,),
-                ),
+            BLEInterface._compat_dispatch_callable(
+                policy,
+                public_name="get_delay",
+                legacy_name="_get_delay",
+                fallback_attr_name=None,
+                error_message=ERROR_RETRY_POLICY_MISSING_GET_DELAY,
+                args=(attempt,),
             )
         )
 
@@ -2260,11 +2257,31 @@ class BLEInterface(MeshInterface):
         -----
         Must be called while holding _connect_lock.
         """
+        original_client: BLEClient | None
+        original_address: str | None
+        original_last_connection_request: str | None
+        original_publish_pending: bool
+        original_replacement_pending: bool
+        original_disconnect_notified: bool
         with self._state_lock:
+            original_client = self.client
+            original_address = self.address
+            original_last_connection_request = getattr(
+                self, "_last_connection_request", None
+            )
+            original_publish_pending = bool(
+                getattr(self, "_client_publish_pending", False)
+            )
+            original_replacement_pending = bool(
+                getattr(self, "_client_replacement_pending", False)
+            )
+            original_disconnect_notified = bool(
+                getattr(self, "_disconnect_notified", False)
+            )
             # Claim a provisional session before orchestration moves shared
             # state to CONNECTED so disconnect callbacks stay publication-safe.
             self._client_replacement_pending = (
-                self.client is not None and not self._client_publish_pending
+                self.client is not None and not original_publish_pending
             )
             self._client_publish_pending = True
 
@@ -2276,8 +2293,8 @@ class BLEInterface(MeshInterface):
             )
         except Exception:
             with self._state_lock:
-                self._client_publish_pending = False
-                self._client_replacement_pending = False
+                self._client_publish_pending = original_publish_pending
+                self._client_replacement_pending = original_replacement_pending
             raise
 
         device_address = getattr(
@@ -2308,11 +2325,36 @@ class BLEInterface(MeshInterface):
                 sanitize_address(device_address or "") or "unknown",
             )
             # Shutdown is already committed, so target restoration is not needed.
-            self._client_manager_safe_close_client(client)
+            try:
+                self._client_manager_safe_close_client(client)
+            except Exception:  # noqa: BLE001 - best-effort cleanup during shutdown
+                logger.debug(
+                    "Error closing discarded late BLE connection result",
+                    exc_info=True,
+                )
             raise self.BLEError(ERROR_INTERFACE_CLOSING)
 
         if previous_client and previous_client is not client:
-            self._client_manager_update_client_reference(client, previous_client)
+            try:
+                self._client_manager_update_client_reference(client, previous_client)
+            except Exception:
+                with self._state_lock:
+                    if self.client is client:
+                        self.client = original_client
+                        self.address = original_address
+                        self._last_connection_request = original_last_connection_request
+                        self._client_publish_pending = original_publish_pending
+                        self._client_replacement_pending = original_replacement_pending
+                        self._disconnect_notified = original_disconnect_notified
+                if client is not original_client:
+                    try:
+                        self._client_manager_safe_close_client(client)
+                    except Exception:  # noqa: BLE001 - rollback cleanup is best effort
+                        logger.debug(
+                            "Error closing client after failed client handoff rollback",
+                            exc_info=True,
+                        )
+                raise
 
         connected_device_key = _addr_key(device_address) if device_address else None
         connection_alias_key = (

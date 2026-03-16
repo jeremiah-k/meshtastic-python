@@ -497,6 +497,48 @@ class BLEClient:
         self._sync_address_from_bleak()
         return None
 
+    def _run_optional_management_method(
+        self,
+        *,
+        method_name: str,
+        await_timeout: float,
+        not_initialized_error: str,
+        unsupported_error: str,
+        call_kwargs: dict[str, object] | None = None,
+    ) -> None:
+        """Resolve and run an optional Bleak management method via shared wrapper.
+
+        Parameters
+        ----------
+        method_name : str
+            Name of the Bleak client method to call.
+        await_timeout : float
+            Maximum seconds to wait for the management coroutine.
+        not_initialized_error : str
+            Error message raised when no Bleak client is initialized.
+        unsupported_error : str
+            Error message raised when the method is unavailable.
+        call_kwargs : dict[str, object] | None
+            Optional keyword arguments forwarded to the resolved method.
+
+        Returns
+        -------
+        None
+            Management operation is performed for side effects only.
+        """
+        bleak_client = self._require_bleak_client(not_initialized_error)
+        operation = getattr(bleak_client, method_name, None)
+        self._run_management_call(
+            (
+                None
+                if not callable(operation) or _is_unconfigured_mock_callable(operation)
+                else lambda: operation(**(call_kwargs or {}))
+            ),
+            await_timeout=await_timeout,
+            not_initialized_error=not_initialized_error,
+            unsupported_error=unsupported_error,
+        )
+
     def pair(
         self,
         *,
@@ -525,20 +567,12 @@ class BLEClient:
         BLEError
             If the BLE client is not initialized or the pairing operation fails.
         """
-        bleak_client = self._require_bleak_client(
-            BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED
-        )
-        pair_method = getattr(bleak_client, "pair", None)
-        self._run_management_call(
-            (
-                None
-                if not callable(pair_method)
-                or _is_unconfigured_mock_callable(pair_method)
-                else lambda: pair_method(**kwargs)
-            ),
+        self._run_optional_management_method(
+            method_name="pair",
             await_timeout=await_timeout,
             not_initialized_error=BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED,
             unsupported_error=BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED,
+            call_kwargs=kwargs,
         )
         return None
 
@@ -564,17 +598,8 @@ class BLEClient:
         BLEError
             If the BLE client is not initialized or if the backend does not expose `unpair`.
         """
-        bleak_client = self._require_bleak_client(
-            BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED
-        )
-        unpair_method = getattr(bleak_client, "unpair", None)
-        self._run_management_call(
-            (
-                None
-                if not callable(unpair_method)
-                or _is_unconfigured_mock_callable(unpair_method)
-                else lambda: unpair_method()
-            ),
+        self._run_optional_management_method(
+            method_name="unpair",
             await_timeout=await_timeout,
             not_initialized_error=BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED,
             unsupported_error=BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED,
