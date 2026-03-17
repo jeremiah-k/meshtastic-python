@@ -706,6 +706,12 @@ class BLEInterface(MeshInterface):
             return
         except TypeError as exc:
             if not _is_unexpected_keyword_error(exc, "error_msg"):
+                logger.debug(
+                    "safe_execute keyword probe raised TypeError for notification handler (%s): %s",
+                    error_msg,
+                    exc,
+                    exc_info=True,
+                )
                 _fallback_if_not_executed()
                 return
         except Exception as exc:  # noqa: BLE001 - notification callbacks must stay best effort
@@ -753,6 +759,11 @@ class BLEInterface(MeshInterface):
             safe_execute(_tracked_handler_thunk)
             return
         except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
+            logger.debug(
+                "safe_execute callable-only probe failed for notification handler (%s).",
+                error_msg,
+                exc_info=True,
+            )
             _fallback_if_not_executed()
 
     def _from_num_handler(self, _: Any, b: bytes | bytearray) -> None:

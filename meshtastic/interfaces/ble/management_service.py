@@ -162,7 +162,7 @@ class BLEManagementCommandsService:
             operation token.
         """
         expected_implicit_binding: str | None = None
-        with iface._state_lock, iface._connect_lock, iface._management_lock:
+        with iface._connect_lock, iface._management_lock, iface._state_lock:
             iface._validate_management_preconditions()
             if address is None:
                 expected_implicit_binding = (
@@ -226,7 +226,7 @@ class BLEManagementCommandsService:
             target_candidate: str | None = None
             use_refreshed_existing_client = True
             if address is None:
-                with iface._state_lock, iface._connect_lock, iface._management_lock:
+                with iface._connect_lock, iface._management_lock, iface._state_lock:
                     iface._validate_management_preconditions()
                     refreshed_existing_client = (
                         iface._get_management_client_if_available(address)

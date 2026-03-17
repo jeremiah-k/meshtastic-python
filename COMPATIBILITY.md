@@ -170,7 +170,7 @@ Semantic deprecation:
 | `meshtastic.interfaces.ble.interface`             | `from_num_handler()`                                              | `_from_num_handler()`                                      |
 | `meshtastic.interfaces.ble.interface`             | `log_radio_handler()`                                             | `_log_radio_handler()`                                     |
 | `meshtastic.interfaces.ble.interface`             | `legacy_log_radio_handler()`                                      | `_legacy_log_radio_handler()`                              |
-| `meshtastic.interfaces.ble.state`                 | `is_connecting()`                                                 | `_is_connecting()`                                         |
+| `meshtastic.interfaces.ble.state`                 | `is_connecting`                                                   | `_is_connecting()`                                         |
 | `meshtastic.interfaces.ble.state`                 | `_lock` property                                                  | `lock` property                                            |
 
 ### Powermon and Slog

@@ -6,7 +6,7 @@ import contextlib
 import importlib
 import threading
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Protocol
 from unittest.mock import MagicMock
 
 import pytest
@@ -29,11 +29,15 @@ class _FatalReceiveError(RuntimeError):
     """Used by receive-loop tests."""
 
 
+class _IfaceWithStateManager(Protocol):
+    _state_manager: object
+
+
 def _make_iface(monkeypatch: pytest.MonkeyPatch) -> Any:
     return _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
 
 
-def _reset_state_manager(iface: Any) -> None:
+def _reset_state_manager(iface: _IfaceWithStateManager) -> None:
     iface._state_manager = importlib.import_module(
         "meshtastic.interfaces.ble.state"
     ).BLEStateManager()

@@ -5043,12 +5043,12 @@ def test_report_notification_handler_error_covers_hook_and_fallback_paths(
     iface._report_notification_handler_error("hook-error")
 
     # Unconfigured child mock should be treated as unavailable and fall back to logger.debug.
-    fallback_hook = MagicMock()
-    iface.error_handler = SimpleNamespace(handle_unhandled_exception=fallback_hook)
+    error_handler = MagicMock()
+    iface.error_handler = error_handler
     iface._report_notification_handler_error("missing-hook")
 
     raising_hook.assert_called_once_with("hook-error")
-    fallback_hook.assert_not_called()
+    error_handler.handle_unhandled_exception.assert_not_called()
     assert "hook-error" in debug_calls
     assert "missing-hook" in debug_calls
 
