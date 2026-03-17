@@ -2112,7 +2112,7 @@ class BLEInterface(MeshInterface):
             error_message=ERROR_RETRY_POLICY_MISSING_GET_DELAY,
             args=(attempt,),
         )
-        if isinstance(result, (int, float)):
+        if isinstance(result, (int, float)) and not isinstance(result, bool):
             return float(result)
         logger.debug(
             "Retry policy get_delay returned non-numeric %r; defaulting to 0.0",

@@ -418,7 +418,8 @@ def test_reconnection_schedule_thread_not_started_and_policy_missing_method() ->
         ),
     )
 
-    assert scheduler._schedule_reconnect(True, Event()) is False
+    should_reconnect = True
+    assert scheduler._schedule_reconnect(should_reconnect, Event()) is False
 
     worker = ReconnectWorker(
         interface=SimpleNamespace(auto_reconnect=True),
@@ -847,8 +848,9 @@ def test_reconnect_scheduler_start_exception_and_management_trust_truncation(
             _is_connection_closing=False, _can_initiate_connection=True
         ),
     )
+    should_reconnect = True
     with pytest.raises(RuntimeError, match="start failed"):
-        scheduler._schedule_reconnect(True, Event())
+        scheduler._schedule_reconnect(should_reconnect, Event())
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     try:

@@ -224,11 +224,6 @@ class BLEManagementCommandsService:
 
         if start_context.use_existing_client_without_resolved_address:
             current_binding: str | None = None
-            if address is None:
-                with iface._state_lock:
-                    current_binding = (
-                        iface._get_current_implicit_management_binding_locked()
-                    )
             with iface._connect_lock, iface._management_lock:
                 iface._validate_management_preconditions()
                 refreshed_existing_client = iface._get_management_client_if_available(
@@ -236,10 +231,15 @@ class BLEManagementCommandsService:
                 )
                 if refreshed_existing_client is None:
                     raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
-            if address is None and sanitize_address(
-                current_binding
-            ) != sanitize_address(start_context.expected_implicit_binding):
-                raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
+                if address is None:
+                    with iface._state_lock:
+                        current_binding = (
+                            iface._get_current_implicit_management_binding_locked()
+                        )
+                    if sanitize_address(current_binding) != sanitize_address(
+                        start_context.expected_implicit_binding
+                    ):
+                        raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
 
             # Prefer a live address extracted from the refreshed client. If no
             # address is present, attempt explicit resolution for identifier

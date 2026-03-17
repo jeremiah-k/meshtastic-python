@@ -223,7 +223,9 @@ def test_connection_orchestrator_dispatch_set_event_and_kwarg_fallbacks(
             connect_timeout=5.0,
         )
         assert isinstance(created, DummyClient)
-        assert create_calls
+        assert create_calls[-1] == {}
+        assert any("pair_on_connect" in call for call in create_calls[:-1])
+        assert any("connect_timeout" in call for call in create_calls[:-1])
 
         connect_calls: list[dict[str, object]] = []
 

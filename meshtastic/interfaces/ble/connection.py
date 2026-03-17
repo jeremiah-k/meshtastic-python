@@ -111,12 +111,16 @@ def _run_safe_cleanup(
         ``False``.
     """
     cleanup_ran = False
+    cleanup_invoked = False
 
     def _tracked_cleanup() -> object:
-        nonlocal cleanup_ran
+        nonlocal cleanup_invoked, cleanup_ran
+        cleanup_invoked = True
+        result = func()
         cleanup_ran = True
-        return func()
+        return result
 
+    handled = False
     if safe_cleanup_hook is not None:
         try:
             handled = bool(
@@ -134,23 +138,22 @@ def _run_safe_cleanup(
                         cleanup_name,
                         exc_info=True,
                     )
-                    return cleanup_ran
             else:
                 logger.debug(
                     "Error running safe_cleanup hook for %s",
                     cleanup_name,
                     exc_info=True,
                 )
-                return cleanup_ran
         except Exception:  # noqa: BLE001 - cleanup path must stay best-effort
             logger.debug(
                 "Error running safe_cleanup hook for %s",
                 cleanup_name,
                 exc_info=True,
             )
-            return cleanup_ran
         if handled or cleanup_ran:
             return True
+        if cleanup_invoked:
+            return False
     if cleanup_ran:
         return True
     try:
