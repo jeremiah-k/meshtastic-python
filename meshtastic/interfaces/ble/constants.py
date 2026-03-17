@@ -18,6 +18,10 @@ DISCONNECT_TIMEOUT_SECONDS = 5.0
 RECEIVE_THREAD_JOIN_TIMEOUT = 2.0
 EVENT_THREAD_JOIN_TIMEOUT = 2.0
 
+# Thread/event coordination constants
+READ_TRIGGER_EVENT: str = "read_trigger"
+RECONNECTED_EVENT: str = "reconnected_event"
+
 
 # BLE timeout and retry constants
 class BLEConfig:

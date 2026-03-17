@@ -26,8 +26,6 @@ Threading model summary
 
 import atexit
 import contextlib
-import math
-import numbers
 import re
 import shutil
 import struct
@@ -36,7 +34,6 @@ import sys
 import threading
 import time
 from collections.abc import Awaitable, Callable
-from queue import Empty
 from threading import Event
 from typing import IO, Any, TypeVar, cast
 
@@ -46,6 +43,7 @@ from bleak.exc import BleakDBusError, BleakError
 
 from meshtastic import publishingThread
 from meshtastic.interfaces.ble.client import BLEClient
+from meshtastic.interfaces.ble.compatibility_service import BLECompatibilityEventService
 from meshtastic.interfaces.ble.connection import (
     ClientManager,
     ConnectionOrchestrator,
@@ -55,43 +53,29 @@ from meshtastic.interfaces.ble.constants import (
     BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
     CONNECTION_ERROR_EMPTY_ADDRESS,
     CONNECTION_ERROR_LOST_OWNERSHIP,
-    DISCONNECT_TIMEOUT_SECONDS,
     ERROR_ADDRESS_RESOLUTION_FAILED,
     ERROR_CONNECTION_FAILED,
     ERROR_CONNECTION_SUPPRESSED,
-    ERROR_DISCOVERY_MANAGER_UNAVAILABLE,
     ERROR_INTERFACE_CLOSING,
-    ERROR_INVALID_CONNECT_TIMEOUT,
     ERROR_MANAGEMENT_ADDRESS_EMPTY,
     ERROR_MANAGEMENT_ADDRESS_REQUIRED,
-    ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID,
     ERROR_MANAGEMENT_CONNECTING,
     ERROR_MANAGEMENT_TARGET_CHANGED,
     ERROR_MULTIPLE_DEVICES,
     ERROR_MULTIPLE_DEVICES_DISCOVERY,
     ERROR_NO_CLIENT_ESTABLISHED,
     ERROR_NO_PERIPHERALS_FOUND,
-    ERROR_READING_BLE,
     ERROR_TIMEOUT,
     ERROR_TRUST_ADDRESS_NOT_RESOLVED,
-    ERROR_TRUST_BLUETOOTHCTL_MISSING,
-    ERROR_TRUST_COMMAND_FAILED,
-    ERROR_TRUST_COMMAND_TIMEOUT,
-    ERROR_TRUST_INVALID_TIMEOUT,
-    ERROR_TRUST_LINUX_ONLY,
     ERROR_WRITING_BLE,
     FROMNUM_UUID,
-    FROMRADIO_UUID,
     GATT_IO_TIMEOUT,
     LEGACY_LOGRADIO_UUID,
     LOGRADIO_UUID,
     MALFORMED_NOTIFICATION_THRESHOLD,
-    MAX_DRAIN_ITERATIONS,
     NOTIFICATION_START_TIMEOUT,
-    RECEIVE_RECOVERY_MAX_BACKOFF_SEC,
-    RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD,
-    RECEIVE_RECOVERY_STABILITY_RESET_SEC,
-    RECEIVE_THREAD_JOIN_TIMEOUT,
+    READ_TRIGGER_EVENT,
+    RECONNECTED_EVENT,
     SERVICE_UUID,
     TORADIO_UUID,
     UNREACHABLE_ADDRESSED_DEVICES_MSG,
@@ -114,17 +98,31 @@ from meshtastic.interfaces.ble.gating import (
     _mark_connecting,
     _mark_disconnected,
 )
+from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
+from meshtastic.interfaces.ble.management_service import (
+    BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS as _BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS,
+)
+from meshtastic.interfaces.ble.management_service import (
+    BLEManagementCommandsService,
+)
 from meshtastic.interfaces.ble.notifications import NotificationManager
 from meshtastic.interfaces.ble.policies import RetryPolicy
+from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryService
 from meshtastic.interfaces.ble.reconnection import ReconnectScheduler
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
-from meshtastic.interfaces.ble.utils import _sleep, sanitize_address, with_timeout
+from meshtastic.interfaces.ble.utils import (
+    _is_unconfigured_mock_callable,
+    _is_unconfigured_mock_member,
+    _is_unexpected_keyword_error,
+    _sleep,
+    sanitize_address,
+    with_timeout,
+)
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import mesh_pb2
 
 T = TypeVar("T")
 _NOTIFY_ACQUIRED_FRAGMENT = "notify acquired"
-_BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS: float = 10.0
 _MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS: float = 30.0
 _MANAGEMENT_CONNECT_WAIT_POLL_SECONDS: float = 0.5
 _MANAGEMENT_CONNECT_WAIT_TIMEOUT_SECONDS: float = 30.0
@@ -133,6 +131,28 @@ _TRUST_HEX_BLOB_RE = re.compile(r"\b[0-9A-Fa-f]{16,}\b")
 _TRUST_TOKEN_RE = re.compile(r"\b[A-Za-z0-9+/=_-]{40,}\b")
 ERROR_PAIR_ON_CONNECT_BOOL: str = "pair_on_connect must be a bool."
 ERROR_PAIR_BOOL: str = "pair must be a bool when provided."
+ERROR_RETRY_POLICY_MISSING_SHOULD_RETRY: str = (
+    "Retry policy missing should_retry/_should_retry"
+)
+ERROR_RETRY_POLICY_MISSING_GET_DELAY: str = "Retry policy missing get_delay/_get_delay"
+ERROR_DISCOVERY_MANAGER_MISSING_DISCOVER_DEVICES: str = (
+    "Discovery manager is missing discover_devices/_discover_devices"
+)
+ERROR_STATE_MANAGER_MISSING_BOOL_IS_CONNECTED: str = (
+    "State manager is missing is_connected/_is_connected boolean members"
+)
+ERROR_CONNECTION_VALIDATOR_MISSING_CHECK_EXISTING_CLIENT: str = (
+    "Connection validator is missing check_existing_client/_check_existing_client"
+)
+ERROR_CONNECTION_ORCHESTRATOR_MISSING_ESTABLISH_CONNECTION: str = (
+    "Connection orchestrator is missing establish_connection/_establish_connection"
+)
+ERROR_CLIENT_MANAGER_MISSING_SAFE_CLOSE_CLIENT: str = (
+    "Client manager is missing safe_close_client/_safe_close_client"
+)
+ERROR_CLIENT_MANAGER_MISSING_UPDATE_CLIENT_REFERENCE: str = (
+    "Client manager is missing update_client_reference/_update_client_reference"
+)
 
 
 class BLEInterface(MeshInterface):
@@ -302,10 +322,10 @@ class BLEInterface(MeshInterface):
 
         # Event coordination for reconnection and read operations
         self._read_trigger = self.thread_coordinator._create_event(
-            "read_trigger"
+            READ_TRIGGER_EVENT
         )  # Signals when data is available to read
         self._reconnected_event = self.thread_coordinator._create_event(
-            "reconnected_event"
+            RECONNECTED_EVENT
         )  # Signals when reconnection occurred
         self._shutdown_event = self.thread_coordinator._create_event("shutdown_event")
         # Whether FROMNUM notifications were successfully registered for the
@@ -406,8 +426,7 @@ class BLEInterface(MeshInterface):
         want_receive : bool
             True to request the receive loop to run, False to stop it.
         """
-        with self._state_lock:
-            self._want_receive = want_receive
+        BLELifecycleService._set_receive_wanted(self, want_receive=want_receive)
 
     def _should_run_receive_loop(self) -> bool:
         """Return whether the receive loop should run.
@@ -417,8 +436,7 @@ class BLEInterface(MeshInterface):
         bool
             `True` if the receive loop is desired and the interface is not closed, `False` otherwise.
         """
-        with self._state_lock:
-            return self._want_receive and not self._closed
+        return BLELifecycleService._should_run_receive_loop(self)
 
     def _start_receive_thread(self, *, name: str, reset_recovery: bool = True) -> None:
         """Create and start the background receive thread, updating `_receiveThread`.
@@ -432,40 +450,9 @@ class BLEInterface(MeshInterface):
             successful thread start; if False, preserve the counter for recovery
             backoff tracking. Defaults to True.
         """
-        with self._state_lock:
-            # Avoid reviving the receive loop after shutdown has begun.
-            if self._closed or not self._want_receive:
-                logger.debug(
-                    "Skipping receive thread start (%s): interface is closing/stopped.",
-                    name,
-                )
-                return
-            # Prevent duplicate live receive threads except when the current thread
-            # is replacing itself after an unexpected failure.
-            existing = self._receiveThread
-            if (
-                existing is not None
-                and existing is not threading.current_thread()
-                and existing.is_alive()
-            ):
-                logger.debug(
-                    "Skipping receive thread start (%s): %s is already running.",
-                    name,
-                    existing.name,
-                )
-                return
-            thread = self.thread_coordinator._create_thread(
-                target=self._receive_from_radio_impl,
-                name=name,
-                daemon=True,
-            )
-            self._receiveThread = thread
-        self.thread_coordinator._start_thread(thread)
-        if reset_recovery:
-            # Reset recovery throttling on successful thread start (not during recovery).
-            # Guarded by _state_lock to match the lock used when incrementing.
-            with self._state_lock:
-                self._receive_recovery_attempts = 0
+        BLELifecycleService._start_receive_thread(
+            self, name=name, reset_recovery=reset_recovery
+        )
 
     @staticmethod
     def _sorted_address_keys(*keys: str | None) -> list[str]:
@@ -573,220 +560,35 @@ class BLEInterface(MeshInterface):
         client: BLEClient | None = None,
         bleak_client: BleakRootClient | None = None,
     ) -> bool:
-        """Handle a BLE client disconnection by updating state and either scheduling an automatic reconnect or initiating shutdown.
+        """Handle BLE disconnect events via lifecycle-service delegation.
 
         Parameters
         ----------
         source : str
-            Short tag identifying where the disconnect originated (for logging).
+            Disconnect-source label used for logging and diagnostics.
         client : BLEClient | None
-            The BLEClient instance associated with the disconnect, if available. (Default value = None)
+            Optional client instance associated with the disconnect callback.
         bleak_client : BleakRootClient | None
-            The underlying Bleak client instance, if available. (Default value = None)
+            Optional raw Bleak client instance associated with the callback.
 
         Returns
         -------
         bool
-            `True` if the interface remains active and will attempt auto-reconnect, `False` if shutdown has begun.
+            ``True`` when receive-loop processing should continue, otherwise
+            ``False``.
+
+        Raises
+        ------
+        AttributeError
+            Intentionally propagated when delegated lifecycle-service helpers
+            are unavailable on compatibility doubles.
         """
-        if not self._disconnect_lock.acquire(blocking=False):
-            # Another disconnect handler is active; this is expected during concurrent
-            # disconnect callbacks. The active handler will process the disconnect,
-            # including deciding whether to keep running and schedule reconnect.
-            # Mirror current shutdown/reconnect intent so callers can stop when
-            # reconnect is not expected.
-            logger.debug(
-                "Disconnect from %s skipped: another disconnect handler is active.",
-                source,
-            )
-            with self._state_lock:
-                return (
-                    self.auto_reconnect
-                    and not self._closed
-                    and not self._state_manager._is_closing
-                )
-        disconnect_lock_released = False
-        target_client = client
-        previous_client: BLEClient | None = None
-        client_at_start: BLEClient | None = None
-        should_reconnect = False
-        should_schedule_reconnect = False
-        was_publish_pending = False
-        was_replacement_pending = False
-        address = "unknown"
-        disconnect_keys: list[str] = []
-        try:
-            # Lock-order invariant: release _disconnect_lock before any operations
-            # that compute/acquire address locks (addr_disconnect_key via
-            # _sorted_address_keys). disconnect_lock_released guarantees
-            # _disconnect_lock is released exactly once even on exceptions.
-            # Perform state checks and state mutation atomically under the state lock.
-            with self._state_lock:
-                current_state = self._state_manager._current_state
-                current_client = self.client
-                is_closing = self._state_manager._is_closing or self._closed
-                was_publish_pending = self._client_publish_pending
-                was_replacement_pending = self._client_replacement_pending
-
-                if current_state == ConnectionState.CONNECTING:
-                    logger.debug(
-                        "Ignoring disconnect from %s while a connection is in progress.",
-                        source,
-                    )
-                    # Early returns inside this try block are safe: the finally
-                    # below releases _disconnect_lock when disconnect_lock_released
-                    # is still False.
-                    return True
-                if is_closing:
-                    logger.debug("Ignoring disconnect from %s during shutdown.", source)
-                    return False
-
-                # Resolve callback source against the currently active client.
-                if target_client is None and bleak_client is not None:
-                    if (
-                        current_client
-                        and getattr(current_client, "bleak_client", None)
-                        is bleak_client
-                    ):
-                        target_client = current_client
-                    elif current_client is not None:
-                        logger.debug("Ignoring stale disconnect from %s.", source)
-                        return True
-
-                # Ignore stale disconnect callbacks from non-active clients.
-                if (
-                    target_client is not None
-                    and current_client is not None
-                    and target_client is not current_client
-                ):
-                    logger.debug("Ignoring stale disconnect from %s.", source)
-                    return True
-
-                # Prevent duplicate disconnect notifications.
-                if self._disconnect_notified:
-                    logger.debug("Ignoring duplicate disconnect from %s.", source)
-                    return True
-
-                previous_client = current_client
-                client_at_start = current_client
-                alias_key = self._connection_alias_key
-                self.client = None
-                self._client_publish_pending = False
-                self._client_replacement_pending = False
-                self._disconnect_notified = True
-                self._connection_alias_key = None
-                self._state_manager._transition_to(ConnectionState.DISCONNECTED)
-                should_reconnect = self.auto_reconnect
-                should_schedule_reconnect = should_reconnect and not self._closed
-
-                if target_client:
-                    address = getattr(target_client, "address", repr(target_client))
-                elif bleak_client:
-                    address = getattr(bleak_client, "address", repr(bleak_client))
-                elif previous_client:
-                    address = getattr(previous_client, "address", repr(previous_client))
-
-                if should_reconnect:
-                    if previous_client:
-                        previous_address = getattr(
-                            previous_client, "address", self.address
-                        )
-                        device_key = (
-                            _addr_key(previous_address) if previous_address else None
-                        )
-                        disconnect_keys = self._sorted_address_keys(
-                            device_key, alias_key
-                        )
-                    else:
-                        fallback_key = _addr_key(self.address)
-                        disconnect_keys = self._sorted_address_keys(
-                            fallback_key, alias_key
-                        )
-                else:
-                    # Guard against sentinel "unknown" address - don't pollute registry.
-                    # Prefer the previous active client's address because callback metadata can be stale.
-                    address_for_registry = (
-                        getattr(previous_client, "address", None)
-                        if previous_client
-                        else (address if address != "unknown" else self.address)
-                    )
-                    addr_disconnect_key = _addr_key(address_for_registry)
-                    disconnect_keys = self._sorted_address_keys(
-                        addr_disconnect_key, alias_key
-                    )
-
-            # Release the disconnect lock before any address-lock operations.
-            self._disconnect_lock.release()
-            disconnect_lock_released = True
-        finally:
-            if not disconnect_lock_released:
-                self._disconnect_lock.release()
-
-        skip_side_effects = False
-        stale_disconnect_keys: list[str] = []
-        with self._state_lock:
-            active_client = self.client
-            if active_client is not None and active_client is not client_at_start:
-                active_keys = set(
-                    self._sorted_address_keys(
-                        _addr_key(getattr(active_client, "address", None)),
-                        self._connection_alias_key,
-                    )
-                )
-                stale_disconnect_keys = [
-                    key for key in disconnect_keys if key not in active_keys
-                ]
-                skip_side_effects = True
-
-        def _close_previous_client_async() -> None:
-            if previous_client:
-                # Keep cleanup behavior consistent between reconnect paths.
-                close_thread = self.thread_coordinator._create_thread(
-                    target=self._client_manager._safe_close_client,
-                    args=(previous_client,),
-                    name="BLEClientClose",
-                    daemon=True,
-                )
-                self.thread_coordinator._start_thread(close_thread)
-
-        if skip_side_effects:
-            if stale_disconnect_keys:
-                self._mark_address_keys_disconnected(*stale_disconnect_keys)
-            _close_previous_client_async()
-            logger.debug(
-                "Skipping stale disconnect side-effects from %s: newer client already active.",
-                source,
-            )
-            return True
-
-        logger.debug("BLE client %s disconnected (source: %s).", address, source)
-        # Expose the most recent disconnect source for external listeners that
-        # only receive the generic meshtastic.connection.lost event.
-        self._last_disconnect_source = f"ble.{source}"
-
-        if disconnect_keys:
-            self._mark_address_keys_disconnected(*disconnect_keys)
-
-        _close_previous_client_async()
-        if not was_publish_pending or was_replacement_pending:
-            self._disconnected()
-        else:
-            logger.debug(
-                "Skipping public disconnect event for provisional session from %s.",
-                source,
-            )
-
-        if should_reconnect:
-            # Event coordination for reconnection (only if not closed)
-            if should_schedule_reconnect:
-                self.thread_coordinator._clear_events(
-                    "read_trigger", "reconnected_event"
-                )
-                self._schedule_auto_reconnect()
-            return True
-
-        logger.debug("Auto-reconnect disabled, staying disconnected.")
-        return False
+        return BLELifecycleService._handle_disconnect(
+            self,
+            source,
+            client=client,
+            bleak_client=bleak_client,
+        )
 
     def _on_ble_disconnect(self, client: BleakRootClient) -> None:
         """Handle a Bleak client disconnect callback.
@@ -796,31 +598,14 @@ class BLEInterface(MeshInterface):
         client : BleakRootClient
             The Bleak client instance that disconnected.
         """
-        self._handle_disconnect("bleak_callback", bleak_client=client)
+        BLELifecycleService._on_ble_disconnect(self, client)
 
     def _schedule_auto_reconnect(self) -> None:
         """Schedule repeated automatic reconnection attempts until a connection is established or shutdown begins.
 
         Does nothing if automatic reconnection is disabled or the interface is closing or already closed.
         """
-
-        if not self.auto_reconnect:
-            return
-        with self._state_lock:
-            if self._closed:
-                logger.debug(
-                    "Skipping auto-reconnect scheduling because interface is closed."
-                )
-                return
-            if self._state_manager._is_closing:
-                logger.debug(
-                    "Skipping auto-reconnect scheduling because interface is closing."
-                )
-                return
-            self._shutdown_event.clear()
-        self._reconnect_scheduler._schedule_reconnect(
-            self.auto_reconnect, self._shutdown_event
-        )
+        BLELifecycleService._schedule_auto_reconnect(self)
 
     def _handle_malformed_fromnum(self, reason: str, exc_info: bool = False) -> None:
         """Track malformed FROMNUM notifications and log occurrences; emit a warning when a configured threshold is reached.
@@ -845,7 +630,7 @@ class BLEInterface(MeshInterface):
     def _from_num_handler(self, _: Any, b: bytes | bytearray) -> None:
         """Process a FROMNUM characteristic notification and wake the receive loop.
 
-        Parses a 4-byte little-endian unsigned 32-bit integer from the notification payload. On successful parse the internal malformed-notification counter is reset and the parsed value is logged. On parse failure or unexpected length the malformed-notification counter is incremented via _handle_malformed_fromnum and a warning may be emitted when a threshold is reached. Always triggers the thread coordinator's "read_trigger" event to wake the read loop.
+        Parses a 4-byte little-endian unsigned 32-bit integer from the notification payload. On successful parse the internal malformed-notification counter is reset and the parsed value is logged. On parse failure or unexpected length the malformed-notification counter is incremented via _handle_malformed_fromnum and a warning may be emitted when a threshold is reached. Always triggers the thread coordinator's read-trigger event to wake the read loop.
 
         Parameters
         ----------
@@ -871,7 +656,7 @@ class BLEInterface(MeshInterface):
             )
             return
         finally:
-            self.thread_coordinator._set_event("read_trigger")
+            self.thread_coordinator._set_event(READ_TRIGGER_EVENT)
 
     # COMPAT_STABLE_SHIM (2.7.7): historical public BLEInterface callback.
     # Keep callable without deprecation warning.
@@ -921,10 +706,59 @@ class BLEInterface(MeshInterface):
             error_msg : str
                 Message given to the error handler if the handler raises an exception.
             """
-            self.error_handler._safe_execute(
-                lambda: handler(sender, data),
-                error_msg=error_msg,
-            )
+
+            def _report_notification_error() -> None:
+                report_exception: Callable[[str], Any] | None = None
+                for hook_name in (
+                    "handle_unhandled_exception",
+                    "_handle_unhandled_exception",
+                ):
+                    hook = getattr(self.error_handler, hook_name, None)
+                    if callable(hook) and not _is_unconfigured_mock_callable(hook):
+                        report_exception = cast(Callable[[str], Any], hook)
+                        break
+                if report_exception is not None:
+                    try:
+                        report_exception(error_msg)
+                    except Exception:  # noqa: BLE001 - callback error reporting is best effort
+                        logger.debug(error_msg, exc_info=True)
+                else:
+                    logger.debug(error_msg, exc_info=True)
+
+            safe_execute = getattr(self.error_handler, "safe_execute", None)
+            if not callable(safe_execute) or _is_unconfigured_mock_callable(
+                safe_execute
+            ):
+                safe_execute = getattr(self.error_handler, "_safe_execute", None)
+            if not callable(safe_execute) or _is_unconfigured_mock_callable(
+                safe_execute
+            ):
+                try:
+                    handler(sender, data)
+                except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
+                    _report_notification_error()
+                return
+            try:
+                safe_execute(lambda: handler(sender, data), error_msg=error_msg)
+            except TypeError as exc:
+                if not _is_unexpected_keyword_error(exc, "error_msg"):
+                    _report_notification_error()
+                    return
+                try:
+                    safe_execute(lambda: handler(sender, data), error_msg)
+                except TypeError as positional_exc:
+                    # Some legacy hooks accept only the callable argument.
+                    if "positional argument" not in str(positional_exc):
+                        _report_notification_error()
+                        return
+                    try:
+                        safe_execute(lambda: handler(sender, data))
+                    except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
+                        _report_notification_error()
+                except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
+                    _report_notification_error()
+            except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
+                _report_notification_error()
 
         def _safe_legacy_handler(sender: Any, data: bytes | bytearray) -> None:
             """Invoke the legacy log-radio notification handler for a BLE notification and suppress any exceptions raised by the handler.
@@ -1208,7 +1042,8 @@ class BLEInterface(MeshInterface):
             awaitable,
             timeout,
             label,
-            timeout_error_factory=lambda timeout_label, timeout_seconds: BLEInterface.BLEError(
+            timeout_error_factory=lambda timeout_label,
+            timeout_seconds: BLEInterface.BLEError(
                 ERROR_TIMEOUT.format(timeout_label, timeout_seconds)
             ),
         )
@@ -1278,13 +1113,10 @@ class BLEInterface(MeshInterface):
         target = address or getattr(self, "address", None)
         sanitized = sanitize_address(target)
 
-        # Surface DBus failures to allow higher-level backoff
-        if self._discovery_manager is None:
-            raise self.BLEError(ERROR_DISCOVERY_MANAGER_UNAVAILABLE)
         # Pass raw target to discovery; the discovery matcher handles address
         # normalization internally and uses the raw identifier for name matching
         # to correctly match device names containing separators (_, -, spaces, :)
-        addressed_devices = self._discovery_manager._discover_devices(target)
+        addressed_devices = self._discover_devices(target)
 
         if len(addressed_devices) == 0:
             if target:
@@ -1603,93 +1435,13 @@ class BLEInterface(MeshInterface):
         T
             Command return value.
         """
-        if address is not None and sanitize_address(address) is None:
-            raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
-
-        # Snapshot preconditions/current client under interface locks, then
-        # release them before waiting on the per-address gate so the documented
-        # lock order stays consistent: address gate first, then interface locks.
-        management_started = False
-        try:
-            with self._connect_lock, self._management_lock:
-                self._validate_management_preconditions()
-                self._begin_management_operation_locked()
-                management_started = True
-                expected_implicit_binding = None
-                if address is None:
-                    with self._state_lock:
-                        expected_implicit_binding = (
-                            self._get_current_implicit_management_binding_locked()
-                        )
-                existing_client = self._get_management_client_if_available(address)
-                target_address = self._extract_client_address(existing_client)
-                use_existing_client_without_resolved_address = (
-                    existing_client is not None and target_address is None
-                )
-            if (
-                target_address is None
-                and not use_existing_client_without_resolved_address
-            ):
-                target_address = self._resolve_target_address_for_management(address)
-
-            if use_existing_client_without_resolved_address:
-                with self._connect_lock:
-                    with self._management_lock:
-                        self._validate_management_preconditions()
-                        refreshed_existing_client = (
-                            self._get_management_client_if_available(address)
-                        )
-                        if refreshed_existing_client is None:
-                            raise self.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
-                return command(refreshed_existing_client)
-
-            # `_connect_lock` and `_management_lock` are intentionally released
-            # before `_management_target_gate(...)` so lock ordering remains
-            # address-gate first, then interface locks. The interface locks are
-            # re-acquired inside the gate before revalidation/client selection.
-            if target_address is None:
-                raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_REQUIRED)
-            with self._management_target_gate(target_address):
-                with self._connect_lock:
-                    with self._management_lock:
-                        self._validate_management_preconditions()
-                        if address is None:
-                            # The implicit target may have changed while we waited
-                            # for the per-address gate. Abort rather than acting on
-                            # a stale temporary target.
-                            self._revalidate_implicit_management_target(
-                                target_address,
-                                expected_binding=expected_implicit_binding,
-                            )
-                        existing_client = self._get_management_client_for_target(
-                            target_address,
-                            prefer_current_client=address is None,
-                        )
-                        if existing_client is not None:
-                            client_to_use = existing_client
-                            temporary_client = None
-                        else:
-                            target_key = _addr_key(target_address)
-                            if (
-                                target_key is not None
-                                and _is_currently_connected_elsewhere(
-                                    target_key, owner=self
-                                )
-                            ):
-                                raise self.BLEError(ERROR_CONNECTION_SUPPRESSED)
-                            temporary_client = BLEClient(
-                                target_address, log_if_no_address=False
-                            )
-                            client_to_use = temporary_client
-
-                    try:
-                        return command(client_to_use)
-                    finally:
-                        if temporary_client is not None:
-                            self._client_manager._safe_close_client(temporary_client)
-        finally:
-            if management_started:
-                self._finish_management_operation()
+        return BLEManagementCommandsService._execute_management_command(
+            self,
+            address,
+            command,
+            ble_client_factory=BLEClient,
+            connected_elsewhere=_is_currently_connected_elsewhere,
+        )
 
     def _begin_management_operation_locked(self) -> None:
         """Record a management operation while holding `_management_lock`."""
@@ -1732,15 +1484,9 @@ class BLEInterface(MeshInterface):
             If `await_timeout` is None, a boolean, non-numeric, non-finite,
             zero, or negative.
         """
-        if (
-            await_timeout is None
-            or isinstance(await_timeout, bool)
-            or not isinstance(await_timeout, numbers.Real)
-            or not math.isfinite(await_timeout)
-            or await_timeout <= 0
-        ):
-            raise self.BLEError(ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID)
-        return float(await_timeout)
+        return BLEManagementCommandsService._validate_management_await_timeout(
+            self, await_timeout
+        )
 
     def _validate_trust_timeout(self, timeout: object) -> float:
         """Validate and return a bounded timeout for `trust()`.
@@ -1761,14 +1507,7 @@ class BLEInterface(MeshInterface):
             If `timeout` is a boolean, non-numeric, non-finite, zero, or
             negative.
         """
-        if (
-            isinstance(timeout, bool)
-            or not isinstance(timeout, numbers.Real)
-            or not math.isfinite(timeout)
-            or timeout <= 0
-        ):
-            raise self.BLEError(ERROR_TRUST_INVALID_TIMEOUT)
-        return float(timeout)
+        return BLEManagementCommandsService._validate_trust_timeout(self, timeout)
 
     def _validate_connect_timeout_override(
         self,
@@ -1777,22 +1516,11 @@ class BLEInterface(MeshInterface):
         pair_on_connect: bool,
     ) -> None:
         """Validate a connect timeout override before connection orchestration."""
-        if connect_timeout is None:
-            return
-        if isinstance(connect_timeout, bool) or not isinstance(
-            connect_timeout, numbers.Real
-        ):
-            exc = ValueError(
-                "connect_timeout must be a finite positive number of seconds."
-            )
-            raise self.BLEError(ERROR_INVALID_CONNECT_TIMEOUT.format(exc=exc)) from exc
-        try:
-            ConnectionOrchestrator._resolve_connect_timeout(
-                pair_on_connect=pair_on_connect,
-                connect_timeout=float(connect_timeout),
-            )
-        except (TypeError, ValueError) as exc:
-            raise self.BLEError(ERROR_INVALID_CONNECT_TIMEOUT.format(exc=exc)) from exc
+        BLEManagementCommandsService._validate_connect_timeout_override(
+            self,
+            connect_timeout,
+            pair_on_connect=pair_on_connect,
+        )
 
     def pair(
         self,
@@ -1823,10 +1551,13 @@ class BLEInterface(MeshInterface):
         None
             Pairing is performed for side effects and does not return a value.
         """
-        validated_timeout = self._validate_management_await_timeout(await_timeout)
-        self._execute_management_command(
+        BLEManagementCommandsService.pair(
+            self,
             address,
-            lambda client: client.pair(await_timeout=validated_timeout, **kwargs),
+            await_timeout=await_timeout,
+            kwargs=dict(kwargs),
+            ble_client_factory=BLEClient,
+            connected_elsewhere=_is_currently_connected_elsewhere,
         )
 
     def unpair(
@@ -1855,10 +1586,12 @@ class BLEInterface(MeshInterface):
         None
             Unpairing is performed for side effects and does not return a value.
         """
-        validated_timeout = self._validate_management_await_timeout(await_timeout)
-        self._execute_management_command(
+        BLEManagementCommandsService.unpair(
+            self,
             address,
-            lambda client: client.unpair(await_timeout=validated_timeout),
+            await_timeout=await_timeout,
+            ble_client_factory=BLEClient,
+            connected_elsewhere=_is_currently_connected_elsewhere,
         )
 
     def _run_bluetoothctl_trust_command(
@@ -1867,70 +1600,37 @@ class BLEInterface(MeshInterface):
         canonical_address: str,
         validated_timeout: float,
     ) -> None:
-        """Run `bluetoothctl trust` and translate subprocess failures into BLEError."""
+        """Delegate execution of ``bluetoothctl trust`` to management service.
 
-        def _sanitize_trust_command_output(output: str) -> str:
-            """Return a redacted, single-line subprocess output snippet."""
-            sanitized = " ".join(output.splitlines())
-            sanitized = "".join(ch if ch.isprintable() else "?" for ch in sanitized)
-            sanitized = _TRUST_HEX_BLOB_RE.sub("[redacted-hex]", sanitized)
-            sanitized = _TRUST_TOKEN_RE.sub("[redacted-token]", sanitized)
-            sanitized = " ".join(sanitized.split())
-            if len(sanitized) > _TRUST_COMMAND_OUTPUT_MAX_CHARS:
-                max_prefix = _TRUST_COMMAND_OUTPUT_MAX_CHARS - 3
-                return f"{sanitized[:max_prefix]}..."
-            return sanitized
+        Parameters
+        ----------
+        bluetoothctl_path : str
+            Resolved path to the ``bluetoothctl`` binary.
+        canonical_address : str
+            Canonicalized device address passed to ``bluetoothctl trust``.
+        validated_timeout : float
+            Positive finite timeout in seconds for subprocess execution.
 
-        logger.debug(
-            "Running bluetoothctl trust command: %s (timeout=%.1fs)",
-            [bluetoothctl_path, "trust", canonical_address],
+        Returns
+        -------
+        None
+            Trust execution is performed for side effects only.
+
+        Raises
+        ------
+        BLEError
+            If command execution fails or times out.
+        """
+        BLEManagementCommandsService._run_bluetoothctl_trust_command(
+            self,
+            bluetoothctl_path,
+            canonical_address,
             validated_timeout,
+            subprocess_module=subprocess,
+            trust_hex_blob_re=_TRUST_HEX_BLOB_RE,
+            trust_token_re=_TRUST_TOKEN_RE,
+            trust_command_output_max_chars=_TRUST_COMMAND_OUTPUT_MAX_CHARS,
         )
-        try:
-            result = subprocess.run(  # noqa: S603
-                [bluetoothctl_path, "trust", canonical_address],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=validated_timeout,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise self.BLEError(
-                ERROR_TRUST_COMMAND_TIMEOUT.format(
-                    timeout=validated_timeout, address=canonical_address
-                )
-            ) from exc
-        except OSError as exc:
-            detail = _sanitize_trust_command_output(str(exc))
-            raise self.BLEError(
-                ERROR_TRUST_COMMAND_FAILED.format(
-                    address=canonical_address,
-                    detail=(
-                        f"{bluetoothctl_path}: {detail}"
-                        if detail
-                        else f"{bluetoothctl_path}: unable to execute bluetoothctl"
-                    ),
-                )
-            ) from exc
-        if result.returncode != 0:
-            stderr_output = (
-                _sanitize_trust_command_output(result.stderr) if result.stderr else ""
-            )
-            stdout_output = (
-                _sanitize_trust_command_output(result.stdout) if result.stdout else ""
-            )
-            detail_parts = []
-            if stderr_output:
-                detail_parts.append(f"stderr: {stderr_output}")
-            if stdout_output:
-                detail_parts.append(f"stdout: {stdout_output}")
-            detail = " | ".join(detail_parts) or f"exit code {result.returncode}"
-            raise self.BLEError(
-                ERROR_TRUST_COMMAND_FAILED.format(
-                    address=canonical_address, detail=detail
-                )
-            )
-        logger.info("Trusted BLE device via bluetoothctl: %s", canonical_address)
 
     def trust(
         self,
@@ -1963,63 +1663,17 @@ class BLEInterface(MeshInterface):
         - This helper is Linux-only and requires `bluetoothctl` on PATH.
         - Pairing PIN/passkey handling remains OS-agent managed.
         """
-        if address is not None and sanitize_address(address) is None:
-            raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
-
-        with self._connect_lock, self._management_lock:
-            self._validate_management_preconditions()
-            expected_implicit_binding = None
-            if address is None:
-                with self._state_lock:
-                    expected_implicit_binding = (
-                        self._get_current_implicit_management_binding_locked()
-                    )
-
-        validated_timeout = self._validate_trust_timeout(timeout)
-        if not sys.platform.startswith("linux"):
-            raise self.BLEError(ERROR_TRUST_LINUX_ONLY)
-        bluetoothctl_path = shutil.which("bluetoothctl")
-        if bluetoothctl_path is None:
-            raise self.BLEError(ERROR_TRUST_BLUETOOTHCTL_MISSING)
-
-        management_started = False
-        try:
-            with self._connect_lock, self._management_lock:
-                self._validate_management_preconditions()
-                self._begin_management_operation_locked()
-                management_started = True
-            target_address = self._resolve_target_address_for_management(address)
-            canonical_address = self._format_bluetoothctl_address(target_address)
-            with self._management_target_gate(target_address):
-                # Hold the process-wide address gate during bluetoothctl execution so
-                # target-scoped trust operations stay serialized without blocking the
-                # interface locks for the full subprocess duration. For implicit
-                # targets, also hold _connect_lock so another thread cannot repoint
-                # this interface before the trust command runs.
-                if address is None:
-                    with self._connect_lock:
-                        with self._management_lock:
-                            self._validate_management_preconditions()
-                            self._revalidate_implicit_management_target(
-                                target_address,
-                                expected_binding=expected_implicit_binding,
-                            )
-                        self._run_bluetoothctl_trust_command(
-                            bluetoothctl_path,
-                            canonical_address,
-                            validated_timeout,
-                        )
-                else:
-                    with self._connect_lock, self._management_lock:
-                        self._validate_management_preconditions()
-                    self._run_bluetoothctl_trust_command(
-                        bluetoothctl_path,
-                        canonical_address,
-                        validated_timeout,
-                    )
-        finally:
-            if management_started:
-                self._finish_management_operation()
+        BLEManagementCommandsService.trust(
+            self,
+            address,
+            timeout=timeout,
+            sys_module=sys,
+            shutil_module=shutil,
+            subprocess_module=subprocess,
+            trust_hex_blob_re=_TRUST_HEX_BLOB_RE,
+            trust_token_re=_TRUST_TOKEN_RE,
+            trust_command_output_max_chars=_TRUST_COMMAND_OUTPUT_MAX_CHARS,
+        )
 
     def _sanitize_address(self, address: str | None) -> str | None:
         """Provide a backward-compatible wrapper that returns a sanitized BLE address or None.
@@ -2035,6 +1689,370 @@ class BLEInterface(MeshInterface):
             The sanitized address string, or `None` if the input was `None`.
         """
         return sanitize_address(address)
+
+    @staticmethod
+    def _compat_dispatch_callable(
+        target: object,
+        *,
+        public_name: str,
+        legacy_name: str,
+        fallback_attr_name: str | None,
+        error_message: str,
+        args: tuple[object, ...] = (),
+        kwargs: dict[str, object] | None = None,
+    ) -> object:
+        """Dispatch a callable through public/legacy/fallback compatibility names."""
+        kwargs = {} if kwargs is None else kwargs
+        public_member = getattr(target, public_name, None)
+        if callable(public_member) and not _is_unconfigured_mock_callable(
+            public_member
+        ):
+            return public_member(*args, **kwargs)
+        legacy_member = getattr(target, legacy_name, None)
+        if callable(legacy_member) and not _is_unconfigured_mock_callable(
+            legacy_member
+        ):
+            return legacy_member(*args, **kwargs)
+        if fallback_attr_name is None:
+            raise AttributeError(error_message)
+        fallback_member = getattr(target, fallback_attr_name, None)
+        if not callable(fallback_member) or _is_unconfigured_mock_callable(
+            fallback_member
+        ):
+            raise AttributeError(error_message)
+        return fallback_member(*args, **kwargs)
+
+    @staticmethod
+    def _compat_get_bool_member(
+        target: object,
+        *,
+        public_name: str,
+        legacy_name: str,
+        fallback_attr_name: str | None,
+        error_message: str,
+    ) -> bool:
+        """Resolve bool members via public/legacy/fallback compatibility names."""
+        public_member = getattr(target, public_name, None)
+        if isinstance(public_member, bool) and not _is_unconfigured_mock_member(
+            public_member
+        ):
+            return public_member
+        legacy_member = getattr(target, legacy_name, None)
+        if isinstance(legacy_member, bool) and not _is_unconfigured_mock_member(
+            legacy_member
+        ):
+            return legacy_member
+        if fallback_attr_name is None:
+            raise AttributeError(error_message)
+        fallback_member = getattr(target, fallback_attr_name, None)
+        if isinstance(fallback_member, bool) and not _is_unconfigured_mock_member(
+            fallback_member
+        ):
+            return fallback_member
+        raise AttributeError(error_message)
+
+    def _discover_devices(self, address: str | None) -> list[BLEDevice]:
+        # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
+        """Discover devices via discovery-manager compatibility dispatch.
+
+        Parameters
+        ----------
+        address : str | None
+            Optional address or identifier used to filter scan results.
+
+        Returns
+        -------
+        list[BLEDevice]
+            Discovered devices matching the requested target filter.
+
+        Raises
+        ------
+        AttributeError
+            If no supported discovery entrypoint exists on the configured
+            discovery manager.
+        """
+        discovery_manager = self._discovery_manager
+        if discovery_manager is None:
+            return []
+        return cast(
+            list[BLEDevice],
+            self._compat_dispatch_callable(
+                discovery_manager,
+                public_name="discover_devices",
+                legacy_name="_discover_devices",
+                fallback_attr_name="discover_devices",
+                error_message=ERROR_DISCOVERY_MANAGER_MISSING_DISCOVER_DEVICES,
+                args=(address,),
+            ),
+        )
+
+    def _state_manager_is_connected(self) -> bool:
+        # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
+        """Read connected-state flag through compatibility member dispatch.
+
+        Returns
+        -------
+        bool
+            Current connected-state flag from the configured state manager.
+
+        Raises
+        ------
+        AttributeError
+            If no supported connected-state member exists on the state manager.
+        """
+        return self._compat_get_bool_member(
+            self._state_manager,
+            public_name="is_connected",
+            legacy_name="_is_connected",
+            fallback_attr_name="_is_connected",
+            error_message=ERROR_STATE_MANAGER_MISSING_BOOL_IS_CONNECTED,
+        )
+
+    def _validator_check_existing_client(
+        self,
+        client: BLEClient,
+        normalized_request: str | None,
+        last_connection_request: str | None,
+    ) -> bool:
+        # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
+        """Check whether an existing client matches the requested connection target.
+
+        Parameters
+        ----------
+        client : BLEClient
+            Client candidate to validate.
+        normalized_request : str | None
+            Normalized requested address/identifier.
+        last_connection_request : str | None
+            Last stored normalized connection request.
+
+        Returns
+        -------
+        bool
+            ``True`` when the client is considered a compatible existing
+            connection target.
+
+        Raises
+        ------
+        AttributeError
+            If neither supported validator compatibility method exists.
+        """
+        return bool(
+            self._compat_dispatch_callable(
+                self._connection_validator,
+                public_name="check_existing_client",
+                legacy_name="_check_existing_client",
+                fallback_attr_name="check_existing_client",
+                error_message=ERROR_CONNECTION_VALIDATOR_MISSING_CHECK_EXISTING_CLIENT,
+                args=(
+                    client,
+                    normalized_request,
+                    last_connection_request,
+                ),
+            )
+        )
+
+    def _establish_connection(
+        self,
+        address: str | None,
+        *,
+        pair_on_connect: bool = False,
+        connect_timeout: float | None = None,
+    ) -> BLEClient:
+        # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
+        """Establish a BLE connection through orchestrator compatibility dispatch.
+
+        Parameters
+        ----------
+        address : str | None
+            Explicit target address/identifier or ``None`` for discovery mode.
+        pair_on_connect : bool
+            Whether pairing should be requested during connect.
+        connect_timeout : float | None
+            Optional caller-supplied connect timeout in seconds.
+
+        Returns
+        -------
+        BLEClient
+            Connected BLE client instance.
+
+        Raises
+        ------
+        AttributeError
+            If no supported orchestrator connect entrypoint is available.
+        BLEError
+            Propagated from orchestrator connection flow on failure.
+        """
+        args = (
+            address,
+            self.address,
+            self._register_notifications,
+            # Defer _connected() publication until interface ownership
+            # has been committed and verified.
+            lambda: None,
+            self._on_ble_disconnect,
+        )
+        kwargs: dict[str, object] = {
+            "pair_on_connect": pair_on_connect,
+            "connect_timeout": connect_timeout,
+            "emit_connected_side_effects": False,
+        }
+        try:
+            result = self._compat_dispatch_callable(
+                self._connection_orchestrator,
+                public_name="establish_connection",
+                legacy_name="_establish_connection",
+                fallback_attr_name="establish_connection",
+                error_message=ERROR_CONNECTION_ORCHESTRATOR_MISSING_ESTABLISH_CONNECTION,
+                args=args,
+                kwargs=kwargs,
+            )
+        except TypeError as exc:
+            if not _is_unexpected_keyword_error(exc, "emit_connected_side_effects"):
+                raise
+            legacy_kwargs: dict[str, object] = {
+                "pair_on_connect": pair_on_connect,
+                "connect_timeout": connect_timeout,
+            }
+            result = self._compat_dispatch_callable(
+                self._connection_orchestrator,
+                public_name="establish_connection",
+                legacy_name="_establish_connection",
+                fallback_attr_name="establish_connection",
+                error_message=ERROR_CONNECTION_ORCHESTRATOR_MISSING_ESTABLISH_CONNECTION,
+                args=args,
+                kwargs=legacy_kwargs,
+            )
+        return cast(BLEClient, result)
+
+    def _client_manager_safe_close_client(self, client: BLEClient) -> None:
+        # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
+        """Close a BLE client via client-manager compatibility dispatch.
+
+        Parameters
+        ----------
+        client : BLEClient
+            Client to close using best-effort manager helpers.
+
+        Returns
+        -------
+        None
+            Cleanup is performed for side effects only.
+
+        Raises
+        ------
+        AttributeError
+            If no supported client-close helper exists on the manager.
+        """
+        self._compat_dispatch_callable(
+            self._client_manager,
+            public_name="safe_close_client",
+            legacy_name="_safe_close_client",
+            fallback_attr_name="safe_close_client",
+            error_message=ERROR_CLIENT_MANAGER_MISSING_SAFE_CLOSE_CLIENT,
+            args=(client,),
+        )
+
+    def _client_manager_update_client_reference(
+        self, client: BLEClient, previous_client: BLEClient
+    ) -> None:
+        # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
+        """Update active-client reference via manager compatibility dispatch.
+
+        Parameters
+        ----------
+        client : BLEClient
+            Client that should become active.
+        previous_client : BLEClient
+            Previously active client to retire/close asynchronously.
+
+        Returns
+        -------
+        None
+            Update is performed for side effects only.
+
+        Raises
+        ------
+        AttributeError
+            If no supported update-client-reference helper is available.
+        """
+        self._compat_dispatch_callable(
+            self._client_manager,
+            public_name="update_client_reference",
+            legacy_name="_update_client_reference",
+            fallback_attr_name="update_client_reference",
+            error_message=ERROR_CLIENT_MANAGER_MISSING_UPDATE_CLIENT_REFERENCE,
+            args=(client, previous_client),
+        )
+
+    @staticmethod
+    def _retry_policy_should_retry(policy: object, attempt: int) -> bool:
+        # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
+        """Evaluate retry permission via policy compatibility dispatch.
+
+        Parameters
+        ----------
+        policy : object
+            Retry-policy object exposing public or underscore retry helpers.
+        attempt : int
+            Retry attempt index to evaluate.
+
+        Returns
+        -------
+        bool
+            ``True`` when another retry is permitted.
+
+        Raises
+        ------
+        AttributeError
+            If no supported retry helper exists on ``policy``.
+        """
+        return bool(
+            BLEInterface._compat_dispatch_callable(
+                policy,
+                public_name="should_retry",
+                legacy_name="_should_retry",
+                fallback_attr_name=None,
+                error_message=ERROR_RETRY_POLICY_MISSING_SHOULD_RETRY,
+                args=(attempt,),
+            )
+        )
+
+    @staticmethod
+    def _retry_policy_get_delay(policy: object, attempt: int) -> float:
+        # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
+        """Resolve retry delay via policy compatibility dispatch.
+
+        Parameters
+        ----------
+        policy : object
+            Retry-policy object exposing public or underscore delay helpers.
+        attempt : int
+            Retry attempt index used for delay calculation.
+
+        Returns
+        -------
+        float
+            Retry delay in seconds.
+
+        Raises
+        ------
+        AttributeError
+            If no supported delay helper exists on ``policy``.
+        """
+        return float(
+            cast(
+                float,
+                BLEInterface._compat_dispatch_callable(
+                    policy,
+                    public_name="get_delay",
+                    legacy_name="_get_delay",
+                    fallback_attr_name=None,
+                    error_message=ERROR_RETRY_POLICY_MISSING_GET_DELAY,
+                    args=(attempt,),
+                ),
+            )
+        )
 
     @property
     def _connection_state(self) -> ConnectionState:
@@ -2183,19 +2201,16 @@ class BLEInterface(MeshInterface):
             existing_client = self.client
             last_connection_request = self._last_connection_request
             is_connected = (
-                self._state_manager._is_connected
+                self._state_manager_is_connected()
                 and not self._disconnect_notified
                 and not getattr(self, "_client_publish_pending", False)
             )
         if not is_connected or existing_client is None:
             return None
-        if (
-            existing_client.isConnected()
-            and self._connection_validator._check_existing_client(
-                existing_client,
-                normalized_request,
-                last_connection_request,
-            )
+        if self._validator_check_existing_client(
+            existing_client,
+            normalized_request,
+            last_connection_request,
         ):
             return existing_client
         return None
@@ -2237,32 +2252,44 @@ class BLEInterface(MeshInterface):
         -----
         Must be called while holding _connect_lock.
         """
+        original_client: BLEClient | None
+        original_address: str | None
+        original_last_connection_request: str | None
+        original_publish_pending: bool
+        original_replacement_pending: bool
+        original_disconnect_notified: bool
         with self._state_lock:
+            original_client = self.client
+            original_address = self.address
+            original_last_connection_request = getattr(
+                self, "_last_connection_request", None
+            )
+            original_publish_pending = bool(
+                getattr(self, "_client_publish_pending", False)
+            )
+            original_replacement_pending = bool(
+                getattr(self, "_client_replacement_pending", False)
+            )
+            original_disconnect_notified = bool(
+                getattr(self, "_disconnect_notified", False)
+            )
             # Claim a provisional session before orchestration moves shared
             # state to CONNECTED so disconnect callbacks stay publication-safe.
             self._client_replacement_pending = (
-                self.client is not None and not self._client_publish_pending
+                self.client is not None and not original_publish_pending
             )
             self._client_publish_pending = True
 
         try:
-            client = self._connection_orchestrator._establish_connection(
+            client = self._establish_connection(
                 address,
-                self.address,
-                self._register_notifications,
-                # Defer _connected() publication until this interface has committed
-                # ownership of the new client and the post-connect stale/closing
-                # checks have passed.
-                lambda: None,
-                self._on_ble_disconnect,
                 pair_on_connect=pair_on_connect,
                 connect_timeout=connect_timeout,
-                emit_connected_side_effects=False,
             )
         except Exception:
             with self._state_lock:
-                self._client_publish_pending = False
-                self._client_replacement_pending = False
+                self._client_publish_pending = original_publish_pending
+                self._client_replacement_pending = original_replacement_pending
             raise
 
         device_address = getattr(
@@ -2293,11 +2320,36 @@ class BLEInterface(MeshInterface):
                 sanitize_address(device_address or "") or "unknown",
             )
             # Shutdown is already committed, so target restoration is not needed.
-            self._client_manager._safe_close_client(client)
+            try:
+                self._client_manager_safe_close_client(client)
+            except Exception:  # noqa: BLE001 - best-effort cleanup during shutdown
+                logger.debug(
+                    "Error closing discarded late BLE connection result",
+                    exc_info=True,
+                )
             raise self.BLEError(ERROR_INTERFACE_CLOSING)
 
         if previous_client and previous_client is not client:
-            self._client_manager._update_client_reference(client, previous_client)
+            try:
+                self._client_manager_update_client_reference(client, previous_client)
+            except Exception:
+                with self._state_lock:
+                    if self.client is client:
+                        self.client = original_client
+                        self.address = original_address
+                        self._last_connection_request = original_last_connection_request
+                        self._client_publish_pending = original_publish_pending
+                        self._client_replacement_pending = original_replacement_pending
+                        self._disconnect_notified = original_disconnect_notified
+                if client is not original_client:
+                    try:
+                        self._client_manager_safe_close_client(client)
+                    except Exception:  # noqa: BLE001 - rollback cleanup is best effort
+                        logger.debug(
+                            "Error closing client after failed client handoff rollback",
+                            exc_info=True,
+                        )
+                raise
 
         connected_device_key = _addr_key(device_address) if device_address else None
         connection_alias_key = (
@@ -2383,104 +2435,11 @@ class BLEInterface(MeshInterface):
         restore_last_connection_request: str | None,
     ) -> None:
         """Publish `_connected()` only if ownership is still valid at publish time."""
-        lost_gate_ownership = self._has_lost_gate_ownership(
-            connected_device_key,
-            connection_alias_key,
-        )
-        publish_connected = False
-        publish_candidate = False
-        publish_now = False
-        publish_committed = False
-        prior_ever_connected = False
-        is_closing = False
-        with self._state_lock:
-            still_owned, is_closing = self._get_connected_client_status_locked(
-                connected_client
-            )
-            if still_owned and not lost_gate_ownership:
-                prior_ever_connected = self._ever_connected
-                publish_connected = True
-        if publish_connected:
-            still_owned, is_closing = self._get_connected_client_status(
-                connected_client
-            )
-            if still_owned:
-                lost_gate_ownership = self._has_lost_gate_ownership(
-                    connected_device_key,
-                    connection_alias_key,
-                )
-                if not lost_gate_ownership:
-                    with self._state_lock:
-                        still_owned, is_closing = (
-                            self._get_connected_client_status_locked(connected_client)
-                        )
-                        if still_owned:
-                            publish_candidate = True
-        if publish_candidate:
-            can_attempt_publish = False
-            with self._state_lock:
-                still_owned, is_closing = self._get_connected_client_status_locked(
-                    connected_client
-                )
-                if still_owned and not is_closing:
-                    can_attempt_publish = True
-            if can_attempt_publish:
-                lost_gate_ownership = self._has_lost_gate_ownership(
-                    connected_device_key,
-                    connection_alias_key,
-                )
-                if not lost_gate_ownership:
-                    with self._state_lock:
-                        still_owned, is_closing = (
-                            self._get_connected_client_status_locked(connected_client)
-                        )
-                        if still_owned and not is_closing:
-                            publish_now = True
-        if publish_now:
-            should_publish_connected = False
-            with self._state_lock:
-                still_owned, is_closing = self._get_connected_client_status_locked(
-                    connected_client
-                )
-                if still_owned and not is_closing:
-                    if not self._client_publish_pending:
-                        # Some direct test harnesses stub connection setup
-                        # without setting provisional publish state.
-                        self._client_publish_pending = True
-                        self._client_replacement_pending = False
-                    should_publish_connected = True
-            if should_publish_connected:
-                try:
-                    self._connected()
-                except Exception:
-                    with self._state_lock:
-                        if self.client is connected_client:
-                            self._client_publish_pending = False
-                            self._client_replacement_pending = False
-                    raise
-                with self._state_lock:
-                    still_owned, is_closing = self._get_connected_client_status_locked(
-                        connected_client
-                    )
-                    if still_owned and not is_closing:
-                        self._ever_connected = True
-                        self._prior_publish_was_reconnect = prior_ever_connected
-                        self._client_publish_pending = False
-                        self._client_replacement_pending = False
-                        publish_committed = True
-                    elif self.client is connected_client:
-                        self._client_publish_pending = False
-                        self._client_replacement_pending = False
-            if publish_committed:
-                self._emit_verified_connection_side_effects(connected_client)
-                return
-
-        self._raise_for_invalidated_connect_result(
+        BLELifecycleService._verify_and_publish_connected(
+            self,
             connected_client,
             connected_device_key,
             connection_alias_key,
-            is_closing=is_closing,
-            lost_gate_ownership=lost_gate_ownership,
             restore_address=restore_address,
             restore_last_connection_request=restore_last_connection_request,
         )
@@ -2489,16 +2448,8 @@ class BLEInterface(MeshInterface):
         self, connected_client: BLEClient
     ) -> None:
         """Emit reconnect signaling/logging only after verified connect publish."""
-        coordinator = getattr(self, "thread_coordinator", None)
-        if self._prior_publish_was_reconnect and coordinator is not None:
-            coordinator._set_event("reconnected_event")
-        self._prior_publish_was_reconnect = False
-        normalized_device_address = sanitize_address(
-            self._extract_client_address(connected_client)
-        )
-        logger.info(
-            "Connection successful to %s",
-            normalized_device_address or "unknown",
+        BLELifecycleService._emit_verified_connection_side_effects(
+            self, connected_client
         )
 
     def _discard_invalidated_connected_client(
@@ -2522,50 +2473,12 @@ class BLEInterface(MeshInterface):
             Normalized request identifier to restore when the connection result
             is discarded before ownership is finalized.
         """
-        restored_address = (
-            restore_address.strip()
-            if restore_address is not None and restore_address.strip()
-            else None
+        BLELifecycleService._discard_invalidated_connected_client(
+            self,
+            client,
+            restore_address=restore_address,
+            restore_last_connection_request=restore_last_connection_request,
         )
-        should_reset_state = False
-        is_closing = False
-        with self._state_lock:
-            if self.client is client:
-                is_closing = self._state_manager._is_closing or self._closed
-                self.client = None
-                self._client_publish_pending = False
-                self._client_replacement_pending = False
-                # The disconnect callback remains registered on `client` until
-                # best-effort close completes, so mark this interface as already
-                # notified before close() can trigger a stale callback.
-                self._disconnect_notified = True
-                if not is_closing:
-                    self.address = restored_address
-                    self._last_connection_request = restore_last_connection_request
-                    self._connection_alias_key = None
-                    should_reset_state = True
-                else:
-                    self._last_connection_request = None
-            elif self.client is None and self._client_publish_pending:
-                # A provisional client can be detached by a concurrent
-                # disconnect path before this cleanup runs; ensure callers do
-                # not remain stuck in ERROR_MANAGEMENT_CONNECTING.
-                self._client_publish_pending = False
-                self._client_replacement_pending = False
-                is_closing = self._state_manager._is_closing or self._closed
-                if not is_closing:
-                    self.address = restored_address
-                    self._last_connection_request = restore_last_connection_request
-                    self._connection_alias_key = None
-                    should_reset_state = True
-                else:
-                    self._last_connection_request = None
-
-        self._client_manager._safe_close_client(client)
-
-        if should_reset_state:
-            with self._state_lock:
-                self._state_manager._reset_to_disconnected()
 
     def _finalize_connection_gates(
         self,
@@ -2586,47 +2499,12 @@ class BLEInterface(MeshInterface):
         connection_alias_key : str | None
             Optional alias key used when claiming connection gates, or `None` if not used.
         """
-        still_active, is_closing = self._get_connected_client_status(connected_client)
-
-        if still_active:
-            self._mark_address_keys_connected(
-                connected_device_key, connection_alias_key
-            )
-            needs_cleanup = False
-            with self._state_lock:
-                still_active, is_closing = self._get_connected_client_status_locked(
-                    connected_client
-                )
-                if still_active:
-                    self._connection_alias_key = connection_alias_key
-                else:
-                    if is_closing:
-                        logger.debug(
-                            "Interface closed during connect(), cleaning up gate claim for %s",
-                            getattr(connected_client, "address", "unknown"),
-                        )
-                    else:
-                        logger.debug(
-                            "Interface lost ownership during connect(), cleaning up gate claim for %s",
-                            getattr(connected_client, "address", "unknown"),
-                        )
-                    self._connection_alias_key = None
-                    needs_cleanup = True
-            if needs_cleanup:
-                self._mark_address_keys_disconnected(
-                    connected_device_key, connection_alias_key
-                )
-        else:
-            if is_closing:
-                logger.debug(
-                    "Skipping connect gate marking during shutdown for stale client result (%s).",
-                    getattr(connected_client, "address", "unknown"),
-                )
-            else:
-                logger.debug(
-                    "Skipping connect gate marking for client result that lost ownership (%s).",
-                    getattr(connected_client, "address", "unknown"),
-                )
+        BLELifecycleService._finalize_connection_gates(
+            self,
+            connected_client,
+            connected_device_key,
+            connection_alias_key,
+        )
 
     def _is_owned_connected_client(self, client: BLEClient) -> bool:
         """Return whether this interface still owns the provided connected client.
@@ -2642,8 +2520,7 @@ class BLEInterface(MeshInterface):
             `True` when the interface is not closed, still references `client`,
             and the state machine reports CONNECTED.
         """
-        is_owned, _ = self._get_connected_client_status(client)
-        return is_owned
+        return BLELifecycleService._is_owned_connected_client(self, client)
 
     # ---------------------------------------------------------------------
     # Main connection method
@@ -2860,14 +2737,9 @@ class BLEInterface(MeshInterface):
         bool
             `True` if the read loop should continue to allow auto-reconnect, `False` otherwise.
         """
-        logger.debug("Device disconnected: %s", error_message)
-        should_continue = self._handle_disconnect(
-            f"read_loop: {error_message}", client=previous_client
+        return BLEReceiveRecoveryService._handle_read_loop_disconnect(
+            self, error_message, previous_client
         )
-        if not should_continue:
-            # End our read loop immediately
-            self._set_receive_wanted(False)
-        return should_continue
 
     def _receive_from_radio_impl(self) -> None:
         """Run the main receive loop that reads FROMRADIO packets and delivers them to the packet handler.
@@ -2879,149 +2751,7 @@ class BLEInterface(MeshInterface):
         Exception
             For unexpected errors in the receive thread that trigger recovery.
         """
-        coordinator = self.thread_coordinator
-        wait_timeout = BLEConfig.RECEIVE_WAIT_TIMEOUT
-        try:
-            while self._should_run_receive_loop():
-                # Wait for data to read, but also check periodically for reconnection
-                event_signaled = coordinator._wait_for_event(
-                    "read_trigger", timeout=wait_timeout
-                )
-                poll_without_notify = False
-                if not event_signaled:
-                    # Timeout occurred, check if we were reconnected during this time
-                    if self._ever_connected and coordinator._check_and_clear_event(
-                        "reconnected_event"
-                    ):
-                        logger.debug("Detected reconnection, resuming normal operation")
-                    with self._state_lock:
-                        poll_without_notify = not self._fromnum_notify_enabled
-                    if not poll_without_notify:
-                        continue
-                else:
-                    coordinator._clear_event("read_trigger")
-
-                while self._should_run_receive_loop():
-                    # Use unified state lock
-                    with self._state_lock:
-                        client = self.client
-                        is_connecting = (
-                            self._state_manager._current_state
-                            == ConnectionState.CONNECTING
-                        )
-                        publish_pending = self._client_publish_pending
-                        is_closing = self._state_manager._is_closing or self._closed
-                    if publish_pending:
-                        logger.debug(
-                            "Skipping BLE read while connect publication is pending verification."
-                        )
-                        coordinator._wait_for_event(
-                            "reconnected_event",
-                            timeout=wait_timeout,
-                        )
-                        break
-                    if client is None:
-                        if self.auto_reconnect or is_connecting:
-                            wait_reason = (
-                                "connection establishment"
-                                if is_connecting
-                                else "auto-reconnect"
-                            )
-                            logger.debug(
-                                "BLE client is None; waiting for %s",
-                                wait_reason,
-                            )
-                            # Wait briefly for reconnect or shutdown signal, then re-check
-                            coordinator._wait_for_event(
-                                "reconnected_event",
-                                timeout=wait_timeout,
-                            )
-                            break  # Return to outer loop to re-check state
-                        if is_closing:
-                            logger.debug("BLE client is None, shutting down")
-                            self._set_receive_wanted(False)
-                        else:
-                            logger.debug(
-                                "BLE client is None; re-checking connection state"
-                            )
-                        break
-                    try:
-                        payload = self._read_from_radio_with_retries(
-                            client,
-                            retry_on_empty=not poll_without_notify,
-                        )
-                        if not payload:
-                            break  # Too many empty reads; exit to recheck state
-                        logger.debug("FROMRADIO read: %s", payload.hex())
-                        try:
-                            self._handle_from_radio(payload)
-                        except DecodeError as e:
-                            # Log and continue on protobuf decode errors
-                            logger.warning(
-                                "Failed to parse FromRadio packet, discarding: %s", e
-                            )
-                            self._read_retry_count = 0
-                            continue
-                        now = time.monotonic()
-                        with self._state_lock:
-                            if (
-                                self._receive_recovery_attempts > 0
-                                and now - self._last_recovery_time
-                                >= RECEIVE_RECOVERY_STABILITY_RESET_SEC
-                            ):
-                                logger.debug(
-                                    "Resetting receive recovery attempts after %.1fs of stability.",
-                                    now - self._last_recovery_time,
-                                )
-                                self._receive_recovery_attempts = 0
-                        self._read_retry_count = 0
-                    except (BleakDBusError, BLEClient.BLEError) as e:
-                        # Handle expected BLE disconnect/read failures.
-                        if self._handle_read_loop_disconnect(repr(e), client):
-                            break
-                        return
-                    except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
-                        raise
-                    except BleakError as e:
-                        # Try to recover from transient BLE errors via retry policy
-                        try:
-                            self._handle_transient_read_error(e)
-                            # If handler returns, retry is allowed - continue the read loop
-                            continue
-                        except self.BLEError:
-                            # Retry policy exhausted, treat as fatal
-                            logger.error("Fatal BLE read error after retries: %s", e)
-                            if not self._is_connection_closing:
-                                self.close()
-                            return
-                    except (RuntimeError, OSError) as e:
-                        # Treat these as fatal errors that should close the interface
-                        logger.error("Fatal error in BLE receive thread: %s", e)
-                        if not self._is_connection_closing:
-                            self.close()
-                        return
-                    except (
-                        Exception  # noqa: BLE001
-                    ) as e:  # pragma: no cover - defensive catch-all
-                        logger.exception("Unexpected error in BLE read loop")
-                        if self._handle_read_loop_disconnect(repr(e), client):
-                            break
-                        return
-        except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
-            raise
-        except (
-            BleakDBusError,
-            BLEClient.BLEError,
-            BleakError,
-            DecodeError,
-            RuntimeError,
-            OSError,
-        ):
-            logger.exception("Fatal error in BLE receive thread")
-            self._recover_receive_thread("receive_thread_fatal")
-        except Exception:  # noqa: BLE001  # defensive crash-recovery for receive thread
-            logger.exception("Unexpected fatal error in BLE receive thread")
-            self._recover_receive_thread("receive_thread_fatal")
+        BLEReceiveRecoveryService._receive_from_radio_impl(self)
 
     def _recover_receive_thread(self, disconnect_reason: str) -> None:
         """Handle receive-thread failure and trigger guarded recovery.
@@ -3031,45 +2761,7 @@ class BLEInterface(MeshInterface):
         disconnect_reason : str
             Reason string passed to disconnect handling for diagnostics.
         """
-        if self._is_connection_closing:
-            return
-        with self._state_lock:
-            current_client = self.client
-        should_continue = self._handle_disconnect(
-            disconnect_reason, client=current_client
-        )
-        if not should_continue:
-            self._set_receive_wanted(False)
-            return
-        # Recovery throttling to prevent tight crash→spawn loops.
-        # All mutations of _receive_recovery_attempts and _last_recovery_time
-        # are guarded by _state_lock to prevent races with concurrent
-        # _start_receive_thread() calls that reset these fields.
-        now = time.monotonic()
-        with self._state_lock:
-            self._receive_recovery_attempts += 1
-            attempts = self._receive_recovery_attempts
-            last_recovery = self._last_recovery_time
-        if attempts > RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD:
-            # Exponential backoff after 3 rapid failures
-            backoff = min(
-                2 ** (attempts - RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD),
-                RECEIVE_RECOVERY_MAX_BACKOFF_SEC,
-            )
-            if now - last_recovery < backoff:
-                logger.warning(
-                    "Throttling BLE receive recovery: waiting %.1fs "
-                    "before retry (attempt %d)",
-                    backoff,
-                    attempts,
-                )
-                self._shutdown_event.wait(timeout=backoff)
-        with self._state_lock:
-            self._last_recovery_time = time.monotonic()
-        # If disconnect handling requests continuation (auto-reconnect path),
-        # replace this crashed receive thread so reads resume after reconnect.
-        if self._should_run_receive_loop():
-            self._start_receive_thread(name="BLEReceiveRecovery", reset_recovery=False)
+        BLEReceiveRecoveryService._recover_receive_thread(self, disconnect_reason)
 
     def _read_from_radio_with_retries(
         self,
@@ -3095,29 +2787,20 @@ class BLEInterface(MeshInterface):
         bytes | None
             The payload bytes when a non-empty read occurs, or `None` if no non-empty payload was obtained after retries.
         """
-        max_retries = BLEConfig.EMPTY_READ_MAX_RETRIES if retry_on_empty else 0
-        read_timeout = (
-            GATT_IO_TIMEOUT if retry_on_empty else BLEConfig.RECEIVE_WAIT_TIMEOUT
+        return BLEReceiveRecoveryService._read_from_radio_with_retries(
+            self, client, retry_on_empty=retry_on_empty
         )
-        for attempt in range(max_retries + 1):
-            payload = client.read_gatt_char(FROMRADIO_UUID, timeout=read_timeout)
-            if payload:
-                self._suppressed_empty_read_warnings = 0
-                return payload
-            if attempt < max_retries:
-                _sleep(self._empty_read_policy._get_delay(attempt))
-        if retry_on_empty:
-            self._log_empty_read_warning()
-        return None
 
-    def _handle_transient_read_error(self, error: BleakError) -> None:
+    def _handle_transient_read_error(
+        self, error: BleakError | BLEClient.BLEError
+    ) -> None:
         """Apply the transient-read retry policy for a BLE read error.
 
         If the policy allows another retry, increments the internal retry counter and sleeps the configured delay to permit a retry. If retries are exhausted, resets the counter and raises BLEInterface.BLEError(ERROR_READING_BLE).
 
         Parameters
         ----------
-        error : BleakError
+        error : BleakError | BLEClient.BLEError
             The transient BLE read error that triggered the retry policy.
 
         Raises
@@ -3125,47 +2808,14 @@ class BLEInterface(MeshInterface):
         BLEInterface.BLEError
             When the retry policy is exhausted and the read should be treated as persistent.
         """
-        transient_policy = self._transient_read_policy
-        if transient_policy._should_retry(self._read_retry_count):
-            attempt_index = self._read_retry_count
-            self._read_retry_count += 1
-            logger.debug(
-                "Transient BLE read error, retrying (%d/%d)",
-                self._read_retry_count,
-                BLEConfig.TRANSIENT_READ_MAX_RETRIES,
-            )
-            _sleep(transient_policy._get_delay(attempt_index))
-            return
-        self._read_retry_count = 0
-        logger.debug("Persistent BLE read error after retries", exc_info=True)
-        raise self.BLEError(ERROR_READING_BLE) from error
+        BLEReceiveRecoveryService._handle_transient_read_error(self, error)
 
     def _log_empty_read_warning(self) -> None:
         """Emit a throttled warning when repeated empty FROMRADIO BLE reads are observed.
 
         If the cooldown period has elapsed, log a warning that an empty read retry limit was exceeded and include how many warnings were suppressed during the last cooldown window; otherwise increment the suppressed-warning counter and log a debug message with the current suppressed count and cooldown duration.
         """
-        now = time.monotonic()
-        cooldown = BLEConfig.EMPTY_READ_WARNING_COOLDOWN
-        if now - self._last_empty_read_warning >= cooldown:
-            suppressed = self._suppressed_empty_read_warnings
-            message = f"Exceeded max retries for empty BLE read from {FROMRADIO_UUID}"
-            if suppressed:
-                message = (
-                    f"{message} (suppressed {suppressed} repeats in the last "
-                    f"{cooldown:.0f}s)"
-                )
-            logger.warning(message)
-            self._last_empty_read_warning = now
-            self._suppressed_empty_read_warnings = 0
-            return
-
-        self._suppressed_empty_read_warnings += 1
-        logger.debug(
-            "Suppressed repeated empty BLE read warning (%d within %.0fs window)",
-            self._suppressed_empty_read_warnings,
-            cooldown,
-        )
+        BLEReceiveRecoveryService._log_empty_read_warning(self)
 
     def _send_to_radio_impl(self, toRadio: mesh_pb2.ToRadio) -> None:
         """Send a protobuf ToRadio message over the TORADIO BLE characteristic.
@@ -3229,168 +2879,16 @@ class BLEInterface(MeshInterface):
             # Brief delay to allow write to propagate before triggering read
             _sleep(BLEConfig.SEND_PROPAGATION_DELAY)
             self.thread_coordinator._set_event(
-                "read_trigger"
+                READ_TRIGGER_EVENT
             )  # Wake receive loop to process any response
 
     def close(self) -> None:
-        """Shuts down the BLE interface and releases associated resources.
-
-        This method performs an idempotent, orderly shutdown: it stops background threads and reconnection activity, disconnects and closes any active BLE client, unsubscribes and cleans up notification and discovery managers, unregisters the atexit handler, publishes a final disconnected indication, and waits briefly for pending disconnect-related notifications to flush.
-        """
-        # Deliberately do not take _connect_lock here. close() must be able to
-        # mark shutdown immediately so any in-flight connect/pair timeout path
-        # can observe _closed/_is_closing and abort, rather than forcing close()
-        # to wait behind a long BLE connect attempt.
-        management_wait_timed_out = False
-        management_wait_started = time.monotonic()
-        with self._management_lock:
-            # Use unified state lock
-            with self._state_lock:
-                if self._closed:
-                    logger.debug(
-                        "BLEInterface.close called on already closed interface; ignoring"
-                    )
-                    return
-                was_closing = self._state_manager._is_closing
-                # Mark closed immediately to prevent overlapping cleanup in concurrent calls
-                self._closed = True
-                if was_closing:
-                    logger.debug(
-                        "BLEInterface.close called while another shutdown is in progress; continuing with cleanup"
-                    )
-                # Transition to DISCONNECTING only if we're not already fully disconnected or mid-disconnect
-                if self._state_manager._current_state not in (
-                    ConnectionState.DISCONNECTED,
-                    ConnectionState.DISCONNECTING,
-                ):
-                    self._state_manager._transition_to(ConnectionState.DISCONNECTING)
-            while self._management_inflight > 0:
-                elapsed = time.monotonic() - management_wait_started
-                if elapsed >= _MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS:
-                    management_wait_timed_out = True
-                    logger.warning(
-                        "Timed out waiting %.1fs for %d inflight management operation(s) during shutdown",
-                        elapsed,
-                        self._management_inflight,
-                    )
-                    break
-                remaining = _MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS - elapsed
-                self._management_idle_condition.wait(
-                    timeout=min(_MANAGEMENT_CONNECT_WAIT_POLL_SECONDS, remaining)
-                )
-
-        try:
-            # Release lock before calling MeshInterface.close() to avoid deadlock
-            # If MeshInterface.close() acquires locks that other paths also acquire, holding state_lock would cause lock inversion
-            if self._shutdown_event is not None:
-                self._shutdown_event.set()
-
-            discovery_manager = self._discovery_manager
-            self._discovery_manager = None
-            if discovery_manager is not None:
-                # Close discovery early to request graceful cleanup of the
-                # persistent discovery client/resources before downstream
-                # shutdown steps. This does not guarantee immediate cancellation
-                # of all in-flight scan/connect operations.
-                self.error_handler._safe_cleanup(
-                    discovery_manager.close, "discovery manager close"
-                )
-
-            self._set_receive_wanted(False)  # Tell the thread we want it to stop
-            self.thread_coordinator._wake_waiting_threads(
-                "read_trigger", "reconnected_event"
-            )  # Wake all waiting threads
-            if self._receiveThread:
-                if self._receiveThread is threading.current_thread():
-                    logger.debug(
-                        "close() called from receive thread; skipping self-join"
-                    )
-                else:
-                    self.thread_coordinator._join_thread(
-                        self._receiveThread, timeout=RECEIVE_THREAD_JOIN_TIMEOUT
-                    )
-                    if self._receiveThread.is_alive():
-                        logger.warning(
-                            "BLE receive thread did not exit within %.1fs",
-                            RECEIVE_THREAD_JOIN_TIMEOUT,
-                        )
-                self._receiveThread = None
-
-            # Close parent interface (stops publishing thread, etc.)
-            self.error_handler._safe_execute(
-                lambda: MeshInterface.close(self),
-                error_msg="Error closing mesh interface",
-            )
-
-            if self._exit_handler:
-                atexit.unregister(self._exit_handler)
-                self._exit_handler = None
-
-            # Use unified state lock
-            with self._state_lock:
-                client = self.client
-                publish_pending = self._client_publish_pending
-                # Don't close client if it was already replaced (race condition)
-                # Only close if it's still the current client
-                if client is not None:
-                    self.client = None
-            client_address = self._extract_client_address(client)
-            # Only close the client if we were the one who replaced it
-            # If it was replaced by a reconnection, the new connection path will clean it up
-            if client is not None:
-                gate_context = (
-                    self._management_target_gate(client_address)
-                    if client_address is not None
-                    and not management_wait_timed_out
-                    and not publish_pending
-                    else contextlib.nullcontext()
-                )
-                with gate_context:
-                    self._notification_manager._unsubscribe_all(
-                        client, timeout=NOTIFICATION_START_TIMEOUT
-                    )
-                    self._disconnect_and_close_client(client)
-            self._notification_manager._cleanup_all()
-
-            # Use unified state lock
-            # Send disconnected indicator if not already notified
-            notify = False
-            with self._state_lock:
-                if self._client_publish_pending:
-                    replacement_pending = self._client_replacement_pending
-                    self._client_publish_pending = False
-                    self._client_replacement_pending = False
-                    if replacement_pending and not self._disconnect_notified:
-                        self._disconnect_notified = True
-                        notify = True
-                    else:
-                        self._disconnect_notified = True
-                elif self._client_replacement_pending:
-                    self._client_replacement_pending = False
-                    if not self._disconnect_notified:
-                        self._disconnect_notified = True
-                        notify = True
-                elif not self._disconnect_notified:
-                    self._disconnect_notified = True
-                    notify = True
-
-            if notify:
-                self._disconnected()  # send the disconnected indicator up to clients
-                self._wait_for_disconnect_notifications()
-
-            # Clean up thread coordinator
-            self.thread_coordinator._cleanup()
-        finally:
-            # Use unified state lock
-            with self._state_lock:
-                # Record final state as DISCONNECTED for observers; instance remains closed.
-                # Safe re-entrant call: _state_lock and _state_manager.lock share the
-                # same RLock instance set during state manager initialization.
-                self._state_manager._transition_to(ConnectionState.DISCONNECTED)
-                alias_key = self._connection_alias_key
-                self._connection_alias_key = None
-            close_key = _addr_key(self.address)
-            self._mark_address_keys_disconnected(close_key, alias_key)
+        """Shut down the BLE interface and release associated resources."""
+        BLELifecycleService._close(
+            self,
+            management_shutdown_wait_timeout=_MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS,
+            management_wait_poll_seconds=_MANAGEMENT_CONNECT_WAIT_POLL_SECONDS,
+        )
 
     def _wait_for_disconnect_notifications(self, timeout: float | None = None) -> None:
         """Wait up to timeout seconds for the publishing thread to flush pending publish callbacks.
@@ -3402,21 +2900,11 @@ class BLEInterface(MeshInterface):
         timeout : float | None
             Maximum seconds to wait for the publish queue to flush. If `None`, uses `DISCONNECT_TIMEOUT_SECONDS`. (Default value = None)
         """
-        if timeout is None:
-            timeout = DISCONNECT_TIMEOUT_SECONDS
-        flush_event = Event()
-        self.error_handler._safe_execute(
-            lambda: publishingThread.queueWork(flush_event.set),
-            error_msg="Runtime error during disconnect notification flush (possible threading issue)",
-            reraise=False,
+        BLECompatibilityEventService.wait_for_disconnect_notifications(
+            self,
+            timeout,
+            publishing_thread=publishingThread,
         )
-
-        if not flush_event.wait(timeout=timeout):
-            thread = getattr(publishingThread, "thread", None)
-            if thread is not None and thread.is_alive():
-                logger.debug("Timed out waiting for publish queue flush")
-            else:
-                self._drain_publish_queue(flush_event)
 
     def _disconnect_and_close_client(self, client: BLEClient) -> None:
         """Ensure the given BLE client is disconnected and its resources are released.
@@ -3426,7 +2914,7 @@ class BLEInterface(MeshInterface):
         client : BLEClient
             BLE client to disconnect and close; operation is idempotent and safe to call on already-closed clients.
         """
-        self._client_manager._safe_close_client(client)
+        BLELifecycleService._disconnect_and_close_client(self, client)
 
     def _drain_publish_queue(self, flush_event: Event) -> None:
         """Drain and run pending publish callbacks on the current thread until the queue is empty or the provided event is set.
@@ -3438,68 +2926,30 @@ class BLEInterface(MeshInterface):
         flush_event : Event
             When set, stop draining immediately.
         """
-        queue = getattr(publishingThread, "queue", None)
-        if queue is None:
-            return
-        iterations = 0
-        while not flush_event.is_set():
-            if iterations >= MAX_DRAIN_ITERATIONS:
-                logger.debug(
-                    "Stopping publish queue drain after %d callbacks to avoid shutdown starvation",
-                    MAX_DRAIN_ITERATIONS,
-                )
-                break
-            try:
-                runnable = queue.get_nowait()
-            except Empty:
-                break
-            iterations += 1
-            self.error_handler._safe_execute(
-                runnable, error_msg="Error in deferred publish callback", reraise=False
-            )
+        BLECompatibilityEventService.drain_publish_queue(
+            self,
+            flush_event,
+            publishing_thread=publishingThread,
+        )
 
-    def _publish_connection_status(self, connected: bool) -> None:
-        """Enqueue a legacy connection status publish for backward compatibility with tests and integrations.
-
-        Attempts to queue a publish of a "meshtastic.connection.status" message indicating whether this interface is connected; failures to queue or send are handled silently and logged at debug level as a best-effort operation.
+    def _publish_connection_status(self, *, connected: bool) -> None:
+        """Enqueue legacy connection-status publication via compatibility service.
 
         Parameters
         ----------
         connected : bool
-            True when the interface is connected, False when disconnected.
+            ``True`` when connected; ``False`` when disconnected.
+
+        Returns
+        -------
+        None
+            Publication is best-effort and performed for side effects.
         """
-        # Lazy import avoids circular dependency and keeps compatibility with
-        # tests/integrations that monkeypatch meshtastic.mesh_interface.pub.
-        from meshtastic import mesh_interface as mesh_iface_module
-
-        mesh_pub: Any = getattr(mesh_iface_module, "pub", None)
-        if mesh_pub is None:
-            logger.debug("Skipping connection status publish: mesh pub is unavailable")
-            return
-
-        def _publish_status() -> None:
-            """Publish the legacy "meshtastic.connection.status" message reflecting the interface's current connection state.
-
-            Attempts to send a "meshtastic.connection.status" message via the mesh publisher with the interface reference and the connection boolean; on failure the error is logged at debug level and the exception is suppressed.
-            """
-            try:
-                mesh_pub.sendMessage(
-                    "meshtastic.connection.status", interface=self, connected=connected
-                )
-            except Exception:  # noqa: BLE001 - best-effort publish path
-                logger.debug(
-                    "Error publishing %s status via mesh_pub.sendMessage",
-                    "connect" if connected else "disconnect",
-                    exc_info=True,
-                )
-
-        try:
-            publishingThread.queueWork(_publish_status)
-        except Exception:  # noqa: BLE001 - best-effort queueing path
-            logger.debug(
-                "Error queuing connection status publish via publishingThread.queueWork",
-                exc_info=True,
-            )
+        BLECompatibilityEventService.publish_connection_status(
+            self,
+            connected=connected,
+            publishing_thread=publishingThread,
+        )
 
     def _disconnected(self) -> None:
         """Publish the legacy meshtastic.connection.status event indicating the interface is disconnected.

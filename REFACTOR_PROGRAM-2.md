@@ -252,15 +252,15 @@ Track work as a small number of themed passes (not micro-passes):
 
 Status table (maintained as work lands):
 
-| Workstream | Status | Branch/PR |
-| --- | --- | --- |
-| A: BLE boundaries/decomposition | Planned | TBD |
-| B: MeshInterface dispatch split | Planned | TBD |
-| C: Node transaction extraction | Planned | TBD |
-| D: CLI decomposition | Planned | TBD |
-| E: Compatibility isolation | Planned | TBD |
-| F: Exception/suppression hygiene | Planned | TBD |
-| G: Test/CI shape cleanup | Planned | TBD |
+| Workstream                       | Status  | Branch/PR |
+| -------------------------------- | ------- | --------- |
+| A: BLE boundaries/decomposition  | Planned | TBD       |
+| B: MeshInterface dispatch split  | Planned | TBD       |
+| C: Node transaction extraction   | Planned | TBD       |
+| D: CLI decomposition             | Planned | TBD       |
+| E: Compatibility isolation       | Planned | TBD       |
+| F: Exception/suppression hygiene | Planned | TBD       |
+| G: Test/CI shape cleanup         | Planned | TBD       |
 
 ---
 

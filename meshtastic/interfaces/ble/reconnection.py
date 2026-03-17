@@ -4,7 +4,7 @@ import logging
 import math
 from collections.abc import Callable
 from threading import TIMEOUT_MAX, Event, RLock
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
@@ -16,6 +16,10 @@ from meshtastic.interfaces.ble.gating import (
 )
 from meshtastic.interfaces.ble.policies import ReconnectPolicy
 from meshtastic.interfaces.ble.state import BLEStateManager
+from meshtastic.interfaces.ble.utils import (
+    _is_unconfigured_mock_callable,
+    _thread_start_probe,
+)
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
@@ -46,6 +50,14 @@ class ReconnectPolicyMissingMethodError(AttributeError):
         """Initialize with the missing method name."""
         self.method_name = method_name
         super().__init__(f"ReconnectPolicy missing method '{method_name}'")
+
+
+class ThreadCoordinatorMissingMethodError(AttributeError):
+    """Raised when required thread-coordinator methods are unavailable."""
+
+    def __init__(self, methods: str) -> None:
+        """Initialize with the missing thread-coordinator method names."""
+        super().__init__(f"Thread coordinator is missing {methods}")
 
 
 class NextAttempt(NamedTuple):
@@ -94,6 +106,115 @@ class ReconnectScheduler:
         self._reconnect_worker = ReconnectWorker(interface, self._reconnect_policy)
         self._reconnect_thread: ThreadLike | None = None
 
+    def _resolve_thread_coordinator_hook(
+        self,
+        public_name: str,
+        legacy_name: str,
+    ) -> Callable[..., object]:
+        """Resolve a coordinator hook with public-first, underscore fallback.
+
+        Parameters
+        ----------
+        public_name : str
+            Public hook name to try first on ``thread_coordinator``.
+        legacy_name : str
+            Underscored fallback hook name to try when public hook is missing.
+
+        Returns
+        -------
+        Callable[..., object]
+            Resolved coordinator hook callable.
+
+        Raises
+        ------
+        ThreadCoordinatorMissingMethodError
+            If neither hook is available and callable.
+        """
+        public_hook = getattr(self.thread_coordinator, public_name, None)
+        if callable(public_hook) and not _is_unconfigured_mock_callable(public_hook):
+            return cast(Callable[..., object], public_hook)
+
+        legacy_hook = getattr(self.thread_coordinator, legacy_name, None)
+        if callable(legacy_hook) and not _is_unconfigured_mock_callable(legacy_hook):
+            return cast(Callable[..., object], legacy_hook)
+
+        raise ThreadCoordinatorMissingMethodError(f"{public_name}/{legacy_name}")
+
+    def _thread_create_thread(
+        self,
+        *,
+        target: Callable[..., object],
+        args: tuple[object, ...],
+        kwargs: dict[str, object],
+        name: str,
+        daemon: bool,
+    ) -> ThreadLike:
+        """Create a thread via public coordinator API with underscore fallback.
+
+        Parameters
+        ----------
+        target : Callable[..., object]
+            Worker entrypoint for the created thread.
+        args : tuple[object, ...]
+            Positional arguments passed to ``target``.
+        kwargs : dict[str, object]
+            Keyword arguments passed to ``target``.
+        name : str
+            Thread name for diagnostics and debug output.
+        daemon : bool
+            Whether the thread should run as a daemon.
+
+        Returns
+        -------
+        ThreadLike
+            Created thread-like object.
+
+        Raises
+        ------
+        ThreadCoordinatorMissingMethodError
+            If neither create hook is available.
+        Exception
+            Any exception raised by the coordinator's create hook.
+        """
+        create_thread = self._resolve_thread_coordinator_hook(
+            "create_thread", "_create_thread"
+        )
+        return cast(
+            ThreadLike,
+            create_thread(
+                target=target,
+                args=args,
+                kwargs=kwargs,
+                name=name,
+                daemon=daemon,
+            ),
+        )
+
+    def _thread_start_thread(self, thread: ThreadLike) -> None:
+        """Start a thread via public coordinator API with underscore fallback.
+
+        Parameters
+        ----------
+        thread : ThreadLike
+            Thread-like object to start.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        ThreadCoordinatorMissingMethodError
+            If neither start hook is available.
+        Exception
+            Any exception raised by the coordinator's start hook.
+        """
+        start_thread = cast(
+            Callable[[ThreadLike], None],
+            self._resolve_thread_coordinator_hook("start_thread", "_start_thread"),
+        )
+        start_thread(thread)
+
     def _schedule_reconnect(self, auto_reconnect: bool, shutdown_event: Event) -> bool:
         """Schedule a background BLE reconnect worker when auto-reconnect is enabled and no worker is already running.
 
@@ -126,7 +247,7 @@ class ReconnectScheduler:
                 )
                 return False
 
-            thread = self.thread_coordinator._create_thread(
+            thread = self._thread_create_thread(
                 target=self._reconnect_worker._attempt_reconnect_loop,
                 args=(shutdown_event,),
                 kwargs={"on_exit": self._clear_thread_reference},
@@ -138,11 +259,8 @@ class ReconnectScheduler:
         # Start outside the lock: the reference is already set, so concurrent
         # schedulers will see a non-None _reconnect_thread and exit early.
         try:
-            self.thread_coordinator._start_thread(thread)
-            thread_ident = getattr(thread, "ident", None)
-            thread_is_alive = bool(
-                callable(getattr(thread, "is_alive", None)) and thread.is_alive()
-            )
+            self._thread_start_thread(thread)
+            thread_ident, thread_is_alive = _thread_start_probe(thread)
             if thread_ident is None and not thread_is_alive:
                 logger.debug(
                     "Auto-reconnect thread did not start; clearing stale thread reference."
@@ -213,13 +331,15 @@ class ReconnectWorker:
 
         for candidate_name in candidate_names:
             candidate_method = getattr(self.reconnect_policy, candidate_name, None)
-            if callable(candidate_method):
+            if callable(candidate_method) and not _is_unconfigured_mock_callable(
+                candidate_method
+            ):
                 return candidate_method(*args)
 
         # Backward compatibility for test doubles that only expose underscored methods.
         for candidate_name in candidate_names:
             fallback = getattr(self.reconnect_policy, f"_{candidate_name}", None)
-            if callable(fallback):
+            if callable(fallback) and not _is_unconfigured_mock_callable(fallback):
                 return fallback(*args)
         raise ReconnectPolicyMissingMethodError(method_name)
 

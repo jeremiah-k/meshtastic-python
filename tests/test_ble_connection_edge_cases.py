@@ -36,6 +36,22 @@ class MockBLEError(Exception):
     """Mock BLE error for connection validator tests."""
 
 
+def _make_orchestrator_client_manager() -> MagicMock:
+    """Return a client-manager mock configured for public-orchestrator adapters."""
+    client_manager = MagicMock(
+        spec_set=[
+            "create_client",
+            "connect_client",
+            "safe_close_client",
+            "update_client_reference",
+        ]
+    )
+    client_manager.connect_client.return_value = None
+    client_manager.safe_close_client.return_value = None
+    client_manager.update_client_reference.return_value = None
+    return client_manager
+
+
 @pytest.mark.unit
 def test_is_device_not_found_error_matches_device_context_messages() -> None:
     """Only device-level 'not found' errors should trigger device-not-found retries."""
@@ -394,6 +410,42 @@ def test_client_manager_safe_close_client_already_closed() -> None:
 
 
 @pytest.mark.unit
+def test_client_manager_safe_close_client_prefers_public_safe_cleanup() -> None:
+    """_safe_close_client should prefer public ``safe_cleanup`` over ``_safe_cleanup``."""
+    state_manager = BLEStateManager()
+    lock = RLock()
+    thread_coordinator = MagicMock()
+    error_handler = MagicMock()
+
+    def _public_safe_cleanup(*args: object, **kwargs: object) -> bool:
+        func = kwargs.get("func")
+        if not callable(func) and args:
+            first_arg = args[0]
+            func = first_arg if callable(first_arg) else None
+        if callable(func):
+            func()
+            return True
+        return False
+
+    error_handler.safe_cleanup = MagicMock(side_effect=_public_safe_cleanup)
+    error_handler._safe_cleanup = MagicMock(
+        side_effect=AssertionError("_safe_cleanup should not be called")
+    )
+    manager = ClientManager(state_manager, lock, thread_coordinator, error_handler)
+
+    mock_client = MagicMock()
+    mock_client._closed = False
+    mock_client.bleak_client = object()
+
+    manager._safe_close_client(mock_client)
+
+    assert error_handler.safe_cleanup.call_count == 2
+    error_handler._safe_cleanup.assert_not_called()
+    mock_client.disconnect.assert_called_once()
+    mock_client.close.assert_called_once()
+
+
+@pytest.mark.unit
 def test_client_manager_update_client_reference_same_client() -> None:
     """_update_client_reference should not close when old and new are same."""
     state_manager = BLEStateManager()
@@ -422,12 +474,15 @@ def test_client_manager_update_client_reference_schedules_close() -> None:
 
     old_client = MagicMock()
     new_client = MagicMock()
+    thread_like = MagicMock()
+    thread_coordinator._create_thread.return_value = thread_like
+    thread_coordinator._start_thread.return_value = None
 
     manager._update_client_reference(new_client, old_client)
 
     # Should have created and started a thread
     thread_coordinator._create_thread.assert_called_once()
-    thread_coordinator._start_thread.assert_called_once()
+    thread_coordinator._start_thread.assert_called_once_with(thread_like)
 
 
 @pytest.mark.unit
@@ -487,10 +542,10 @@ def test_connection_orchestrator_interrupt_resets_state_and_closes_client() -> N
     state_lock = RLock()
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
 
-    client_manager = MagicMock()
+    client_manager = _make_orchestrator_client_manager()
     mock_client = MagicMock()
-    client_manager._create_client.return_value = mock_client
-    client_manager._connect_client.side_effect = KeyboardInterrupt()
+    client_manager.create_client.return_value = mock_client
+    client_manager.connect_client.side_effect = KeyboardInterrupt()
 
     interface = MagicMock()
     interface.BLEError = MockBLEError
@@ -515,7 +570,7 @@ def test_connection_orchestrator_interrupt_resets_state_and_closes_client() -> N
         )
 
     assert state_manager._current_state == ConnectionState.DISCONNECTED
-    client_manager._safe_close_client.assert_called_once_with(mock_client)
+    client_manager.safe_close_client.assert_called_once_with(mock_client)
 
 
 @pytest.mark.unit
@@ -525,15 +580,17 @@ def test_connection_orchestrator_aborts_fallback_when_interface_closing() -> Non
     state_lock = RLock()
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
 
-    client_manager = MagicMock()
+    client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
-    client_manager._create_client.return_value = direct_client
+    client_manager.create_client.return_value = direct_client
 
     interface = MagicMock()
     interface.BLEError = MockBLEError
     interface._closed = False
     discovered_device = BLEDevice("AA:BB:CC:DD:EE:FF", "Mesh", details=None)
     interface.findDevice.return_value = discovered_device
+    interface.find_device = MagicMock(return_value=discovered_device)
+    interface._find_device = MagicMock(return_value=discovered_device)
 
     connect_attempts = 0
 
@@ -545,7 +602,7 @@ def test_connection_orchestrator_aborts_fallback_when_interface_closing() -> Non
             raise TimeoutError("direct connect timed out")
         raise AssertionError("fallback connect should not run while closing")
 
-    client_manager._connect_client.side_effect = _connect_side_effect
+    client_manager.connect_client.side_effect = _connect_side_effect
 
     orchestrator = ConnectionOrchestrator(
         interface=interface,
@@ -568,7 +625,9 @@ def test_connection_orchestrator_aborts_fallback_when_interface_closing() -> Non
 
     assert connect_attempts == 1
     interface.findDevice.assert_not_called()
-    client_manager._safe_close_client.assert_called_once_with(direct_client)
+    interface.find_device.assert_not_called()
+    interface._find_device.assert_not_called()
+    client_manager.safe_close_client.assert_called_once_with(direct_client)
     assert state_manager._current_state == ConnectionState.DISCONNECTED
 
 
@@ -580,6 +639,7 @@ def test_transition_failure_to_disconnected_forces_reset_when_transitions_reject
     state_manager = MagicMock()
     state_manager._current_state = ConnectionState.CONNECTING
     state_manager._transition_to.return_value = False
+    state_manager._reset_to_disconnected.return_value = True
     state_lock = RLock()
     validator = ConnectionValidator(BLEStateManager(), state_lock, MockBLEError)
     orchestrator = ConnectionOrchestrator(
@@ -610,6 +670,7 @@ def test_finalize_connection_sets_reconnected_event_and_logs_normalized_address(
     interface.BLEError = MockBLEError
     interface._ever_connected = True
     thread_coordinator = MagicMock()
+    thread_coordinator._set_event.return_value = None
     orchestrator = ConnectionOrchestrator(
         interface=interface,
         validator=validator,
@@ -650,6 +711,7 @@ def test_finalize_connection_can_defer_connected_side_effects() -> None:
     interface.BLEError = MockBLEError
     interface._ever_connected = True
     thread_coordinator = MagicMock()
+    thread_coordinator._set_event.return_value = None
     orchestrator = ConnectionOrchestrator(
         interface=interface,
         validator=validator,
@@ -711,10 +773,13 @@ def test_connection_orchestrator_rejects_direct_connect_when_interface_already_c
     state_manager = BLEStateManager()
     state_lock = RLock()
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
-    client_manager = MagicMock()
+    client_manager = _make_orchestrator_client_manager()
     interface = MagicMock()
     interface.BLEError = MockBLEError
     interface._closed = True
+    interface.findDevice = MagicMock()
+    interface.find_device = MagicMock()
+    interface._find_device = MagicMock()
     orchestrator = ConnectionOrchestrator(
         interface=interface,
         validator=validator,
@@ -734,9 +799,11 @@ def test_connection_orchestrator_rejects_direct_connect_when_interface_already_c
             on_disconnect_func=lambda _client: None,
         )
 
-    client_manager._create_client.assert_not_called()
-    client_manager._connect_client.assert_not_called()
+    client_manager.create_client.assert_not_called()
+    client_manager.connect_client.assert_not_called()
     interface.findDevice.assert_not_called()
+    interface.find_device.assert_not_called()
+    interface._find_device.assert_not_called()
 
 
 @pytest.mark.unit
@@ -746,11 +813,15 @@ def test_connection_orchestrator_raises_when_connect_state_transition_fails() ->
     state_lock = RLock()
     assert state_manager._transition_to(ConnectionState.CONNECTING)
     assert state_manager._transition_to(ConnectionState.CONNECTED)
-    validator = MagicMock()
-    client_manager = MagicMock()
+    validator = MagicMock(spec_set=ConnectionValidator)
+    validator.validate_connection_request.return_value = None
+    client_manager = _make_orchestrator_client_manager()
     interface = MagicMock()
     interface.BLEError = MockBLEError
     interface._closed = False
+    interface.findDevice = MagicMock()
+    interface.find_device = MagicMock()
+    interface._find_device = MagicMock()
     orchestrator = ConnectionOrchestrator(
         interface=interface,
         validator=validator,
@@ -772,8 +843,8 @@ def test_connection_orchestrator_raises_when_connect_state_transition_fails() ->
             on_disconnect_func=lambda _client: None,
         )
 
-    validator._validate_connection_request.assert_called_once()
-    client_manager._create_client.assert_not_called()
+    validator.validate_connection_request.assert_called_once()
+    client_manager.create_client.assert_not_called()
 
 
 @pytest.mark.unit
@@ -784,11 +855,11 @@ def test_connection_orchestrator_reraises_retry_ble_dbus_error(
     state_manager = BLEStateManager()
     state_lock = RLock()
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
-    client_manager = MagicMock()
+    client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
     retry_client = MagicMock()
-    client_manager._create_client.side_effect = [direct_client, retry_client]
-    client_manager._connect_client.side_effect = [
+    client_manager.create_client.side_effect = [direct_client, retry_client]
+    client_manager.connect_client.side_effect = [
         OSError("direct connect failed"),
         BleakDBusError("org.bluez.Error.Failed", ["retry dbus failure"]),
     ]
@@ -822,8 +893,8 @@ def test_connection_orchestrator_reraises_retry_ble_dbus_error(
             on_disconnect_func=lambda _client: None,
         )
 
-    client_manager._safe_close_client.assert_any_call(direct_client)
-    client_manager._safe_close_client.assert_any_call(retry_client)
+    client_manager.safe_close_client.assert_any_call(direct_client)
+    client_manager.safe_close_client.assert_any_call(retry_client)
 
 
 @pytest.mark.unit
@@ -832,9 +903,9 @@ def test_connection_orchestrator_returns_after_successful_direct_connect() -> No
     state_manager = BLEStateManager()
     state_lock = RLock()
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
-    client_manager = MagicMock()
+    client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
-    client_manager._create_client.return_value = direct_client
+    client_manager.create_client.return_value = direct_client
 
     interface = MagicMock()
     interface.BLEError = MockBLEError
@@ -861,6 +932,8 @@ def test_connection_orchestrator_returns_after_successful_direct_connect() -> No
 
     assert result is direct_client
     interface.findDevice.assert_not_called()
+    interface.find_device.assert_not_called()
+    interface._find_device.assert_not_called()
     orchestrator._finalize_connection.assert_called_once()
 
 
@@ -870,13 +943,16 @@ def test_connection_orchestrator_forwards_pair_on_connect_to_client_creation() -
     state_manager = BLEStateManager()
     state_lock = RLock()
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
-    client_manager = MagicMock()
+    client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
-    client_manager._create_client.return_value = direct_client
+    client_manager.create_client.return_value = direct_client
 
     interface = MagicMock()
     interface.BLEError = MockBLEError
     interface._closed = False
+    interface.findDevice = MagicMock()
+    interface.find_device = MagicMock()
+    interface._find_device = MagicMock()
 
     orchestrator = ConnectionOrchestrator(
         interface=interface,
@@ -898,13 +974,13 @@ def test_connection_orchestrator_forwards_pair_on_connect_to_client_creation() -
         pair_on_connect=True,
     )
 
-    client_manager._create_client.assert_called_once()
-    assert client_manager._create_client.call_args.kwargs["pair_on_connect"] is True
+    client_manager.create_client.assert_called_once()
+    assert client_manager.create_client.call_args.kwargs["pair_on_connect"] is True
     assert (
-        client_manager._create_client.call_args.kwargs["connect_timeout"]
+        client_manager.create_client.call_args.kwargs["connect_timeout"]
         == BLEConfig.CONNECTION_TIMEOUT
     )
-    client_manager._connect_client.assert_called_once_with(
+    client_manager.connect_client.assert_called_once_with(
         direct_client,
         timeout=BLEConfig.CONNECTION_TIMEOUT,
     )
@@ -916,9 +992,9 @@ def test_connection_orchestrator_uses_explicit_connect_timeout_override() -> Non
     state_manager = BLEStateManager()
     state_lock = RLock()
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
-    client_manager = MagicMock()
+    client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
-    client_manager._create_client.return_value = direct_client
+    client_manager.create_client.return_value = direct_client
 
     interface = MagicMock()
     interface.BLEError = MockBLEError
@@ -946,9 +1022,9 @@ def test_connection_orchestrator_uses_explicit_connect_timeout_override() -> Non
     )
 
     assert result is direct_client
-    client_manager._create_client.assert_called_once()
-    assert client_manager._create_client.call_args.kwargs["connect_timeout"] == 23.5
-    client_manager._connect_client.assert_called_once_with(direct_client, timeout=23.5)
+    client_manager.create_client.assert_called_once()
+    assert client_manager.create_client.call_args.kwargs["connect_timeout"] == 23.5
+    client_manager.connect_client.assert_called_once_with(direct_client, timeout=23.5)
 
 
 @pytest.mark.unit
@@ -957,9 +1033,9 @@ def test_connection_orchestrator_allows_none_connect_timeout() -> None:
     state_manager = BLEStateManager()
     state_lock = RLock()
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
-    client_manager = MagicMock()
+    client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
-    client_manager._create_client.return_value = direct_client
+    client_manager.create_client.return_value = direct_client
 
     interface = MagicMock()
     interface.BLEError = MockBLEError
@@ -988,12 +1064,12 @@ def test_connection_orchestrator_allows_none_connect_timeout() -> None:
 
     assert result is direct_client
     direct_timeout = min(DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT)
-    client_manager._create_client.assert_called_once()
+    client_manager.create_client.assert_called_once()
     assert (
-        client_manager._create_client.call_args.kwargs["connect_timeout"]
+        client_manager.create_client.call_args.kwargs["connect_timeout"]
         == direct_timeout
     )
-    client_manager._connect_client.assert_called_once_with(
+    client_manager.connect_client.assert_called_once_with(
         direct_client,
         timeout=direct_timeout,
     )
@@ -1011,7 +1087,7 @@ def test_connection_orchestrator_rejects_invalid_connect_timeout_override(
     state_manager = BLEStateManager()
     state_lock = RLock()
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
-    client_manager = MagicMock()
+    client_manager = _make_orchestrator_client_manager()
 
     interface = MagicMock()
     interface.BLEError = MockBLEError
@@ -1038,8 +1114,8 @@ def test_connection_orchestrator_rejects_invalid_connect_timeout_override(
             connect_timeout=cast(Any, invalid_timeout),
         )
 
-    client_manager._create_client.assert_not_called()
-    client_manager._connect_client.assert_not_called()
+    client_manager.create_client.assert_not_called()
+    client_manager.connect_client.assert_not_called()
 
 
 @pytest.mark.unit
@@ -1050,11 +1126,11 @@ def test_connection_orchestrator_preserves_pair_on_connect_across_direct_retry()
     state_manager = BLEStateManager()
     state_lock = RLock()
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
-    client_manager = MagicMock()
+    client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
     retry_client = MagicMock()
-    client_manager._create_client.side_effect = [direct_client, retry_client]
-    client_manager._connect_client.side_effect = [
+    client_manager.create_client.side_effect = [direct_client, retry_client]
+    client_manager.connect_client.side_effect = [
         BleakDeviceNotFoundError("AA:BB:CC:DD:EE:FF", "not found"),
         None,
     ]
@@ -1084,17 +1160,17 @@ def test_connection_orchestrator_preserves_pair_on_connect_across_direct_retry()
     )
 
     assert result is retry_client
-    assert client_manager._create_client.call_count == 2
+    assert client_manager.create_client.call_count == 2
     assert [
         call.kwargs["pair_on_connect"]
-        for call in client_manager._create_client.call_args_list
+        for call in client_manager.create_client.call_args_list
     ] == [True, True]
     assert [
         call.kwargs["connect_timeout"]
-        for call in client_manager._create_client.call_args_list
+        for call in client_manager.create_client.call_args_list
     ] == [BLEConfig.CONNECTION_TIMEOUT, BLEConfig.CONNECTION_TIMEOUT]
     assert [
-        call.kwargs["timeout"] for call in client_manager._connect_client.call_args_list
+        call.kwargs["timeout"] for call in client_manager.connect_client.call_args_list
     ] == [BLEConfig.CONNECTION_TIMEOUT, BLEConfig.CONNECTION_TIMEOUT]
 
 
@@ -1106,16 +1182,16 @@ def test_connection_orchestrator_preserves_pair_on_connect_across_scan_fallback(
     state_manager = BLEStateManager()
     state_lock = RLock()
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
-    client_manager = MagicMock()
+    client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
     retry_client = MagicMock()
     discovered_client = MagicMock()
-    client_manager._create_client.side_effect = [
+    client_manager.create_client.side_effect = [
         direct_client,
         retry_client,
         discovered_client,
     ]
-    client_manager._connect_client.side_effect = [
+    client_manager.connect_client.side_effect = [
         BleakDeviceNotFoundError("AA:BB:CC:DD:EE:FF", "not found"),
         BleakDeviceNotFoundError("AA:BB:CC:DD:EE:FF", "not found"),
         None,
@@ -1148,22 +1224,22 @@ def test_connection_orchestrator_preserves_pair_on_connect_across_scan_fallback(
     )
 
     assert result is discovered_client
-    assert client_manager._create_client.call_count == 3
+    assert client_manager.create_client.call_count == 3
     assert [
         call.kwargs["pair_on_connect"]
-        for call in client_manager._create_client.call_args_list
+        for call in client_manager.create_client.call_args_list
     ] == [True, True, True]
     assert [
         call.kwargs["connect_timeout"]
-        for call in client_manager._create_client.call_args_list
+        for call in client_manager.create_client.call_args_list
     ] == [
         BLEConfig.CONNECTION_TIMEOUT,
         BLEConfig.CONNECTION_TIMEOUT,
         BLEConfig.CONNECTION_TIMEOUT,
     ]
-    assert client_manager._create_client.call_args_list[2].args[0] is discovered_device
+    assert client_manager.create_client.call_args_list[2].args[0] is discovered_device
     assert [
-        call.kwargs["timeout"] for call in client_manager._connect_client.call_args_list
+        call.kwargs["timeout"] for call in client_manager.connect_client.call_args_list
     ] == [
         BLEConfig.CONNECTION_TIMEOUT,
         BLEConfig.CONNECTION_TIMEOUT,
@@ -1177,9 +1253,9 @@ def test_connection_orchestrator_uses_full_timeout_for_non_pairing_fallback() ->
     state_manager = BLEStateManager()
     state_lock = RLock()
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
-    client_manager = MagicMock()
+    client_manager = _make_orchestrator_client_manager()
     fallback_client = MagicMock()
-    client_manager._create_client.return_value = fallback_client
+    client_manager.create_client.return_value = fallback_client
 
     interface = MagicMock()
     interface.BLEError = MockBLEError
@@ -1209,11 +1285,11 @@ def test_connection_orchestrator_uses_full_timeout_for_non_pairing_fallback() ->
 
     assert result is fallback_client
     expected_timeout = BLEConfig.CONNECTION_TIMEOUT
-    assert client_manager._create_client.call_args.args[0] is discovered_device
-    assert client_manager._create_client.call_args.kwargs["connect_timeout"] == (
+    assert client_manager.create_client.call_args.args[0] is discovered_device
+    assert client_manager.create_client.call_args.kwargs["connect_timeout"] == (
         expected_timeout
     )
-    client_manager._connect_client.assert_called_once_with(
+    client_manager.connect_client.assert_called_once_with(
         fallback_client,
         timeout=expected_timeout,
     )
@@ -1227,11 +1303,11 @@ def test_connection_orchestrator_skips_scan_after_direct_device_not_found_for_ex
     state_manager = BLEStateManager()
     state_lock = RLock()
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
-    client_manager = MagicMock()
+    client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
     retry_client = MagicMock()
-    client_manager._create_client.side_effect = [direct_client, retry_client]
-    client_manager._connect_client.side_effect = [
+    client_manager.create_client.side_effect = [direct_client, retry_client]
+    client_manager.connect_client.side_effect = [
         BleakDeviceNotFoundError("AA:BB:CC:DD:EE:FF", "not found"),
         None,
     ]
@@ -1261,19 +1337,21 @@ def test_connection_orchestrator_skips_scan_after_direct_device_not_found_for_ex
 
     assert result is retry_client
     interface.findDevice.assert_not_called()
-    assert client_manager._connect_client.call_count == 2
+    interface.find_device.assert_not_called()
+    interface._find_device.assert_not_called()
+    assert client_manager.connect_client.call_count == 2
     direct_timeout = min(DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT)
     assert (
-        client_manager._connect_client.call_args_list[0].kwargs["timeout"]
+        client_manager.connect_client.call_args_list[0].kwargs["timeout"]
         == direct_timeout
     )
     assert (
-        client_manager._connect_client.call_args_list[1].kwargs["timeout"]
+        client_manager.connect_client.call_args_list[1].kwargs["timeout"]
         == direct_timeout
     )
     assert [
         call.kwargs["connect_timeout"]
-        for call in client_manager._create_client.call_args_list
+        for call in client_manager.create_client.call_args_list
     ] == [direct_timeout, direct_timeout]
     orchestrator._finalize_connection.assert_called_once_with(
         retry_client,
@@ -1292,11 +1370,11 @@ def test_connection_orchestrator_uses_discovery_for_non_address_identifier_after
     state_manager = BLEStateManager()
     state_lock = RLock()
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
-    client_manager = MagicMock()
+    client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
     discovered_client = MagicMock()
-    client_manager._create_client.side_effect = [direct_client, discovered_client]
-    client_manager._connect_client.side_effect = [
+    client_manager.create_client.side_effect = [direct_client, discovered_client]
+    client_manager.connect_client.side_effect = [
         BleakDeviceNotFoundError("mesh-node", "not found"),
         None,
     ]
@@ -1328,22 +1406,22 @@ def test_connection_orchestrator_uses_discovery_for_non_address_identifier_after
 
     assert result is discovered_client
     interface.findDevice.assert_called_once_with("mesh-node")
-    assert client_manager._connect_client.call_count == 2
+    assert client_manager.connect_client.call_count == 2
     direct_timeout = min(DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT)
     discovery_timeout = BLEConfig.CONNECTION_TIMEOUT
     assert (
-        client_manager._connect_client.call_args_list[0].kwargs["timeout"]
+        client_manager.connect_client.call_args_list[0].kwargs["timeout"]
         == direct_timeout
     )
     assert (
-        client_manager._connect_client.call_args_list[1].kwargs["timeout"]
+        client_manager.connect_client.call_args_list[1].kwargs["timeout"]
         == discovery_timeout
     )
     assert [
         call.kwargs["connect_timeout"]
-        for call in client_manager._create_client.call_args_list
+        for call in client_manager.create_client.call_args_list
     ] == [direct_timeout, discovery_timeout]
-    assert client_manager._create_client.call_args_list[1].args[0] is discovered_device
+    assert client_manager.create_client.call_args_list[1].args[0] is discovered_device
     orchestrator._finalize_connection.assert_called_once_with(
         discovered_client,
         "11:22:33:44:55:66",
@@ -1354,6 +1432,110 @@ def test_connection_orchestrator_uses_discovery_for_non_address_identifier_after
 
 
 @pytest.mark.unit
+def test_connection_orchestrator_falls_back_to_find_device_when_findDevice_missing() -> (
+    None
+):
+    """Explicit-address retry should use find_device() when findDevice() is absent."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = _make_orchestrator_client_manager()
+    direct_client = MagicMock()
+    retry_client = MagicMock()
+    discovered_client = MagicMock()
+    client_manager.create_client.side_effect = [
+        direct_client,
+        retry_client,
+        discovered_client,
+    ]
+    client_manager.connect_client.side_effect = [
+        BleakDeviceNotFoundError("AA:BB:CC:DD:EE:FF", "not found"),
+        BleakDeviceNotFoundError("AA:BB:CC:DD:EE:FF", "not found"),
+        None,
+    ]
+
+    discovered_device = BLEDevice("AA:BB:CC:DD:EE:FF", "Mesh", details=None)
+    interface = SimpleNamespace(
+        BLEError=MockBLEError,
+        _closed=False,
+        find_device=MagicMock(return_value=discovered_device),
+    )
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+    orchestrator._finalize_connection = MagicMock()  # type: ignore[method-assign]
+
+    result = orchestrator._establish_connection(
+        address="AA:BB:CC:DD:EE:FF",
+        current_address=None,
+        register_notifications_func=lambda _client: None,
+        on_connected_func=lambda: None,
+        on_disconnect_func=lambda _client: None,
+    )
+
+    assert result is discovered_client
+    interface.find_device.assert_called_once_with("AA:BB:CC:DD:EE:FF")
+
+
+@pytest.mark.unit
+def test_connection_orchestrator_falls_back_to_underscore_find_device() -> None:
+    """Explicit-address retry should use _find_device() when other names are absent."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = _make_orchestrator_client_manager()
+    direct_client = MagicMock()
+    retry_client = MagicMock()
+    discovered_client = MagicMock()
+    client_manager.create_client.side_effect = [
+        direct_client,
+        retry_client,
+        discovered_client,
+    ]
+    client_manager.connect_client.side_effect = [
+        BleakDeviceNotFoundError("11:22:33:44:55:66", "not found"),
+        BleakDeviceNotFoundError("11:22:33:44:55:66", "not found"),
+        None,
+    ]
+
+    discovered_device = BLEDevice("11:22:33:44:55:66", "Mesh", details=None)
+    interface = SimpleNamespace(
+        BLEError=MockBLEError,
+        _closed=False,
+        _find_device=MagicMock(return_value=discovered_device),
+    )
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+    orchestrator._finalize_connection = MagicMock()  # type: ignore[method-assign]
+
+    result = orchestrator._establish_connection(
+        address="11:22:33:44:55:66",
+        current_address=None,
+        register_notifications_func=lambda _client: None,
+        on_connected_func=lambda: None,
+        on_disconnect_func=lambda _client: None,
+    )
+
+    assert result is discovered_client
+    interface._find_device.assert_called_once_with("11:22:33:44:55:66")
+
+
+@pytest.mark.unit
 def test_connection_orchestrator_falls_back_to_scan_when_direct_retry_still_device_not_found() -> (
     None
 ):
@@ -1361,16 +1543,16 @@ def test_connection_orchestrator_falls_back_to_scan_when_direct_retry_still_devi
     state_manager = BLEStateManager()
     state_lock = RLock()
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
-    client_manager = MagicMock()
+    client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
     retry_client = MagicMock()
     discovered_client = MagicMock()
-    client_manager._create_client.side_effect = [
+    client_manager.create_client.side_effect = [
         direct_client,
         retry_client,
         discovered_client,
     ]
-    client_manager._connect_client.side_effect = [
+    client_manager.connect_client.side_effect = [
         BleakDeviceNotFoundError("AA:BB:CC:DD:EE:FF", "not found"),
         BleakDeviceNotFoundError("AA:BB:CC:DD:EE:FF", "not found"),
         None,
@@ -1403,27 +1585,27 @@ def test_connection_orchestrator_falls_back_to_scan_when_direct_retry_still_devi
 
     assert result is discovered_client
     interface.findDevice.assert_called_once_with("AA:BB:CC:DD:EE:FF")
-    assert client_manager._connect_client.call_count == 3
+    assert client_manager.connect_client.call_count == 3
     direct_timeout = min(DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT)
     discovery_timeout = BLEConfig.CONNECTION_TIMEOUT
     assert (
-        client_manager._connect_client.call_args_list[0].kwargs["timeout"]
+        client_manager.connect_client.call_args_list[0].kwargs["timeout"]
         == direct_timeout
     )
     assert (
-        client_manager._connect_client.call_args_list[1].kwargs["timeout"]
+        client_manager.connect_client.call_args_list[1].kwargs["timeout"]
         == direct_timeout
     )
     assert (
-        client_manager._connect_client.call_args_list[2].kwargs["timeout"]
+        client_manager.connect_client.call_args_list[2].kwargs["timeout"]
         == discovery_timeout
     )
     assert [
         call.kwargs["connect_timeout"]
-        for call in client_manager._create_client.call_args_list
+        for call in client_manager.create_client.call_args_list
     ] == [direct_timeout, direct_timeout, discovery_timeout]
-    assert client_manager._create_client.call_args_list[2].args[0] is discovered_device
-    assert client_manager._safe_close_client.call_count == 2
+    assert client_manager.create_client.call_args_list[2].args[0] is discovered_device
+    assert client_manager.safe_close_client.call_count == 2
     orchestrator._finalize_connection.assert_called_once_with(
         discovered_client,
         "AA:BB:CC:DD:EE:FF",
@@ -1439,10 +1621,10 @@ def test_connection_orchestrator_handles_bleak_dbus_error_during_connect() -> No
     state_manager = BLEStateManager()
     state_lock = RLock()
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
-    client_manager = MagicMock()
+    client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
-    client_manager._create_client.return_value = direct_client
-    client_manager._connect_client.side_effect = BleakDBusError(
+    client_manager.create_client.return_value = direct_client
+    client_manager.connect_client.side_effect = BleakDBusError(
         "org.bluez.Error.Failed", []
     )
 
@@ -1472,7 +1654,7 @@ def test_connection_orchestrator_handles_bleak_dbus_error_during_connect() -> No
     assert state_manager._current_state == ConnectionState.DISCONNECTED
     # DBus adapter failures should bypass discovery fallback and use only the
     # dedicated outer cleanup path.
-    assert client_manager._safe_close_client.call_count == 1
+    assert client_manager.safe_close_client.call_count == 1
 
 
 @pytest.mark.unit

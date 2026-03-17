@@ -1,11 +1,11 @@
 """Meshtastic unit tests for ota.py."""
 
-from collections.abc import Callable
 import hashlib
 import logging
 import os
-from pathlib import Path
 import tempfile
+from collections.abc import Callable
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
