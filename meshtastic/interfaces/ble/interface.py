@@ -851,9 +851,7 @@ class BLEInterface(MeshInterface):
             ):
                 try:
                     _invoke_handler()
-                except (
-                    Exception
-                ):  # noqa: BLE001 - notification callbacks must stay best effort
+                except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
                     _report_notification_error()
                 return
             self._invoke_safe_execute_compat(
@@ -1145,7 +1143,8 @@ class BLEInterface(MeshInterface):
             awaitable,
             timeout,
             label,
-            timeout_error_factory=lambda timeout_label, timeout_seconds: BLEInterface.BLEError(
+            timeout_error_factory=lambda timeout_label,
+            timeout_seconds: BLEInterface.BLEError(
                 ERROR_TIMEOUT.format(timeout_label, timeout_seconds)
             ),
         )
@@ -2155,9 +2154,12 @@ class BLEInterface(MeshInterface):
                 normalized_result = float(result)
             except (TypeError, ValueError, OverflowError):
                 normalized_result = None
-            else:
-                if math.isfinite(normalized_result) and normalized_result >= 0:
-                    return normalized_result
+            if (
+                normalized_result is not None
+                and math.isfinite(normalized_result)
+                and normalized_result >= 0
+            ):
+                return normalized_result
         logger.debug(
             "Retry policy get_delay returned invalid value %r; defaulting to 0.0",
             result,
