@@ -105,7 +105,7 @@ from meshtastic.interfaces.ble.management_service import (
     BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS as _BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS,
 )
 from meshtastic.interfaces.ble.management_service import (
-    BLEManagementCommandsService,
+    BLEManagementCommandHandler,
 )
 from meshtastic.interfaces.ble.notifications import NotificationManager
 from meshtastic.interfaces.ble.policies import RetryPolicy
@@ -138,7 +138,7 @@ ERROR_RETRY_POLICY_MISSING_SHOULD_RETRY: str = (
 )
 ERROR_RETRY_POLICY_MISSING_GET_DELAY: str = "Retry policy missing get_delay/_get_delay"
 _SAFE_EXECUTE_POSITIONAL_SIGNATURE_MISMATCH_RE = re.compile(
-    r"positional.*argument|takes .* positional|missing required positional",
+    r"positional.*argument|takes .* positional|missing required positional|were given|was given",
     re.IGNORECASE,
 )
 ERROR_DISCOVERY_MANAGER_MISSING_DISCOVER_DEVICES: str = (
@@ -714,6 +714,13 @@ class BLEInterface(MeshInterface):
                 )
                 _fallback_if_not_executed()
                 return
+            if executed:
+                logger.debug(
+                    "safe_execute keyword compatibility probe raised TypeError after handler execution (%s): %s",
+                    error_msg,
+                    exc,
+                    exc_info=True,
+                )
         except Exception as exc:  # noqa: BLE001 - notification callbacks must stay best effort
             logger.debug(
                 "safe_execute keyword probe failed for notification handler (%s): %s",
@@ -734,7 +741,13 @@ class BLEInterface(MeshInterface):
             # Most TypeError cases here are compatibility signature mismatches.
             # Only probe callable-only when this looks like a signature mismatch.
             if _SAFE_EXECUTE_POSITIONAL_SIGNATURE_MISMATCH_RE.search(str(exc)):
-                pass
+                if executed:
+                    logger.debug(
+                        "safe_execute positional compatibility probe raised TypeError after handler execution (%s): %s",
+                        error_msg,
+                        exc,
+                        exc_info=True,
+                    )
             else:
                 logger.debug(
                     "safe_execute positional probe raised TypeError for notification handler (%s); skipping callable-only probe to avoid duplicate handler execution.",
@@ -743,10 +756,11 @@ class BLEInterface(MeshInterface):
                 )
                 _fallback_if_not_executed()
                 return
-        except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
+        except Exception as exc:  # noqa: BLE001 - notification callbacks must stay best effort
             logger.debug(
-                "safe_execute positional probe failed for notification handler (%s); skipping callable-only probe to avoid duplicate handler execution.",
+                "safe_execute positional probe failed for notification handler (%s): %s; skipping callable-only probe to avoid duplicate handler execution.",
                 error_msg,
+                exc,
                 exc_info=True,
             )
             _fallback_if_not_executed()
@@ -758,10 +772,11 @@ class BLEInterface(MeshInterface):
         try:
             safe_execute(_tracked_handler_thunk)
             return
-        except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
+        except Exception as exc:  # noqa: BLE001 - notification callbacks must stay best effort
             logger.debug(
-                "safe_execute callable-only probe failed for notification handler (%s).",
+                "safe_execute callable-only probe failed for notification handler (%s): %s.",
                 error_msg,
+                exc,
                 exc_info=True,
             )
             _fallback_if_not_executed()
@@ -1536,6 +1551,21 @@ class BLEInterface(MeshInterface):
         ):
             raise self.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
 
+    def _get_management_command_handler(self) -> BLEManagementCommandHandler:
+        """Return the bound management-command collaborator.
+
+        Returns
+        -------
+        BLEManagementCommandHandler
+            Lazily initialized management command collaborator.
+        """
+        handler = BLEManagementCommandHandler(
+            self,
+            ble_client_factory=BLEClient,
+            connected_elsewhere=_is_currently_connected_elsewhere,
+        )
+        return handler
+
     def _execute_management_command(
         self,
         address: str | None,
@@ -1556,12 +1586,9 @@ class BLEInterface(MeshInterface):
         T
             Command return value.
         """
-        return BLEManagementCommandsService._execute_management_command(
-            self,
+        return self._get_management_command_handler().execute_management_command(
             address,
             command,
-            ble_client_factory=BLEClient,
-            connected_elsewhere=_is_currently_connected_elsewhere,
         )
 
     def _begin_management_operation_locked(self) -> None:
@@ -1605,8 +1632,8 @@ class BLEInterface(MeshInterface):
             If `await_timeout` is None, a boolean, non-numeric, non-finite,
             zero, or negative.
         """
-        return BLEManagementCommandsService._validate_management_await_timeout(
-            self, await_timeout
+        return self._get_management_command_handler().validate_management_await_timeout(
+            await_timeout
         )
 
     def _validate_trust_timeout(self, timeout: object) -> float:
@@ -1628,7 +1655,7 @@ class BLEInterface(MeshInterface):
             If `timeout` is a boolean, non-numeric, non-finite, zero, or
             negative.
         """
-        return BLEManagementCommandsService._validate_trust_timeout(self, timeout)
+        return self._get_management_command_handler().validate_trust_timeout(timeout)
 
     def _validate_connect_timeout_override(
         self,
@@ -1637,8 +1664,7 @@ class BLEInterface(MeshInterface):
         pair_on_connect: bool,
     ) -> None:
         """Validate a connect timeout override before connection orchestration."""
-        BLEManagementCommandsService._validate_connect_timeout_override(
-            self,
+        self._get_management_command_handler().validate_connect_timeout_override(
             connect_timeout,
             pair_on_connect=pair_on_connect,
         )
@@ -1672,13 +1698,10 @@ class BLEInterface(MeshInterface):
         None
             Pairing is performed for side effects and does not return a value.
         """
-        BLEManagementCommandsService.pair(
-            self,
+        self._get_management_command_handler().pair(
             address,
             await_timeout=await_timeout,
             kwargs=dict(kwargs),
-            ble_client_factory=BLEClient,
-            connected_elsewhere=_is_currently_connected_elsewhere,
         )
 
     def unpair(
@@ -1707,12 +1730,9 @@ class BLEInterface(MeshInterface):
         None
             Unpairing is performed for side effects and does not return a value.
         """
-        BLEManagementCommandsService.unpair(
-            self,
+        self._get_management_command_handler().unpair(
             address,
             await_timeout=await_timeout,
-            ble_client_factory=BLEClient,
-            connected_elsewhere=_is_currently_connected_elsewhere,
         )
 
     def _run_bluetoothctl_trust_command(
@@ -1742,8 +1762,7 @@ class BLEInterface(MeshInterface):
         BLEError
             If command execution fails or times out.
         """
-        BLEManagementCommandsService._run_bluetoothctl_trust_command(
-            self,
+        self._get_management_command_handler().run_bluetoothctl_trust_command(
             bluetoothctl_path,
             canonical_address,
             validated_timeout,
@@ -1784,8 +1803,7 @@ class BLEInterface(MeshInterface):
         - This helper is Linux-only and requires `bluetoothctl` on PATH.
         - Pairing PIN/passkey handling remains OS-agent managed.
         """
-        BLEManagementCommandsService.trust(
-            self,
+        self._get_management_command_handler().trust(
             address,
             timeout=timeout,
             sys_module=sys,
