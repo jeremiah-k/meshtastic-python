@@ -154,8 +154,6 @@ def _run_safe_cleanup(
             return True
         if cleanup_invoked:
             return False
-    if cleanup_ran:
-        return True
     try:
         _tracked_cleanup()
     except Exception:  # noqa: BLE001 - cleanup path must stay best-effort
@@ -814,27 +812,36 @@ class ConnectionOrchestrator:
         AttributeError
             If no supported member exists and no default is provided.
         """
+        # Use the function's own default sentinel rather than module globals so
+        # behavior remains stable even if this module is reloaded in tests.
+        dispatch_kwdefaults = (
+            self._dispatch_public_or_underscore.__func__.__kwdefaults__ or {}
+        )
+        missing_sentinel = cast(
+            object,
+            dispatch_kwdefaults.get("default_if_missing", _DISPATCH_MISSING),
+        )
         kwargs = {} if kwargs is None else kwargs
-        public_member = getattr(target, public_name, _DISPATCH_MISSING)
-        underscore_member = getattr(target, underscore_name, _DISPATCH_MISSING)
+        public_member = getattr(target, public_name, missing_sentinel)
+        underscore_member = getattr(target, underscore_name, missing_sentinel)
 
         if not call_member:
             if _is_unconfigured_mock_member(public_member):
-                public_member = _DISPATCH_MISSING
+                public_member = missing_sentinel
             if _is_unconfigured_mock_member(underscore_member):
-                underscore_member = _DISPATCH_MISSING
+                underscore_member = missing_sentinel
         else:
             if _is_unconfigured_mock_callable(public_member):
-                public_member = _DISPATCH_MISSING
+                public_member = missing_sentinel
             if _is_unconfigured_mock_callable(underscore_member):
-                underscore_member = _DISPATCH_MISSING
+                underscore_member = missing_sentinel
 
         if (
             prefer_instance_type is not None
             and isinstance(target, prefer_instance_type)
             and not _is_mock_instance(target)
         ):
-            if public_member is _DISPATCH_MISSING:
+            if public_member is missing_sentinel:
                 raise AttributeError(
                     f"{type(target).__name__} is missing required member '{public_name}'"
                 )
@@ -852,18 +859,18 @@ class ConnectionOrchestrator:
             if callable(underscore_member):
                 return underscore_member(*args, **kwargs)
         else:
-            if public_member is not _DISPATCH_MISSING:
+            if public_member is not missing_sentinel:
                 if underscore_attr_type is None or isinstance(
                     public_member, underscore_attr_type
                 ):
                     return public_member
-            if underscore_member is not _DISPATCH_MISSING and (
+            if underscore_member is not missing_sentinel and (
                 underscore_attr_type is None
                 or isinstance(underscore_member, underscore_attr_type)
             ):
                 return underscore_member
 
-        if default_if_missing is not _DISPATCH_MISSING:
+        if default_if_missing is not missing_sentinel:
             return default_if_missing
 
         raise AttributeError(

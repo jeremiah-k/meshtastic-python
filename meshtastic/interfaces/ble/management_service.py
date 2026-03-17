@@ -162,13 +162,12 @@ class BLEManagementCommandsService:
             operation token.
         """
         expected_implicit_binding: str | None = None
-        if address is None:
-            with iface._state_lock:
+        with iface._connect_lock, iface._management_lock, iface._state_lock:
+            iface._validate_management_preconditions()
+            if address is None:
                 expected_implicit_binding = (
                     iface._get_current_implicit_management_binding_locked()
                 )
-        with iface._connect_lock, iface._management_lock:
-            iface._validate_management_preconditions()
             iface._begin_management_operation_locked()
             try:
                 existing_client = iface._get_management_client_if_available(address)
@@ -224,21 +223,28 @@ class BLEManagementCommandsService:
 
         if start_context.use_existing_client_without_resolved_address:
             current_binding: str | None = None
-            with iface._connect_lock, iface._management_lock:
-                iface._validate_management_preconditions()
-                refreshed_existing_client = iface._get_management_client_if_available(
-                    address
-                )
-                if refreshed_existing_client is None:
-                    raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
-                if address is None:
-                    with iface._state_lock:
-                        current_binding = (
-                            iface._get_current_implicit_management_binding_locked()
-                        )
+            if address is None:
+                with iface._connect_lock, iface._management_lock, iface._state_lock:
+                    iface._validate_management_preconditions()
+                    refreshed_existing_client = (
+                        iface._get_management_client_if_available(address)
+                    )
+                    if refreshed_existing_client is None:
+                        raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
+                    current_binding = (
+                        iface._get_current_implicit_management_binding_locked()
+                    )
                     if sanitize_address(current_binding) != sanitize_address(
                         start_context.expected_implicit_binding
                     ):
+                        raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
+            else:
+                with iface._connect_lock, iface._management_lock:
+                    iface._validate_management_preconditions()
+                    refreshed_existing_client = (
+                        iface._get_management_client_if_available(address)
+                    )
+                    if refreshed_existing_client is None:
                         raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
 
             # Prefer a live address extracted from the refreshed client. If no

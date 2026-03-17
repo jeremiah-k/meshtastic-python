@@ -26,6 +26,8 @@ Threading model summary
 
 import atexit
 import contextlib
+import math
+import numbers
 import re
 import shutil
 import struct
@@ -700,19 +702,25 @@ class BLEInterface(MeshInterface):
             return
         except TypeError as exc:
             # Most TypeError cases here are compatibility signature mismatches.
-            # Keep probing the callable-only variant before invoking fallback.
-            if "positional argument" not in str(exc):
+            # Only probe callable-only when this looks like a signature mismatch.
+            if "positional argument" in str(exc):
+                pass
+            else:
                 logger.debug(
-                    "safe_execute positional probe raised TypeError for notification handler (%s); trying callable-only fallback.",
+                    "safe_execute positional probe raised TypeError for notification handler (%s); skipping callable-only probe to avoid duplicate handler execution.",
                     error_msg,
                     exc_info=True,
                 )
+                fallback()
+                return
         except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
             logger.debug(
-                "safe_execute positional probe failed for notification handler (%s); trying callable-only fallback.",
+                "safe_execute positional probe failed for notification handler (%s); skipping callable-only probe to avoid duplicate handler execution.",
                 error_msg,
                 exc_info=True,
             )
+            fallback()
+            return
 
         try:
             safe_execute(handler_thunk)
@@ -2112,7 +2120,12 @@ class BLEInterface(MeshInterface):
             error_message=ERROR_RETRY_POLICY_MISSING_GET_DELAY,
             args=(attempt,),
         )
-        if isinstance(result, (int, float)) and not isinstance(result, bool):
+        if (
+            isinstance(result, numbers.Real)
+            and not isinstance(result, bool)
+            and math.isfinite(result)
+            and result >= 0
+        ):
             return float(result)
         logger.debug(
             "Retry policy get_delay returned non-numeric %r; defaulting to 0.0",

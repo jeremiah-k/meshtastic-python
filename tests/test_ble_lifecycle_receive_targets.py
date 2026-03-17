@@ -468,9 +468,24 @@ def test_lifecycle_invalidation_and_publish_verification_paths(
         assert BLELifecycleService._ever_connected_flag(iface) is False
 
         snapshots = [
-            _OwnershipSnapshot(True, False, False, False),
-            _OwnershipSnapshot(True, False, False, False),
-            _OwnershipSnapshot(False, False, False, False),
+            _OwnershipSnapshot(
+                still_owned=True,
+                is_closing=False,
+                lost_gate_ownership=False,
+                prior_ever_connected=False,
+            ),
+            _OwnershipSnapshot(
+                still_owned=True,
+                is_closing=False,
+                lost_gate_ownership=False,
+                prior_ever_connected=False,
+            ),
+            _OwnershipSnapshot(
+                still_owned=False,
+                is_closing=False,
+                lost_gate_ownership=False,
+                prior_ever_connected=False,
+            ),
         ]
         monkeypatch.setattr(
             BLELifecycleService,

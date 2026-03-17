@@ -438,7 +438,7 @@ def test_management_helpers_cover_factory_and_target_edge_paths(
         if kwargs:
             raise TypeError(
                 "factory() got an unexpected keyword argument 'log_if_no_address'"
-            )
+            )  # noqa: TRY003 - intentional test fixture message shape
         client = DummyClient()
         client.address = address
         return client

@@ -4927,6 +4927,81 @@ def test_find_device_direct_connect_without_discovery_manager() -> None:
     assert direct_device.name == address
 
 
+def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure() -> None:
+    """Positional safe_execute failures should not trigger a second handler invocation."""
+
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    handler_runs: list[str] = []
+    fallbacks: list[str] = []
+
+    def _handler_thunk() -> None:
+        handler_runs.append("run")
+        raise RuntimeError("handler failed")
+
+    def _fallback() -> None:
+        fallbacks.append("fallback")
+
+    def _legacy_safe_execute(
+        func: Callable[[], None], *args: object, **kwargs: object
+    ) -> None:
+        calls.append((args, dict(kwargs)))
+        if "error_msg" in kwargs:
+            raise TypeError(
+                "safe_execute() got an unexpected keyword argument 'error_msg'"
+            )
+        func()
+
+    BLEInterface._invoke_safe_execute_compat(
+        _legacy_safe_execute,
+        _handler_thunk,
+        error_msg="notification error",
+        fallback=_fallback,
+    )
+
+    assert handler_runs == ["run"]
+    assert fallbacks == ["fallback"]
+    assert len(calls) == 2
+
+
+def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signature_error() -> None:
+    """Positional signature mismatch should continue to callable-only compatibility probe."""
+
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    handler_runs: list[str] = []
+    fallbacks: list[str] = []
+
+    def _handler_thunk() -> None:
+        handler_runs.append("run")
+
+    def _fallback() -> None:
+        fallbacks.append("fallback")
+
+    def _legacy_safe_execute(
+        func: Callable[[], None], *args: object, **kwargs: object
+    ) -> None:
+        calls.append((args, dict(kwargs)))
+        if "error_msg" in kwargs:
+            raise TypeError(
+                "safe_execute() got an unexpected keyword argument 'error_msg'"
+            )
+        if args:
+            raise TypeError(
+                "takes 1 positional argument but 2 positional arguments were given"
+            )
+        func()
+
+    BLEInterface._invoke_safe_execute_compat(
+        _legacy_safe_execute,
+        _handler_thunk,
+        error_msg="notification error",
+        fallback=_fallback,
+    )
+
+    assert handler_runs == ["run"]
+    assert fallbacks == []
+    assert len(calls) == 3
+
+
 def test_wait_for_disconnect_notifications_skips_unconfigured_queuework(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
