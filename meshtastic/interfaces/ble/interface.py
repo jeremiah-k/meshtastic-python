@@ -137,6 +137,10 @@ ERROR_RETRY_POLICY_MISSING_SHOULD_RETRY: str = (
     "Retry policy missing should_retry/_should_retry"
 )
 ERROR_RETRY_POLICY_MISSING_GET_DELAY: str = "Retry policy missing get_delay/_get_delay"
+_SAFE_EXECUTE_POSITIONAL_SIGNATURE_MISMATCH_RE = re.compile(
+    r"positional.*argument|takes .* positional|missing required positional",
+    re.IGNORECASE,
+)
 ERROR_DISCOVERY_MANAGER_MISSING_DISCOVER_DEVICES: str = (
     "Discovery manager is missing discover_devices/_discover_devices"
 )
@@ -686,24 +690,38 @@ class BLEInterface(MeshInterface):
         None
             Returns ``None`` after invoking a compatible signature or fallback.
         """
+        executed = False
+
+        def _tracked_handler_thunk() -> None:
+            nonlocal executed
+            executed = True
+            handler_thunk()
+
+        def _fallback_if_not_executed() -> None:
+            if not executed:
+                fallback()
+
         try:
-            safe_execute(handler_thunk, error_msg=error_msg)
+            safe_execute(_tracked_handler_thunk, error_msg=error_msg)
             return
         except TypeError as exc:
             if not _is_unexpected_keyword_error(exc, "error_msg"):
-                fallback()
+                _fallback_if_not_executed()
                 return
         except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
-            fallback()
+            _fallback_if_not_executed()
+            return
+
+        if executed:
             return
 
         try:
-            safe_execute(handler_thunk, error_msg)
+            safe_execute(_tracked_handler_thunk, error_msg)
             return
         except TypeError as exc:
             # Most TypeError cases here are compatibility signature mismatches.
             # Only probe callable-only when this looks like a signature mismatch.
-            if "positional argument" in str(exc):
+            if _SAFE_EXECUTE_POSITIONAL_SIGNATURE_MISMATCH_RE.search(str(exc)):
                 pass
             else:
                 logger.debug(
@@ -711,7 +729,7 @@ class BLEInterface(MeshInterface):
                     error_msg,
                     exc_info=True,
                 )
-                fallback()
+                _fallback_if_not_executed()
                 return
         except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
             logger.debug(
@@ -719,14 +737,17 @@ class BLEInterface(MeshInterface):
                 error_msg,
                 exc_info=True,
             )
-            fallback()
+            _fallback_if_not_executed()
+            return
+
+        if executed:
             return
 
         try:
-            safe_execute(handler_thunk)
+            safe_execute(_tracked_handler_thunk)
             return
         except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
-            fallback()
+            _fallback_if_not_executed()
 
     def _from_num_handler(self, _: Any, b: bytes | bytearray) -> None:
         """Process a FROMNUM characteristic notification and wake the receive loop.
@@ -2129,16 +2150,17 @@ class BLEInterface(MeshInterface):
             error_message=ERROR_RETRY_POLICY_MISSING_GET_DELAY,
             args=(attempt,),
         )
-        if (
-            isinstance(result, numbers.Real)
-            and not isinstance(result, bool)
-            and math.isfinite(result)
-            and float(result) >= 0
-        ):
-            return float(result)
+        if isinstance(result, numbers.Real) and not isinstance(result, bool):
+            try:
+                normalized_result = float(result)
+            except (TypeError, ValueError, OverflowError):
+                normalized_result = None
+            else:
+                if math.isfinite(normalized_result) and normalized_result >= 0:
+                    return normalized_result
         logger.debug(
-            "Retry policy get_delay returned non-numeric %r; defaulting to 0.0",
-            type(result).__name__,
+            "Retry policy get_delay returned invalid value %r; defaulting to 0.0",
+            result,
         )
         return 0.0
 

@@ -27,6 +27,8 @@ from tests.test_ble_interface_fixtures import DummyClient, _build_interface
 
 pytestmark = pytest.mark.unit
 
+MOCK_IMPORT_UNAVAILABLE_MSG = "mock import unavailable"
+
 
 class _TestBLEError(Exception):
     """Custom BLEError type for focused branch tests."""
@@ -88,7 +90,7 @@ def test_connection_helpers_cover_mock_import_and_inline_safe_cleanup(
         level: int = 0,
     ) -> object:
         if name == "unittest.mock":
-            raise ImportError("mock import unavailable")
+            raise ImportError(MOCK_IMPORT_UNAVAILABLE_MSG)
         return real_import(name, globals_arg, locals_arg, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", _import_with_mock_failure)

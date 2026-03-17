@@ -66,6 +66,17 @@ pytestmark = pytest.mark.unit
 _MAX_SPURIOUS_CONNECT_WAIT_CALLS_BEFORE_FAIL = 10
 _MAX_SPURIOUS_CLOSE_WAIT_CALLS_BEFORE_FAIL = 50
 START_FAILED_MSG = "start failed"
+SAFE_EXECUTE_UNEXPECTED_ERROR_MSG = (
+    "safe_execute() got an unexpected keyword argument 'error_msg'"
+)
+SAFE_EXECUTE_POSITIONAL_MISMATCH_ERROR_MSG = (
+    "takes 1 positional argument but 2 positional arguments were given"
+)
+SAFE_EXECUTE_DIFFERENT_TYPE_ERROR_MSG = "different type error"
+SAFE_EXECUTE_KEYWORD_CALL_FAILED_MSG = "keyword call failed"
+SAFE_EXECUTE_HANDLER_TYPE_ERROR_MSG = "handler raised type error"
+SAFE_EXECUTE_CALLABLE_ONLY_ERROR_MSG = "callable-only failed"
+SAFE_EXECUTE_LEGACY_POSITIONAL_MISMATCH_ERROR_MSG = "legacy positional mismatch"
 
 
 def _pin_trust_environment(
@@ -5050,9 +5061,7 @@ def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure
     ) -> None:
         calls.append((args, dict(kwargs)))
         if "error_msg" in kwargs:
-            raise TypeError(
-                "safe_execute() got an unexpected keyword argument 'error_msg'"
-            )
+            raise TypeError(SAFE_EXECUTE_UNEXPECTED_ERROR_MSG)
         func()
 
     BLEInterface._invoke_safe_execute_compat(
@@ -5063,7 +5072,7 @@ def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure
     )
 
     assert handler_runs == ["run"]
-    assert fallbacks == ["fallback"]
+    assert fallbacks == []
     assert len(calls) == 2
 
 
@@ -5085,13 +5094,9 @@ def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signatu
     ) -> None:
         calls.append((args, dict(kwargs)))
         if "error_msg" in kwargs:
-            raise TypeError(
-                "safe_execute() got an unexpected keyword argument 'error_msg'"
-            )
+            raise TypeError(SAFE_EXECUTE_UNEXPECTED_ERROR_MSG)
         if args:
-            raise TypeError(
-                "takes 1 positional argument but 2 positional arguments were given"
-            )
+            raise TypeError(SAFE_EXECUTE_POSITIONAL_MISMATCH_ERROR_MSG)
         func()
 
     BLEInterface._invoke_safe_execute_compat(
@@ -5106,9 +5111,7 @@ def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signatu
     assert len(calls) == 3
 
 
-def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_paths() -> (
-    None
-):
+def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_paths() -> None:
     """safe_execute compatibility helper should cover success/fallback branches."""
 
     def _run_scenario(
@@ -5147,7 +5150,7 @@ def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_
     ) -> None:
         _ = args
         _ = kwargs
-        raise TypeError("different type error")
+        raise TypeError(SAFE_EXECUTE_DIFFERENT_TYPE_ERROR_MSG)
 
     _run_scenario(
         _keyword_typeerror,
@@ -5160,7 +5163,7 @@ def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_
     ) -> None:
         _ = args
         _ = kwargs
-        raise RuntimeError("keyword call failed")
+        raise RuntimeError(SAFE_EXECUTE_KEYWORD_CALL_FAILED_MSG)
 
     _run_scenario(
         _keyword_exception,
@@ -5172,9 +5175,7 @@ def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_
         func: Callable[[], None], *args: object, **kwargs: object
     ) -> None:
         if "error_msg" in kwargs:
-            raise TypeError(
-                "safe_execute() got an unexpected keyword argument 'error_msg'"
-            )
+            raise TypeError(SAFE_EXECUTE_UNEXPECTED_ERROR_MSG)
         if args:
             func()
             return
@@ -5190,11 +5191,9 @@ def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_
         _func: Callable[[], None], *args: object, **kwargs: object
     ) -> None:
         if "error_msg" in kwargs:
-            raise TypeError(
-                "safe_execute() got an unexpected keyword argument 'error_msg'"
-            )
+            raise TypeError(SAFE_EXECUTE_UNEXPECTED_ERROR_MSG)
         if args:
-            raise TypeError("handler raised type error")
+            raise TypeError(SAFE_EXECUTE_HANDLER_TYPE_ERROR_MSG)
         raise AssertionError("callable-only path should not execute")
 
     _run_scenario(
@@ -5207,14 +5206,10 @@ def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_
         _func: Callable[[], None], *args: object, **kwargs: object
     ) -> None:
         if "error_msg" in kwargs:
-            raise TypeError(
-                "safe_execute() got an unexpected keyword argument 'error_msg'"
-            )
+            raise TypeError(SAFE_EXECUTE_UNEXPECTED_ERROR_MSG)
         if args:
-            raise TypeError(
-                "takes 1 positional argument but 2 positional arguments were given"
-            )
-        raise RuntimeError("callable-only failed")
+            raise TypeError(SAFE_EXECUTE_POSITIONAL_MISMATCH_ERROR_MSG)
+        raise RuntimeError(SAFE_EXECUTE_CALLABLE_ONLY_ERROR_MSG)
 
     _run_scenario(
         _callable_only_exception,
@@ -5478,9 +5473,7 @@ def test_discovery_manager_accepts_discover_underscore_only_factory() -> None:
     assert devices == [filtered_device]
 
 
-def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> (
-    None
-):
+def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> None:
     """Verify discovery prefers configured ``_discover`` over unconfigured ``discover``.
 
     Returns
@@ -6437,7 +6430,7 @@ def test_register_notifications_safe_call_inline_fallback_when_safe_execute_unco
         def has_characteristic(self, uuid: str) -> bool:
             return uuid in {LOGRADIO_UUID, FROMNUM_UUID}
 
-        def start_notify(self, *args: Any, **kwargs: Any) -> None:
+        def start_notify(self, *args: object, **kwargs: object) -> None:
             _ = kwargs
             if len(args) >= 2:
                 self.callbacks[str(args[0])] = cast(
@@ -6486,7 +6479,7 @@ def test_register_notifications_safe_execute_fallback_still_invokes_handler(
         def has_characteristic(self, uuid: str) -> bool:
             return uuid in {LOGRADIO_UUID, FROMNUM_UUID}
 
-        def start_notify(self, *args: Any, **kwargs: Any) -> None:
+        def start_notify(self, *args: object, **kwargs: object) -> None:
             _ = kwargs
             if len(args) >= 2:
                 self.callbacks[str(args[0])] = cast(
@@ -6497,11 +6490,9 @@ def test_register_notifications_safe_execute_fallback_still_invokes_handler(
         _func: Callable[[], None], *args: object, **kwargs: object
     ) -> None:
         if "error_msg" in kwargs:
-            raise TypeError(
-                "safe_execute() got an unexpected keyword argument 'error_msg'"
-            )
+            raise TypeError(SAFE_EXECUTE_UNEXPECTED_ERROR_MSG)
         if args:
-            raise TypeError("legacy positional mismatch")
+            raise TypeError(SAFE_EXECUTE_LEGACY_POSITIONAL_MISMATCH_ERROR_MSG)
         raise AssertionError("callable-only probe should be skipped in this path")
 
     client = _ClientWithCallbacks()
@@ -6544,7 +6535,7 @@ def test_register_notifications_retries_fromnum_notify_acquired_once(
         def has_characteristic(self, uuid: str) -> bool:
             return uuid == FROMNUM_UUID
 
-        def start_notify(self, *args: Any, **kwargs: Any) -> None:
+        def start_notify(self, *args: object, **kwargs: object) -> None:
             _ = kwargs
             if args and args[0] == FROMNUM_UUID:
                 self.fromnum_start_attempts += 1
@@ -6578,7 +6569,7 @@ def test_register_notifications_re_raises_non_notify_acquired_dbus_error(
         def has_characteristic(self, uuid: str) -> bool:
             return uuid == FROMNUM_UUID
 
-        def start_notify(self, *args: Any, **kwargs: Any) -> None:
+        def start_notify(self, *args: object, **kwargs: object) -> None:
             _ = kwargs
             if args and args[0] == FROMNUM_UUID:
                 raise BleakDBusError(
@@ -6612,7 +6603,7 @@ def test_register_notifications_falls_back_to_polling_after_repeated_notify_acqu
         def has_characteristic(self, uuid: str) -> bool:
             return uuid == FROMNUM_UUID
 
-        def start_notify(self, *args: Any, **kwargs: Any) -> None:
+        def start_notify(self, *args: object, **kwargs: object) -> None:
             _ = kwargs
             if args and args[0] == FROMNUM_UUID:
                 self.fromnum_start_attempts += 1

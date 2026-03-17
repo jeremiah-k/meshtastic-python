@@ -436,9 +436,9 @@ def test_management_helpers_cover_factory_and_target_edge_paths(
 
     def _reject_kwarg(address: str, **kwargs: object) -> DummyClient:
         if kwargs:
-            raise TypeError(
+            raise TypeError(  # noqa: TRY003 - intentional test fixture message shape
                 "factory() got an unexpected keyword argument 'log_if_no_address'"
-            )  # noqa: TRY003 - intentional test fixture message shape
+            )
         client = DummyClient()
         client.address = address
         return client
@@ -530,7 +530,7 @@ def test_resolve_management_target_existing_client_explicit_address_paths(
             start_context,
         )
         assert target == "AA:BB:CC:DD:EE:FF"
-        assert active_client is refreshed_client
+        assert active_client is None
         assert resolved_addresses == ["target-id"]
     finally:
         iface.close()

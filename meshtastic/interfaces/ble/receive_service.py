@@ -226,13 +226,7 @@ class BLEReceiveRecoveryService:
             timeout=wait_timeout,
         )
         poll_without_notify = False
-        raw_ever_connected = getattr(iface, "_ever_connected", False)
-        if _is_unconfigured_mock_member(raw_ever_connected):
-            ever_connected = False
-        elif isinstance(raw_ever_connected, bool):
-            ever_connected = raw_ever_connected
-        else:
-            ever_connected = False
+        ever_connected = BLELifecycleService._ever_connected_flag(iface)
         if not event_signaled:
             if (
                 ever_connected
@@ -791,7 +785,6 @@ class BLEReceiveRecoveryService:
             _sleep(iface._retry_policy_get_delay(transient_policy, attempt_index))
             return
         iface._read_retry_count = 0
-        logger.warning("Persistent BLE read error after retries", exc_info=True)
         raise iface.BLEError(ERROR_READING_BLE) from error
 
     @staticmethod
