@@ -84,6 +84,131 @@ class _OwnershipSnapshot:
     prior_ever_connected: bool
 
 
+class BLELifecycleController:
+    """Instance-bound collaborator for BLE lifecycle responsibilities."""
+
+    def __init__(self, iface: "BLEInterface") -> None:
+        """Bind lifecycle orchestration helpers to a specific interface."""
+        self._iface = iface
+
+    def set_receive_wanted(self, *, want_receive: bool) -> None:
+        """Request or clear the receive loop on the bound interface."""
+        BLELifecycleService._set_receive_wanted(self._iface, want_receive=want_receive)
+
+    def should_run_receive_loop(self) -> bool:
+        """Return whether receive loop should continue for the bound interface."""
+        return BLELifecycleService._should_run_receive_loop(self._iface)
+
+    def start_receive_thread(self, *, name: str, reset_recovery: bool = True) -> None:
+        """Start receive thread for the bound interface."""
+        BLELifecycleService._start_receive_thread(
+            self._iface,
+            name=name,
+            reset_recovery=reset_recovery,
+        )
+
+    def handle_disconnect(
+        self,
+        source: str,
+        *,
+        client: "BLEClient | None" = None,
+        bleak_client: BleakRootClient | None = None,
+    ) -> bool:
+        """Handle disconnect sequence for the bound interface."""
+        return BLELifecycleService._handle_disconnect(
+            self._iface,
+            source,
+            client=client,
+            bleak_client=bleak_client,
+        )
+
+    def on_ble_disconnect(self, client: BleakRootClient) -> None:
+        """Handle Bleak disconnect callback for the bound interface."""
+        BLELifecycleService._on_ble_disconnect(self._iface, client)
+
+    def schedule_auto_reconnect(self) -> None:
+        """Schedule reconnect worker for the bound interface."""
+        BLELifecycleService._schedule_auto_reconnect(self._iface)
+
+    def verify_and_publish_connected(
+        self,
+        connected_client: "BLEClient",
+        connected_device_key: str | None,
+        connection_alias_key: str | None,
+        *,
+        restore_address: str | None,
+        restore_last_connection_request: str | None,
+    ) -> None:
+        """Verify ownership and publish connected side effects."""
+        BLELifecycleService._verify_and_publish_connected(
+            self._iface,
+            connected_client,
+            connected_device_key,
+            connection_alias_key,
+            restore_address=restore_address,
+            restore_last_connection_request=restore_last_connection_request,
+        )
+
+    def emit_verified_connection_side_effects(
+        self, connected_client: "BLEClient"
+    ) -> None:
+        """Emit verified-connection side effects for the bound interface."""
+        BLELifecycleService._emit_verified_connection_side_effects(
+            self._iface,
+            connected_client,
+        )
+
+    def discard_invalidated_connected_client(
+        self,
+        client: "BLEClient",
+        *,
+        restore_address: str | None = None,
+        restore_last_connection_request: str | None = None,
+    ) -> None:
+        """Discard stale connect result for the bound interface."""
+        BLELifecycleService._discard_invalidated_connected_client(
+            self._iface,
+            client,
+            restore_address=restore_address,
+            restore_last_connection_request=restore_last_connection_request,
+        )
+
+    def finalize_connection_gates(
+        self,
+        connected_client: "BLEClient",
+        connected_device_key: str | None,
+        connection_alias_key: str | None,
+    ) -> None:
+        """Finalize gate ownership after successful connect."""
+        BLELifecycleService._finalize_connection_gates(
+            self._iface,
+            connected_client,
+            connected_device_key,
+            connection_alias_key,
+        )
+
+    def is_owned_connected_client(self, client: "BLEClient") -> bool:
+        """Return whether the bound interface still owns the provided client."""
+        return BLELifecycleService._is_owned_connected_client(self._iface, client)
+
+    def close(
+        self,
+        *,
+        management_shutdown_wait_timeout: float,
+        management_wait_poll_seconds: float,
+    ) -> None:
+        """Close the bound interface and lifecycle resources."""
+        BLELifecycleService._close(
+            self._iface,
+            management_shutdown_wait_timeout=management_shutdown_wait_timeout,
+            management_wait_poll_seconds=management_wait_poll_seconds,
+        )
+
+    def disconnect_and_close_client(self, client: "BLEClient") -> None:
+        """Disconnect and close the provided client for the bound interface."""
+        BLELifecycleService._disconnect_and_close_client(self._iface, client)
+
+
 class BLELifecycleService:
     """Service helpers for BLEInterface lifecycle responsibilities."""
 

@@ -3,12 +3,12 @@
 
 ## Execution Progress
 
-- Program status: **PASS 1 In Progress**
-- Last updated: **2026-03-17 (review-integration sweep complete)**
+- Program status: **PASS 1 Complete**
+- Last updated: **2026-03-17 (PASS 1 closure sweep complete)**
 
 ### Progress Log
 
-#### PASS 1 — BLE Ownership Refactor (In Progress)
+#### PASS 1 — BLE Ownership Refactor (Complete)
 
 - Completed in current cycle:
   - Introduced a real instance-bound collaborator for BLE management commands (`BLEManagementCommandHandler`) in `management_service.py`.
@@ -27,14 +27,22 @@
     - clarified that underscore-prefixed canonical symbols are implementation details,
     - marked `_lock` row as internal compatibility alias.
   - Consolidated BLE utils imports in `compatibility_service.py` for style consistency.
+  - Completed runtime collaboratorization for remaining BLE orchestration services:
+    - Added `BLELifecycleController` in `lifecycle_service.py`.
+    - Added `BLEReceiveRecoveryController` in `receive_service.py`.
+    - Added `BLECompatibilityEventPublisher` in `compatibility_service.py`.
+  - Rewired `BLEInterface` runtime lifecycle/receive/compatibility paths to instance-bound collaborators instead of direct static service invocation.
+  - Added lazy collaborator getters in `BLEInterface` for object-constructed and monkeypatch-heavy test compatibility.
+  - Updated `BLE.md` architecture and boundary documentation to reflect the current collaborator-based runtime model.
 - Validation completed:
   - `ruff check` on touched files: passed.
   - `poetry run pytest -q tests/test_ble_interface_core.py tests/test_ble_connection_discovery_client_targets.py tests/test_ble_lifecycle_receive_targets.py tests/test_ble_utils_service_targets.py`: **264 passed**.
+  - `poetry run pytest -q tests/test_ble_interface_core.py tests/test_ble_lifecycle_receive_targets.py tests/test_ble_utils_service_targets.py tests/test_ble_integration_scenarios.py`: **256 passed**.
   - `poetry run pytest -q`: **1454 passed, 3 skipped, 92 deselected**.
-- Remaining PASS 1 work (next chunk):
-  - Convert lifecycle/receive/compatibility service entrypoints to instance-owned collaborators.
-  - Reduce collaborator access to broad interface internals via narrower dependency interfaces/protocols.
-  - Move collaborator-owned orchestration state out of `BLEInterface` into dedicated controllers.
+- PASS 1 completion notes:
+  - Runtime BLE service calls now route through bound collaborators rather than static service classes.
+  - Management/lifecycle/receive/compatibility orchestration responsibilities are now separated behind explicit collaborator objects.
+  - Public behavior and compatibility pathways were preserved while shifting ownership boundaries.
 
 You are operating as a project coordinator responsible for executing a **large-scale architectural refinement program** on an existing codebase.
 

@@ -45,7 +45,9 @@ from bleak.exc import BleakDBusError, BleakError
 
 from meshtastic import publishingThread
 from meshtastic.interfaces.ble.client import BLEClient
-from meshtastic.interfaces.ble.compatibility_service import BLECompatibilityEventService
+from meshtastic.interfaces.ble.compatibility_service import (
+    BLECompatibilityEventPublisher,
+)
 from meshtastic.interfaces.ble.connection import (
     ClientManager,
     ConnectionOrchestrator,
@@ -100,7 +102,7 @@ from meshtastic.interfaces.ble.gating import (
     _mark_connecting,
     _mark_disconnected,
 )
-from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
+from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleController
 from meshtastic.interfaces.ble.management_service import (
     BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS as _BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS,
 )
@@ -109,7 +111,7 @@ from meshtastic.interfaces.ble.management_service import (
 )
 from meshtastic.interfaces.ble.notifications import NotificationManager
 from meshtastic.interfaces.ble.policies import RetryPolicy
-from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryService
+from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryController
 from meshtastic.interfaces.ble.reconnection import ReconnectScheduler
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from meshtastic.interfaces.ble.utils import (
@@ -326,6 +328,9 @@ class BLEInterface(MeshInterface):
             self.thread_coordinator,
             self,
         )
+        self._lifecycle_controller = BLELifecycleController(self)
+        self._receive_recovery_controller = BLEReceiveRecoveryController(self)
+        self._compatibility_publisher = BLECompatibilityEventPublisher(self)
 
         # Event coordination for reconnection and read operations
         self._read_trigger = self.thread_coordinator._create_event(
@@ -433,7 +438,7 @@ class BLEInterface(MeshInterface):
         want_receive : bool
             True to request the receive loop to run, False to stop it.
         """
-        BLELifecycleService._set_receive_wanted(self, want_receive=want_receive)
+        self._get_lifecycle_controller().set_receive_wanted(want_receive=want_receive)
 
     def _should_run_receive_loop(self) -> bool:
         """Return whether the receive loop should run.
@@ -443,7 +448,7 @@ class BLEInterface(MeshInterface):
         bool
             `True` if the receive loop is desired and the interface is not closed, `False` otherwise.
         """
-        return BLELifecycleService._should_run_receive_loop(self)
+        return self._get_lifecycle_controller().should_run_receive_loop()
 
     def _start_receive_thread(self, *, name: str, reset_recovery: bool = True) -> None:
         """Create and start the background receive thread, updating `_receiveThread`.
@@ -457,8 +462,9 @@ class BLEInterface(MeshInterface):
             successful thread start; if False, preserve the counter for recovery
             backoff tracking. Defaults to True.
         """
-        BLELifecycleService._start_receive_thread(
-            self, name=name, reset_recovery=reset_recovery
+        self._get_lifecycle_controller().start_receive_thread(
+            name=name,
+            reset_recovery=reset_recovery,
         )
 
     @staticmethod
@@ -590,8 +596,7 @@ class BLEInterface(MeshInterface):
             Intentionally propagated when delegated lifecycle-service helpers
             are unavailable on compatibility doubles.
         """
-        return BLELifecycleService._handle_disconnect(
-            self,
+        return self._get_lifecycle_controller().handle_disconnect(
             source,
             client=client,
             bleak_client=bleak_client,
@@ -605,14 +610,14 @@ class BLEInterface(MeshInterface):
         client : BleakRootClient
             The Bleak client instance that disconnected.
         """
-        BLELifecycleService._on_ble_disconnect(self, client)
+        self._get_lifecycle_controller().on_ble_disconnect(client)
 
     def _schedule_auto_reconnect(self) -> None:
         """Schedule repeated automatic reconnection attempts until a connection is established or shutdown begins.
 
         Does nothing if automatic reconnection is disabled or the interface is closing or already closed.
         """
-        BLELifecycleService._schedule_auto_reconnect(self)
+        self._get_lifecycle_controller().schedule_auto_reconnect()
 
     def _handle_malformed_fromnum(self, reason: str, exc_info: bool = False) -> None:
         """Track malformed FROMNUM notifications and log occurrences; emit a warning when a configured threshold is reached.
@@ -1550,6 +1555,30 @@ class BLEInterface(MeshInterface):
             expected_target_address
         ):
             raise self.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
+
+    def _get_lifecycle_controller(self) -> BLELifecycleController:
+        """Return lifecycle collaborator, creating one lazily when needed."""
+        controller = getattr(self, "_lifecycle_controller", None)
+        if controller is None:
+            controller = BLELifecycleController(self)
+            self._lifecycle_controller = controller
+        return cast(BLELifecycleController, controller)
+
+    def _get_receive_recovery_controller(self) -> BLEReceiveRecoveryController:
+        """Return receive/recovery collaborator, creating one lazily when needed."""
+        controller = getattr(self, "_receive_recovery_controller", None)
+        if controller is None:
+            controller = BLEReceiveRecoveryController(self)
+            self._receive_recovery_controller = controller
+        return cast(BLEReceiveRecoveryController, controller)
+
+    def _get_compatibility_publisher(self) -> BLECompatibilityEventPublisher:
+        """Return compatibility publisher collaborator, creating one lazily when needed."""
+        publisher = getattr(self, "_compatibility_publisher", None)
+        if publisher is None:
+            publisher = BLECompatibilityEventPublisher(self)
+            self._compatibility_publisher = publisher
+        return cast(BLECompatibilityEventPublisher, publisher)
 
     def _get_management_command_handler(self) -> BLEManagementCommandHandler:
         """Return the bound management-command collaborator.
@@ -2585,8 +2614,7 @@ class BLEInterface(MeshInterface):
         restore_last_connection_request: str | None,
     ) -> None:
         """Publish `_connected()` only if ownership is still valid at publish time."""
-        BLELifecycleService._verify_and_publish_connected(
-            self,
+        self._get_lifecycle_controller().verify_and_publish_connected(
             connected_client,
             connected_device_key,
             connection_alias_key,
@@ -2598,8 +2626,8 @@ class BLEInterface(MeshInterface):
         self, connected_client: BLEClient
     ) -> None:
         """Emit reconnect signaling/logging only after verified connect publish."""
-        BLELifecycleService._emit_verified_connection_side_effects(
-            self, connected_client
+        self._get_lifecycle_controller().emit_verified_connection_side_effects(
+            connected_client
         )
 
     def _discard_invalidated_connected_client(
@@ -2623,8 +2651,7 @@ class BLEInterface(MeshInterface):
             Normalized request identifier to restore when the connection result
             is discarded before ownership is finalized.
         """
-        BLELifecycleService._discard_invalidated_connected_client(
-            self,
+        self._get_lifecycle_controller().discard_invalidated_connected_client(
             client,
             restore_address=restore_address,
             restore_last_connection_request=restore_last_connection_request,
@@ -2649,8 +2676,7 @@ class BLEInterface(MeshInterface):
         connection_alias_key : str | None
             Optional alias key used when claiming connection gates, or `None` if not used.
         """
-        BLELifecycleService._finalize_connection_gates(
-            self,
+        self._get_lifecycle_controller().finalize_connection_gates(
             connected_client,
             connected_device_key,
             connection_alias_key,
@@ -2670,7 +2696,7 @@ class BLEInterface(MeshInterface):
             `True` when the interface is not closed, still references `client`,
             and the state machine reports CONNECTED.
         """
-        return BLELifecycleService._is_owned_connected_client(self, client)
+        return self._get_lifecycle_controller().is_owned_connected_client(client)
 
     # ---------------------------------------------------------------------
     # Main connection method
@@ -2887,8 +2913,9 @@ class BLEInterface(MeshInterface):
         bool
             `True` if the read loop should continue to allow auto-reconnect, `False` otherwise.
         """
-        return BLEReceiveRecoveryService._handle_read_loop_disconnect(
-            self, error_message, previous_client
+        return self._get_receive_recovery_controller().handle_read_loop_disconnect(
+            error_message,
+            previous_client,
         )
 
     def _receive_from_radio_impl(self) -> None:
@@ -2901,7 +2928,7 @@ class BLEInterface(MeshInterface):
         Exception
             For unexpected errors in the receive thread that trigger recovery.
         """
-        BLEReceiveRecoveryService._receive_from_radio_impl(self)
+        self._get_receive_recovery_controller().receive_from_radio_impl()
 
     def _recover_receive_thread(self, disconnect_reason: str) -> None:
         """Handle receive-thread failure and trigger guarded recovery.
@@ -2911,7 +2938,7 @@ class BLEInterface(MeshInterface):
         disconnect_reason : str
             Reason string passed to disconnect handling for diagnostics.
         """
-        BLEReceiveRecoveryService._recover_receive_thread(self, disconnect_reason)
+        self._get_receive_recovery_controller().recover_receive_thread(disconnect_reason)
 
     def _read_from_radio_with_retries(
         self,
@@ -2937,8 +2964,9 @@ class BLEInterface(MeshInterface):
         bytes | None
             The payload bytes when a non-empty read occurs, or `None` if no non-empty payload was obtained after retries.
         """
-        return BLEReceiveRecoveryService._read_from_radio_with_retries(
-            self, client, retry_on_empty=retry_on_empty
+        return self._get_receive_recovery_controller().read_from_radio_with_retries(
+            client,
+            retry_on_empty=retry_on_empty,
         )
 
     def _handle_transient_read_error(
@@ -2958,14 +2986,14 @@ class BLEInterface(MeshInterface):
         BLEInterface.BLEError
             When the retry policy is exhausted and the read should be treated as persistent.
         """
-        BLEReceiveRecoveryService._handle_transient_read_error(self, error)
+        self._get_receive_recovery_controller().handle_transient_read_error(error)
 
     def _log_empty_read_warning(self) -> None:
         """Emit a throttled warning when repeated empty FROMRADIO BLE reads are observed.
 
         If the cooldown period has elapsed, log a warning that an empty read retry limit was exceeded and include how many warnings were suppressed during the last cooldown window; otherwise increment the suppressed-warning counter and log a debug message with the current suppressed count and cooldown duration.
         """
-        BLEReceiveRecoveryService._log_empty_read_warning(self)
+        self._get_receive_recovery_controller().log_empty_read_warning()
 
     def _send_to_radio_impl(self, toRadio: mesh_pb2.ToRadio) -> None:
         """Send a protobuf ToRadio message over the TORADIO BLE characteristic.
@@ -3034,8 +3062,7 @@ class BLEInterface(MeshInterface):
 
     def close(self) -> None:
         """Shut down the BLE interface and release associated resources."""
-        BLELifecycleService._close(
-            self,
+        self._get_lifecycle_controller().close(
             management_shutdown_wait_timeout=_MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS,
             management_wait_poll_seconds=_MANAGEMENT_CONNECT_WAIT_POLL_SECONDS,
         )
@@ -3063,11 +3090,7 @@ class BLEInterface(MeshInterface):
         timeout : float | None
             Maximum seconds to wait for the publish queue to flush. If `None`, uses `DISCONNECT_TIMEOUT_SECONDS`. (Default value = None)
         """
-        BLECompatibilityEventService.wait_for_disconnect_notifications(
-            self,
-            timeout,
-            publishing_thread=self._get_publishing_thread(),
-        )
+        self._get_compatibility_publisher().wait_for_disconnect_notifications(timeout)
 
     def _disconnect_and_close_client(self, client: BLEClient) -> None:
         """Ensure the given BLE client is disconnected and its resources are released.
@@ -3077,7 +3100,7 @@ class BLEInterface(MeshInterface):
         client : BLEClient
             BLE client to disconnect and close; operation is idempotent and safe to call on already-closed clients.
         """
-        BLELifecycleService._disconnect_and_close_client(self, client)
+        self._get_lifecycle_controller().disconnect_and_close_client(client)
 
     def _drain_publish_queue(self, flush_event: Event) -> None:
         """Drain and run pending publish callbacks on the current thread until the queue is empty or the provided event is set.
@@ -3089,11 +3112,7 @@ class BLEInterface(MeshInterface):
         flush_event : Event
             When set, stop draining immediately.
         """
-        BLECompatibilityEventService.drain_publish_queue(
-            self,
-            flush_event,
-            publishing_thread=self._get_publishing_thread(),
-        )
+        self._get_compatibility_publisher().drain_publish_queue(flush_event)
 
     def _publish_connection_status(self, *, connected: bool) -> None:
         """Enqueue legacy connection-status publication via compatibility service.
@@ -3108,10 +3127,8 @@ class BLEInterface(MeshInterface):
         None
             Publication is best-effort and performed for side effects.
         """
-        BLECompatibilityEventService.publish_connection_status(
-            self,
-            connected=connected,
-            publishing_thread=self._get_publishing_thread(),
+        self._get_compatibility_publisher().publish_connection_status(
+            connected=connected
         )
 
     def _disconnected(self) -> None:

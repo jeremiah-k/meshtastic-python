@@ -35,6 +35,50 @@ COORDINATOR_WAIT_FALLBACK_SLEEP_SEC = 0.001
 RECEIVE_THREAD_FATAL_REASON = "receive_thread_fatal"
 
 
+class BLEReceiveRecoveryController:
+    """Instance-bound collaborator for BLE receive-loop and recovery paths."""
+
+    def __init__(self, iface: "BLEInterface") -> None:
+        """Bind receive/recovery helpers to a specific interface instance."""
+        self._iface = iface
+
+    def handle_read_loop_disconnect(
+        self, error_message: str, previous_client: BLEClient
+    ) -> bool:
+        """Handle read-loop disconnect logic for the bound interface."""
+        return BLEReceiveRecoveryService._handle_read_loop_disconnect(
+            self._iface, error_message, previous_client
+        )
+
+    def receive_from_radio_impl(self) -> None:
+        """Run the receive loop for the bound interface."""
+        BLEReceiveRecoveryService._receive_from_radio_impl(self._iface)
+
+    def recover_receive_thread(self, disconnect_reason: str) -> None:
+        """Recover the receive thread for the bound interface."""
+        BLEReceiveRecoveryService._recover_receive_thread(
+            self._iface, disconnect_reason
+        )
+
+    def read_from_radio_with_retries(
+        self, client: BLEClient, *, retry_on_empty: bool = True
+    ) -> bytes | None:
+        """Read FROMRADIO payload for the bound interface with retry policy."""
+        return BLEReceiveRecoveryService._read_from_radio_with_retries(
+            self._iface,
+            client,
+            retry_on_empty=retry_on_empty,
+        )
+
+    def handle_transient_read_error(self, error: BleakError | BLEClient.BLEError) -> None:
+        """Apply transient-read retry policy for the bound interface."""
+        BLEReceiveRecoveryService._handle_transient_read_error(self._iface, error)
+
+    def log_empty_read_warning(self) -> None:
+        """Emit empty-read warning for the bound interface."""
+        BLEReceiveRecoveryService._log_empty_read_warning(self._iface)
+
+
 class BLEReceiveRecoveryService:
     """Service helpers for BLE receive-loop and recovery behavior."""
 
