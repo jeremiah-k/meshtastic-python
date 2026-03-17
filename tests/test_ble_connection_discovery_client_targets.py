@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Iterator
 from threading import Event, RLock
 from types import SimpleNamespace
-from typing import Any, Iterator
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -681,13 +682,13 @@ def test_orchestrator_create_connect_direct_retry_remaining_branches(
             create_clients
         )
 
+        connect_attempt_count = [0]
+
         def _connect_side_effect(*_args: object, **_kwargs: object) -> None:
-            if _connect_side_effect.calls == 0:
-                _connect_side_effect.calls += 1
+            if connect_attempt_count[0] == 0:
+                connect_attempt_count[0] += 1
                 raise BleakDeviceNotFoundError("device not found")
             raise RuntimeError("discovery connect failed")
-
-        _connect_side_effect.calls = 0
         orchestrator._client_manager_connect_client = _connect_side_effect
         orchestrator._compat_find_device = lambda _target: SimpleNamespace(
             address="AA:BB"

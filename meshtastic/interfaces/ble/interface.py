@@ -698,8 +698,21 @@ class BLEInterface(MeshInterface):
         try:
             safe_execute(handler_thunk, error_msg)
             return
+        except TypeError as exc:
+            # Most TypeError cases here are compatibility signature mismatches.
+            # Keep probing the callable-only variant before invoking fallback.
+            if "positional argument" not in str(exc):
+                logger.debug(
+                    "safe_execute positional probe raised TypeError for notification handler (%s); trying callable-only fallback.",
+                    error_msg,
+                    exc_info=True,
+                )
         except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
-            pass
+            logger.debug(
+                "safe_execute positional probe failed for notification handler (%s); trying callable-only fallback.",
+                error_msg,
+                exc_info=True,
+            )
 
         try:
             safe_execute(handler_thunk)
@@ -2099,7 +2112,13 @@ class BLEInterface(MeshInterface):
             error_message=ERROR_RETRY_POLICY_MISSING_GET_DELAY,
             args=(attempt,),
         )
-        return float(result) if isinstance(result, (int, float)) else 0.0
+        if isinstance(result, (int, float)):
+            return float(result)
+        logger.debug(
+            "Retry policy get_delay returned non-numeric %r; defaulting to 0.0",
+            type(result).__name__,
+        )
+        return 0.0
 
     @property
     def _connection_state(self) -> ConnectionState:

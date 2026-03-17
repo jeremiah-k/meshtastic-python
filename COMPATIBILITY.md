@@ -162,8 +162,8 @@ Semantic deprecation:
 | `meshtastic.interfaces.ble.client`                | `stop_notify()`                      | `stopNotify()`                |
 | `meshtastic.interfaces.ble.client`                | `async_await()`                      | `_async_await()`              |
 | `meshtastic.interfaces.ble.client`                | `async_run()`                        | `_async_run()`                |
-| `meshtastic.interfaces.ble.errors`                | `safe_execute()`                     | `_safe_execute()`             |
-| `meshtastic.interfaces.ble.errors`                | `safe_cleanup()`                     | `_safe_cleanup()`             |
+| `meshtastic.interfaces.ble.errors`                | `BLEErrorHandler.safe_execute()`     | `BLEErrorHandler._safe_execute()` |
+| `meshtastic.interfaces.ble.errors`                | `BLEErrorHandler.safe_cleanup()`     | `BLEErrorHandler._safe_cleanup()` |
 | `meshtastic.interfaces.ble.compatibility_service` | `publish_connection_status_legacy()` | `publish_connection_status()` |
 | `meshtastic.interfaces.ble.interface`             | `find_device()`                      | `findDevice()`                |
 | `meshtastic.interfaces.ble.interface`             | `from_num_handler()`                 | `_from_num_handler()`         |

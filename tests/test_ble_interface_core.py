@@ -4813,13 +4813,14 @@ def test_start_receive_thread_clears_cached_thread_when_start_fails(
             raising=True,
         )
 
+        if invoke_start == "facade":
+            start_receive = iface._start_receive_thread
+        else:
+            def start_receive(*, name: str) -> None:
+                BLELifecycleService._start_receive_thread(iface, name=name)
+
         with pytest.raises(RuntimeError, match=START_FAILED_MSG):
-            if invoke_start == "facade":
-                iface._start_receive_thread(name="BLEReceiveStartFailure")
-            else:
-                BLELifecycleService._start_receive_thread(
-                    iface, name="BLEReceiveStartFailure"
-                )
+            start_receive(name="BLEReceiveStartFailure")
 
         assert iface._receiveThread is None
     finally:
@@ -5157,9 +5158,7 @@ def test_discovery_manager_accepts_discover_underscore_only_factory() -> None:
     assert devices == [filtered_device]
 
 
-def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> (
-    None
-):
+def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> None:
     """Verify discovery prefers configured ``_discover`` over unconfigured ``discover``.
 
     Returns

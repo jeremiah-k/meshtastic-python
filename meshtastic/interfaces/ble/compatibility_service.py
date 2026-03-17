@@ -11,11 +11,7 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
-)
-from meshtastic.interfaces.ble.utils import (
     _resolve_safe_execute as _resolve_safe_execute_hook,
-)
-from meshtastic.interfaces.ble.utils import (
     _safe_execute_through_adapter,
 )
 

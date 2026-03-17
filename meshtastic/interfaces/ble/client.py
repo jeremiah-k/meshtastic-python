@@ -567,15 +567,11 @@ class BLEClient:
         """
 
         def operation() -> Coroutine[Any, Any, object]:
-            from typing import cast as typing_cast
-
             bleak_client = self._require_bleak_client(not_initialized_error)
             method = getattr(bleak_client, method_name, None)
             if not callable(method) or _is_unconfigured_mock_callable(method):
                 raise self.BLEError(unsupported_error)
-            return typing_cast(
-                Coroutine[Any, Any, object], method(**(call_kwargs or {}))
-            )
+            return cast(Coroutine[Any, Any, object], method(**(call_kwargs or {})))
 
         self._run_management_call(
             operation,
