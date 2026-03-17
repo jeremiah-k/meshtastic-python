@@ -169,7 +169,8 @@ def test_thread_start_probe_handles_invalid_ident_and_is_alive_errors() -> None:
 
 def test_compatibility_event_service_enqueue_paths() -> None:
     """Callback enqueue helper should cover non-blocking and fallback queue paths."""
-    callback = lambda: None
+    def callback() -> None:
+        return None
 
     dead_thread = SimpleNamespace(
         queueWork=lambda _cb: None,
@@ -196,18 +197,20 @@ def test_compatibility_event_service_enqueue_paths() -> None:
     )
 
     full_nonblocking = SimpleNamespace(
-        queueWork=lambda _cb: None,
+        queueWork=lambda cb: queued_from_full.append(cb),
         queue=SimpleNamespace(put_nowait=lambda _cb: (_ for _ in ()).throw(Full())),
         thread=None,
     )
+    queued_from_full: list[object] = []
     assert (
         BLECompatibilityEventService._enqueue_publish_callback(
             full_nonblocking,
             callback,
             prefer_non_blocking=True,
         )
-        is False
+        is True
     )
+    assert queued_from_full == [callback]
 
     queued: list[object] = []
     queue_work_only = SimpleNamespace(
@@ -357,11 +360,12 @@ def test_publish_connection_status_branches(monkeypatch: pytest.MonkeyPatch) -> 
     )
 
 
-def test_coordination_inert_thread_start_is_noop() -> None:
-    """Starting an inert coordinator thread should only warn and return."""
+def test_coordination_inert_thread_start_raises() -> None:
+    """Starting an inert coordinator thread should raise a start failure."""
     coordinator = ThreadCoordinator()
     inert = _InertThread(name="never-start")
-    coordinator._start_thread(inert)
+    with pytest.raises(RuntimeError, match="Cannot start inert thread"):
+        coordinator._start_thread(inert)
 
 
 def test_reconnection_error_types_and_hook_resolution() -> None:
@@ -433,29 +437,39 @@ def test_management_helpers_cover_factory_and_target_edge_paths(
     assert _is_blank_or_malformed_address_like("AA:BB:CC") is True
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-    iface._finish_management_operation = MagicMock()
-    iface._validate_management_preconditions = MagicMock(return_value=None)
-    iface._get_management_client_if_available = MagicMock(
-        side_effect=RuntimeError("target resolution failure")
-    )
+    try:
+        iface._finish_management_operation = MagicMock()
+        iface._validate_management_preconditions = MagicMock(return_value=None)
+        iface._get_management_client_if_available = MagicMock(
+            side_effect=RuntimeError("target resolution failure")
+        )
 
-    with pytest.raises(RuntimeError, match="target resolution failure"):
-        BLEManagementCommandsService._start_management_phase(iface, None)
-    iface._finish_management_operation.assert_called_once()
-    iface.close()
+        with pytest.raises(RuntimeError, match="target resolution failure"):
+            BLEManagementCommandsService._start_management_phase(iface, None)
+        iface._finish_management_operation.assert_called_once()
+    finally:
+        iface.close()
 
-    start_context = SimpleNamespace(
-        target_address=None,
-        use_existing_client_without_resolved_address=True,
-        expected_implicit_binding="AA:BB:CC:DD:EE:FF",
-    )
-    iface._get_management_client_if_available = lambda _address: DummyClient()
-    iface._resolve_target_address_for_management = lambda _address: None
-    iface._validate_management_preconditions = lambda: None
-    iface._get_current_implicit_management_binding_locked = lambda: "11:22:33:44:55:66"
+    fresh_iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    try:
+        start_context = SimpleNamespace(
+            target_address=None,
+            use_existing_client_without_resolved_address=True,
+            expected_implicit_binding="AA:BB:CC:DD:EE:FF",
+        )
+        fresh_iface._get_management_client_if_available = lambda _address: DummyClient()
+        fresh_iface._resolve_target_address_for_management = lambda _address: None
+        fresh_iface._validate_management_preconditions = lambda: None
+        fresh_iface._get_current_implicit_management_binding_locked = (
+            lambda: "11:22:33:44:55:66"
+        )
 
-    with pytest.raises(iface.BLEError, match="changed"):
-        BLEManagementCommandsService._resolve_management_target(iface, None, start_context)
+        with pytest.raises(fresh_iface.BLEError, match="changed"):
+            BLEManagementCommandsService._resolve_management_target(
+                fresh_iface, None, start_context
+            )
+    finally:
+        fresh_iface.close()
 
 
 def test_management_execute_with_client_preserves_command_outcome_on_close_failure(
@@ -463,15 +477,20 @@ def test_management_execute_with_client_preserves_command_outcome_on_close_failu
 ) -> None:
     """Temporary-client close failures should not mask command result."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-    iface._client_manager_safe_close_client = MagicMock(side_effect=RuntimeError("close failed"))
+    try:
+        iface._client_manager_safe_close_client = MagicMock(
+            side_effect=RuntimeError("close failed")
+        )
 
-    result = BLEManagementCommandsService._execute_with_client(
-        iface,
-        client_to_use=DummyClient(),
-        temporary_client=DummyClient(),
-        command=lambda _client: "ok",
-    )
-    assert result == "ok"
+        result = BLEManagementCommandsService._execute_with_client(
+            iface,
+            client_to_use=DummyClient(),
+            temporary_client=DummyClient(),
+            command=lambda _client: "ok",
+        )
+        assert result == "ok"
+    finally:
+        iface.close()
 
 
 def test_management_execute_management_command_existing_client_and_trust_edges(
@@ -524,7 +543,7 @@ def test_management_execute_management_command_existing_client_and_trust_edges(
         def run(*_args: object, **_kwargs: object) -> object:
             raise ValueError("unexpected non-oserror")
 
-    with pytest.raises(ValueError, match="unexpected non-oserror"):
+    with pytest.raises(bluetooth_iface.BLEError, match="trust"):
         BLEManagementCommandsService._run_bluetoothctl_trust_command(
             bluetooth_iface,
             "/usr/bin/bluetoothctl",
@@ -681,7 +700,10 @@ def test_compatibility_service_remaining_enqueue_wait_and_drain_branches(
     """Compatibility service should cover remaining enqueue/wait/drain branches."""
     original_drain_publish_queue = BLECompatibilityEventService.drain_publish_queue
     original_safe_execute = BLECompatibilityEventService._safe_execute
-    callback = lambda: None
+
+    def callback() -> None:
+        return None
+
     enqueue_thread = SimpleNamespace(
         queueWork=None,
         queue=SimpleNamespace(put_nowait=lambda _cb: (_ for _ in ()).throw(Full())),

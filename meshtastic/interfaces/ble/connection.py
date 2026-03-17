@@ -587,37 +587,55 @@ class ClientManager:
 
         def run_safe_cleanup(func: Callable[[], object], cleanup_name: str) -> bool:
             """Run cleanup through hook when available, otherwise inline best effort."""
+            cleanup_ran = False
+
+            def _tracked_cleanup() -> object:
+                nonlocal cleanup_ran
+                cleanup_ran = True
+                return func()
+
             if safe_cleanup_hook is not None:
                 try:
-                    return bool(
-                        safe_cleanup_hook(func=func, cleanup_name=cleanup_name)
+                    handled = bool(
+                        safe_cleanup_hook(
+                            func=_tracked_cleanup, cleanup_name=cleanup_name
+                        )
                     )
                 except TypeError as exc:
                     if _is_unexpected_keyword_error(
                         exc, "func"
                     ) or _is_unexpected_keyword_error(exc, "cleanup_name"):
                         try:
-                            return bool(safe_cleanup_hook(func, cleanup_name))
+                            handled = bool(
+                                safe_cleanup_hook(_tracked_cleanup, cleanup_name)
+                            )
                         except Exception:  # noqa: BLE001 - cleanup path must stay best-effort
                             logger.debug(
                                 "Error running safe_cleanup hook for %s",
                                 cleanup_name,
                                 exc_info=True,
                             )
+                            return cleanup_ran
                     else:
                         logger.debug(
                             "Error running safe_cleanup hook for %s",
                             cleanup_name,
                             exc_info=True,
                         )
+                        return cleanup_ran
                 except Exception:  # noqa: BLE001 - cleanup path must stay best-effort
                     logger.debug(
                         "Error running safe_cleanup hook for %s",
                         cleanup_name,
                         exc_info=True,
                     )
+                    return cleanup_ran
+                if handled or cleanup_ran:
+                    return True
+            if cleanup_ran:
+                return True
             try:
-                func()
+                _tracked_cleanup()
             except Exception:  # noqa: BLE001 - cleanup path must stay best-effort
                 return False
             return True

@@ -106,8 +106,9 @@ class BLEErrorHandler:
             return default_return
 
     # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _safe_execute.
-    @staticmethod
+    @classmethod
     def safe_execute(  # noqa: FBT001,FBT002 - compatibility shim intentionally preserves legacy positional booleans.
+        cls,
         func: Callable[[], T],
         default_return: T | None = None,
         log_error: bool = True,
@@ -138,7 +139,7 @@ class BLEErrorHandler:
             Return value from ``func`` on success, otherwise ``default_return``
             when a handled exception occurs and ``reraise`` is False.
         """
-        return BLEErrorHandler._safe_execute(
+        return cls._safe_execute(
             func=func,
             default_return=default_return,
             log_error=log_error,
@@ -184,8 +185,9 @@ class BLEErrorHandler:
             return True
 
     # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _safe_cleanup.
-    @staticmethod
+    @classmethod
     def safe_cleanup(
+        cls,
         func: Callable[[], Any], cleanup_name: str = "cleanup operation"
     ) -> bool:
         """Run a cleanup callable and suppress non-fatal cleanup exceptions.
@@ -203,4 +205,4 @@ class BLEErrorHandler:
         bool
             True when cleanup completed without exceptions, otherwise False.
         """
-        return BLEErrorHandler._safe_cleanup(func=func, cleanup_name=cleanup_name)
+        return cls._safe_cleanup(func=func, cleanup_name=cleanup_name)

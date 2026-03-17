@@ -140,13 +140,16 @@ class BLECompatibilityEventService:
             if thread_is_alive is False:
                 return False
         if prefer_non_blocking:
-            if put_nowait_callback is None:
-                return False
-            try:
-                put_nowait_callback(callback)
+            if put_nowait_callback is not None:
+                try:
+                    put_nowait_callback(callback)
+                    return True
+                except Full:
+                    pass
+            if queue_work_callback is not None:
+                queue_work_callback(callback)
                 return True
-            except Full:
-                return False
+            return False
         if queue_work_callback is not None:
             queue_work_callback(callback)
             return True

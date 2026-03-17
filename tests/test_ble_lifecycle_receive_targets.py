@@ -843,7 +843,7 @@ def test_lifecycle_and_receive_remaining_branch_targets(
             lambda: "fallback-none",
             error_msg="msg",
         )
-        is None
+        == "fallback-none"
     )
 
     def _safe_execute_positional_then_fail(func: Any, *args: object, **kwargs: object) -> object:
@@ -860,7 +860,7 @@ def test_lifecycle_and_receive_remaining_branch_targets(
             lambda: "unused",
             error_msg="msg",
         )
-        is None
+        == "unused"
     )
 
     # lifecycle public thread helper branches
@@ -1376,7 +1376,7 @@ def test_lifecycle_remaining_error_handler_and_invalidation_paths(
             lambda: "unused",
             error_msg="line-243",
         )
-        is None
+        == "unused"
     )
 
     def _hook_runtime_on_positional_with_func(

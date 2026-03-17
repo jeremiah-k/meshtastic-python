@@ -227,57 +227,59 @@ def test_connection_orchestrator_direct_and_retry_exception_paths(
 ) -> None:
     """Direct/retry connect helpers should close clients on exceptional paths."""
     iface, orchestrator = _make_orchestrator(monkeypatch)
+    try:
+        closed_clients: list[object] = []
+        orchestrator._client_manager_safe_close_client = lambda client: closed_clients.append(client)
 
-    closed_clients: list[object] = []
-    orchestrator._client_manager_safe_close_client = lambda client: closed_clients.append(client)
+        class _SimpleClient(DummyClient):
+            pass
 
-    class _SimpleClient(DummyClient):
-        pass
-
-    created_client = _SimpleClient()
-    orchestrator._client_manager_create_client = lambda *_args, **_kwargs: created_client
-    orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: None
-    orchestrator._raise_if_interface_closing = lambda: None
-    orchestrator._finalize_connection = lambda *_args, **_kwargs: (_ for _ in ()).throw(
-        RuntimeError("finalize failed")
-    )
-
-    with pytest.raises(RuntimeError, match="finalize failed"):
-        orchestrator._attempt_direct_connect(
-            target_address="AA:BB:CC:DD:EE:FF",
-            normalized_target="aabbccddeeff",
-            on_disconnect_func=lambda _client: None,
-            pair_on_connect=False,
-            direct_connect_timeout=1.0,
-            register_notifications_func=lambda _client: None,
-            on_connected_func=lambda: None,
-            emit_connected_side_effects=True,
+        created_client = _SimpleClient()
+        orchestrator._client_manager_create_client = lambda *_args, **_kwargs: created_client
+        orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: None
+        orchestrator._raise_if_interface_closing = lambda: None
+        orchestrator._finalize_connection = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("finalize failed")
         )
-    assert created_client in closed_clients
 
-    closed_clients.clear()
-    retry_client = _SimpleClient()
-    orchestrator._client_manager_create_client = lambda *_args, **_kwargs: retry_client
-    orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: (_ for _ in ()).throw(
-        RuntimeError("connect failed")
-    )
+        with pytest.raises(RuntimeError, match="finalize failed"):
+            orchestrator._attempt_direct_connect(
+                target_address="AA:BB:CC:DD:EE:FF",
+                normalized_target="aabbccddeeff",
+                on_disconnect_func=lambda _client: None,
+                pair_on_connect=False,
+                direct_connect_timeout=1.0,
+                register_notifications_func=lambda _client: None,
+                on_connected_func=lambda: None,
+                emit_connected_side_effects=True,
+            )
+        assert created_client in closed_clients
 
-    with pytest.raises(RuntimeError, match="connect failed"):
-        orchestrator._connect_retry_target(
-            connection_target="AA:BB:CC:DD:EE:FF",
-            resolved_address="AA:BB:CC:DD:EE:FF",
-            target_address="AA:BB:CC:DD:EE:FF",
-            skip_discovery_scan=False,
-            on_disconnect_func=lambda _client: None,
-            pair_on_connect=False,
-            retry_connect_timeout=1.0,
-            discovery_connect_timeout=1.0,
+        closed_clients.clear()
+        retry_client = _SimpleClient()
+        orchestrator._client_manager_create_client = lambda *_args, **_kwargs: retry_client
+        orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("connect failed")
         )
-    assert retry_client in closed_clients
 
-    orchestrator.interface = SimpleNamespace()
-    with pytest.raises(AttributeError):
-        orchestrator._compat_find_device("AA:BB:CC:DD:EE:FF")
+        with pytest.raises(RuntimeError, match="connect failed"):
+            orchestrator._connect_retry_target(
+                connection_target="AA:BB:CC:DD:EE:FF",
+                resolved_address="AA:BB:CC:DD:EE:FF",
+                target_address="AA:BB:CC:DD:EE:FF",
+                skip_discovery_scan=False,
+                on_disconnect_func=lambda _client: None,
+                pair_on_connect=False,
+                retry_connect_timeout=1.0,
+                discovery_connect_timeout=1.0,
+            )
+        assert retry_client in closed_clients
+
+        orchestrator.interface = SimpleNamespace()
+        with pytest.raises(AttributeError):
+            orchestrator._compat_find_device("AA:BB:CC:DD:EE:FF")
+    finally:
+        iface.close()
 
 
 def test_connection_orchestrator_finalize_and_establish_error_paths(

@@ -220,30 +220,22 @@ class BLELifecycleService:
             try:
                 return safe_execute(_tracked_func, error_msg=error_msg)
             except TypeError as exc:
-                if not _is_unexpected_keyword_error(exc, "error_msg"):
-                    logger.debug(error_msg, exc_info=True)
-                    if func_ran:
-                        return None
-                else:
+                if _is_unexpected_keyword_error(exc, "error_msg"):
                     try:
                         return safe_execute(_tracked_func, error_msg)
-                    except TypeError as positional_exc:
-                        if "positional argument" not in str(positional_exc):
-                            logger.debug(error_msg, exc_info=True)
-                            if func_ran:
-                                return None
-                            return None
-                        try:
-                            return safe_execute(_tracked_func)
-                        except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
-                            logger.debug(error_msg, exc_info=True)
-                            if func_ran:
-                                return None
-                            return None
                     except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
                         logger.debug(error_msg, exc_info=True)
                         if func_ran:
                             return None
+                    try:
+                        return safe_execute(_tracked_func)
+                    except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
+                        logger.debug(error_msg, exc_info=True)
+                        if func_ran:
+                            return None
+                else:
+                    logger.debug(error_msg, exc_info=True)
+                    if func_ran:
                         return None
             except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
                 logger.debug(error_msg, exc_info=True)
@@ -1014,9 +1006,15 @@ class BLELifecycleService:
             )
             with iface._state_lock:
                 return (
-                    iface.auto_reconnect
-                    and not iface._closed
+                    not iface._closed
                     and not BLELifecycleService._state_manager_is_closing(iface)
+                    and (
+                        iface.auto_reconnect
+                        or iface._want_receive
+                        or iface.client is not None
+                        or iface._client_publish_pending
+                        or iface._client_replacement_pending
+                    )
                 )
 
         disconnect_lock_released = False

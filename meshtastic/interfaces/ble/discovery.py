@@ -422,6 +422,38 @@ class DiscoveryManager:
         ) = None
         self._client_lock = threading.RLock()
 
+    def _invalidate_cached_client_if_same(
+        self,
+        client: BLEClient | DiscoveryClientProtocol | UnderscoreDiscoveryClientProtocol,
+    ) -> bool:
+        """Discard and close cached client when it matches ``client``.
+
+        Parameters
+        ----------
+        client : BLEClient | DiscoveryClientProtocol | UnderscoreDiscoveryClientProtocol
+            Client instance to invalidate when it is currently cached.
+
+        Returns
+        -------
+        bool
+            ``True`` when the cached client was cleared and closed, otherwise
+            ``False``.
+        """
+        discarded_client: (
+            BLEClient
+            | DiscoveryClientProtocol
+            | UnderscoreDiscoveryClientProtocol
+            | None
+        ) = None
+        with self._client_lock:
+            if self._client is client:
+                discarded_client = self._client
+                self._client = None
+        if discarded_client is None:
+            return False
+        _close_discovery_client_best_effort(discarded_client)
+        return True
+
     def discover_devices(self, address: str | None) -> list[BLEDevice]:
         """Discover BLE devices advertising the configured service UUID.
 
@@ -611,18 +643,7 @@ class DiscoveryManager:
                 # underscore-prefixed discover helpers.
                 discover = getattr(client, "_discover", None)
             if not callable(discover) or _is_unconfigured_mock_callable(discover):
-                discarded_client: (
-                    BLEClient
-                    | DiscoveryClientProtocol
-                    | UnderscoreDiscoveryClientProtocol
-                    | None
-                ) = None
-                with self._client_lock:
-                    if self._client is client:
-                        discarded_client = self._client
-                        self._client = None
-                if discarded_client is not None:
-                    _close_discovery_client_best_effort(discarded_client)
+                self._invalidate_cached_client_if_same(client)
                 raise DiscoveryClientError.invalid_client(
                     resolved_factory,
                     type(client),
@@ -640,18 +661,7 @@ class DiscoveryManager:
                         exc,
                         exc_info=True,
                     )
-                    discarded_kwarg_client: (
-                        BLEClient
-                        | DiscoveryClientProtocol
-                        | UnderscoreDiscoveryClientProtocol
-                        | None
-                    ) = None
-                    with self._client_lock:
-                        if self._client is client:
-                            discarded_kwarg_client = self._client
-                            self._client = None
-                    if discarded_kwarg_client is not None:
-                        _close_discovery_client_best_effort(discarded_kwarg_client)
+                    self._invalidate_cached_client_if_same(client)
                     raise DiscoveryClientError.invalid_client(
                         resolved_factory,
                         type(client),
@@ -662,18 +672,7 @@ class DiscoveryManager:
                     exc,
                     exc_info=True,
                 )
-                discarded_typeerror_client: (
-                    BLEClient
-                    | DiscoveryClientProtocol
-                    | UnderscoreDiscoveryClientProtocol
-                    | None
-                ) = None
-                with self._client_lock:
-                    if self._client is client:
-                        discarded_typeerror_client = self._client
-                        self._client = None
-                if discarded_typeerror_client is not None:
-                    _close_discovery_client_best_effort(discarded_typeerror_client)
+                self._invalidate_cached_client_if_same(client)
                 raise DiscoveryClientError.invalid_client(
                     resolved_factory,
                     type(client),
@@ -692,36 +691,14 @@ class DiscoveryManager:
                 if inspect.isawaitable(response):
                     if inspect.iscoroutine(response):
                         response.close()
-                    discarded_awaitable_client: (
-                        BLEClient
-                        | DiscoveryClientProtocol
-                        | UnderscoreDiscoveryClientProtocol
-                        | None
-                    ) = None
-                    with self._client_lock:
-                        if self._client is client:
-                            discarded_awaitable_client = self._client
-                            self._client = None
-                    if discarded_awaitable_client is not None:
-                        _close_discovery_client_best_effort(discarded_awaitable_client)
+                    self._invalidate_cached_client_if_same(client)
                     raise DiscoveryClientError.invalid_client(
                         resolved_factory,
                         type(client),
                         ["async_await", "_async_await"],
                     )
             if not isinstance(response, dict):
-                discarded_response_client: (
-                    BLEClient
-                    | DiscoveryClientProtocol
-                    | UnderscoreDiscoveryClientProtocol
-                    | None
-                ) = None
-                with self._client_lock:
-                    if self._client is client:
-                        discarded_response_client = self._client
-                        self._client = None
-                if discarded_response_client is not None:
-                    _close_discovery_client_best_effort(discarded_response_client)
+                self._invalidate_cached_client_if_same(client)
                 raise DiscoveryClientError.invalid_client(
                     resolved_factory,
                     type(client),

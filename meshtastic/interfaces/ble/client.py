@@ -315,13 +315,16 @@ class BLEClient:
             Always returns ``None``.
         """
         safe_cleanup = self._resolve_error_handler_hook("safe_cleanup", "_safe_cleanup")
+        hook_called = False
         if safe_cleanup is not None:
             try:
+                hook_called = True
                 safe_cleanup(cleanup, cleanup_name=operation_name)
                 return
             except TypeError as exc:
                 if _is_unexpected_keyword_error(exc, "cleanup_name"):
                     try:
+                        hook_called = True
                         safe_cleanup(cleanup, operation_name)
                         return
                     except Exception:  # noqa: BLE001 - cleanup paths are best effort
@@ -330,10 +333,11 @@ class BLEClient:
                     logger.debug("Error during %s", operation_name, exc_info=True)
             except Exception:  # noqa: BLE001 - cleanup paths are best effort
                 logger.debug("Error during %s", operation_name, exc_info=True)
-        try:
-            cleanup()
-        except Exception:  # noqa: BLE001 - cleanup paths are best effort
-            logger.debug("Error during %s", operation_name, exc_info=True)
+        if safe_cleanup is None or not hook_called:
+            try:
+                cleanup()
+            except Exception:  # noqa: BLE001 - cleanup paths are best effort
+                logger.debug("Error during %s", operation_name, exc_info=True)
 
     def _require_bleak_client(self, error_message: str) -> BleakRootClient:
         """Return active Bleak client or raise BLEError for uninitialized transport.
@@ -550,14 +554,15 @@ class BLEClient:
         None
             Management operation is performed for side effects only.
         """
-        bleak_client = getattr(self, "bleak_client", None)
-        operation = getattr(bleak_client, method_name, None)
+        def operation() -> Coroutine[Any, Any, object]:
+            bleak_client = self._require_bleak_client(not_initialized_error)
+            method = getattr(bleak_client, method_name, None)
+            if not callable(method) or _is_unconfigured_mock_callable(method):
+                raise self.BLEError(unsupported_error)
+            return method(**(call_kwargs or {}))
+
         self._run_management_call(
-            (
-                None
-                if not callable(operation) or _is_unconfigured_mock_callable(operation)
-                else lambda: operation(**(call_kwargs or {}))
-            ),
+            operation,
             await_timeout=await_timeout,
             not_initialized_error=not_initialized_error,
             unsupported_error=unsupported_error,

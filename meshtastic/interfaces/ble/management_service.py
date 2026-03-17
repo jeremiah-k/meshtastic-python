@@ -728,8 +728,6 @@ class BLEManagementCommandsService:
                         timeout=validated_timeout, address=canonical_address
                     )
                 ) from exc
-            if not isinstance(exc, OSError):
-                raise
             detail = _sanitize_trust_command_output(str(exc))
             raise iface.BLEError(
                 ERROR_TRUST_COMMAND_FAILED.format(

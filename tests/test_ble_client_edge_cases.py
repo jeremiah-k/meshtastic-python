@@ -413,8 +413,25 @@ def test_bleclient_find_device_aliases_delegate_to_expected_targets(
     assert discover_calls == [{"address": "AA:BB"}]
 
     monkeypatch.setattr(ble_client, "findDevice", _find_device_stub)
-    assert ble_client.find_device(name="node") == ["found"]
-    assert find_device_calls == [{"name": "node"}]
+    assert ble_client.find_device(timeout=1.5) == ["found"]
+    assert find_device_calls == [{"timeout": 1.5}]
+
+
+@pytest.mark.unit
+def test_bleclient_discover_delegates_to_private_discover(
+    monkeypatch: pytest.MonkeyPatch,
+    ble_client: BLEClient,
+) -> None:
+    """discover() should delegate through the private _discover implementation."""
+    discover_calls: list[dict[str, Any]] = []
+
+    def _discover_stub(**kwargs: Any) -> list[str]:
+        discover_calls.append(kwargs)
+        return ["discovered_from__"]
+
+    monkeypatch.setattr(ble_client, "_discover", _discover_stub)
+    assert ble_client.discover(address="AA:BB") == ["discovered_from__"]
+    assert discover_calls == [{"address": "AA:BB"}]
 
 
 @pytest.mark.unit

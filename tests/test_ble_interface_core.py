@@ -4778,36 +4778,39 @@ def test_start_receive_thread_clears_cached_thread_when_start_fails(
     from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-    with iface._state_lock:
-        iface._want_receive = True
-    thread_like = SimpleNamespace(
-        name="BLEReceiveStartFailure",
-        ident=None,
-        is_alive=lambda: False,
-    )
-    monkeypatch.setattr(
-        iface.thread_coordinator,
-        "_create_thread",
-        lambda **_kwargs: thread_like,
-        raising=True,
-    )
+    try:
+        with iface._state_lock:
+            iface._want_receive = True
+        thread_like = SimpleNamespace(
+            name="BLEReceiveStartFailure",
+            ident=None,
+            is_alive=lambda: False,
+        )
+        monkeypatch.setattr(
+            iface.thread_coordinator,
+            "_create_thread",
+            lambda **_kwargs: thread_like,
+            raising=True,
+        )
 
-    def _raise_start_failure(_thread: object) -> None:
-        assert _thread is thread_like
-        assert iface._receiveThread is thread_like
-        raise RuntimeError(START_FAILED_MSG)
+        def _raise_start_failure(_thread: object) -> None:
+            assert _thread is thread_like
+            assert iface._receiveThread is thread_like
+            raise RuntimeError(START_FAILED_MSG)
 
-    monkeypatch.setattr(
-        iface.thread_coordinator,
-        "_start_thread",
-        _raise_start_failure,
-        raising=True,
-    )
+        monkeypatch.setattr(
+            iface.thread_coordinator,
+            "_start_thread",
+            _raise_start_failure,
+            raising=True,
+        )
 
-    with pytest.raises(RuntimeError, match=START_FAILED_MSG):
-        BLELifecycleService._start_receive_thread(iface, name="BLEReceiveStartFailure")
+        with pytest.raises(RuntimeError, match=START_FAILED_MSG):
+            BLELifecycleService._start_receive_thread(iface, name="BLEReceiveStartFailure")
 
-    assert iface._receiveThread is None
+        assert iface._receiveThread is None
+    finally:
+        iface.close()
 
 
 def test_start_receive_thread_facade_clears_cached_thread_when_start_fails(
@@ -4827,42 +4830,45 @@ def test_start_receive_thread_facade_clears_cached_thread_when_start_fails(
     from meshtastic.interfaces.ble.interface import BLEInterface
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-    monkeypatch.setattr(
-        type(iface),
-        "_start_receive_thread",
-        BLEInterface._start_receive_thread,
-        raising=True,
-    )
-    with iface._state_lock:
-        iface._want_receive = True
-    thread_like = SimpleNamespace(
-        name="BLEReceiveStartFailure",
-        ident=None,
-        is_alive=lambda: False,
-    )
-    monkeypatch.setattr(
-        iface.thread_coordinator,
-        "_create_thread",
-        lambda **_kwargs: thread_like,
-        raising=True,
-    )
+    try:
+        monkeypatch.setattr(
+            type(iface),
+            "_start_receive_thread",
+            BLEInterface._start_receive_thread,
+            raising=True,
+        )
+        with iface._state_lock:
+            iface._want_receive = True
+        thread_like = SimpleNamespace(
+            name="BLEReceiveStartFailure",
+            ident=None,
+            is_alive=lambda: False,
+        )
+        monkeypatch.setattr(
+            iface.thread_coordinator,
+            "_create_thread",
+            lambda **_kwargs: thread_like,
+            raising=True,
+        )
 
-    def _raise_start_failure(_thread: object) -> None:
-        assert _thread is thread_like
-        assert iface._receiveThread is thread_like
-        raise RuntimeError(START_FAILED_MSG)
+        def _raise_start_failure(_thread: object) -> None:
+            assert _thread is thread_like
+            assert iface._receiveThread is thread_like
+            raise RuntimeError(START_FAILED_MSG)
 
-    monkeypatch.setattr(
-        iface.thread_coordinator,
-        "_start_thread",
-        _raise_start_failure,
-        raising=True,
-    )
+        monkeypatch.setattr(
+            iface.thread_coordinator,
+            "_start_thread",
+            _raise_start_failure,
+            raising=True,
+        )
 
-    with pytest.raises(RuntimeError, match=START_FAILED_MSG):
-        iface._start_receive_thread(name="BLEReceiveStartFailure")
+        with pytest.raises(RuntimeError, match=START_FAILED_MSG):
+            iface._start_receive_thread(name="BLEReceiveStartFailure")
 
-    assert iface._receiveThread is None
+        assert iface._receiveThread is None
+    finally:
+        iface.close()
 
 
 def test_start_receive_thread_clears_cached_thread_when_start_noops(
@@ -4882,37 +4888,40 @@ def test_start_receive_thread_clears_cached_thread_when_start_noops(
     from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-    with iface._state_lock:
-        iface._want_receive = True
-    thread_like = SimpleNamespace(
-        name="BLEReceiveStartNoop",
-        ident=None,
-        is_alive=lambda: False,
-    )
-    monkeypatch.setattr(
-        iface.thread_coordinator,
-        "_create_thread",
-        lambda **_kwargs: thread_like,
-        raising=True,
-    )
+    try:
+        with iface._state_lock:
+            iface._want_receive = True
+        thread_like = SimpleNamespace(
+            name="BLEReceiveStartNoop",
+            ident=None,
+            is_alive=lambda: False,
+        )
+        monkeypatch.setattr(
+            iface.thread_coordinator,
+            "_create_thread",
+            lambda **_kwargs: thread_like,
+            raising=True,
+        )
 
-    start_calls: list[object] = []
+        start_calls: list[object] = []
 
-    def _record_noop_start(thread: object) -> None:
-        start_calls.append(thread)
-        assert iface._receiveThread is thread_like
+        def _record_noop_start(thread: object) -> None:
+            start_calls.append(thread)
+            assert iface._receiveThread is thread_like
 
-    monkeypatch.setattr(
-        iface.thread_coordinator,
-        "_start_thread",
-        _record_noop_start,
-        raising=True,
-    )
+        monkeypatch.setattr(
+            iface.thread_coordinator,
+            "_start_thread",
+            _record_noop_start,
+            raising=True,
+        )
 
-    BLELifecycleService._start_receive_thread(iface, name="BLEReceiveStartNoop")
+        BLELifecycleService._start_receive_thread(iface, name="BLEReceiveStartNoop")
 
-    assert start_calls == [thread_like]
-    assert iface._receiveThread is None
+        assert start_calls == [thread_like]
+        assert iface._receiveThread is None
+    finally:
+        iface.close()
 
 
 def test_find_device_multiple_matches_raises() -> None:
@@ -4983,8 +4992,7 @@ def test_wait_for_disconnect_notifications_skips_unconfigured_queuework(
     iface = SimpleNamespace(
         error_handler=SimpleNamespace(safe_execute=lambda func, **_kwargs: func())
     )
-    publishing_thread = MagicMock()
-    queue_work = publishing_thread.queueWork
+    publishing_thread = SimpleNamespace()
     drained: list[bool] = []
     monkeypatch.setattr(
         BLECompatibilityEventService,
@@ -5000,7 +5008,6 @@ def test_wait_for_disconnect_notifications_skips_unconfigured_queuework(
     )
 
     assert drained == [True]
-    queue_work.assert_not_called()
 
 
 def test_publish_connection_status_runs_directly_when_queuework_unconfigured(
@@ -5035,8 +5042,7 @@ def test_publish_connection_status_runs_directly_when_queuework_unconfigured(
     )
 
     iface = SimpleNamespace()
-    publishing_thread = MagicMock()
-    queue_work = publishing_thread.queueWork
+    publishing_thread = SimpleNamespace()
 
     BLECompatibilityEventService.publish_connection_status(
         iface,
@@ -5045,7 +5051,6 @@ def test_publish_connection_status_runs_directly_when_queuework_unconfigured(
     )
 
     assert sent == [("meshtastic.connection.status", iface, True)]
-    queue_work.assert_not_called()
 
 
 def test_publish_connection_status_falls_back_inline_when_non_blocking_enqueue_unavailable(
@@ -5079,18 +5084,8 @@ def test_publish_connection_status_falls_back_inline_when_non_blocking_enqueue_u
         raising=True,
     )
 
-    queue_attempts: list[object] = []
-
-    class _FailingPublishingThread:
-        class QueueFailure(Exception):
-            """Raised when queueWork fails in this test double."""
-
-        def queueWork(self, callback: object) -> None:
-            queue_attempts.append(callback)
-            raise self.QueueFailure
-
     iface = SimpleNamespace()
-    publishing_thread = _FailingPublishingThread()
+    publishing_thread = SimpleNamespace()
 
     BLECompatibilityEventService.publish_connection_status(
         iface,
@@ -5098,7 +5093,6 @@ def test_publish_connection_status_falls_back_inline_when_non_blocking_enqueue_u
         publishing_thread=publishing_thread,
     )
 
-    assert len(queue_attempts) == 0
     assert sent == [("meshtastic.connection.status", iface, False)]
 
 
