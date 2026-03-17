@@ -3,74 +3,46 @@
 
 ## Execution Progress
 
-- Program status: **PASS 1 In Progress (major ownership-transfer tranche landed)**
-- Last updated: **2026-03-17 (ownership-transfer tranche: management + notifications)**
+- Program status: **PASS 1 Complete (BLE ownership transfer)**
+- Last updated: **2026-03-17 (lifecycle ownership split + service-core collapse)**
 
 ### Progress Log
 
-#### PASS 1 — BLE Ownership Refactor (In Progress)
+#### PASS 1 — BLE Ownership Refactor (Complete)
 
-- Completed in current cycle:
-  - Landed a large ownership-transfer tranche focused on management + notification domains:
-    - Extracted notification safety/registration authority into `BLENotificationDispatcher`.
-    - Rewired `_register_notifications`, `_from_num_handler`,
-      `_report_notification_handler_error`, and `_invoke_safe_execute_compat`
-      in `BLEInterface` to collaborator delegation.
-    - Migrated malformed FROMNUM counter/lock and FROMNUM notify-enabled flags
-      behind dispatcher-owned state with compatibility bridges on `BLEInterface`.
-  - Refactored management helper ownership boundaries:
-    - Added substantial management-domain helper implementations on
-      `BLEManagementCommandHandler` (`resolve_target_address_for_management`,
-      client selection/revalidation helpers, gate helper, operation accounting).
-    - Converted interface-side management helpers to collaborator facades.
-    - Bound a persistent management collaborator in `BLEInterface` with dynamic
-      dependency lookup for monkeypatch-heavy compatibility paths.
-  - Preserved compatibility contracts while moving authority:
-    - `BLEInterface` keeps compatibility wrappers and module-level constants
-      expected by existing tests/integrations.
-    - Dynamic collaborator wiring ensures monkeypatched
-      `meshtastic.interfaces.ble.interface.BLEClient` and
-      `_is_currently_connected_elsewhere` paths still work.
-  - Introduced a real instance-bound collaborator for BLE management commands (`BLEManagementCommandHandler`) in `management_service.py`.
-  - Rewired `BLEInterface` management pathways to delegate through collaborator instances instead of static service calls for:
-    - `_execute_management_command()`
-    - timeout validators
-    - `pair()`, `unpair()`, and `trust()`
-    - `_run_bluetoothctl_trust_command()`
-  - Preserved testability and behavioral compatibility by resolving collaborator dependencies dynamically at call time (important for monkeypatched `BLEClient` test paths).
-  - Hardened notification safe-execute compatibility dispatch in `interface.py`:
-    - widened positional signature-mismatch detection for legacy `TypeError` variants,
-    - added explicit debug logging for compatibility-probe exceptions (including post-handler-execution probe failures),
-    - retained no-duplicate-handler-execution behavior by keeping fallback execution conditional.
-  - Applied compatibility inventory/documentation cleanup in `COMPATIBILITY.md`:
-    - normalized `BLEStateManager.is_connecting()` method notation,
-    - clarified that underscore-prefixed canonical symbols are implementation details,
-    - marked `_lock` row as internal compatibility alias.
-  - Consolidated BLE utils imports in `compatibility_service.py` for style consistency.
-  - Completed runtime collaboratorization for remaining BLE orchestration services:
-    - Added `BLELifecycleController` in `lifecycle_service.py`.
-    - Added `BLEReceiveRecoveryController` in `receive_service.py`.
-    - Added `BLECompatibilityEventPublisher` in `compatibility_service.py`.
-  - Rewired `BLEInterface` runtime lifecycle/receive/compatibility paths to instance-bound collaborators instead of direct static service invocation.
-  - Added lazy collaborator getters in `BLEInterface` for object-constructed and monkeypatch-heavy test compatibility.
-  - Updated `BLE.md` architecture and boundary documentation to reflect the current collaborator-based runtime model.
-  - Removed direct collaborator-private reach-through from `BLEInterface` for state/notification paths by introducing and using explicit collaborator APIs:
-    - `NotificationManager.get_callback()/subscribe()/cleanup_all()/unsubscribe_all()/resubscribe_all()`
-    - `BLEStateManager.current_state/is_connected/is_closing/can_connect/is_active`
-  - Updated compatibility publisher collaborator construction to inject a publishing-thread provider, removing cross-module direct private method calls.
+- Completed ownership-transfer scope:
+  - Converted BLE runtime orchestration to instance-bound collaborators:
+    - `BLEManagementCommandHandler`
+    - `BLENotificationDispatcher`
+    - `BLELifecycleController`
+    - `BLEReceiveRecoveryController`
+    - `BLECompatibilityEventPublisher`
+  - Completed lifecycle ownership split in `lifecycle_service.py`:
+    - `BLEReceiveLifecycleCoordinator`
+    - `BLEDisconnectLifecycleCoordinator`
+    - `BLEConnectionOwnershipLifecycleCoordinator`
+    - `BLEShutdownLifecycleCoordinator`
+  - Collapsed lifecycle service-core duplication by turning remaining heavy
+    static entrypoints into compatibility wrappers that delegate to collaborator
+    implementations.
+  - Removed direct collaborator-private reach-through from `BLEInterface` for
+    state and notification runtime paths.
+  - Preserved monkeypatch-heavy compatibility surfaces by keeping static helper
+    shim entrypoints callable for tests/integrations while routing behavior
+    through bound collaborators.
+
+- Architectural outcomes:
+  - `BLEInterface` runtime paths now delegate through collaborator APIs instead
+    of static service-style namespaces.
+  - Ownership domains are explicit across management, notification, lifecycle,
+    receive-recovery, and compatibility publication.
+  - Static service methods remain as compatibility shim surfaces, not as the
+    primary runtime authority.
+
 - Validation completed:
-  - `ruff check meshtastic/interfaces/ble/interface.py meshtastic/interfaces/ble/management_service.py meshtastic/interfaces/ble/notifications.py`: passed.
+  - `ruff check meshtastic/interfaces/ble/lifecycle_service.py meshtastic/interfaces/ble/interface.py meshtastic/interfaces/ble/management_service.py meshtastic/interfaces/ble/notifications.py`: passed.
   - `poetry run pytest -q tests/test_ble_interface_core.py tests/test_ble_utils_service_targets.py tests/test_ble_lifecycle_receive_targets.py tests/test_ble_connection_discovery_client_targets.py`: **264 passed**.
   - `poetry run pytest -q`: **1454 passed, 3 skipped, 92 deselected**.
-  - `ruff check` on touched files: passed.
-  - `poetry run pytest -q tests/test_ble_interface_core.py tests/test_ble_connection_discovery_client_targets.py tests/test_ble_lifecycle_receive_targets.py tests/test_ble_utils_service_targets.py`: **264 passed**.
-  - `poetry run pytest -q tests/test_ble_interface_core.py tests/test_ble_lifecycle_receive_targets.py tests/test_ble_utils_service_targets.py tests/test_ble_integration_scenarios.py`: **256 passed**.
-  - `poetry run pytest -q tests/test_ble_interface_core.py tests/test_ble_lifecycle_receive_targets.py tests/test_ble_utils_service_targets.py tests/test_ble_connection_discovery_client_targets.py`: **264 passed**.
-  - `poetry run pytest -q`: **1454 passed, 3 skipped, 92 deselected**.
-- PASS 1 completion notes:
-  - Runtime BLE service calls now route through bound collaborators rather than static service classes.
-  - Management/lifecycle/receive/compatibility orchestration responsibilities are now separated behind explicit collaborator objects.
-  - Public behavior and compatibility pathways were preserved while shifting ownership boundaries.
 
 You are operating as a project coordinator responsible for executing a **large-scale architectural refinement program** on an existing codebase.
 

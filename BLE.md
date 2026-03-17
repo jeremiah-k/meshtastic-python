@@ -22,15 +22,21 @@ recommended patterns for code that embeds `meshtastic-python`.
 | `ConnectionOrchestrator`                 | Coordinates a full connection attempt: validate → discover → connect → register notifications |
 | `ReconnectScheduler` / `ReconnectWorker` | Policy-driven background reconnect loop                                                       |
 | `BLEManagementCommandHandler`            | Instance-bound management collaborator for pair/unpair/trust and temporary-client handling    |
-| `BLELifecycleController`                 | Instance-bound lifecycle collaborator for disconnect, reconnect, thread, and close orchestration |
+| `BLELifecycleController`                 | Instance-bound lifecycle facade; delegates lifecycle domains to dedicated coordinators          |
+| `BLEReceiveLifecycleCoordinator`         | Owns receive intent and receive-thread lifecycle start policy                                  |
+| `BLEDisconnectLifecycleCoordinator`      | Owns disconnect target resolution, side effects, and auto-reconnect scheduling                 |
+| `BLEConnectionOwnershipLifecycleCoordinator` | Owns verified-connect publication, stale-client cleanup, and gate finalization             |
+| `BLEShutdownLifecycleCoordinator`        | Owns close/shutdown sequencing and terminal cleanup orchestration                              |
 | `BLEReceiveRecoveryController`           | Instance-bound receive collaborator for read-loop execution, retry, and recovery              |
 | `BLECompatibilityEventPublisher`         | Instance-bound publisher for legacy status events and publish-queue drain/flush               |
-| `*...Service` classes                    | Internal implementation helpers behind controllers (not direct runtime entrypoints)           |
+| `*...Service` classes                    | Compatibility shim surfaces and shared helper logic behind collaborator-owned runtime flows    |
 
 ### Boundary contract (current)
 
 - BLEInterface delegates lifecycle/receive/management/compatibility runtime
   paths through bound collaborator instances.
+- Lifecycle runtime ownership is partitioned under `BLELifecycleController`
+  into receive, disconnect, connection-ownership, and shutdown coordinators.
 - Underscore-prefixed methods are canonical for internal orchestration
   collaborators (`state`, `coordination`, lifecycle services).
 - `BLEInterface` uses collaborator APIs for state/notification interactions
@@ -52,6 +58,8 @@ recommended patterns for code that embeds `meshtastic-python`.
   `meshtastic.interfaces.ble.interface.*` continue to work.
 - Service classes remain implementation details; runtime orchestration should
   enter through collaborator/controller interfaces rather than static helpers.
+- `BLELifecycleService._*` methods are retained as compatibility/test shim
+  entrypoints and delegate to coordinator-owned implementations.
 
 ### Key design choices
 
