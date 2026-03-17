@@ -918,6 +918,51 @@ def test_receive_service_branch_targets(monkeypatch: pytest.MonkeyPatch) -> None
     iface.close()
 
 
+@pytest.mark.parametrize("raw_ever_connected", [MagicMock(), "invalid-state"])
+def test_wait_for_read_trigger_normalizes_non_bool_ever_connected(
+    monkeypatch: pytest.MonkeyPatch,
+    raw_ever_connected: object,
+) -> None:
+    """_wait_for_read_trigger should treat non-bool _ever_connected values as False."""
+    iface = _make_iface(monkeypatch)
+    try:
+        with iface._state_lock:
+            iface._ever_connected = raw_ever_connected
+            iface._fromnum_notify_enabled = False
+            iface._closed = False
+
+        reconnected_checks: list[str] = []
+        monkeypatch.setattr(
+            BLEReceiveRecoveryService,
+            "_coordinator_wait_for_event",
+            staticmethod(lambda *_args, **_kwargs: False),
+        )
+        monkeypatch.setattr(
+            BLEReceiveRecoveryService,
+            "_coordinator_check_and_clear_event",
+            staticmethod(
+                lambda *_args, **_kwargs: (
+                    reconnected_checks.append("checked") or True
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            BLEReceiveRecoveryService,
+            "_should_poll_without_notify",
+            staticmethod(lambda _iface: True),
+        )
+
+        proceed, poll_without_notify = BLEReceiveRecoveryService._wait_for_read_trigger(
+            iface,
+            coordinator=SimpleNamespace(),
+            wait_timeout=0.1,
+        )
+        assert (proceed, poll_without_notify) == (True, True)
+        assert reconnected_checks == []
+    finally:
+        iface.close()
+
+
 def test_lifecycle_remaining_error_handler_branch_targets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

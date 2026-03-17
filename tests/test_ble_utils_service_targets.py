@@ -491,6 +491,51 @@ def test_management_helpers_cover_factory_and_target_edge_paths(
         fresh_iface.close()
 
 
+def test_resolve_management_target_existing_client_explicit_address_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_resolve_management_target should validate explicit existing-client paths and resolver fallback."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    try:
+        start_context = SimpleNamespace(
+            target_address=None,
+            use_existing_client_without_resolved_address=True,
+            expected_implicit_binding=None,
+        )
+        iface._validate_management_preconditions = lambda: None
+        iface._get_management_client_if_available = lambda _address: None
+
+        with pytest.raises(iface.BLEError, match="changed"):
+            BLEManagementCommandsService._resolve_management_target(
+                iface, "target-id", start_context
+            )
+
+        refreshed_client = DummyClient()
+        refreshed_client.address = None
+        refreshed_client.bleak_client = SimpleNamespace(address=None)
+        resolved_addresses: list[str | None] = []
+
+        iface._get_management_client_if_available = lambda _address: refreshed_client
+        iface._extract_client_address = lambda _client: None
+
+        def _resolve_target_address(address: str | None) -> str:
+            resolved_addresses.append(address)
+            return "AA:BB:CC:DD:EE:FF"
+
+        iface._resolve_target_address_for_management = _resolve_target_address
+
+        target, active_client = BLEManagementCommandsService._resolve_management_target(
+            iface,
+            "target-id",
+            start_context,
+        )
+        assert target == "AA:BB:CC:DD:EE:FF"
+        assert active_client is refreshed_client
+        assert resolved_addresses == ["target-id"]
+    finally:
+        iface.close()
+
+
 def test_management_execute_with_client_preserves_command_outcome_on_close_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

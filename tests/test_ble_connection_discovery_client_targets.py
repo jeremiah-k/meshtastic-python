@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import builtins
 import contextlib
 from collections.abc import Iterator
 from threading import Event, RLock
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
+import meshtastic.interfaces.ble.connection as connection_mod
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.connection import (
     ClientManager,
@@ -72,6 +74,39 @@ def test_connection_validator_client_is_connected_member_paths() -> None:
     assert ConnectionValidator._client_is_connected(client_unknown) is False
 
 
+def test_connection_helpers_cover_mock_import_and_inline_safe_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Connection helper utilities should handle import fallback and inline cleanup execution."""
+    real_import = builtins.__import__
+
+    def _import_with_mock_failure(
+        name: str,
+        globals_arg: dict[str, object] | None = None,
+        locals_arg: dict[str, object] | None = None,
+        fromlist: tuple[str, ...] = (),
+        level: int = 0,
+    ) -> object:
+        if name == "unittest.mock":
+            raise ImportError("mock import unavailable")
+        return real_import(name, globals_arg, locals_arg, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _import_with_mock_failure)
+    assert connection_mod._is_mock_instance(object()) is False
+
+    cleanup_calls: list[str] = []
+
+    def _cleanup() -> None:
+        cleanup_calls.append("ran")
+
+    assert connection_mod._run_safe_cleanup(
+        _cleanup,
+        cleanup_name="client close",
+        safe_cleanup_hook=lambda *_args, **_kwargs: False,
+    )
+    assert cleanup_calls == ["ran"]
+
+
 def test_client_manager_thread_dispatch_and_wrapper_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -123,6 +158,39 @@ def test_client_manager_thread_dispatch_and_wrapper_paths(
     manager._connect_client = MagicMock(return_value=None)
     manager.connect_client(DummyClient())
     manager._connect_client.assert_called_once()
+
+
+def test_client_manager_connect_client_recovers_from_services_property_bleak_error() -> None:
+    """_connect_client should force service discovery when services property access fails."""
+    manager = ClientManager(
+        BLEStateManager(),
+        RLock(),
+        SimpleNamespace(),
+        BLEErrorHandler(),
+    )
+
+    class _BleakClientWithFailingServices:
+        @property
+        def services(self) -> None:
+            raise BleakError("services not ready")
+
+    class _ConnectedClient:
+        def __init__(self) -> None:
+            self.connect_calls: list[dict[str, object]] = []
+            self.get_services_calls = 0
+            self.bleak_client = _BleakClientWithFailingServices()
+
+        def connect(self, **kwargs: object) -> None:
+            self.connect_calls.append(dict(kwargs))
+
+        def _get_services(self) -> None:
+            self.get_services_calls += 1
+
+    client = _ConnectedClient()
+    manager._connect_client(cast(BLEClient, client))
+
+    assert client.connect_calls
+    assert client.get_services_calls == 1
 
 
 def test_client_manager_update_reference_thread_failure_closes_inline() -> None:
