@@ -225,17 +225,13 @@ class BLELifecycleService:
                 if _is_unexpected_keyword_error(exc, "error_msg"):
                     try:
                         return safe_execute(_tracked_func, error_msg)
-                    except (
-                        Exception
-                    ):  # noqa: BLE001 - hook failures must not abort shutdown
+                    except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
                         logger.debug(error_msg, exc_info=True)
                         if func_ran:
                             return None
                     try:
                         return safe_execute(_tracked_func)
-                    except (
-                        Exception
-                    ):  # noqa: BLE001 - hook failures must not abort shutdown
+                    except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
                         logger.debug(error_msg, exc_info=True)
                         if func_ran:
                             return None

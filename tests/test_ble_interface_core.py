@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import logging
+import math
 import re
 import subprocess
 import threading
@@ -4533,14 +4534,20 @@ def test_transient_read_retry_uses_zero_based_delay(
     iface.close()
 
 
-def test_retry_policy_get_delay_rejects_invalid_numeric_outputs() -> None:
+@pytest.mark.parametrize(
+    "invalid_delay",
+    [True, -1.0, math.nan, math.inf, -math.inf],
+)
+def test_retry_policy_get_delay_rejects_invalid_numeric_outputs(
+    invalid_delay: object,
+) -> None:
     """Retry delay helper should clamp bool/non-finite/negative results to 0.0."""
 
-    class BoolDelayPolicy:
-        def get_delay(self, _attempt: int) -> bool:
-            return True
+    class InvalidDelayPolicy:
+        def get_delay(self, _attempt: int) -> object:
+            return invalid_delay
 
-    assert BLEInterface._retry_policy_get_delay(BoolDelayPolicy(), attempt=0) == 0.0
+    assert BLEInterface._retry_policy_get_delay(InvalidDelayPolicy(), attempt=0) == 0.0
 
 
 def test_receive_recovery_backoff_reaches_configured_cap_for_non_power_of_two(
@@ -5009,23 +5016,22 @@ def test_report_notification_handler_error_covers_hook_and_fallback_paths(
         lambda message, *_args, **_kwargs: debug_calls.append(cast(str, message)),
     )
 
-    def _raising_report(_message: str) -> None:
-        raise RuntimeError("hook failed")
-
-    iface.error_handler = SimpleNamespace(handle_unhandled_exception=_raising_report)
+    raising_hook = MagicMock(side_effect=RuntimeError("hook failed"))
+    iface.error_handler = SimpleNamespace(handle_unhandled_exception=raising_hook)
     iface._report_notification_handler_error("hook-error")
 
     # Unconfigured child mock should be treated as unavailable and fall back to logger.debug.
-    iface.error_handler = SimpleNamespace(handle_unhandled_exception=MagicMock())
+    fallback_hook = MagicMock()
+    iface.error_handler = SimpleNamespace(handle_unhandled_exception=fallback_hook)
     iface._report_notification_handler_error("missing-hook")
 
+    raising_hook.assert_called_once_with("hook-error")
+    fallback_hook.assert_not_called()
     assert "hook-error" in debug_calls
     assert "missing-hook" in debug_calls
 
 
-def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure() -> (
-    None
-):
+def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure() -> None:
     """Positional safe_execute failures should not trigger a second handler invocation."""
 
     calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
@@ -5061,9 +5067,7 @@ def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure
     assert len(calls) == 2
 
 
-def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signature_error() -> (
-    None
-):
+def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signature_error() -> None:
     """Positional signature mismatch should continue to callable-only compatibility probe."""
 
     calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
@@ -5355,6 +5359,21 @@ def test_get_publishing_thread_prefers_instance_override() -> None:
     iface._publishing_thread_override = override_thread
 
     assert iface._get_publishing_thread() is override_thread
+
+
+def test_get_publishing_thread_falls_back_to_module_publishing_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_get_publishing_thread should return module-level publishingThread when override is unset."""
+    iface = object.__new__(BLEInterface)
+    iface._publishing_thread_override = None
+    module_thread = SimpleNamespace(name="module-thread")
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.publishingThread",
+        module_thread,
+    )
+
+    assert iface._get_publishing_thread() is module_thread
 
 
 def test_discovery_manager_filters_meshtastic_devices(
@@ -6450,6 +6469,62 @@ def test_register_notifications_safe_call_inline_fallback_when_safe_execute_unco
         client.callbacks[LOGRADIO_UUID]("sender", b"log")
 
         assert errors == ["Error in log notification handler"]
+    finally:
+        iface.close()
+
+
+def test_register_notifications_safe_execute_fallback_still_invokes_handler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Incompatible safe_execute signatures should fallback to direct handler invocation."""
+
+    class _ClientWithCallbacks(DummyClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.callbacks: dict[str, Callable[[Any, bytes], None]] = {}
+
+        def has_characteristic(self, uuid: str) -> bool:
+            return uuid in {LOGRADIO_UUID, FROMNUM_UUID}
+
+        def start_notify(self, *args: Any, **kwargs: Any) -> None:
+            _ = kwargs
+            if len(args) >= 2:
+                self.callbacks[str(args[0])] = cast(
+                    Callable[[Any, bytes], None], args[1]
+                )
+
+    def _incompatible_safe_execute(
+        _func: Callable[[], None], *args: object, **kwargs: object
+    ) -> None:
+        if "error_msg" in kwargs:
+            raise TypeError(
+                "safe_execute() got an unexpected keyword argument 'error_msg'"
+            )
+        if args:
+            raise TypeError("legacy positional mismatch")
+        raise AssertionError("callable-only probe should be skipped in this path")
+
+    client = _ClientWithCallbacks()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    log_calls: list[tuple[object, bytes]] = []
+    error_hook = MagicMock()
+    try:
+        iface.error_handler = SimpleNamespace(
+            safe_execute=_incompatible_safe_execute,
+            handle_unhandled_exception=error_hook,
+        )
+        monkeypatch.setattr(
+            iface,
+            "_log_radio_handler",
+            lambda sender, data: log_calls.append((sender, data)),
+            raising=True,
+        )
+
+        iface._register_notifications(cast(BLEClient, client))
+        client.callbacks[LOGRADIO_UUID]("sender", b"log")
+
+        assert log_calls == [("sender", b"log")]
+        error_hook.assert_not_called()
     finally:
         iface.close()
 

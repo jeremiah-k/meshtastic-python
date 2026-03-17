@@ -811,6 +811,15 @@ class BLEInterface(MeshInterface):
             def _report_notification_error() -> None:
                 self._report_notification_handler_error(error_msg)
 
+            def _invoke_handler() -> None:
+                handler(sender, data)
+
+            def _fallback_invoke_handler() -> None:
+                try:
+                    _invoke_handler()
+                except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
+                    _report_notification_error()
+
             safe_execute = getattr(self.error_handler, "safe_execute", None)
             if not callable(safe_execute) or _is_unconfigured_mock_callable(
                 safe_execute
@@ -820,7 +829,7 @@ class BLEInterface(MeshInterface):
                 safe_execute
             ):
                 try:
-                    handler(sender, data)
+                    _invoke_handler()
                 except (
                     Exception
                 ):  # noqa: BLE001 - notification callbacks must stay best effort
@@ -828,9 +837,9 @@ class BLEInterface(MeshInterface):
                 return
             self._invoke_safe_execute_compat(
                 safe_execute,
-                lambda: handler(sender, data),
+                _invoke_handler,
                 error_msg=error_msg,
-                fallback=_report_notification_error,
+                fallback=_fallback_invoke_handler,
             )
 
         def _safe_legacy_handler(sender: Any, data: bytes | bytearray) -> None:
