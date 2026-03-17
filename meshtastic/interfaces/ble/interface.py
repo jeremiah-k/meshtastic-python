@@ -30,7 +30,6 @@ import math
 import numbers
 import re
 import shutil
-import struct
 import subprocess
 import sys
 import threading
@@ -61,10 +60,7 @@ from meshtastic.interfaces.ble.constants import (
     ERROR_CONNECTION_FAILED,
     ERROR_CONNECTION_SUPPRESSED,
     ERROR_INTERFACE_CLOSING,
-    ERROR_MANAGEMENT_ADDRESS_EMPTY,
-    ERROR_MANAGEMENT_ADDRESS_REQUIRED,
     ERROR_MANAGEMENT_CONNECTING,
-    ERROR_MANAGEMENT_TARGET_CHANGED,
     ERROR_MULTIPLE_DEVICES,
     ERROR_MULTIPLE_DEVICES_DISCOVERY,
     ERROR_NO_CLIENT_ESTABLISHED,
@@ -72,12 +68,8 @@ from meshtastic.interfaces.ble.constants import (
     ERROR_TIMEOUT,
     ERROR_TRUST_ADDRESS_NOT_RESOLVED,
     ERROR_WRITING_BLE,
-    FROMNUM_UUID,
     GATT_IO_TIMEOUT,
-    LEGACY_LOGRADIO_UUID,
-    LOGRADIO_UUID,
-    MALFORMED_NOTIFICATION_THRESHOLD,
-    NOTIFICATION_START_TIMEOUT,
+    MALFORMED_NOTIFICATION_THRESHOLD as _MALFORMED_NOTIFICATION_THRESHOLD,
     READ_TRIGGER_EVENT,
     RECONNECTED_EVENT,
     SERVICE_UUID,
@@ -92,7 +84,7 @@ from meshtastic.interfaces.ble.discovery import (
     _looks_like_ble_address,
     _parse_scan_response,
 )
-from meshtastic.interfaces.ble.errors import BLEErrorHandler, DecodeError
+from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.gating import (
     _addr_key,
     _addr_lock_context,
@@ -109,7 +101,10 @@ from meshtastic.interfaces.ble.management_service import (
 from meshtastic.interfaces.ble.management_service import (
     BLEManagementCommandHandler,
 )
-from meshtastic.interfaces.ble.notifications import NotificationManager
+from meshtastic.interfaces.ble.notifications import (
+    BLENotificationDispatcher,
+    NotificationManager,
+)
 from meshtastic.interfaces.ble.policies import RetryPolicy
 from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryController
 from meshtastic.interfaces.ble.reconnection import ReconnectScheduler
@@ -126,7 +121,7 @@ from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import mesh_pb2
 
 T = TypeVar("T")
-_NOTIFY_ACQUIRED_FRAGMENT = "notify acquired"
+MALFORMED_NOTIFICATION_THRESHOLD = _MALFORMED_NOTIFICATION_THRESHOLD
 _MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS: float = 30.0
 _MANAGEMENT_CONNECT_WAIT_POLL_SECONDS: float = 0.5
 _MANAGEMENT_CONNECT_WAIT_TIMEOUT_SECONDS: float = 30.0
@@ -139,10 +134,6 @@ ERROR_RETRY_POLICY_MISSING_SHOULD_RETRY: str = (
     "Retry policy missing should_retry/_should_retry"
 )
 ERROR_RETRY_POLICY_MISSING_GET_DELAY: str = "Retry policy missing get_delay/_get_delay"
-_SAFE_EXECUTE_POSITIONAL_SIGNATURE_MISMATCH_RE = re.compile(
-    r"positional.*argument|takes .* positional|missing required positional|were given|was given",
-    re.IGNORECASE,
-)
 ERROR_DISCOVERY_MANAGER_MISSING_DISCOVER_DEVICES: str = (
     "Discovery manager is missing discover_devices/_discover_devices"
 )
@@ -303,6 +294,13 @@ class BLEInterface(MeshInterface):
         # Thread management infrastructure
         self.thread_coordinator = ThreadCoordinator()
         self._notification_manager = NotificationManager()
+        self._notification_dispatcher = BLENotificationDispatcher(
+            notification_manager=self._notification_manager,
+            error_handler_provider=lambda: self.error_handler,
+            trigger_read_event=lambda: self.thread_coordinator._set_event(
+                READ_TRIGGER_EVENT
+            ),
+        )
         self._discovery_manager: DiscoveryManager | None = DiscoveryManager()
         self._connection_validator = ConnectionValidator(
             self._state_manager, self._state_lock, self.BLEError
@@ -334,6 +332,13 @@ class BLEInterface(MeshInterface):
             self,
             publishing_thread_provider=self._get_publishing_thread,
         )
+        self._management_command_handler = BLEManagementCommandHandler(
+            self,
+            ble_client_factory=lambda *args, **kwargs: BLEClient(*args, **kwargs),
+            connected_elsewhere=lambda key, owner=None: _is_currently_connected_elsewhere(
+                key, owner
+            ),
+        )
 
         # Event coordination for reconnection and read operations
         self._read_trigger = self.thread_coordinator._create_event(
@@ -348,7 +353,6 @@ class BLEInterface(MeshInterface):
         # FROMRADIO polling.
         self._fromnum_notify_enabled = False
         self._malformed_notification_count = 0  # Tracks corrupted packets for threshold
-        self._malformed_notification_lock = threading.Lock()
         self._ever_connected = (
             False  # Track first successful connection to tune logging
         )
@@ -623,54 +627,14 @@ class BLEInterface(MeshInterface):
         self._get_lifecycle_controller().schedule_auto_reconnect()
 
     def _handle_malformed_fromnum(self, reason: str, exc_info: bool = False) -> None:
-        """Track malformed FROMNUM notifications and log occurrences; emit a warning when a configured threshold is reached.
-
-        Parameters
-        ----------
-        reason : str
-            Description of why the notification was considered malformed.
-        exc_info : bool
-            If True, include exception traceback information in the log. (Default value = False)
-        """
-        with self._malformed_notification_lock:
-            self._malformed_notification_count += 1
-            logger.debug("%s", reason, exc_info=exc_info)
-            if self._malformed_notification_count >= MALFORMED_NOTIFICATION_THRESHOLD:
-                logger.warning(
-                    "Received %d malformed FROMNUM notifications. Check BLE connection stability.",
-                    self._malformed_notification_count,
-                )
-                self._malformed_notification_count = 0
+        """Track malformed FROMNUM notifications through dispatcher ownership."""
+        self._get_notification_dispatcher().handle_malformed_fromnum(
+            reason, exc_info=exc_info
+        )
 
     def _report_notification_handler_error(self, error_msg: str) -> None:
-        """Report notification-handler failures through configured error hooks.
-
-        Parameters
-        ----------
-        error_msg : str
-            Message forwarded to unhandled-exception hooks and debug logging.
-
-        Returns
-        -------
-        None
-            Returns ``None`` after best-effort error reporting.
-        """
-        report_exception: Callable[[str], Any] | None = None
-        for hook_name in (
-            "handle_unhandled_exception",
-            "_handle_unhandled_exception",
-        ):
-            hook = getattr(self.error_handler, hook_name, None)
-            if callable(hook) and not _is_unconfigured_mock_callable(hook):
-                report_exception = cast(Callable[[str], Any], hook)
-                break
-        if report_exception is not None:
-            try:
-                report_exception(error_msg)
-            except Exception:  # noqa: BLE001 - callback error reporting is best effort
-                logger.debug(error_msg, exc_info=True)
-            return
-        logger.debug(error_msg, exc_info=True)
+        """Report notification handler failures through dispatcher ownership."""
+        self._get_notification_dispatcher().report_notification_handler_error(error_msg)
 
     @staticmethod
     def _invoke_safe_execute_compat(
@@ -680,145 +644,17 @@ class BLEInterface(MeshInterface):
         error_msg: str,
         fallback: Callable[[], None],
     ) -> None:
-        """Invoke ``safe_execute`` with compatibility fallbacks.
-
-        Parameters
-        ----------
-        safe_execute : Callable[..., Any]
-            Resolved safe-execute hook from the error handler.
-        handler_thunk : Callable[[], None]
-            Thunk that executes the notification handler.
-        error_msg : str
-            Error message used for keyword/positional dispatch.
-        fallback : Callable[[], None]
-            Callback invoked when no compatible hook signature succeeds.
-
-        Returns
-        -------
-        None
-            Returns ``None`` after invoking a compatible signature or fallback.
-        """
-        executed = False
-
-        def _tracked_handler_thunk() -> None:
-            nonlocal executed
-            executed = True
-            handler_thunk()
-
-        def _fallback_if_not_executed() -> None:
-            if not executed:
-                fallback()
-
-        try:
-            safe_execute(_tracked_handler_thunk, error_msg=error_msg)
-            return
-        except TypeError as exc:
-            if not _is_unexpected_keyword_error(exc, "error_msg"):
-                logger.debug(
-                    "safe_execute keyword probe raised TypeError for notification handler (%s): %s",
-                    error_msg,
-                    exc,
-                    exc_info=True,
-                )
-                _fallback_if_not_executed()
-                return
-            if executed:
-                logger.debug(
-                    "safe_execute keyword compatibility probe raised TypeError after handler execution (%s): %s",
-                    error_msg,
-                    exc,
-                    exc_info=True,
-                )
-        except Exception as exc:  # noqa: BLE001 - notification callbacks must stay best effort
-            logger.debug(
-                "safe_execute keyword probe failed for notification handler (%s): %s",
-                error_msg,
-                exc,
-                exc_info=True,
-            )
-            _fallback_if_not_executed()
-            return
-
-        if executed:
-            return
-
-        try:
-            safe_execute(_tracked_handler_thunk, error_msg)
-            return
-        except TypeError as exc:
-            # Most TypeError cases here are compatibility signature mismatches.
-            # Only probe callable-only when this looks like a signature mismatch.
-            if _SAFE_EXECUTE_POSITIONAL_SIGNATURE_MISMATCH_RE.search(str(exc)):
-                if executed:
-                    logger.debug(
-                        "safe_execute positional compatibility probe raised TypeError after handler execution (%s): %s",
-                        error_msg,
-                        exc,
-                        exc_info=True,
-                    )
-            else:
-                logger.debug(
-                    "safe_execute positional probe raised TypeError for notification handler (%s); skipping callable-only probe to avoid duplicate handler execution.",
-                    error_msg,
-                    exc_info=True,
-                )
-                _fallback_if_not_executed()
-                return
-        except Exception as exc:  # noqa: BLE001 - notification callbacks must stay best effort
-            logger.debug(
-                "safe_execute positional probe failed for notification handler (%s): %s; skipping callable-only probe to avoid duplicate handler execution.",
-                error_msg,
-                exc,
-                exc_info=True,
-            )
-            _fallback_if_not_executed()
-            return
-
-        if executed:
-            return
-
-        try:
-            safe_execute(_tracked_handler_thunk)
-            return
-        except Exception as exc:  # noqa: BLE001 - notification callbacks must stay best effort
-            logger.debug(
-                "safe_execute callable-only probe failed for notification handler (%s): %s.",
-                error_msg,
-                exc,
-                exc_info=True,
-            )
-            _fallback_if_not_executed()
+        """Invoke safe_execute compatibility probing via notification dispatcher."""
+        BLENotificationDispatcher.invoke_safe_execute_compat(
+            safe_execute,
+            handler_thunk,
+            error_msg=error_msg,
+            fallback=fallback,
+        )
 
     def _from_num_handler(self, _: Any, b: bytes | bytearray) -> None:
-        """Process a FROMNUM characteristic notification and wake the receive loop.
-
-        Parses a 4-byte little-endian unsigned 32-bit integer from the notification payload. On successful parse the internal malformed-notification counter is reset and the parsed value is logged. On parse failure or unexpected length the malformed-notification counter is incremented via _handle_malformed_fromnum and a warning may be emitted when a threshold is reached. Always triggers the thread coordinator's read-trigger event to wake the read loop.
-
-        Parameters
-        ----------
-        _ : Any
-            Unused sender parameter provided by the BLE library.
-        b : bytes | bytearray
-            Notification payload expected to contain a 4-byte little-endian unsigned 32-bit integer.
-        """
-        try:
-            if len(b) != 4:
-                self._handle_malformed_fromnum(
-                    f"FROMNUM notify has unexpected length {len(b)}; ignoring"
-                )
-                return
-            from_num = struct.unpack("<I", b)[0]
-            logger.debug("FROMNUM notify: %d", from_num)
-            # Successful parse: reset malformed counter
-            with self._malformed_notification_lock:
-                self._malformed_notification_count = 0
-        except (struct.error, ValueError):
-            self._handle_malformed_fromnum(
-                "Malformed FROMNUM notify; ignoring", exc_info=True
-            )
-            return
-        finally:
-            self.thread_coordinator._set_event(READ_TRIGGER_EVENT)
+        """Process a FROMNUM notification via notification dispatcher."""
+        self._get_notification_dispatcher().from_num_handler(_, b)
 
     # COMPAT_STABLE_SHIM (2.7.7): historical public BLEInterface callback.
     # Keep callable without deprecation warning.
@@ -835,273 +671,20 @@ class BLEInterface(MeshInterface):
         self._from_num_handler(sender, b)
 
     def _register_notifications(self, client: BLEClient) -> None:
-        """Register BLE characteristic notification handlers on the given BLE client.
-
-        Registers optional legacy and modern log notification handlers (failures to start these are logged and ignored)
-        and registers the critical FROMNUM notification handler for incoming packets. FROMNUM registration failures are
-        propagated unless BlueZ reports an acquired-notify conflict, in which case this method falls back to periodic
-        FROMRADIO polling for compatibility.
-        All handlers are wrapped to route exceptions to the interface's error handler.
-
-        Parameters
-        ----------
-        client : BLEClient
-            Connected BLE client on which to subscribe notifications.
-        """
-
-        def _safe_call(
-            handler: Callable[[Any, Any], None],
-            sender: Any,
-            data: Any,
-            error_msg: str,
-        ) -> None:
-            """Run a notification handler and forward any exception it raises to the interface's error handler.
-
-            Parameters
-            ----------
-            handler : Callable[[Any, Any], None]
-                Function to invoke with (sender, data).
-            sender : Any
-                Origin of the notification passed to the handler.
-            data : Any
-                Notification payload (e.g., bytes, bytearray, or parsed object).
-            error_msg : str
-                Message given to the error handler if the handler raises an exception.
-            """
-
-            def _report_notification_error() -> None:
-                self._report_notification_handler_error(error_msg)
-
-            def _invoke_handler() -> None:
-                handler(sender, data)
-
-            def _fallback_invoke_handler() -> None:
-                try:
-                    _invoke_handler()
-                except (
-                    Exception
-                ):  # noqa: BLE001 - notification callbacks must stay best effort
-                    _report_notification_error()
-
-            safe_execute = getattr(self.error_handler, "safe_execute", None)
-            if not callable(safe_execute) or _is_unconfigured_mock_callable(
-                safe_execute
-            ):
-                safe_execute = getattr(self.error_handler, "_safe_execute", None)
-            if not callable(safe_execute) or _is_unconfigured_mock_callable(
-                safe_execute
-            ):
-                try:
-                    _invoke_handler()
-                except (
-                    Exception
-                ):  # noqa: BLE001 - notification callbacks must stay best effort
-                    _report_notification_error()
-                return
-            self._invoke_safe_execute_compat(
-                safe_execute,
-                _invoke_handler,
-                error_msg=error_msg,
-                fallback=_fallback_invoke_handler,
-            )
-
-        def _safe_legacy_handler(sender: Any, data: bytes | bytearray) -> None:
-            """Invoke the legacy log-radio notification handler for a BLE notification and suppress any exceptions raised by the handler.
-
-            Parameters
-            ----------
-            sender : Any
-                The notification source (characteristic or client) that produced the payload.
-            data : bytes | bytearray
-                Raw notification payload (bytes or bytearray) delivered by the BLE characteristic.
-            """
-            _safe_call(
-                self._legacy_log_radio_handler,
-                sender,
-                data,
-                "Error in legacy log notification handler",
-            )
-
-        def _safe_log_handler(sender: Any, data: bytes | bytearray) -> None:
-            """Forward a BLE log-characteristic notification to the configured log handler and record an error if the handler raises.
-
-            Parameters
-            ----------
-            sender : Any
-                Notification sender (characteristic or client); may be unused by the handler.
-            data : bytes | bytearray
-                Raw notification payload from the BLE device.
-            """
-            _safe_call(
-                self._log_radio_handler,
-                sender,
-                data,
-                "Error in log notification handler",
-            )
-
-        def _safe_from_num_handler(sender: Any, data: bytes) -> None:
-            """Safely invoke the FROMNUM notification handler, forwarding the sender and raw payload and reporting any exceptions raised.
-
-            Parameters
-            ----------
-            sender : Any
-                Identifier for the notification source (e.g., client or characteristic).
-            data : bytes
-                Raw FROMNUM characteristic payload.
-            """
-            _safe_call(
-                self._from_num_handler,
-                sender,
-                data,
-                "Error in FROMNUM notification handler",
-            )
-
-        def _get_or_create_handler(
-            uuid: str, factory: Callable[[], Callable[[Any, Any], None]]
-        ) -> Callable[[Any, Any], None]:
-            """Return the registered notification handler for a characteristic UUID, creating and subscribing one via the provided factory if none exists.
-
-            Parameters
-            ----------
-            uuid : str
-                Characteristic UUID to look up or register.
-            factory : Callable[[], Callable[[Any, Any], None]]
-                Factory that returns a handler callable taking (sender, data).
-
-            Returns
-            -------
-            Callable[[Any, Any], None]
-                The existing or newly created notification handler.
-            """
-            handler = self._notification_manager.get_callback(uuid)
-            if handler is None:
-                handler = factory()
-                self._notification_manager.subscribe(uuid, handler)
-            return handler
-
-        def _is_notify_acquired_error(err: BaseException) -> bool:
-            """Return True when a notification-start error indicates an acquired notify state."""
-            return _NOTIFY_ACQUIRED_FRAGMENT in str(err).casefold()
-
-        # Optional log notifications - failures are non-fatal.
-        try:
-            if client.has_characteristic(LEGACY_LOGRADIO_UUID):
-                legacy_handler = _get_or_create_handler(
-                    LEGACY_LOGRADIO_UUID, lambda: _safe_legacy_handler
-                )
-                client.start_notify(
-                    LEGACY_LOGRADIO_UUID,
-                    legacy_handler,
-                    timeout=NOTIFICATION_START_TIMEOUT,
-                )
-        except (
-            BleakError,
-            BleakDBusError,
-            RuntimeError,
-            BLEClient.BLEError,
-            self.BLEError,
-        ) as e:
-            logger.debug(
-                "Failed to start optional legacy log notifications for %s: %s",
-                LEGACY_LOGRADIO_UUID,
-                e,
-            )
-        try:
-            if client.has_characteristic(LOGRADIO_UUID):
-                log_handler = _get_or_create_handler(
-                    LOGRADIO_UUID, lambda: _safe_log_handler
-                )
-                client.start_notify(
-                    LOGRADIO_UUID,
-                    log_handler,
-                    timeout=NOTIFICATION_START_TIMEOUT,
-                )
-        except (
-            BleakError,
-            BleakDBusError,
-            RuntimeError,
-            BLEClient.BLEError,
-            self.BLEError,
-        ) as e:
-            logger.debug(
-                "Failed to start optional log notifications for %s: %s",
-                LOGRADIO_UUID,
-                e,
-            )
-
-        # Critical notification for packet ingress
-        from_num_handler = _get_or_create_handler(
-            FROMNUM_UUID, lambda: _safe_from_num_handler
+        """Register notifications through the notification dispatcher owner."""
+        self._get_notification_dispatcher().register_notifications(
+            self,
+            client,
+            legacy_log_handler=self._legacy_log_radio_handler,
+            log_handler=self._log_radio_handler,
+            from_num_handler=self._from_num_handler,
         )
-        with self._state_lock:
-            self._fromnum_notify_enabled = False
-
-        max_attempts = BLEConfig.SERVICE_CHARACTERISTIC_RETRY_COUNT + 1
-        for attempt in range(max_attempts):
-            try:
-                client.start_notify(
-                    FROMNUM_UUID,
-                    from_num_handler,
-                    timeout=NOTIFICATION_START_TIMEOUT,
-                )
-            except BleakDBusError as e:
-                if not _is_notify_acquired_error(e):
-                    raise
-                logger.debug(
-                    "FROMNUM notify already acquired for %s; retrying after best-effort stop_notify (attempt %d/%d)",
-                    FROMNUM_UUID,
-                    attempt + 1,
-                    max_attempts,
-                )
-                with contextlib.suppress(
-                    BleakError,
-                    BleakDBusError,
-                    RuntimeError,
-                    BLEClient.BLEError,
-                    self.BLEError,
-                ):
-                    client.stop_notify(
-                        FROMNUM_UUID,
-                        timeout=NOTIFICATION_START_TIMEOUT,
-                    )
-                if attempt + 1 < max_attempts:
-                    _sleep(BLEConfig.SERVICE_CHARACTERISTIC_RETRY_DELAY * (attempt + 1))
-                    continue
-                logger.warning(
-                    "Unable to start FROMNUM notifications for %s after %d attempts due to BlueZ 'Notify acquired'; falling back to polling reads.",
-                    FROMNUM_UUID,
-                    max_attempts,
-                )
-                return
-            else:
-                with self._state_lock:
-                    self._fromnum_notify_enabled = True
-                return
 
     def _log_radio_handler(self, _: Any, b: bytes | bytearray) -> None:
-        """Handle a protobuf LogRecord notification and forward a formatted log line to the instance log handler.
-
-        Parses the notification payload as a mesh_pb2.LogRecord and forwards its message to self._handle_log_line. If the record includes a `source` the message is prefixed with "[source] ". Malformed records are logged and ignored.
-
-        Parameters
-        ----------
-        _ : Any
-            Unused sender/handle value provided by the BLE library.
-        b : bytes | bytearray
-            Serialized mesh_pb2.LogRecord payload from the BLE notification.
-        """
-        log_record = mesh_pb2.LogRecord()
-        try:
-            log_record.ParseFromString(bytes(b))
-
-            message = (
-                f"[{log_record.source}] {log_record.message}"
-                if log_record.source
-                else log_record.message
-            )
+        """Decode and dispatch protobuf log notification via dispatcher owner."""
+        message = self._get_notification_dispatcher().log_radio_handler(_, b)
+        if message is not None:
             self._handle_log_line(message)
-        except DecodeError:
-            logger.warning("Malformed LogRecord received. Skipping.")
 
     # COMPAT_STABLE_SHIM (2.7.7): historical public BLEInterface callback.
     # Keep callable without deprecation warning.
@@ -1123,24 +706,10 @@ class BLEInterface(MeshInterface):
         self._log_radio_handler(sender, b)
 
     def _legacy_log_radio_handler(self, _: Any, b: bytes | bytearray) -> None:
-        """Deliver a legacy UTF-8 log notification payload to the log handler.
-
-        Decodes the notification payload as UTF-8, strips newline characters, and forwards the resulting string to self._handle_log_line. If decoding fails, the payload is ignored and a warning is logged.
-
-        Parameters
-        ----------
-        _ : Any
-            Sender or handle value provided by the BLE library (unused).
-        b : bytes | bytearray
-            Raw notification payload expected to contain a UTF-8 encoded log line.
-        """
-        try:
-            log_radio = b.decode("utf-8").replace("\n", "")
-            self._handle_log_line(log_radio)
-        except UnicodeDecodeError:
-            logger.warning(
-                "Malformed legacy LogRecord received (not valid utf-8). Skipping."
-            )
+        """Decode and dispatch legacy UTF-8 log notification via dispatcher owner."""
+        message = BLENotificationDispatcher.legacy_log_radio_handler(_, b)
+        if message is not None:
+            self._handle_log_line(message)
 
     # COMPAT_STABLE_SHIM (2.7.7): historical public BLEInterface callback.
     # Keep callable without deprecation warning.
@@ -1326,54 +895,10 @@ class BLEInterface(MeshInterface):
         return cast(str | None, bleak_address or getattr(client, "address", None))
 
     def _resolve_target_address_for_management(self, address: str | None) -> str:
-        """Resolve a management target to a concrete BLE address.
-
-        This helper is used by `pair()`, `unpair()`, and `trust()` to
-        resolve explicit addresses or device-name identifiers into a concrete
-        address. When no active device is connected, management operations
-        require an explicit target and will not discover an arbitrary device.
-
-        Parameters
-        ----------
-        address : str | None
-            Target address, device name, or None to resolve from the active
-            connection when possible.
-
-        Returns
-        -------
-        str
-            Resolved BLE address.
-
-        Raises
-        ------
-        BLEInterface.BLEError
-            If no active/explicit management target is available or if the
-            explicit target cannot be resolved to a concrete BLE address.
-        """
-        requested_identifier = address if address is not None else self.address
-        if address is not None and sanitize_address(address) is None:
-            raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
-        if address is None and requested_identifier is not None:
-            normalized_bound_identifier = sanitize_address(requested_identifier)
-            if normalized_bound_identifier is None:
-                raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
-        if address is None:
-            with self._state_lock:
-                current_client = self.client
-            if current_client is not None and current_client.isConnected():
-                current_address = self._extract_client_address(current_client)
-                if current_address:
-                    return current_address
-            if requested_identifier is None:
-                raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_REQUIRED)
-        normalized_request = sanitize_address(requested_identifier)
-        existing_client = self._get_existing_client_if_valid(normalized_request)
-        existing_client_address = self._extract_client_address(existing_client)
-        if existing_client_address:
-            return existing_client_address
-        if requested_identifier and _looks_like_ble_address(requested_identifier):
-            return requested_identifier
-        return self.findDevice(requested_identifier).address
+        """Resolve management target through the management collaborator."""
+        return self._get_management_command_handler().resolve_target_address_for_management(
+            address
+        )
 
     def _resolve_target_address_for_connect(
         self, requested_identifier: str | None
@@ -1409,60 +934,19 @@ class BLEInterface(MeshInterface):
 
     @staticmethod
     def _management_target_gate(target_address: str) -> contextlib.ExitStack:
-        """Return a context manager that serializes temporary management work by address.
-
-        Parameters
-        ----------
-        target_address : str
-            BLE address to serialize temporary management operations for.
-
-        Returns
-        -------
-        contextlib.ExitStack
-            Active context stack holding the process-wide per-address gate when
-            one applies to `target_address`.
-        """
-        stack = contextlib.ExitStack()
-        target_key = _addr_key(target_address)
-        if target_key is not None:
-            addr_lock = stack.enter_context(_addr_lock_context(target_key))
-            stack.enter_context(addr_lock)
-        return stack
+        """Compatibility wrapper for address-gated management execution."""
+        return cast(
+            contextlib.ExitStack,
+            BLEManagementCommandHandler.management_target_gate(target_address),
+        )
 
     def _get_management_client_if_available(
         self, address: str | None
     ) -> BLEClient | None:
-        """Return an active or reusable client for a management operation, if one exists.
-
-        Parameters
-        ----------
-        address : str | None
-            Target address or identifier. When `None`, this helper first checks
-            `current_client = self.client` and returns it if connected. When an
-            explicit address is provided, the current client path is bypassed;
-            the helper normalizes `requested_identifier` via
-            `sanitize_address()` and validates only via
-            `_get_existing_client_if_valid()`. This asymmetry is intentional so
-            explicit address operations are validated against the registry path.
-
-        Returns
-        -------
-        BLEClient | None
-            Connected or reusable client for the requested target, or None when
-            management work requires a temporary client.
-        """
-        requested_identifier = address if address is not None else self.address
-        with self._state_lock:
-            current_client = (
-                self.client
-                if address is None
-                and not getattr(self, "_client_publish_pending", False)
-                else None
-            )
-        if current_client is not None and current_client.isConnected():
-            return current_client
-        normalized_request = sanitize_address(requested_identifier)
-        return self._get_existing_client_if_valid(normalized_request)
+        """Return available management client via management collaborator."""
+        return self._get_management_command_handler().get_management_client_if_available(
+            address
+        )
 
     def _get_management_client_for_target(
         self,
@@ -1470,51 +954,23 @@ class BLEInterface(MeshInterface):
         *,
         prefer_current_client: bool,
     ) -> BLEClient | None:
-        """Return a reusable management client only when it matches the target address.
-
-        Parameters
-        ----------
-        target_address : str
-            Concrete BLE target address chosen for the management operation.
-        prefer_current_client : bool
-            When True, consider the interface's current connected client before
-            checking the process-wide client registry.
-
-        Returns
-        -------
-        BLEClient | None
-            Matching active or reusable client for `target_address`, or None if
-            a temporary client should be created instead.
-        """
-        normalized_target = sanitize_address(target_address)
-        with self._state_lock:
-            current_client = (
-                self.client
-                if prefer_current_client
-                and not getattr(self, "_client_publish_pending", False)
-                else None
-            )
-        if current_client is not None and current_client.isConnected():
-            current_address = self._extract_client_address(current_client)
-            if sanitize_address(current_address) == normalized_target:
-                return current_client
-        return self._get_existing_client_if_valid(normalized_target)
+        """Return reusable target-matching management client via collaborator."""
+        return self._get_management_command_handler().get_management_client_for_target(
+            target_address,
+            prefer_current_client=prefer_current_client,
+        )
 
     def _get_current_implicit_management_binding_locked(self) -> str | None:
-        """Return the current implicit management binding while holding `_state_lock`."""
-        current_client = self.client
-        if current_client is not None and current_client.isConnected():
-            client_address = self._extract_client_address(current_client)
-            if client_address is not None:
-                return client_address
-        return self.address
+        """Return implicit management binding via management collaborator."""
+        return (
+            self._get_management_command_handler().get_current_implicit_management_binding_locked()
+        )
 
     def _get_current_implicit_management_address_locked(self) -> str | None:
-        """Return the current implicit management target when it is already concrete."""
-        current_binding = self._get_current_implicit_management_binding_locked()
-        if current_binding and _looks_like_ble_address(current_binding):
-            return current_binding
-        return None
+        """Return implicit management concrete address via collaborator."""
+        return (
+            self._get_management_command_handler().get_current_implicit_management_address_locked()
+        )
 
     def _revalidate_implicit_management_target(
         self,
@@ -1522,42 +978,65 @@ class BLEInterface(MeshInterface):
         *,
         expected_binding: str | None = None,
     ) -> None:
-        """Abort when an implicit management target changed while waiting on the gate.
+        """Revalidate implicit management target via collaborator."""
+        self._get_management_command_handler().revalidate_implicit_management_target(
+            expected_target_address,
+            expected_binding=expected_binding,
+        )
 
-        Parameters
-        ----------
-        expected_target_address : str
-            Concrete BLE address selected before entering the per-target
-            management gate.
+    def _get_notification_dispatcher(self) -> BLENotificationDispatcher:
+        """Return notification dispatcher collaborator, creating it lazily."""
+        dispatcher = getattr(self, "_notification_dispatcher", None)
+        if dispatcher is None:
+            notification_manager = getattr(self, "_notification_manager", None)
+            if notification_manager is None:
+                notification_manager = NotificationManager()
+                self._notification_manager = notification_manager
 
-        Raises
-        ------
-        BLEInterface.BLEError
-            If the interface's current implicit management target has changed to
-            a different concrete BLE address.
-        """
-        with self._state_lock:
-            current_binding = self._get_current_implicit_management_binding_locked()
-        if current_binding is None:
-            raise self.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
+            def _error_handler_provider() -> object:
+                handler = getattr(self, "error_handler", None)
+                if handler is None:
+                    handler = BLEErrorHandler()
+                    self.error_handler = handler
+                return handler
 
-        if _looks_like_ble_address(current_binding):
-            current_target_address = current_binding
-        else:
-            if expected_binding is None or sanitize_address(
-                current_binding
-            ) != sanitize_address(expected_binding):
-                raise self.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
-            # When there's an active connected client for an implicit target,
-            # use its concrete address directly instead of calling findDevice
-            # (which would trigger device discovery). The expected_target_address
-            # was already resolved from the active client before entering the gate.
-            current_target_address = expected_target_address
+            def _trigger_read_event() -> None:
+                coordinator = getattr(self, "thread_coordinator", None)
+                if coordinator is not None:
+                    coordinator._set_event(READ_TRIGGER_EVENT)
 
-        if sanitize_address(current_target_address) != sanitize_address(
-            expected_target_address
-        ):
-            raise self.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
+            dispatcher = BLENotificationDispatcher(
+                notification_manager=notification_manager,
+                error_handler_provider=_error_handler_provider,
+                trigger_read_event=_trigger_read_event,
+            )
+            self._notification_dispatcher = dispatcher
+        return cast(BLENotificationDispatcher, dispatcher)
+
+    @property
+    def _fromnum_notify_enabled(self) -> bool:
+        """Compatibility bridge exposing FROMNUM notification-active state."""
+        return self._get_notification_dispatcher().fromnum_notify_enabled
+
+    @_fromnum_notify_enabled.setter
+    def _fromnum_notify_enabled(self, enabled: bool) -> None:
+        """Compatibility bridge setter for FROMNUM notification-active state."""
+        self._get_notification_dispatcher().fromnum_notify_enabled = bool(enabled)
+
+    @property
+    def _malformed_notification_count(self) -> int:
+        """Compatibility bridge exposing malformed FROMNUM counter."""
+        return self._get_notification_dispatcher().malformed_notification_count
+
+    @_malformed_notification_count.setter
+    def _malformed_notification_count(self, count: int) -> None:
+        """Compatibility bridge setter for malformed FROMNUM counter."""
+        self._get_notification_dispatcher().malformed_notification_count = int(count)
+
+    @property
+    def _malformed_notification_lock(self) -> threading.RLock:
+        """Compatibility bridge exposing malformed FROMNUM lock."""
+        return self._get_notification_dispatcher().malformed_notification_lock
 
     def _get_lifecycle_controller(self) -> BLELifecycleController:
         """Return lifecycle collaborator, creating one lazily when needed."""
@@ -1594,12 +1073,17 @@ class BLEInterface(MeshInterface):
         BLEManagementCommandHandler
             Lazily initialized management command collaborator.
         """
-        handler = BLEManagementCommandHandler(
-            self,
-            ble_client_factory=BLEClient,
-            connected_elsewhere=_is_currently_connected_elsewhere,
-        )
-        return handler
+        handler = getattr(self, "_management_command_handler", None)
+        if handler is None:
+            handler = BLEManagementCommandHandler(
+                self,
+                ble_client_factory=lambda *args, **kwargs: BLEClient(*args, **kwargs),
+                connected_elsewhere=lambda key, owner=None: _is_currently_connected_elsewhere(
+                    key, owner
+                ),
+            )
+            self._management_command_handler = handler
+        return cast(BLEManagementCommandHandler, handler)
 
     def _execute_management_command(
         self,
@@ -1627,26 +1111,12 @@ class BLEInterface(MeshInterface):
         )
 
     def _begin_management_operation_locked(self) -> None:
-        """Record a management operation while holding `_management_lock`."""
-        self._management_inflight += 1
+        """Record management operation via collaborator."""
+        self._get_management_command_handler().begin_management_operation_locked()
 
     def _finish_management_operation(self) -> None:
-        """
-        Mark completion of an in-flight management operation and notify any waiters when no operations remain.
-
-        If the internal in-flight counter is already zero or negative, reset it to zero, notify waiters, and log a warning; otherwise decrement the counter and notify waiters when it reaches zero.
-        """
-        with self._management_lock:
-            if self._management_inflight <= 0:
-                logger.warning(
-                    "Management operation accounting underflow detected during finish(); resetting inflight count to zero."
-                )
-                self._management_inflight = 0
-                self._management_idle_condition.notify_all()
-                return
-            self._management_inflight -= 1
-            if self._management_inflight == 0:
-                self._management_idle_condition.notify_all()
+        """Mark completion of management operation via collaborator."""
+        self._get_management_command_handler().finish_management_operation()
 
     def _validate_management_await_timeout(self, await_timeout: object) -> float:
         """Validate and return a bounded await timeout for management operations.

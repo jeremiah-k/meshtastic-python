@@ -15,6 +15,7 @@ recommended patterns for code that embeds `meshtastic-python`.
 | `BLEStateManager`                        | Centralized state machine (`DISCONNECTED → CONNECTING → CONNECTED → DISCONNECTING`)           |
 | `BLEErrorHandler`                        | Unified exception-handling helpers used across the BLE subsystem                              |
 | `NotificationManager`                    | Tracks active GATT notification subscriptions so they can be resubscribed after reconnects    |
+| `BLENotificationDispatcher`              | Owns notification safety wrappers, FROMNUM parsing, malformed-counter logic, and notify registration |
 | `DiscoveryManager`                       | Scan-based BLE device discovery with address normalization                                    |
 | `ConnectionValidator`                    | Enforces connection preconditions before any lock is acquired                                 |
 | `ClientManager`                          | Owns `BLEClient` lifecycle and safe-close operations                                          |
@@ -36,6 +37,14 @@ recommended patterns for code that embeds `meshtastic-python`.
   (for example `NotificationManager.get_callback()/subscribe()` and
   `BLEStateManager.current_state/is_connected/is_closing/can_connect`) instead
   of direct collaborator-private member reach-through.
+- Notification execution/registration paths are owned by
+  `BLENotificationDispatcher`; `BLEInterface` exposes compatibility wrappers
+  (`_register_notifications`, `_from_num_handler`,
+  `_report_notification_handler_error`, `_invoke_safe_execute_compat`) that
+  delegate to dispatcher-owned logic.
+- Management command orchestration routes through
+  `BLEManagementCommandHandler`; interface-level management helpers are facade
+  shims that delegate to the collaborator.
 - `BLEInterface` remains the compatibility boundary: patch-sensitive
   collaborators (for example `publishingThread`, `BLEClient`,
   `_is_currently_connected_elsewhere`, `sys/shutil/subprocess`) are delegated
@@ -136,7 +145,9 @@ still available for legacy/internal call sites.
 ### `NotificationManager`
 
 Tracks GATT notification subscriptions so they can be resubscribed cleanly
-after a reconnect.
+after a reconnect. This manager is consumed by
+`BLENotificationDispatcher`, which owns notification callback safety and
+FROMNUM handler orchestration.
 
 ```python
 from meshtastic.interfaces.ble.notifications import NotificationManager
@@ -144,25 +155,52 @@ from meshtastic.interfaces.ble.notifications import NotificationManager
 mgr = NotificationManager()
 
 # Register a callback for a characteristic UUID; returns an opaque token.
-token = mgr._subscribe(uuid, callback)
+token = mgr.subscribe(uuid, callback)
 
 # Retrieve the most-recently-registered callback for a UUID.
-cb = mgr._get_callback(uuid)
+cb = mgr.get_callback(uuid)
 
 # Stop all notifications through a BLEClient (e.g. during shutdown).
-mgr._unsubscribe_all(client, timeout=5.0)
+mgr.unsubscribe_all(client, timeout=5.0)
 
 # Re-register all subscriptions on a new client (e.g. after reconnect).
-mgr._resubscribe_all(client, timeout=5.0)
+mgr.resubscribe_all(client, timeout=5.0)
 
 # Clear internal subscription state (called after full disconnect + cleanup).
-mgr._cleanup_all()
+mgr.cleanup_all()
 ```
 
-Compatibility note: `NotificationManager` currently exposes underscore methods
-as its canonical API surface (`_subscribe`, `_get_callback`,
-`_unsubscribe_all`, `_resubscribe_all`, `_cleanup_all`); non-underscore
-wrappers are not currently provided.
+Compatibility note: underscore methods remain available for legacy/internal
+callers; public-first wrappers (`subscribe`, `get_callback`, `unsubscribe_all`,
+`resubscribe_all`, `cleanup_all`) are preferred for new code.
+
+### `BLENotificationDispatcher`
+
+Owns notification safety execution and ingress registration policy used by
+`BLEInterface`.
+
+```python
+from meshtastic.interfaces.ble.notifications import BLENotificationDispatcher
+
+dispatcher = BLENotificationDispatcher(
+    notification_manager=notification_manager,
+    error_handler_provider=lambda: iface.error_handler,
+    trigger_read_event=lambda: iface.thread_coordinator._set_event("read_trigger"),
+)
+
+# Register handlers for LOGRADIO/legacy/FROMNUM with safe_execute compatibility probing.
+dispatcher.register_notifications(
+    iface,
+    client,
+    legacy_log_handler=iface._legacy_log_radio_handler,
+    log_handler=iface._log_radio_handler,
+    from_num_handler=iface._from_num_handler,
+)
+
+# Delegate malformed FROMNUM accounting and handler error reporting.
+dispatcher.handle_malformed_fromnum("Malformed FROMNUM notify")
+dispatcher.report_notification_handler_error("Error in FROMNUM notification handler")
+```
 
 ### `RetryPolicy` / `ReconnectPolicy`
 
