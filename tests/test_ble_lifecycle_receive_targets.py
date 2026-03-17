@@ -1598,6 +1598,7 @@ def test_lifecycle_remaining_error_handler_execute_paths(
     """Cover remaining lifecycle error-handler execute-hook branches."""
     iface = _make_iface(monkeypatch)
     try:
+
         def _hook_non_positional_with_func_run(
             func: Any, *args: object, **kwargs: object
         ) -> object:
@@ -1636,7 +1637,9 @@ def test_lifecycle_remaining_error_handler_execute_paths(
             func()
             raise RuntimeError("post-run failure")
 
-        iface.error_handler = SimpleNamespace(safe_execute=_hook_positional_then_runtime)
+        iface.error_handler = SimpleNamespace(
+            safe_execute=_hook_positional_then_runtime
+        )
         assert (
             BLELifecycleService._error_handler_safe_execute(
                 iface,

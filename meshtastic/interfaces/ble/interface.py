@@ -838,7 +838,9 @@ class BLEInterface(MeshInterface):
             def _fallback_invoke_handler() -> None:
                 try:
                     _invoke_handler()
-                except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
+                except (
+                    Exception
+                ):  # noqa: BLE001 - notification callbacks must stay best effort
                     _report_notification_error()
 
             safe_execute = getattr(self.error_handler, "safe_execute", None)
@@ -851,7 +853,9 @@ class BLEInterface(MeshInterface):
             ):
                 try:
                     _invoke_handler()
-                except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
+                except (
+                    Exception
+                ):  # noqa: BLE001 - notification callbacks must stay best effort
                     _report_notification_error()
                 return
             self._invoke_safe_execute_compat(
@@ -1143,8 +1147,7 @@ class BLEInterface(MeshInterface):
             awaitable,
             timeout,
             label,
-            timeout_error_factory=lambda timeout_label,
-            timeout_seconds: BLEInterface.BLEError(
+            timeout_error_factory=lambda timeout_label, timeout_seconds: BLEInterface.BLEError(
                 ERROR_TIMEOUT.format(timeout_label, timeout_seconds)
             ),
         )
