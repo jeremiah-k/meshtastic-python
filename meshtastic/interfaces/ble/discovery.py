@@ -500,51 +500,71 @@ class DiscoveryManager:
         resolved_factory: Callable[..., Any] = cast(
             Callable[..., Any], self.client_factory or BLEClient
         )
-        with self._client_lock:
+        cached_candidate: (
+            BLEClient | DiscoveryClientProtocol | UnderscoreDiscoveryClientProtocol | None
+        ) = None
 
-            def _probe_connected_state(candidate: object) -> bool | None:
-                for method_name in ("isConnected", "is_connected"):
-                    probe = getattr(candidate, method_name, None)
-                    if callable(probe) and not _is_unconfigured_mock_callable(probe):
-                        try:
-                            result = probe()
-                        except Exception:  # noqa: BLE001 - defensive probe path
-                            logger.debug(
-                                "Cached discovery client %s() probe failed; discarding client.",
-                                method_name,
-                                exc_info=True,
-                            )
-                            return None
-                        if isinstance(result, bool):
-                            return result
-                member_probe = getattr(candidate, "is_connected", None)
-                if isinstance(member_probe, bool) and not _is_unconfigured_mock_member(
-                    member_probe
-                ):
-                    return member_probe
-                return None
-
-            def _discard_cached_client() -> None:
-                cached_client = self._client
-                if cached_client is not None:
-                    stale_clients.append(cached_client)
-                    self._client = None
-
-            # Only discard the client if it was previously connected and has since
-            # disconnected. A discovery-only client (never connected) should be reused.
-            if self._client is not None:
-                bleak = getattr(self._client, "bleak_client", None)
-                if bleak is not None:
-                    connected_state = _probe_connected_state(self._client)
-                    if connected_state is None:
-                        connected_state = _probe_connected_state(bleak)
-                    if connected_state is None:
+        def _probe_connected_state(candidate: object) -> bool | None:
+            for method_name in ("isConnected", "is_connected"):
+                probe = getattr(candidate, method_name, None)
+                if callable(probe) and not _is_unconfigured_mock_callable(probe):
+                    try:
+                        result = probe()
+                    except Exception:  # noqa: BLE001 - defensive probe path
                         logger.debug(
-                            "Cached discovery client lacks isConnected()/is_connected(); discarding client."
+                            "Cached discovery client %s() probe failed; discarding client.",
+                            method_name,
+                            exc_info=True,
                         )
-                        _discard_cached_client()
-                    elif not connected_state:
-                        _discard_cached_client()
+                        return None
+                    if isinstance(result, bool):
+                        return result
+            member_probe = getattr(candidate, "is_connected", None)
+            if isinstance(member_probe, bool) and not _is_unconfigured_mock_member(
+                member_probe
+            ):
+                return member_probe
+            return None
+
+        def _discard_cached_client() -> None:
+            """Discard current cached client.
+
+            Notes
+            -----
+            Caller must hold ``self._client_lock``.
+            """
+            cached_client = self._client
+            if cached_client is not None:
+                stale_clients.append(cached_client)
+                self._client = None
+
+        with self._client_lock:
+            cached_candidate = cast(
+                BLEClient | DiscoveryClientProtocol | UnderscoreDiscoveryClientProtocol | None,
+                self._client,
+            )
+
+        discard_cached_candidate = False
+        # Only discard the client if it was previously connected and has since
+        # disconnected. A discovery-only client (never connected) should be reused.
+        if cached_candidate is not None:
+            bleak = getattr(cached_candidate, "bleak_client", None)
+            if bleak is not None:
+                connected_state = _probe_connected_state(cached_candidate)
+                if connected_state is None:
+                    connected_state = _probe_connected_state(bleak)
+                if connected_state is None:
+                    logger.debug(
+                        "Cached discovery client lacks isConnected()/is_connected(); discarding client."
+                    )
+                    discard_cached_candidate = True
+                elif not connected_state:
+                    discard_cached_candidate = True
+
+        with self._client_lock:
+            if discard_cached_candidate and self._client is cached_candidate:
+                _discard_cached_client()
+
             if self._client is None:
                 # Factory resolution precedence (back-compat and testability):
                 #   1. Explicit self.client_factory (injected for testing)

@@ -575,11 +575,11 @@ class ClientManager:
         """
         is_finalizing = getattr(sys, "is_finalizing", None)
         skip_disconnect = bool(is_finalizing()) if callable(is_finalizing) else False
-        safe_cleanup_hook = getattr(self.error_handler, "_safe_cleanup", None)
+        safe_cleanup_hook = getattr(self.error_handler, "safe_cleanup", None)
         if not callable(safe_cleanup_hook) or _is_unconfigured_mock_callable(
             safe_cleanup_hook
         ):
-            safe_cleanup_hook = getattr(self.error_handler, "safe_cleanup", None)
+            safe_cleanup_hook = getattr(self.error_handler, "_safe_cleanup", None)
         if not callable(safe_cleanup_hook) or _is_unconfigured_mock_callable(
             safe_cleanup_hook
         ):

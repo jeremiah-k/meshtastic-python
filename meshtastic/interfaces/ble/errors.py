@@ -111,9 +111,9 @@ class BLEErrorHandler:
         cls,
         func: Callable[[], T],
         default_return: T | None = None,
-        log_error: bool = True,
+        log_error: bool = True,  # noqa: FBT001,FBT002
         error_msg: str = "Error in operation",
-        reraise: bool = False,
+        reraise: bool = False,  # noqa: FBT001,FBT002
     ) -> T | None:
         """Execute a callable with standardized guarded BLE error handling.
 

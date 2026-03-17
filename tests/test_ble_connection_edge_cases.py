@@ -410,17 +410,26 @@ def test_client_manager_safe_close_client_already_closed() -> None:
 
 
 @pytest.mark.unit
-def test_client_manager_safe_close_client_prefers_internal_safe_cleanup() -> None:
-    """_safe_close_client should prefer internal ``_safe_cleanup`` over ``safe_cleanup``."""
+def test_client_manager_safe_close_client_prefers_public_safe_cleanup() -> None:
+    """_safe_close_client should prefer public ``safe_cleanup`` over ``_safe_cleanup``."""
     state_manager = BLEStateManager()
     lock = RLock()
     thread_coordinator = MagicMock()
     error_handler = MagicMock()
-    error_handler.safe_cleanup = MagicMock(
-        side_effect=AssertionError("safe_cleanup should not be called")
-    )
+
+    def _public_safe_cleanup(*args: object, **kwargs: object) -> bool:
+        func = kwargs.get("func")
+        if not callable(func) and args:
+            first_arg = args[0]
+            func = first_arg if callable(first_arg) else None
+        if callable(func):
+            func()
+            return True
+        return False
+
+    error_handler.safe_cleanup = MagicMock(side_effect=_public_safe_cleanup)
     error_handler._safe_cleanup = MagicMock(
-        side_effect=lambda func, _name=None, **_kwargs: func()
+        side_effect=AssertionError("_safe_cleanup should not be called")
     )
     manager = ClientManager(state_manager, lock, thread_coordinator, error_handler)
 
@@ -430,8 +439,8 @@ def test_client_manager_safe_close_client_prefers_internal_safe_cleanup() -> Non
 
     manager._safe_close_client(mock_client)
 
-    error_handler.safe_cleanup.assert_not_called()
-    assert error_handler._safe_cleanup.call_count == 2
+    assert error_handler.safe_cleanup.call_count == 2
+    error_handler._safe_cleanup.assert_not_called()
     mock_client.disconnect.assert_called_once()
     mock_client.close.assert_called_once()
 

@@ -4992,7 +4992,8 @@ def test_wait_for_disconnect_notifications_skips_unconfigured_queuework(
     iface = SimpleNamespace(
         error_handler=SimpleNamespace(safe_execute=lambda func, **_kwargs: func())
     )
-    publishing_thread = SimpleNamespace()
+    publishing_thread = MagicMock()
+    queue_work = publishing_thread.queueWork
     drained: list[bool] = []
     monkeypatch.setattr(
         BLECompatibilityEventService,
@@ -5008,6 +5009,7 @@ def test_wait_for_disconnect_notifications_skips_unconfigured_queuework(
     )
 
     assert drained == [True]
+    queue_work.assert_not_called()
 
 
 def test_publish_connection_status_runs_directly_when_queuework_unconfigured(
@@ -5042,7 +5044,8 @@ def test_publish_connection_status_runs_directly_when_queuework_unconfigured(
     )
 
     iface = SimpleNamespace()
-    publishing_thread = SimpleNamespace()
+    publishing_thread = MagicMock()
+    queue_work = publishing_thread.queueWork
 
     BLECompatibilityEventService.publish_connection_status(
         iface,
@@ -5051,6 +5054,7 @@ def test_publish_connection_status_runs_directly_when_queuework_unconfigured(
     )
 
     assert sent == [("meshtastic.connection.status", iface, True)]
+    queue_work.assert_not_called()
 
 
 def test_publish_connection_status_falls_back_inline_when_non_blocking_enqueue_unavailable(

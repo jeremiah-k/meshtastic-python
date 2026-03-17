@@ -196,21 +196,21 @@ def test_compatibility_event_service_enqueue_paths() -> None:
         is False
     )
 
+    queued_from_full: list[object] = []
     full_nonblocking = SimpleNamespace(
         queueWork=lambda cb: queued_from_full.append(cb),
         queue=SimpleNamespace(put_nowait=lambda _cb: (_ for _ in ()).throw(Full())),
         thread=None,
     )
-    queued_from_full: list[object] = []
     assert (
         BLECompatibilityEventService._enqueue_publish_callback(
             full_nonblocking,
             callback,
             prefer_non_blocking=True,
         )
-        is True
+        is False
     )
-    assert queued_from_full == [callback]
+    assert queued_from_full == []
 
     queued: list[object] = []
     queue_work_only = SimpleNamespace(
@@ -360,12 +360,11 @@ def test_publish_connection_status_branches(monkeypatch: pytest.MonkeyPatch) -> 
     )
 
 
-def test_coordination_inert_thread_start_raises() -> None:
-    """Starting an inert coordinator thread should raise a start failure."""
+def test_coordination_inert_thread_start_is_noop() -> None:
+    """Starting an inert coordinator thread should only warn and return."""
     coordinator = ThreadCoordinator()
     inert = _InertThread(name="never-start")
-    with pytest.raises(RuntimeError, match="Cannot start inert thread"):
-        coordinator._start_thread(inert)
+    coordinator._start_thread(inert)
 
 
 def test_reconnection_error_types_and_hook_resolution() -> None:
@@ -394,9 +393,7 @@ def test_reconnection_error_types_and_hook_resolution() -> None:
         scheduler._resolve_thread_coordinator_hook("create_thread", "_create_thread")
 
 
-def test_reconnection_schedule_thread_not_started_and_policy_missing_method(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_reconnection_schedule_thread_not_started_and_policy_missing_method() -> None:
     """Reconnect scheduler should clear stale thread refs and worker should raise for missing methods."""
     scheduler = ReconnectScheduler(
         state_manager=BLEStateManager(),
@@ -498,96 +495,97 @@ def test_management_execute_management_command_existing_client_and_trust_edges(
 ) -> None:
     """Management command and trust helpers should cover missing-target and subprocess branches."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-
-    start_context = SimpleNamespace(
-        expected_implicit_binding=None,
-        target_address=None,
-        use_existing_client_without_resolved_address=False,
-    )
-    monkeypatch.setattr(
-        BLEManagementCommandsService,
-        "_start_management_phase",
-        staticmethod(lambda _iface, _address: start_context),
-    )
-    refreshed_client = DummyClient()
-    monkeypatch.setattr(
-        BLEManagementCommandsService,
-        "_resolve_management_target",
-        staticmethod(lambda _iface, _address, _ctx: (None, refreshed_client)),
-    )
-    monkeypatch.setattr(
-        BLEManagementCommandsService,
-        "_acquire_client_for_target",
-        staticmethod(lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError())),
-    )
-
-    assert (
-        BLEManagementCommandsService._execute_management_command(
-            iface,
-            None,
-            lambda client: client,
-            ble_client_factory=DummyClient,
-            connected_elsewhere=lambda *_args: False,
-        )
-        is refreshed_client
-    )
-
     bluetooth_iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-    bluetooth_iface._format_bluetoothctl_address = lambda address: address
-    bluetooth_iface._management_target_gate = lambda _address: contextlib.nullcontext()
-
-    class _SubprocessModule:
-        TimeoutExpired = RuntimeError
-
-        @staticmethod
-        def run(*_args: object, **_kwargs: object) -> object:
-            raise ValueError("unexpected non-oserror")
-
-    with pytest.raises(bluetooth_iface.BLEError, match="trust"):
-        BLEManagementCommandsService._run_bluetoothctl_trust_command(
-            bluetooth_iface,
-            "/usr/bin/bluetoothctl",
-            "AA:BB:CC:DD:EE:FF",
-            1.0,
-            subprocess_module=_SubprocessModule,
-            trust_hex_blob_re=importlib.import_module(
-                "meshtastic.interfaces.ble.management_service"
-            ).TRUST_HEX_BLOB_RE,
-            trust_token_re=importlib.import_module(
-                "meshtastic.interfaces.ble.management_service"
-            ).TRUST_TOKEN_RE,
-            trust_command_output_max_chars=3,
+    try:
+        start_context = SimpleNamespace(
+            expected_implicit_binding=None,
+            target_address=None,
+            use_existing_client_without_resolved_address=False,
+        )
+        monkeypatch.setattr(
+            BLEManagementCommandsService,
+            "_start_management_phase",
+            staticmethod(lambda _iface, _address: start_context),
+        )
+        refreshed_client = DummyClient()
+        monkeypatch.setattr(
+            BLEManagementCommandsService,
+            "_resolve_management_target",
+            staticmethod(lambda _iface, _address, _ctx: (None, refreshed_client)),
+        )
+        monkeypatch.setattr(
+            BLEManagementCommandsService,
+            "_acquire_client_for_target",
+            staticmethod(lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError())),
         )
 
-    monkeypatch.setattr(
-        BLEManagementCommandsService,
-        "_start_management_phase",
-        staticmethod(lambda _iface, _address: start_context),
-    )
-    monkeypatch.setattr(
-        BLEManagementCommandsService,
-        "_resolve_management_target",
-        staticmethod(lambda _iface, _address, _ctx: (None, None)),
-    )
-
-    with pytest.raises(bluetooth_iface.BLEError, match="require"):
-        BLEManagementCommandsService.trust(
-            bluetooth_iface,
-            None,
-            timeout=1.0,
-            sys_module=SimpleNamespace(platform="linux"),
-            shutil_module=SimpleNamespace(which=lambda _name: "/usr/bin/bluetoothctl"),
-            subprocess_module=_SubprocessModule,
-            trust_hex_blob_re=importlib.import_module(
-                "meshtastic.interfaces.ble.management_service"
-            ).TRUST_HEX_BLOB_RE,
-            trust_token_re=importlib.import_module(
-                "meshtastic.interfaces.ble.management_service"
-            ).TRUST_TOKEN_RE,
-            trust_command_output_max_chars=3,
+        assert (
+            BLEManagementCommandsService._execute_management_command(
+                iface,
+                None,
+                lambda client: client,
+                ble_client_factory=DummyClient,
+                connected_elsewhere=lambda *_args: False,
+            )
+            is refreshed_client
         )
-    iface.close()
-    bluetooth_iface.close()
+
+        bluetooth_iface._format_bluetoothctl_address = lambda address: address
+        bluetooth_iface._management_target_gate = lambda _address: contextlib.nullcontext()
+
+        class _SubprocessModule:
+            TimeoutExpired = RuntimeError
+
+            @staticmethod
+            def run(*_args: object, **_kwargs: object) -> object:
+                raise ValueError("unexpected non-oserror")
+
+        with pytest.raises(bluetooth_iface.BLEError, match="trust"):
+            BLEManagementCommandsService._run_bluetoothctl_trust_command(
+                bluetooth_iface,
+                "/usr/bin/bluetoothctl",
+                "AA:BB:CC:DD:EE:FF",
+                1.0,
+                subprocess_module=_SubprocessModule,
+                trust_hex_blob_re=importlib.import_module(
+                    "meshtastic.interfaces.ble.management_service"
+                ).TRUST_HEX_BLOB_RE,
+                trust_token_re=importlib.import_module(
+                    "meshtastic.interfaces.ble.management_service"
+                ).TRUST_TOKEN_RE,
+                trust_command_output_max_chars=3,
+            )
+
+        monkeypatch.setattr(
+            BLEManagementCommandsService,
+            "_start_management_phase",
+            staticmethod(lambda _iface, _address: start_context),
+        )
+        monkeypatch.setattr(
+            BLEManagementCommandsService,
+            "_resolve_management_target",
+            staticmethod(lambda _iface, _address, _ctx: (None, None)),
+        )
+
+        with pytest.raises(bluetooth_iface.BLEError, match="require"):
+            BLEManagementCommandsService.trust(
+                bluetooth_iface,
+                None,
+                timeout=1.0,
+                sys_module=SimpleNamespace(platform="linux"),
+                shutil_module=SimpleNamespace(which=lambda _name: "/usr/bin/bluetoothctl"),
+                subprocess_module=_SubprocessModule,
+                trust_hex_blob_re=importlib.import_module(
+                    "meshtastic.interfaces.ble.management_service"
+                ).TRUST_HEX_BLOB_RE,
+                trust_token_re=importlib.import_module(
+                    "meshtastic.interfaces.ble.management_service"
+                ).TRUST_TOKEN_RE,
+                trust_command_output_max_chars=3,
+            )
+    finally:
+        iface.close()
+        bluetooth_iface.close()
 
 
 def test_error_handler_safe_execute_reraises_unexpected_when_requested() -> None:
@@ -719,74 +717,75 @@ def test_compatibility_service_remaining_enqueue_wait_and_drain_branches(
     )
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    try:
+        class _NeverSetEvent:
+            def set(self) -> None:
+                return None
 
-    class _NeverSetEvent:
-        def set(self) -> None:
-            return None
+            @staticmethod
+            def wait(timeout: float | None = None) -> bool:
+                _ = timeout
+                return False
 
-        @staticmethod
-        def wait(timeout: float | None = None) -> bool:
-            _ = timeout
-            return False
-
-    monkeypatch.setattr(compatibility_mod, "Event", _NeverSetEvent, raising=True)
-    monkeypatch.setattr(
-        BLECompatibilityEventService,
-        "_safe_execute",
-        staticmethod(lambda *_args, **_kwargs: True),
-    )
-    drained: list[str] = []
-    monkeypatch.setattr(
-        BLECompatibilityEventService,
-        "drain_publish_queue",
-        staticmethod(lambda *_args, **_kwargs: drained.append("drained")),
-    )
-    BLECompatibilityEventService.wait_for_disconnect_notifications(
-        iface,
-        timeout=0.01,
-        publishing_thread=SimpleNamespace(
-            thread=SimpleNamespace(is_alive=lambda: True),
-            queueWork=lambda _cb: None,
-            queue=SimpleNamespace(put_nowait=lambda _cb: None),
-        ),
-    )
-    assert drained == []
-    monkeypatch.setattr(
-        BLECompatibilityEventService,
-        "_safe_execute",
-        original_safe_execute,
-    )
-    monkeypatch.setattr(
-        BLECompatibilityEventService,
-        "drain_publish_queue",
-        original_drain_publish_queue,
-    )
-
-    flush_event = Event()
-    called_thread_drain: list[str] = []
-    BLECompatibilityEventService.drain_publish_queue(
-        iface,
-        flush_event,
-        publishing_thread=SimpleNamespace(
-            thread=SimpleNamespace(
-                _drain_publish_queue=lambda _event: called_thread_drain.append("thread")
+        monkeypatch.setattr(compatibility_mod, "Event", _NeverSetEvent, raising=True)
+        monkeypatch.setattr(
+            BLECompatibilityEventService,
+            "_safe_execute",
+            staticmethod(lambda *_args, **_kwargs: True),
+        )
+        drained: list[str] = []
+        monkeypatch.setattr(
+            BLECompatibilityEventService,
+            "drain_publish_queue",
+            staticmethod(lambda *_args, **_kwargs: drained.append("drained")),
+        )
+        BLECompatibilityEventService.wait_for_disconnect_notifications(
+            iface,
+            timeout=0.01,
+            publishing_thread=SimpleNamespace(
+                thread=SimpleNamespace(is_alive=lambda: True),
+                queueWork=lambda _cb: None,
+                queue=SimpleNamespace(put_nowait=lambda _cb: None),
             ),
-            queue=SimpleNamespace(get_nowait=lambda: (_ for _ in ()).throw(Empty())),
-        ),
-    )
-    assert called_thread_drain == ["thread"]
+        )
+        assert drained == []
+        monkeypatch.setattr(
+            BLECompatibilityEventService,
+            "_safe_execute",
+            original_safe_execute,
+        )
+        monkeypatch.setattr(
+            BLECompatibilityEventService,
+            "drain_publish_queue",
+            original_drain_publish_queue,
+        )
 
-    BLECompatibilityEventService.drain_publish_queue(
-        iface,
-        flush_event,
-        publishing_thread=SimpleNamespace(
-            thread=None,
-            queue=SimpleNamespace(
-                get_nowait=lambda: (_ for _ in ()).throw(RuntimeError("queue read failed"))
+        flush_event = Event()
+        called_thread_drain: list[str] = []
+        BLECompatibilityEventService.drain_publish_queue(
+            iface,
+            flush_event,
+            publishing_thread=SimpleNamespace(
+                thread=SimpleNamespace(
+                    _drain_publish_queue=lambda _event: called_thread_drain.append("thread")
+                ),
+                queue=SimpleNamespace(get_nowait=lambda: (_ for _ in ()).throw(Empty())),
             ),
-        ),
-    )
-    iface.close()
+        )
+        assert called_thread_drain == ["thread"]
+
+        BLECompatibilityEventService.drain_publish_queue(
+            iface,
+            flush_event,
+            publishing_thread=SimpleNamespace(
+                thread=None,
+                queue=SimpleNamespace(
+                    get_nowait=lambda: (_ for _ in ()).throw(RuntimeError("queue read failed"))
+                ),
+            ),
+        )
+    finally:
+        iface.close()
 
 
 def test_reconnect_scheduler_start_exception_and_management_trust_truncation(
@@ -806,31 +805,32 @@ def test_reconnect_scheduler_start_exception_and_management_trust_truncation(
         scheduler._schedule_reconnect(True, Event())
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    try:
+        class _FailingSubprocess:
+            TimeoutExpired = RuntimeError
 
-    class _FailingSubprocess:
-        TimeoutExpired = RuntimeError
+            @staticmethod
+            def run(*_args: object, **_kwargs: object) -> object:
+                return SimpleNamespace(
+                    returncode=1,
+                    stderr="A very long diagnostic output that should be truncated for tests",
+                    stdout="",
+                )
 
-        @staticmethod
-        def run(*_args: object, **_kwargs: object) -> object:
-            return SimpleNamespace(
-                returncode=1,
-                stderr="A very long diagnostic output that should be truncated for tests",
-                stdout="",
+        with pytest.raises(iface.BLEError, match="trust"):
+            BLEManagementCommandsService._run_bluetoothctl_trust_command(
+                iface,
+                "/usr/bin/bluetoothctl",
+                "AA:BB:CC:DD:EE:FF",
+                1.0,
+                subprocess_module=_FailingSubprocess,
+                trust_hex_blob_re=importlib.import_module(
+                    "meshtastic.interfaces.ble.management_service"
+                ).TRUST_HEX_BLOB_RE,
+                trust_token_re=importlib.import_module(
+                    "meshtastic.interfaces.ble.management_service"
+                ).TRUST_TOKEN_RE,
+                trust_command_output_max_chars=2,
             )
-
-    with pytest.raises(iface.BLEError, match="trust"):
-        BLEManagementCommandsService._run_bluetoothctl_trust_command(
-            iface,
-            "/usr/bin/bluetoothctl",
-            "AA:BB:CC:DD:EE:FF",
-            1.0,
-            subprocess_module=_FailingSubprocess,
-            trust_hex_blob_re=importlib.import_module(
-                "meshtastic.interfaces.ble.management_service"
-            ).TRUST_HEX_BLOB_RE,
-            trust_token_re=importlib.import_module(
-                "meshtastic.interfaces.ble.management_service"
-            ).TRUST_TOKEN_RE,
-            trust_command_output_max_chars=2,
-        )
-    iface.close()
+    finally:
+        iface.close()

@@ -315,29 +315,40 @@ class BLEClient:
             Always returns ``None``.
         """
         safe_cleanup = self._resolve_error_handler_hook("safe_cleanup", "_safe_cleanup")
-        hook_called = False
+        cleanup_ran = False
+
+        def _tracked_cleanup() -> Any:
+            nonlocal cleanup_ran
+            cleanup_ran = True
+            return cleanup()
+
         if safe_cleanup is not None:
             try:
-                hook_called = True
-                safe_cleanup(cleanup, cleanup_name=operation_name)
+                safe_cleanup(_tracked_cleanup, cleanup_name=operation_name)
                 return
             except TypeError as exc:
                 if _is_unexpected_keyword_error(exc, "cleanup_name"):
                     try:
-                        hook_called = True
-                        safe_cleanup(cleanup, operation_name)
+                        safe_cleanup(_tracked_cleanup, operation_name)
                         return
                     except Exception:  # noqa: BLE001 - cleanup paths are best effort
                         logger.debug("Error during %s", operation_name, exc_info=True)
+                        if cleanup_ran:
+                            return
                 else:
                     logger.debug("Error during %s", operation_name, exc_info=True)
+                    if cleanup_ran:
+                        return
             except Exception:  # noqa: BLE001 - cleanup paths are best effort
                 logger.debug("Error during %s", operation_name, exc_info=True)
-        if safe_cleanup is None or not hook_called:
-            try:
-                cleanup()
-            except Exception:  # noqa: BLE001 - cleanup paths are best effort
-                logger.debug("Error during %s", operation_name, exc_info=True)
+                if cleanup_ran:
+                    return
+        if cleanup_ran:
+            return
+        try:
+            cleanup()
+        except Exception:  # noqa: BLE001 - cleanup paths are best effort
+            logger.debug("Error during %s", operation_name, exc_info=True)
 
     def _require_bleak_client(self, error_message: str) -> BleakRootClient:
         """Return active Bleak client or raise BLEError for uninitialized transport.

@@ -216,6 +216,8 @@ def _safe_execute_through_adapter(
             "reraise": reraise,
         }
         try:
+            # Bounded fallback: each rejected kwarg is removed once, so this
+            # loop exits after at most len(adapter_kwargs) + 1 attempts.
             while True:
                 try:
                     return cast(T | None, safe_execute(func, **adapter_kwargs))

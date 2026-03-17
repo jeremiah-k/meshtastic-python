@@ -113,9 +113,7 @@ def test_client_manager_thread_dispatch_and_wrapper_paths(
     manager._connect_client.assert_called_once()
 
 
-def test_client_manager_update_reference_thread_failure_closes_inline(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_client_manager_update_reference_thread_failure_closes_inline() -> None:
     """update_client_reference should close old client inline on thread start failure."""
     lock = RLock()
     manager = ClientManager(BLEStateManager(), lock, SimpleNamespace(), BLEErrorHandler())

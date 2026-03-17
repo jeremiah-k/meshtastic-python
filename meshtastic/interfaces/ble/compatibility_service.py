@@ -145,10 +145,7 @@ class BLECompatibilityEventService:
                     put_nowait_callback(callback)
                     return True
                 except Full:
-                    pass
-            if queue_work_callback is not None:
-                queue_work_callback(callback)
-                return True
+                    return False
             return False
         if queue_work_callback is not None:
             queue_work_callback(callback)

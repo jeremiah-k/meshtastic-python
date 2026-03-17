@@ -242,7 +242,16 @@ class BLEManagementCommandsService:
                         raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
             target_candidate = address if address is not None else current_binding
             if target_candidate is not None:
-                target_address = target_candidate.strip() or None
+                candidate = target_candidate.strip() or None
+                normalized_candidate = sanitize_address(candidate)
+                if (
+                    normalized_candidate is not None
+                    and _HEX_MAC_NO_SEPARATOR_RE.fullmatch(normalized_candidate)
+                    is not None
+                ):
+                    target_address = candidate
+                else:
+                    target_address = None
             return target_address, refreshed_existing_client
 
         return target_address, None

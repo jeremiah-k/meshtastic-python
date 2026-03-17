@@ -393,8 +393,12 @@ def test_auto_reconnect_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
         if disconnect_client and hasattr(disconnect_client, "bleak_client"):
             iface._on_ble_disconnect(disconnect_client.bleak_client)  # type: ignore[arg-type]
 
-        # Allow time for auto-reconnect thread to run
-        for _ in range(50):
+        # Allow time for auto-reconnect thread to run.
+        reconnect_poll_iterations = max(
+            1,
+            int(ble_mod.BLEConfig.AUTO_RECONNECT_INITIAL_DELAY / 0.01),
+        )
+        for _ in range(reconnect_poll_iterations):
             if (
                 len(_get_connect_stub_calls(iface)) >= 2
                 and cast(object, iface.client) is client
