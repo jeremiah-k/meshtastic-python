@@ -187,8 +187,7 @@ class BLEErrorHandler:
     # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _safe_cleanup.
     @classmethod
     def safe_cleanup(
-        cls,
-        func: Callable[[], Any], cleanup_name: str = "cleanup operation"
+        cls, func: Callable[[], Any], cleanup_name: str = "cleanup operation"
     ) -> bool:
         """Run a cleanup callable and suppress non-fatal cleanup exceptions.
 

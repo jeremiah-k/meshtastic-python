@@ -6,7 +6,7 @@ import contextlib
 import importlib
 import threading
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Protocol
 from unittest.mock import MagicMock
 
 import pytest
@@ -29,8 +29,18 @@ class _FatalReceiveError(RuntimeError):
     """Used by receive-loop tests."""
 
 
+class _IfaceWithStateManager(Protocol):
+    _state_manager: object
+
+
 def _make_iface(monkeypatch: pytest.MonkeyPatch) -> Any:
     return _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+
+
+def _reset_state_manager(iface: _IfaceWithStateManager) -> None:
+    iface._state_manager = importlib.import_module(
+        "meshtastic.interfaces.ble.state"
+    ).BLEStateManager()
 
 
 def test_lifecycle_error_handler_cleanup_and_execute_branches(
@@ -38,77 +48,85 @@ def test_lifecycle_error_handler_cleanup_and_execute_branches(
 ) -> None:
     """Lifecycle error-handler adapters should cover compatibility fallback branches."""
     iface = _make_iface(monkeypatch)
+    try:
+        legacy_cleanup_calls: list[str] = []
 
-    legacy_cleanup_calls: list[str] = []
+        def _legacy_cleanup(func: Any, _operation_name: str) -> None:
+            func()
+            legacy_cleanup_calls.append("ran")
+            raise RuntimeError("hook post-processing failure")
 
-    def _legacy_cleanup(func: Any, _operation_name: str) -> None:
-        func()
-        legacy_cleanup_calls.append("ran")
-        raise RuntimeError("hook post-processing failure")
-
-    iface.error_handler = SimpleNamespace(
-        safe_cleanup=MagicMock(),
-        _safe_cleanup=_legacy_cleanup,
-    )
-
-    cleanup_calls: list[str] = []
-    BLELifecycleService._error_handler_safe_cleanup(
-        iface,
-        lambda: cleanup_calls.append("cleanup"),
-        "cleanup-op",
-    )
-    assert cleanup_calls == ["cleanup"]
-    assert legacy_cleanup_calls == ["ran"]
-
-    iface.error_handler = SimpleNamespace()
-    BLELifecycleService._error_handler_safe_cleanup(
-        iface,
-        lambda: (_ for _ in ()).throw(RuntimeError("cleanup failed")),
-        "cleanup-op",
-    )
-
-    def _keyword_incompatible_safe_execute(func: Any, *args: object, **kwargs: object) -> object:
-        if "error_msg" in kwargs:
-            raise TypeError("safe_execute() got an unexpected keyword argument 'error_msg'")
-        if args:
-            raise TypeError("takes 1 positional argument but 2 positional arguments were given")
-        return func()
-
-    iface.error_handler = SimpleNamespace(safe_execute=_keyword_incompatible_safe_execute)
-    assert (
-        BLELifecycleService._error_handler_safe_execute(
-            iface,
-            lambda: "ok",
-            error_msg="execute-error",
+        iface.error_handler = SimpleNamespace(
+            safe_cleanup=MagicMock(),
+            _safe_cleanup=_legacy_cleanup,
         )
-        == "ok"
-    )
 
-    def _typeerror_after_running(func: Any, **_kwargs: object) -> object:
-        func()
-        raise TypeError("non-keyword type error")
-
-    iface.error_handler = SimpleNamespace(safe_execute=_typeerror_after_running)
-    assert (
-        BLELifecycleService._error_handler_safe_execute(
+        cleanup_calls: list[str] = []
+        BLELifecycleService._error_handler_safe_cleanup(
             iface,
-            lambda: "ran",
-            error_msg="execute-error",
+            lambda: cleanup_calls.append("cleanup"),
+            "cleanup-op",
         )
-        is None
-    )
+        assert cleanup_calls == ["cleanup"]
+        assert legacy_cleanup_calls == ["ran"]
 
-    iface.error_handler = SimpleNamespace()
-    assert (
-        BLELifecycleService._error_handler_safe_execute(
+        iface.error_handler = SimpleNamespace()
+        BLELifecycleService._error_handler_safe_cleanup(
             iface,
-            lambda: (_ for _ in ()).throw(RuntimeError("fallback failed")),
-            error_msg="fallback",
+            lambda: (_ for _ in ()).throw(RuntimeError("cleanup failed")),
+            "cleanup-op",
         )
-        is None
-    )
 
-    iface.close()
+        def _keyword_incompatible_safe_execute(
+            func: Any, *args: object, **kwargs: object
+        ) -> object:
+            if "error_msg" in kwargs:
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
+                    "safe_execute() got an unexpected keyword argument 'error_msg'"
+                )
+            if args:
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
+                    "takes 1 positional argument but 2 positional arguments were given"
+                )
+            return func()
+
+        iface.error_handler = SimpleNamespace(
+            safe_execute=_keyword_incompatible_safe_execute
+        )
+        assert (
+            BLELifecycleService._error_handler_safe_execute(
+                iface,
+                lambda: "ok",
+                error_msg="execute-error",
+            )
+            == "ok"
+        )
+
+        def _typeerror_after_running(func: Any, **_kwargs: object) -> object:
+            func()
+            raise TypeError("non-keyword type error")
+
+        iface.error_handler = SimpleNamespace(safe_execute=_typeerror_after_running)
+        assert (
+            BLELifecycleService._error_handler_safe_execute(
+                iface,
+                lambda: "ran",
+                error_msg="execute-error",
+            )
+            is None
+        )
+
+        iface.error_handler = SimpleNamespace()
+        assert (
+            BLELifecycleService._error_handler_safe_execute(
+                iface,
+                lambda: (_ for _ in ()).throw(RuntimeError("fallback failed")),
+                error_msg="fallback",
+            )
+            is None
+        )
+    finally:
+        iface.close()
 
 
 def test_lifecycle_thread_dispatch_helpers_cover_legacy_and_missing(
@@ -264,12 +282,16 @@ def test_lifecycle_disconnect_planning_and_side_effect_paths(
         iface.client = DummyClient()
         iface._disconnect_notified = True
         iface._state_manager._transition_to(ConnectionState.CONNECTING)
-    assert BLELifecycleService._resolve_disconnect_target(iface, "src", None, None).early_return
+    assert BLELifecycleService._resolve_disconnect_target(
+        iface, "src", None, None
+    ).early_return
 
     with iface._state_lock:
         iface._state_manager._reset_to_disconnected()
         iface._disconnect_notified = True
-    assert BLELifecycleService._resolve_disconnect_target(iface, "src", None, None).early_return
+    assert BLELifecycleService._resolve_disconnect_target(
+        iface, "src", None, None
+    ).early_return
 
     previous = DummyClient()
     previous.address = "AA:BB:CC:DD:EE:FF"
@@ -288,7 +310,9 @@ def test_lifecycle_disconnect_planning_and_side_effect_paths(
         "_state_manager_reset_to_disconnected",
         staticmethod(lambda *_args, **_kwargs: False),
     )
-    detailed_plan = BLELifecycleService._resolve_disconnect_target(iface, "src", None, None)
+    detailed_plan = BLELifecycleService._resolve_disconnect_target(
+        iface, "src", None, None
+    )
     assert detailed_plan.early_return is None
 
     iface.client = DummyClient()
@@ -317,7 +341,9 @@ def test_lifecycle_disconnect_planning_and_side_effect_paths(
         was_publish_pending=False,
         was_replacement_pending=False,
     )
-    assert BLELifecycleService._execute_disconnect_side_effects(iface, plan=stale_plan, source="stale")
+    assert BLELifecycleService._execute_disconnect_side_effects(
+        iface, plan=stale_plan, source="stale"
+    )
     assert disconnected_keys == ["stale-key"]
     assert closed_previous == ["closed-previous"]
 
@@ -356,222 +382,287 @@ def test_lifecycle_disconnect_planning_and_side_effect_paths(
     iface.close()
 
 
-def test_lifecycle_state_helpers_and_finalize_paths(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Lifecycle state-helper and shutdown/finalize helpers should cover fallback branches."""
+def test_lifecycle_state_manager_helper_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """State-manager compatibility helpers should cover callable/member/missing paths."""
     iface = _make_iface(monkeypatch)
-
-    iface._state_manager = SimpleNamespace(
-        is_connected=MagicMock(),
-        _is_connected=True,
-        current_state=MagicMock(),
-        _current_state=ConnectionState.CONNECTED,
-        transition_to=lambda _state: True,
-        _transition_to=lambda _state: True,
-        reset_to_disconnected=lambda: True,
-        _reset_to_disconnected=lambda: True,
-        is_closing=MagicMock(),
-        _is_closing=True,
-    )
-    assert BLELifecycleService._state_manager_is_connected(iface) is True
-    assert BLELifecycleService._state_manager_current_state(iface) == ConnectionState.CONNECTED
-    assert BLELifecycleService._state_manager_transition_to(iface, ConnectionState.CONNECTED)
-    assert BLELifecycleService._state_manager_reset_to_disconnected(iface)
-    assert BLELifecycleService._state_manager_is_closing(iface) is True
-
-    iface._state_manager = SimpleNamespace()
-    with pytest.raises(AttributeError):
-        BLELifecycleService._state_manager_is_connected(iface)
-    with pytest.raises(AttributeError):
-        BLELifecycleService._state_manager_current_state(iface)
-    with pytest.raises(AttributeError):
-        BLELifecycleService._state_manager_transition_to(iface, ConnectionState.CONNECTED)
-    with pytest.raises(AttributeError):
-        BLELifecycleService._state_manager_reset_to_disconnected(iface)
-
-    bad_client = SimpleNamespace(
-        isConnected=lambda: "not-bool",
-        is_connected=MagicMock(),
-        _is_connected=MagicMock(),
-    )
-    with pytest.raises(AttributeError):
-        BLELifecycleService._client_is_connected(bad_client)
-
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.lifecycle_service._is_currently_connected_elsewhere",
-        lambda key, owner: bool(key == "key2"),
-    )
-    assert BLELifecycleService._has_lost_gate_ownership(iface, "key1", "key2") is True
-
-    iface.client = DummyClient()
-    iface._connection_alias_key = "alias"
-    iface._sorted_address_keys = lambda *_keys: ["k1", "k2"]
-    iface._mark_address_keys_disconnected = MagicMock()
-    iface._discard_invalidated_connected_client = MagicMock()
-    with pytest.raises(iface.BLEError, match=ERROR_INTERFACE_CLOSING):
-        BLELifecycleService._raise_for_invalidated_connect_result(
-            iface,
-            DummyClient(),
-            "device-key",
-            "alias-key",
+    try:
+        current_state_public = MagicMock(return_value=ConnectionState.CONNECTED)
+        transition_to_public = MagicMock(return_value=True)
+        reset_to_disconnected_public = MagicMock(return_value=True)
+        iface._state_manager = SimpleNamespace(
+            is_connected=True,
+            _is_connected=False,
+            current_state=current_state_public,
+            _current_state=ConnectionState.DISCONNECTED,
+            transition_to=transition_to_public,
+            _transition_to=lambda _state: False,
+            reset_to_disconnected=reset_to_disconnected_public,
+            _reset_to_disconnected=lambda: False,
             is_closing=True,
-            lost_gate_ownership=False,
-            restore_address=None,
-            restore_last_connection_request=None,
+            _is_closing=False,
+        )
+        assert BLELifecycleService._state_manager_is_connected(iface) is True
+        assert (
+            BLELifecycleService._state_manager_current_state(iface)
+            == ConnectionState.CONNECTED
+        )
+        assert BLELifecycleService._state_manager_transition_to(
+            iface, ConnectionState.CONNECTED
+        )
+        assert BLELifecycleService._state_manager_reset_to_disconnected(iface)
+        assert BLELifecycleService._state_manager_is_closing(iface) is True
+        current_state_public.assert_called_once_with()
+        transition_to_public.assert_called_once_with(ConnectionState.CONNECTED)
+        reset_to_disconnected_public.assert_called_once_with()
+
+        iface._state_manager = SimpleNamespace()
+        with pytest.raises(AttributeError):
+            BLELifecycleService._state_manager_is_connected(iface)
+        with pytest.raises(AttributeError):
+            BLELifecycleService._state_manager_current_state(iface)
+        with pytest.raises(AttributeError):
+            BLELifecycleService._state_manager_transition_to(
+                iface, ConnectionState.CONNECTED
+            )
+        with pytest.raises(AttributeError):
+            BLELifecycleService._state_manager_reset_to_disconnected(iface)
+
+        bad_client = SimpleNamespace(
+            isConnected=lambda: "not-bool",
+            is_connected=MagicMock(),
+            _is_connected=MagicMock(),
+        )
+        with pytest.raises(AttributeError):
+            BLELifecycleService._client_is_connected(bad_client)
+    finally:
+        _reset_state_manager(iface)
+        iface.close()
+
+
+def test_lifecycle_invalidation_and_publish_verification_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invalidation helpers should cover ownership-loss and verify/publish races."""
+    iface = _make_iface(monkeypatch)
+    try:
+        monkeypatch.setattr(
+            "meshtastic.interfaces.ble.lifecycle_service._is_currently_connected_elsewhere",
+            lambda key, owner: bool(key == "key2"),
+        )
+        assert (
+            BLELifecycleService._has_lost_gate_ownership(iface, "key1", "key2") is True
         )
 
-    iface._ever_connected = MagicMock()
-    assert BLELifecycleService._ever_connected_flag(iface) is False
+        iface.client = DummyClient()
+        iface._connection_alias_key = "alias"
+        iface._sorted_address_keys = lambda *_keys: ["k1", "k2"]
+        iface._mark_address_keys_disconnected = MagicMock()
+        iface._discard_invalidated_connected_client = MagicMock()
+        with pytest.raises(iface.BLEError, match=ERROR_INTERFACE_CLOSING):
+            BLELifecycleService._raise_for_invalidated_connect_result(
+                iface,
+                DummyClient(),
+                "device-key",
+                "alias-key",
+                is_closing=True,
+                lost_gate_ownership=False,
+                restore_address=None,
+                restore_last_connection_request=None,
+            )
 
-    snapshots = [
-        _OwnershipSnapshot(True, False, False, False),
-        _OwnershipSnapshot(True, False, False, False),
-        _OwnershipSnapshot(False, False, False, False),
-    ]
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_verify_ownership_snapshot",
-        staticmethod(lambda *_args, **_kwargs: snapshots.pop(0)),
-    )
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_get_connected_client_status_locked",
-        staticmethod(lambda *_args, **_kwargs: (True, False)),
-    )
-    iface._raise_for_invalidated_connect_result = MagicMock(
-        side_effect=iface.BLEError("invalidated")
-    )
-    with pytest.raises(iface.BLEError, match="invalidated"):
-        BLELifecycleService._verify_and_publish_connected(
+        iface._ever_connected = MagicMock()
+        assert BLELifecycleService._ever_connected_flag(iface) is False
+
+        snapshots = [
+            _OwnershipSnapshot(
+                still_owned=True,
+                is_closing=False,
+                lost_gate_ownership=False,
+                prior_ever_connected=False,
+            ),
+            _OwnershipSnapshot(
+                still_owned=True,
+                is_closing=False,
+                lost_gate_ownership=False,
+                prior_ever_connected=False,
+            ),
+            _OwnershipSnapshot(
+                still_owned=False,
+                is_closing=False,
+                lost_gate_ownership=False,
+                prior_ever_connected=False,
+            ),
+        ]
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_verify_ownership_snapshot",
+            staticmethod(lambda *_args, **_kwargs: snapshots.pop(0)),
+        )
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_get_connected_client_status_locked",
+            staticmethod(lambda *_args, **_kwargs: (True, False)),
+        )
+        iface._raise_for_invalidated_connect_result = MagicMock(
+            side_effect=iface.BLEError("invalidated")
+        )
+        with pytest.raises(iface.BLEError, match="invalidated"):
+            BLELifecycleService._verify_and_publish_connected(
+                iface,
+                DummyClient(),
+                "key",
+                "alias",
+                restore_address=None,
+                restore_last_connection_request=None,
+            )
+    finally:
+        iface.close()
+
+
+def test_lifecycle_finalize_and_cleanup_thread_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Thread-coordinator cleanup and finalize-connection gates should cover fallback branches."""
+    iface = _make_iface(monkeypatch)
+    try:
+        iface.thread_coordinator = SimpleNamespace(
+            cleanup=lambda: (_ for _ in ()).throw(RuntimeError("cleanup"))
+        )
+        BLELifecycleService._cleanup_thread_coordinator(iface)
+        iface.thread_coordinator = SimpleNamespace(
+            _cleanup=lambda: (_ for _ in ()).throw(RuntimeError("legacy-cleanup"))
+        )
+        BLELifecycleService._cleanup_thread_coordinator(iface)
+        iface.thread_coordinator = SimpleNamespace()
+        BLELifecycleService._cleanup_thread_coordinator(iface)
+
+        iface._connection_alias_key = "alias"
+        iface._mark_address_keys_connected = MagicMock()
+        iface._mark_address_keys_disconnected = MagicMock()
+        statuses = [(True, False), (True, False), (False, False)]
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_get_connected_client_status",
+            staticmethod(lambda *_args, **_kwargs: statuses[0]),
+        )
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_get_connected_client_status_locked",
+            staticmethod(lambda *_args, **_kwargs: statuses.pop(0)),
+        )
+        BLELifecycleService._finalize_connection_gates(
             iface,
             DummyClient(),
-            "key",
+            "dev",
             "alias",
-            restore_address=None,
-            restore_last_connection_request=None,
+        )
+    finally:
+        iface.close()
+
+
+def test_lifecycle_shutdown_and_finalize_close_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Shutdown-management, receive-thread, and final-close helpers should cover fallback paths."""
+    iface = _make_iface(monkeypatch)
+    try:
+        with iface._management_lock:
+            iface._management_inflight = 0
+        with iface._state_lock:
+            iface._closed = False
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_state_manager_current_state",
+            staticmethod(lambda _iface: ConnectionState.CONNECTED),
+        )
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_state_manager_transition_to",
+            staticmethod(lambda *_args, **_kwargs: False),
+        )
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_state_manager_reset_to_disconnected",
+            staticmethod(lambda *_args, **_kwargs: False),
+        )
+        assert (
+            BLELifecycleService._await_management_shutdown(
+                iface,
+                management_shutdown_wait_timeout=0.01,
+                management_wait_poll_seconds=0.01,
+            )
+            is False
         )
 
-    iface.thread_coordinator = SimpleNamespace(cleanup=lambda: (_ for _ in ()).throw(RuntimeError("cleanup")))
-    BLELifecycleService._cleanup_thread_coordinator(iface)
-    iface.thread_coordinator = SimpleNamespace(_cleanup=lambda: (_ for _ in ()).throw(RuntimeError("legacy-cleanup")))
-    BLELifecycleService._cleanup_thread_coordinator(iface)
-    iface.thread_coordinator = SimpleNamespace()
-    BLELifecycleService._cleanup_thread_coordinator(iface)
-
-    iface._connection_alias_key = "alias"
-    iface._mark_address_keys_connected = MagicMock()
-    iface._mark_address_keys_disconnected = MagicMock()
-    statuses = [(True, False), (True, False), (False, False)]
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_get_connected_client_status",
-        staticmethod(lambda *_args, **_kwargs: statuses[0]),
-    )
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_get_connected_client_status_locked",
-        staticmethod(lambda *_args, **_kwargs: statuses.pop(0)),
-    )
-    BLELifecycleService._finalize_connection_gates(
-        iface,
-        DummyClient(),
-        "dev",
-        "alias",
-    )
-
-    with iface._management_lock:
-        iface._management_inflight = 0
-    with iface._state_lock:
-        iface._closed = False
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_state_manager_current_state",
-        staticmethod(lambda _iface: ConnectionState.CONNECTED),
-    )
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_state_manager_transition_to",
-        staticmethod(lambda *_args, **_kwargs: False),
-    )
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_state_manager_reset_to_disconnected",
-        staticmethod(lambda *_args, **_kwargs: False),
-    )
-    assert (
-        BLELifecycleService._await_management_shutdown(
-            iface,
-            management_shutdown_wait_timeout=0.01,
-            management_wait_poll_seconds=0.01,
+        never_started = SimpleNamespace(
+            name="never", ident=None, is_alive=lambda: False
         )
-        is False
-    )
+        iface._receiveThread = never_started
+        BLELifecycleService._shutdown_receive_thread(iface)
+        assert iface._receiveThread is None
 
-    never_started = SimpleNamespace(name="never", ident=None, is_alive=lambda: False)
-    iface._receiveThread = never_started
-    BLELifecycleService._shutdown_receive_thread(iface)
-    assert iface._receiveThread is None
+        class _AliveThread:
+            ident = 1
 
-    class _AliveThread:
-        ident = 1
+            @staticmethod
+            def is_alive() -> bool:
+                return True
 
-        @staticmethod
-        def is_alive() -> bool:
-            return True
+            @staticmethod
+            def join(timeout: float | None = None) -> None:
+                _ = timeout
 
-        @staticmethod
-        def join(timeout: float | None = None) -> None:
-            _ = timeout
+        iface._receiveThread = _AliveThread()
+        BLELifecycleService._shutdown_receive_thread(iface)
 
-    iface._receiveThread = _AliveThread()
-    BLELifecycleService._shutdown_receive_thread(iface)
+        with iface._state_lock:
+            iface._client_publish_pending = False
+            iface._client_replacement_pending = True
+            iface._disconnect_notified = False
+        assert BLELifecycleService._consume_disconnect_notification_state(iface) is True
 
-    with iface._state_lock:
-        iface._client_publish_pending = False
-        iface._client_replacement_pending = True
-        iface._disconnect_notified = False
-    assert BLELifecycleService._consume_disconnect_notification_state(iface) is True
+        iface._notification_manager = SimpleNamespace(
+            unsubscribe_all=lambda *_args, **_kwargs: None
+        )
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_detach_client_for_shutdown",
+            staticmethod(lambda _iface: (DummyClient(), False)),
+        )
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_error_handler_safe_cleanup",
+            staticmethod(lambda _iface, func, _name: func()),
+        )
+        iface._management_target_gate = lambda _address: contextlib.nullcontext()
+        iface._disconnect_and_close_client = lambda _client: None
+        iface._wait_for_disconnect_notifications = lambda: None
+        iface._disconnected = lambda: None
+        BLELifecycleService._shutdown_client(iface, management_wait_timed_out=False)
 
-    notification_manager = SimpleNamespace(unsubscribe_all=lambda *_args, **_kwargs: None)
-    iface._notification_manager = notification_manager
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_detach_client_for_shutdown",
-        staticmethod(lambda _iface: (DummyClient(), False)),
-    )
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_error_handler_safe_cleanup",
-        staticmethod(lambda _iface, func, _name: func()),
-    )
-    iface._management_target_gate = lambda _address: contextlib.nullcontext()
-    iface._disconnect_and_close_client = lambda _client: None
-    iface._wait_for_disconnect_notifications = lambda: None
-    iface._disconnected = lambda: None
-    BLELifecycleService._shutdown_client(iface, management_wait_timed_out=False)
-
-    with iface._state_lock:
-        iface._connection_alias_key = "alias"
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_state_manager_transition_to",
-        staticmethod(lambda *_args, **_kwargs: False),
-    )
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_state_manager_reset_to_disconnected",
-        staticmethod(lambda *_args, **_kwargs: False),
-    )
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_state_manager_current_state",
-        staticmethod(lambda _iface: ConnectionState.CONNECTING),
-    )
-    BLELifecycleService._finalize_close_state(iface)
-
-    iface._state_manager = importlib.import_module(
-        "meshtastic.interfaces.ble.state"
-    ).BLEStateManager()
-    iface.close()
+        with iface._state_lock:
+            iface._connection_alias_key = "alias"
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_state_manager_transition_to",
+            staticmethod(lambda *_args, **_kwargs: False),
+        )
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_state_manager_reset_to_disconnected",
+            staticmethod(lambda *_args, **_kwargs: False),
+        )
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_state_manager_current_state",
+            staticmethod(lambda _iface: ConnectionState.CONNECTING),
+        )
+        BLELifecycleService._finalize_close_state(iface)
+    finally:
+        _reset_state_manager(iface)
+        iface.close()
 
 
 def test_receive_service_branch_targets(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -612,8 +703,12 @@ def test_receive_service_branch_targets(monkeypatch: pytest.MonkeyPatch) -> None
         _check_and_clear_event=lambda _event: True,
         _clear_event=lambda _event: None,
     )
-    assert BLEReceiveRecoveryService._coordinator_wait_for_event(coordinator, "evt", timeout=0.1)
-    assert BLEReceiveRecoveryService._coordinator_check_and_clear_event(coordinator, "evt")
+    assert BLEReceiveRecoveryService._coordinator_wait_for_event(
+        coordinator, "evt", timeout=0.1
+    )
+    assert BLEReceiveRecoveryService._coordinator_check_and_clear_event(
+        coordinator, "evt"
+    )
     BLEReceiveRecoveryService._coordinator_clear_event(coordinator, "evt")
 
     iface._fromnum_notify_enabled = False
@@ -658,16 +753,14 @@ def test_receive_service_branch_targets(monkeypatch: pytest.MonkeyPatch) -> None
         is_connecting=MagicMock(),
         _is_connecting=True,
     )
-    client, is_connecting, publish_pending, is_closing = BLEReceiveRecoveryService._snapshot_client_state(
-        iface
+    client, is_connecting, publish_pending, is_closing = (
+        BLEReceiveRecoveryService._snapshot_client_state(iface)
     )
     assert client is iface.client
     assert is_connecting is True
     assert isinstance(publish_pending, bool)
     assert isinstance(is_closing, bool)
-    iface._state_manager = importlib.import_module(
-        "meshtastic.interfaces.ble.state"
-    ).BLEStateManager()
+    _reset_state_manager(iface)
 
     iface.auto_reconnect = True
     with iface._state_lock:
@@ -707,7 +800,11 @@ def test_receive_service_branch_targets(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(
         BLEReceiveRecoveryService,
         "_read_and_handle_payload",
-        staticmethod(lambda *_args, **_kwargs: (_ for _ in ()).throw(BleakDBusError("err", "dbus"))),
+        staticmethod(
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                BleakDBusError("err", "dbus")
+            )
+        ),
     )
     iface._handle_read_loop_disconnect = lambda *_args, **_kwargs: True
     assert BLEReceiveRecoveryService._handle_payload_read(
@@ -719,7 +816,9 @@ def test_receive_service_branch_targets(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(
         BLEReceiveRecoveryService,
         "_read_and_handle_payload",
-        staticmethod(lambda *_args, **_kwargs: (_ for _ in ()).throw(BleakError("transient"))),
+        staticmethod(
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(BleakError("transient"))
+        ),
     )
     iface._handle_transient_read_error = lambda _err: (_ for _ in ()).throw(
         iface.BLEError("fatal")
@@ -754,16 +853,21 @@ def test_receive_service_branch_targets(monkeypatch: pytest.MonkeyPatch) -> None
         staticmethod(lambda *_args, **_kwargs: False),
     )
     iface._should_run_receive_loop = MagicMock(side_effect=[True, True, False])
-    assert BLEReceiveRecoveryService._run_receive_cycle(
-        iface,
-        coordinator=SimpleNamespace(),
-        wait_timeout=0.1,
-    ) is False
+    assert (
+        BLEReceiveRecoveryService._run_receive_cycle(
+            iface,
+            coordinator=SimpleNamespace(),
+            wait_timeout=0.1,
+        )
+        is False
+    )
 
     monkeypatch.setattr(
         BLEReceiveRecoveryService,
         "_run_receive_cycle",
-        staticmethod(lambda *_args, **_kwargs: (_ for _ in ()).throw(_FatalReceiveError("fatal"))),
+        staticmethod(
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(_FatalReceiveError("fatal"))
+        ),
     )
     iface._recover_receive_thread = MagicMock()
     BLEReceiveRecoveryService._receive_from_radio_impl(iface)
@@ -796,10 +900,14 @@ def test_receive_service_branch_targets(monkeypatch: pytest.MonkeyPatch) -> None
     iface._retry_policy_should_retry = lambda _policy, count: count < 1
     iface._retry_policy_get_delay = lambda _policy, _attempt: 0.01
     iface._read_retry_count = 0
-    BLEReceiveRecoveryService._handle_transient_read_error(iface, BleakError("transient"))
+    BLEReceiveRecoveryService._handle_transient_read_error(
+        iface, BleakError("transient")
+    )
     iface._retry_policy_should_retry = lambda _policy, _count: False
     with pytest.raises(iface.BLEError):
-        BLEReceiveRecoveryService._handle_transient_read_error(iface, BleakError("fatal"))
+        BLEReceiveRecoveryService._handle_transient_read_error(
+            iface, BleakError("fatal")
+        )
 
     iface._last_empty_read_warning = 0.0
     iface._suppressed_empty_read_warnings = 2
@@ -807,728 +915,911 @@ def test_receive_service_branch_targets(monkeypatch: pytest.MonkeyPatch) -> None
     iface._last_empty_read_warning = 10**9
     BLEReceiveRecoveryService._log_empty_read_warning(iface)
 
-    iface._state_manager = importlib.import_module(
-        "meshtastic.interfaces.ble.state"
-    ).BLEStateManager()
+    _reset_state_manager(iface)
     iface._shutdown_event = threading.Event()
     iface.close()
 
 
-def test_lifecycle_and_receive_remaining_branch_targets(
+@pytest.mark.parametrize("raw_ever_connected", [MagicMock(), "invalid-state"])
+def test_wait_for_read_trigger_normalizes_non_bool_ever_connected(
+    monkeypatch: pytest.MonkeyPatch,
+    raw_ever_connected: object,
+) -> None:
+    """_wait_for_read_trigger should treat non-bool _ever_connected values as False."""
+    iface = _make_iface(monkeypatch)
+    try:
+        with iface._state_lock:
+            iface._ever_connected = raw_ever_connected
+            iface._fromnum_notify_enabled = False
+            iface._closed = False
+
+        reconnected_checks: list[str] = []
+        monkeypatch.setattr(
+            BLEReceiveRecoveryService,
+            "_coordinator_wait_for_event",
+            staticmethod(lambda *_args, **_kwargs: False),
+        )
+        monkeypatch.setattr(
+            BLEReceiveRecoveryService,
+            "_coordinator_check_and_clear_event",
+            staticmethod(
+                lambda *_args, **_kwargs: (reconnected_checks.append("checked") or True)
+            ),
+        )
+        monkeypatch.setattr(
+            BLEReceiveRecoveryService,
+            "_should_poll_without_notify",
+            staticmethod(lambda _iface: True),
+        )
+
+        proceed, poll_without_notify = BLEReceiveRecoveryService._wait_for_read_trigger(
+            iface,
+            coordinator=SimpleNamespace(),
+            wait_timeout=0.1,
+        )
+        assert (proceed, poll_without_notify) == (True, True)
+        assert reconnected_checks == []
+    finally:
+        iface.close()
+
+
+def test_lifecycle_remaining_error_handler_branch_targets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Cover remaining lifecycle/receive branch targets with focused micro-scenarios."""
+    """Lifecycle error-handler compatibility fallbacks should stay best effort."""
     iface = _make_iface(monkeypatch)
-
-    # lifecycle _error_handler_safe_cleanup non-keyword TypeError path (line 165)
-    iface.error_handler = SimpleNamespace(
-        safe_cleanup=lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            TypeError("non-keyword type error")
+    try:
+        iface.error_handler = SimpleNamespace(
+            safe_cleanup=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                TypeError("non-keyword type error")
+            )
         )
-    )
-    BLELifecycleService._error_handler_safe_cleanup(iface, lambda: None, "cleanup")
+        BLELifecycleService._error_handler_safe_cleanup(iface, lambda: None, "cleanup")
 
-    # lifecycle _error_handler_safe_execute positional compatibility fallbacks
-    def _safe_execute_non_positional(func: Any, *args: object, **kwargs: object) -> object:
-        if "error_msg" in kwargs:
-            raise TypeError("safe_execute() got an unexpected keyword argument 'error_msg'")
-        if args:
-            raise TypeError("totally different positional failure")
-        return func()
+        def _safe_execute_non_positional(
+            func: Any, *args: object, **kwargs: object
+        ) -> object:
+            if "error_msg" in kwargs:
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
+                    "safe_execute() got an unexpected keyword argument 'error_msg'"
+                )
+            if args:
+                raise TypeError("totally different positional failure")
+            return func()
 
-    iface.error_handler = SimpleNamespace(safe_execute=_safe_execute_non_positional)
-    assert (
-        BLELifecycleService._error_handler_safe_execute(
-            iface,
-            lambda: "fallback-none",
-            error_msg="msg",
+        iface.error_handler = SimpleNamespace(safe_execute=_safe_execute_non_positional)
+        assert (
+            BLELifecycleService._error_handler_safe_execute(
+                iface,
+                lambda: "fallback-none",
+                error_msg="msg",
+            )
+            == "fallback-none"
         )
-        == "fallback-none"
-    )
 
-    def _safe_execute_positional_then_fail(func: Any, *args: object, **kwargs: object) -> object:
-        if "error_msg" in kwargs:
-            raise TypeError("safe_execute() got an unexpected keyword argument 'error_msg'")
-        if args:
-            raise TypeError("takes 1 positional argument but 2 positional arguments were given")
-        raise RuntimeError("hook failed")
+        def _safe_execute_positional_then_fail(
+            func: Any, *args: object, **kwargs: object
+        ) -> object:
+            if "error_msg" in kwargs:
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
+                    "safe_execute() got an unexpected keyword argument 'error_msg'"
+                )
+            if args:
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
+                    "takes 1 positional argument but 2 positional arguments were given"
+                )
+            raise RuntimeError("hook failed")
 
-    iface.error_handler = SimpleNamespace(safe_execute=_safe_execute_positional_then_fail)
-    assert (
-        BLELifecycleService._error_handler_safe_execute(
-            iface,
-            lambda: "unused",
-            error_msg="msg",
+        iface.error_handler = SimpleNamespace(
+            safe_execute=_safe_execute_positional_then_fail
         )
-        == "unused"
-    )
+        assert (
+            BLELifecycleService._error_handler_safe_execute(
+                iface,
+                lambda: "unused",
+                error_msg="msg",
+            )
+            == "unused"
+        )
+    finally:
+        iface.close()
 
-    # lifecycle public thread helper branches
-    start_calls: list[object] = []
-    join_calls: list[float | None] = []
-    set_calls: list[str] = []
-    clear_calls: list[str] = []
-    wake_calls: list[str] = []
-    iface.thread_coordinator = SimpleNamespace(
-        start_thread=lambda thread: start_calls.append(thread),
-        join_thread=lambda _thread, timeout=None: join_calls.append(timeout),
-        set_event=lambda name: set_calls.append(name),
-        clear_events=lambda *names: clear_calls.extend(names),
-        wake_waiting_threads=lambda *names: wake_calls.extend(names),
-    )
-    thread_marker = SimpleNamespace(name="thread-marker")
-    BLELifecycleService._thread_start_thread(iface, thread_marker)
-    BLELifecycleService._thread_join_thread(iface, thread_marker, timeout=0.25)
-    BLELifecycleService._thread_set_event(iface, "set-me")
-    BLELifecycleService._thread_clear_events(iface, "clear-me")
-    BLELifecycleService._thread_wake_waiting_threads(iface, "wake-me")
-    assert start_calls == [thread_marker]
-    assert join_calls == [0.25]
-    assert set_calls == ["set-me"]
-    assert clear_calls == ["clear-me"]
-    assert wake_calls == ["wake-me"]
 
-    # lifecycle _thread_join_thread missing join path (line 432)
-    iface.thread_coordinator = SimpleNamespace()
-    BLELifecycleService._thread_join_thread(iface, SimpleNamespace(), timeout=0.1)
+def test_lifecycle_remaining_thread_and_disconnect_target_branches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Lifecycle thread dispatch and disconnect-target helpers should cover edge branches."""
+    iface = _make_iface(monkeypatch)
+    try:
+        start_calls: list[object] = []
+        join_calls: list[float | None] = []
+        set_calls: list[str] = []
+        clear_calls: list[str] = []
+        wake_calls: list[str] = []
+        iface.thread_coordinator = SimpleNamespace(
+            start_thread=lambda thread: start_calls.append(thread),
+            join_thread=lambda _thread, timeout=None: join_calls.append(timeout),
+            set_event=lambda name: set_calls.append(name),
+            clear_events=lambda *names: clear_calls.extend(names),
+            wake_waiting_threads=lambda *names: wake_calls.extend(names),
+        )
+        thread_marker = SimpleNamespace(name="thread-marker")
+        BLELifecycleService._thread_start_thread(iface, thread_marker)
+        BLELifecycleService._thread_join_thread(iface, thread_marker, timeout=0.25)
+        BLELifecycleService._thread_set_event(iface, "set-me")
+        BLELifecycleService._thread_clear_events(iface, "clear-me")
+        BLELifecycleService._thread_wake_waiting_threads(iface, "wake-me")
+        assert start_calls == [thread_marker]
+        assert join_calls == [0.25]
+        assert set_calls == ["set-me"]
+        assert clear_calls == ["clear-me"]
+        assert wake_calls == ["wake-me"]
 
-    # lifecycle disconnect target closing early return (796-797) and bleak address fallback (868)
-    with iface._state_lock:
-        iface.client = DummyClient()
-        iface._closed = True
-        iface._state_manager._reset_to_disconnected()
-    assert BLELifecycleService._resolve_disconnect_target(iface, "src", None, None).early_return is False
+        iface.thread_coordinator = SimpleNamespace()
+        BLELifecycleService._thread_join_thread(iface, SimpleNamespace(), timeout=0.1)
 
-    with iface._state_lock:
-        iface.client = None
-        iface._closed = False
-        iface._client_publish_pending = True
-        iface._client_replacement_pending = False
-        iface._disconnect_notified = False
-        iface._state_manager._reset_to_disconnected()
-    bleak_client = SimpleNamespace(address="AA:BB:CC:DD:EE:FF")
-    plan = BLELifecycleService._resolve_disconnect_target(iface, "src", None, bleak_client)
-    assert plan.address == "AA:BB:CC:DD:EE:FF"
+        with iface._state_lock:
+            iface.client = DummyClient()
+            iface._closed = True
+            iface._state_manager._reset_to_disconnected()
+        assert (
+            BLELifecycleService._resolve_disconnect_target(
+                iface, "src", None, None
+            ).early_return
+            is False
+        )
 
-    # lifecycle close_previous_client_async branches
-    BLELifecycleService._close_previous_client_async(iface, None)
-    previous_client = DummyClient()
-    previous_client.address = "AA:BB:CC:DD:EE:FF"
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_thread_create_thread",
-        staticmethod(lambda *_args, **_kwargs: SimpleNamespace(ident=None, is_alive=lambda: False)),
-    )
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_thread_start_thread",
-        staticmethod(lambda *_args, **_kwargs: None),
-    )
-    BLELifecycleService._close_previous_client_async(iface, previous_client)
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_thread_start_thread",
-        staticmethod(lambda *_args, **_kwargs: (_ for _ in ()).throw(SystemExit())),
-    )
-    with pytest.raises(SystemExit):
+        with iface._state_lock:
+            iface.client = None
+            iface._closed = False
+            iface._client_publish_pending = True
+            iface._client_replacement_pending = False
+            iface._disconnect_notified = False
+            iface._state_manager._reset_to_disconnected()
+        bleak_client = SimpleNamespace(address="AA:BB:CC:DD:EE:FF")
+        plan = BLELifecycleService._resolve_disconnect_target(
+            iface, "src", None, bleak_client
+        )
+        assert plan.address == "AA:BB:CC:DD:EE:FF"
+    finally:
+        iface.close()
+
+
+def test_lifecycle_remaining_close_previous_client_async_branches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Previous-client async close should cover start success/failure branches."""
+    iface = _make_iface(monkeypatch)
+    try:
+        BLELifecycleService._close_previous_client_async(iface, None)
+        previous_client = DummyClient()
+        previous_client.address = "AA:BB:CC:DD:EE:FF"
+
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_thread_create_thread",
+            staticmethod(
+                lambda *_args, **_kwargs: SimpleNamespace(
+                    ident=None, is_alive=lambda: False
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_thread_start_thread",
+            staticmethod(lambda *_args, **_kwargs: None),
+        )
         BLELifecycleService._close_previous_client_async(iface, previous_client)
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_thread_start_thread",
-        staticmethod(lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("fail"))),
-    )
-    BLELifecycleService._close_previous_client_async(iface, previous_client)
 
-    # lifecycle _discard_invalidated_connected_client fallback reset paths
-    iface.client = DummyClient()
-    iface._client_publish_pending = False
-    iface._connection_alias_key = "alias"
-    with monkeypatch.context() as m:
-        m.setattr(
+        monkeypatch.setattr(
             BLELifecycleService,
-            "_state_manager_is_closing",
-            staticmethod(lambda _iface: False),
+            "_thread_start_thread",
+            staticmethod(lambda *_args, **_kwargs: (_ for _ in ()).throw(SystemExit())),
         )
-        m.setattr(
+        with pytest.raises(SystemExit):
+            BLELifecycleService._close_previous_client_async(iface, previous_client)
+
+        monkeypatch.setattr(
             BLELifecycleService,
-            "_state_manager_reset_to_disconnected",
-            staticmethod(lambda *_args, **_kwargs: False),
+            "_thread_start_thread",
+            staticmethod(
+                lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("fail"))
+            ),
         )
-        m.setattr(
-            BLELifecycleService,
-            "_state_manager_transition_to",
-            staticmethod(lambda *_args, **_kwargs: False),
+        BLELifecycleService._close_previous_client_async(iface, previous_client)
+    finally:
+        iface.close()
+
+
+def test_lifecycle_remaining_invalidation_and_state_helper_branches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invalidation and state helper branches should remain deterministic."""
+    iface = _make_iface(monkeypatch)
+    try:
+        iface.client = DummyClient()
+        iface._client_publish_pending = False
+        iface._connection_alias_key = "alias"
+        with monkeypatch.context() as m:
+            m.setattr(
+                BLELifecycleService,
+                "_state_manager_is_closing",
+                staticmethod(lambda _iface: False),
+            )
+            m.setattr(
+                BLELifecycleService,
+                "_state_manager_reset_to_disconnected",
+                staticmethod(lambda *_args, **_kwargs: False),
+            )
+            m.setattr(
+                BLELifecycleService,
+                "_state_manager_transition_to",
+                staticmethod(lambda *_args, **_kwargs: False),
+            )
+            m.setattr(
+                BLELifecycleService,
+                "_state_manager_current_state",
+                staticmethod(lambda _iface: ConnectionState.CONNECTING),
+            )
+            BLELifecycleService._discard_invalidated_connected_client(
+                iface,
+                iface.client,
+                restore_address="AA",
+                restore_last_connection_request="AA",
+            )
+
+        iface._state_manager = SimpleNamespace(
+            is_connected=True,
+            current_state=lambda: ConnectionState.CONNECTED,
+            _current_state=lambda: ConnectionState.DISCONNECTED,
+            is_closing=True,
         )
-        m.setattr(
-            BLELifecycleService,
-            "_state_manager_current_state",
-            staticmethod(lambda _iface: ConnectionState.CONNECTING),
+        assert BLELifecycleService._state_manager_is_connected(iface) is True
+        assert (
+            BLELifecycleService._state_manager_current_state(iface)
+            == ConnectionState.CONNECTED
         )
-        BLELifecycleService._discard_invalidated_connected_client(
-            iface,
-            iface.client,
-            restore_address="AA",
-            restore_last_connection_request="AA",
-        )
+        assert BLELifecycleService._state_manager_is_closing(iface) is True
 
-    # lifecycle state helper branches
-    iface._state_manager = SimpleNamespace(
-        is_connected=True,
-        current_state=lambda: ConnectionState.CONNECTED,
-        _current_state=lambda: ConnectionState.DISCONNECTED,
-        is_closing=True,
-    )
-    assert BLELifecycleService._state_manager_is_connected(iface) is True
-    assert BLELifecycleService._state_manager_current_state(iface) == ConnectionState.CONNECTED
-    assert BLELifecycleService._state_manager_is_closing(iface) is True
-
-    iface._state_manager = SimpleNamespace(current_state=ConnectionState.CONNECTED)
-    assert BLELifecycleService._state_manager_current_state(iface) == ConnectionState.CONNECTED
-
-    iface._state_manager = SimpleNamespace(_current_state=lambda: ConnectionState.CONNECTED)
-    assert BLELifecycleService._state_manager_current_state(iface) == ConnectionState.CONNECTED
-
-    client_member = SimpleNamespace(_is_connected=True)
-    assert BLELifecycleService._client_is_connected(client_member) is True
-
-    iface._sorted_address_keys = lambda *_keys: ["key-a", "key-b"]
-    iface._mark_address_keys_disconnected = MagicMock()
-    iface._discard_invalidated_connected_client = MagicMock()
-    with pytest.raises(iface.BLEError):
-        BLELifecycleService._raise_for_invalidated_connect_result(
-            iface,
-            DummyClient(),
-            "dev",
-            "alias",
-            is_closing=False,
-            lost_gate_ownership=False,
-            restore_address=None,
-            restore_last_connection_request=None,
+        iface._state_manager = SimpleNamespace(current_state=ConnectionState.CONNECTED)
+        assert (
+            BLELifecycleService._state_manager_current_state(iface)
+            == ConnectionState.CONNECTED
         )
 
-    # lifecycle verify/publish race branches and invalidation fallback
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_verify_ownership_snapshot",
-        staticmethod(
-            lambda *_args, **_kwargs: _OwnershipSnapshot(
-                still_owned=True,
+        iface._state_manager = SimpleNamespace(
+            _current_state=lambda: ConnectionState.CONNECTED
+        )
+        assert (
+            BLELifecycleService._state_manager_current_state(iface)
+            == ConnectionState.CONNECTED
+        )
+
+        client_member = SimpleNamespace(_is_connected=True)
+        assert BLELifecycleService._client_is_connected(client_member) is True
+
+        iface._sorted_address_keys = lambda *_keys: ["key-a", "key-b"]
+        iface._mark_address_keys_disconnected = MagicMock()
+        iface._discard_invalidated_connected_client = MagicMock()
+        with pytest.raises(iface.BLEError):
+            BLELifecycleService._raise_for_invalidated_connect_result(
+                iface,
+                DummyClient(),
+                "dev",
+                "alias",
                 is_closing=False,
                 lost_gate_ownership=False,
-                prior_ever_connected=False,
+                restore_address=None,
+                restore_last_connection_request=None,
             )
-        ),
-    )
-    status_values = [(True, False), (True, False), (False, False)]
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_get_connected_client_status_locked",
-        staticmethod(lambda *_args, **_kwargs: status_values.pop(0)),
-    )
-    iface._client_publish_pending = True
-    iface._client_replacement_pending = True
-    iface._disconnect_notified = True
-    iface.client = DummyClient()
-    iface._connected = lambda: None
-    disconnected_calls: list[str] = []
-    iface._disconnected = lambda: disconnected_calls.append("disconnected")
-    iface._emit_verified_connection_side_effects = lambda _client: None
-    BLELifecycleService._verify_and_publish_connected(
-        iface,
-        iface.client,
-        "dev",
-        "alias",
-        restore_address=None,
-        restore_last_connection_request=None,
-    )
-    assert disconnected_calls == ["disconnected"]
+    finally:
+        _reset_state_manager(iface)
+        iface.close()
 
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_verify_ownership_snapshot",
-        staticmethod(
-            lambda *_args, **_kwargs: _OwnershipSnapshot(
-                still_owned=False,
-                is_closing=False,
-                lost_gate_ownership=False,
-                prior_ever_connected=False,
-            )
-        ),
-    )
-    iface._raise_for_invalidated_connect_result = MagicMock(side_effect=iface.BLEError("invalid"))
-    with pytest.raises(iface.BLEError, match="invalid"):
+
+def test_lifecycle_remaining_verify_finalize_and_shutdown_branches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify/publish, gate-finalize, and shutdown helpers should cover remaining branches."""
+    iface = _make_iface(monkeypatch)
+    try:
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_verify_ownership_snapshot",
+            staticmethod(
+                lambda *_args, **_kwargs: _OwnershipSnapshot(
+                    still_owned=True,
+                    is_closing=False,
+                    lost_gate_ownership=False,
+                    prior_ever_connected=False,
+                )
+            ),
+        )
+        status_values = [(True, False), (True, False), (False, False)]
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_get_connected_client_status_locked",
+            staticmethod(lambda *_args, **_kwargs: status_values.pop(0)),
+        )
+        iface._client_publish_pending = True
+        iface._client_replacement_pending = True
+        iface._disconnect_notified = True
+        iface.client = DummyClient()
+        iface._connected = lambda: None
+        disconnected_calls: list[str] = []
+        iface._disconnected = lambda: disconnected_calls.append("disconnected")
+        iface._emit_verified_connection_side_effects = lambda _client: None
         BLELifecycleService._verify_and_publish_connected(
             iface,
-            DummyClient(),
+            iface.client,
             "dev",
             "alias",
             restore_address=None,
             restore_last_connection_request=None,
         )
+        assert disconnected_calls == ["disconnected"]
 
-    # lifecycle finalize gate cleanup branch
-    gate_statuses = [(True, False), (False, False)]
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_get_connected_client_status",
-        staticmethod(lambda *_args, **_kwargs: gate_statuses[0]),
-    )
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_get_connected_client_status_locked",
-        staticmethod(lambda *_args, **_kwargs: gate_statuses.pop(0)),
-    )
-    iface._mark_address_keys_connected = lambda *_keys: None
-    disconnected_gate_keys: list[str] = []
-    iface._mark_address_keys_disconnected = lambda *keys: disconnected_gate_keys.extend(
-        [k for k in keys if k is not None]
-    )
-    BLELifecycleService._finalize_connection_gates(
-        iface,
-        DummyClient(),
-        "dev",
-        "alias",
-    )
-    assert disconnected_gate_keys == ["dev", "alias"]
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_verify_ownership_snapshot",
+            staticmethod(
+                lambda *_args, **_kwargs: _OwnershipSnapshot(
+                    still_owned=False,
+                    is_closing=False,
+                    lost_gate_ownership=False,
+                    prior_ever_connected=False,
+                )
+            ),
+        )
+        iface._raise_for_invalidated_connect_result = MagicMock(
+            side_effect=iface.BLEError("invalid")
+        )
+        with pytest.raises(iface.BLEError, match="invalid"):
+            BLELifecycleService._verify_and_publish_connected(
+                iface,
+                DummyClient(),
+                "dev",
+                "alias",
+                restore_address=None,
+                restore_last_connection_request=None,
+            )
 
-    # lifecycle shutdown receive thread self-join branch and missing unsubscribe debug path
-    iface._receiveThread = threading.current_thread()
-    BLELifecycleService._shutdown_receive_thread(iface)
+        gate_statuses = [(True, False), (False, False)]
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_get_connected_client_status",
+            staticmethod(lambda *_args, **_kwargs: gate_statuses[0]),
+        )
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_get_connected_client_status_locked",
+            staticmethod(lambda *_args, **_kwargs: gate_statuses.pop(0)),
+        )
+        iface._mark_address_keys_connected = lambda *_keys: None
+        disconnected_gate_keys: list[str] = []
+        iface._mark_address_keys_disconnected = (
+            lambda *keys: disconnected_gate_keys.extend(
+                [k for k in keys if k is not None]
+            )
+        )
+        BLELifecycleService._finalize_connection_gates(
+            iface,
+            DummyClient(),
+            "dev",
+            "alias",
+        )
+        assert disconnected_gate_keys == ["dev", "alias"]
 
-    iface._notification_manager = SimpleNamespace()
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_detach_client_for_shutdown",
-        staticmethod(lambda _iface: (DummyClient(), False)),
-    )
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_error_handler_safe_cleanup",
-        staticmethod(lambda _iface, func, _name: func()),
-    )
-    iface._management_target_gate = lambda _address: contextlib.nullcontext()
-    iface._disconnect_and_close_client = lambda _client: None
-    iface._wait_for_disconnect_notifications = lambda: None
-    iface._disconnected = lambda: None
-    BLELifecycleService._shutdown_client(iface, management_wait_timed_out=False)
+        iface._receiveThread = threading.current_thread()
+        BLELifecycleService._shutdown_receive_thread(iface)
 
-    # receive helper remaining branch scenarios
-    wait_calls: list[float] = []
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.receive_service._sleep",
-        lambda delay: wait_calls.append(delay),
-    )
-    assert (
+        iface._notification_manager = SimpleNamespace()
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_detach_client_for_shutdown",
+            staticmethod(lambda _iface: (DummyClient(), False)),
+        )
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_error_handler_safe_cleanup",
+            staticmethod(lambda _iface, func, _name: func()),
+        )
+        iface._management_target_gate = lambda _address: contextlib.nullcontext()
+        iface._disconnect_and_close_client = lambda _client: None
+        iface._wait_for_disconnect_notifications = lambda: None
+        iface._disconnected = lambda: None
+        BLELifecycleService._shutdown_client(iface, management_wait_timed_out=False)
+    finally:
+        _reset_state_manager(iface)
+        iface.close()
+
+
+def test_receive_service_remaining_coordinator_and_snapshot_branches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Receive coordinator/snapshot helpers should cover remaining compatibility branches."""
+    iface = _make_iface(monkeypatch)
+    try:
+        wait_calls: list[float] = []
+        monkeypatch.setattr(
+            "meshtastic.interfaces.ble.receive_service._sleep",
+            lambda delay: wait_calls.append(delay),
+        )
+        assert (
+            BLEReceiveRecoveryService._coordinator_wait_for_event(
+                SimpleNamespace(wait_for_event=lambda _event, timeout=None: True),
+                "evt",
+                timeout=0.5,
+            )
+            is True
+        )
         BLEReceiveRecoveryService._coordinator_wait_for_event(
-            SimpleNamespace(wait_for_event=lambda _event, timeout=None: True),
-            "evt",
-            timeout=0.5,
+            SimpleNamespace(), "evt", timeout=0.5
         )
-        is True
-    )
-    BLEReceiveRecoveryService._coordinator_wait_for_event(SimpleNamespace(), "evt", timeout=0.5)
-    assert wait_calls
+        assert wait_calls
 
-    assert (
-        BLEReceiveRecoveryService._coordinator_check_and_clear_event(
-            SimpleNamespace(check_and_clear_event=lambda _event: True),
+        assert (
+            BLEReceiveRecoveryService._coordinator_check_and_clear_event(
+                SimpleNamespace(check_and_clear_event=lambda _event: True),
+                "evt",
+            )
+            is True
+        )
+        assert (
+            BLEReceiveRecoveryService._coordinator_check_and_clear_event(
+                SimpleNamespace(_check_and_clear_event=lambda _event: True),
+                "evt",
+            )
+            is True
+        )
+        BLEReceiveRecoveryService._coordinator_clear_event(
+            SimpleNamespace(clear_events=lambda *_events: None),
             "evt",
         )
-        is True
-    )
-    assert (
-        BLEReceiveRecoveryService._coordinator_check_and_clear_event(
-            SimpleNamespace(_check_and_clear_event=lambda _event: True),
+        BLEReceiveRecoveryService._coordinator_clear_event(
+            SimpleNamespace(clear_event=lambda _event: None),
             "evt",
         )
-        is True
-    )
-    BLEReceiveRecoveryService._coordinator_clear_event(
-        SimpleNamespace(clear_events=lambda *_events: None),
-        "evt",
-    )
-    BLEReceiveRecoveryService._coordinator_clear_event(
-        SimpleNamespace(clear_event=lambda _event: None),
-        "evt",
-    )
 
-    iface._state_manager = SimpleNamespace(is_connecting=lambda: True)
-    assert BLEReceiveRecoveryService._snapshot_client_state(iface)[1] is True
-    iface._state_manager = SimpleNamespace(_is_connecting=lambda: True)
-    assert BLEReceiveRecoveryService._snapshot_client_state(iface)[1] is True
-    iface._state_manager = SimpleNamespace(_is_connecting=False)
-    assert BLEReceiveRecoveryService._snapshot_client_state(iface)[1] is False
-    iface._state_manager = importlib.import_module(
-        "meshtastic.interfaces.ble.state"
-    ).BLEStateManager()
+        iface._state_manager = SimpleNamespace(is_connecting=lambda: True)
+        assert BLEReceiveRecoveryService._snapshot_client_state(iface)[1] is True
+        iface._state_manager = SimpleNamespace(_is_connecting=lambda: True)
+        assert BLEReceiveRecoveryService._snapshot_client_state(iface)[1] is True
+        iface._state_manager = SimpleNamespace(_is_connecting=False)
+        assert BLEReceiveRecoveryService._snapshot_client_state(iface)[1] is False
+        _reset_state_manager(iface)
 
-    assert BLEReceiveRecoveryService._process_client_state(
-        iface,
-        coordinator=SimpleNamespace(),
-        wait_timeout=0.1,
-        client=None,
-        is_connecting=False,
-        publish_pending=False,
-        is_closing=False,
-    )
+        assert BLEReceiveRecoveryService._process_client_state(
+            iface,
+            coordinator=SimpleNamespace(),
+            wait_timeout=0.1,
+            client=None,
+            is_connecting=False,
+            publish_pending=False,
+            is_closing=False,
+        )
 
-    with iface._state_lock:
-        iface._receive_recovery_attempts = 1
-        iface._last_recovery_time = 0.0
-    BLEReceiveRecoveryService._reset_recovery_after_stability(iface)
+        with iface._state_lock:
+            iface._receive_recovery_attempts = 1
+            iface._last_recovery_time = 0.0
+        BLEReceiveRecoveryService._reset_recovery_after_stability(iface)
+    finally:
+        _reset_state_manager(iface)
+        iface.close()
 
-    iface._read_from_radio_with_retries = lambda *_args, **_kwargs: b"payload"
-    iface._handle_from_radio = lambda _payload: None
-    assert BLEReceiveRecoveryService._read_and_handle_payload(
-        iface,
-        DummyClient(),
-        poll_without_notify=False,
-    )
 
-    monkeypatch.setattr(
-        BLEReceiveRecoveryService,
-        "_read_and_handle_payload",
-        staticmethod(lambda *_args, **_kwargs: False),
-    )
-    assert BLEReceiveRecoveryService._handle_payload_read(
-        iface,
-        DummyClient(),
-        poll_without_notify=False,
-    ) == (True, False)
-
-    monkeypatch.setattr(
-        BLEReceiveRecoveryService,
-        "_read_and_handle_payload",
-        staticmethod(lambda *_args, **_kwargs: (_ for _ in ()).throw(BleakDBusError("err", "dbus"))),
-    )
-    iface._handle_read_loop_disconnect = lambda *_args, **_kwargs: False
-    assert BLEReceiveRecoveryService._handle_payload_read(
-        iface,
-        DummyClient(),
-        poll_without_notify=False,
-    ) == (True, True)
-
-    monkeypatch.setattr(
-        BLEReceiveRecoveryService,
-        "_read_and_handle_payload",
-        staticmethod(lambda *_args, **_kwargs: (_ for _ in ()).throw(SystemExit())),
-    )
-    with pytest.raises(SystemExit):
-        BLEReceiveRecoveryService._handle_payload_read(
+def test_receive_service_remaining_payload_read_branches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Receive payload-read helpers should cover normal and exceptional branches."""
+    iface = _make_iface(monkeypatch)
+    try:
+        iface._read_from_radio_with_retries = lambda *_args, **_kwargs: b"payload"
+        iface._handle_from_radio = lambda _payload: None
+        assert BLEReceiveRecoveryService._read_and_handle_payload(
             iface,
             DummyClient(),
             poll_without_notify=False,
         )
 
-    monkeypatch.setattr(
-        BLEReceiveRecoveryService,
-        "_read_and_handle_payload",
-        staticmethod(lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("unexpected"))),
-    )
-    iface._handle_read_loop_disconnect = lambda *_args, **_kwargs: False
-    assert BLEReceiveRecoveryService._handle_payload_read(
-        iface,
-        DummyClient(),
-        poll_without_notify=False,
-    ) == (True, True)
+        monkeypatch.setattr(
+            BLEReceiveRecoveryService,
+            "_read_and_handle_payload",
+            staticmethod(lambda *_args, **_kwargs: False),
+        )
+        assert BLEReceiveRecoveryService._handle_payload_read(
+            iface,
+            DummyClient(),
+            poll_without_notify=False,
+        ) == (True, False)
 
-    monkeypatch.setattr(
-        BLEReceiveRecoveryService,
-        "_wait_for_read_trigger",
-        staticmethod(lambda *_args, **_kwargs: (False, False)),
-    )
-    iface._should_run_receive_loop = MagicMock(side_effect=[True, False])
-    assert BLEReceiveRecoveryService._run_receive_cycle(
-        iface,
-        coordinator=SimpleNamespace(),
-        wait_timeout=0.1,
-    ) is True
+        monkeypatch.setattr(
+            BLEReceiveRecoveryService,
+            "_read_and_handle_payload",
+            staticmethod(
+                lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                    BleakDBusError("err", "dbus")
+                )
+            ),
+        )
+        iface._handle_read_loop_disconnect = lambda *_args, **_kwargs: False
+        assert BLEReceiveRecoveryService._handle_payload_read(
+            iface,
+            DummyClient(),
+            poll_without_notify=False,
+        ) == (True, True)
 
-    monkeypatch.setattr(
-        BLEReceiveRecoveryService,
-        "_wait_for_read_trigger",
-        staticmethod(lambda *_args, **_kwargs: (True, False)),
-    )
-    monkeypatch.setattr(
-        BLEReceiveRecoveryService,
-        "_snapshot_client_state",
-        staticmethod(lambda _iface: (None, False, False, False)),
-    )
-    iface._should_run_receive_loop = MagicMock(side_effect=[True, True, False])
-    assert BLEReceiveRecoveryService._run_receive_cycle(
-        iface,
-        coordinator=SimpleNamespace(),
-        wait_timeout=0.1,
-    ) is True
+        monkeypatch.setattr(
+            BLEReceiveRecoveryService,
+            "_read_and_handle_payload",
+            staticmethod(lambda *_args, **_kwargs: (_ for _ in ()).throw(SystemExit())),
+        )
+        with pytest.raises(SystemExit):
+            BLEReceiveRecoveryService._handle_payload_read(
+                iface,
+                DummyClient(),
+                poll_without_notify=False,
+            )
 
-    monkeypatch.setattr(
-        BLEReceiveRecoveryService,
-        "_run_receive_cycle",
-        staticmethod(lambda *_args, **_kwargs: (_ for _ in ()).throw(SystemExit())),
-    )
-    with pytest.raises(SystemExit):
-        BLEReceiveRecoveryService._receive_from_radio_impl(iface)
-
-    monkeypatch.setattr(
-        BLEReceiveRecoveryService,
-        "_run_receive_cycle",
-        staticmethod(lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("fatal"))),
-    )
-    iface._recover_receive_thread = MagicMock()
-    BLEReceiveRecoveryService._receive_from_radio_impl(iface)
-
-    iface._state_manager = importlib.import_module(
-        "meshtastic.interfaces.ble.state"
-    ).BLEStateManager()
-    with iface._state_lock:
-        iface._closed = True
-    BLEReceiveRecoveryService._recover_receive_thread(iface, "reason")
-
-    with iface._state_lock:
-        iface._receive_recovery_attempts = 10
-        iface._last_recovery_time = 0.0
-        iface._closed = False
-    iface._handle_disconnect = lambda *_args, **_kwargs: True
-    iface._shutdown_event = SimpleNamespace(wait=lambda timeout=None: False)
-    iface._should_run_receive_loop = lambda: True
-    iface._start_receive_thread = lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("restart failed"))
-    with pytest.raises(RuntimeError, match="restart failed"):
-        BLEReceiveRecoveryService._recover_receive_thread(iface, "reason")
-
-    client = DummyClient()
-    client.read_gatt_char = lambda *_args, **_kwargs: b""
-    iface._retry_policy_get_delay = lambda _policy, _attempt: 0.01
-    iface._empty_read_policy = object()
-    iface._log_empty_read_warning = MagicMock()
-    assert BLEReceiveRecoveryService._read_from_radio_with_retries(iface, client) is None
-    iface._log_empty_read_warning.assert_called_once()
-
-    iface._state_manager = importlib.import_module(
-        "meshtastic.interfaces.ble.state"
-    ).BLEStateManager()
-    iface._shutdown_event = threading.Event()
-    iface.close()
+        monkeypatch.setattr(
+            BLEReceiveRecoveryService,
+            "_read_and_handle_payload",
+            staticmethod(
+                lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                    RuntimeError("unexpected")
+                )
+            ),
+        )
+        iface._handle_read_loop_disconnect = lambda *_args, **_kwargs: False
+        assert BLEReceiveRecoveryService._handle_payload_read(
+            iface,
+            DummyClient(),
+            poll_without_notify=False,
+        ) == (True, True)
+    finally:
+        iface.close()
 
 
-def test_lifecycle_remaining_error_handler_and_invalidation_paths(
+def test_receive_service_remaining_cycle_and_impl_branches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Cover remaining lifecycle error-handler and invalidation branches."""
+    """Receive-cycle and receive-loop implementation should cover remaining branches."""
     iface = _make_iface(monkeypatch)
-
-    def _hook_non_positional_with_func_run(
-        func: Any, *args: object, **kwargs: object
-    ) -> object:
-        if "error_msg" in kwargs:
-            raise TypeError(
-                "safe_execute() got an unexpected keyword argument 'error_msg'"
+    try:
+        monkeypatch.setattr(
+            BLEReceiveRecoveryService,
+            "_wait_for_read_trigger",
+            staticmethod(lambda *_args, **_kwargs: (False, False)),
+        )
+        iface._should_run_receive_loop = MagicMock(side_effect=[True, False])
+        assert (
+            BLEReceiveRecoveryService._run_receive_cycle(
+                iface,
+                coordinator=SimpleNamespace(),
+                wait_timeout=0.1,
             )
-        if args:
+            is True
+        )
+
+        monkeypatch.setattr(
+            BLEReceiveRecoveryService,
+            "_wait_for_read_trigger",
+            staticmethod(lambda *_args, **_kwargs: (True, False)),
+        )
+        monkeypatch.setattr(
+            BLEReceiveRecoveryService,
+            "_snapshot_client_state",
+            staticmethod(lambda _iface: (None, False, False, False)),
+        )
+        iface._should_run_receive_loop = MagicMock(side_effect=[True, True, False])
+        assert (
+            BLEReceiveRecoveryService._run_receive_cycle(
+                iface,
+                coordinator=SimpleNamespace(),
+                wait_timeout=0.1,
+            )
+            is True
+        )
+
+        monkeypatch.setattr(
+            BLEReceiveRecoveryService,
+            "_run_receive_cycle",
+            staticmethod(lambda *_args, **_kwargs: (_ for _ in ()).throw(SystemExit())),
+        )
+        with pytest.raises(SystemExit):
+            BLEReceiveRecoveryService._receive_from_radio_impl(iface)
+
+        monkeypatch.setattr(
+            BLEReceiveRecoveryService,
+            "_run_receive_cycle",
+            staticmethod(
+                lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("fatal"))
+            ),
+        )
+        iface._recover_receive_thread = MagicMock()
+        BLEReceiveRecoveryService._receive_from_radio_impl(iface)
+    finally:
+        iface.close()
+
+
+def test_receive_service_remaining_recovery_and_empty_read_branches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Receive recovery and empty-read warning paths should hit remaining branches."""
+    iface = _make_iface(monkeypatch)
+    try:
+        _reset_state_manager(iface)
+        with iface._state_lock:
+            iface._closed = True
+        BLEReceiveRecoveryService._recover_receive_thread(iface, "reason")
+
+        with iface._state_lock:
+            iface._receive_recovery_attempts = 10
+            iface._last_recovery_time = 0.0
+            iface._closed = False
+        iface._handle_disconnect = lambda *_args, **_kwargs: True
+        iface._shutdown_event = SimpleNamespace(wait=lambda timeout=None: False)
+        iface._should_run_receive_loop = lambda: True
+        iface._start_receive_thread = lambda **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("restart failed")
+        )
+        with pytest.raises(RuntimeError, match="restart failed"):
+            BLEReceiveRecoveryService._recover_receive_thread(iface, "reason")
+
+        client = DummyClient()
+        client.read_gatt_char = lambda *_args, **_kwargs: b""
+        iface._retry_policy_get_delay = lambda _policy, _attempt: 0.01
+        iface._empty_read_policy = object()
+        iface._log_empty_read_warning = MagicMock()
+        assert (
+            BLEReceiveRecoveryService._read_from_radio_with_retries(iface, client)
+            is None
+        )
+        iface._log_empty_read_warning.assert_called_once()
+    finally:
+        _reset_state_manager(iface)
+        iface._shutdown_event = threading.Event()
+        iface.close()
+
+
+def test_lifecycle_remaining_error_handler_execute_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cover remaining lifecycle error-handler execute-hook branches."""
+    iface = _make_iface(monkeypatch)
+    try:
+
+        def _hook_non_positional_with_func_run(
+            func: Any, *args: object, **kwargs: object
+        ) -> object:
+            if "error_msg" in kwargs:
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
+                    "safe_execute() got an unexpected keyword argument 'error_msg'"
+                )
+            if args:
+                func()
+                raise TypeError("non positional-compatible failure")
+            return func()
+
+        iface.error_handler = SimpleNamespace(
+            safe_execute=_hook_non_positional_with_func_run
+        )
+        assert (
+            BLELifecycleService._error_handler_safe_execute(
+                iface,
+                lambda: "unused",
+                error_msg="line-234",
+            )
+            is None
+        )
+
+        def _hook_positional_then_runtime(
+            func: Any, *args: object, **kwargs: object
+        ) -> object:
+            if "error_msg" in kwargs:
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
+                    "safe_execute() got an unexpected keyword argument 'error_msg'"
+                )
+            if args:
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
+                    "takes 1 positional argument but 2 positional arguments were given"
+                )
             func()
-            raise TypeError("non positional-compatible failure")
-        return func()
+            raise RuntimeError("post-run failure")
 
-    iface.error_handler = SimpleNamespace(safe_execute=_hook_non_positional_with_func_run)
-    assert (
-        BLELifecycleService._error_handler_safe_execute(
-            iface,
-            lambda: "unused",
-            error_msg="line-234",
+        iface.error_handler = SimpleNamespace(
+            safe_execute=_hook_positional_then_runtime
         )
-        is None
-    )
-
-    def _hook_positional_then_runtime(func: Any, *args: object, **kwargs: object) -> object:
-        if "error_msg" in kwargs:
-            raise TypeError(
-                "safe_execute() got an unexpected keyword argument 'error_msg'"
+        assert (
+            BLELifecycleService._error_handler_safe_execute(
+                iface,
+                lambda: "unused",
+                error_msg="line-241",
             )
-        if args:
-            raise TypeError(
-                "takes 1 positional argument but 2 positional arguments were given"
-            )
-        func()
-        raise RuntimeError("post-run failure")
-
-    iface.error_handler = SimpleNamespace(safe_execute=_hook_positional_then_runtime)
-    assert (
-        BLELifecycleService._error_handler_safe_execute(
-            iface,
-            lambda: "unused",
-            error_msg="line-241",
+            is None
         )
-        is None
-    )
 
-    def _hook_runtime_on_positional(func: Any, *args: object, **kwargs: object) -> object:
-        if "error_msg" in kwargs:
-            raise TypeError(
-                "safe_execute() got an unexpected keyword argument 'error_msg'"
+        def _hook_runtime_on_positional(
+            func: Any, *args: object, **kwargs: object
+        ) -> object:
+            if "error_msg" in kwargs:
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
+                    "safe_execute() got an unexpected keyword argument 'error_msg'"
+                )
+            if args:
+                raise RuntimeError("positional runtime failure")
+            return func()
+
+        iface.error_handler = SimpleNamespace(safe_execute=_hook_runtime_on_positional)
+        assert (
+            BLELifecycleService._error_handler_safe_execute(
+                iface,
+                lambda: "unused",
+                error_msg="line-243",
             )
-        if args:
-            raise RuntimeError("positional runtime failure")
-        return func()
-
-    iface.error_handler = SimpleNamespace(safe_execute=_hook_runtime_on_positional)
-    assert (
-        BLELifecycleService._error_handler_safe_execute(
-            iface,
-            lambda: "unused",
-            error_msg="line-243",
+            == "unused"
         )
-        == "unused"
-    )
 
-    def _hook_runtime_on_positional_with_func(
-        func: Any, *args: object, **kwargs: object
-    ) -> object:
-        if "error_msg" in kwargs:
-            raise TypeError(
-                "safe_execute() got an unexpected keyword argument 'error_msg'"
+        def _hook_runtime_on_positional_with_func(
+            func: Any, *args: object, **kwargs: object
+        ) -> object:
+            if "error_msg" in kwargs:
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
+                    "safe_execute() got an unexpected keyword argument 'error_msg'"
+                )
+            if args:
+                func()
+                raise RuntimeError("positional runtime failure with func")
+            return func()
+
+        iface.error_handler = SimpleNamespace(
+            safe_execute=_hook_runtime_on_positional_with_func
+        )
+        assert (
+            BLELifecycleService._error_handler_safe_execute(
+                iface,
+                lambda: "unused",
+                error_msg="line-245",
             )
-        if args:
+            is None
+        )
+
+        def _hook_runtime_on_keyword(func: Any, **_kwargs: object) -> object:
             func()
-            raise RuntimeError("positional runtime failure with func")
-        return func()
+            raise RuntimeError("keyword runtime failure")
 
-    iface.error_handler = SimpleNamespace(
-        safe_execute=_hook_runtime_on_positional_with_func
-    )
-    assert (
-        BLELifecycleService._error_handler_safe_execute(
-            iface,
-            lambda: "unused",
-            error_msg="line-245",
+        iface.error_handler = SimpleNamespace(safe_execute=_hook_runtime_on_keyword)
+        assert (
+            BLELifecycleService._error_handler_safe_execute(
+                iface,
+                lambda: "unused",
+                error_msg="line-248",
+            )
+            is None
         )
-        is None
-    )
+    finally:
+        iface.close()
 
-    def _hook_runtime_on_keyword(func: Any, **_kwargs: object) -> object:
-        func()
-        raise RuntimeError("keyword runtime failure")
 
-    iface.error_handler = SimpleNamespace(safe_execute=_hook_runtime_on_keyword)
-    assert (
-        BLELifecycleService._error_handler_safe_execute(
-            iface,
-            lambda: "unused",
-            error_msg="line-248",
-        )
-        is None
-    )
+def test_lifecycle_remaining_invalidation_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cover remaining lifecycle invalidation and finalize-gate branches."""
+    iface = _make_iface(monkeypatch)
+    try:
+        tracked_client = DummyClient()
+        with iface._state_lock:
+            iface.client = tracked_client
+            iface._client_publish_pending = False
+            iface._client_replacement_pending = False
+            iface._last_connection_request = "AA:BB"
+        with monkeypatch.context() as m:
+            m.setattr(
+                BLELifecycleService,
+                "_state_manager_is_closing",
+                staticmethod(lambda _iface: True),
+            )
+            BLELifecycleService._discard_invalidated_connected_client(
+                iface,
+                tracked_client,
+                restore_address="AA:BB",
+                restore_last_connection_request="AA:BB",
+            )
+        assert iface._last_connection_request is None
 
-    tracked_client = DummyClient()
-    with iface._state_lock:
-        iface.client = tracked_client
-        iface._client_publish_pending = False
-        iface._client_replacement_pending = False
-        iface._last_connection_request = "AA:BB"
-    with monkeypatch.context() as m:
-        m.setattr(
-            BLELifecycleService,
-            "_state_manager_is_closing",
-            staticmethod(lambda _iface: True),
-        )
-        BLELifecycleService._discard_invalidated_connected_client(
-            iface,
-            tracked_client,
-            restore_address="AA:BB",
-            restore_last_connection_request="AA:BB",
-        )
-    assert iface._last_connection_request is None
+        with iface._state_lock:
+            iface.client = None
+            iface._client_publish_pending = True
+            iface._client_replacement_pending = False
+            iface._last_connection_request = "pending"
+        with monkeypatch.context() as m:
+            m.setattr(
+                BLELifecycleService,
+                "_state_manager_is_closing",
+                staticmethod(lambda _iface: True),
+            )
+            BLELifecycleService._discard_invalidated_connected_client(
+                iface,
+                DummyClient(),
+                restore_address="CC:DD",
+                restore_last_connection_request="CC:DD",
+            )
+        assert iface._last_connection_request is None
 
-    with iface._state_lock:
-        iface.client = None
-        iface._client_publish_pending = True
-        iface._client_replacement_pending = False
-        iface._last_connection_request = "pending"
-    with monkeypatch.context() as m:
-        m.setattr(
-            BLELifecycleService,
-            "_state_manager_is_closing",
-            staticmethod(lambda _iface: True),
+        disconnected_keys: list[str] = []
+        iface._sorted_address_keys = lambda *_keys: ["stale-key"]
+        iface._mark_address_keys_disconnected = lambda *keys: disconnected_keys.extend(
+            [k for k in keys if k is not None]
         )
-        BLELifecycleService._discard_invalidated_connected_client(
-            iface,
-            DummyClient(),
-            restore_address="CC:DD",
-            restore_last_connection_request="CC:DD",
-        )
-    assert iface._last_connection_request is None
-
-    disconnected_keys: list[str] = []
-    iface._sorted_address_keys = lambda *_keys: ["stale-key"]
-    iface._mark_address_keys_disconnected = lambda *keys: disconnected_keys.extend(
-        [k for k in keys if k is not None]
-    )
-    iface._discard_invalidated_connected_client = lambda *_args, **_kwargs: None
-    with pytest.raises(iface.BLEError):
-        BLELifecycleService._raise_for_invalidated_connect_result(
-            iface,
-            DummyClient(),
-            "device-key",
-            "alias-key",
-            is_closing=False,
-            lost_gate_ownership=True,
-            restore_address=None,
-            restore_last_connection_request=None,
-        )
-    assert disconnected_keys == ["stale-key"]
-
-    iface._raise_for_invalidated_connect_result = MagicMock(
-        side_effect=iface.BLEError("invalidated")
-    )
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_verify_ownership_snapshot",
-        staticmethod(
-            lambda *_args, **_kwargs: _OwnershipSnapshot(
-                still_owned=True,
+        iface._discard_invalidated_connected_client = lambda *_args, **_kwargs: None
+        with pytest.raises(iface.BLEError):
+            BLELifecycleService._raise_for_invalidated_connect_result(
+                iface,
+                DummyClient(),
+                "device-key",
+                "alias-key",
                 is_closing=False,
-                lost_gate_ownership=False,
-                prior_ever_connected=False,
+                lost_gate_ownership=True,
+                restore_address=None,
+                restore_last_connection_request=None,
             )
-        ),
-    )
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_get_connected_client_status_locked",
-        staticmethod(lambda *_args, **_kwargs: (False, False)),
-    )
-    with pytest.raises(iface.BLEError, match="invalidated"):
-        BLELifecycleService._verify_and_publish_connected(
+        assert disconnected_keys == ["stale-key"]
+
+        iface._raise_for_invalidated_connect_result = MagicMock(
+            side_effect=iface.BLEError("invalidated")
+        )
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_verify_ownership_snapshot",
+            staticmethod(
+                lambda *_args, **_kwargs: _OwnershipSnapshot(
+                    still_owned=True,
+                    is_closing=False,
+                    lost_gate_ownership=False,
+                    prior_ever_connected=False,
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_get_connected_client_status_locked",
+            staticmethod(lambda *_args, **_kwargs: (False, False)),
+        )
+        with pytest.raises(iface.BLEError, match="invalidated"):
+            BLELifecycleService._verify_and_publish_connected(
+                iface,
+                DummyClient(),
+                "device-key",
+                "alias-key",
+                restore_address=None,
+                restore_last_connection_request=None,
+            )
+
+        cleanup_keys: list[str] = []
+        status_values = [(True, False), (False, True)]
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_get_connected_client_status",
+            staticmethod(lambda *_args, **_kwargs: (True, False)),
+        )
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_get_connected_client_status_locked",
+            staticmethod(lambda *_args, **_kwargs: status_values.pop(0)),
+        )
+        iface._mark_address_keys_connected = lambda *_keys: None
+        iface._mark_address_keys_disconnected = lambda *keys: cleanup_keys.extend(
+            [k for k in keys if k is not None]
+        )
+        BLELifecycleService._finalize_connection_gates(
             iface,
             DummyClient(),
-            "device-key",
-            "alias-key",
-            restore_address=None,
-            restore_last_connection_request=None,
+            "closing-device",
+            "closing-alias",
         )
-
-    cleanup_keys: list[str] = []
-    status_values = [(True, False), (False, True)]
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_get_connected_client_status",
-        staticmethod(lambda *_args, **_kwargs: (True, False)),
-    )
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_get_connected_client_status_locked",
-        staticmethod(lambda *_args, **_kwargs: status_values.pop(0)),
-    )
-    iface._mark_address_keys_connected = lambda *_keys: None
-    iface._mark_address_keys_disconnected = lambda *keys: cleanup_keys.extend(
-        [k for k in keys if k is not None]
-    )
-    BLELifecycleService._finalize_connection_gates(
-        iface,
-        DummyClient(),
-        "closing-device",
-        "closing-alias",
-    )
-    assert cleanup_keys == ["closing-device", "closing-alias"]
-    iface.close()
+        assert cleanup_keys == ["closing-device", "closing-alias"]
+    finally:
+        iface.close()
 
 
 def test_receive_remaining_branches(
@@ -1536,110 +1827,113 @@ def test_receive_remaining_branches(
 ) -> None:
     """Cover remaining receive-service branch paths."""
     iface = _make_iface(monkeypatch)
-
-    assert (
-        BLEReceiveRecoveryService._coordinator_check_and_clear_event(
-            SimpleNamespace(), "evt"
+    try:
+        assert (
+            BLEReceiveRecoveryService._coordinator_check_and_clear_event(
+                SimpleNamespace(), "evt"
+            )
+            is False
         )
-        is False
-    )
 
-    iface._state_manager = SimpleNamespace()
-    _, is_connecting, _, _ = BLEReceiveRecoveryService._snapshot_client_state(iface)
-    assert is_connecting is False
-    iface._state_manager = importlib.import_module(
-        "meshtastic.interfaces.ble.state"
-    ).BLEStateManager()
+        iface._state_manager = SimpleNamespace()
+        _, is_connecting, _, _ = BLEReceiveRecoveryService._snapshot_client_state(iface)
+        assert is_connecting is False
+        _reset_state_manager(iface)
 
-    monkeypatch.setattr(
-        BLEReceiveRecoveryService,
-        "_read_and_handle_payload",
-        staticmethod(
-            lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("unexpected"))
-        ),
-    )
-    iface._handle_read_loop_disconnect = lambda *_args, **_kwargs: True
-    assert BLEReceiveRecoveryService._handle_payload_read(
-        iface,
-        DummyClient(),
-        poll_without_notify=False,
-    ) == (True, False)
-    iface._handle_read_loop_disconnect = lambda *_args, **_kwargs: False
-    assert BLEReceiveRecoveryService._handle_payload_read(
-        iface,
-        DummyClient(),
-        poll_without_notify=False,
-    ) == (True, True)
-
-    monkeypatch.setattr(
-        BLEReceiveRecoveryService,
-        "_wait_for_read_trigger",
-        staticmethod(lambda *_args, **_kwargs: (True, False)),
-    )
-    monkeypatch.setattr(
-        BLEReceiveRecoveryService,
-        "_snapshot_client_state",
-        staticmethod(lambda _iface: (None, False, False, False)),
-    )
-    monkeypatch.setattr(
-        BLEReceiveRecoveryService,
-        "_process_client_state",
-        staticmethod(lambda *_args, **_kwargs: False),
-    )
-    iface._should_run_receive_loop = MagicMock(side_effect=[True, True, False])
-    assert BLEReceiveRecoveryService._run_receive_cycle(
-        iface,
-        coordinator=SimpleNamespace(),
-        wait_timeout=0.1,
-    )
-
-    monkeypatch.setattr(
-        BLEReceiveRecoveryService,
-        "_snapshot_client_state",
-        staticmethod(lambda _iface: (DummyClient(), False, False, False)),
-    )
-    monkeypatch.setattr(
-        BLEReceiveRecoveryService,
-        "_handle_payload_read",
-        staticmethod(lambda *_args, **_kwargs: (True, False)),
-    )
-    iface._should_run_receive_loop = MagicMock(side_effect=[True, True, False])
-    assert BLEReceiveRecoveryService._run_receive_cycle(
-        iface,
-        coordinator=SimpleNamespace(),
-        wait_timeout=0.1,
-    )
-
-    recovered: list[str] = []
-    monkeypatch.setattr(
-        BLEReceiveRecoveryService,
-        "_run_receive_cycle",
-        staticmethod(lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("fatal"))),
-    )
-    iface._recover_receive_thread = lambda reason: recovered.append(reason)
-    BLEReceiveRecoveryService._receive_from_radio_impl(iface)
-    assert recovered == ["receive_thread_fatal"]
-
-    with monkeypatch.context() as m:
-        monotonic_values = iter([100.0, 100.1])
-        m.setattr(
-            "meshtastic.interfaces.ble.receive_service.time.monotonic",
-            lambda: next(monotonic_values),
+        monkeypatch.setattr(
+            BLEReceiveRecoveryService,
+            "_read_and_handle_payload",
+            staticmethod(
+                lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                    ValueError("unexpected")
+                )
+            ),
         )
-        with iface._state_lock:
-            iface.client = DummyClient()
-            iface._closed = False
-            iface._receive_recovery_attempts = 3
-            iface._last_recovery_time = 99.0
-        iface._handle_disconnect = lambda *_args, **_kwargs: True
-        iface._shutdown_event = SimpleNamespace(
-            wait=lambda timeout=None: False,
-            set=lambda: None,
+        iface._handle_read_loop_disconnect = lambda *_args, **_kwargs: True
+        assert BLEReceiveRecoveryService._handle_payload_read(
+            iface,
+            DummyClient(),
+            poll_without_notify=False,
+        ) == (True, False)
+        iface._handle_read_loop_disconnect = lambda *_args, **_kwargs: False
+        assert BLEReceiveRecoveryService._handle_payload_read(
+            iface,
+            DummyClient(),
+            poll_without_notify=False,
+        ) == (True, True)
+
+        monkeypatch.setattr(
+            BLEReceiveRecoveryService,
+            "_wait_for_read_trigger",
+            staticmethod(lambda *_args, **_kwargs: (True, False)),
         )
-        iface._should_run_receive_loop = lambda: True
-        started: list[dict[str, object]] = []
-        iface._start_receive_thread = lambda **kwargs: started.append(kwargs)
-        BLEReceiveRecoveryService._recover_receive_thread(iface, "recover")
-    assert started == [{"name": "BLEReceiveRecovery", "reset_recovery": False}]
-    iface._shutdown_event = threading.Event()
-    iface.close()
+        monkeypatch.setattr(
+            BLEReceiveRecoveryService,
+            "_snapshot_client_state",
+            staticmethod(lambda _iface: (None, False, False, False)),
+        )
+        monkeypatch.setattr(
+            BLEReceiveRecoveryService,
+            "_process_client_state",
+            staticmethod(lambda *_args, **_kwargs: False),
+        )
+        iface._should_run_receive_loop = MagicMock(side_effect=[True, True, False])
+        assert BLEReceiveRecoveryService._run_receive_cycle(
+            iface,
+            coordinator=SimpleNamespace(),
+            wait_timeout=0.1,
+        )
+
+        monkeypatch.setattr(
+            BLEReceiveRecoveryService,
+            "_snapshot_client_state",
+            staticmethod(lambda _iface: (DummyClient(), False, False, False)),
+        )
+        monkeypatch.setattr(
+            BLEReceiveRecoveryService,
+            "_handle_payload_read",
+            staticmethod(lambda *_args, **_kwargs: (True, False)),
+        )
+        iface._should_run_receive_loop = MagicMock(side_effect=[True, True, False])
+        assert BLEReceiveRecoveryService._run_receive_cycle(
+            iface,
+            coordinator=SimpleNamespace(),
+            wait_timeout=0.1,
+        )
+
+        recovered: list[str] = []
+        monkeypatch.setattr(
+            BLEReceiveRecoveryService,
+            "_run_receive_cycle",
+            staticmethod(
+                lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("fatal"))
+            ),
+        )
+        iface._recover_receive_thread = lambda reason: recovered.append(reason)
+        BLEReceiveRecoveryService._receive_from_radio_impl(iface)
+        assert recovered == ["receive_thread_fatal"]
+
+        with monkeypatch.context() as m:
+            monotonic_values = iter([100.0, 100.1])
+            m.setattr(
+                "meshtastic.interfaces.ble.receive_service.time.monotonic",
+                lambda: next(monotonic_values),
+            )
+            with iface._state_lock:
+                iface.client = DummyClient()
+                iface._closed = False
+                iface._receive_recovery_attempts = 3
+                iface._last_recovery_time = 99.0
+            iface._handle_disconnect = lambda *_args, **_kwargs: True
+            iface._shutdown_event = SimpleNamespace(
+                wait=lambda timeout=None: False,
+                set=lambda: None,
+            )
+            iface._should_run_receive_loop = lambda: True
+            started: list[dict[str, object]] = []
+            iface._start_receive_thread = lambda **kwargs: started.append(kwargs)
+            BLEReceiveRecoveryService._recover_receive_thread(iface, "recover")
+        assert started == [{"name": "BLEReceiveRecovery", "reset_recovery": False}]
+        iface._shutdown_event = threading.Event()
+    finally:
+        iface.close()

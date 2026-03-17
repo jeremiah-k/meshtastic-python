@@ -138,10 +138,9 @@ class BLELifecycleService:
         None
             Always returns ``None``.
 
-        Raises
-        ------
-        None
-            Exceptions are suppressed to preserve shutdown progress.
+        Notes
+        -----
+        Exceptions are suppressed to preserve shutdown progress.
         """
         safe_cleanup = BLELifecycleService._resolve_error_handler_hook(
             iface, "safe_cleanup", "_safe_cleanup"
@@ -201,10 +200,9 @@ class BLELifecycleService:
         object | None
             Callable return value on success; otherwise ``None``.
 
-        Raises
-        ------
-        None
-            Exceptions are suppressed to preserve shutdown progress.
+        Notes
+        -----
+        Exceptions are suppressed to preserve shutdown progress.
         """
         safe_execute = BLELifecycleService._resolve_error_handler_hook(
             iface, "safe_execute", "_safe_execute"
@@ -218,8 +216,12 @@ class BLELifecycleService:
 
         if safe_execute is not None:
             try:
+                # Preferred signature: safe_execute(func, error_msg=...)
                 return safe_execute(_tracked_func, error_msg=error_msg)
             except TypeError as exc:
+                # Compatibility fallbacks:
+                #   1) positional error_msg
+                #   2) callable-only legacy signature
                 if _is_unexpected_keyword_error(exc, "error_msg"):
                     try:
                         return safe_execute(_tracked_func, error_msg)
@@ -579,9 +581,7 @@ class BLELifecycleService:
                 if iface._receiveThread is thread:
                     iface._receiveThread = None
             raise
-        except (
-            Exception
-        ):  # noqa: BLE001 - start failure must clear stale thread reference
+        except Exception:  # noqa: BLE001 - start failure must clear stale thread reference
             with iface._state_lock:
                 if iface._receiveThread is thread:
                     iface._receiveThread = None
@@ -654,11 +654,15 @@ class BLELifecycleService:
             # Keep clear() under the state lock so reconnect scheduling starts a
             # fresh cycle against a non-signaled shutdown event.
             iface._shutdown_event.clear()
-        schedule_reconnect = getattr(iface._reconnect_scheduler, "schedule_reconnect", None)
+        schedule_reconnect = getattr(
+            iface._reconnect_scheduler, "schedule_reconnect", None
+        )
         if not callable(schedule_reconnect) or _is_unconfigured_mock_callable(
             schedule_reconnect
         ):
-            schedule_reconnect = getattr(iface._reconnect_scheduler, "_schedule_reconnect", None)
+            schedule_reconnect = getattr(
+                iface._reconnect_scheduler, "_schedule_reconnect", None
+            )
         if not callable(schedule_reconnect) or _is_unconfigured_mock_callable(
             schedule_reconnect
         ):
@@ -886,7 +890,24 @@ class BLELifecycleService:
     def _close_previous_client_async(
         iface: "BLEInterface", previous_client: "BLEClient | None"
     ) -> None:
-        """Close previous client asynchronously, with inline fallback on start failure."""
+        """Close a disconnected previous client asynchronously.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing thread and cleanup helpers.
+        previous_client : BLEClient | None
+            Prior client to close. ``None`` is a no-op.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after scheduling or inline cleanup.
+
+        Notes
+        -----
+        Falls back to inline cleanup when thread creation/start fails.
+        """
         if previous_client is None:
             return
 
@@ -931,7 +952,23 @@ class BLELifecycleService:
     def _execute_disconnect_side_effects(
         iface: "BLEInterface", *, plan: _DisconnectPlan, source: str
     ) -> bool:
-        """Execute disconnect side effects outside ``_disconnect_lock``."""
+        """Execute disconnect publication/cleanup side effects.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing disconnect side-effect helpers.
+        plan : _DisconnectPlan
+            Disconnect plan produced by ``_resolve_disconnect_target``.
+        source : str
+            Disconnect-source label used in logging.
+
+        Returns
+        -------
+        bool
+            ``True`` when reconnect flow should continue; ``False`` when
+            disconnect handling should stop.
+        """
         disconnect_keys = list(plan.disconnect_keys)
         skip_side_effects = False
         stale_disconnect_keys: list[str] = []
@@ -996,7 +1033,26 @@ class BLELifecycleService:
         client: "BLEClient | None" = None,
         bleak_client: BleakRootClient | None = None,
     ) -> bool:
-        """Handle a BLE client disconnection and drive reconnect/shutdown orchestration."""
+        """Handle disconnect orchestration and reconnect decisions.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface whose disconnect lifecycle is being processed.
+        source : str
+            Disconnect-source label used in logs and emitted metadata.
+        client : BLEClient | None
+            Optional client that triggered the disconnect callback.
+        bleak_client : BleakRootClient | None
+            Optional Bleak transport object used when the wrapped client is not
+            directly available.
+
+        Returns
+        -------
+        bool
+            ``True`` when reconnect processing should continue; ``False`` when
+            disconnect flow should stop.
+        """
         if not iface._disconnect_lock.acquire(blocking=False):
             # Another disconnect handler is active; mirror current reconnect
             # intent so callers can stop when reconnect is not expected.
@@ -1017,6 +1073,8 @@ class BLELifecycleService:
                     )
                 )
 
+        # We release `_disconnect_lock` before address-lock work. Track manual
+        # release so `finally` can safely release only when still owned here.
         disconnect_lock_released = False
         plan = _DisconnectPlan(early_return=False)
         try:
@@ -1048,7 +1106,20 @@ class BLELifecycleService:
     def _emit_verified_connection_side_effects(
         iface: "BLEInterface", connected_client: "BLEClient"
     ) -> None:
-        """Emit reconnect signaling/logging only after verified connect publish."""
+        """Emit reconnect wake signal and success logging after verified publish.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing reconnect event coordination state.
+        connected_client : BLEClient
+            Connected client used for normalized success logging.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after side effects are emitted.
+        """
         coordinator = getattr(iface, "thread_coordinator", None)
         if iface._prior_publish_was_reconnect and coordinator is not None:
             BLELifecycleService._thread_set_event(iface, RECONNECTED_EVENT)
@@ -1069,7 +1140,24 @@ class BLELifecycleService:
         restore_address: str | None = None,
         restore_last_connection_request: str | None = None,
     ) -> None:
-        """Best-effort cleanup for a connected client invalidated before return."""
+        """Clean up a client invalidated before connect publication completes.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing state and client-close helpers.
+        client : BLEClient
+            Client to detach and close.
+        restore_address : str | None
+            Address restored when ownership remains local after invalidation.
+        restore_last_connection_request : str | None
+            Last-request value restored when ownership remains local.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after best-effort cleanup.
+        """
         restored_address = (
             restore_address.strip()
             if restore_address is not None and restore_address.strip()
@@ -1127,8 +1215,8 @@ class BLELifecycleService:
                     if not BLELifecycleService._state_manager_reset_to_disconnected(
                         iface
                     ):
-                        current_state = BLELifecycleService._state_manager_current_state(
-                            iface
+                        current_state = (
+                            BLELifecycleService._state_manager_current_state(iface)
                         )
                         logger.error(
                             "Failed to reset state after invalidated connect result (alias=%s current=%s); forcing transition to %s.",
@@ -1289,7 +1377,20 @@ class BLELifecycleService:
     def _get_connected_client_status_locked(
         iface: "BLEInterface", client: "BLEClient"
     ) -> tuple[bool, bool]:
-        """Return owned/closing status for a connected client while holding state lock."""
+        """Return ownership and closing flags for ``client`` under state lock.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface whose state is being evaluated.
+        client : BLEClient
+            Client candidate for ownership verification.
+
+        Returns
+        -------
+        tuple[bool, bool]
+            ``(is_owned, is_closing)`` for the current snapshot.
+        """
         is_closing = (
             BLELifecycleService._state_manager_is_closing(iface) or iface._closed
         )
@@ -1307,7 +1408,20 @@ class BLELifecycleService:
     def _get_connected_client_status(
         iface: "BLEInterface", client: "BLEClient"
     ) -> tuple[bool, bool]:
-        """Return whether interface owns `client` and whether shutdown has started."""
+        """Return ownership and closing flags with internal state locking.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface whose state is being evaluated.
+        client : BLEClient
+            Client candidate for ownership verification.
+
+        Returns
+        -------
+        tuple[bool, bool]
+            ``(is_owned, is_closing)`` for the current snapshot.
+        """
         with iface._state_lock:
             return BLELifecycleService._get_connected_client_status_locked(
                 iface, client
@@ -1315,7 +1429,21 @@ class BLELifecycleService:
 
     @staticmethod
     def _has_lost_gate_ownership(iface: "BLEInterface", *keys: str | None) -> bool:
-        """Return whether any connected address key is now owned elsewhere."""
+        """Return whether any supplied address key is now owned elsewhere.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface used as the ownership identity.
+        *keys : str | None
+            Address keys to probe for ownership loss.
+
+        Returns
+        -------
+        bool
+            ``True`` when any non-``None`` key is currently owned by another
+            interface; otherwise ``False``.
+        """
         return any(
             key is not None and _is_currently_connected_elsewhere(key, owner=iface)
             for key in keys
@@ -1333,7 +1461,38 @@ class BLELifecycleService:
         restore_address: str | None,
         restore_last_connection_request: str | None,
     ) -> None:
-        """Clean up a stale connect result and raise the appropriate BLEError."""
+        """Clean up invalidated connect result and raise the corresponding BLEError.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface whose stale connect result is being rejected.
+        connected_client : BLEClient
+            Client produced by a stale connect result.
+        connected_device_key : str | None
+            Address key for the connected client candidate.
+        connection_alias_key : str | None
+            Alias key associated with the connect attempt.
+        is_closing : bool
+            Whether shutdown is active for this interface.
+        lost_gate_ownership : bool
+            Whether another interface claimed ownership of the target.
+        restore_address : str | None
+            Address restored when cleanup preserves local state.
+        restore_last_connection_request : str | None
+            Last-request value restored when cleanup preserves local state.
+
+        Returns
+        -------
+        None
+            This method always raises and does not return normally.
+
+        Raises
+        ------
+        BLEError
+            ``ERROR_INTERFACE_CLOSING`` when closing; otherwise
+            ``CONNECTION_ERROR_LOST_OWNERSHIP``.
+        """
         stale_keys = iface._sorted_address_keys(
             connected_device_key,
             connection_alias_key,
@@ -1367,7 +1526,25 @@ class BLELifecycleService:
         connected_device_key: str | None,
         connection_alias_key: str | None,
     ) -> _OwnershipSnapshot:
-        """Return a single ownership snapshot for connect-result verification."""
+        """Capture a connect-result ownership snapshot.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface whose ownership is being verified.
+        connected_client : BLEClient
+            Client candidate for ownership verification.
+        connected_device_key : str | None
+            Address key for the connected client candidate.
+        connection_alias_key : str | None
+            Alias key associated with the connect attempt.
+
+        Returns
+        -------
+        _OwnershipSnapshot
+            Snapshot containing ownership, closing, gate-loss, and reconnect
+            publication context.
+        """
         lost_gate_ownership = iface._has_lost_gate_ownership(
             connected_device_key,
             connection_alias_key,
@@ -1415,7 +1592,33 @@ class BLELifecycleService:
         restore_address: str | None,
         restore_last_connection_request: str | None,
     ) -> None:
-        """Publish connected state only when ownership is still valid."""
+        """Publish connected state only when ownership is still valid.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface owning the candidate connected client.
+        connected_client : BLEClient
+            Client candidate produced by connection orchestration.
+        connected_device_key : str | None
+            Address key for ownership validation.
+        connection_alias_key : str | None
+            Alias key for ownership validation.
+        restore_address : str | None
+            Address restored when invalidation cleanup is required.
+        restore_last_connection_request : str | None
+            Last-request value restored when invalidation cleanup is required.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after publication or invalidation handling.
+
+        Raises
+        ------
+        BLEError
+            Raised when ownership is invalidated before or during publication.
+        """
 
         def _raise_invalidated(snapshot: _OwnershipSnapshot) -> None:
             iface._raise_for_invalidated_connect_result(
@@ -1506,7 +1709,11 @@ class BLELifecycleService:
                         )
                     )
                     disconnect_notified = iface._disconnect_notified
-                if not still_owned_after and disconnect_notified and not is_closing_after:
+                if (
+                    not still_owned_after
+                    and disconnect_notified
+                    and not is_closing_after
+                ):
                     logger.debug(
                         "Connected publication raced with disconnect; emitting compensating disconnect event."
                     )
@@ -1517,7 +1724,18 @@ class BLELifecycleService:
 
     @staticmethod
     def _cleanup_thread_coordinator(iface: "BLEInterface") -> None:
-        """Run thread coordinator cleanup using public-first compatibility dispatch."""
+        """Run thread-coordinator cleanup via public/legacy compatibility hooks.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing the thread coordinator.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after best-effort cleanup.
+        """
         cleanup = getattr(iface.thread_coordinator, "cleanup", None)
         if callable(cleanup) and not _is_unconfigured_mock_callable(cleanup):
             try:
@@ -1598,7 +1816,24 @@ class BLELifecycleService:
         connected_device_key: str | None,
         connection_alias_key: str | None,
     ) -> None:
-        """Finalize post-connection gating and cleanup stale claims."""
+        """Finalize address-gate ownership after successful connection.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface owning connection-gate state.
+        connected_client : BLEClient
+            Connected client candidate associated with the gate claim.
+        connected_device_key : str | None
+            Device key to mark connected/disconnected.
+        connection_alias_key : str | None
+            Alias key to mark connected/disconnected.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after gate publication or stale-claim cleanup.
+        """
         still_active, is_closing = BLELifecycleService._get_connected_client_status(
             iface, connected_client
         )
@@ -1672,7 +1907,20 @@ class BLELifecycleService:
 
     @staticmethod
     def _is_owned_connected_client(iface: "BLEInterface", client: "BLEClient") -> bool:
-        """Return whether the interface still owns the provided connected client."""
+        """Return whether the interface still owns the provided connected client.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface whose ownership state is being checked.
+        client : BLEClient
+            Client candidate for ownership verification.
+
+        Returns
+        -------
+        bool
+            ``True`` when the interface still owns ``client``.
+        """
         is_owned, _ = BLELifecycleService._get_connected_client_status(iface, client)
         return is_owned
 
@@ -1683,7 +1931,23 @@ class BLELifecycleService:
         management_shutdown_wait_timeout: float,
         management_wait_poll_seconds: float,
     ) -> bool | None:
-        """Mark interface as closed and wait for inflight management operations."""
+        """Mark interface as closed and wait for inflight management operations.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface whose management in-flight counter is being awaited.
+        management_shutdown_wait_timeout : float
+            Maximum seconds to wait for in-flight management completion.
+        management_wait_poll_seconds : float
+            Poll interval used while waiting on the management idle condition.
+
+        Returns
+        -------
+        bool | None
+            ``True`` when waiting timed out, ``False`` when all operations
+            drained cleanly, or ``None`` when the interface was already closed.
+        """
         management_wait_timed_out = False
         management_wait_started = time.monotonic()
         with iface._management_lock:
@@ -1699,15 +1963,11 @@ class BLELifecycleService:
                     logger.debug(
                         "BLEInterface.close called while another shutdown is in progress; continuing with cleanup"
                     )
-                if (
-                    BLELifecycleService._state_manager_current_state(iface)
-                    not in (
-                        ConnectionState.DISCONNECTED,
-                        ConnectionState.DISCONNECTING,
-                    )
-                    and not BLELifecycleService._state_manager_transition_to(
-                        iface, ConnectionState.DISCONNECTING
-                    )
+                if BLELifecycleService._state_manager_current_state(iface) not in (
+                    ConnectionState.DISCONNECTED,
+                    ConnectionState.DISCONNECTING,
+                ) and not BLELifecycleService._state_manager_transition_to(
+                    iface, ConnectionState.DISCONNECTING
                 ):
                     current_state = BLELifecycleService._state_manager_current_state(
                         iface
@@ -1718,16 +1978,13 @@ class BLELifecycleService:
                         iface._connection_alias_key,
                         getattr(current_state, "value", current_state),
                     )
-                    if (
-                        not BLELifecycleService._state_manager_reset_to_disconnected(
-                            iface
-                        )
-                        and not BLELifecycleService._state_manager_transition_to(
-                            iface, ConnectionState.DISCONNECTED
-                        )
+                    if not BLELifecycleService._state_manager_reset_to_disconnected(
+                        iface
+                    ) and not BLELifecycleService._state_manager_transition_to(
+                        iface, ConnectionState.DISCONNECTED
                     ):
-                        fallback_state = BLELifecycleService._state_manager_current_state(
-                            iface
+                        fallback_state = (
+                            BLELifecycleService._state_manager_current_state(iface)
                         )
                         logger.error(
                             "Failed forced transition to %s during shutdown fallback (alias=%s current=%s).",
@@ -1777,7 +2034,18 @@ class BLELifecycleService:
 
     @staticmethod
     def _shutdown_receive_thread(iface: "BLEInterface") -> None:
-        """Wake and join receive thread, then clear cached thread reference."""
+        """Wake and join receive thread, then clear cached thread reference.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing receive-thread state and thread hooks.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after best-effort receive-thread shutdown.
+        """
         BLELifecycleService._thread_wake_waiting_threads(
             iface, READ_TRIGGER_EVENT, RECONNECTED_EVENT
         )
@@ -1809,7 +2077,18 @@ class BLELifecycleService:
 
     @staticmethod
     def _close_mesh_interface(iface: "BLEInterface") -> None:
-        """Run mesh-interface close under safe execution wrapper."""
+        """Run ``MeshInterface.close`` through guarded error-handler execution.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface instance forwarded to ``MeshInterface.close``.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after guarded close execution.
+        """
         BLELifecycleService._error_handler_safe_execute(
             iface,
             lambda: MeshInterface.close(iface),
@@ -1818,7 +2097,18 @@ class BLELifecycleService:
 
     @staticmethod
     def _unregister_exit_handler(iface: "BLEInterface") -> None:
-        """Unregister process exit handler when present."""
+        """Unregister process exit handler when present.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface containing optional ``_exit_handler`` state.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after best-effort unregister.
+        """
         if iface._exit_handler:
             atexit.unregister(iface._exit_handler)
             iface._exit_handler = None
@@ -1827,7 +2117,18 @@ class BLELifecycleService:
     def _detach_client_for_shutdown(
         iface: "BLEInterface",
     ) -> tuple["BLEClient | None", bool]:
-        """Detach active client reference and return detached client plus publish state."""
+        """Detach active client reference and return detached client plus publish state.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface whose client and publish-pending state are detached.
+
+        Returns
+        -------
+        tuple[BLEClient | None, bool]
+            ``(client, publish_pending)`` snapshot captured during detach.
+        """
         with iface._state_lock:
             client = iface.client
             publish_pending = iface._client_publish_pending
@@ -1837,7 +2138,18 @@ class BLELifecycleService:
 
     @staticmethod
     def _consume_disconnect_notification_state(iface: "BLEInterface") -> bool:
-        """Consume pending publish flags and return whether public disconnect should emit."""
+        """Consume pending publish flags and decide disconnect notification emission.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface containing disconnect-publication state flags.
+
+        Returns
+        -------
+        bool
+            ``True`` when callers should emit a public disconnect event.
+        """
         notify = False
         with iface._state_lock:
             if iface._client_publish_pending:
@@ -1963,11 +2275,10 @@ class BLELifecycleService:
                     iface._connection_alias_key,
                     getattr(current_state, "value", current_state),
                 )
-                if (
-                    not BLELifecycleService._state_manager_reset_to_disconnected(iface)
-                    and not BLELifecycleService._state_manager_transition_to(
-                        iface, ConnectionState.DISCONNECTED
-                    )
+                if not BLELifecycleService._state_manager_reset_to_disconnected(
+                    iface
+                ) and not BLELifecycleService._state_manager_transition_to(
+                    iface, ConnectionState.DISCONNECTED
                 ):
                     fallback_state = BLELifecycleService._state_manager_current_state(
                         iface

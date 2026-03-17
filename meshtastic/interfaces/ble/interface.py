@@ -26,6 +26,8 @@ Threading model summary
 
 import atexit
 import contextlib
+import math
+import numbers
 import re
 import shutil
 import struct
@@ -135,6 +137,10 @@ ERROR_RETRY_POLICY_MISSING_SHOULD_RETRY: str = (
     "Retry policy missing should_retry/_should_retry"
 )
 ERROR_RETRY_POLICY_MISSING_GET_DELAY: str = "Retry policy missing get_delay/_get_delay"
+_SAFE_EXECUTE_POSITIONAL_SIGNATURE_MISMATCH_RE = re.compile(
+    r"positional.*argument|takes .* positional|missing required positional",
+    re.IGNORECASE,
+)
 ERROR_DISCOVERY_MANAGER_MISSING_DISCOVER_DEVICES: str = (
     "Discovery manager is missing discover_devices/_discover_devices"
 )
@@ -287,6 +293,7 @@ class BLEInterface(MeshInterface):
         self._prior_publish_was_reconnect = False
         self._last_connect_pair_override: bool | None = None
         self._last_connect_timeout_override: float | None = None
+        self._publishing_thread_override: object | None = None
 
         # Error handling infrastructure
         self.error_handler = BLEErrorHandler()
@@ -627,6 +634,138 @@ class BLEInterface(MeshInterface):
                 )
                 self._malformed_notification_count = 0
 
+    def _report_notification_handler_error(self, error_msg: str) -> None:
+        """Report notification-handler failures through configured error hooks.
+
+        Parameters
+        ----------
+        error_msg : str
+            Message forwarded to unhandled-exception hooks and debug logging.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after best-effort error reporting.
+        """
+        report_exception: Callable[[str], Any] | None = None
+        for hook_name in (
+            "handle_unhandled_exception",
+            "_handle_unhandled_exception",
+        ):
+            hook = getattr(self.error_handler, hook_name, None)
+            if callable(hook) and not _is_unconfigured_mock_callable(hook):
+                report_exception = cast(Callable[[str], Any], hook)
+                break
+        if report_exception is not None:
+            try:
+                report_exception(error_msg)
+            except Exception:  # noqa: BLE001 - callback error reporting is best effort
+                logger.debug(error_msg, exc_info=True)
+            return
+        logger.debug(error_msg, exc_info=True)
+
+    @staticmethod
+    def _invoke_safe_execute_compat(
+        safe_execute: Callable[..., Any],
+        handler_thunk: Callable[[], None],
+        *,
+        error_msg: str,
+        fallback: Callable[[], None],
+    ) -> None:
+        """Invoke ``safe_execute`` with compatibility fallbacks.
+
+        Parameters
+        ----------
+        safe_execute : Callable[..., Any]
+            Resolved safe-execute hook from the error handler.
+        handler_thunk : Callable[[], None]
+            Thunk that executes the notification handler.
+        error_msg : str
+            Error message used for keyword/positional dispatch.
+        fallback : Callable[[], None]
+            Callback invoked when no compatible hook signature succeeds.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after invoking a compatible signature or fallback.
+        """
+        executed = False
+
+        def _tracked_handler_thunk() -> None:
+            nonlocal executed
+            executed = True
+            handler_thunk()
+
+        def _fallback_if_not_executed() -> None:
+            if not executed:
+                fallback()
+
+        try:
+            safe_execute(_tracked_handler_thunk, error_msg=error_msg)
+            return
+        except TypeError as exc:
+            if not _is_unexpected_keyword_error(exc, "error_msg"):
+                logger.debug(
+                    "safe_execute keyword probe raised TypeError for notification handler (%s): %s",
+                    error_msg,
+                    exc,
+                    exc_info=True,
+                )
+                _fallback_if_not_executed()
+                return
+        except Exception as exc:  # noqa: BLE001 - notification callbacks must stay best effort
+            logger.debug(
+                "safe_execute keyword probe failed for notification handler (%s): %s",
+                error_msg,
+                exc,
+                exc_info=True,
+            )
+            _fallback_if_not_executed()
+            return
+
+        if executed:
+            return
+
+        try:
+            safe_execute(_tracked_handler_thunk, error_msg)
+            return
+        except TypeError as exc:
+            # Most TypeError cases here are compatibility signature mismatches.
+            # Only probe callable-only when this looks like a signature mismatch.
+            if _SAFE_EXECUTE_POSITIONAL_SIGNATURE_MISMATCH_RE.search(str(exc)):
+                pass
+            else:
+                logger.debug(
+                    "safe_execute positional probe raised TypeError for notification handler (%s); skipping callable-only probe to avoid duplicate handler execution.",
+                    error_msg,
+                    exc_info=True,
+                )
+                _fallback_if_not_executed()
+                return
+        except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
+            logger.debug(
+                "safe_execute positional probe failed for notification handler (%s); skipping callable-only probe to avoid duplicate handler execution.",
+                error_msg,
+                exc_info=True,
+            )
+            _fallback_if_not_executed()
+            return
+
+        if executed:
+            return
+
+        try:
+            safe_execute(_tracked_handler_thunk)
+            return
+        except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
+            logger.debug(
+                "safe_execute callable-only probe failed for notification handler (%s).",
+                error_msg,
+                exc_info=True,
+            )
+            _fallback_if_not_executed()
+
     def _from_num_handler(self, _: Any, b: bytes | bytearray) -> None:
         """Process a FROMNUM characteristic notification and wake the receive loop.
 
@@ -708,22 +847,18 @@ class BLEInterface(MeshInterface):
             """
 
             def _report_notification_error() -> None:
-                report_exception: Callable[[str], Any] | None = None
-                for hook_name in (
-                    "handle_unhandled_exception",
-                    "_handle_unhandled_exception",
-                ):
-                    hook = getattr(self.error_handler, hook_name, None)
-                    if callable(hook) and not _is_unconfigured_mock_callable(hook):
-                        report_exception = cast(Callable[[str], Any], hook)
-                        break
-                if report_exception is not None:
-                    try:
-                        report_exception(error_msg)
-                    except Exception:  # noqa: BLE001 - callback error reporting is best effort
-                        logger.debug(error_msg, exc_info=True)
-                else:
-                    logger.debug(error_msg, exc_info=True)
+                self._report_notification_handler_error(error_msg)
+
+            def _invoke_handler() -> None:
+                handler(sender, data)
+
+            def _fallback_invoke_handler() -> None:
+                try:
+                    _invoke_handler()
+                except (
+                    Exception
+                ):  # noqa: BLE001 - notification callbacks must stay best effort
+                    _report_notification_error()
 
             safe_execute = getattr(self.error_handler, "safe_execute", None)
             if not callable(safe_execute) or _is_unconfigured_mock_callable(
@@ -734,31 +869,18 @@ class BLEInterface(MeshInterface):
                 safe_execute
             ):
                 try:
-                    handler(sender, data)
-                except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
+                    _invoke_handler()
+                except (
+                    Exception
+                ):  # noqa: BLE001 - notification callbacks must stay best effort
                     _report_notification_error()
                 return
-            try:
-                safe_execute(lambda: handler(sender, data), error_msg=error_msg)
-            except TypeError as exc:
-                if not _is_unexpected_keyword_error(exc, "error_msg"):
-                    _report_notification_error()
-                    return
-                try:
-                    safe_execute(lambda: handler(sender, data), error_msg)
-                except TypeError as positional_exc:
-                    # Some legacy hooks accept only the callable argument.
-                    if "positional argument" not in str(positional_exc):
-                        _report_notification_error()
-                        return
-                    try:
-                        safe_execute(lambda: handler(sender, data))
-                    except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
-                        _report_notification_error()
-                except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
-                    _report_notification_error()
-            except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
-                _report_notification_error()
+            self._invoke_safe_execute_compat(
+                safe_execute,
+                _invoke_handler,
+                error_msg=error_msg,
+                fallback=_fallback_invoke_handler,
+            )
 
         def _safe_legacy_handler(sender: Any, data: bytes | bytearray) -> None:
             """Invoke the legacy log-radio notification handler for a BLE notification and suppress any exceptions raised by the handler.
@@ -1042,8 +1164,7 @@ class BLEInterface(MeshInterface):
             awaitable,
             timeout,
             label,
-            timeout_error_factory=lambda timeout_label,
-            timeout_seconds: BLEInterface.BLEError(
+            timeout_error_factory=lambda timeout_label, timeout_seconds: BLEInterface.BLEError(
                 ERROR_TIMEOUT.format(timeout_label, timeout_seconds)
             ),
         )
@@ -1780,7 +1901,7 @@ class BLEInterface(MeshInterface):
                 discovery_manager,
                 public_name="discover_devices",
                 legacy_name="_discover_devices",
-                fallback_attr_name="discover_devices",
+                fallback_attr_name=None,
                 error_message=ERROR_DISCOVERY_MANAGER_MISSING_DISCOVER_DEVICES,
                 args=(address,),
             ),
@@ -2040,19 +2161,30 @@ class BLEInterface(MeshInterface):
         AttributeError
             If no supported delay helper exists on ``policy``.
         """
-        return float(
-            cast(
-                float,
-                BLEInterface._compat_dispatch_callable(
-                    policy,
-                    public_name="get_delay",
-                    legacy_name="_get_delay",
-                    fallback_attr_name=None,
-                    error_message=ERROR_RETRY_POLICY_MISSING_GET_DELAY,
-                    args=(attempt,),
-                ),
-            )
+        result = BLEInterface._compat_dispatch_callable(
+            policy,
+            public_name="get_delay",
+            legacy_name="_get_delay",
+            fallback_attr_name=None,
+            error_message=ERROR_RETRY_POLICY_MISSING_GET_DELAY,
+            args=(attempt,),
         )
+        if isinstance(result, numbers.Real) and not isinstance(result, bool):
+            try:
+                normalized_result = float(result)
+            except (TypeError, ValueError, OverflowError):
+                normalized_result = None
+            if (
+                normalized_result is not None
+                and math.isfinite(normalized_result)
+                and normalized_result >= 0
+            ):
+                return normalized_result
+        logger.debug(
+            "Retry policy get_delay returned invalid value %r; defaulting to 0.0",
+            result,
+        )
+        return 0.0
 
     @property
     def _connection_state(self) -> ConnectionState:
@@ -2890,6 +3022,19 @@ class BLEInterface(MeshInterface):
             management_wait_poll_seconds=_MANAGEMENT_CONNECT_WAIT_POLL_SECONDS,
         )
 
+    def _get_publishing_thread(self) -> object:
+        """Resolve the publishing-thread adapter used for compatibility events.
+
+        Returns
+        -------
+        object
+            Instance override when configured, otherwise module-level
+            ``publishingThread``.
+        """
+        if self._publishing_thread_override is not None:
+            return self._publishing_thread_override
+        return publishingThread
+
     def _wait_for_disconnect_notifications(self, timeout: float | None = None) -> None:
         """Wait up to timeout seconds for the publishing thread to flush pending publish callbacks.
 
@@ -2903,7 +3048,7 @@ class BLEInterface(MeshInterface):
         BLECompatibilityEventService.wait_for_disconnect_notifications(
             self,
             timeout,
-            publishing_thread=publishingThread,
+            publishing_thread=self._get_publishing_thread(),
         )
 
     def _disconnect_and_close_client(self, client: BLEClient) -> None:
@@ -2929,7 +3074,7 @@ class BLEInterface(MeshInterface):
         BLECompatibilityEventService.drain_publish_queue(
             self,
             flush_event,
-            publishing_thread=publishingThread,
+            publishing_thread=self._get_publishing_thread(),
         )
 
     def _publish_connection_status(self, *, connected: bool) -> None:
@@ -2948,7 +3093,7 @@ class BLEInterface(MeshInterface):
         BLECompatibilityEventService.publish_connection_status(
             self,
             connected=connected,
-            publishing_thread=publishingThread,
+            publishing_thread=self._get_publishing_thread(),
         )
 
     def _disconnected(self) -> None:

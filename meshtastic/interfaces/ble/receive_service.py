@@ -20,6 +20,7 @@ from meshtastic.interfaces.ble.constants import (
     logger,
 )
 from meshtastic.interfaces.ble.errors import DecodeError
+from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
 from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
     _is_unconfigured_mock_member,
@@ -225,12 +226,7 @@ class BLEReceiveRecoveryService:
             timeout=wait_timeout,
         )
         poll_without_notify = False
-        raw_ever_connected = getattr(iface, "_ever_connected", False)
-        ever_connected = (
-            False
-            if _is_unconfigured_mock_member(raw_ever_connected)
-            else raw_ever_connected if isinstance(raw_ever_connected, bool) else False
-        )
+        ever_connected = BLELifecycleService._ever_connected_flag(iface)
         if not event_signaled:
             if (
                 ever_connected
@@ -267,8 +263,6 @@ class BLEReceiveRecoveryService:
         tuple[BLEClient | None, bool, bool, bool]
             ``(client, is_connecting, publish_pending, is_closing)``.
         """
-        from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
-
         with iface._state_lock:
             client = iface.client
             state_is_connecting = getattr(iface._state_manager, "is_connecting", None)
@@ -279,15 +273,17 @@ class BLEReceiveRecoveryService:
                 is_connecting = (
                     connecting_result if isinstance(connecting_result, bool) else False
                 )
-            elif not _is_unconfigured_mock_member(
-                state_is_connecting
-            ) and isinstance(state_is_connecting, bool):
+            elif not _is_unconfigured_mock_member(state_is_connecting) and isinstance(
+                state_is_connecting, bool
+            ):
                 is_connecting = state_is_connecting
             else:
-                legacy_is_connecting = getattr(iface._state_manager, "_is_connecting", None)
-                if callable(legacy_is_connecting) and not _is_unconfigured_mock_callable(
+                legacy_is_connecting = getattr(
+                    iface._state_manager, "_is_connecting", None
+                )
+                if callable(
                     legacy_is_connecting
-                ):
+                ) and not _is_unconfigured_mock_callable(legacy_is_connecting):
                     connecting_result = legacy_is_connecting()
                     is_connecting = (
                         connecting_result
@@ -789,7 +785,6 @@ class BLEReceiveRecoveryService:
             _sleep(iface._retry_policy_get_delay(transient_policy, attempt_index))
             return
         iface._read_retry_count = 0
-        logger.debug("Persistent BLE read error after retries", exc_info=True)
         raise iface.BLEError(ERROR_READING_BLE) from error
 
     @staticmethod

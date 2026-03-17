@@ -565,12 +565,13 @@ class BLEClient:
         None
             Management operation is performed for side effects only.
         """
+
         def operation() -> Coroutine[Any, Any, object]:
             bleak_client = self._require_bleak_client(not_initialized_error)
             method = getattr(bleak_client, method_name, None)
             if not callable(method) or _is_unconfigured_mock_callable(method):
                 raise self.BLEError(unsupported_error)
-            return method(**(call_kwargs or {}))
+            return cast(Coroutine[Any, Any, object], method(**(call_kwargs or {})))
 
         self._run_management_call(
             operation,

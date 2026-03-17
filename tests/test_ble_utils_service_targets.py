@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import importlib
 import contextlib
+import importlib
 from queue import Empty, Full
 from threading import Event, RLock
 from types import SimpleNamespace
@@ -97,7 +97,9 @@ def test_safe_execute_adapter_covers_kwarg_stripping_and_fallback_paths() -> Non
                 )
         return func()
 
-    iface = SimpleNamespace(error_handler=SimpleNamespace(safe_execute=_compat_safe_execute))
+    iface = SimpleNamespace(
+        error_handler=SimpleNamespace(safe_execute=_compat_safe_execute)
+    )
     assert (
         ble_utils._safe_execute_through_adapter(
             iface,
@@ -169,6 +171,7 @@ def test_thread_start_probe_handles_invalid_ident_and_is_alive_errors() -> None:
 
 def test_compatibility_event_service_enqueue_paths() -> None:
     """Callback enqueue helper should cover non-blocking and fallback queue paths."""
+
     def callback() -> None:
         return None
 
@@ -186,7 +189,9 @@ def test_compatibility_event_service_enqueue_paths() -> None:
         is False
     )
 
-    no_put_nowait = SimpleNamespace(queueWork=None, queue=SimpleNamespace(), thread=None)
+    no_put_nowait = SimpleNamespace(
+        queueWork=None, queue=SimpleNamespace(), thread=None
+    )
     assert (
         BLECompatibilityEventService._enqueue_publish_callback(
             no_put_nowait,
@@ -380,10 +385,14 @@ def test_reconnection_error_types_and_hook_resolution() -> None:
         state_manager=BLEStateManager(),
         state_lock=RLock(),
         thread_coordinator=SimpleNamespace(
-            create_thread=lambda **_kwargs: SimpleNamespace(ident=None, is_alive=lambda: False),
+            create_thread=lambda **_kwargs: SimpleNamespace(
+                ident=None, is_alive=lambda: False
+            ),
             start_thread=lambda _thread: None,
         ),
-        interface=SimpleNamespace(_is_connection_closing=False, _can_initiate_connection=True),
+        interface=SimpleNamespace(
+            _is_connection_closing=False, _can_initiate_connection=True
+        ),
     )
     hook = scheduler._resolve_thread_coordinator_hook("create_thread", "_create_thread")
     assert callable(hook)
@@ -399,15 +408,23 @@ def test_reconnection_schedule_thread_not_started_and_policy_missing_method() ->
         state_manager=BLEStateManager(),
         state_lock=RLock(),
         thread_coordinator=SimpleNamespace(
-            create_thread=lambda **_kwargs: SimpleNamespace(ident=None, is_alive=lambda: False),
+            create_thread=lambda **_kwargs: SimpleNamespace(
+                ident=None, is_alive=lambda: False
+            ),
             start_thread=lambda _thread: None,
         ),
-        interface=SimpleNamespace(_is_connection_closing=False, _can_initiate_connection=True),
+        interface=SimpleNamespace(
+            _is_connection_closing=False, _can_initiate_connection=True
+        ),
     )
 
-    assert scheduler._schedule_reconnect(True, Event()) is False
+    should_reconnect = True
+    assert scheduler._schedule_reconnect(should_reconnect, Event()) is False
 
-    worker = ReconnectWorker(interface=SimpleNamespace(auto_reconnect=True), reconnect_policy=SimpleNamespace())
+    worker = ReconnectWorker(
+        interface=SimpleNamespace(auto_reconnect=True),
+        reconnect_policy=SimpleNamespace(),
+    )
     with pytest.raises(ReconnectPolicyMissingMethodError):
         worker._call_policy("next_attempt")
 
@@ -416,9 +433,12 @@ def test_management_helpers_cover_factory_and_target_edge_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Management helper branches should handle factory fallback and target drift."""
+
     def _reject_kwarg(address: str, **kwargs: object) -> DummyClient:
         if kwargs:
-            raise TypeError("factory() got an unexpected keyword argument 'log_if_no_address'")
+            raise TypeError(  # noqa: TRY003 - intentional test fixture message shape
+                "factory() got an unexpected keyword argument 'log_if_no_address'"
+            )
         client = DummyClient()
         client.address = address
         return client
@@ -447,7 +467,9 @@ def test_management_helpers_cover_factory_and_target_edge_paths(
     finally:
         iface.close()
 
-    fresh_iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    fresh_iface = _build_interface(
+        monkeypatch, DummyClient(), start_receive_thread=False
+    )
     try:
         start_context = SimpleNamespace(
             target_address=None,
@@ -467,6 +489,51 @@ def test_management_helpers_cover_factory_and_target_edge_paths(
             )
     finally:
         fresh_iface.close()
+
+
+def test_resolve_management_target_existing_client_explicit_address_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_resolve_management_target should validate explicit existing-client paths and resolver fallback."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    try:
+        start_context = SimpleNamespace(
+            target_address=None,
+            use_existing_client_without_resolved_address=True,
+            expected_implicit_binding=None,
+        )
+        iface._validate_management_preconditions = lambda: None
+        iface._get_management_client_if_available = lambda _address: None
+
+        with pytest.raises(iface.BLEError, match="changed"):
+            BLEManagementCommandsService._resolve_management_target(
+                iface, "target-id", start_context
+            )
+
+        refreshed_client = DummyClient()
+        refreshed_client.address = None
+        refreshed_client.bleak_client = SimpleNamespace(address=None)
+        resolved_addresses: list[str | None] = []
+
+        iface._get_management_client_if_available = lambda _address: refreshed_client
+        iface._extract_client_address = lambda _client: None
+
+        def _resolve_target_address(address: str | None) -> str:
+            resolved_addresses.append(address)
+            return "AA:BB:CC:DD:EE:FF"
+
+        iface._resolve_target_address_for_management = _resolve_target_address
+
+        target, active_client = BLEManagementCommandsService._resolve_management_target(
+            iface,
+            "target-id",
+            start_context,
+        )
+        assert target == "AA:BB:CC:DD:EE:FF"
+        assert active_client is None
+        assert resolved_addresses == ["target-id"]
+    finally:
+        iface.close()
 
 
 def test_management_execute_with_client_preserves_command_outcome_on_close_failure(
@@ -495,7 +562,9 @@ def test_management_execute_management_command_existing_client_and_trust_edges(
 ) -> None:
     """Management command and trust helpers should cover missing-target and subprocess branches."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-    bluetooth_iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    bluetooth_iface = _build_interface(
+        monkeypatch, DummyClient(), start_receive_thread=False
+    )
     try:
         start_context = SimpleNamespace(
             expected_implicit_binding=None,
@@ -516,7 +585,9 @@ def test_management_execute_management_command_existing_client_and_trust_edges(
         monkeypatch.setattr(
             BLEManagementCommandsService,
             "_acquire_client_for_target",
-            staticmethod(lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError())),
+            staticmethod(
+                lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError())
+            ),
         )
 
         assert (
@@ -531,7 +602,9 @@ def test_management_execute_management_command_existing_client_and_trust_edges(
         )
 
         bluetooth_iface._format_bluetoothctl_address = lambda address: address
-        bluetooth_iface._management_target_gate = lambda _address: contextlib.nullcontext()
+        bluetooth_iface._management_target_gate = (
+            lambda _address: contextlib.nullcontext()
+        )
 
         class _SubprocessModule:
             TimeoutExpired = RuntimeError
@@ -573,7 +646,9 @@ def test_management_execute_management_command_existing_client_and_trust_edges(
                 None,
                 timeout=1.0,
                 sys_module=SimpleNamespace(platform="linux"),
-                shutil_module=SimpleNamespace(which=lambda _name: "/usr/bin/bluetoothctl"),
+                shutil_module=SimpleNamespace(
+                    which=lambda _name: "/usr/bin/bluetoothctl"
+                ),
                 subprocess_module=_SubprocessModule,
                 trust_hex_blob_re=importlib.import_module(
                     "meshtastic.interfaces.ble.management_service"
@@ -614,7 +689,9 @@ def test_utils_remaining_optional_kwarg_and_safe_execute_branches() -> None:
         )
 
     iface_no_hooks = SimpleNamespace(
-        error_handler=SimpleNamespace(safe_execute=MagicMock(), _safe_execute=MagicMock())
+        error_handler=SimpleNamespace(
+            safe_execute=MagicMock(), _safe_execute=MagicMock()
+        )
     )
     assert ble_utils._resolve_safe_execute(iface_no_hooks) is None
 
@@ -681,7 +758,9 @@ def test_compatibility_resolve_safe_execute_wrapper() -> None:
 
 def test_compatibility_enqueue_returns_false_when_no_enqueue_path() -> None:
     """enqueue_publish_callback should return False when no queue path exists."""
-    publishing_thread = SimpleNamespace(queueWork=None, queue=SimpleNamespace(), thread=None)
+    publishing_thread = SimpleNamespace(
+        queueWork=None, queue=SimpleNamespace(), thread=None
+    )
     assert (
         BLECompatibilityEventService._enqueue_publish_callback(
             publishing_thread,
@@ -718,6 +797,7 @@ def test_compatibility_service_remaining_enqueue_wait_and_drain_branches(
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     try:
+
         class _NeverSetEvent:
             def set(self) -> None:
                 return None
@@ -767,9 +847,13 @@ def test_compatibility_service_remaining_enqueue_wait_and_drain_branches(
             flush_event,
             publishing_thread=SimpleNamespace(
                 thread=SimpleNamespace(
-                    _drain_publish_queue=lambda _event: called_thread_drain.append("thread")
+                    _drain_publish_queue=lambda _event: called_thread_drain.append(
+                        "thread"
+                    )
                 ),
-                queue=SimpleNamespace(get_nowait=lambda: (_ for _ in ()).throw(Empty())),
+                queue=SimpleNamespace(
+                    get_nowait=lambda: (_ for _ in ()).throw(Empty())
+                ),
             ),
         )
         assert called_thread_drain == ["thread"]
@@ -780,7 +864,9 @@ def test_compatibility_service_remaining_enqueue_wait_and_drain_branches(
             publishing_thread=SimpleNamespace(
                 thread=None,
                 queue=SimpleNamespace(
-                    get_nowait=lambda: (_ for _ in ()).throw(RuntimeError("queue read failed"))
+                    get_nowait=lambda: (_ for _ in ()).throw(
+                        RuntimeError("queue read failed")
+                    )
                 ),
             ),
         )
@@ -796,16 +882,24 @@ def test_reconnect_scheduler_start_exception_and_management_trust_truncation(
         state_manager=BLEStateManager(),
         state_lock=RLock(),
         thread_coordinator=SimpleNamespace(
-            create_thread=lambda **_kwargs: SimpleNamespace(ident=1, is_alive=lambda: True),
-            start_thread=lambda _thread: (_ for _ in ()).throw(RuntimeError("start failed")),
+            create_thread=lambda **_kwargs: SimpleNamespace(
+                ident=1, is_alive=lambda: True
+            ),
+            start_thread=lambda _thread: (_ for _ in ()).throw(
+                RuntimeError("start failed")
+            ),
         ),
-        interface=SimpleNamespace(_is_connection_closing=False, _can_initiate_connection=True),
+        interface=SimpleNamespace(
+            _is_connection_closing=False, _can_initiate_connection=True
+        ),
     )
+    should_reconnect = True
     with pytest.raises(RuntimeError, match="start failed"):
-        scheduler._schedule_reconnect(True, Event())
+        scheduler._schedule_reconnect(should_reconnect, Event())
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     try:
+
         class _FailingSubprocess:
             TimeoutExpired = RuntimeError
 

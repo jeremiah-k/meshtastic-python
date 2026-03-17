@@ -162,15 +162,14 @@ class BLEManagementCommandsService:
             operation token.
         """
         expected_implicit_binding: str | None = None
-        with iface._connect_lock, iface._management_lock:
+        with iface._connect_lock, iface._management_lock, iface._state_lock:
             iface._validate_management_preconditions()
+            if address is None:
+                expected_implicit_binding = (
+                    iface._get_current_implicit_management_binding_locked()
+                )
             iface._begin_management_operation_locked()
             try:
-                if address is None:
-                    with iface._state_lock:
-                        expected_implicit_binding = (
-                            iface._get_current_implicit_management_binding_locked()
-                        )
                 existing_client = iface._get_management_client_if_available(address)
                 target_address = iface._extract_client_address(existing_client)
                 use_existing_client_without_resolved_address = (
@@ -224,23 +223,47 @@ class BLEManagementCommandsService:
 
         if start_context.use_existing_client_without_resolved_address:
             current_binding: str | None = None
-            with iface._connect_lock, iface._management_lock:
-                iface._validate_management_preconditions()
-                refreshed_existing_client = iface._get_management_client_if_available(
-                    address
-                )
-                if refreshed_existing_client is None:
-                    raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
-                if address is None:
-                    with iface._state_lock:
-                        current_binding = (
-                            iface._get_current_implicit_management_binding_locked()
-                        )
+            target_candidate: str | None = None
+            use_refreshed_existing_client = True
+            if address is None:
+                with iface._connect_lock, iface._management_lock, iface._state_lock:
+                    iface._validate_management_preconditions()
+                    refreshed_existing_client = (
+                        iface._get_management_client_if_available(address)
+                    )
+                    if refreshed_existing_client is None:
+                        raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
+                    current_binding = (
+                        iface._get_current_implicit_management_binding_locked()
+                    )
                     if sanitize_address(current_binding) != sanitize_address(
                         start_context.expected_implicit_binding
                     ):
                         raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
-            target_candidate = address if address is not None else current_binding
+                    target_candidate = iface._extract_client_address(
+                        refreshed_existing_client
+                    )
+            else:
+                with iface._connect_lock, iface._management_lock:
+                    iface._validate_management_preconditions()
+                    refreshed_existing_client = (
+                        iface._get_management_client_if_available(address)
+                    )
+                    if refreshed_existing_client is None:
+                        raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
+                    target_candidate = iface._extract_client_address(
+                        refreshed_existing_client
+                    )
+                    if target_candidate is None:
+                        target_candidate = iface._resolve_target_address_for_management(
+                            address
+                        )
+                        # Explicit re-resolution outside the refreshed client
+                        # can drift from the client binding; force reacquisition.
+                        use_refreshed_existing_client = False
+
+            if target_candidate is None:
+                target_candidate = current_binding
             if target_candidate is not None:
                 candidate = target_candidate.strip() or None
                 normalized_candidate = sanitize_address(candidate)
@@ -252,7 +275,10 @@ class BLEManagementCommandsService:
                     target_address = candidate
                 else:
                     target_address = None
-            return target_address, refreshed_existing_client
+            return (
+                target_address,
+                refreshed_existing_client if use_refreshed_existing_client else None,
+            )
 
         return target_address, None
 
@@ -728,9 +754,7 @@ class BLEManagementCommandsService:
                 check=False,
                 timeout=validated_timeout,
             )
-        except (
-            Exception
-        ) as exc:  # noqa: BLE001 - preserve injected module compatibility
+        except Exception as exc:  # noqa: BLE001 - preserve injected module compatibility
             if isinstance(exc, timeout_exc_type):
                 raise iface.BLEError(
                     ERROR_TRUST_COMMAND_TIMEOUT.format(

@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import logging
+import math
 import re
 import subprocess
 import threading
@@ -65,6 +66,17 @@ pytestmark = pytest.mark.unit
 _MAX_SPURIOUS_CONNECT_WAIT_CALLS_BEFORE_FAIL = 10
 _MAX_SPURIOUS_CLOSE_WAIT_CALLS_BEFORE_FAIL = 50
 START_FAILED_MSG = "start failed"
+SAFE_EXECUTE_UNEXPECTED_ERROR_MSG = (
+    "safe_execute() got an unexpected keyword argument 'error_msg'"
+)
+SAFE_EXECUTE_POSITIONAL_MISMATCH_ERROR_MSG = (
+    "takes 1 positional argument but 2 positional arguments were given"
+)
+SAFE_EXECUTE_DIFFERENT_TYPE_ERROR_MSG = "different type error"
+SAFE_EXECUTE_KEYWORD_CALL_FAILED_MSG = "keyword call failed"
+SAFE_EXECUTE_HANDLER_TYPE_ERROR_MSG = "handler raised type error"
+SAFE_EXECUTE_CALLABLE_ONLY_ERROR_MSG = "callable-only failed"
+SAFE_EXECUTE_LEGACY_POSITIONAL_MISMATCH_ERROR_MSG = "legacy positional mismatch"
 
 
 def _pin_trust_environment(
@@ -766,11 +778,15 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
     cleanup_calls: list[Any] = []
 
     if factory_mode == "with_optional_kwargs":
+
         def _temp_client_factory(_address: str, **_kwargs: object) -> SimpleNamespace:
             return temp_client
+
     elif factory_mode == "without_optional_kwargs":
+
         def _temp_client_factory(_address: str) -> SimpleNamespace:
             return temp_client
+
     else:
         pytest.fail(f"Unexpected factory_mode: {factory_mode}")
 
@@ -2110,6 +2126,41 @@ def test_ble_interface_close_bounds_wait_on_spurious_management_wakeups(
     assert unsubscribe_calls == [client]
     assert disconnect_calls == [client]
     assert any("Timed out waiting" in record.message for record in caplog.records)
+
+
+def test_ble_interface_close_forwards_management_wait_poll_seconds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """close() should forward management shutdown timing kwargs to lifecycle close."""
+    from meshtastic.interfaces.ble import interface as interface_mod
+    from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
+
+    iface = object.__new__(BLEInterface)
+    close_calls: list[dict[str, object]] = []
+
+    def _capture_close(
+        _iface: object,
+        *,
+        management_shutdown_wait_timeout: float,
+        management_wait_poll_seconds: float,
+    ) -> None:
+        close_calls.append(
+            {
+                "management_shutdown_wait_timeout": management_shutdown_wait_timeout,
+                "management_wait_poll_seconds": management_wait_poll_seconds,
+            }
+        )
+
+    monkeypatch.setattr(BLELifecycleService, "_close", staticmethod(_capture_close))
+
+    BLEInterface.close(iface)
+
+    assert close_calls == [
+        {
+            "management_shutdown_wait_timeout": interface_mod._MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS,
+            "management_wait_poll_seconds": interface_mod._MANAGEMENT_CONNECT_WAIT_POLL_SECONDS,
+        }
+    ]
 
 
 def test_ble_interface_implicit_trust_releases_connect_lock_before_subprocess(
@@ -4494,6 +4545,30 @@ def test_transient_read_retry_uses_zero_based_delay(
     iface.close()
 
 
+@pytest.mark.parametrize(
+    "invalid_delay",
+    [
+        True,
+        -1.0,
+        math.nan,
+        math.inf,
+        -math.inf,
+        pytest.param("1.0", id="string"),
+        pytest.param(object(), id="opaque-object"),
+    ],
+)
+def test_retry_policy_get_delay_rejects_invalid_numeric_outputs(
+    invalid_delay: object,
+) -> None:
+    """Retry delay helper should clamp invalid bool/non-finite/negative/non-numeric results to 0.0."""
+
+    class InvalidDelayPolicy:
+        def get_delay(self, _attempt: int) -> object:
+            return invalid_delay
+
+    assert BLEInterface._retry_policy_get_delay(InvalidDelayPolicy(), attempt=0) == 0.0
+
+
 def test_receive_recovery_backoff_reaches_configured_cap_for_non_power_of_two(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -4761,24 +4836,28 @@ def test_start_receive_thread_skips_when_interface_closed(
     iface._start_receive_thread(name="BLEReceiveAfterClose")
 
 
+@pytest.mark.parametrize(
+    "invoke_start",
+    ["service", "facade"],
+)
 def test_start_receive_thread_clears_cached_thread_when_start_fails(
     monkeypatch: pytest.MonkeyPatch,
+    invoke_start: str,
 ) -> None:
-    """Verify start failures clear cached receive-thread references.
-
-    Parameters
-    ----------
-    monkeypatch : pytest.MonkeyPatch
-        Fixture used to patch thread-coordinator start behavior.
-
-    Returns
-    -------
-    None
-    """
+    """Verify start failures clear cached receive-thread references for service/facade paths."""
+    from meshtastic.interfaces.ble.interface import BLEInterface
     from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     try:
+        if invoke_start == "facade":
+            monkeypatch.setattr(
+                type(iface),
+                "_start_receive_thread",
+                BLEInterface._start_receive_thread,
+                raising=True,
+            )
+
         with iface._state_lock:
             iface._want_receive = True
         thread_like = SimpleNamespace(
@@ -4805,66 +4884,15 @@ def test_start_receive_thread_clears_cached_thread_when_start_fails(
             raising=True,
         )
 
-        with pytest.raises(RuntimeError, match=START_FAILED_MSG):
-            BLELifecycleService._start_receive_thread(iface, name="BLEReceiveStartFailure")
+        if invoke_start == "facade":
+            start_receive = iface._start_receive_thread
+        else:
 
-        assert iface._receiveThread is None
-    finally:
-        iface.close()
-
-
-def test_start_receive_thread_facade_clears_cached_thread_when_start_fails(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Verify facade start failures clear cached receive-thread references.
-
-    Parameters
-    ----------
-    monkeypatch : pytest.MonkeyPatch
-        Fixture used to patch thread-coordinator start behavior.
-
-    Returns
-    -------
-    None
-    """
-    from meshtastic.interfaces.ble.interface import BLEInterface
-
-    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-    try:
-        monkeypatch.setattr(
-            type(iface),
-            "_start_receive_thread",
-            BLEInterface._start_receive_thread,
-            raising=True,
-        )
-        with iface._state_lock:
-            iface._want_receive = True
-        thread_like = SimpleNamespace(
-            name="BLEReceiveStartFailure",
-            ident=None,
-            is_alive=lambda: False,
-        )
-        monkeypatch.setattr(
-            iface.thread_coordinator,
-            "_create_thread",
-            lambda **_kwargs: thread_like,
-            raising=True,
-        )
-
-        def _raise_start_failure(_thread: object) -> None:
-            assert _thread is thread_like
-            assert iface._receiveThread is thread_like
-            raise RuntimeError(START_FAILED_MSG)
-
-        monkeypatch.setattr(
-            iface.thread_coordinator,
-            "_start_thread",
-            _raise_start_failure,
-            raising=True,
-        )
+            def start_receive(*, name: str) -> None:
+                BLELifecycleService._start_receive_thread(iface, name=name)
 
         with pytest.raises(RuntimeError, match=START_FAILED_MSG):
-            iface._start_receive_thread(name="BLEReceiveStartFailure")
+            start_receive(name="BLEReceiveStartFailure")
 
         assert iface._receiveThread is None
     finally:
@@ -4969,6 +4997,236 @@ def test_find_device_direct_connect_without_discovery_manager() -> None:
 
     assert direct_device.address == address
     assert direct_device.name == address
+
+
+def test_handle_malformed_fromnum_warns_at_threshold_and_resets_counter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Malformed FROMNUM counter should emit warning at threshold then reset."""
+    from meshtastic.interfaces.ble.interface import MALFORMED_NOTIFICATION_THRESHOLD
+
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    warning_calls: list[tuple[object, ...]] = []
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.logger.warning",
+        lambda *args, **_kwargs: warning_calls.append(args),
+    )
+    try:
+        with iface._malformed_notification_lock:
+            iface._malformed_notification_count = MALFORMED_NOTIFICATION_THRESHOLD - 1
+
+        iface._handle_malformed_fromnum("bad notification")
+
+        assert len(warning_calls) == 1
+        with iface._malformed_notification_lock:
+            assert iface._malformed_notification_count == 0
+
+        iface._handle_malformed_fromnum("bad notification")
+        assert len(warning_calls) == 1
+    finally:
+        iface.close()
+
+
+def test_report_notification_handler_error_covers_hook_and_fallback_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Notification error reporting should handle hook failures and missing hooks."""
+    iface = object.__new__(BLEInterface)
+    debug_calls: list[str] = []
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.logger.debug",
+        lambda message, *_args, **_kwargs: debug_calls.append(cast(str, message)),
+    )
+
+    raising_hook = MagicMock(side_effect=RuntimeError("hook failed"))
+    iface.error_handler = SimpleNamespace(handle_unhandled_exception=raising_hook)
+    iface._report_notification_handler_error("hook-error")
+
+    # Unconfigured child mock should be treated as unavailable and fall back to logger.debug.
+    error_handler = MagicMock()
+    iface.error_handler = error_handler
+    iface._report_notification_handler_error("missing-hook")
+
+    raising_hook.assert_called_once_with("hook-error")
+    error_handler.handle_unhandled_exception.assert_not_called()
+    assert "hook-error" in debug_calls
+    assert "missing-hook" in debug_calls
+
+
+def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure() -> None:
+    """Positional safe_execute failures should not trigger a second handler invocation."""
+
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    handler_runs: list[str] = []
+    fallbacks: list[str] = []
+
+    def _handler_thunk() -> None:
+        handler_runs.append("run")
+        raise RuntimeError("handler failed")
+
+    def _fallback() -> None:
+        fallbacks.append("fallback")
+
+    def _legacy_safe_execute(
+        func: Callable[[], None], *args: object, **kwargs: object
+    ) -> None:
+        calls.append((args, dict(kwargs)))
+        if "error_msg" in kwargs:
+            raise TypeError(SAFE_EXECUTE_UNEXPECTED_ERROR_MSG)
+        func()
+
+    BLEInterface._invoke_safe_execute_compat(
+        _legacy_safe_execute,
+        _handler_thunk,
+        error_msg="notification error",
+        fallback=_fallback,
+    )
+
+    assert handler_runs == ["run"]
+    assert fallbacks == []
+    assert len(calls) == 2
+
+
+def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signature_error() -> None:
+    """Positional signature mismatch should continue to callable-only compatibility probe."""
+
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    handler_runs: list[str] = []
+    fallbacks: list[str] = []
+
+    def _handler_thunk() -> None:
+        handler_runs.append("run")
+
+    def _fallback() -> None:
+        fallbacks.append("fallback")
+
+    def _legacy_safe_execute(
+        func: Callable[[], None], *args: object, **kwargs: object
+    ) -> None:
+        calls.append((args, dict(kwargs)))
+        if "error_msg" in kwargs:
+            raise TypeError(SAFE_EXECUTE_UNEXPECTED_ERROR_MSG)
+        if args:
+            raise TypeError(SAFE_EXECUTE_POSITIONAL_MISMATCH_ERROR_MSG)
+        func()
+
+    BLEInterface._invoke_safe_execute_compat(
+        _legacy_safe_execute,
+        _handler_thunk,
+        error_msg="notification error",
+        fallback=_fallback,
+    )
+
+    assert handler_runs == ["run"]
+    assert fallbacks == []
+    assert len(calls) == 3
+
+
+def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_paths() -> None:
+    """safe_execute compatibility helper should cover success/fallback branches."""
+
+    def _run_scenario(
+        safe_execute: Callable[..., object],
+        *,
+        expect_handler_runs: int,
+        expect_fallback_runs: int,
+    ) -> None:
+        handler_runs: list[str] = []
+        fallback_runs: list[str] = []
+
+        def _handler() -> None:
+            handler_runs.append("run")
+
+        def _fallback() -> None:
+            fallback_runs.append("fallback")
+
+        BLEInterface._invoke_safe_execute_compat(
+            safe_execute,
+            _handler,
+            error_msg="notification error",
+            fallback=_fallback,
+        )
+
+        assert len(handler_runs) == expect_handler_runs
+        assert len(fallback_runs) == expect_fallback_runs
+
+    _run_scenario(
+        lambda func, *_args, **_kwargs: func(),
+        expect_handler_runs=1,
+        expect_fallback_runs=0,
+    )
+
+    def _keyword_typeerror(
+        _func: Callable[[], None], *args: object, **kwargs: object
+    ) -> None:
+        _ = args
+        _ = kwargs
+        raise TypeError(SAFE_EXECUTE_DIFFERENT_TYPE_ERROR_MSG)
+
+    _run_scenario(
+        _keyword_typeerror,
+        expect_handler_runs=0,
+        expect_fallback_runs=1,
+    )
+
+    def _keyword_exception(
+        _func: Callable[[], None], *args: object, **kwargs: object
+    ) -> None:
+        _ = args
+        _ = kwargs
+        raise RuntimeError(SAFE_EXECUTE_KEYWORD_CALL_FAILED_MSG)
+
+    _run_scenario(
+        _keyword_exception,
+        expect_handler_runs=0,
+        expect_fallback_runs=1,
+    )
+
+    def _positional_success(
+        func: Callable[[], None], *args: object, **kwargs: object
+    ) -> None:
+        if "error_msg" in kwargs:
+            raise TypeError(SAFE_EXECUTE_UNEXPECTED_ERROR_MSG)
+        if args:
+            func()
+            return
+        raise AssertionError("callable-only path should not execute")
+
+    _run_scenario(
+        _positional_success,
+        expect_handler_runs=1,
+        expect_fallback_runs=0,
+    )
+
+    def _non_signature_positional_typeerror(
+        _func: Callable[[], None], *args: object, **kwargs: object
+    ) -> None:
+        if "error_msg" in kwargs:
+            raise TypeError(SAFE_EXECUTE_UNEXPECTED_ERROR_MSG)
+        if args:
+            raise TypeError(SAFE_EXECUTE_HANDLER_TYPE_ERROR_MSG)
+        raise AssertionError("callable-only path should not execute")
+
+    _run_scenario(
+        _non_signature_positional_typeerror,
+        expect_handler_runs=0,
+        expect_fallback_runs=1,
+    )
+
+    def _callable_only_exception(
+        _func: Callable[[], None], *args: object, **kwargs: object
+    ) -> None:
+        if "error_msg" in kwargs:
+            raise TypeError(SAFE_EXECUTE_UNEXPECTED_ERROR_MSG)
+        if args:
+            raise TypeError(SAFE_EXECUTE_POSITIONAL_MISMATCH_ERROR_MSG)
+        raise RuntimeError(SAFE_EXECUTE_CALLABLE_ONLY_ERROR_MSG)
+
+    _run_scenario(
+        _callable_only_exception,
+        expect_handler_runs=0,
+        expect_fallback_runs=1,
+    )
 
 
 def test_wait_for_disconnect_notifications_skips_unconfigured_queuework(
@@ -5098,6 +5356,30 @@ def test_publish_connection_status_falls_back_inline_when_non_blocking_enqueue_u
     )
 
     assert sent == [("meshtastic.connection.status", iface, False)]
+
+
+def test_get_publishing_thread_prefers_instance_override() -> None:
+    """_get_publishing_thread should return an instance override when configured."""
+    iface = object.__new__(BLEInterface)
+    override_thread = SimpleNamespace(name="override-thread")
+    iface._publishing_thread_override = override_thread
+
+    assert iface._get_publishing_thread() is override_thread
+
+
+def test_get_publishing_thread_falls_back_to_module_publishing_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_get_publishing_thread should return module-level publishingThread when override is unset."""
+    iface = object.__new__(BLEInterface)
+    iface._publishing_thread_override = None
+    module_thread = SimpleNamespace(name="module-thread")
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.publishingThread",
+        module_thread,
+    )
+
+    assert iface._get_publishing_thread() is module_thread
 
 
 def test_discovery_manager_filters_meshtastic_devices(
@@ -6146,6 +6428,117 @@ def test_log_notification_registration(
     iface.close()
 
 
+def test_register_notifications_safe_call_inline_fallback_when_safe_execute_unconfigured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Notification wrappers should use inline fallback when safe_execute hooks are unconfigured."""
+
+    class _ClientWithCallbacks(DummyClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.callbacks: dict[str, Callable[[Any, bytes], None]] = {}
+
+        def has_characteristic(self, uuid: str) -> bool:
+            return uuid in {LOGRADIO_UUID, FROMNUM_UUID}
+
+        def start_notify(self, *args: object, **kwargs: object) -> None:
+            _ = kwargs
+            if len(args) >= 2:
+                self.callbacks[str(args[0])] = cast(
+                    Callable[[Any, bytes], None], args[1]
+                )
+
+    client = _ClientWithCallbacks()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    errors: list[str] = []
+    safe_execute = MagicMock()
+    legacy_safe_execute = MagicMock()
+    try:
+        iface.error_handler = SimpleNamespace(
+            safe_execute=safe_execute,
+            _safe_execute=legacy_safe_execute,
+        )
+        monkeypatch.setattr(
+            iface,
+            "_log_radio_handler",
+            lambda _sender, _data: (_ for _ in ()).throw(RuntimeError("handler boom")),
+            raising=True,
+        )
+        monkeypatch.setattr(
+            iface,
+            "_report_notification_handler_error",
+            lambda msg: errors.append(msg),
+            raising=True,
+        )
+
+        iface._register_notifications(cast(BLEClient, client))
+        client.callbacks[LOGRADIO_UUID]("sender", b"log")
+
+        assert errors == ["Error in log notification handler"]
+        safe_execute.assert_not_called()
+        legacy_safe_execute.assert_not_called()
+    finally:
+        iface.close()
+
+
+def test_register_notifications_safe_execute_fallback_still_invokes_handler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Incompatible safe_execute signatures should fallback to direct handler invocation."""
+
+    class _ClientWithCallbacks(DummyClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.callbacks: dict[str, Callable[[Any, bytes], None]] = {}
+
+        def has_characteristic(self, uuid: str) -> bool:
+            return uuid in {LOGRADIO_UUID, FROMNUM_UUID}
+
+        def start_notify(self, *args: object, **kwargs: object) -> None:
+            _ = kwargs
+            if len(args) >= 2:
+                self.callbacks[str(args[0])] = cast(
+                    Callable[[Any, bytes], None], args[1]
+                )
+
+    safe_execute_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def _incompatible_safe_execute(
+        _func: Callable[[], None], *args: object, **kwargs: object
+    ) -> None:
+        safe_execute_calls.append((args, dict(kwargs)))
+        if "error_msg" in kwargs:
+            raise TypeError(SAFE_EXECUTE_UNEXPECTED_ERROR_MSG)
+        if args:
+            raise TypeError(SAFE_EXECUTE_LEGACY_POSITIONAL_MISMATCH_ERROR_MSG)
+        raise AssertionError("callable-only probe should be skipped in this path")
+
+    client = _ClientWithCallbacks()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    log_calls: list[tuple[object, bytes]] = []
+    error_hook = MagicMock()
+    try:
+        iface.error_handler = SimpleNamespace(
+            safe_execute=_incompatible_safe_execute,
+            handle_unhandled_exception=error_hook,
+        )
+        monkeypatch.setattr(
+            iface,
+            "_log_radio_handler",
+            lambda sender, data: log_calls.append((sender, data)),
+            raising=True,
+        )
+
+        iface._register_notifications(cast(BLEClient, client))
+        client.callbacks[LOGRADIO_UUID]("sender", b"log")
+
+        assert log_calls == [("sender", b"log")]
+        assert len(safe_execute_calls) == 2
+        error_hook.assert_not_called()
+    finally:
+        iface.close()
+
+
 def test_register_notifications_retries_fromnum_notify_acquired_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -6161,7 +6554,7 @@ def test_register_notifications_retries_fromnum_notify_acquired_once(
         def has_characteristic(self, uuid: str) -> bool:
             return uuid == FROMNUM_UUID
 
-        def start_notify(self, *args: Any, **kwargs: Any) -> None:
+        def start_notify(self, *args: object, **kwargs: object) -> None:
             _ = kwargs
             if args and args[0] == FROMNUM_UUID:
                 self.fromnum_start_attempts += 1
@@ -6195,7 +6588,7 @@ def test_register_notifications_re_raises_non_notify_acquired_dbus_error(
         def has_characteristic(self, uuid: str) -> bool:
             return uuid == FROMNUM_UUID
 
-        def start_notify(self, *args: Any, **kwargs: Any) -> None:
+        def start_notify(self, *args: object, **kwargs: object) -> None:
             _ = kwargs
             if args and args[0] == FROMNUM_UUID:
                 raise BleakDBusError(
@@ -6229,7 +6622,7 @@ def test_register_notifications_falls_back_to_polling_after_repeated_notify_acqu
         def has_characteristic(self, uuid: str) -> bool:
             return uuid == FROMNUM_UUID
 
-        def start_notify(self, *args: Any, **kwargs: Any) -> None:
+        def start_notify(self, *args: object, **kwargs: object) -> None:
             _ = kwargs
             if args and args[0] == FROMNUM_UUID:
                 self.fromnum_start_attempts += 1

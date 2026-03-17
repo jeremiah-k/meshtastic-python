@@ -130,7 +130,9 @@ def test_client_manager_handles_concurrent_updates() -> None:
         thread.ident = 1
         thread.is_alive.return_value = True
 
-    thread_coordinator._create_thread.side_effect = lambda *_args, **_kwargs: _new_thread()
+    thread_coordinator._create_thread.side_effect = (
+        lambda *_args, **_kwargs: _new_thread()
+    )
     thread_coordinator._start_thread.side_effect = _mark_started
     error_handler = MagicMock()
 
