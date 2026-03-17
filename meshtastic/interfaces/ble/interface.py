@@ -2124,7 +2124,7 @@ class BLEInterface(MeshInterface):
             isinstance(result, numbers.Real)
             and not isinstance(result, bool)
             and math.isfinite(result)
-            and result >= 0
+            and float(result) >= 0
         ):
             return float(result)
         logger.debug(

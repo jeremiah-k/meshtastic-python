@@ -160,7 +160,9 @@ def test_client_manager_thread_dispatch_and_wrapper_paths(
     manager._connect_client.assert_called_once()
 
 
-def test_client_manager_connect_client_recovers_from_services_property_bleak_error() -> None:
+def test_client_manager_connect_client_recovers_from_services_property_bleak_error() -> (
+    None
+):
     """_connect_client should force service discovery when services property access fails."""
     manager = ClientManager(
         BLEStateManager(),
@@ -759,6 +761,7 @@ def test_orchestrator_create_connect_direct_retry_remaining_branches(
                 connect_attempt_count[0] += 1
                 raise BleakDeviceNotFoundError("device not found")
             raise RuntimeError("discovery connect failed")
+
         orchestrator._client_manager_connect_client = _connect_side_effect
         orchestrator._compat_find_device = lambda _target: SimpleNamespace(
             address="AA:BB"

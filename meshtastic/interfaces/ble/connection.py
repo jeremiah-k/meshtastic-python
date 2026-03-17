@@ -815,7 +815,7 @@ class ConnectionOrchestrator:
         # Use the function's own default sentinel rather than module globals so
         # behavior remains stable even if this module is reloaded in tests.
         dispatch_kwdefaults = (
-            self._dispatch_public_or_underscore.__func__.__kwdefaults__ or {}
+            type(self)._dispatch_public_or_underscore.__kwdefaults__ or {}
         )
         missing_sentinel = cast(
             object,

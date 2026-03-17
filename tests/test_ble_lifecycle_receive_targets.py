@@ -941,9 +941,7 @@ def test_wait_for_read_trigger_normalizes_non_bool_ever_connected(
             BLEReceiveRecoveryService,
             "_coordinator_check_and_clear_event",
             staticmethod(
-                lambda *_args, **_kwargs: (
-                    reconnected_checks.append("checked") or True
-                )
+                lambda *_args, **_kwargs: (reconnected_checks.append("checked") or True)
             ),
         )
         monkeypatch.setattr(
