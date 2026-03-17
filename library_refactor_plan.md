@@ -34,10 +34,15 @@
   - Rewired `BLEInterface` runtime lifecycle/receive/compatibility paths to instance-bound collaborators instead of direct static service invocation.
   - Added lazy collaborator getters in `BLEInterface` for object-constructed and monkeypatch-heavy test compatibility.
   - Updated `BLE.md` architecture and boundary documentation to reflect the current collaborator-based runtime model.
+  - Removed direct collaborator-private reach-through from `BLEInterface` for state/notification paths by introducing and using explicit collaborator APIs:
+    - `NotificationManager.get_callback()/subscribe()/cleanup_all()/unsubscribe_all()/resubscribe_all()`
+    - `BLEStateManager.current_state/is_connected/is_closing/can_connect/is_active`
+  - Updated compatibility publisher collaborator construction to inject a publishing-thread provider, removing cross-module direct private method calls.
 - Validation completed:
   - `ruff check` on touched files: passed.
   - `poetry run pytest -q tests/test_ble_interface_core.py tests/test_ble_connection_discovery_client_targets.py tests/test_ble_lifecycle_receive_targets.py tests/test_ble_utils_service_targets.py`: **264 passed**.
   - `poetry run pytest -q tests/test_ble_interface_core.py tests/test_ble_lifecycle_receive_targets.py tests/test_ble_utils_service_targets.py tests/test_ble_integration_scenarios.py`: **256 passed**.
+  - `poetry run pytest -q tests/test_ble_interface_core.py tests/test_ble_lifecycle_receive_targets.py tests/test_ble_utils_service_targets.py tests/test_ble_connection_discovery_client_targets.py`: **264 passed**.
   - `poetry run pytest -q`: **1454 passed, 3 skipped, 92 deselected**.
 - PASS 1 completion notes:
   - Runtime BLE service calls now route through bound collaborators rather than static service classes.

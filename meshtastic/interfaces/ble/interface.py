@@ -330,7 +330,10 @@ class BLEInterface(MeshInterface):
         )
         self._lifecycle_controller = BLELifecycleController(self)
         self._receive_recovery_controller = BLEReceiveRecoveryController(self)
-        self._compatibility_publisher = BLECompatibilityEventPublisher(self)
+        self._compatibility_publisher = BLECompatibilityEventPublisher(
+            self,
+            publishing_thread_provider=self._get_publishing_thread,
+        )
 
         # Event coordination for reconnection and read operations
         self._read_trigger = self.thread_coordinator._create_event(
@@ -970,10 +973,10 @@ class BLEInterface(MeshInterface):
             Callable[[Any, Any], None]
                 The existing or newly created notification handler.
             """
-            handler = self._notification_manager._get_callback(uuid)
+            handler = self._notification_manager.get_callback(uuid)
             if handler is None:
                 handler = factory()
-                self._notification_manager._subscribe(uuid, handler)
+                self._notification_manager.subscribe(uuid, handler)
             return handler
 
         def _is_notify_acquired_error(err: BaseException) -> bool:
@@ -1576,7 +1579,10 @@ class BLEInterface(MeshInterface):
         """Return compatibility publisher collaborator, creating one lazily when needed."""
         publisher = getattr(self, "_compatibility_publisher", None)
         if publisher is None:
-            publisher = BLECompatibilityEventPublisher(self)
+            publisher = BLECompatibilityEventPublisher(
+                self,
+                publishing_thread_provider=self._get_publishing_thread,
+            )
             self._compatibility_publisher = publisher
         return cast(BLECompatibilityEventPublisher, publisher)
 
@@ -2243,7 +2249,7 @@ class BLEInterface(MeshInterface):
             The current connection state of the interface.
         """
         with self._state_lock:
-            return self._state_manager._current_state
+            return self._state_manager.current_state
 
     @property
     def _is_connection_connected(self) -> bool:
@@ -2255,7 +2261,7 @@ class BLEInterface(MeshInterface):
             `True` if a BLE connection is active, `False` otherwise.
         """
         with self._state_lock:
-            return self._state_manager._is_connected
+            return self._state_manager.is_connected
 
     @property
     def _is_connection_closing(self) -> bool:
@@ -2267,7 +2273,7 @@ class BLEInterface(MeshInterface):
             True if the interface is closing or closed, False otherwise.
         """
         with self._state_lock:
-            return self._state_manager._is_closing or self._closed
+            return self._state_manager.is_closing or self._closed
 
     @property
     def _can_initiate_connection(self) -> bool:
@@ -2281,7 +2287,7 @@ class BLEInterface(MeshInterface):
             True if a new connection can be initiated, False otherwise.
         """
         with self._state_lock:
-            return self._state_manager._can_connect and not self._closed
+            return self._state_manager.can_connect and not self._closed
 
     # ---------------------------------------------------------------------
     # Connection helper methods (extracted from connect() for readability)
@@ -2315,7 +2321,7 @@ class BLEInterface(MeshInterface):
         self._validate_connection_preconditions()
         with self._state_lock:
             if (
-                self._state_manager._current_state == ConnectionState.CONNECTING
+                self._state_manager.current_state == ConnectionState.CONNECTING
                 or self._client_publish_pending
             ):
                 raise self.BLEError(ERROR_MANAGEMENT_CONNECTING)
@@ -2334,7 +2340,7 @@ class BLEInterface(MeshInterface):
             `True` if the connection should be suppressed because the key is connected elsewhere and this interface is not the active connection, `False` otherwise.
         """
         with self._state_lock:
-            is_self_connected = self._state_manager._is_connected
+            is_self_connected = self._state_manager.is_connected
         return bool(
             connection_key
             and _is_currently_connected_elsewhere(connection_key, owner=self)
@@ -2477,7 +2483,7 @@ class BLEInterface(MeshInterface):
         previous_client = None
         abort_connect = False
         with self._state_lock:
-            if self._closed or self._state_manager._is_closing:
+            if self._closed or self._state_manager.is_closing:
                 abort_connect = True
                 self._client_publish_pending = False
                 self._client_replacement_pending = False
@@ -2546,11 +2552,11 @@ class BLEInterface(MeshInterface):
         self, client: BLEClient
     ) -> tuple[bool, bool]:
         """Return owned/closing status for a connected client while holding `_state_lock`."""
-        is_closing = self._state_manager._is_closing or self._closed
+        is_closing = self._state_manager.is_closing or self._closed
         is_owned = (
             not self._closed
             and self.client is client
-            and self._state_manager._is_connected
+            and self._state_manager.is_connected
             and client.isConnected()
         )
         return is_owned, is_closing

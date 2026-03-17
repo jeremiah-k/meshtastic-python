@@ -92,6 +92,23 @@ class NotificationManager:
             self._characteristic_to_callback[characteristic] = callback
             return token
 
+    def subscribe(self, characteristic: str, callback: Callable[[Any, Any], None]) -> int:
+        """Public-first wrapper for tracking a characteristic notification callback.
+
+        Parameters
+        ----------
+        characteristic : str
+            Characteristic UUID/identifier.
+        callback : Callable[[Any, Any], None]
+            Notification callback invoked as ``(sender, data)``.
+
+        Returns
+        -------
+        int
+            Subscription token for the tracked callback.
+        """
+        return self._subscribe(characteristic, callback)
+
     def _cleanup_all(self) -> None:
         """Clear all tracked BLE notification subscriptions and per-characteristic callbacks.
 
@@ -107,6 +124,10 @@ class NotificationManager:
             self._characteristic_to_callback.clear()
             self._resubscribe_failures.clear()
             self._subscription_counter = 0
+
+    def cleanup_all(self) -> None:
+        """Public-first wrapper that clears all tracked subscription state."""
+        self._cleanup_all()
 
     def _unsubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
         """Stop notifications for every characteristic currently tracked and ignore any errors.
@@ -142,6 +163,10 @@ class NotificationManager:
                 failure_count,
                 len(characteristics),
             )
+
+    def unsubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
+        """Public-first wrapper that unsubscribes all tracked notifications."""
+        self._unsubscribe_all(client, timeout=timeout)
 
     def _resubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
         """Resubscribe all tracked BLE notification callbacks on the given client.
@@ -202,6 +227,10 @@ class NotificationManager:
                         return
                     failures.pop(characteristic, None)
 
+    def resubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
+        """Public-first wrapper that resubscribes all tracked notifications."""
+        self._resubscribe_all(client, timeout=timeout)
+
     def __len__(self) -> int:
         """Report the number of active BLE notification subscriptions being tracked.
 
@@ -228,3 +257,7 @@ class NotificationManager:
         """
         with self._lock:
             return self._characteristic_to_callback.get(characteristic)
+
+    def get_callback(self, characteristic: str) -> Callable[[Any, Any], None] | None:
+        """Public-first wrapper returning latest callback for ``characteristic``."""
+        return self._get_callback(characteristic)

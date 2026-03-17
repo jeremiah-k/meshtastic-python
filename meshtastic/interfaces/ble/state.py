@@ -135,6 +135,17 @@ class BLEStateManager:
             return self._state
 
     @property
+    def current_state(self) -> ConnectionState:
+        """Public-first state snapshot accessor.
+
+        Returns
+        -------
+        ConnectionState
+            Current connection state.
+        """
+        return self._current_state
+
+    @property
     def _is_connected(self) -> bool:
         """Whether the BLE interface is currently in the CONNECTED state.
 
@@ -150,6 +161,11 @@ class BLEStateManager:
         return self._current_state == ConnectionState.CONNECTED
 
     @property
+    def is_connected(self) -> bool:
+        """Public-first connected-state snapshot accessor."""
+        return self._is_connected
+
+    @property
     def _is_closing(self) -> bool:
         """Internal property: Indicates whether the BLE interface is in the DISCONNECTING state.
 
@@ -163,6 +179,11 @@ class BLEStateManager:
             True if the current connection state is DISCONNECTING, False otherwise.
         """
         return self._current_state == ConnectionState.DISCONNECTING
+
+    @property
+    def is_closing(self) -> bool:
+        """Public-first closing-state snapshot accessor."""
+        return self._is_closing
 
     @property
     def _can_connect(self) -> bool:
@@ -181,6 +202,11 @@ class BLEStateManager:
             ConnectionState.DISCONNECTED,
             ConnectionState.ERROR,
         )
+
+    @property
+    def can_connect(self) -> bool:
+        """Public-first connect-capability snapshot accessor."""
+        return self._can_connect
 
     @property
     def _is_connecting(self) -> bool:
@@ -230,6 +256,11 @@ class BLEStateManager:
             ConnectionState.RECONNECTING,
             ConnectionState.CONNECTED,
         )
+
+    @property
+    def is_active(self) -> bool:
+        """Public-first active-state snapshot accessor."""
+        return self._is_active
 
     def _transition_to_unlocked(self, new_state: ConnectionState) -> bool:
         """Transition helper that assumes `_state_lock` is already held."""

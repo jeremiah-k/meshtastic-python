@@ -32,6 +32,10 @@ recommended patterns for code that embeds `meshtastic-python`.
   paths through bound collaborator instances.
 - Underscore-prefixed methods are canonical for internal orchestration
   collaborators (`state`, `coordination`, lifecycle services).
+- `BLEInterface` uses collaborator APIs for state/notification interactions
+  (for example `NotificationManager.get_callback()/subscribe()` and
+  `BLEStateManager.current_state/is_connected/is_closing/can_connect`) instead
+  of direct collaborator-private member reach-through.
 - `BLEInterface` remains the compatibility boundary: patch-sensitive
   collaborators (for example `publishingThread`, `BLEClient`,
   `_is_currently_connected_elsewhere`, `sys/shutil/subprocess`) are delegated

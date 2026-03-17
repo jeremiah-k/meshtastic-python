@@ -22,16 +22,19 @@ if TYPE_CHECKING:
 class BLECompatibilityEventPublisher:
     """Instance-bound collaborator for compatibility event publication."""
 
-    def __init__(self, iface: "BLEInterface") -> None:
+    def __init__(
+        self, iface: "BLEInterface", *, publishing_thread_provider: Callable[[], object]
+    ) -> None:
         """Bind publisher helpers to a specific interface instance."""
         self._iface = iface
+        self._publishing_thread_provider = publishing_thread_provider
 
     def wait_for_disconnect_notifications(self, timeout: float | None = None) -> None:
         """Wait for disconnect-notification queue flush on the bound interface."""
         BLECompatibilityEventService.wait_for_disconnect_notifications(
             self._iface,
             timeout,
-            publishing_thread=self._iface._get_publishing_thread(),
+            publishing_thread=self._publishing_thread_provider(),
         )
 
     def drain_publish_queue(self, flush_event: Event) -> None:
@@ -39,7 +42,7 @@ class BLECompatibilityEventPublisher:
         BLECompatibilityEventService.drain_publish_queue(
             self._iface,
             flush_event,
-            publishing_thread=self._iface._get_publishing_thread(),
+            publishing_thread=self._publishing_thread_provider(),
         )
 
     def publish_connection_status(self, *, connected: bool) -> None:
@@ -47,7 +50,7 @@ class BLECompatibilityEventPublisher:
         BLECompatibilityEventService.publish_connection_status(
             self._iface,
             connected=connected,
-            publishing_thread=self._iface._get_publishing_thread(),
+            publishing_thread=self._publishing_thread_provider(),
         )
 
     def publish_connection_status_legacy(self, connected: bool) -> None:
@@ -55,7 +58,7 @@ class BLECompatibilityEventPublisher:
         BLECompatibilityEventService.publish_connection_status_legacy(
             self._iface,
             connected,
-            publishing_thread=self._iface._get_publishing_thread(),
+            publishing_thread=self._publishing_thread_provider(),
         )
 
 
