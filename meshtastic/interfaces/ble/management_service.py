@@ -159,6 +159,19 @@ class BLEManagementCommandHandler:
         self._ble_client_factory = ble_client_factory
         self._connected_elsewhere = connected_elsewhere
 
+    def _call_iface_override(
+        self,
+        method_name: str,
+        fallback: Callable[..., T],
+        *args: object,
+        **kwargs: object,
+    ) -> T:
+        """Call instance-level iface override when present, else fallback."""
+        override = self._iface.__dict__.get(method_name)
+        if callable(override):
+            return override(*args, **kwargs)
+        return fallback(*args, **kwargs)
+
     def resolve_target_address_for_management(self, address: str | None) -> str:
         """Resolve a management target to a concrete BLE address."""
         iface = self._iface
@@ -312,7 +325,11 @@ class BLEManagementCommandHandler:
                 )
             self.begin_management_operation_locked()
             try:
-                existing_client = self.get_management_client_if_available(address)
+                existing_client = self._call_iface_override(
+                    "_get_management_client_if_available",
+                    self.get_management_client_if_available,
+                    address,
+                )
                 target_address = iface._extract_client_address(existing_client)
                 use_existing_client_without_resolved_address = (
                     existing_client is not None and target_address is None
@@ -338,7 +355,11 @@ class BLEManagementCommandHandler:
             target_address is None
             and not start_context.use_existing_client_without_resolved_address
         ):
-            target_address = self.resolve_target_address_for_management(address)
+            target_address = self._call_iface_override(
+                "_resolve_target_address_for_management",
+                self.resolve_target_address_for_management,
+                address,
+            )
 
         if start_context.use_existing_client_without_resolved_address:
             refreshed_existing_client: BLEClient | None = None
@@ -348,12 +369,17 @@ class BLEManagementCommandHandler:
             if address is None:
                 with iface._connect_lock, iface._management_lock, iface._state_lock:
                     iface._validate_management_preconditions()
-                    refreshed_existing_client = self.get_management_client_if_available(
-                        address
+                    refreshed_existing_client = self._call_iface_override(
+                        "_get_management_client_if_available",
+                        self.get_management_client_if_available,
+                        address,
                     )
                     if refreshed_existing_client is None:
                         raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
-                    current_binding = self.get_current_implicit_management_binding_locked()
+                    current_binding = self._call_iface_override(
+                        "_get_current_implicit_management_binding_locked",
+                        self.get_current_implicit_management_binding_locked,
+                    )
                     if sanitize_address(current_binding) != sanitize_address(
                         start_context.expected_implicit_binding
                     ):
@@ -364,8 +390,10 @@ class BLEManagementCommandHandler:
             else:
                 with iface._connect_lock, iface._management_lock:
                     iface._validate_management_preconditions()
-                    refreshed_existing_client = self.get_management_client_if_available(
-                        address
+                    refreshed_existing_client = self._call_iface_override(
+                        "_get_management_client_if_available",
+                        self.get_management_client_if_available,
+                        address,
                     )
                     if refreshed_existing_client is None:
                         raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
@@ -377,7 +405,11 @@ class BLEManagementCommandHandler:
                         # reacquisition by resolved concrete target.
                         use_refreshed_existing_client = False
                 if target_candidate is None:
-                    target_candidate = self.resolve_target_address_for_management(address)
+                    target_candidate = self._call_iface_override(
+                        "_resolve_target_address_for_management",
+                        self.resolve_target_address_for_management,
+                        address,
+                    )
 
             if target_candidate is None:
                 target_candidate = current_binding
@@ -415,11 +447,15 @@ class BLEManagementCommandHandler:
         with iface._connect_lock, iface._management_lock:
             iface._validate_management_preconditions()
             if address is None:
-                self.revalidate_implicit_management_target(
+                self._call_iface_override(
+                    "_revalidate_implicit_management_target",
+                    self.revalidate_implicit_management_target,
                     target_address,
                     expected_binding=expected_implicit_binding,
                 )
-            client_to_use = self.get_management_client_for_target(
+            client_to_use = self._call_iface_override(
+                "_get_management_client_for_target",
+                self.get_management_client_for_target,
                 target_address,
                 prefer_current_client=address is None,
             )
@@ -477,13 +513,47 @@ class BLEManagementCommandHandler:
         T
             Result returned by ``command``.
         """
-        return BLEManagementCommandsService._execute_management_command(
-            self._iface,
-            address,
-            command,
-            ble_client_factory=self._ble_client_factory,
-            connected_elsewhere=self._connected_elsewhere,
-        )
+        iface = self._iface
+        if _is_blank_or_malformed_address_like(address):
+            raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
+
+        management_started = False
+        try:
+            start_context = self._start_management_phase(address)
+            management_started = True
+            target_address, refreshed_existing_client = self._resolve_management_target(
+                address,
+                start_context,
+            )
+
+            if target_address is None:
+                if refreshed_existing_client is not None:
+                    return command(refreshed_existing_client)
+                raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_REQUIRED)
+
+            with iface._management_target_gate(target_address):
+                if refreshed_existing_client is not None:
+                    with iface._connect_lock, iface._management_lock:
+                        iface._validate_management_preconditions()
+                        if address is None:
+                            self.revalidate_implicit_management_target(
+                                target_address,
+                                expected_binding=start_context.expected_implicit_binding,
+                            )
+                    return command(refreshed_existing_client)
+                client_to_use, temporary_client = self._acquire_client_for_target(
+                    address=address,
+                    target_address=target_address,
+                    expected_implicit_binding=start_context.expected_implicit_binding,
+                )
+                return self._execute_with_client(
+                    client_to_use=client_to_use,
+                    temporary_client=temporary_client,
+                    command=command,
+                )
+        finally:
+            if management_started:
+                self.finish_management_operation()
 
     def validate_management_await_timeout(self, await_timeout: object) -> float:
         """Validate bounded await timeout for management operations."""

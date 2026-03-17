@@ -51,6 +51,9 @@ recommended patterns for code that embeds `meshtastic-python`.
 - Management command orchestration routes through
   `BLEManagementCommandHandler`; interface-level management helpers are facade
   shims that delegate to the collaborator.
+- Receive-loop and recovery runtime orchestration routes through
+  `BLEReceiveRecoveryController`; interface-level receive helpers are facade
+  shims that delegate to the collaborator.
 - `BLEInterface` remains the compatibility boundary: patch-sensitive
   collaborators (for example `publishingThread`, `BLEClient`,
   `_is_currently_connected_elsewhere`, `sys/shutil/subprocess`) are delegated
@@ -60,6 +63,10 @@ recommended patterns for code that embeds `meshtastic-python`.
   enter through collaborator/controller interfaces rather than static helpers.
 - `BLELifecycleService._*` methods are retained as compatibility/test shim
   entrypoints and delegate to coordinator-owned implementations.
+- `BLEReceiveRecoveryService._*` and `BLEManagementCommandsService._*` remain
+  available for compatibility-targeted direct service/test entrypoints; runtime
+  `BLEInterface` call paths are collaborator-owned (`BLEReceiveRecoveryController`
+  and `BLEManagementCommandHandler`).
 
 ### Key design choices
 

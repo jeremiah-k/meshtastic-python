@@ -196,8 +196,7 @@ class BLELifecycleController:
         management_wait_poll_seconds: float,
     ) -> None:
         """Close the bound interface and lifecycle resources."""
-        BLELifecycleService._close(
-            self._iface,
+        self._shutdown.close(
             management_shutdown_wait_timeout=management_shutdown_wait_timeout,
             management_wait_poll_seconds=management_wait_poll_seconds,
         )
@@ -615,8 +614,7 @@ class BLEDisconnectLifecycleCoordinator:
         disconnect_lock_released = False
         plan = _DisconnectPlan(early_return=False)
         try:
-            plan = BLELifecycleService._resolve_disconnect_target(
-                iface,
+            plan = self._resolve_disconnect_target(
                 source,
                 client,
                 bleak_client,
@@ -630,8 +628,7 @@ class BLEDisconnectLifecycleCoordinator:
             if not disconnect_lock_released:
                 iface._disconnect_lock.release()
 
-        return BLELifecycleService._execute_disconnect_side_effects(
-            iface,
+        return self._execute_disconnect_side_effects(
             plan=plan,
             source=source,
         )

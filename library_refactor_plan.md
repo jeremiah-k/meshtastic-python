@@ -4,7 +4,7 @@
 ## Execution Progress
 
 - Program status: **PASS 1 Complete (BLE ownership transfer)**
-- Last updated: **2026-03-17 (lifecycle ownership split + service-core collapse)**
+- Last updated: **2026-03-17 (strict runtime authority retirement pass)**
 
 ### Progress Log
 
@@ -30,14 +30,29 @@
   - Preserved monkeypatch-heavy compatibility surfaces by keeping static helper
     shim entrypoints callable for tests/integrations while routing behavior
     through bound collaborators.
+  - Completed strict runtime authority retirements in this tranche:
+    - `BLELifecycleController.close()` now executes collaborator-owned shutdown
+      logic directly (`BLEShutdownLifecycleCoordinator.close()`), with
+      `BLELifecycleService._close()` retained as compatibility shim.
+    - `BLEReceiveRecoveryController.recover_receive_thread()` is now the
+      runtime owner for receive-thread recovery flow.
+    - `BLEReceiveRecoveryController.receive_from_radio_impl()` is now the
+      runtime owner for receive-loop execution flow.
+    - `BLEManagementCommandHandler.execute_management_command()` is now the
+      runtime owner for management startup/target/gate/client execution.
+  - Added compatibility fallback hooks in receive/management collaborators so
+    instance monkeypatch overrides used by existing tests/integrations continue
+    to work without re-centralizing runtime ownership.
 
 - Architectural outcomes:
   - `BLEInterface` runtime paths now delegate through collaborator APIs instead
     of static service-style namespaces.
   - Ownership domains are explicit across management, notification, lifecycle,
     receive-recovery, and compatibility publication.
-  - Static service methods remain as compatibility shim surfaces, not as the
-    primary runtime authority.
+  - Static service methods are not the primary runtime authority for
+    `BLEInterface` call paths; they remain compatibility surfaces (including
+    some intentionally non-trivial direct service entrypoints used by
+    compatibility-targeted tests).
 
 - Validation completed:
   - `ruff check meshtastic/interfaces/ble/lifecycle_service.py meshtastic/interfaces/ble/interface.py meshtastic/interfaces/ble/management_service.py meshtastic/interfaces/ble/notifications.py`: passed.

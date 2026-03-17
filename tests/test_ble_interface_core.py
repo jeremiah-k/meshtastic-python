@@ -2128,18 +2128,14 @@ def test_ble_interface_close_bounds_wait_on_spurious_management_wakeups(
     assert any("Timed out waiting" in record.message for record in caplog.records)
 
 
-def test_ble_interface_close_forwards_management_wait_poll_seconds(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_ble_interface_close_forwards_management_wait_poll_seconds() -> None:
     """close() should forward management shutdown timing kwargs to lifecycle close."""
     from meshtastic.interfaces.ble import interface as interface_mod
-    from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
 
     iface = object.__new__(BLEInterface)
     close_calls: list[dict[str, object]] = []
 
     def _capture_close(
-        _iface: object,
         *,
         management_shutdown_wait_timeout: float,
         management_wait_poll_seconds: float,
@@ -2151,7 +2147,7 @@ def test_ble_interface_close_forwards_management_wait_poll_seconds(
             }
         )
 
-    monkeypatch.setattr(BLELifecycleService, "_close", staticmethod(_capture_close))
+    iface._lifecycle_controller = SimpleNamespace(close=_capture_close)
 
     BLEInterface.close(iface)
 

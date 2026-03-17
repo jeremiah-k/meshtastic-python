@@ -1,51 +1,47 @@
 # BLE Pass 1 Progress (Temporary)
 
-> Temporary architect-facing progress log for the AGOR program.
+> Temporary architect-facing progress log for AGOR PASS 1.
 > Last updated: 2026-03-17
-> Status: **PASS 1 complete**
+> Status: **PASS 1 complete (runtime ownership transfer landed)**
 
-## Pass Objective
+## Scope (This Completion Tranche)
 
-Complete BLE ownership transfer by moving runtime authority out of static
-service namespaces and into instance-bound collaborators while preserving
-behavior and compatibility.
+- Finish remaining BLE hybrid ownership gaps in lifecycle, receive/recovery, and management command execution.
+- Keep public behavior and compatibility unchanged.
 
-## Completed in This Tranche
+## Runtime Authority Retired
 
-- Finalized lifecycle ownership split in `meshtastic/interfaces/ble/lifecycle_service.py`.
-- Added/used concrete lifecycle collaborators:
-  - `BLEReceiveLifecycleCoordinator`
-  - `BLEDisconnectLifecycleCoordinator`
-  - `BLEConnectionOwnershipLifecycleCoordinator`
-  - `BLEShutdownLifecycleCoordinator`
-- Converted major static lifecycle entrypoints into compatibility wrappers that
-  delegate to collaborator-owned implementations:
-  - disconnect target resolution/side effects
-  - verified connect publication and stale-client discard
-  - gate finalization and ownership checks
-  - close/shutdown orchestration
-- Preserved compatibility interception points for monkeypatched test paths by
-  retaining static shim surfaces and routing them through collaborator logic.
-- Kept runtime behavior stable while reducing centralized authority in
-  `BLEInterface` and static lifecycle service cores.
+- `BLELifecycleService._close`
+  - Runtime owner now: `BLEShutdownLifecycleCoordinator.close()` via `BLELifecycleController.close()`.
+  - Compatibility shim remains: `BLELifecycleService._close(...)` delegates to shutdown coordinator.
+- `BLEReceiveRecoveryService._recover_receive_thread`
+  - Runtime owner now: `BLEReceiveRecoveryController.recover_receive_thread()`.
+  - Compatibility shim remains: `BLEReceiveRecoveryService._recover_receive_thread(...)` delegates to controller.
+- `BLEReceiveRecoveryService._receive_from_radio_impl`
+  - Runtime owner now: `BLEReceiveRecoveryController.receive_from_radio_impl()`.
+  - Compatibility shim remains: static service method retained for direct compatibility/test invocation.
+- `BLEManagementCommandsService._execute_management_command`
+  - Runtime owner now: `BLEManagementCommandHandler.execute_management_command()`.
+  - Compatibility shim remains: static service implementation retained for direct service-level compatibility tests.
+
+## Additional Ownership Hardening
+
+- `BLEReceiveRecoveryController` now owns runtime read-loop behavior:
+  - wait/trigger processing
+  - client-state gating
+  - payload-read flow
+  - transient/fatal recovery decisions
+  - restart backoff orchestration
+- Receive controller now routes lifecycle actions through collaborator ownership and uses compatibility fallbacks only when tests/fixtures provide legacy iface-level overrides.
+- `BLEManagementCommandHandler.execute_management_command()` now owns startup/target/gate/client execution flow directly, with explicit support for instance monkeypatch overrides used by compatibility tests.
 
 ## Validation Evidence
 
-- `ruff check meshtastic/interfaces/ble/lifecycle_service.py meshtastic/interfaces/ble/interface.py meshtastic/interfaces/ble/management_service.py meshtastic/interfaces/ble/notifications.py` -> passed.
+- `ruff check meshtastic/interfaces/ble/lifecycle_service.py meshtastic/interfaces/ble/management_service.py meshtastic/interfaces/ble/receive_service.py tests/test_ble_interface_core.py` -> passed.
 - `poetry run pytest -q tests/test_ble_interface_core.py tests/test_ble_utils_service_targets.py tests/test_ble_lifecycle_receive_targets.py tests/test_ble_connection_discovery_client_targets.py` -> **264 passed**.
 - `poetry run pytest -q` -> **1454 passed, 3 skipped, 92 deselected**.
 
-## Current Architectural Shape
+## Remaining Static-Core Hotspots
 
-- `BLEInterface` delegates runtime domains to bound collaborators.
-- Static service methods are now compatibility shims rather than primary
-  runtime authority.
-- Lifecycle concerns are explicitly partitioned by responsibility
-  (receive, disconnect, connection ownership, shutdown).
-
-## Follow-On (Next Pass Candidate)
-
-- PASS 2: further `BLEInterface` decomposition and static-helper reduction in
-  remaining non-lifecycle service modules.
-- After BLE stabilization: `MeshInterface` dispatch decomposition and
-  `Node.setURL()` transaction extraction.
+- Some static service methods remain intentionally non-trivial in `receive_service.py` and `management_service.py` for direct compatibility/test entrypoints.
+- These are no longer the primary runtime authority for `BLEInterface` call paths, but they still exist as compatibility surfaces.
