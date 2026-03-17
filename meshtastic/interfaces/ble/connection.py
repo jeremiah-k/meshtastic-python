@@ -83,7 +83,7 @@ def _is_mock_instance(target: object) -> bool:
     """
     try:
         from unittest.mock import Mock, NonCallableMock
-    except Exception:  # pragma: no cover - stdlib import should always exist
+    except ImportError:  # pragma: no cover - stdlib import should always exist
         return False
     return isinstance(target, (Mock, NonCallableMock))
 

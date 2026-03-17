@@ -28,6 +28,8 @@ from tests.test_ble_interface_fixtures import DummyClient, _build_interface
 pytestmark = pytest.mark.unit
 
 MOCK_IMPORT_UNAVAILABLE_MSG = "mock import unavailable"
+TEST_BLE_ADDRESS = "AA:BB:CC:DD:EE:FF"
+TEST_CONNECT_TIMEOUT_SECONDS = 5.0
 
 
 class _TestBLEError(Exception):
@@ -153,7 +155,7 @@ def test_client_manager_thread_dispatch_and_wrapper_paths(
 
     manager._create_client = MagicMock(return_value=DummyClient())
     assert isinstance(
-        manager.create_client("AA:BB:CC:DD:EE:FF", lambda _client: None),
+        manager.create_client(TEST_BLE_ADDRESS, lambda _client: None),
         DummyClient,
     )
 
@@ -162,9 +164,7 @@ def test_client_manager_thread_dispatch_and_wrapper_paths(
     manager._connect_client.assert_called_once()
 
 
-def test_client_manager_connect_client_recovers_from_services_property_bleak_error() -> (
-    None
-):
+def test_client_manager_connect_client_recovers_from_services_property_bleak_error() -> None:
     """_connect_client should force service discovery when services property access fails."""
     manager = ClientManager(
         BLEStateManager(),
@@ -278,21 +278,21 @@ def test_connection_orchestrator_dispatch_set_event_and_kwarg_fallbacks(
         ) -> DummyClient:
             create_calls.append(dict(kwargs))
             if "pair_on_connect" in kwargs:
-                raise TypeError(
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
                     "create_client() got an unexpected keyword argument 'pair_on_connect'"
                 )
             if "connect_timeout" in kwargs:
-                raise TypeError(
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
                     "create_client() got an unexpected keyword argument 'connect_timeout'"
                 )
             return DummyClient()
 
         orchestrator.client_manager = SimpleNamespace(create_client=_create_client)
         created = orchestrator._client_manager_create_client(
-            "AA:BB:CC:DD:EE:FF",
+            TEST_BLE_ADDRESS,
             lambda _client: None,
             pair_on_connect=True,
-            connect_timeout=5.0,
+            connect_timeout=TEST_CONNECT_TIMEOUT_SECONDS,
         )
         assert isinstance(created, DummyClient)
         assert create_calls[-1] == {}
@@ -304,7 +304,7 @@ def test_connection_orchestrator_dispatch_set_event_and_kwarg_fallbacks(
         def _connect_client(_client: object, **kwargs: object) -> None:
             connect_calls.append(dict(kwargs))
             if "timeout" in kwargs:
-                raise TypeError(
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
                     "connect_client() got an unexpected keyword argument 'timeout'"
                 )
 
@@ -338,7 +338,7 @@ def test_connection_orchestrator_direct_and_retry_exception_paths(
 
         with pytest.raises(RuntimeError, match="finalize failed"):
             orchestrator._attempt_direct_connect(
-                target_address="AA:BB:CC:DD:EE:FF",
+                target_address=TEST_BLE_ADDRESS,
                 normalized_target="aabbccddeeff",
                 on_disconnect_func=lambda _client: None,
                 pair_on_connect=False,
@@ -360,9 +360,9 @@ def test_connection_orchestrator_direct_and_retry_exception_paths(
 
         with pytest.raises(RuntimeError, match="connect failed"):
             orchestrator._connect_retry_target(
-                connection_target="AA:BB:CC:DD:EE:FF",
-                resolved_address="AA:BB:CC:DD:EE:FF",
-                target_address="AA:BB:CC:DD:EE:FF",
+                connection_target=TEST_BLE_ADDRESS,
+                resolved_address=TEST_BLE_ADDRESS,
+                target_address=TEST_BLE_ADDRESS,
                 skip_discovery_scan=False,
                 on_disconnect_func=lambda _client: None,
                 pair_on_connect=False,
@@ -373,7 +373,7 @@ def test_connection_orchestrator_direct_and_retry_exception_paths(
 
         orchestrator.interface = SimpleNamespace()
         with pytest.raises(AttributeError):
-            orchestrator._compat_find_device("AA:BB:CC:DD:EE:FF")
+            orchestrator._compat_find_device(TEST_BLE_ADDRESS)
 
 
 def test_connection_orchestrator_finalize_and_establish_error_paths(
@@ -389,7 +389,7 @@ def test_connection_orchestrator_finalize_and_establish_error_paths(
         with pytest.raises(iface.BLEError):
             orchestrator._finalize_connection(
                 DummyClient(),
-                "AA:BB:CC:DD:EE:FF",
+                TEST_BLE_ADDRESS,
                 lambda _client: None,
                 lambda: None,
             )
@@ -508,7 +508,7 @@ def test_connection_validator_client_wrapper_and_manager_remaining_branches() ->
     validator = ConnectionValidator(BLEStateManager(), RLock(), _TestBLEError)
     assert (
         validator.check_existing_client(
-            SimpleNamespace(is_connected=True, address="AA:BB:CC:DD:EE:FF"),
+            SimpleNamespace(is_connected=True, address=TEST_BLE_ADDRESS),
             None,
             None,
         )
@@ -668,7 +668,7 @@ def test_orchestrator_create_connect_direct_retry_remaining_branches(
         )
         with pytest.raises(TypeError, match="plain typeerror"):
             orchestrator._client_manager_create_client(
-                "AA:BB:CC:DD:EE:FF",
+                TEST_BLE_ADDRESS,
                 lambda _client: None,
                 pair_on_connect=True,
                 connect_timeout=1.0,
@@ -695,7 +695,7 @@ def test_orchestrator_create_connect_direct_retry_remaining_branches(
         )
         with pytest.raises(ValueError, match="direct fail"):
             orchestrator._attempt_direct_connect(
-                target_address="AA:BB:CC:DD:EE:FF",
+                target_address=TEST_BLE_ADDRESS,
                 normalized_target="aabbccddeeff",
                 on_disconnect_func=lambda _client: None,
                 pair_on_connect=False,
@@ -716,9 +716,9 @@ def test_orchestrator_create_connect_direct_retry_remaining_branches(
         ).throw(SystemExit())
         with pytest.raises(SystemExit):
             orchestrator._connect_retry_target(
-                connection_target="AA:BB:CC:DD:EE:FF",
-                resolved_address="AA:BB:CC:DD:EE:FF",
-                target_address="AA:BB:CC:DD:EE:FF",
+                connection_target=TEST_BLE_ADDRESS,
+                resolved_address=TEST_BLE_ADDRESS,
+                target_address=TEST_BLE_ADDRESS,
                 skip_discovery_scan=False,
                 on_disconnect_func=lambda _client: None,
                 pair_on_connect=False,
@@ -737,9 +737,9 @@ def test_orchestrator_create_connect_direct_retry_remaining_branches(
         ).throw(BleakError("retry fail"))
         with pytest.raises(BleakError, match="retry fail"):
             orchestrator._connect_retry_target(
-                connection_target="AA:BB:CC:DD:EE:FF",
-                resolved_address="AA:BB:CC:DD:EE:FF",
-                target_address="AA:BB:CC:DD:EE:FF",
+                connection_target=TEST_BLE_ADDRESS,
+                resolved_address=TEST_BLE_ADDRESS,
+                target_address=TEST_BLE_ADDRESS,
                 skip_discovery_scan=False,
                 on_disconnect_func=lambda _client: None,
                 pair_on_connect=False,
@@ -770,9 +770,9 @@ def test_orchestrator_create_connect_direct_retry_remaining_branches(
         )
         with pytest.raises(RuntimeError, match="discovery connect failed"):
             orchestrator._connect_retry_target(
-                connection_target="AA:BB:CC:DD:EE:FF",
-                resolved_address="AA:BB:CC:DD:EE:FF",
-                target_address="AA:BB:CC:DD:EE:FF",
+                connection_target=TEST_BLE_ADDRESS,
+                resolved_address=TEST_BLE_ADDRESS,
+                target_address=TEST_BLE_ADDRESS,
                 skip_discovery_scan=True,
                 on_disconnect_func=lambda _client: None,
                 pair_on_connect=False,
@@ -794,7 +794,7 @@ def test_orchestrator_finalize_and_establish_remaining_branches(
         with pytest.raises(iface.BLEError):
             orchestrator._finalize_connection(
                 connected_client,
-                "AA:BB:CC:DD:EE:FF",
+                TEST_BLE_ADDRESS,
                 lambda _client: None,
                 lambda: None,
             )
@@ -808,7 +808,7 @@ def test_orchestrator_finalize_and_establish_remaining_branches(
         with pytest.raises(iface.BLEError):
             orchestrator._finalize_connection(
                 connected_client,
-                "AA:BB:CC:DD:EE:FF",
+                TEST_BLE_ADDRESS,
                 lambda _client: None,
                 lambda: None,
             )
@@ -822,7 +822,7 @@ def test_orchestrator_finalize_and_establish_remaining_branches(
         with pytest.raises(iface.BLEError):
             orchestrator._finalize_connection(
                 connected_client,
-                "AA:BB:CC:DD:EE:FF",
+                TEST_BLE_ADDRESS,
                 lambda _client: None,
                 lambda: None,
             )
@@ -907,7 +907,7 @@ def test_discovery_probe_and_factory_kwarg_rejection_branches() -> None:
 
     def _factory_rejecting_kwarg(**kwargs: object) -> _GoodDiscoveryClient:
         if kwargs:
-            raise TypeError(
+            raise TypeError(  # noqa: TRY003 - intentional fixture message shape
                 "factory() got an unexpected keyword argument 'log_if_no_address'"
             )
         return _GoodDiscoveryClient()
@@ -999,7 +999,7 @@ def test_discovery_missing_discover_and_typeerror_rejection_branches() -> None:
 
         @staticmethod
         def discover(**_kwargs: object) -> dict[str, Any]:
-            raise TypeError(
+            raise TypeError(  # noqa: TRY003 - intentional fixture message shape
                 "discover() got an unexpected keyword argument 'return_adv'"
             )
 
@@ -1141,7 +1141,7 @@ def test_bleclient_remaining_hook_and_connection_branches() -> None:
 
     def _failing_safe_cleanup(cleanup: Any, *args: object, **kwargs: object) -> None:
         if "cleanup_name" in kwargs:
-            raise TypeError(
+            raise TypeError(  # noqa: TRY003 - intentional fixture message shape
                 "safe_cleanup() got an unexpected keyword argument 'cleanup_name'"
             )
         _ = args

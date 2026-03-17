@@ -33,90 +33,96 @@ def _make_iface(monkeypatch: pytest.MonkeyPatch) -> Any:
     return _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
 
 
+def _reset_state_manager(iface: Any) -> None:
+    iface._state_manager = importlib.import_module(
+        "meshtastic.interfaces.ble.state"
+    ).BLEStateManager()
+
+
 def test_lifecycle_error_handler_cleanup_and_execute_branches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Lifecycle error-handler adapters should cover compatibility fallback branches."""
     iface = _make_iface(monkeypatch)
+    try:
+        legacy_cleanup_calls: list[str] = []
 
-    legacy_cleanup_calls: list[str] = []
+        def _legacy_cleanup(func: Any, _operation_name: str) -> None:
+            func()
+            legacy_cleanup_calls.append("ran")
+            raise RuntimeError("hook post-processing failure")
 
-    def _legacy_cleanup(func: Any, _operation_name: str) -> None:
-        func()
-        legacy_cleanup_calls.append("ran")
-        raise RuntimeError("hook post-processing failure")
+        iface.error_handler = SimpleNamespace(
+            safe_cleanup=MagicMock(),
+            _safe_cleanup=_legacy_cleanup,
+        )
 
-    iface.error_handler = SimpleNamespace(
-        safe_cleanup=MagicMock(),
-        _safe_cleanup=_legacy_cleanup,
-    )
+        cleanup_calls: list[str] = []
+        BLELifecycleService._error_handler_safe_cleanup(
+            iface,
+            lambda: cleanup_calls.append("cleanup"),
+            "cleanup-op",
+        )
+        assert cleanup_calls == ["cleanup"]
+        assert legacy_cleanup_calls == ["ran"]
 
-    cleanup_calls: list[str] = []
-    BLELifecycleService._error_handler_safe_cleanup(
-        iface,
-        lambda: cleanup_calls.append("cleanup"),
-        "cleanup-op",
-    )
-    assert cleanup_calls == ["cleanup"]
-    assert legacy_cleanup_calls == ["ran"]
+        iface.error_handler = SimpleNamespace()
+        BLELifecycleService._error_handler_safe_cleanup(
+            iface,
+            lambda: (_ for _ in ()).throw(RuntimeError("cleanup failed")),
+            "cleanup-op",
+        )
 
-    iface.error_handler = SimpleNamespace()
-    BLELifecycleService._error_handler_safe_cleanup(
-        iface,
-        lambda: (_ for _ in ()).throw(RuntimeError("cleanup failed")),
-        "cleanup-op",
-    )
+        def _keyword_incompatible_safe_execute(
+            func: Any, *args: object, **kwargs: object
+        ) -> object:
+            if "error_msg" in kwargs:
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
+                    "safe_execute() got an unexpected keyword argument 'error_msg'"
+                )
+            if args:
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
+                    "takes 1 positional argument but 2 positional arguments were given"
+                )
+            return func()
 
-    def _keyword_incompatible_safe_execute(
-        func: Any, *args: object, **kwargs: object
-    ) -> object:
-        if "error_msg" in kwargs:
-            raise TypeError(
-                "safe_execute() got an unexpected keyword argument 'error_msg'"
+        iface.error_handler = SimpleNamespace(
+            safe_execute=_keyword_incompatible_safe_execute
+        )
+        assert (
+            BLELifecycleService._error_handler_safe_execute(
+                iface,
+                lambda: "ok",
+                error_msg="execute-error",
             )
-        if args:
-            raise TypeError(
-                "takes 1 positional argument but 2 positional arguments were given"
+            == "ok"
+        )
+
+        def _typeerror_after_running(func: Any, **_kwargs: object) -> object:
+            func()
+            raise TypeError("non-keyword type error")
+
+        iface.error_handler = SimpleNamespace(safe_execute=_typeerror_after_running)
+        assert (
+            BLELifecycleService._error_handler_safe_execute(
+                iface,
+                lambda: "ran",
+                error_msg="execute-error",
             )
-        return func()
-
-    iface.error_handler = SimpleNamespace(
-        safe_execute=_keyword_incompatible_safe_execute
-    )
-    assert (
-        BLELifecycleService._error_handler_safe_execute(
-            iface,
-            lambda: "ok",
-            error_msg="execute-error",
+            is None
         )
-        == "ok"
-    )
 
-    def _typeerror_after_running(func: Any, **_kwargs: object) -> object:
-        func()
-        raise TypeError("non-keyword type error")
-
-    iface.error_handler = SimpleNamespace(safe_execute=_typeerror_after_running)
-    assert (
-        BLELifecycleService._error_handler_safe_execute(
-            iface,
-            lambda: "ran",
-            error_msg="execute-error",
+        iface.error_handler = SimpleNamespace()
+        assert (
+            BLELifecycleService._error_handler_safe_execute(
+                iface,
+                lambda: (_ for _ in ()).throw(RuntimeError("fallback failed")),
+                error_msg="fallback",
+            )
+            is None
         )
-        is None
-    )
-
-    iface.error_handler = SimpleNamespace()
-    assert (
-        BLELifecycleService._error_handler_safe_execute(
-            iface,
-            lambda: (_ for _ in ()).throw(RuntimeError("fallback failed")),
-            error_msg="fallback",
-        )
-        is None
-    )
-
-    iface.close()
+    finally:
+        iface.close()
 
 
 def test_lifecycle_thread_dispatch_helpers_cover_legacy_and_missing(
@@ -427,9 +433,7 @@ def test_lifecycle_state_manager_helper_paths(
         with pytest.raises(AttributeError):
             BLELifecycleService._client_is_connected(bad_client)
     finally:
-        iface._state_manager = importlib.import_module(
-            "meshtastic.interfaces.ble.state"
-        ).BLEStateManager()
+        _reset_state_manager(iface)
         iface.close()
 
 
@@ -653,9 +657,7 @@ def test_lifecycle_shutdown_and_finalize_close_paths(
         )
         BLELifecycleService._finalize_close_state(iface)
     finally:
-        iface._state_manager = importlib.import_module(
-            "meshtastic.interfaces.ble.state"
-        ).BLEStateManager()
+        _reset_state_manager(iface)
         iface.close()
 
 
@@ -754,9 +756,7 @@ def test_receive_service_branch_targets(monkeypatch: pytest.MonkeyPatch) -> None
     assert is_connecting is True
     assert isinstance(publish_pending, bool)
     assert isinstance(is_closing, bool)
-    iface._state_manager = importlib.import_module(
-        "meshtastic.interfaces.ble.state"
-    ).BLEStateManager()
+    _reset_state_manager(iface)
 
     iface.auto_reconnect = True
     with iface._state_lock:
@@ -911,9 +911,7 @@ def test_receive_service_branch_targets(monkeypatch: pytest.MonkeyPatch) -> None
     iface._last_empty_read_warning = 10**9
     BLEReceiveRecoveryService._log_empty_read_warning(iface)
 
-    iface._state_manager = importlib.import_module(
-        "meshtastic.interfaces.ble.state"
-    ).BLEStateManager()
+    _reset_state_manager(iface)
     iface._shutdown_event = threading.Event()
     iface.close()
 
@@ -978,7 +976,7 @@ def test_lifecycle_remaining_error_handler_branch_targets(
             func: Any, *args: object, **kwargs: object
         ) -> object:
             if "error_msg" in kwargs:
-                raise TypeError(
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
                     "safe_execute() got an unexpected keyword argument 'error_msg'"
                 )
             if args:
@@ -999,11 +997,11 @@ def test_lifecycle_remaining_error_handler_branch_targets(
             func: Any, *args: object, **kwargs: object
         ) -> object:
             if "error_msg" in kwargs:
-                raise TypeError(
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
                     "safe_execute() got an unexpected keyword argument 'error_msg'"
                 )
             if args:
-                raise TypeError(
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
                     "takes 1 positional argument but 2 positional arguments were given"
                 )
             raise RuntimeError("hook failed")
@@ -1211,9 +1209,7 @@ def test_lifecycle_remaining_invalidation_and_state_helper_branches(
                 restore_last_connection_request=None,
             )
     finally:
-        iface._state_manager = importlib.import_module(
-            "meshtastic.interfaces.ble.state"
-        ).BLEStateManager()
+        _reset_state_manager(iface)
         iface.close()
 
 
@@ -1330,9 +1326,7 @@ def test_lifecycle_remaining_verify_finalize_and_shutdown_branches(
         iface._disconnected = lambda: None
         BLELifecycleService._shutdown_client(iface, management_wait_timed_out=False)
     finally:
-        iface._state_manager = importlib.import_module(
-            "meshtastic.interfaces.ble.state"
-        ).BLEStateManager()
+        _reset_state_manager(iface)
         iface.close()
 
 
@@ -1389,9 +1383,7 @@ def test_receive_service_remaining_coordinator_and_snapshot_branches(
         assert BLEReceiveRecoveryService._snapshot_client_state(iface)[1] is True
         iface._state_manager = SimpleNamespace(_is_connecting=False)
         assert BLEReceiveRecoveryService._snapshot_client_state(iface)[1] is False
-        iface._state_manager = importlib.import_module(
-            "meshtastic.interfaces.ble.state"
-        ).BLEStateManager()
+        _reset_state_manager(iface)
 
         assert BLEReceiveRecoveryService._process_client_state(
             iface,
@@ -1408,9 +1400,7 @@ def test_receive_service_remaining_coordinator_and_snapshot_branches(
             iface._last_recovery_time = 0.0
         BLEReceiveRecoveryService._reset_recovery_after_stability(iface)
     finally:
-        iface._state_manager = importlib.import_module(
-            "meshtastic.interfaces.ble.state"
-        ).BLEStateManager()
+        _reset_state_manager(iface)
         iface.close()
 
 
@@ -1554,9 +1544,7 @@ def test_receive_service_remaining_recovery_and_empty_read_branches(
     """Receive recovery and empty-read warning paths should hit remaining branches."""
     iface = _make_iface(monkeypatch)
     try:
-        iface._state_manager = importlib.import_module(
-            "meshtastic.interfaces.ble.state"
-        ).BLEStateManager()
+        _reset_state_manager(iface)
         with iface._state_lock:
             iface._closed = True
         BLEReceiveRecoveryService._recover_receive_thread(iface, "reason")
@@ -1585,9 +1573,7 @@ def test_receive_service_remaining_recovery_and_empty_read_branches(
         )
         iface._log_empty_read_warning.assert_called_once()
     finally:
-        iface._state_manager = importlib.import_module(
-            "meshtastic.interfaces.ble.state"
-        ).BLEStateManager()
+        _reset_state_manager(iface)
         iface._shutdown_event = threading.Event()
         iface.close()
 
@@ -1603,7 +1589,7 @@ def test_lifecycle_remaining_error_handler_execute_paths(
             func: Any, *args: object, **kwargs: object
         ) -> object:
             if "error_msg" in kwargs:
-                raise TypeError(
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
                     "safe_execute() got an unexpected keyword argument 'error_msg'"
                 )
             if args:
@@ -1627,11 +1613,11 @@ def test_lifecycle_remaining_error_handler_execute_paths(
             func: Any, *args: object, **kwargs: object
         ) -> object:
             if "error_msg" in kwargs:
-                raise TypeError(
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
                     "safe_execute() got an unexpected keyword argument 'error_msg'"
                 )
             if args:
-                raise TypeError(
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
                     "takes 1 positional argument but 2 positional arguments were given"
                 )
             func()
@@ -1653,7 +1639,7 @@ def test_lifecycle_remaining_error_handler_execute_paths(
             func: Any, *args: object, **kwargs: object
         ) -> object:
             if "error_msg" in kwargs:
-                raise TypeError(
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
                     "safe_execute() got an unexpected keyword argument 'error_msg'"
                 )
             if args:
@@ -1674,7 +1660,7 @@ def test_lifecycle_remaining_error_handler_execute_paths(
             func: Any, *args: object, **kwargs: object
         ) -> object:
             if "error_msg" in kwargs:
-                raise TypeError(
+                raise TypeError(  # noqa: TRY003 - intentional fixture message shape
                     "safe_execute() got an unexpected keyword argument 'error_msg'"
                 )
             if args:
@@ -1848,9 +1834,7 @@ def test_receive_remaining_branches(
         iface._state_manager = SimpleNamespace()
         _, is_connecting, _, _ = BLEReceiveRecoveryService._snapshot_client_state(iface)
         assert is_connecting is False
-        iface._state_manager = importlib.import_module(
-            "meshtastic.interfaces.ble.state"
-        ).BLEStateManager()
+        _reset_state_manager(iface)
 
         monkeypatch.setattr(
             BLEReceiveRecoveryService,

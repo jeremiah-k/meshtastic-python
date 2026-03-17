@@ -4547,12 +4547,20 @@ def test_transient_read_retry_uses_zero_based_delay(
 
 @pytest.mark.parametrize(
     "invalid_delay",
-    [True, -1.0, math.nan, math.inf, -math.inf],
+    [
+        True,
+        -1.0,
+        math.nan,
+        math.inf,
+        -math.inf,
+        pytest.param("1.0", id="string"),
+        pytest.param(object(), id="opaque-object"),
+    ],
 )
 def test_retry_policy_get_delay_rejects_invalid_numeric_outputs(
     invalid_delay: object,
 ) -> None:
-    """Retry delay helper should clamp bool/non-finite/negative results to 0.0."""
+    """Retry delay helper should clamp invalid bool/non-finite/negative/non-numeric results to 0.0."""
 
     class InvalidDelayPolicy:
         def get_delay(self, _attempt: int) -> object:
@@ -5009,9 +5017,12 @@ def test_handle_malformed_fromnum_warns_at_threshold_and_resets_counter(
 
         iface._handle_malformed_fromnum("bad notification")
 
-        assert warning_calls
+        assert len(warning_calls) == 1
         with iface._malformed_notification_lock:
             assert iface._malformed_notification_count == 0
+
+        iface._handle_malformed_fromnum("bad notification")
+        assert len(warning_calls) == 1
     finally:
         iface.close()
 
@@ -5042,9 +5053,7 @@ def test_report_notification_handler_error_covers_hook_and_fallback_paths(
     assert "missing-hook" in debug_calls
 
 
-def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure() -> (
-    None
-):
+def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure() -> None:
     """Positional safe_execute failures should not trigger a second handler invocation."""
 
     calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
@@ -5078,9 +5087,7 @@ def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure
     assert len(calls) == 2
 
 
-def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signature_error() -> (
-    None
-):
+def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signature_error() -> None:
     """Positional signature mismatch should continue to callable-only compatibility probe."""
 
     calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
@@ -5115,9 +5122,7 @@ def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signatu
     assert len(calls) == 3
 
 
-def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_paths() -> (
-    None
-):
+def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_paths() -> None:
     """safe_execute compatibility helper should cover success/fallback branches."""
 
     def _run_scenario(
@@ -5146,7 +5151,7 @@ def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_
         assert len(fallback_runs) == expect_fallback_runs
 
     _run_scenario(
-        lambda func, *args, **kwargs: func(),
+        lambda func, *_args, **_kwargs: func(),
         expect_handler_runs=1,
         expect_fallback_runs=0,
     )
@@ -5479,9 +5484,7 @@ def test_discovery_manager_accepts_discover_underscore_only_factory() -> None:
     assert devices == [filtered_device]
 
 
-def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> (
-    None
-):
+def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> None:
     """Verify discovery prefers configured ``_discover`` over unconfigured ``discover``.
 
     Returns
@@ -6448,10 +6451,12 @@ def test_register_notifications_safe_call_inline_fallback_when_safe_execute_unco
     client = _ClientWithCallbacks()
     iface = _build_interface(monkeypatch, client, start_receive_thread=False)
     errors: list[str] = []
+    safe_execute = MagicMock()
+    legacy_safe_execute = MagicMock()
     try:
         iface.error_handler = SimpleNamespace(
-            safe_execute=MagicMock(),
-            _safe_execute=MagicMock(),
+            safe_execute=safe_execute,
+            _safe_execute=legacy_safe_execute,
         )
         monkeypatch.setattr(
             iface,
@@ -6470,6 +6475,8 @@ def test_register_notifications_safe_call_inline_fallback_when_safe_execute_unco
         client.callbacks[LOGRADIO_UUID]("sender", b"log")
 
         assert errors == ["Error in log notification handler"]
+        safe_execute.assert_not_called()
+        legacy_safe_execute.assert_not_called()
     finally:
         iface.close()
 
@@ -6494,9 +6501,12 @@ def test_register_notifications_safe_execute_fallback_still_invokes_handler(
                     Callable[[Any, bytes], None], args[1]
                 )
 
+    safe_execute_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
     def _incompatible_safe_execute(
         _func: Callable[[], None], *args: object, **kwargs: object
     ) -> None:
+        safe_execute_calls.append((args, dict(kwargs)))
         if "error_msg" in kwargs:
             raise TypeError(SAFE_EXECUTE_UNEXPECTED_ERROR_MSG)
         if args:
@@ -6523,6 +6533,7 @@ def test_register_notifications_safe_execute_fallback_still_invokes_handler(
         client.callbacks[LOGRADIO_UUID]("sender", b"log")
 
         assert log_calls == [("sender", b"log")]
+        assert len(safe_execute_calls) == 2
         error_hook.assert_not_called()
     finally:
         iface.close()

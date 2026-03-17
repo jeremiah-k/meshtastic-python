@@ -162,7 +162,7 @@ class BLEManagementCommandsService:
             operation token.
         """
         expected_implicit_binding: str | None = None
-        with iface._connect_lock, iface._management_lock, iface._state_lock:
+        with iface._state_lock, iface._connect_lock, iface._management_lock:
             iface._validate_management_preconditions()
             if address is None:
                 expected_implicit_binding = (
@@ -226,7 +226,7 @@ class BLEManagementCommandsService:
             target_candidate: str | None = None
             use_refreshed_existing_client = True
             if address is None:
-                with iface._connect_lock, iface._management_lock, iface._state_lock:
+                with iface._state_lock, iface._connect_lock, iface._management_lock:
                     iface._validate_management_preconditions()
                     refreshed_existing_client = (
                         iface._get_management_client_if_available(address)
@@ -386,9 +386,7 @@ class BLEManagementCommandsService:
             if temporary_client is not None:
                 try:
                     iface._client_manager_safe_close_client(temporary_client)
-                except (
-                    Exception
-                ):  # noqa: BLE001 - best-effort cleanup must not mask command outcome
+                except Exception:  # noqa: BLE001 - best-effort cleanup must not mask command outcome
                     logger.debug(
                         "Failed to close temporary management client.",
                         exc_info=True,
@@ -756,9 +754,7 @@ class BLEManagementCommandsService:
                 check=False,
                 timeout=validated_timeout,
             )
-        except (
-            Exception
-        ) as exc:  # noqa: BLE001 - preserve injected module compatibility
+        except Exception as exc:  # noqa: BLE001 - preserve injected module compatibility
             if isinstance(exc, timeout_exc_type):
                 raise iface.BLEError(
                     ERROR_TRUST_COMMAND_TIMEOUT.format(

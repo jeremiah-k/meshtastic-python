@@ -708,7 +708,13 @@ class BLEInterface(MeshInterface):
             if not _is_unexpected_keyword_error(exc, "error_msg"):
                 _fallback_if_not_executed()
                 return
-        except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
+        except Exception as exc:  # noqa: BLE001 - notification callbacks must stay best effort
+            logger.debug(
+                "safe_execute keyword probe failed for notification handler (%s): %s",
+                error_msg,
+                exc,
+                exc_info=True,
+            )
             _fallback_if_not_executed()
             return
 
