@@ -4761,24 +4761,28 @@ def test_start_receive_thread_skips_when_interface_closed(
     iface._start_receive_thread(name="BLEReceiveAfterClose")
 
 
+@pytest.mark.parametrize(
+    "invoke_start",
+    ["service", "facade"],
+)
 def test_start_receive_thread_clears_cached_thread_when_start_fails(
     monkeypatch: pytest.MonkeyPatch,
+    invoke_start: str,
 ) -> None:
-    """Verify start failures clear cached receive-thread references.
-
-    Parameters
-    ----------
-    monkeypatch : pytest.MonkeyPatch
-        Fixture used to patch thread-coordinator start behavior.
-
-    Returns
-    -------
-    None
-    """
+    """Verify start failures clear cached receive-thread references for service/facade paths."""
+    from meshtastic.interfaces.ble.interface import BLEInterface
     from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     try:
+        if invoke_start == "facade":
+            monkeypatch.setattr(
+                type(iface),
+                "_start_receive_thread",
+                BLEInterface._start_receive_thread,
+                raising=True,
+            )
+
         with iface._state_lock:
             iface._want_receive = True
         thread_like = SimpleNamespace(
@@ -4806,65 +4810,12 @@ def test_start_receive_thread_clears_cached_thread_when_start_fails(
         )
 
         with pytest.raises(RuntimeError, match=START_FAILED_MSG):
-            BLELifecycleService._start_receive_thread(iface, name="BLEReceiveStartFailure")
-
-        assert iface._receiveThread is None
-    finally:
-        iface.close()
-
-
-def test_start_receive_thread_facade_clears_cached_thread_when_start_fails(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Verify facade start failures clear cached receive-thread references.
-
-    Parameters
-    ----------
-    monkeypatch : pytest.MonkeyPatch
-        Fixture used to patch thread-coordinator start behavior.
-
-    Returns
-    -------
-    None
-    """
-    from meshtastic.interfaces.ble.interface import BLEInterface
-
-    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-    try:
-        monkeypatch.setattr(
-            type(iface),
-            "_start_receive_thread",
-            BLEInterface._start_receive_thread,
-            raising=True,
-        )
-        with iface._state_lock:
-            iface._want_receive = True
-        thread_like = SimpleNamespace(
-            name="BLEReceiveStartFailure",
-            ident=None,
-            is_alive=lambda: False,
-        )
-        monkeypatch.setattr(
-            iface.thread_coordinator,
-            "_create_thread",
-            lambda **_kwargs: thread_like,
-            raising=True,
-        )
-
-        def _raise_start_failure(_thread: object) -> None:
-            assert _thread is thread_like
-            assert iface._receiveThread is thread_like
-            raise RuntimeError(START_FAILED_MSG)
-
-        monkeypatch.setattr(
-            iface.thread_coordinator,
-            "_start_thread",
-            _raise_start_failure,
-            raising=True,
-        )
-
-        with pytest.raises(RuntimeError, match=START_FAILED_MSG):
-            iface._start_receive_thread(name="BLEReceiveStartFailure")
+            if invoke_start == "facade":
+                iface._start_receive_thread(name="BLEReceiveStartFailure")
+            else:
+                BLELifecycleService._start_receive_thread(
+                    iface, name="BLEReceiveStartFailure"
+                )
 
         assert iface._receiveThread is None
     finally:

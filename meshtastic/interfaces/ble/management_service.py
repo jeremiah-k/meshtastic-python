@@ -162,15 +162,15 @@ class BLEManagementCommandsService:
             operation token.
         """
         expected_implicit_binding: str | None = None
+        if address is None:
+            with iface._state_lock:
+                expected_implicit_binding = (
+                    iface._get_current_implicit_management_binding_locked()
+                )
         with iface._connect_lock, iface._management_lock:
             iface._validate_management_preconditions()
             iface._begin_management_operation_locked()
             try:
-                if address is None:
-                    with iface._state_lock:
-                        expected_implicit_binding = (
-                            iface._get_current_implicit_management_binding_locked()
-                        )
                 existing_client = iface._get_management_client_if_available(address)
                 target_address = iface._extract_client_address(existing_client)
                 use_existing_client_without_resolved_address = (
@@ -224,6 +224,11 @@ class BLEManagementCommandsService:
 
         if start_context.use_existing_client_without_resolved_address:
             current_binding: str | None = None
+            if address is None:
+                with iface._state_lock:
+                    current_binding = (
+                        iface._get_current_implicit_management_binding_locked()
+                    )
             with iface._connect_lock, iface._management_lock:
                 iface._validate_management_preconditions()
                 refreshed_existing_client = iface._get_management_client_if_available(
@@ -231,16 +236,19 @@ class BLEManagementCommandsService:
                 )
                 if refreshed_existing_client is None:
                     raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
-                if address is None:
-                    with iface._state_lock:
-                        current_binding = (
-                            iface._get_current_implicit_management_binding_locked()
-                        )
-                    if sanitize_address(current_binding) != sanitize_address(
-                        start_context.expected_implicit_binding
-                    ):
-                        raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
-            target_candidate = address if address is not None else current_binding
+            if address is None and sanitize_address(current_binding) != sanitize_address(
+                start_context.expected_implicit_binding
+            ):
+                raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
+
+            # Prefer a live address extracted from the refreshed client. If no
+            # address is present, attempt explicit resolution for identifier
+            # inputs before falling back to implicit binding snapshots.
+            target_candidate = iface._extract_client_address(refreshed_existing_client)
+            if target_candidate is None and address is not None:
+                target_candidate = iface._resolve_target_address_for_management(address)
+            if target_candidate is None:
+                target_candidate = current_binding
             if target_candidate is not None:
                 candidate = target_candidate.strip() or None
                 normalized_candidate = sanitize_address(candidate)

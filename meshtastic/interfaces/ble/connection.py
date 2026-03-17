@@ -8,7 +8,6 @@ import sys
 from collections.abc import Callable
 from threading import Event, RLock
 from typing import TYPE_CHECKING, cast
-from unittest.mock import Mock, NonCallableMock
 
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
@@ -69,6 +68,98 @@ def _is_device_not_found_error(err: Exception) -> bool:
     return bool(message) and _DEVICE_NOT_FOUND_MESSAGE_RE.search(message) is not None
 
 
+def _is_mock_instance(target: object) -> bool:
+    """Return whether ``target`` is a unittest mock instance.
+
+    Parameters
+    ----------
+    target : object
+        Candidate object inspected for mock-instance type.
+
+    Returns
+    -------
+    bool
+        ``True`` when ``target`` is a ``Mock`` or ``NonCallableMock``.
+    """
+    try:
+        from unittest.mock import Mock, NonCallableMock
+    except Exception:  # pragma: no cover - stdlib import should always exist
+        return False
+    return isinstance(target, (Mock, NonCallableMock))
+
+
+def _run_safe_cleanup(
+    func: Callable[[], object],
+    cleanup_name: str,
+    safe_cleanup_hook: Callable[..., object] | None,
+) -> bool:
+    """Run cleanup through hook when available, otherwise inline best effort.
+
+    Parameters
+    ----------
+    func : Callable[[], object]
+        Cleanup callable to execute.
+    cleanup_name : str
+        Cleanup operation label used in debug logs.
+    safe_cleanup_hook : Callable[..., object] | None
+        Optional hook resolved from error-handler compatibility surface.
+
+    Returns
+    -------
+    bool
+        ``True`` when cleanup was handled/executed successfully, otherwise
+        ``False``.
+    """
+    cleanup_ran = False
+
+    def _tracked_cleanup() -> object:
+        nonlocal cleanup_ran
+        cleanup_ran = True
+        return func()
+
+    if safe_cleanup_hook is not None:
+        try:
+            handled = bool(
+                safe_cleanup_hook(func=_tracked_cleanup, cleanup_name=cleanup_name)
+            )
+        except TypeError as exc:
+            if _is_unexpected_keyword_error(
+                exc, "func"
+            ) or _is_unexpected_keyword_error(exc, "cleanup_name"):
+                try:
+                    handled = bool(safe_cleanup_hook(_tracked_cleanup, cleanup_name))
+                except Exception:  # noqa: BLE001 - cleanup path must stay best-effort
+                    logger.debug(
+                        "Error running safe_cleanup hook for %s",
+                        cleanup_name,
+                        exc_info=True,
+                    )
+                    return cleanup_ran
+            else:
+                logger.debug(
+                    "Error running safe_cleanup hook for %s",
+                    cleanup_name,
+                    exc_info=True,
+                )
+                return cleanup_ran
+        except Exception:  # noqa: BLE001 - cleanup path must stay best-effort
+            logger.debug(
+                "Error running safe_cleanup hook for %s",
+                cleanup_name,
+                exc_info=True,
+            )
+            return cleanup_ran
+        if handled or cleanup_ran:
+            return True
+    if cleanup_ran:
+        return True
+    try:
+        _tracked_cleanup()
+    except Exception:  # noqa: BLE001 - cleanup path must stay best-effort
+        return False
+    return True
+
+
 class ConnectionValidator:
     """Encapsulate connection pre-checks and reuse logic."""
 
@@ -112,7 +203,7 @@ class ConnectionValidator:
                 raise self.BLEError(BLECLIENT_ERROR_ALREADY_CONNECTED)
 
     def validate_connection_request(self) -> None:
-        # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _validate_connection_request.
+        # Internal adapter alias for collaborator migration; delegates to _validate_connection_request.
         """Validate whether a BLE connection request may proceed.
 
         Parameters
@@ -212,7 +303,7 @@ class ConnectionValidator:
         normalized_request: str | None,
         last_connection_request: str | None,
     ) -> bool:
-        # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _check_existing_client.
+        # Internal adapter alias for collaborator migration; delegates to _check_existing_client.
         """Check whether an existing client still matches the requested target.
 
         Parameters
@@ -388,7 +479,7 @@ class ClientManager:
         pair_on_connect: bool = False,
         connect_timeout: float | None = None,
     ) -> BLEClient:
-        # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _create_client.
+        # Internal adapter alias for collaborator migration; delegates to _create_client.
         """Create a BLE client through the compatibility wrapper surface.
 
         Parameters
@@ -456,7 +547,7 @@ class ClientManager:
             client._get_services()
 
     def connect_client(self, client: BLEClient, timeout: float | None = None) -> None:
-        # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _connect_client.
+        # Internal adapter alias for collaborator migration; delegates to _connect_client.
         """Connect a BLE client and ensure service readiness.
 
         Parameters
@@ -540,7 +631,7 @@ class ClientManager:
         new_client: BLEClient,
         old_client: BLEClient | None,
     ) -> None:
-        # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _update_client_reference.
+        # Internal adapter alias for collaborator migration; delegates to _update_client_reference.
         """Update active-client reference and schedule old-client cleanup.
 
         Parameters
@@ -585,83 +676,29 @@ class ClientManager:
         ):
             safe_cleanup_hook = None
 
-        def run_safe_cleanup(func: Callable[[], object], cleanup_name: str) -> bool:
-            """Run cleanup through hook when available, otherwise inline best effort."""
-            cleanup_ran = False
-
-            def _tracked_cleanup() -> object:
-                nonlocal cleanup_ran
-                cleanup_ran = True
-                return func()
-
-            if safe_cleanup_hook is not None:
-                try:
-                    handled = bool(
-                        safe_cleanup_hook(
-                            func=_tracked_cleanup, cleanup_name=cleanup_name
-                        )
-                    )
-                except TypeError as exc:
-                    if _is_unexpected_keyword_error(
-                        exc, "func"
-                    ) or _is_unexpected_keyword_error(exc, "cleanup_name"):
-                        try:
-                            handled = bool(
-                                safe_cleanup_hook(_tracked_cleanup, cleanup_name)
-                            )
-                        except Exception:  # noqa: BLE001 - cleanup path must stay best-effort
-                            logger.debug(
-                                "Error running safe_cleanup hook for %s",
-                                cleanup_name,
-                                exc_info=True,
-                            )
-                            return cleanup_ran
-                    else:
-                        logger.debug(
-                            "Error running safe_cleanup hook for %s",
-                            cleanup_name,
-                            exc_info=True,
-                        )
-                        return cleanup_ran
-                except Exception:  # noqa: BLE001 - cleanup path must stay best-effort
-                    logger.debug(
-                        "Error running safe_cleanup hook for %s",
-                        cleanup_name,
-                        exc_info=True,
-                    )
-                    return cleanup_ran
-                if handled or cleanup_ran:
-                    return True
-            if cleanup_ran:
-                return True
-            try:
-                _tracked_cleanup()
-            except Exception:  # noqa: BLE001 - cleanup path must stay best-effort
-                return False
-            return True
-
         if (
             not skip_disconnect
             and not getattr(client, "_closed", False)
             and getattr(client, "bleak_client", None)
         ):
-            run_safe_cleanup(
+            _run_safe_cleanup(
                 lambda: client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS),
                 "client disconnect",
+                safe_cleanup_hook,
             )
         elif skip_disconnect:
             logger.debug(
                 "Skipping BLE client disconnect during interpreter finalization."
             )
         if not skip_disconnect:
-            run_safe_cleanup(client.close, "client close")
+            _run_safe_cleanup(client.close, "client close", safe_cleanup_hook)
         else:
             logger.debug("Skipping BLE client close during interpreter finalization.")
         if event:
             event.set()
 
     def safe_close_client(self, client: BLEClient, event: Event | None = None) -> None:
-        # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _safe_close_client.
+        # Internal adapter alias for collaborator migration; delegates to _safe_close_client.
         """Close a BLE client using best-effort shutdown semantics.
 
         Parameters
@@ -683,8 +720,8 @@ class ClientManager:
         """
         if event is None:
             self._safe_close_client(client)
-        else:
-            self._safe_close_client(client, event=event)
+            return
+        self._safe_close_client(client, event=event)
 
 
 class ConnectionOrchestrator:
@@ -792,7 +829,7 @@ class ConnectionOrchestrator:
         if (
             prefer_instance_type is not None
             and isinstance(target, prefer_instance_type)
-            and not isinstance(target, (Mock, NonCallableMock))
+            and not _is_mock_instance(target)
         ):
             if public_member is _DISPATCH_MISSING:
                 raise AttributeError(
@@ -1742,7 +1779,7 @@ class ConnectionOrchestrator:
         connect_timeout: float | None = None,
         emit_connected_side_effects: bool = True,
     ) -> BLEClient:
-        # COMPAT_STABLE_SHIM: Public compatibility alias; delegates to _establish_connection.
+        # Internal adapter alias for collaborator migration; delegates to _establish_connection.
         """Establish a BLE connection through the public compatibility surface.
 
         Parameters

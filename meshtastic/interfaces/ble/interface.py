@@ -287,6 +287,7 @@ class BLEInterface(MeshInterface):
         self._prior_publish_was_reconnect = False
         self._last_connect_pair_override: bool | None = None
         self._last_connect_timeout_override: float | None = None
+        self._publishing_thread_override: object | None = None
 
         # Error handling infrastructure
         self.error_handler = BLEErrorHandler()
@@ -627,6 +628,85 @@ class BLEInterface(MeshInterface):
                 )
                 self._malformed_notification_count = 0
 
+    def _report_notification_handler_error(self, error_msg: str) -> None:
+        """Report notification-handler failures through configured error hooks.
+
+        Parameters
+        ----------
+        error_msg : str
+            Message forwarded to unhandled-exception hooks and debug logging.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after best-effort error reporting.
+        """
+        report_exception: Callable[[str], Any] | None = None
+        for hook_name in (
+            "handle_unhandled_exception",
+            "_handle_unhandled_exception",
+        ):
+            hook = getattr(self.error_handler, hook_name, None)
+            if callable(hook) and not _is_unconfigured_mock_callable(hook):
+                report_exception = cast(Callable[[str], Any], hook)
+                break
+        if report_exception is not None:
+            try:
+                report_exception(error_msg)
+            except Exception:  # noqa: BLE001 - callback error reporting is best effort
+                logger.debug(error_msg, exc_info=True)
+            return
+        logger.debug(error_msg, exc_info=True)
+
+    @staticmethod
+    def _invoke_safe_execute_compat(
+        safe_execute: Callable[..., Any],
+        handler_thunk: Callable[[], None],
+        *,
+        error_msg: str,
+        fallback: Callable[[], None],
+    ) -> None:
+        """Invoke ``safe_execute`` with compatibility fallbacks.
+
+        Parameters
+        ----------
+        safe_execute : Callable[..., Any]
+            Resolved safe-execute hook from the error handler.
+        handler_thunk : Callable[[], None]
+            Thunk that executes the notification handler.
+        error_msg : str
+            Error message used for keyword/positional dispatch.
+        fallback : Callable[[], None]
+            Callback invoked when no compatible hook signature succeeds.
+
+        Returns
+        -------
+        None
+            Returns ``None`` after invoking a compatible signature or fallback.
+        """
+        try:
+            safe_execute(handler_thunk, error_msg=error_msg)
+            return
+        except TypeError as exc:
+            if not _is_unexpected_keyword_error(exc, "error_msg"):
+                fallback()
+                return
+        except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
+            fallback()
+            return
+
+        try:
+            safe_execute(handler_thunk, error_msg)
+            return
+        except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
+            pass
+
+        try:
+            safe_execute(handler_thunk)
+            return
+        except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
+            fallback()
+
     def _from_num_handler(self, _: Any, b: bytes | bytearray) -> None:
         """Process a FROMNUM characteristic notification and wake the receive loop.
 
@@ -708,22 +788,7 @@ class BLEInterface(MeshInterface):
             """
 
             def _report_notification_error() -> None:
-                report_exception: Callable[[str], Any] | None = None
-                for hook_name in (
-                    "handle_unhandled_exception",
-                    "_handle_unhandled_exception",
-                ):
-                    hook = getattr(self.error_handler, hook_name, None)
-                    if callable(hook) and not _is_unconfigured_mock_callable(hook):
-                        report_exception = cast(Callable[[str], Any], hook)
-                        break
-                if report_exception is not None:
-                    try:
-                        report_exception(error_msg)
-                    except Exception:  # noqa: BLE001 - callback error reporting is best effort
-                        logger.debug(error_msg, exc_info=True)
-                else:
-                    logger.debug(error_msg, exc_info=True)
+                self._report_notification_handler_error(error_msg)
 
             safe_execute = getattr(self.error_handler, "safe_execute", None)
             if not callable(safe_execute) or _is_unconfigured_mock_callable(
@@ -738,27 +803,12 @@ class BLEInterface(MeshInterface):
                 except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
                     _report_notification_error()
                 return
-            try:
-                safe_execute(lambda: handler(sender, data), error_msg=error_msg)
-            except TypeError as exc:
-                if not _is_unexpected_keyword_error(exc, "error_msg"):
-                    _report_notification_error()
-                    return
-                try:
-                    safe_execute(lambda: handler(sender, data), error_msg)
-                except TypeError as positional_exc:
-                    # Some legacy hooks accept only the callable argument.
-                    if "positional argument" not in str(positional_exc):
-                        _report_notification_error()
-                        return
-                    try:
-                        safe_execute(lambda: handler(sender, data))
-                    except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
-                        _report_notification_error()
-                except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
-                    _report_notification_error()
-            except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
-                _report_notification_error()
+            self._invoke_safe_execute_compat(
+                safe_execute,
+                lambda: handler(sender, data),
+                error_msg=error_msg,
+                fallback=_report_notification_error,
+            )
 
         def _safe_legacy_handler(sender: Any, data: bytes | bytearray) -> None:
             """Invoke the legacy log-radio notification handler for a BLE notification and suppress any exceptions raised by the handler.
@@ -1780,7 +1830,7 @@ class BLEInterface(MeshInterface):
                 discovery_manager,
                 public_name="discover_devices",
                 legacy_name="_discover_devices",
-                fallback_attr_name="discover_devices",
+                fallback_attr_name=None,
                 error_message=ERROR_DISCOVERY_MANAGER_MISSING_DISCOVER_DEVICES,
                 args=(address,),
             ),
@@ -2041,16 +2091,13 @@ class BLEInterface(MeshInterface):
             If no supported delay helper exists on ``policy``.
         """
         return float(
-            cast(
-                float,
-                BLEInterface._compat_dispatch_callable(
-                    policy,
-                    public_name="get_delay",
-                    legacy_name="_get_delay",
-                    fallback_attr_name=None,
-                    error_message=ERROR_RETRY_POLICY_MISSING_GET_DELAY,
-                    args=(attempt,),
-                ),
+            BLEInterface._compat_dispatch_callable(
+                policy,
+                public_name="get_delay",
+                legacy_name="_get_delay",
+                fallback_attr_name=None,
+                error_message=ERROR_RETRY_POLICY_MISSING_GET_DELAY,
+                args=(attempt,),
             )
         )
 
@@ -2890,6 +2937,19 @@ class BLEInterface(MeshInterface):
             management_wait_poll_seconds=_MANAGEMENT_CONNECT_WAIT_POLL_SECONDS,
         )
 
+    def _get_publishing_thread(self) -> object:
+        """Resolve the publishing-thread adapter used for compatibility events.
+
+        Returns
+        -------
+        object
+            Instance override when configured, otherwise module-level
+            ``publishingThread``.
+        """
+        if self._publishing_thread_override is not None:
+            return self._publishing_thread_override
+        return publishingThread
+
     def _wait_for_disconnect_notifications(self, timeout: float | None = None) -> None:
         """Wait up to timeout seconds for the publishing thread to flush pending publish callbacks.
 
@@ -2903,7 +2963,7 @@ class BLEInterface(MeshInterface):
         BLECompatibilityEventService.wait_for_disconnect_notifications(
             self,
             timeout,
-            publishing_thread=publishingThread,
+            publishing_thread=self._get_publishing_thread(),
         )
 
     def _disconnect_and_close_client(self, client: BLEClient) -> None:
@@ -2929,7 +2989,7 @@ class BLEInterface(MeshInterface):
         BLECompatibilityEventService.drain_publish_queue(
             self,
             flush_event,
-            publishing_thread=publishingThread,
+            publishing_thread=self._get_publishing_thread(),
         )
 
     def _publish_connection_status(self, *, connected: bool) -> None:
@@ -2948,7 +3008,7 @@ class BLEInterface(MeshInterface):
         BLECompatibilityEventService.publish_connection_status(
             self,
             connected=connected,
-            publishing_thread=publishingThread,
+            publishing_thread=self._get_publishing_thread(),
         )
 
     def _disconnected(self) -> None:

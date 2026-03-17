@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 from threading import Event, RLock
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Iterator
 from unittest.mock import MagicMock
 
 import pytest
@@ -28,9 +29,10 @@ class _TestBLEError(Exception):
     """Custom BLEError type for focused branch tests."""
 
 
+@contextlib.contextmanager
 def _make_orchestrator(
     monkeypatch: pytest.MonkeyPatch,
-) -> tuple[Any, ConnectionOrchestrator]:
+) -> Iterator[tuple[Any, ConnectionOrchestrator]]:
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     validator = ConnectionValidator(BLEStateManager(), RLock(), iface.BLEError)
     client_manager = ClientManager(
@@ -49,7 +51,10 @@ def _make_orchestrator(
         RLock(),
         SimpleNamespace(),
     )
-    return iface, orchestrator
+    try:
+        yield iface, orchestrator
+    finally:
+        iface.close()
 
 
 def test_connection_validator_client_is_connected_member_paths() -> None:
@@ -170,62 +175,64 @@ def test_connection_orchestrator_dispatch_set_event_and_kwarg_fallbacks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Orchestrator dispatch helpers should cover missing/default and kwarg compatibility retries."""
-    iface, orchestrator = _make_orchestrator(monkeypatch)
-
-    assert (
-        orchestrator._dispatch_public_or_underscore(
-            target=SimpleNamespace(),
-            public_name="missing",
-            underscore_name="_missing",
-            call_member=False,
-            default_if_missing="default",
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        assert (
+            orchestrator._dispatch_public_or_underscore(
+                target=SimpleNamespace(),
+                public_name="missing",
+                underscore_name="_missing",
+                call_member=False,
+                default_if_missing="default",
+            )
+            == "default"
         )
-        == "default"
-    )
 
-    orchestrator.thread_coordinator = SimpleNamespace()
-    orchestrator._thread_set_event("reconnected_event")
+        orchestrator.thread_coordinator = SimpleNamespace()
+        orchestrator._thread_set_event("reconnected_event")
 
-    create_calls: list[dict[str, object]] = []
+        create_calls: list[dict[str, object]] = []
 
-    def _create_client(_device: object, _cb: object, **kwargs: object) -> DummyClient:
-        create_calls.append(dict(kwargs))
-        if "pair_on_connect" in kwargs:
-            raise TypeError("create_client() got an unexpected keyword argument 'pair_on_connect'")
-        if "connect_timeout" in kwargs:
-            raise TypeError("create_client() got an unexpected keyword argument 'connect_timeout'")
-        return DummyClient()
+        def _create_client(_device: object, _cb: object, **kwargs: object) -> DummyClient:
+            create_calls.append(dict(kwargs))
+            if "pair_on_connect" in kwargs:
+                raise TypeError(
+                    "create_client() got an unexpected keyword argument 'pair_on_connect'"
+                )
+            if "connect_timeout" in kwargs:
+                raise TypeError(
+                    "create_client() got an unexpected keyword argument 'connect_timeout'"
+                )
+            return DummyClient()
 
-    orchestrator.client_manager = SimpleNamespace(create_client=_create_client)
-    created = orchestrator._client_manager_create_client(
-        "AA:BB:CC:DD:EE:FF",
-        lambda _client: None,
-        pair_on_connect=True,
-        connect_timeout=5.0,
-    )
-    assert isinstance(created, DummyClient)
-    assert create_calls
+        orchestrator.client_manager = SimpleNamespace(create_client=_create_client)
+        created = orchestrator._client_manager_create_client(
+            "AA:BB:CC:DD:EE:FF",
+            lambda _client: None,
+            pair_on_connect=True,
+            connect_timeout=5.0,
+        )
+        assert isinstance(created, DummyClient)
+        assert create_calls
 
-    connect_calls: list[dict[str, object]] = []
+        connect_calls: list[dict[str, object]] = []
 
-    def _connect_client(_client: object, **kwargs: object) -> None:
-        connect_calls.append(dict(kwargs))
-        if "timeout" in kwargs:
-            raise TypeError("connect_client() got an unexpected keyword argument 'timeout'")
+        def _connect_client(_client: object, **kwargs: object) -> None:
+            connect_calls.append(dict(kwargs))
+            if "timeout" in kwargs:
+                raise TypeError(
+                    "connect_client() got an unexpected keyword argument 'timeout'"
+                )
 
-    orchestrator.client_manager = SimpleNamespace(connect_client=_connect_client)
-    orchestrator._client_manager_connect_client(DummyClient(), timeout=1.0)
-    assert connect_calls == [{"timeout": 1.0}, {}]
-
-    iface.close()
+        orchestrator.client_manager = SimpleNamespace(connect_client=_connect_client)
+        orchestrator._client_manager_connect_client(DummyClient(), timeout=1.0)
+        assert connect_calls == [{"timeout": 1.0}, {}]
 
 
 def test_connection_orchestrator_direct_and_retry_exception_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Direct/retry connect helpers should close clients on exceptional paths."""
-    iface, orchestrator = _make_orchestrator(monkeypatch)
-    try:
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
         closed_clients: list[object] = []
         orchestrator._client_manager_safe_close_client = lambda client: closed_clients.append(client)
 
@@ -276,55 +283,51 @@ def test_connection_orchestrator_direct_and_retry_exception_paths(
         orchestrator.interface = SimpleNamespace()
         with pytest.raises(AttributeError):
             orchestrator._compat_find_device("AA:BB:CC:DD:EE:FF")
-    finally:
-        iface.close()
 
 
 def test_connection_orchestrator_finalize_and_establish_error_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Finalize/establish helpers should cover invalid state and cleanup-on-failure branches."""
-    iface, orchestrator = _make_orchestrator(monkeypatch)
-    orchestrator.state_manager = SimpleNamespace(
-        current_state=ConnectionState.DISCONNECTED,
-        transition_to=lambda _state: False,
-    )
-
-    with pytest.raises(iface.BLEError):
-        orchestrator._finalize_connection(
-            DummyClient(),
-            "AA:BB:CC:DD:EE:FF",
-            lambda _client: None,
-            lambda: None,
+    with _make_orchestrator(monkeypatch) as (iface, orchestrator):
+        orchestrator.state_manager = SimpleNamespace(
+            current_state=ConnectionState.DISCONNECTED,
+            transition_to=lambda _state: False,
         )
 
-    orchestrator._validator_validate_connection_request = lambda: None
-    orchestrator._raise_if_interface_closing = lambda: None
-    orchestrator._prepare_connection_target = lambda **_kwargs: ("AA", "aa")
-    orchestrator._resolve_connection_timeouts = lambda **_kwargs: (1.0, 1.0)
-    orchestrator._state_transition_to = lambda _state: True
-    client = DummyClient()
-    orchestrator._attempt_direct_connect = lambda **_kwargs: (None, False)
-    orchestrator._resolve_retry_target = lambda **_kwargs: ("AA", "AA", 1.0)
-    orchestrator._connect_retry_target = lambda **_kwargs: (client, "AA")
-    orchestrator._finalize_connection = lambda *_args, **_kwargs: (_ for _ in ()).throw(
-        RuntimeError("boom")
-    )
-    closed: list[object] = []
-    orchestrator._client_manager_safe_close_client = lambda c: closed.append(c)
-    orchestrator._transition_failure_to_disconnected = lambda _ctx: None
+        with pytest.raises(iface.BLEError):
+            orchestrator._finalize_connection(
+                DummyClient(),
+                "AA:BB:CC:DD:EE:FF",
+                lambda _client: None,
+                lambda: None,
+            )
 
-    with pytest.raises(RuntimeError, match="boom"):
-        orchestrator._establish_connection(
-            address="AA",
-            current_address=None,
-            register_notifications_func=lambda _client: None,
-            on_connected_func=lambda: None,
-            on_disconnect_func=lambda _client: None,
+        orchestrator._validator_validate_connection_request = lambda: None
+        orchestrator._raise_if_interface_closing = lambda: None
+        orchestrator._prepare_connection_target = lambda **_kwargs: ("AA", "aa")
+        orchestrator._resolve_connection_timeouts = lambda **_kwargs: (1.0, 1.0)
+        orchestrator._state_transition_to = lambda _state: True
+        client = DummyClient()
+        orchestrator._attempt_direct_connect = lambda **_kwargs: (None, False)
+        orchestrator._resolve_retry_target = lambda **_kwargs: ("AA", "AA", 1.0)
+        orchestrator._connect_retry_target = lambda **_kwargs: (client, "AA")
+        orchestrator._finalize_connection = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("boom")
         )
-    assert closed == [client]
+        closed: list[object] = []
+        orchestrator._client_manager_safe_close_client = lambda c: closed.append(c)
+        orchestrator._transition_failure_to_disconnected = lambda _ctx: None
 
-    iface.close()
+        with pytest.raises(RuntimeError, match="boom"):
+            orchestrator._establish_connection(
+                address="AA",
+                current_address=None,
+                register_notifications_func=lambda _client: None,
+                on_connected_func=lambda: None,
+                on_disconnect_func=lambda _client: None,
+            )
+        assert closed == [client]
 
 
 def test_discovery_manager_typeerror_and_invalid_response_paths(
@@ -478,286 +481,281 @@ def test_orchestrator_dispatch_and_event_remaining_branches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Connection orchestrator dispatch helper should cover remaining guard branches."""
-    iface, orchestrator = _make_orchestrator(monkeypatch)
-
-    assert (
-        orchestrator._dispatch_public_or_underscore(
-            target=SimpleNamespace(_legacy=MagicMock()),
-            public_name="public",
-            underscore_name="_legacy",
-            call_member=False,
-            default_if_missing="fallback",
-        )
-        == "fallback"
-    )
-
-    validator = ConnectionValidator(BLEStateManager(), RLock(), _TestBLEError)
-    with pytest.raises(AttributeError):
-        orchestrator._dispatch_public_or_underscore(
-            target=validator,
-            public_name="missing",
-            underscore_name="_missing",
-            prefer_instance_type=ConnectionValidator,
-            call_member=True,
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        assert (
+            orchestrator._dispatch_public_or_underscore(
+                target=SimpleNamespace(_legacy=MagicMock()),
+                public_name="public",
+                underscore_name="_legacy",
+                call_member=False,
+                default_if_missing="fallback",
+            )
+            == "fallback"
         )
 
-    validator_non_callable = ConnectionValidator(BLEStateManager(), RLock(), _TestBLEError)
-    validator_non_callable.validate_connection_request = 123  # type: ignore[method-assign]
-    with pytest.raises(AttributeError):
-        orchestrator._dispatch_public_or_underscore(
-            target=validator_non_callable,
-            public_name="validate_connection_request",
-            underscore_name="_validate_connection_request",
-            prefer_instance_type=ConnectionValidator,
-            call_member=True,
+        validator = ConnectionValidator(BLEStateManager(), RLock(), _TestBLEError)
+        with pytest.raises(AttributeError):
+            orchestrator._dispatch_public_or_underscore(
+                target=validator,
+                public_name="missing",
+                underscore_name="_missing",
+                prefer_instance_type=ConnectionValidator,
+                call_member=True,
+            )
+
+        validator_non_callable = ConnectionValidator(BLEStateManager(), RLock(), _TestBLEError)
+        validator_non_callable.validate_connection_request = 123  # type: ignore[method-assign]
+        with pytest.raises(AttributeError):
+            orchestrator._dispatch_public_or_underscore(
+                target=validator_non_callable,
+                public_name="validate_connection_request",
+                underscore_name="_validate_connection_request",
+                prefer_instance_type=ConnectionValidator,
+                call_member=True,
+            )
+
+        called: list[str] = []
+        validator_callable = ConnectionValidator(BLEStateManager(), RLock(), _TestBLEError)
+        validator_callable.validate_connection_request = lambda: called.append("called")  # type: ignore[method-assign]
+        assert (
+            orchestrator._dispatch_public_or_underscore(
+                target=validator_callable,
+                public_name="validate_connection_request",
+                underscore_name="_validate_connection_request",
+                prefer_instance_type=ConnectionValidator,
+                call_member=True,
+            )
+            is None
+        )
+        assert called == ["called"]
+        assert (
+            orchestrator._dispatch_public_or_underscore(
+                target=validator_callable,
+                public_name="BLEError",
+                underscore_name="_ble_error",
+                prefer_instance_type=ConnectionValidator,
+                call_member=False,
+            )
+            is _TestBLEError
         )
 
-    called: list[str] = []
-    validator_callable = ConnectionValidator(BLEStateManager(), RLock(), _TestBLEError)
-    validator_callable.validate_connection_request = lambda: called.append("called")  # type: ignore[method-assign]
-    assert (
-        orchestrator._dispatch_public_or_underscore(
-            target=validator_callable,
-            public_name="validate_connection_request",
-            underscore_name="_validate_connection_request",
-            prefer_instance_type=ConnectionValidator,
-            call_member=True,
-        )
-        is None
-    )
-    assert called == ["called"]
-    assert (
-        orchestrator._dispatch_public_or_underscore(
-            target=validator_callable,
-            public_name="BLEError",
-            underscore_name="_ble_error",
-            prefer_instance_type=ConnectionValidator,
-            call_member=False,
-        )
-        is _TestBLEError
-    )
+        with pytest.raises(AttributeError):
+            orchestrator._dispatch_public_or_underscore(
+                target=SimpleNamespace(),
+                public_name="missing",
+                underscore_name="_missing",
+                call_member=False,
+            )
 
-    with pytest.raises(AttributeError):
-        orchestrator._dispatch_public_or_underscore(
-            target=SimpleNamespace(),
-            public_name="missing",
-            underscore_name="_missing",
-            call_member=False,
+        orchestrator.thread_coordinator = SimpleNamespace(
+            set_event=lambda _name: (_ for _ in ()).throw(RuntimeError("event failed"))
         )
-
-    orchestrator.thread_coordinator = SimpleNamespace(
-        set_event=lambda _name: (_ for _ in ()).throw(RuntimeError("event failed"))
-    )
-    orchestrator._thread_set_event("evt")
-    iface.close()
+        orchestrator._thread_set_event("evt")
 
 
 def test_orchestrator_create_connect_direct_retry_remaining_branches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Create/connect/direct/retry helpers should hit remaining TypeError and cleanup branches."""
-    iface, orchestrator = _make_orchestrator(monkeypatch)
-
-    orchestrator.client_manager = SimpleNamespace(
-        create_client=lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            TypeError("plain typeerror")
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        orchestrator.client_manager = SimpleNamespace(
+            create_client=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                TypeError("plain typeerror")
+            )
         )
-    )
-    with pytest.raises(TypeError, match="plain typeerror"):
-        orchestrator._client_manager_create_client(
-            "AA:BB:CC:DD:EE:FF",
-            lambda _client: None,
-            pair_on_connect=True,
-            connect_timeout=1.0,
+        with pytest.raises(TypeError, match="plain typeerror"):
+            orchestrator._client_manager_create_client(
+                "AA:BB:CC:DD:EE:FF",
+                lambda _client: None,
+                pair_on_connect=True,
+                connect_timeout=1.0,
+            )
+
+        orchestrator.client_manager = SimpleNamespace(
+            connect_client=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                TypeError("plain typeerror")
+            )
+        )
+        with pytest.raises(TypeError, match="plain typeerror"):
+            orchestrator._client_manager_connect_client(DummyClient(), timeout=1.0)
+
+        direct_client = DummyClient()
+        closed_clients: list[object] = []
+        orchestrator._client_manager_create_client = lambda *_args, **_kwargs: direct_client
+        orchestrator._client_manager_connect_client = (
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("direct fail"))
+        )
+        orchestrator._client_manager_safe_close_client = lambda client: closed_clients.append(
+            client
+        )
+        with pytest.raises(ValueError, match="direct fail"):
+            orchestrator._attempt_direct_connect(
+                target_address="AA:BB:CC:DD:EE:FF",
+                normalized_target="aabbccddeeff",
+                on_disconnect_func=lambda _client: None,
+                pair_on_connect=False,
+                direct_connect_timeout=1.0,
+                register_notifications_func=lambda _client: None,
+                on_connected_func=lambda: None,
+                emit_connected_side_effects=True,
+            )
+        assert direct_client in closed_clients
+
+        retry_client = DummyClient()
+        closed_clients.clear()
+        orchestrator._client_manager_create_client = lambda *_args, **_kwargs: retry_client
+        orchestrator._client_manager_connect_client = (
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(SystemExit())
+        )
+        with pytest.raises(SystemExit):
+            orchestrator._connect_retry_target(
+                connection_target="AA:BB:CC:DD:EE:FF",
+                resolved_address="AA:BB:CC:DD:EE:FF",
+                target_address="AA:BB:CC:DD:EE:FF",
+                skip_discovery_scan=False,
+                on_disconnect_func=lambda _client: None,
+                pair_on_connect=False,
+                retry_connect_timeout=1.0,
+                discovery_connect_timeout=1.0,
+            )
+        assert retry_client in closed_clients
+
+        retry_client = DummyClient()
+        closed_clients.clear()
+        orchestrator._client_manager_create_client = lambda *_args, **_kwargs: retry_client
+        orchestrator._client_manager_connect_client = (
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(BleakError("retry fail"))
+        )
+        with pytest.raises(BleakError, match="retry fail"):
+            orchestrator._connect_retry_target(
+                connection_target="AA:BB:CC:DD:EE:FF",
+                resolved_address="AA:BB:CC:DD:EE:FF",
+                target_address="AA:BB:CC:DD:EE:FF",
+                skip_discovery_scan=False,
+                on_disconnect_func=lambda _client: None,
+                pair_on_connect=False,
+                retry_connect_timeout=1.0,
+                discovery_connect_timeout=1.0,
+            )
+        assert retry_client in closed_clients
+
+        first_retry_client = DummyClient()
+        second_retry_client = DummyClient()
+        create_clients = iter([first_retry_client, second_retry_client])
+        closed_clients.clear()
+        orchestrator._client_manager_create_client = lambda *_args, **_kwargs: next(
+            create_clients
         )
 
-    orchestrator.client_manager = SimpleNamespace(
-        connect_client=lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            TypeError("plain typeerror")
-        )
-    )
-    with pytest.raises(TypeError, match="plain typeerror"):
-        orchestrator._client_manager_connect_client(DummyClient(), timeout=1.0)
+        def _connect_side_effect(*_args: object, **_kwargs: object) -> None:
+            if _connect_side_effect.calls == 0:
+                _connect_side_effect.calls += 1
+                raise BleakDeviceNotFoundError("device not found")
+            raise RuntimeError("discovery connect failed")
 
-    direct_client = DummyClient()
-    closed_clients: list[object] = []
-    orchestrator._client_manager_create_client = lambda *_args, **_kwargs: direct_client
-    orchestrator._client_manager_connect_client = (
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("direct fail"))
-    )
-    orchestrator._client_manager_safe_close_client = lambda client: closed_clients.append(
-        client
-    )
-    with pytest.raises(ValueError, match="direct fail"):
-        orchestrator._attempt_direct_connect(
-            target_address="AA:BB:CC:DD:EE:FF",
-            normalized_target="aabbccddeeff",
-            on_disconnect_func=lambda _client: None,
-            pair_on_connect=False,
-            direct_connect_timeout=1.0,
-            register_notifications_func=lambda _client: None,
-            on_connected_func=lambda: None,
-            emit_connected_side_effects=True,
-        )
-    assert direct_client in closed_clients
-
-    retry_client = DummyClient()
-    closed_clients.clear()
-    orchestrator._client_manager_create_client = lambda *_args, **_kwargs: retry_client
-    orchestrator._client_manager_connect_client = (
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(SystemExit())
-    )
-    with pytest.raises(SystemExit):
-        orchestrator._connect_retry_target(
-            connection_target="AA:BB:CC:DD:EE:FF",
-            resolved_address="AA:BB:CC:DD:EE:FF",
-            target_address="AA:BB:CC:DD:EE:FF",
-            skip_discovery_scan=False,
-            on_disconnect_func=lambda _client: None,
-            pair_on_connect=False,
-            retry_connect_timeout=1.0,
-            discovery_connect_timeout=1.0,
-        )
-    assert retry_client in closed_clients
-
-    retry_client = DummyClient()
-    closed_clients.clear()
-    orchestrator._client_manager_create_client = lambda *_args, **_kwargs: retry_client
-    orchestrator._client_manager_connect_client = (
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(BleakError("retry fail"))
-    )
-    with pytest.raises(BleakError, match="retry fail"):
-        orchestrator._connect_retry_target(
-            connection_target="AA:BB:CC:DD:EE:FF",
-            resolved_address="AA:BB:CC:DD:EE:FF",
-            target_address="AA:BB:CC:DD:EE:FF",
-            skip_discovery_scan=False,
-            on_disconnect_func=lambda _client: None,
-            pair_on_connect=False,
-            retry_connect_timeout=1.0,
-            discovery_connect_timeout=1.0,
-        )
-    assert retry_client in closed_clients
-
-    first_retry_client = DummyClient()
-    second_retry_client = DummyClient()
-    create_clients = iter([first_retry_client, second_retry_client])
-    closed_clients.clear()
-    orchestrator._client_manager_create_client = lambda *_args, **_kwargs: next(
-        create_clients
-    )
-
-    def _connect_side_effect(*_args: object, **_kwargs: object) -> None:
-        if _connect_side_effect.calls == 0:
-            _connect_side_effect.calls += 1
-            raise BleakDeviceNotFoundError("device not found")
-        raise RuntimeError("discovery connect failed")
-
-    _connect_side_effect.calls = 0
-    orchestrator._client_manager_connect_client = _connect_side_effect
-    orchestrator._compat_find_device = lambda _target: SimpleNamespace(address="AA:BB")
-    with pytest.raises(RuntimeError, match="discovery connect failed"):
-        orchestrator._connect_retry_target(
-            connection_target="AA:BB:CC:DD:EE:FF",
-            resolved_address="AA:BB:CC:DD:EE:FF",
-            target_address="AA:BB:CC:DD:EE:FF",
-            skip_discovery_scan=True,
-            on_disconnect_func=lambda _client: None,
-            pair_on_connect=False,
-            retry_connect_timeout=1.0,
-            discovery_connect_timeout=1.0,
-        )
-    assert closed_clients == [first_retry_client, second_retry_client]
-    iface.close()
+        _connect_side_effect.calls = 0
+        orchestrator._client_manager_connect_client = _connect_side_effect
+        orchestrator._compat_find_device = lambda _target: SimpleNamespace(address="AA:BB")
+        with pytest.raises(RuntimeError, match="discovery connect failed"):
+            orchestrator._connect_retry_target(
+                connection_target="AA:BB:CC:DD:EE:FF",
+                resolved_address="AA:BB:CC:DD:EE:FF",
+                target_address="AA:BB:CC:DD:EE:FF",
+                skip_discovery_scan=True,
+                on_disconnect_func=lambda _client: None,
+                pair_on_connect=False,
+                retry_connect_timeout=1.0,
+                discovery_connect_timeout=1.0,
+            )
+        assert closed_clients == [first_retry_client, second_retry_client]
 
 
 def test_orchestrator_finalize_and_establish_remaining_branches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Finalize/establish paths should cover remaining invalidation and cleanup branches."""
-    iface, orchestrator = _make_orchestrator(monkeypatch)
-    connected_client = SimpleNamespace(isConnected=lambda: True)
+    with _make_orchestrator(monkeypatch) as (iface, orchestrator):
+        connected_client = SimpleNamespace(isConnected=lambda: True)
 
-    state_values = iter([ConnectionState.CONNECTING, ConnectionState.DISCONNECTED])
-    orchestrator._state_current_state = lambda: next(state_values)
-    with pytest.raises(iface.BLEError):
-        orchestrator._finalize_connection(
-            connected_client,
-            "AA:BB:CC:DD:EE:FF",
-            lambda _client: None,
-            lambda: None,
+        state_values = iter([ConnectionState.CONNECTING, ConnectionState.DISCONNECTED])
+        orchestrator._state_current_state = lambda: next(state_values)
+        with pytest.raises(iface.BLEError):
+            orchestrator._finalize_connection(
+                connected_client,
+                "AA:BB:CC:DD:EE:FF",
+                lambda _client: None,
+                lambda: None,
+            )
+
+        orchestrator._state_current_state = lambda: ConnectionState.CONNECTING
+        monkeypatch.setattr(
+            ConnectionValidator,
+            "_client_is_connected",
+            staticmethod(lambda _client: False),
+        )
+        with pytest.raises(iface.BLEError):
+            orchestrator._finalize_connection(
+                connected_client,
+                "AA:BB:CC:DD:EE:FF",
+                lambda _client: None,
+                lambda: None,
+            )
+
+        monkeypatch.setattr(
+            ConnectionValidator,
+            "_client_is_connected",
+            staticmethod(lambda _client: True),
+        )
+        orchestrator._state_transition_to = lambda _state: False
+        with pytest.raises(iface.BLEError):
+            orchestrator._finalize_connection(
+                connected_client,
+                "AA:BB:CC:DD:EE:FF",
+                lambda _client: None,
+                lambda: None,
+            )
+
+        retry_client = DummyClient()
+        closed_clients: list[object] = []
+        orchestrator._validator_validate_connection_request = lambda: None
+        orchestrator._raise_if_interface_closing = lambda: None
+        orchestrator._prepare_connection_target = lambda **_kwargs: ("AA", "aa")
+        orchestrator._resolve_connection_timeouts = lambda **_kwargs: (1.0, 1.0)
+        orchestrator._state_transition_to = lambda _state: True
+        orchestrator._attempt_direct_connect = lambda **_kwargs: (None, False)
+        orchestrator._resolve_retry_target = lambda **_kwargs: ("AA", "AA", 1.0)
+        orchestrator._connect_retry_target = lambda **_kwargs: (retry_client, "AA")
+        orchestrator._client_manager_safe_close_client = lambda client: closed_clients.append(
+            client
+        )
+        orchestrator._transition_failure_to_disconnected = lambda _ctx: None
+        orchestrator._finalize_connection = (
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(BleakDBusError("dbus", "err"))
         )
 
-    orchestrator._state_current_state = lambda: ConnectionState.CONNECTING
-    monkeypatch.setattr(
-        ConnectionValidator,
-        "_client_is_connected",
-        staticmethod(lambda _client: False),
-    )
-    with pytest.raises(iface.BLEError):
-        orchestrator._finalize_connection(
-            connected_client,
-            "AA:BB:CC:DD:EE:FF",
-            lambda _client: None,
-            lambda: None,
-        )
+        with pytest.raises(BleakDBusError):
+            orchestrator._establish_connection(
+                address="AA",
+                current_address=None,
+                register_notifications_func=lambda _client: None,
+                on_connected_func=lambda: None,
+                on_disconnect_func=lambda _client: None,
+            )
+        assert closed_clients == [retry_client]
 
-    monkeypatch.setattr(
-        ConnectionValidator,
-        "_client_is_connected",
-        staticmethod(lambda _client: True),
-    )
-    orchestrator._state_transition_to = lambda _state: False
-    with pytest.raises(iface.BLEError):
-        orchestrator._finalize_connection(
-            connected_client,
-            "AA:BB:CC:DD:EE:FF",
-            lambda _client: None,
-            lambda: None,
+        closed_clients.clear()
+        orchestrator._finalize_connection = (
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(SystemExit())
         )
-
-    retry_client = DummyClient()
-    closed_clients: list[object] = []
-    orchestrator._validator_validate_connection_request = lambda: None
-    orchestrator._raise_if_interface_closing = lambda: None
-    orchestrator._prepare_connection_target = lambda **_kwargs: ("AA", "aa")
-    orchestrator._resolve_connection_timeouts = lambda **_kwargs: (1.0, 1.0)
-    orchestrator._state_transition_to = lambda _state: True
-    orchestrator._attempt_direct_connect = lambda **_kwargs: (None, False)
-    orchestrator._resolve_retry_target = lambda **_kwargs: ("AA", "AA", 1.0)
-    orchestrator._connect_retry_target = lambda **_kwargs: (retry_client, "AA")
-    orchestrator._client_manager_safe_close_client = lambda client: closed_clients.append(
-        client
-    )
-    orchestrator._transition_failure_to_disconnected = lambda _ctx: None
-    orchestrator._finalize_connection = (
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(BleakDBusError("dbus", "err"))
-    )
-
-    with pytest.raises(BleakDBusError):
-        orchestrator._establish_connection(
-            address="AA",
-            current_address=None,
-            register_notifications_func=lambda _client: None,
-            on_connected_func=lambda: None,
-            on_disconnect_func=lambda _client: None,
-        )
-    assert closed_clients == [retry_client]
-
-    closed_clients.clear()
-    orchestrator._finalize_connection = (
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(SystemExit())
-    )
-    with pytest.raises(SystemExit):
-        orchestrator._establish_connection(
-            address="AA",
-            current_address=None,
-            register_notifications_func=lambda _client: None,
-            on_connected_func=lambda: None,
-            on_disconnect_func=lambda _client: None,
-        )
-    assert closed_clients == [retry_client]
-    iface.close()
+        with pytest.raises(SystemExit):
+            orchestrator._establish_connection(
+                address="AA",
+                current_address=None,
+                register_notifications_func=lambda _client: None,
+                on_connected_func=lambda: None,
+                on_disconnect_func=lambda _client: None,
+            )
+        assert closed_clients == [retry_client]
 
 
 def test_discovery_probe_and_factory_kwarg_rejection_branches() -> None:

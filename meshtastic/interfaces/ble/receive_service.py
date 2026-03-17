@@ -20,6 +20,7 @@ from meshtastic.interfaces.ble.constants import (
     logger,
 )
 from meshtastic.interfaces.ble.errors import DecodeError
+from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
 from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
     _is_unconfigured_mock_member,
@@ -226,11 +227,12 @@ class BLEReceiveRecoveryService:
         )
         poll_without_notify = False
         raw_ever_connected = getattr(iface, "_ever_connected", False)
-        ever_connected = (
-            False
-            if _is_unconfigured_mock_member(raw_ever_connected)
-            else raw_ever_connected if isinstance(raw_ever_connected, bool) else False
-        )
+        if _is_unconfigured_mock_member(raw_ever_connected):
+            ever_connected = False
+        elif isinstance(raw_ever_connected, bool):
+            ever_connected = raw_ever_connected
+        else:
+            ever_connected = False
         if not event_signaled:
             if (
                 ever_connected
@@ -267,8 +269,6 @@ class BLEReceiveRecoveryService:
         tuple[BLEClient | None, bool, bool, bool]
             ``(client, is_connecting, publish_pending, is_closing)``.
         """
-        from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
-
         with iface._state_lock:
             client = iface.client
             state_is_connecting = getattr(iface._state_manager, "is_connecting", None)
@@ -789,7 +789,7 @@ class BLEReceiveRecoveryService:
             _sleep(iface._retry_policy_get_delay(transient_policy, attempt_index))
             return
         iface._read_retry_count = 0
-        logger.debug("Persistent BLE read error after retries", exc_info=True)
+        logger.warning("Persistent BLE read error after retries", exc_info=True)
         raise iface.BLEError(ERROR_READING_BLE) from error
 
     @staticmethod
