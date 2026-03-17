@@ -154,23 +154,23 @@ Semantic deprecation:
 
 ### BLE and Related Exports
 
-| Module                                | Compatibility symbol         | Canonical symbol              |
-| ------------------------------------- | ---------------------------- | ----------------------------- |
-| `meshtastic.interfaces.ble.client`    | `find_device()`              | `findDevice()`                |
-| `meshtastic.interfaces.ble.client`    | `_discover()`                | `discover()`                  |
-| `meshtastic.interfaces.ble.client`    | `is_connected()`             | `isConnected()`               |
-| `meshtastic.interfaces.ble.client`    | `stop_notify()`              | `stopNotify()`                |
-| `meshtastic.interfaces.ble.client`    | `async_await()`              | `_async_await()`              |
-| `meshtastic.interfaces.ble.client`    | `async_run()`                | `_async_run()`                |
-| `meshtastic.interfaces.ble.errors`    | `safe_execute()`             | `_safe_execute()`             |
-| `meshtastic.interfaces.ble.errors`    | `safe_cleanup()`             | `_safe_cleanup()`             |
+| Module                                            | Compatibility symbol                 | Canonical symbol              |
+| ------------------------------------------------- | ------------------------------------ | ----------------------------- |
+| `meshtastic.interfaces.ble.client`                | `find_device()`                      | `findDevice()`                |
+| `meshtastic.interfaces.ble.client`                | `_discover()`                        | `discover()`                  |
+| `meshtastic.interfaces.ble.client`                | `is_connected()`                     | `isConnected()`               |
+| `meshtastic.interfaces.ble.client`                | `stop_notify()`                      | `stopNotify()`                |
+| `meshtastic.interfaces.ble.client`                | `async_await()`                      | `_async_await()`              |
+| `meshtastic.interfaces.ble.client`                | `async_run()`                        | `_async_run()`                |
+| `meshtastic.interfaces.ble.errors`                | `safe_execute()`                     | `_safe_execute()`             |
+| `meshtastic.interfaces.ble.errors`                | `safe_cleanup()`                     | `_safe_cleanup()`             |
 | `meshtastic.interfaces.ble.compatibility_service` | `publish_connection_status_legacy()` | `publish_connection_status()` |
-| `meshtastic.interfaces.ble.interface` | `find_device()`              | `findDevice()`                |
-| `meshtastic.interfaces.ble.interface` | `from_num_handler()`         | `_from_num_handler()`         |
-| `meshtastic.interfaces.ble.interface` | `log_radio_handler()`        | `_log_radio_handler()`        |
-| `meshtastic.interfaces.ble.interface` | `legacy_log_radio_handler()` | `_legacy_log_radio_handler()` |
-| `meshtastic.interfaces.ble.state`     | `is_connecting` property     | `_is_connecting` property     |
-| `meshtastic.interfaces.ble.state`     | `_lock` property             | `lock` property               |
+| `meshtastic.interfaces.ble.interface`             | `find_device()`                      | `findDevice()`                |
+| `meshtastic.interfaces.ble.interface`             | `from_num_handler()`                 | `_from_num_handler()`         |
+| `meshtastic.interfaces.ble.interface`             | `log_radio_handler()`                | `_log_radio_handler()`        |
+| `meshtastic.interfaces.ble.interface`             | `legacy_log_radio_handler()`         | `_legacy_log_radio_handler()` |
+| `meshtastic.interfaces.ble.state`                 | `is_connecting` property             | `_is_connecting` property     |
+| `meshtastic.interfaces.ble.state`                 | `_lock` property                     | `lock` property               |
 
 ### Powermon and Slog
 

@@ -225,13 +225,17 @@ class BLELifecycleService:
                 if _is_unexpected_keyword_error(exc, "error_msg"):
                     try:
                         return safe_execute(_tracked_func, error_msg)
-                    except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
+                    except (
+                        Exception
+                    ):  # noqa: BLE001 - hook failures must not abort shutdown
                         logger.debug(error_msg, exc_info=True)
                         if func_ran:
                             return None
                     try:
                         return safe_execute(_tracked_func)
-                    except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
+                    except (
+                        Exception
+                    ):  # noqa: BLE001 - hook failures must not abort shutdown
                         logger.debug(error_msg, exc_info=True)
                         if func_ran:
                             return None
@@ -656,11 +660,15 @@ class BLELifecycleService:
             # Keep clear() under the state lock so reconnect scheduling starts a
             # fresh cycle against a non-signaled shutdown event.
             iface._shutdown_event.clear()
-        schedule_reconnect = getattr(iface._reconnect_scheduler, "schedule_reconnect", None)
+        schedule_reconnect = getattr(
+            iface._reconnect_scheduler, "schedule_reconnect", None
+        )
         if not callable(schedule_reconnect) or _is_unconfigured_mock_callable(
             schedule_reconnect
         ):
-            schedule_reconnect = getattr(iface._reconnect_scheduler, "_schedule_reconnect", None)
+            schedule_reconnect = getattr(
+                iface._reconnect_scheduler, "_schedule_reconnect", None
+            )
         if not callable(schedule_reconnect) or _is_unconfigured_mock_callable(
             schedule_reconnect
         ):
@@ -1213,8 +1221,8 @@ class BLELifecycleService:
                     if not BLELifecycleService._state_manager_reset_to_disconnected(
                         iface
                     ):
-                        current_state = BLELifecycleService._state_manager_current_state(
-                            iface
+                        current_state = (
+                            BLELifecycleService._state_manager_current_state(iface)
                         )
                         logger.error(
                             "Failed to reset state after invalidated connect result (alias=%s current=%s); forcing transition to %s.",
@@ -1707,7 +1715,11 @@ class BLELifecycleService:
                         )
                     )
                     disconnect_notified = iface._disconnect_notified
-                if not still_owned_after and disconnect_notified and not is_closing_after:
+                if (
+                    not still_owned_after
+                    and disconnect_notified
+                    and not is_closing_after
+                ):
                     logger.debug(
                         "Connected publication raced with disconnect; emitting compensating disconnect event."
                     )
@@ -1957,15 +1969,11 @@ class BLELifecycleService:
                     logger.debug(
                         "BLEInterface.close called while another shutdown is in progress; continuing with cleanup"
                     )
-                if (
-                    BLELifecycleService._state_manager_current_state(iface)
-                    not in (
-                        ConnectionState.DISCONNECTED,
-                        ConnectionState.DISCONNECTING,
-                    )
-                    and not BLELifecycleService._state_manager_transition_to(
-                        iface, ConnectionState.DISCONNECTING
-                    )
+                if BLELifecycleService._state_manager_current_state(iface) not in (
+                    ConnectionState.DISCONNECTED,
+                    ConnectionState.DISCONNECTING,
+                ) and not BLELifecycleService._state_manager_transition_to(
+                    iface, ConnectionState.DISCONNECTING
                 ):
                     current_state = BLELifecycleService._state_manager_current_state(
                         iface
@@ -1976,16 +1984,13 @@ class BLELifecycleService:
                         iface._connection_alias_key,
                         getattr(current_state, "value", current_state),
                     )
-                    if (
-                        not BLELifecycleService._state_manager_reset_to_disconnected(
-                            iface
-                        )
-                        and not BLELifecycleService._state_manager_transition_to(
-                            iface, ConnectionState.DISCONNECTED
-                        )
+                    if not BLELifecycleService._state_manager_reset_to_disconnected(
+                        iface
+                    ) and not BLELifecycleService._state_manager_transition_to(
+                        iface, ConnectionState.DISCONNECTED
                     ):
-                        fallback_state = BLELifecycleService._state_manager_current_state(
-                            iface
+                        fallback_state = (
+                            BLELifecycleService._state_manager_current_state(iface)
                         )
                         logger.error(
                             "Failed forced transition to %s during shutdown fallback (alias=%s current=%s).",
@@ -2276,11 +2281,10 @@ class BLELifecycleService:
                     iface._connection_alias_key,
                     getattr(current_state, "value", current_state),
                 )
-                if (
-                    not BLELifecycleService._state_manager_reset_to_disconnected(iface)
-                    and not BLELifecycleService._state_manager_transition_to(
-                        iface, ConnectionState.DISCONNECTED
-                    )
+                if not BLELifecycleService._state_manager_reset_to_disconnected(
+                    iface
+                ) and not BLELifecycleService._state_manager_transition_to(
+                    iface, ConnectionState.DISCONNECTED
                 ):
                     fallback_state = BLELifecycleService._state_manager_current_state(
                         iface

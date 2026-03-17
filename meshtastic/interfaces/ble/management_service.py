@@ -236,9 +236,9 @@ class BLEManagementCommandsService:
                 )
                 if refreshed_existing_client is None:
                     raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
-            if address is None and sanitize_address(current_binding) != sanitize_address(
-                start_context.expected_implicit_binding
-            ):
+            if address is None and sanitize_address(
+                current_binding
+            ) != sanitize_address(start_context.expected_implicit_binding):
                 raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
 
             # Prefer a live address extracted from the refreshed client. If no
@@ -368,7 +368,9 @@ class BLEManagementCommandsService:
             if temporary_client is not None:
                 try:
                     iface._client_manager_safe_close_client(temporary_client)
-                except Exception:  # noqa: BLE001 - best-effort cleanup must not mask command outcome
+                except (
+                    Exception
+                ):  # noqa: BLE001 - best-effort cleanup must not mask command outcome
                     logger.debug(
                         "Failed to close temporary management client.",
                         exc_info=True,

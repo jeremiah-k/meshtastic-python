@@ -1582,7 +1582,11 @@ class ConnectionOrchestrator:
             prior_ever_connected = (
                 False
                 if _is_unconfigured_mock_member(raw_ever_connected)
-                else raw_ever_connected if isinstance(raw_ever_connected, bool) else False
+                else (
+                    raw_ever_connected
+                    if isinstance(raw_ever_connected, bool)
+                    else False
+                )
             )
             on_connected_func()
             if prior_ever_connected:

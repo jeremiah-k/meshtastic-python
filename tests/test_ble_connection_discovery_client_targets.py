@@ -83,7 +83,9 @@ def test_client_manager_thread_dispatch_and_wrapper_paths(
     )
 
     created = SimpleNamespace(name="created")
-    manager.thread_coordinator = SimpleNamespace(create_thread=lambda **_kwargs: created)
+    manager.thread_coordinator = SimpleNamespace(
+        create_thread=lambda **_kwargs: created
+    )
     assert (
         manager._thread_create_thread(
             target=lambda: None,
@@ -96,10 +98,14 @@ def test_client_manager_thread_dispatch_and_wrapper_paths(
 
     manager.thread_coordinator = SimpleNamespace()
     with pytest.raises(AttributeError):
-        manager._thread_create_thread(target=lambda: None, args=(), name="n", daemon=True)
+        manager._thread_create_thread(
+            target=lambda: None, args=(), name="n", daemon=True
+        )
 
     started: list[object] = []
-    manager.thread_coordinator = SimpleNamespace(_start_thread=lambda thread: started.append(thread))
+    manager.thread_coordinator = SimpleNamespace(
+        _start_thread=lambda thread: started.append(thread)
+    )
     manager._thread_start_thread(created)
     assert started == [created]
 
@@ -121,7 +127,9 @@ def test_client_manager_thread_dispatch_and_wrapper_paths(
 def test_client_manager_update_reference_thread_failure_closes_inline() -> None:
     """update_client_reference should close old client inline on thread start failure."""
     lock = RLock()
-    manager = ClientManager(BLEStateManager(), lock, SimpleNamespace(), BLEErrorHandler())
+    manager = ClientManager(
+        BLEStateManager(), lock, SimpleNamespace(), BLEErrorHandler()
+    )
 
     old_client = DummyClient()
     new_client = DummyClient()
@@ -192,7 +200,9 @@ def test_connection_orchestrator_dispatch_set_event_and_kwarg_fallbacks(
 
         create_calls: list[dict[str, object]] = []
 
-        def _create_client(_device: object, _cb: object, **kwargs: object) -> DummyClient:
+        def _create_client(
+            _device: object, _cb: object, **kwargs: object
+        ) -> DummyClient:
             create_calls.append(dict(kwargs))
             if "pair_on_connect" in kwargs:
                 raise TypeError(
@@ -234,18 +244,22 @@ def test_connection_orchestrator_direct_and_retry_exception_paths(
     """Direct/retry connect helpers should close clients on exceptional paths."""
     with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
         closed_clients: list[object] = []
-        orchestrator._client_manager_safe_close_client = lambda client: closed_clients.append(client)
+        orchestrator._client_manager_safe_close_client = (
+            lambda client: closed_clients.append(client)
+        )
 
         class _SimpleClient(DummyClient):
             pass
 
         created_client = _SimpleClient()
-        orchestrator._client_manager_create_client = lambda *_args, **_kwargs: created_client
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: created_client
+        )
         orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: None
         orchestrator._raise_if_interface_closing = lambda: None
-        orchestrator._finalize_connection = lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            RuntimeError("finalize failed")
-        )
+        orchestrator._finalize_connection = lambda *_args, **_kwargs: (
+            _ for _ in ()
+        ).throw(RuntimeError("finalize failed"))
 
         with pytest.raises(RuntimeError, match="finalize failed"):
             orchestrator._attempt_direct_connect(
@@ -262,10 +276,12 @@ def test_connection_orchestrator_direct_and_retry_exception_paths(
 
         closed_clients.clear()
         retry_client = _SimpleClient()
-        orchestrator._client_manager_create_client = lambda *_args, **_kwargs: retry_client
-        orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            RuntimeError("connect failed")
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: retry_client
         )
+        orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: (
+            _ for _ in ()
+        ).throw(RuntimeError("connect failed"))
 
         with pytest.raises(RuntimeError, match="connect failed"):
             orchestrator._connect_retry_target(
@@ -312,9 +328,9 @@ def test_connection_orchestrator_finalize_and_establish_error_paths(
         orchestrator._attempt_direct_connect = lambda **_kwargs: (None, False)
         orchestrator._resolve_retry_target = lambda **_kwargs: ("AA", "AA", 1.0)
         orchestrator._connect_retry_target = lambda **_kwargs: (client, "AA")
-        orchestrator._finalize_connection = lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            RuntimeError("boom")
-        )
+        orchestrator._finalize_connection = lambda *_args, **_kwargs: (
+            _ for _ in ()
+        ).throw(RuntimeError("boom"))
         closed: list[object] = []
         orchestrator._client_manager_safe_close_client = lambda c: closed.append(c)
         orchestrator._transition_failure_to_disconnected = lambda _ctx: None
@@ -397,7 +413,9 @@ def test_client_error_handler_and_connection_state_branches(
     client.bleak_client = SimpleNamespace(is_connected=MagicMock())
     assert client.isConnected() is False
 
-    client.bleak_client = SimpleNamespace(is_connected=MagicMock(return_value=MagicMock()))
+    client.bleak_client = SimpleNamespace(
+        is_connected=MagicMock(return_value=MagicMock())
+    )
     assert client.isConnected() is False
 
     class _BleakWithBrokenServices:
@@ -422,14 +440,20 @@ def test_connection_validator_client_wrapper_and_manager_remaining_branches() ->
         is True
     )
     assert (
-        ConnectionValidator._client_is_connected(SimpleNamespace(isConnected=MagicMock()))
+        ConnectionValidator._client_is_connected(
+            SimpleNamespace(isConnected=MagicMock())
+        )
         is False
     )
 
-    manager = ClientManager(BLEStateManager(), RLock(), SimpleNamespace(), BLEErrorHandler())
+    manager = ClientManager(
+        BLEStateManager(), RLock(), SimpleNamespace(), BLEErrorHandler()
+    )
     started: list[object] = []
     marker = SimpleNamespace(name="public-start")
-    manager.thread_coordinator = SimpleNamespace(start_thread=lambda thread: started.append(thread))
+    manager.thread_coordinator = SimpleNamespace(
+        start_thread=lambda thread: started.append(thread)
+    )
     manager._thread_start_thread(marker)
     assert started == [marker]
 
@@ -503,7 +527,9 @@ def test_orchestrator_dispatch_and_event_remaining_branches(
                 call_member=True,
             )
 
-        validator_non_callable = ConnectionValidator(BLEStateManager(), RLock(), _TestBLEError)
+        validator_non_callable = ConnectionValidator(
+            BLEStateManager(), RLock(), _TestBLEError
+        )
         validator_non_callable.validate_connection_request = 123  # type: ignore[method-assign]
         with pytest.raises(AttributeError):
             orchestrator._dispatch_public_or_underscore(
@@ -515,7 +541,9 @@ def test_orchestrator_dispatch_and_event_remaining_branches(
             )
 
         called: list[str] = []
-        validator_callable = ConnectionValidator(BLEStateManager(), RLock(), _TestBLEError)
+        validator_callable = ConnectionValidator(
+            BLEStateManager(), RLock(), _TestBLEError
+        )
         validator_callable.validate_connection_request = lambda: called.append("called")  # type: ignore[method-assign]
         assert (
             orchestrator._dispatch_public_or_underscore(
@@ -581,12 +609,14 @@ def test_orchestrator_create_connect_direct_retry_remaining_branches(
 
         direct_client = DummyClient()
         closed_clients: list[object] = []
-        orchestrator._client_manager_create_client = lambda *_args, **_kwargs: direct_client
-        orchestrator._client_manager_connect_client = (
-            lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("direct fail"))
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: direct_client
         )
-        orchestrator._client_manager_safe_close_client = lambda client: closed_clients.append(
-            client
+        orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: (
+            _ for _ in ()
+        ).throw(ValueError("direct fail"))
+        orchestrator._client_manager_safe_close_client = (
+            lambda client: closed_clients.append(client)
         )
         with pytest.raises(ValueError, match="direct fail"):
             orchestrator._attempt_direct_connect(
@@ -603,10 +633,12 @@ def test_orchestrator_create_connect_direct_retry_remaining_branches(
 
         retry_client = DummyClient()
         closed_clients.clear()
-        orchestrator._client_manager_create_client = lambda *_args, **_kwargs: retry_client
-        orchestrator._client_manager_connect_client = (
-            lambda *_args, **_kwargs: (_ for _ in ()).throw(SystemExit())
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: retry_client
         )
+        orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: (
+            _ for _ in ()
+        ).throw(SystemExit())
         with pytest.raises(SystemExit):
             orchestrator._connect_retry_target(
                 connection_target="AA:BB:CC:DD:EE:FF",
@@ -622,10 +654,12 @@ def test_orchestrator_create_connect_direct_retry_remaining_branches(
 
         retry_client = DummyClient()
         closed_clients.clear()
-        orchestrator._client_manager_create_client = lambda *_args, **_kwargs: retry_client
-        orchestrator._client_manager_connect_client = (
-            lambda *_args, **_kwargs: (_ for _ in ()).throw(BleakError("retry fail"))
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: retry_client
         )
+        orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: (
+            _ for _ in ()
+        ).throw(BleakError("retry fail"))
         with pytest.raises(BleakError, match="retry fail"):
             orchestrator._connect_retry_target(
                 connection_target="AA:BB:CC:DD:EE:FF",
@@ -655,7 +689,9 @@ def test_orchestrator_create_connect_direct_retry_remaining_branches(
 
         _connect_side_effect.calls = 0
         orchestrator._client_manager_connect_client = _connect_side_effect
-        orchestrator._compat_find_device = lambda _target: SimpleNamespace(address="AA:BB")
+        orchestrator._compat_find_device = lambda _target: SimpleNamespace(
+            address="AA:BB"
+        )
         with pytest.raises(RuntimeError, match="discovery connect failed"):
             orchestrator._connect_retry_target(
                 connection_target="AA:BB:CC:DD:EE:FF",
@@ -725,13 +761,13 @@ def test_orchestrator_finalize_and_establish_remaining_branches(
         orchestrator._attempt_direct_connect = lambda **_kwargs: (None, False)
         orchestrator._resolve_retry_target = lambda **_kwargs: ("AA", "AA", 1.0)
         orchestrator._connect_retry_target = lambda **_kwargs: (retry_client, "AA")
-        orchestrator._client_manager_safe_close_client = lambda client: closed_clients.append(
-            client
+        orchestrator._client_manager_safe_close_client = (
+            lambda client: closed_clients.append(client)
         )
         orchestrator._transition_failure_to_disconnected = lambda _ctx: None
-        orchestrator._finalize_connection = (
-            lambda *_args, **_kwargs: (_ for _ in ()).throw(BleakDBusError("dbus", "err"))
-        )
+        orchestrator._finalize_connection = lambda *_args, **_kwargs: (
+            _ for _ in ()
+        ).throw(BleakDBusError("dbus", "err"))
 
         with pytest.raises(BleakDBusError):
             orchestrator._establish_connection(
@@ -744,9 +780,9 @@ def test_orchestrator_finalize_and_establish_remaining_branches(
         assert closed_clients == [retry_client]
 
         closed_clients.clear()
-        orchestrator._finalize_connection = (
-            lambda *_args, **_kwargs: (_ for _ in ()).throw(SystemExit())
-        )
+        orchestrator._finalize_connection = lambda *_args, **_kwargs: (
+            _ for _ in ()
+        ).throw(SystemExit())
         with pytest.raises(SystemExit):
             orchestrator._establish_connection(
                 address="AA",
@@ -773,7 +809,9 @@ def test_discovery_probe_and_factory_kwarg_rejection_branches() -> None:
         def close() -> None:
             return None
 
-    manager_probe_error = DiscoveryManager(client_factory=lambda **_kwargs: _GoodDiscoveryClient())
+    manager_probe_error = DiscoveryManager(
+        client_factory=lambda **_kwargs: _GoodDiscoveryClient()
+    )
     manager_probe_error._client = SimpleNamespace(
         bleak_client=object(),
         isConnected=lambda: (_ for _ in ()).throw(RuntimeError("probe failure")),
@@ -781,7 +819,9 @@ def test_discovery_probe_and_factory_kwarg_rejection_branches() -> None:
     )
     assert manager_probe_error._discover_devices(address=None) == []
 
-    manager_bool_member = DiscoveryManager(client_factory=lambda **_kwargs: _GoodDiscoveryClient())
+    manager_bool_member = DiscoveryManager(
+        client_factory=lambda **_kwargs: _GoodDiscoveryClient()
+    )
     manager_bool_member._client = SimpleNamespace(
         bleak_client=object(),
         is_connected=False,
@@ -819,7 +859,9 @@ def test_discovery_missing_discover_and_typeerror_rejection_branches() -> None:
         def close() -> None:
             return None
 
-    manager_missing = DiscoveryManager(client_factory=lambda **_kwargs: _FlakyDiscoverClient())
+    manager_missing = DiscoveryManager(
+        client_factory=lambda **_kwargs: _FlakyDiscoverClient()
+    )
     with pytest.raises(DiscoveryClientError):
         manager_missing._discover_devices(address=None)
 
@@ -869,7 +911,9 @@ def test_discovery_missing_discover_and_typeerror_rejection_branches() -> None:
                 # 3) _is_discovery_client_like check at line 548
                 self._post_set_reads_remaining = 3
 
-    manager_line567 = _Line567Manager(client_factory=lambda **_kwargs: _DiscoveryLikeClient())
+    manager_line567 = _Line567Manager(
+        client_factory=lambda **_kwargs: _DiscoveryLikeClient()
+    )
     with pytest.raises(DiscoveryClientError):
         manager_line567._discover_devices(address=None)
 
@@ -887,7 +931,9 @@ def test_discovery_missing_discover_and_typeerror_rejection_branches() -> None:
         def close() -> None:
             return None
 
-    manager_kwarg = DiscoveryManager(client_factory=lambda **_kwargs: _UnexpectedKwargClient())
+    manager_kwarg = DiscoveryManager(
+        client_factory=lambda **_kwargs: _UnexpectedKwargClient()
+    )
     with pytest.raises(DiscoveryClientError):
         manager_kwarg._discover_devices(address=None)
 
@@ -953,7 +999,9 @@ def test_discovery_awaitable_and_exception_handler_branches() -> None:
         def close() -> None:
             return None
 
-    manager_dbus = DiscoveryManager(client_factory=lambda **_kwargs: _DbusErrorDiscoveryClient())
+    manager_dbus = DiscoveryManager(
+        client_factory=lambda **_kwargs: _DbusErrorDiscoveryClient()
+    )
     with pytest.raises(BleakDBusError):
         manager_dbus._discover_devices(address=None)
 
@@ -986,7 +1034,9 @@ def test_discovery_awaitable_and_exception_handler_branches() -> None:
         def close() -> None:
             return None
 
-    manager_value = DiscoveryManager(client_factory=lambda **_kwargs: _ValueErrorDiscoveryClient())
+    manager_value = DiscoveryManager(
+        client_factory=lambda **_kwargs: _ValueErrorDiscoveryClient()
+    )
     assert manager_value._discover_devices(address=None) == []
 
 
@@ -994,7 +1044,9 @@ def test_bleclient_remaining_hook_and_connection_branches() -> None:
     """BLEClient helper methods should cover remaining hook/connection/property branches."""
     client = object.__new__(BLEClient)
     client.BLEError = BLEClient.BLEError
-    client.error_handler = SimpleNamespace(safe_cleanup=object(), _safe_cleanup=object())
+    client.error_handler = SimpleNamespace(
+        safe_cleanup=object(), _safe_cleanup=object()
+    )
     assert client._resolve_error_handler_hook("safe_cleanup", "_safe_cleanup") is None
 
     client.error_handler = SimpleNamespace(
@@ -1030,7 +1082,9 @@ def test_bleclient_remaining_hook_and_connection_branches() -> None:
     client.bleak_client = SimpleNamespace(is_connected=MagicMock())
     assert client.isConnected() is False
 
-    client.bleak_client = SimpleNamespace(is_connected=MagicMock(return_value=MagicMock()))
+    client.bleak_client = SimpleNamespace(
+        is_connected=MagicMock(return_value=MagicMock())
+    )
     assert client.isConnected() is False
 
     class _BrokenServices:

@@ -279,15 +279,17 @@ class BLEReceiveRecoveryService:
                 is_connecting = (
                     connecting_result if isinstance(connecting_result, bool) else False
                 )
-            elif not _is_unconfigured_mock_member(
-                state_is_connecting
-            ) and isinstance(state_is_connecting, bool):
+            elif not _is_unconfigured_mock_member(state_is_connecting) and isinstance(
+                state_is_connecting, bool
+            ):
                 is_connecting = state_is_connecting
             else:
-                legacy_is_connecting = getattr(iface._state_manager, "_is_connecting", None)
-                if callable(legacy_is_connecting) and not _is_unconfigured_mock_callable(
+                legacy_is_connecting = getattr(
+                    iface._state_manager, "_is_connecting", None
+                )
+                if callable(
                     legacy_is_connecting
-                ):
+                ) and not _is_unconfigured_mock_callable(legacy_is_connecting):
                     connecting_result = legacy_is_connecting()
                     is_connecting = (
                         connecting_result

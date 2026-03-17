@@ -800,7 +800,9 @@ class BLEInterface(MeshInterface):
             ):
                 try:
                     handler(sender, data)
-                except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
+                except (
+                    Exception
+                ):  # noqa: BLE001 - notification callbacks must stay best effort
                     _report_notification_error()
                 return
             self._invoke_safe_execute_compat(
@@ -1092,8 +1094,7 @@ class BLEInterface(MeshInterface):
             awaitable,
             timeout,
             label,
-            timeout_error_factory=lambda timeout_label,
-            timeout_seconds: BLEInterface.BLEError(
+            timeout_error_factory=lambda timeout_label, timeout_seconds: BLEInterface.BLEError(
                 ERROR_TIMEOUT.format(timeout_label, timeout_seconds)
             ),
         )
@@ -2090,16 +2091,15 @@ class BLEInterface(MeshInterface):
         AttributeError
             If no supported delay helper exists on ``policy``.
         """
-        return float(
-            BLEInterface._compat_dispatch_callable(
-                policy,
-                public_name="get_delay",
-                legacy_name="_get_delay",
-                fallback_attr_name=None,
-                error_message=ERROR_RETRY_POLICY_MISSING_GET_DELAY,
-                args=(attempt,),
-            )
+        result = BLEInterface._compat_dispatch_callable(
+            policy,
+            public_name="get_delay",
+            legacy_name="_get_delay",
+            fallback_attr_name=None,
+            error_message=ERROR_RETRY_POLICY_MISSING_GET_DELAY,
+            args=(attempt,),
         )
+        return float(result) if isinstance(result, (int, float)) else 0.0
 
     @property
     def _connection_state(self) -> ConnectionState:

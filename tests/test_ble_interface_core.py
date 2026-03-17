@@ -766,11 +766,15 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
     cleanup_calls: list[Any] = []
 
     if factory_mode == "with_optional_kwargs":
+
         def _temp_client_factory(_address: str, **_kwargs: object) -> SimpleNamespace:
             return temp_client
+
     elif factory_mode == "without_optional_kwargs":
+
         def _temp_client_factory(_address: str) -> SimpleNamespace:
             return temp_client
+
     else:
         pytest.fail(f"Unexpected factory_mode: {factory_mode}")
 
@@ -5153,7 +5157,9 @@ def test_discovery_manager_accepts_discover_underscore_only_factory() -> None:
     assert devices == [filtered_device]
 
 
-def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> None:
+def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> (
+    None
+):
     """Verify discovery prefers configured ``_discover`` over unconfigured ``discover``.
 
     Returns

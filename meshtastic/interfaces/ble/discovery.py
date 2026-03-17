@@ -501,7 +501,10 @@ class DiscoveryManager:
             Callable[..., Any], self.client_factory or BLEClient
         )
         cached_candidate: (
-            BLEClient | DiscoveryClientProtocol | UnderscoreDiscoveryClientProtocol | None
+            BLEClient
+            | DiscoveryClientProtocol
+            | UnderscoreDiscoveryClientProtocol
+            | None
         ) = None
 
         def _probe_connected_state(candidate: object) -> bool | None:
@@ -539,10 +542,7 @@ class DiscoveryManager:
                 self._client = None
 
         with self._client_lock:
-            cached_candidate = cast(
-                BLEClient | DiscoveryClientProtocol | UnderscoreDiscoveryClientProtocol | None,
-                self._client,
-            )
+            cached_candidate = self._client
 
         discard_cached_candidate = False
         # Only discard the client if it was previously connected and has since
