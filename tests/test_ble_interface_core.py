@@ -5032,10 +5032,10 @@ def test_start_receive_thread_clears_cached_thread_when_start_fails(
         iface.close()
 
 
-def test_start_receive_thread_clears_cached_thread_when_start_noops(
+def test_start_receive_thread_retains_cached_thread_when_start_noops(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify no-op thread starts clear stale receive-thread placeholders.
+    """Verify no-op thread starts retain cached receive-thread placeholders.
 
     Parameters
     ----------

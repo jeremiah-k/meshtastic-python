@@ -768,20 +768,20 @@ def test_receive_controller_filters_unconfigured_lifecycle_hooks(
         assert controller._handle_disconnect("ignored", client=None) is False
         controller._start_receive_thread(name="ignored", reset_recovery=True)
         controller._close_after_fatal_read()
-        assert close_calls == []
+        assert close_calls == ["iface-close"]
 
         iface._get_lifecycle_controller = lambda: None
         controller._close_after_fatal_read()
-        assert close_calls == ["iface-close"]
+        assert close_calls == ["iface-close", "iface-close"]
     finally:
         iface._get_lifecycle_controller = original_get_lifecycle_controller
         original_close()
 
 
-def test_receive_controller_fallback_state_and_override_branches(
+def test_receive_controller_has_ever_connected_session_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Receive controller should cover fallback state probes and override-only paths."""
+    """Receive controller should expose mock-safe `_ever_connected` fallback behavior."""
     iface = _make_iface(monkeypatch)
     original_get_lifecycle_controller = iface._get_lifecycle_controller
     try:
@@ -793,12 +793,90 @@ def test_receive_controller_fallback_state_and_override_branches(
             raising=True,
         )
         iface._get_lifecycle_controller = lambda: None
-
         iface._ever_connected = MagicMock()
         assert controller._has_ever_connected_session() is False
         iface._ever_connected = True
         assert controller._has_ever_connected_session() is True
+    finally:
+        iface._get_lifecycle_controller = original_get_lifecycle_controller
+        _reset_state_manager(iface)
+        iface.close()
 
+
+def test_receive_controller_is_connection_closing_fallback_branches() -> None:
+    """Receive controller should cover state-manager and legacy closing fallbacks."""
+    receive_service_mod = importlib.import_module("meshtastic.interfaces.ble.receive_service")
+    fallback_iface = SimpleNamespace(
+        _state_lock=threading.RLock(),
+        _state_manager=None,
+        _closed=False,
+        _is_connection_closing=MagicMock(),
+        _get_lifecycle_controller=lambda: None,
+    )
+    fallback_controller = receive_service_mod.BLEReceiveRecoveryController(fallback_iface)
+    assert fallback_controller._is_connection_closing() is False
+
+    fallback_iface._is_connection_closing = lambda: True
+    assert fallback_controller._is_connection_closing() is True
+
+    state_manager = SimpleNamespace()
+    fallback_iface._state_manager = state_manager
+
+    state_manager.is_closing = MagicMock()
+    assert fallback_controller._is_connection_closing() is False
+
+    state_manager.is_closing = lambda: True
+    assert fallback_controller._is_connection_closing() is True
+
+    def _raise_is_closing() -> bool:
+        raise RuntimeError("closing probe failed")
+
+    state_manager.is_closing = _raise_is_closing
+    assert fallback_controller._is_connection_closing() is False
+
+    state_manager.is_closing = True
+    assert fallback_controller._is_connection_closing() is True
+
+    state_manager.is_closing = "invalid"
+    state_manager._is_closing = MagicMock()
+    assert fallback_controller._is_connection_closing() is False
+
+    state_manager._is_closing = lambda: True
+    assert fallback_controller._is_connection_closing() is True
+
+    def _raise_legacy_is_closing() -> bool:
+        raise RuntimeError("legacy closing probe failed")
+
+    state_manager._is_closing = _raise_legacy_is_closing
+    assert fallback_controller._is_connection_closing() is False
+
+    state_manager._is_closing = True
+    assert fallback_controller._is_connection_closing() is True
+
+    state_manager._is_closing = object()
+    assert fallback_controller._is_connection_closing() is False
+
+
+def test_receive_controller_disconnect_and_override_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Receive controller should cover no-lifecycle disconnect and hook-resolution branches."""
+    iface = _make_iface(monkeypatch)
+    original_get_lifecycle_controller = iface._get_lifecycle_controller
+    try:
+        controller = iface._get_receive_recovery_controller()
+        monkeypatch.setattr(
+            controller,
+            "_resolve_iface_receive_hook_override",
+            lambda _name: None,
+            raising=True,
+        )
+        iface._get_lifecycle_controller = lambda: None
+        assert controller._handle_disconnect("no-lifecycle", client=None) is False
+        assert (
+            controller._is_default_iface_receive_hook("unknown_method", lambda: None)
+            is False
+        )
         receive_service_mod = importlib.import_module(
             "meshtastic.interfaces.ble.receive_service"
         )
@@ -806,62 +884,26 @@ def test_receive_controller_fallback_state_and_override_branches(
             _state_lock=threading.RLock(),
             _state_manager=None,
             _closed=False,
-            _is_connection_closing=MagicMock(),
+            _is_connection_closing=False,
             _get_lifecycle_controller=lambda: None,
         )
         fallback_controller = receive_service_mod.BLEReceiveRecoveryController(
             fallback_iface
         )
-        assert fallback_controller._is_connection_closing() is False
-
-        fallback_iface._is_connection_closing = lambda: True
-        assert fallback_controller._is_connection_closing() is True
-
-        state_manager = SimpleNamespace()
-        fallback_iface._state_manager = state_manager
-
-        state_manager.is_closing = MagicMock()
-        assert fallback_controller._is_connection_closing() is False
-
-        state_manager.is_closing = lambda: True
-        assert fallback_controller._is_connection_closing() is True
-
-        def _raise_is_closing() -> bool:
-            raise RuntimeError("closing probe failed")
-
-        state_manager.is_closing = _raise_is_closing
-        assert fallback_controller._is_connection_closing() is False
-
-        state_manager.is_closing = True
-        assert fallback_controller._is_connection_closing() is True
-
-        state_manager.is_closing = "invalid"
-        state_manager._is_closing = MagicMock()
-        assert fallback_controller._is_connection_closing() is False
-
-        state_manager._is_closing = lambda: True
-        assert fallback_controller._is_connection_closing() is True
-
-        def _raise_legacy_is_closing() -> bool:
-            raise RuntimeError("legacy closing probe failed")
-
-        state_manager._is_closing = _raise_legacy_is_closing
-        assert fallback_controller._is_connection_closing() is False
-
-        state_manager._is_closing = True
-        assert fallback_controller._is_connection_closing() is True
-
-        state_manager._is_closing = object()
-        assert fallback_controller._is_connection_closing() is False
-
-        assert controller._handle_disconnect("no-lifecycle", client=None) is False
-
-        assert (
-            controller._is_default_iface_receive_hook("unknown_method", lambda: None)
-            is False
-        )
         assert fallback_controller._resolve_iface_receive_hook_override("_unknown") is None
+    finally:
+        iface._get_lifecycle_controller = original_get_lifecycle_controller
+        _reset_state_manager(iface)
+        iface.close()
 
+
+def test_receive_controller_handle_payload_read_break_branch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Receive controller should break inner loop after a successful payload read."""
+    iface = _make_iface(monkeypatch)
+    try:
+        controller = iface._get_receive_recovery_controller()
         monkeypatch.setattr(
             controller,
             "_read_and_handle_payload",
@@ -872,7 +914,18 @@ def test_receive_controller_fallback_state_and_override_branches(
             DummyClient(),
             poll_without_notify=False,
         ) == (False, False)
+    finally:
+        _reset_state_manager(iface)
+        iface.close()
 
+
+def test_receive_controller_transient_error_override_capture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Transient read errors should flow through override hook resolution."""
+    iface = _make_iface(monkeypatch)
+    try:
+        controller = iface._get_receive_recovery_controller()
         override_errors: list[BaseException] = []
         monkeypatch.setattr(
             controller,
@@ -888,7 +941,6 @@ def test_receive_controller_fallback_state_and_override_branches(
         assert len(override_errors) == 1
         assert isinstance(override_errors[0], BleakError)
     finally:
-        iface._get_lifecycle_controller = original_get_lifecycle_controller
         _reset_state_manager(iface)
         iface.close()
 

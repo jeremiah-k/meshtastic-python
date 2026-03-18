@@ -31,6 +31,119 @@ class BLEReceiveLifecycleCoordinator:
         with self._iface._state_lock:
             return self._iface._want_receive and not self._iface._closed
 
+    def _check_receive_start_conditions(
+        self,
+        *,
+        name: str,
+        reset_recovery: bool,
+        create_runtime_thread: Callable[..., ThreadLike],
+    ) -> tuple[ThreadLike | None, int | None]:
+        """Validate start preconditions and create a staged receive thread."""
+        iface = self._iface
+        with iface._state_lock:
+            if iface._closed or not iface._want_receive:
+                logger.debug(
+                    "Skipping receive thread start (%s): interface is closing/stopped.",
+                    name,
+                )
+                return None, None
+            existing = iface._receiveThread
+            existing_ident, existing_is_alive = (
+                _thread_start_probe(existing) if existing is not None else (None, False)
+            )
+            if (
+                existing is not None
+                and existing is not threading.current_thread()
+                and (existing_is_alive or existing_ident is None)
+            ):
+                logger.debug(
+                    "Skipping receive thread start (%s): %s is already running or pending start.",
+                    name,
+                    existing.name,
+                )
+                return None, None
+            thread = create_runtime_thread(
+                target=iface._receive_from_radio_impl,
+                name=name,
+                daemon=True,
+            )
+            iface._receiveThread = thread
+            recovery_attempts_before_start = (
+                iface._receive_recovery_attempts if reset_recovery else None
+            )
+            return thread, recovery_attempts_before_start
+
+    def _create_and_start_receive_thread(
+        self,
+        thread: ThreadLike,
+        *,
+        start_runtime_thread: Callable[[object], None],
+    ) -> None:
+        """Start staged receive thread and clear stale reference on failure."""
+        iface = self._iface
+        try:
+            start_runtime_thread(thread)
+        except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
+            with iface._state_lock:
+                if iface._receiveThread is thread:
+                    iface._receiveThread = None
+            raise
+        except Exception:  # noqa: BLE001 - start failure must clear stale thread reference
+            with iface._state_lock:
+                if iface._receiveThread is thread:
+                    iface._receiveThread = None
+            raise
+
+    def _probe_receive_thread_start(self, thread: ThreadLike, *, name: str) -> bool:
+        """Probe receive-thread startup and clear stale references on failure."""
+        iface = self._iface
+        thread_ident, thread_is_alive = _thread_start_probe(thread)
+        if thread_ident is not None or thread_is_alive:
+            return True
+        started_event = getattr(thread, "_started", None)
+        is_started = getattr(started_event, "is_set", None)
+        start_failure_confirmed = False
+        if callable(is_started):
+            try:
+                start_failure_confirmed = not bool(is_started())
+            except Exception:  # noqa: BLE001 - probe remains best effort
+                start_failure_confirmed = False
+        elif isinstance(thread, threading.Thread):
+            # Native thread with no ident and not alive indicates startup never happened.
+            start_failure_confirmed = True
+
+        if start_failure_confirmed:
+            with iface._state_lock:
+                if iface._receiveThread is thread:
+                    iface._receiveThread = None
+            logger.debug(
+                "Receive thread %s did not start; cleared stale thread reference.",
+                name,
+            )
+        else:
+            logger.debug(
+                "Receive thread %s start probe inconclusive; keeping thread reference.",
+                name,
+            )
+        return False
+
+    def _maybe_reset_receive_recovery(
+        self,
+        *,
+        thread: ThreadLike,
+        recovery_attempts_before_start: int | None,
+    ) -> None:
+        """Reset recovery attempts after successful start when still applicable."""
+        iface = self._iface
+        if recovery_attempts_before_start is None:
+            return
+        with iface._state_lock:
+            if (
+                iface._receiveThread is thread
+                and iface._receive_recovery_attempts == recovery_attempts_before_start
+            ):
+                iface._receive_recovery_attempts = 0
+
     def start_receive_thread(
         self,
         *,
@@ -53,87 +166,22 @@ class BLEReceiveLifecycleCoordinator:
         start_thread : Callable[[object], None] | None
             Optional thread starter override used by tests/compatibility flows.
         """
-        iface = self._iface
         create_runtime_thread = create_thread or self._thread_access.create_thread
         start_runtime_thread = start_thread or self._thread_access.start_thread
-        recovery_attempts_before_start: int | None = None
-        with iface._state_lock:
-            if iface._closed or not iface._want_receive:
-                logger.debug(
-                    "Skipping receive thread start (%s): interface is closing/stopped.",
-                    name,
-                )
-                return
-            existing = iface._receiveThread
-            existing_ident, existing_is_alive = (
-                _thread_start_probe(existing) if existing is not None else (None, False)
-            )
-            if (
-                existing is not None
-                and existing is not threading.current_thread()
-                and (existing_is_alive or existing_ident is None)
-            ):
-                logger.debug(
-                    "Skipping receive thread start (%s): %s is already running or pending start.",
-                    name,
-                    existing.name,
-                )
-                return
-            thread = create_runtime_thread(
-                target=iface._receive_from_radio_impl,
-                name=name,
-                daemon=True,
-            )
-            iface._receiveThread = thread
-            if reset_recovery:
-                recovery_attempts_before_start = iface._receive_recovery_attempts
-        try:
-            start_runtime_thread(thread)
-        except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
-            with iface._state_lock:
-                if iface._receiveThread is thread:
-                    iface._receiveThread = None
-            raise
-        except (
-            Exception
-        ):  # noqa: BLE001 - start failure must clear stale thread reference
-            with iface._state_lock:
-                if iface._receiveThread is thread:
-                    iface._receiveThread = None
-            raise
-        thread_ident, thread_is_alive = _thread_start_probe(thread)
-        if thread_ident is None and not thread_is_alive:
-            started_event = getattr(thread, "_started", None)
-            is_started = getattr(started_event, "is_set", None)
-            start_failure_confirmed = False
-            if callable(is_started):
-                try:
-                    start_failure_confirmed = not bool(is_started())
-                except Exception:  # noqa: BLE001 - probe remains best effort
-                    start_failure_confirmed = False
-            elif isinstance(thread, threading.Thread):
-                # Native thread with no ident and not alive indicates startup never happened.
-                start_failure_confirmed = True
-
-            if start_failure_confirmed:
-                with iface._state_lock:
-                    if iface._receiveThread is thread:
-                        iface._receiveThread = None
-                logger.debug(
-                    "Receive thread %s did not start; cleared stale thread reference.",
-                    name,
-                )
-            else:
-                logger.debug(
-                    "Receive thread %s start probe inconclusive; keeping thread reference.",
-                    name,
-                )
+        thread, recovery_attempts_before_start = self._check_receive_start_conditions(
+            name=name,
+            reset_recovery=reset_recovery,
+            create_runtime_thread=create_runtime_thread,
+        )
+        if thread is None:
             return
-        if reset_recovery:
-            with iface._state_lock:
-                if (
-                    recovery_attempts_before_start is not None
-                    and iface._receive_recovery_attempts
-                    == recovery_attempts_before_start
-                ):
-                    iface._receive_recovery_attempts = 0
+        self._create_and_start_receive_thread(
+            thread,
+            start_runtime_thread=start_runtime_thread,
+        )
+        if not self._probe_receive_thread_start(thread, name=name):
+            return
+        self._maybe_reset_receive_recovery(
+            thread=thread,
+            recovery_attempts_before_start=recovery_attempts_before_start,
+        )

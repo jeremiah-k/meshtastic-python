@@ -41,7 +41,7 @@ recommended patterns for code that embeds `meshtastic-python`.
   collaborators (`state`, `coordination`, and compatibility shims);
   runtime ownership is in controllers/coordinators/dispatchers.
 - `BLEInterface` uses collaborator APIs for state/notification interactions
-  (for example `NotificationManager._get_callback()/_subscribe()` and
+  (for example NotificationManager callback/subscription APIs and
   `BLEStateManager` accessors such as `current_state`, `is_connected`,
   `is_closing`, `can_connect`, `transition_to()`, `reset_to_disconnected()`) instead
   of direct collaborator-private member reach-through.

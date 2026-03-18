@@ -274,7 +274,14 @@ class _LifecycleThreadAccess:
         """Join thread via public-first coordinator compatibility dispatch."""
         join_thread = getattr(self._iface.thread_coordinator, "join_thread", None)
         if callable(join_thread) and not _is_unconfigured_mock_callable(join_thread):
-            join_thread(thread, timeout=timeout)
+            try:
+                join_thread(thread, timeout=timeout)
+            except Exception:  # noqa: BLE001 - non-critical join stays best effort
+                logger.debug(
+                    "Error in thread_coordinator.join_thread for %r",
+                    thread,
+                    exc_info=True,
+                )
             return
         legacy_join_thread = getattr(
             self._iface.thread_coordinator, "_join_thread", None
@@ -282,11 +289,21 @@ class _LifecycleThreadAccess:
         if callable(legacy_join_thread) and not _is_unconfigured_mock_callable(
             legacy_join_thread
         ):
-            legacy_join_thread(thread, timeout=timeout)
+            try:
+                legacy_join_thread(thread, timeout=timeout)
+            except Exception:  # noqa: BLE001 - non-critical join stays best effort
+                logger.debug(
+                    "Error in thread_coordinator._join_thread for %r",
+                    thread,
+                    exc_info=True,
+                )
             return
         thread_join = getattr(thread, "join", None)
         if callable(thread_join) and not _is_unconfigured_mock_callable(thread_join):
-            thread_join(timeout=timeout)
+            try:
+                thread_join(timeout=timeout)
+            except Exception:  # noqa: BLE001 - non-critical join stays best effort
+                logger.debug("Error in thread.join for %r", thread, exc_info=True)
             return
         logger.debug("Thread coordinator is missing join_thread/_join_thread")
 
@@ -294,13 +311,27 @@ class _LifecycleThreadAccess:
         """Set event via public-first coordinator compatibility dispatch."""
         set_event = getattr(self._iface.thread_coordinator, "set_event", None)
         if callable(set_event) and not _is_unconfigured_mock_callable(set_event):
-            set_event(event_name)
+            try:
+                set_event(event_name)
+            except Exception:  # noqa: BLE001 - non-critical event set stays best effort
+                logger.debug(
+                    "Error in thread_coordinator.set_event for %s",
+                    event_name,
+                    exc_info=True,
+                )
             return
         legacy_set_event = getattr(self._iface.thread_coordinator, "_set_event", None)
         if callable(legacy_set_event) and not _is_unconfigured_mock_callable(
             legacy_set_event
         ):
-            legacy_set_event(event_name)
+            try:
+                legacy_set_event(event_name)
+            except Exception:  # noqa: BLE001 - non-critical event set stays best effort
+                logger.debug(
+                    "Error in thread_coordinator._set_event for %s",
+                    event_name,
+                    exc_info=True,
+                )
             return
         logger.debug("Thread coordinator is missing set_event/_set_event")
 
@@ -308,7 +339,14 @@ class _LifecycleThreadAccess:
         """Clear events via public-first coordinator compatibility dispatch."""
         clear_events = getattr(self._iface.thread_coordinator, "clear_events", None)
         if callable(clear_events) and not _is_unconfigured_mock_callable(clear_events):
-            clear_events(*event_names)
+            try:
+                clear_events(*event_names)
+            except Exception:  # noqa: BLE001 - non-critical clear stays best effort
+                logger.debug(
+                    "Error in thread_coordinator.clear_events for %s",
+                    event_names,
+                    exc_info=True,
+                )
             return
         legacy_clear_events = getattr(
             self._iface.thread_coordinator, "_clear_events", None
@@ -316,7 +354,14 @@ class _LifecycleThreadAccess:
         if callable(legacy_clear_events) and not _is_unconfigured_mock_callable(
             legacy_clear_events
         ):
-            legacy_clear_events(*event_names)
+            try:
+                legacy_clear_events(*event_names)
+            except Exception:  # noqa: BLE001 - non-critical clear stays best effort
+                logger.debug(
+                    "Error in thread_coordinator._clear_events for %s",
+                    event_names,
+                    exc_info=True,
+                )
             return
         logger.debug("Thread coordinator is missing clear_events/_clear_events")
 
@@ -328,7 +373,14 @@ class _LifecycleThreadAccess:
         if callable(wake_waiting_threads) and not _is_unconfigured_mock_callable(
             wake_waiting_threads
         ):
-            wake_waiting_threads(*event_names)
+            try:
+                wake_waiting_threads(*event_names)
+            except Exception:  # noqa: BLE001 - non-critical wake stays best effort
+                logger.debug(
+                    "Error in thread_coordinator.wake_waiting_threads for %s",
+                    event_names,
+                    exc_info=True,
+                )
             return
         legacy_wake_waiting_threads = getattr(
             self._iface.thread_coordinator, "_wake_waiting_threads", None
@@ -336,7 +388,14 @@ class _LifecycleThreadAccess:
         if callable(legacy_wake_waiting_threads) and not _is_unconfigured_mock_callable(
             legacy_wake_waiting_threads
         ):
-            legacy_wake_waiting_threads(*event_names)
+            try:
+                legacy_wake_waiting_threads(*event_names)
+            except Exception:  # noqa: BLE001 - non-critical wake stays best effort
+                logger.debug(
+                    "Error in thread_coordinator._wake_waiting_threads for %s",
+                    event_names,
+                    exc_info=True,
+                )
             return
         logger.debug(
             "Thread coordinator is missing wake_waiting_threads/_wake_waiting_threads"

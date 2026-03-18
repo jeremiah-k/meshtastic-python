@@ -71,8 +71,8 @@ Additional approved BLE compatibility and promotions:
 | `BLEStateManager.can_connect`                                   | `INTERNAL_COMPAT`    | Silent         | Internal compatibility alias for `_can_connect`.   |
 | `BLEStateManager.is_connecting`                                 | `COMPAT_STABLE_SHIM` | Silent         | Public property alias for `_is_connecting`.        |
 | `BLEStateManager.is_active`                                     | `INTERNAL_COMPAT`    | Silent         | Internal compatibility alias for `_is_active`.     |
-| `BLEStateManager.transition_to()`                               | `INTERNAL_COMPAT`    | Silent         | Internal compatibility alias for `_transition_to()`. |
-| `BLEStateManager.reset_to_disconnected()`                       | `INTERNAL_COMPAT`    | Silent         | Internal compatibility alias for `_reset_to_disconnected()`. |
+| `BLEStateManager.transition_to()`                               | `COMPAT_STABLE_SHIM` | Silent         | Public-first wrapper for `_transition_to()`.        |
+| `BLEStateManager.reset_to_disconnected()`                       | `COMPAT_STABLE_SHIM` | Silent         | Public-first wrapper for `_reset_to_disconnected()`. |
 | `BLEStateManager._lock`                                         | `INTERNAL_COMPAT`    | Silent         | Legacy alias for `lock` property.                  |
 | `meshtastic.ble_interface.BleakClient`                          | `COMPAT_STABLE_SHIM` | Silent         | Legacy module-level import compatibility.          |
 | `meshtastic.ble_interface.BleakScanner`                         | `COMPAT_STABLE_SHIM` | Silent         | Legacy module-level import compatibility.          |
@@ -109,7 +109,9 @@ Semantic deprecation:
 ## Stable Compatibility Aliases (Silent)
 
 Note: underscore-prefixed canonical symbols listed here are implementation
-details. Treat the compatibility symbol column as the intended external entrypoint.
+details. For `COMPAT_STABLE_SHIM` rows, treat the compatibility symbol column as
+the intended external entrypoint. `INTERNAL_COMPAT` rows are retained for
+compatibility/patching and are not recommended public surface.
 
 ### Core Package and CLI
 

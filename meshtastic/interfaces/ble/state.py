@@ -164,7 +164,13 @@ class BLEStateManager:
     @property
     # COMPAT_STABLE_SHIM: public-first alias for `_is_connected`.
     def is_connected(self) -> bool:
-        """Public-first connected-state snapshot accessor."""
+        """Public-first connected-state snapshot accessor.
+
+        Returns
+        -------
+        bool
+            ``True`` when the current state is ``ConnectionState.CONNECTED``.
+        """
         return self._is_connected
 
     @property
@@ -185,7 +191,13 @@ class BLEStateManager:
     @property
     # COMPAT_STABLE_SHIM: public-first alias for `_is_closing`.
     def is_closing(self) -> bool:
-        """Public-first closing-state snapshot accessor."""
+        """Public-first closing-state snapshot accessor.
+
+        Returns
+        -------
+        bool
+            ``True`` when the current state is ``ConnectionState.DISCONNECTING``.
+        """
         return self._is_closing
 
     @property
@@ -209,7 +221,13 @@ class BLEStateManager:
     @property
     # COMPAT_STABLE_SHIM: public-first alias for `_can_connect`.
     def can_connect(self) -> bool:
-        """Public-first connect-capability snapshot accessor."""
+        """Public-first connect-capability snapshot accessor.
+
+        Returns
+        -------
+        bool
+            ``True`` when the current state allows initiating a connection.
+        """
         return self._can_connect
 
     @property
@@ -264,7 +282,13 @@ class BLEStateManager:
     @property
     # COMPAT_STABLE_SHIM: public-first alias for `_is_active`.
     def is_active(self) -> bool:
-        """Public-first active-state snapshot accessor."""
+        """Public-first active-state snapshot accessor.
+
+        Returns
+        -------
+        bool
+            ``True`` when the connection state is active or currently in-flight.
+        """
         return self._is_active
 
     def _transition_to_unlocked(self, new_state: ConnectionState) -> bool:
@@ -305,7 +329,18 @@ class BLEStateManager:
 
     # COMPAT_STABLE_SHIM: public-first alias for `_transition_to`.
     def transition_to(self, new_state: ConnectionState) -> bool:
-        """Public-first wrapper for state transitions."""
+        """Public-first wrapper for state transitions.
+
+        Parameters
+        ----------
+        new_state : ConnectionState
+            Target state to transition to.
+
+        Returns
+        -------
+        bool
+            ``True`` when the transition succeeds (or is a valid no-op).
+        """
         return self._transition_to(new_state)
 
     def _is_valid_transition(
@@ -373,5 +408,11 @@ class BLEStateManager:
 
     # COMPAT_STABLE_SHIM: public-first alias for `_reset_to_disconnected`.
     def reset_to_disconnected(self) -> bool:
-        """Public-first wrapper that forces DISCONNECTED state."""
+        """Public-first wrapper that forces DISCONNECTED state.
+
+        Returns
+        -------
+        bool
+            ``True`` when DISCONNECTED is reached (including no-op).
+        """
         return self._reset_to_disconnected()

@@ -1,7 +1,7 @@
 """Receive compatibility shim service for BLE."""
 
 import contextlib
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from bleak.exc import BleakError
 
@@ -33,11 +33,11 @@ class BLEReceiveRecoveryService:
         get_controller = getattr(iface, "_get_receive_recovery_controller", None)
         if callable(get_controller):
             resolved = get_controller()
-            if resolved is not None:
-                return cast(BLEReceiveRecoveryController, resolved)
+            if isinstance(resolved, BLEReceiveRecoveryController):
+                return resolved
         cached = getattr(iface, "_receive_recovery_controller", None)
-        if cached is not None:
-            return cast(BLEReceiveRecoveryController, cached)
+        if isinstance(cached, BLEReceiveRecoveryController):
+            return cached
         controller = BLEReceiveRecoveryController(iface)
         with contextlib.suppress(Exception):  # noqa: BLE001 - best-effort cache attach
             iface._receive_recovery_controller = controller

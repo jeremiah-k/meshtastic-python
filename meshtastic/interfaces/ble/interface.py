@@ -331,7 +331,7 @@ class BLEInterface(MeshInterface):
         self._management_command_handler = BLEManagementCommandHandler(
             self,
             ble_client_factory=BLEClient,
-            connected_elsewhere=_is_currently_connected_elsewhere,
+            connected_elsewhere=self._connected_elsewhere_late_bound,
         )
 
         # Event coordination for reconnection and read operations
@@ -1051,7 +1051,9 @@ class BLEInterface(MeshInterface):
     def _create_notification_dispatcher(self) -> BLENotificationDispatcher:
         """Build notification dispatcher with canonical collaborator wiring."""
         notification_manager = getattr(self, "_notification_manager", None)
-        if notification_manager is None:
+        if notification_manager is None or _is_unconfigured_mock_member(
+            notification_manager
+        ):
             notification_manager = NotificationManager()
             self._notification_manager = notification_manager
         return BLENotificationDispatcher(
@@ -1059,6 +1061,13 @@ class BLEInterface(MeshInterface):
             error_handler_provider=self._get_or_create_error_handler,
             trigger_read_event=lambda: self._set_thread_event(READ_TRIGGER_EVENT),
         )
+
+    @staticmethod
+    def _connected_elsewhere_late_bound(
+        key: str | None, owner: object | None = None
+    ) -> bool:
+        """Late-bound gateway for interface-level ownership probes."""
+        return _is_currently_connected_elsewhere(key, owner=owner)
 
     def _get_notification_dispatcher(self) -> BLENotificationDispatcher:
         """Return notification dispatcher collaborator, creating it lazily."""
@@ -1126,7 +1135,7 @@ class BLEInterface(MeshInterface):
             lambda: BLEManagementCommandHandler(
                 self,
                 ble_client_factory=BLEClient,
-                connected_elsewhere=_is_currently_connected_elsewhere,
+                connected_elsewhere=self._connected_elsewhere_late_bound,
             ),
         )
 
@@ -2609,9 +2618,7 @@ class BLEInterface(MeshInterface):
         if write_successful:
             # Brief delay to allow write to propagate before triggering read
             _sleep(BLEConfig.SEND_PROPAGATION_DELAY)
-            self.thread_coordinator._set_event(
-                READ_TRIGGER_EVENT
-            )  # Wake receive loop to process any response
+            self._set_thread_event(READ_TRIGGER_EVENT)
 
     def close(self) -> None:
         """Shut down the BLE interface and release associated resources."""

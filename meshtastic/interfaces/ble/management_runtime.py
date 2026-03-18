@@ -206,7 +206,7 @@ class BLEManagementCommandHandler:
         if address is None:
             with iface._state_lock:
                 current_client = iface.client
-            if current_client is not None and current_client.isConnected():
+            if self._is_client_connected(current_client):
                 current_address = iface._extract_client_address(current_client)
                 if current_address:
                     return current_address
@@ -247,7 +247,7 @@ class BLEManagementCommandHandler:
                 and not getattr(iface, "_client_publish_pending", False)
                 else None
             )
-        if current_client is not None and current_client.isConnected():
+        if self._is_client_connected(current_client):
             return current_client
         normalized_request = sanitize_address(requested_identifier)
         if address is not None and normalized_request is None:
@@ -270,7 +270,7 @@ class BLEManagementCommandHandler:
                 and not getattr(iface, "_client_publish_pending", False)
                 else None
             )
-        if current_client is not None and current_client.isConnected():
+        if self._is_client_connected(current_client):
             current_address = iface._extract_client_address(current_client)
             if sanitize_address(current_address) == normalized_target:
                 return current_client
@@ -293,7 +293,7 @@ class BLEManagementCommandHandler:
         """Return current implicit management binding while holding state lock."""
         iface = self._iface
         current_client = iface.client
-        if current_client is not None and current_client.isConnected():
+        if self._is_client_connected(current_client):
             client_address = iface._extract_client_address(current_client)
             if client_address is not None:
                 return client_address
@@ -637,16 +637,6 @@ class BLEManagementCommandHandler:
                             )
                     if self._is_client_connected(refreshed_existing_client):
                         return command(refreshed_existing_client)
-                    client_to_use, temporary_client = self._acquire_client_for_target(
-                        address=address,
-                        target_address=target_address,
-                        expected_implicit_binding=start_context.expected_implicit_binding,
-                    )
-                    return self._execute_with_client(
-                        client_to_use=client_to_use,
-                        temporary_client=temporary_client,
-                        command=command,
-                    )
                 client_to_use, temporary_client = self._acquire_client_for_target(
                     address=address,
                     target_address=target_address,
@@ -858,7 +848,15 @@ class BLEManagementCommandHandler:
                 start_context,
             )
             if target_address is None:
-                raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_REQUIRED)
+                implicit_binding = start_context.expected_implicit_binding
+                if address is None and implicit_binding is not None:
+                    target_address = self._call_iface_override(
+                        "_resolve_target_address_for_management",
+                        self.resolve_target_address_for_management,
+                        implicit_binding,
+                    )
+                if target_address is None:
+                    raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_REQUIRED)
             canonical_address = iface._format_bluetoothctl_address(target_address)
             with iface._management_target_gate(target_address):
                 with iface._connect_lock, iface._management_lock:

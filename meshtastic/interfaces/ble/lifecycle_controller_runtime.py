@@ -94,6 +94,39 @@ class BLELifecycleController:
         ) = None,
     ) -> None:
         """Verify ownership and publish connected side effects."""
+        if self._uses_compat_connection_status_overrides():
+            from meshtastic.interfaces.ble import (
+                lifecycle_service as lifecycle_service_mod,
+            )
+
+            if verify_ownership_snapshot is None:
+
+                def _compat_verify_snapshot(
+                    client: "BLEClient",
+                    device_key: str | None,
+                    alias_key: str | None,
+                ) -> _OwnershipSnapshot:
+                    return (
+                        lifecycle_service_mod.BLELifecycleService._verify_ownership_snapshot(  # noqa: E501
+                            self._iface,
+                            client,
+                            device_key,
+                            alias_key,
+                        )
+                    )
+
+                verify_ownership_snapshot = _compat_verify_snapshot
+            if get_connected_client_status_locked is None:
+
+                def _compat_get_status_locked(
+                    client: "BLEClient",
+                ) -> tuple[bool, bool]:
+                    return lifecycle_service_mod.BLELifecycleService._get_connected_client_status_locked(  # noqa: E501
+                        self._iface,
+                        client,
+                    )
+
+                get_connected_client_status_locked = _compat_get_status_locked
         self._connection_ownership._verify_and_publish_connected(
             connected_client,
             connected_device_key,

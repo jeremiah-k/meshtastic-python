@@ -1,5 +1,6 @@
 """Disconnect lifecycle coordinator runtime ownership for BLE."""
 
+import threading
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -22,12 +23,15 @@ from meshtastic.interfaces.ble.lifecycle_primitives import (
 from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
+    _sleep,
     _thread_start_probe,
 )
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
     from meshtastic.interfaces.ble.interface import BLEInterface
+
+CLOSE_THREAD_START_PROBE_DELAY_SEC = 0.001
 
 
 class BLEDisconnectLifecycleCoordinator:
@@ -275,6 +279,24 @@ class BLEDisconnectLifecycleCoordinator:
             start_runtime_thread(close_thread)
             thread_ident, thread_is_alive = _thread_start_probe(close_thread)
             if thread_ident is None and not thread_is_alive:
+                _sleep(CLOSE_THREAD_START_PROBE_DELAY_SEC)
+                thread_ident, thread_is_alive = _thread_start_probe(close_thread)
+            if thread_ident is None and not thread_is_alive:
+                started_event = getattr(close_thread, "_started", None)
+                is_started = getattr(started_event, "is_set", None)
+                start_failure_confirmed = False
+                if callable(is_started):
+                    try:
+                        start_failure_confirmed = not bool(is_started())
+                    except Exception:  # noqa: BLE001 - probe remains best effort
+                        start_failure_confirmed = False
+                elif isinstance(close_thread, threading.Thread):
+                    start_failure_confirmed = True
+                if not start_failure_confirmed:
+                    logger.debug(
+                        "BLE client close thread start probe inconclusive; keeping async close path."
+                    )
+                    return
                 logger.warning(
                     "BLE client close thread did not start; closing inline.",
                     exc_info=False,

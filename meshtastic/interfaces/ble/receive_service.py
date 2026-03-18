@@ -315,17 +315,16 @@ class BLEReceiveRecoveryController:
         if lifecycle_controller is not None:
             close = getattr(lifecycle_controller, "close", None)
             close_fn = self._as_usable_callable(close)
-            if close_fn is None:
-                return
-            from meshtastic.interfaces.ble import interface as interface_mod
+            if close_fn is not None:
+                from meshtastic.interfaces.ble import interface as interface_mod
 
-            close_fn(
-                management_shutdown_wait_timeout=(
-                    interface_mod._MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS
-                ),
-                management_wait_poll_seconds=interface_mod._MANAGEMENT_CONNECT_WAIT_POLL_SECONDS,
-            )
-            return
+                close_fn(
+                    management_shutdown_wait_timeout=(
+                        interface_mod._MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS
+                    ),
+                    management_wait_poll_seconds=interface_mod._MANAGEMENT_CONNECT_WAIT_POLL_SECONDS,
+                )
+                return
         close = getattr(iface, "close", None)
         if callable(close):
             close()
