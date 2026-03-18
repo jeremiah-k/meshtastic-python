@@ -4,21 +4,22 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from meshtastic.interfaces.ble.constants import RECONNECTED_EVENT, logger
+from meshtastic.interfaces.ble.lifecycle_primitives import (
+    _LifecycleErrorAccess,
+    _LifecycleStateAccess,
+    _LifecycleThreadAccess,
+    _OwnershipSnapshot,
+)
 from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_member,
     sanitize_address,
 )
-from meshtastic.interfaces.ble.lifecycle_primitives import (
-    _OwnershipSnapshot,
-    _LifecycleErrorAccess,
-    _LifecycleStateAccess,
-    _LifecycleThreadAccess,
-)
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
     from meshtastic.interfaces.ble.interface import BLEInterface
+
 
 class BLEConnectionOwnershipLifecycleCoordinator:
     """Own verified-connection publication and ownership/finalization behavior."""
@@ -86,7 +87,8 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         """Capture connect-result ownership snapshot for this interface."""
         iface = self._iface
         get_connected_status_locked = (
-            get_connected_client_status_locked or self._get_connected_client_status_locked
+            get_connected_client_status_locked
+            or self._get_connected_client_status_locked
         )
         lost_gate_ownership = iface._has_lost_gate_ownership(
             connected_device_key,
@@ -245,7 +247,8 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             )
         )
         get_connected_status_locked = (
-            get_connected_client_status_locked or self._get_connected_client_status_locked
+            get_connected_client_status_locked
+            or self._get_connected_client_status_locked
         )
 
         snapshot = snapshot_provider(
@@ -341,7 +344,8 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         iface = self._iface
         get_status = get_connected_client_status or self._get_connected_client_status
         get_status_locked = (
-            get_connected_client_status_locked or self._get_connected_client_status_locked
+            get_connected_client_status_locked
+            or self._get_connected_client_status_locked
         )
         still_active, is_closing = get_status(connected_client)
 

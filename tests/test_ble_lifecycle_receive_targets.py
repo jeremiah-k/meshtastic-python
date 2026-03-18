@@ -13,15 +13,12 @@ import pytest
 from bleak.exc import BleakDBusError, BleakError
 
 from meshtastic.interfaces.ble.constants import ERROR_INTERFACE_CLOSING
-from meshtastic.interfaces.ble.lifecycle_service import (
-    BLELifecycleService,
+from meshtastic.interfaces.ble.lifecycle_primitives import (
     _DisconnectPlan,
     _OwnershipSnapshot,
 )
-from meshtastic.interfaces.ble.receive_service import (
-    BLEReceiveRecoveryController,
-    BLEReceiveRecoveryService,
-)
+from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
+from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryService
 from meshtastic.interfaces.ble.state import ConnectionState
 from tests.test_ble_interface_fixtures import DummyClient, _build_interface
 
@@ -800,8 +797,9 @@ def test_receive_service_branch_targets(monkeypatch: pytest.MonkeyPatch) -> None
         poll_without_notify=False,
     )
 
+    controller = iface._get_receive_recovery_controller()
     monkeypatch.setattr(
-        BLEReceiveRecoveryController,
+        controller,
         "_read_and_handle_payload",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(BleakDBusError("err", "dbus")),
     )
@@ -813,7 +811,7 @@ def test_receive_service_branch_targets(monkeypatch: pytest.MonkeyPatch) -> None
     ) == (True, False)
 
     monkeypatch.setattr(
-        BLEReceiveRecoveryController,
+        controller,
         "_read_and_handle_payload",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(BleakError("transient")),
     )
@@ -830,22 +828,22 @@ def test_receive_service_branch_targets(monkeypatch: pytest.MonkeyPatch) -> None
     iface.close = original_close
 
     monkeypatch.setattr(
-        BLEReceiveRecoveryController,
+        controller,
         "_handle_payload_read",
         lambda *_args, **_kwargs: (True, True),
     )
     monkeypatch.setattr(
-        BLEReceiveRecoveryController,
+        controller,
         "_wait_for_read_trigger",
         lambda *_args, **_kwargs: (True, False),
     )
     monkeypatch.setattr(
-        BLEReceiveRecoveryController,
+        controller,
         "_snapshot_client_state",
         lambda *_args, **_kwargs: (DummyClient(), False, False, False),
     )
     monkeypatch.setattr(
-        BLEReceiveRecoveryController,
+        controller,
         "_process_client_state",
         lambda *_args, **_kwargs: False,
     )
@@ -860,18 +858,18 @@ def test_receive_service_branch_targets(monkeypatch: pytest.MonkeyPatch) -> None
     )
 
     monkeypatch.setattr(
-        BLEReceiveRecoveryController,
+        controller,
         "_run_receive_cycle",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(_FatalReceiveError("fatal")),
     )
     recovered_reasons: list[str] = []
     monkeypatch.setattr(
-        BLEReceiveRecoveryController,
+        controller,
         "recover_receive_thread",
-        lambda _self, reason: recovered_reasons.append(reason),
+        lambda reason: recovered_reasons.append(reason),
     )
     BLEReceiveRecoveryService._receive_from_radio_impl(iface)
-    assert recovered_reasons
+    assert recovered_reasons == ["receive_thread_fatal"]
 
     with iface._state_lock:
         iface._closed = False
@@ -884,7 +882,7 @@ def test_receive_service_branch_targets(monkeypatch: pytest.MonkeyPatch) -> None
     BLEReceiveRecoveryService._recover_receive_thread(iface, "reason")
 
     read_client = DummyClient()
-    iface.__dict__.pop("_read_from_radio_with_retries", None)
+    monkeypatch.delattr(iface, "_read_from_radio_with_retries", raising=False)
     payloads = [b"", b"data"]
     read_client.read_gatt_char = lambda *_args, **_kwargs: payloads.pop(0)
     delays: list[float] = []
@@ -897,7 +895,7 @@ def test_receive_service_branch_targets(monkeypatch: pytest.MonkeyPatch) -> None
     assert BLEReceiveRecoveryService._read_from_radio_with_retries(iface, read_client)
     assert delays
 
-    iface.__dict__.pop("_handle_transient_read_error", None)
+    monkeypatch.delattr(iface, "_handle_transient_read_error", raising=False)
     iface._transient_read_policy = object()
     iface._retry_policy_should_retry = lambda _policy, count: count < 1
     iface._retry_policy_get_delay = lambda _policy, _attempt: 0.01
@@ -1416,6 +1414,7 @@ def test_receive_service_remaining_payload_read_branches(
     """Receive payload-read helpers should cover normal and exceptional branches."""
     iface = _make_iface(monkeypatch)
     try:
+        controller = iface._get_receive_recovery_controller()
         iface._read_from_radio_with_retries = lambda *_args, **_kwargs: b"payload"
         iface._handle_from_radio = lambda _payload: None
         assert BLEReceiveRecoveryService._read_and_handle_payload(
@@ -1425,7 +1424,7 @@ def test_receive_service_remaining_payload_read_branches(
         )
 
         monkeypatch.setattr(
-            BLEReceiveRecoveryController,
+            controller,
             "_read_and_handle_payload",
             lambda *_args, **_kwargs: False,
         )
@@ -1436,7 +1435,7 @@ def test_receive_service_remaining_payload_read_branches(
         ) == (True, False)
 
         monkeypatch.setattr(
-            BLEReceiveRecoveryController,
+            controller,
             "_read_and_handle_payload",
             lambda *_args, **_kwargs: (_ for _ in ()).throw(
                 BleakDBusError("err", "dbus")
@@ -1450,7 +1449,7 @@ def test_receive_service_remaining_payload_read_branches(
         ) == (True, True)
 
         monkeypatch.setattr(
-            BLEReceiveRecoveryController,
+            controller,
             "_read_and_handle_payload",
             lambda *_args, **_kwargs: (_ for _ in ()).throw(SystemExit()),
         )
@@ -1462,7 +1461,7 @@ def test_receive_service_remaining_payload_read_branches(
             )
 
         monkeypatch.setattr(
-            BLEReceiveRecoveryController,
+            controller,
             "_read_and_handle_payload",
             lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("unexpected")),
         )
@@ -1482,8 +1481,9 @@ def test_receive_service_remaining_cycle_and_impl_branches(
     """Receive-cycle and receive-loop implementation should cover remaining branches."""
     iface = _make_iface(monkeypatch)
     try:
+        controller = iface._get_receive_recovery_controller()
         monkeypatch.setattr(
-            BLEReceiveRecoveryController,
+            controller,
             "_wait_for_read_trigger",
             lambda *_args, **_kwargs: (False, False),
         )
@@ -1498,12 +1498,12 @@ def test_receive_service_remaining_cycle_and_impl_branches(
         )
 
         monkeypatch.setattr(
-            BLEReceiveRecoveryController,
+            controller,
             "_wait_for_read_trigger",
             lambda *_args, **_kwargs: (True, False),
         )
         monkeypatch.setattr(
-            BLEReceiveRecoveryController,
+            controller,
             "_snapshot_client_state",
             lambda *_args, **_kwargs: (None, False, False, False),
         )
@@ -1518,7 +1518,7 @@ def test_receive_service_remaining_cycle_and_impl_branches(
         )
 
         monkeypatch.setattr(
-            BLEReceiveRecoveryController,
+            controller,
             "_run_receive_cycle",
             lambda *_args, **_kwargs: (_ for _ in ()).throw(SystemExit()),
         )
@@ -1526,18 +1526,18 @@ def test_receive_service_remaining_cycle_and_impl_branches(
             BLEReceiveRecoveryService._receive_from_radio_impl(iface)
 
         monkeypatch.setattr(
-            BLEReceiveRecoveryController,
+            controller,
             "_run_receive_cycle",
             lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("fatal")),
         )
         recovered_reasons: list[str] = []
         monkeypatch.setattr(
-            BLEReceiveRecoveryController,
+            controller,
             "recover_receive_thread",
-            lambda _self, reason: recovered_reasons.append(reason),
+            lambda reason: recovered_reasons.append(reason),
         )
         BLEReceiveRecoveryService._receive_from_radio_impl(iface)
-        assert recovered_reasons
+        assert recovered_reasons == ["receive_thread_fatal"]
     finally:
         iface.close()
 
@@ -1828,6 +1828,7 @@ def test_receive_remaining_branches(
     """Cover remaining receive-service branch paths."""
     iface = _make_iface(monkeypatch)
     try:
+        controller = iface._get_receive_recovery_controller()
         assert (
             BLEReceiveRecoveryService._coordinator_check_and_clear_event(
                 SimpleNamespace(), "evt"
@@ -1841,7 +1842,7 @@ def test_receive_remaining_branches(
         _reset_state_manager(iface)
 
         monkeypatch.setattr(
-            BLEReceiveRecoveryController,
+            controller,
             "_read_and_handle_payload",
             lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("unexpected")),
         )
@@ -1859,17 +1860,17 @@ def test_receive_remaining_branches(
         ) == (True, True)
 
         monkeypatch.setattr(
-            BLEReceiveRecoveryController,
+            controller,
             "_wait_for_read_trigger",
             lambda *_args, **_kwargs: (True, False),
         )
         monkeypatch.setattr(
-            BLEReceiveRecoveryController,
+            controller,
             "_snapshot_client_state",
             lambda *_args, **_kwargs: (None, False, False, False),
         )
         monkeypatch.setattr(
-            BLEReceiveRecoveryController,
+            controller,
             "_process_client_state",
             lambda *_args, **_kwargs: False,
         )
@@ -1881,12 +1882,12 @@ def test_receive_remaining_branches(
         )
 
         monkeypatch.setattr(
-            BLEReceiveRecoveryController,
+            controller,
             "_snapshot_client_state",
             lambda *_args, **_kwargs: (DummyClient(), False, False, False),
         )
         monkeypatch.setattr(
-            BLEReceiveRecoveryController,
+            controller,
             "_handle_payload_read",
             lambda *_args, **_kwargs: (True, False),
         )
@@ -1900,14 +1901,14 @@ def test_receive_remaining_branches(
         recovered: list[str] = []
         with monkeypatch.context() as m:
             m.setattr(
-                BLEReceiveRecoveryController,
+                controller,
                 "_run_receive_cycle",
                 lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("fatal")),
             )
             m.setattr(
-                BLEReceiveRecoveryController,
+                controller,
                 "recover_receive_thread",
-                lambda _self, reason: recovered.append(reason),
+                lambda reason: recovered.append(reason),
             )
             BLEReceiveRecoveryService._receive_from_radio_impl(iface)
         assert recovered == ["receive_thread_fatal"]

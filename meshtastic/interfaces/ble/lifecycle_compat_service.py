@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 from bleak import BleakClient as BleakRootClient
 
 from meshtastic.interfaces.ble.coordination import ThreadLike
-from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.lifecycle_disconnect_runtime import (
     BLEDisconnectLifecycleCoordinator,
 )
@@ -14,12 +13,12 @@ from meshtastic.interfaces.ble.lifecycle_ownership_runtime import (
     BLEConnectionOwnershipLifecycleCoordinator,
 )
 from meshtastic.interfaces.ble.lifecycle_primitives import (
+    _client_is_connected_compat,
     _DisconnectPlan,
     _LifecycleErrorAccess,
     _LifecycleStateAccess,
     _LifecycleThreadAccess,
     _OwnershipSnapshot,
-    _client_is_connected_compat,
 )
 from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
     BLEReceiveLifecycleCoordinator,
@@ -27,10 +26,12 @@ from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
 from meshtastic.interfaces.ble.lifecycle_shutdown_runtime import (
     BLEShutdownLifecycleCoordinator,
 )
+from meshtastic.interfaces.ble.state import ConnectionState
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
     from meshtastic.interfaces.ble.interface import BLEInterface
+
 
 class BLELifecycleService:
     """Service helpers for BLEInterface lifecycle responsibilities."""
@@ -681,10 +682,24 @@ class BLELifecycleService:
     def _state_manager_is_connected(iface: "BLEInterface") -> bool:
         """Return connected-state flag from public-first state-manager members.
 
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing state-manager compatibility access.
+
+        Returns
+        -------
+        bool
+            ``True`` when the state manager reports connected state.
+
         Raises
         ------
         AttributeError
             If no valid connected-state compatibility member is available.
+
+        Notes
+        -----
+        Dispatches through ``_LifecycleStateAccess``.
         """
         return _LifecycleStateAccess(iface).is_connected()
 
@@ -692,10 +707,24 @@ class BLELifecycleService:
     def _state_manager_current_state(iface: "BLEInterface") -> ConnectionState:
         """Return current connection state from public-first state-manager members.
 
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing state-manager compatibility access.
+
+        Returns
+        -------
+        ConnectionState
+            Current state-manager connection state value.
+
         Raises
         ------
         AttributeError
             If no valid current-state compatibility member is available.
+
+        Notes
+        -----
+        Dispatches through ``_LifecycleStateAccess``.
         """
         return _LifecycleStateAccess(iface).current_state()
 
@@ -705,10 +734,26 @@ class BLELifecycleService:
     ) -> bool:
         """Transition state manager using public-first compatibility dispatch.
 
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing state-manager compatibility access.
+        new_state : ConnectionState
+            Target state for the transition request.
+
+        Returns
+        -------
+        bool
+            ``True`` when transition succeeds.
+
         Raises
         ------
         AttributeError
             If no valid transition compatibility member is available.
+
+        Notes
+        -----
+        Dispatches through ``_LifecycleStateAccess``.
         """
         return _LifecycleStateAccess(iface).transition_to(new_state)
 
@@ -716,10 +761,24 @@ class BLELifecycleService:
     def _state_manager_reset_to_disconnected(iface: "BLEInterface") -> bool:
         """Reset state manager to disconnected using public-first dispatch.
 
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing state-manager compatibility access.
+
+        Returns
+        -------
+        bool
+            ``True`` when reset succeeds.
+
         Raises
         ------
         AttributeError
             If no valid reset compatibility member is available.
+
+        Notes
+        -----
+        Dispatches through ``_LifecycleStateAccess``.
         """
         return _LifecycleStateAccess(iface).reset_to_disconnected()
 
@@ -727,11 +786,20 @@ class BLELifecycleService:
     def _state_manager_is_closing(iface: "BLEInterface") -> bool:
         """Return closing-state flag from public-first state-manager members.
 
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing state-manager compatibility access.
+
         Returns
         -------
         bool
             ``True`` when the state manager reports an active close/shutdown
             transition, otherwise ``False``.
+
+        Notes
+        -----
+        Dispatches through ``_LifecycleStateAccess``.
         """
         return _LifecycleStateAccess(iface).is_closing()
 
@@ -739,10 +807,24 @@ class BLELifecycleService:
     def _client_is_connected(client: "BLEClient") -> bool:
         """Return connected-state flag from public/legacy BLEClient members.
 
+        Parameters
+        ----------
+        client : BLEClient
+            Client instance whose connected state should be probed.
+
+        Returns
+        -------
+        bool
+            ``True`` when client reports an active connection.
+
         Raises
         ------
         AttributeError
             If no valid connected-state compatibility member is available.
+
+        Notes
+        -----
+        Dispatches through ``_client_is_connected_compat``.
         """
         return _client_is_connected_compat(client)
 
@@ -1327,7 +1409,9 @@ class BLELifecycleService:
         )
 
 
+# COMPAT_STABLE_SHIM: captured original symbol for monkeypatch detection.
 _ORIGINAL_GET_CONNECTED_CLIENT_STATUS = BLELifecycleService._get_connected_client_status
+# COMPAT_STABLE_SHIM: captured original symbol for monkeypatch detection.
 _ORIGINAL_GET_CONNECTED_CLIENT_STATUS_LOCKED = (
     BLELifecycleService._get_connected_client_status_locked
 )

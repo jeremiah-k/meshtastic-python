@@ -60,7 +60,7 @@ Additional approved BLE compatibility and promotions:
 | `BLEInterface.find_device`                                      | `COMPAT_STABLE_SHIM` | Silent         | Historical snake_case wrapper.                 |
 | `BLEInterface.findDevice`                                       | `PRIMARY`            | Silent         | Approved promoted camelCase name.              |
 | `BLEClient._discover`                                           | `COMPAT_STABLE_SHIM` | Silent         | Historical internal discovery entrypoint.      |
-| `BLEStateManager.is_connecting()`                               | `COMPAT_STABLE_SHIM` | Silent         | Public method alias for `_is_connecting()`.    |
+| `BLEStateManager.is_connecting`                                 | `COMPAT_STABLE_SHIM` | Silent         | Public property alias for `_is_connecting`.    |
 | `BLEStateManager._lock`                                         | `INTERNAL_COMPAT`    | Silent         | Legacy alias for `lock` property.              |
 | `meshtastic.ble_interface.BleakClient`                          | `COMPAT_STABLE_SHIM` | Silent         | Legacy module-level import compatibility.      |
 | `meshtastic.ble_interface.BleakScanner`                         | `COMPAT_STABLE_SHIM` | Silent         | Legacy module-level import compatibility.      |
@@ -173,7 +173,7 @@ details. Treat the compatibility symbol column as the intended external entrypoi
 | `meshtastic.interfaces.ble.interface`             | `from_num_handler()`                                              | `_from_num_handler()`                                      |
 | `meshtastic.interfaces.ble.interface`             | `log_radio_handler()`                                             | `_log_radio_handler()`                                     |
 | `meshtastic.interfaces.ble.interface`             | `legacy_log_radio_handler()`                                      | `_legacy_log_radio_handler()`                              |
-| `meshtastic.interfaces.ble.state`                 | `is_connecting()`                                                 | `_is_connecting()`                                         |
+| `meshtastic.interfaces.ble.state`                 | `is_connecting`                                                   | `_is_connecting`                                           |
 | `meshtastic.interfaces.ble.state`                 | `_lock` property (internal compatibility alias)                   | `lock` property                                            |
 
 ### Powermon and Slog

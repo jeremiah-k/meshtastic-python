@@ -12,11 +12,6 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.coordination import ThreadLike
 from meshtastic.interfaces.ble.gating import _addr_key
-from meshtastic.interfaces.ble.state import ConnectionState
-from meshtastic.interfaces.ble.utils import (
-    _is_unconfigured_mock_callable,
-    _thread_start_probe,
-)
 from meshtastic.interfaces.ble.lifecycle_primitives import (
     RECONNECT_SCHEDULER_MISSING_MSG,
     _DisconnectPlan,
@@ -24,10 +19,16 @@ from meshtastic.interfaces.ble.lifecycle_primitives import (
     _LifecycleStateAccess,
     _LifecycleThreadAccess,
 )
+from meshtastic.interfaces.ble.state import ConnectionState
+from meshtastic.interfaces.ble.utils import (
+    _is_unconfigured_mock_callable,
+    _thread_start_probe,
+)
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
     from meshtastic.interfaces.ble.interface import BLEInterface
+
 
 class BLEDisconnectLifecycleCoordinator:
     """Own disconnect orchestration and reconnect scheduling behavior."""
@@ -247,9 +248,7 @@ class BLEDisconnectLifecycleCoordinator:
         self,
         previous_client: "BLEClient | None",
         *,
-        create_thread: (
-            Callable[..., ThreadLike] | None
-        ) = None,
+        create_thread: Callable[..., ThreadLike] | None = None,
         start_thread: Callable[[object], None] | None = None,
         safe_cleanup: Callable[[Callable[[], object], str], None] | None = None,
     ) -> None:
@@ -306,7 +305,9 @@ class BLEDisconnectLifecycleCoordinator:
     ) -> bool:
         """Execute disconnect publication/cleanup side effects."""
         iface = self._iface
-        close_previous = close_previous_client_async or self._close_previous_client_async
+        close_previous = (
+            close_previous_client_async or self._close_previous_client_async
+        )
         clear_runtime_events = clear_events or (
             lambda events: self._thread_access.clear_events(*events)
         )

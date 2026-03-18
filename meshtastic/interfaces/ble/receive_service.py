@@ -161,8 +161,8 @@ class BLEReceiveRecoveryController:
     def _should_run_receive_loop(self) -> bool:
         """Return whether the lifecycle currently wants receive-loop execution."""
         iface = self._iface
-        override_should_run_receive_loop = iface.__dict__.get(
-            "_should_run_receive_loop"
+        override_should_run_receive_loop = getattr(
+            iface, "_should_run_receive_loop", None
         )
         if callable(override_should_run_receive_loop):
             return bool(override_should_run_receive_loop())
@@ -173,15 +173,12 @@ class BLEReceiveRecoveryController:
             )
             if callable(should_run_receive_loop):
                 return bool(should_run_receive_loop())
-        should_run_receive_loop = getattr(iface, "_should_run_receive_loop", None)
-        if callable(should_run_receive_loop):
-            return bool(should_run_receive_loop())
         return False
 
     def _set_receive_wanted(self, *, want_receive: bool) -> None:
         """Set receive-loop intent through lifecycle controller or legacy iface hook."""
         iface = self._iface
-        override_set_receive_wanted = iface.__dict__.get("_set_receive_wanted")
+        override_set_receive_wanted = getattr(iface, "_set_receive_wanted", None)
         if callable(override_set_receive_wanted):
             override_set_receive_wanted(want_receive=want_receive)
             return
@@ -192,10 +189,7 @@ class BLEReceiveRecoveryController:
             )
             if callable(set_receive_wanted):
                 set_receive_wanted(want_receive=want_receive)
-                return
-        set_receive_wanted = getattr(iface, "_set_receive_wanted", None)
-        if callable(set_receive_wanted):
-            set_receive_wanted(want_receive=want_receive)
+        return
 
     def _handle_disconnect(
         self,
@@ -205,7 +199,7 @@ class BLEReceiveRecoveryController:
     ) -> bool:
         """Invoke disconnect handling through lifecycle controller or legacy hook."""
         iface = self._iface
-        override_handle_disconnect = iface.__dict__.get("_handle_disconnect")
+        override_handle_disconnect = getattr(iface, "_handle_disconnect", None)
         if callable(override_handle_disconnect):
             return bool(override_handle_disconnect(disconnect_reason, client=client))
         lifecycle_controller = self._get_lifecycle_controller()
@@ -219,15 +213,12 @@ class BLEReceiveRecoveryController:
                     client=client,
                 )
             )
-        handle_disconnect = getattr(iface, "_handle_disconnect", None)
-        if callable(handle_disconnect):
-            return bool(handle_disconnect(disconnect_reason, client=client))
         return False
 
     def _start_receive_thread(self, *, name: str, reset_recovery: bool) -> None:
         """Start receive thread through lifecycle controller or legacy hook."""
         iface = self._iface
-        override_start_receive_thread = iface.__dict__.get("_start_receive_thread")
+        override_start_receive_thread = getattr(iface, "_start_receive_thread", None)
         if callable(override_start_receive_thread):
             override_start_receive_thread(name=name, reset_recovery=reset_recovery)
             return
@@ -242,15 +233,12 @@ class BLEReceiveRecoveryController:
                 name=name,
                 reset_recovery=reset_recovery,
             )
-            return
-        start_receive_thread = getattr(iface, "_start_receive_thread", None)
-        if callable(start_receive_thread):
-            start_receive_thread(name=name, reset_recovery=reset_recovery)
+        return
 
     def _close_after_fatal_read(self) -> None:
         """Close interface via lifecycle collaborator after fatal read failures."""
         iface = self._iface
-        override_close = iface.__dict__.get("close")
+        override_close = getattr(iface, "close", None)
         if callable(override_close):
             override_close()
             return
@@ -307,9 +295,7 @@ class BLEReceiveRecoveryController:
         wait_for_event: (
             Callable[["ThreadCoordinator", str, float | None], bool] | None
         ) = None,
-        check_and_clear_event: (
-            Callable[["ThreadCoordinator", str], bool] | None
-        ) = None,
+        check_and_clear_event: Callable[["ThreadCoordinator", str], bool] | None = None,
         clear_event: Callable[["ThreadCoordinator", str], None] | None = None,
     ) -> tuple[bool, bool]:
         """Wait for read trigger and compute fallback poll mode."""
@@ -767,6 +753,7 @@ class BLEReceiveRecoveryController:
             iface._suppressed_empty_read_warnings,
             cooldown,
         )
+
 
 from meshtastic.interfaces.ble.receive_compat_service import (  # noqa: E402
     BLEReceiveRecoveryService,

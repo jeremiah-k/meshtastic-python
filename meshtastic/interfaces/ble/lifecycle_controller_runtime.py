@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
     from meshtastic.interfaces.ble.interface import BLEInterface
 
+
 class BLELifecycleController:
     """Instance-bound collaborator for BLE lifecycle responsibilities."""
 

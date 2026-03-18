@@ -452,6 +452,7 @@ def test_management_helpers_cover_factory_and_target_edge_paths(
 
     assert _is_blank_or_malformed_address_like("AA:BB:CC:DD:EE:FF") is False
     assert _is_blank_or_malformed_address_like("aabbccddeeff") is False
+    assert _is_blank_or_malformed_address_like("Kitchen:Node") is False
     assert _is_blank_or_malformed_address_like("AA:BB:CC") is True
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)

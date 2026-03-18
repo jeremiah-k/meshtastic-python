@@ -244,7 +244,9 @@ class _LifecycleThreadAccess:
         if callable(join_thread) and not _is_unconfigured_mock_callable(join_thread):
             join_thread(thread, timeout=timeout)
             return
-        legacy_join_thread = getattr(self._iface.thread_coordinator, "_join_thread", None)
+        legacy_join_thread = getattr(
+            self._iface.thread_coordinator, "_join_thread", None
+        )
         if callable(legacy_join_thread) and not _is_unconfigured_mock_callable(
             legacy_join_thread
         ):
@@ -386,13 +388,17 @@ class _LifecycleErrorAccess:
                 if _is_unexpected_keyword_error(exc, "error_msg"):
                     try:
                         return safe_execute(_tracked_func, error_msg)
-                    except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
+                    except (
+                        Exception
+                    ):  # noqa: BLE001 - hook failures must not abort shutdown
                         logger.debug(error_msg, exc_info=True)
                         if func_ran:
                             return None
                     try:
                         return safe_execute(_tracked_func)
-                    except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
+                    except (
+                        Exception
+                    ):  # noqa: BLE001 - hook failures must not abort shutdown
                         logger.debug(error_msg, exc_info=True)
                         if func_ran:
                             return None

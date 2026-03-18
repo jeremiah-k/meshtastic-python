@@ -6,11 +6,12 @@ from typing import TYPE_CHECKING
 
 from meshtastic.interfaces.ble.constants import logger
 from meshtastic.interfaces.ble.coordination import ThreadLike
-from meshtastic.interfaces.ble.utils import _thread_start_probe
 from meshtastic.interfaces.ble.lifecycle_primitives import _LifecycleThreadAccess
+from meshtastic.interfaces.ble.utils import _thread_start_probe
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
+
 
 class BLEReceiveLifecycleCoordinator:
     """Own receive-loop intent and receive-thread lifecycle behavior."""

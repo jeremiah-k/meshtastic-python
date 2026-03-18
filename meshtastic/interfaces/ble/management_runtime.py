@@ -31,6 +31,7 @@ from meshtastic.interfaces.ble.gating import (
 )
 from meshtastic.interfaces.ble.utils import (
     _call_factory_with_optional_kwarg,
+    _is_unconfigured_mock_callable,
     sanitize_address,
 )
 
@@ -131,7 +132,13 @@ def _is_blank_or_malformed_address_like(address: str | None) -> bool:
         and _HEX_MAC_NO_SEPARATOR_RE.fullmatch(normalized_address) is not None
     ):
         return False
-    return ":" in stripped_address
+    if ":" not in stripped_address:
+        return False
+    # Treat colon-containing identifiers as malformed only when they look
+    # like hex/MAC text but fail strict MAC validation.
+    return all(
+        char == ":" or char in "0123456789abcdefABCDEF" for char in stripped_address
+    )
 
 
 class BLEManagementCommandHandler:
@@ -167,8 +174,8 @@ class BLEManagementCommandHandler:
         **kwargs: object,
     ) -> T:
         """Call instance-level iface override when present, else fallback."""
-        override = self._iface.__dict__.get(method_name)
-        if callable(override):
+        override = getattr(self._iface, method_name, None)
+        if callable(override) and not _is_unconfigured_mock_callable(override):
             return cast(T, override(*args, **kwargs))
         return fallback(*args, **kwargs)
 
@@ -822,4 +829,3 @@ class BLEManagementCommandHandler:
         finally:
             if management_started:
                 self.finish_management_operation()
-

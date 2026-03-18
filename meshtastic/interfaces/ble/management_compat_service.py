@@ -1,23 +1,52 @@
 """Management compatibility shim service for BLE."""
 
 import re
+import shutil as shutil_stdlib
+import subprocess as subprocess_stdlib
+import sys as sys_stdlib
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.gating import _is_currently_connected_elsewhere
 from meshtastic.interfaces.ble.management_runtime import (
     BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS,
+    TRUST_COMMAND_OUTPUT_MAX_CHARS,
+    TRUST_HEX_BLOB_RE,
+    TRUST_TOKEN_RE,
     BLEManagementCommandHandler,
-    _ManagementStartContext,
     T,
+    _ManagementStartContext,
 )
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
 
+
 class BLEManagementCommandsService:
     """Service helpers for BLE management command paths."""
+
+    @staticmethod
+    def _is_handler_like(candidate: object) -> bool:
+        """Return whether ``candidate`` implements management handler API."""
+        required_methods = (
+            "start_management_phase",
+            "resolve_management_target",
+            "acquire_client_for_target",
+            "execute_with_client",
+            "execute_management_command",
+            "validate_management_await_timeout",
+            "validate_trust_timeout",
+            "validate_connect_timeout_override",
+            "pair",
+            "unpair",
+            "run_bluetoothctl_trust_command",
+            "trust",
+        )
+        return all(
+            callable(getattr(candidate, method_name, None))
+            for method_name in required_methods
+        )
 
     @staticmethod
     def _handler_for_shim(
@@ -33,6 +62,11 @@ class BLEManagementCommandsService:
                 resolved = get_handler()
                 if isinstance(resolved, BLEManagementCommandHandler):
                     return resolved
+                if (
+                    resolved is not None
+                    and BLEManagementCommandsService._is_handler_like(resolved)
+                ):
+                    return cast(BLEManagementCommandHandler, resolved)
         if ble_client_factory is None:
             ble_client_factory = BLEClient
         if connected_elsewhere is None:
@@ -226,7 +260,9 @@ class BLEManagementCommandsService:
             Propagates any exception raised by ``command`` after temporary
             client cleanup is attempted.
         """
-        return BLEManagementCommandsService._handler_for_shim(iface).execute_with_client(
+        return BLEManagementCommandsService._handler_for_shim(
+            iface
+        ).execute_with_client(
             client_to_use=client_to_use,
             temporary_client=temporary_client,
             command=command,
@@ -374,8 +410,8 @@ class BLEManagementCommandsService:
         *,
         await_timeout: float,
         kwargs: dict[str, object],
-        ble_client_factory: Callable[..., BLEClient],
-        connected_elsewhere: Callable[[str | None, object | None], bool],
+        ble_client_factory: Callable[..., BLEClient] | None = None,
+        connected_elsewhere: Callable[[str | None, object | None], bool] | None = None,
     ) -> None:
         """Pair with BLE device using active or temporary client.
 
@@ -389,11 +425,12 @@ class BLEManagementCommandsService:
             Timeout for BLE pairing call.
         kwargs : dict[str, object]
             Extra keyword arguments forwarded to ``BLEClient.pair``.
-        ble_client_factory : Callable[..., BLEClient]
-            Factory used for temporary management clients.
-        connected_elsewhere : Callable[[str | None, object | None], bool]
+        ble_client_factory : Callable[..., BLEClient] | None
+            Optional factory used for temporary management clients.
+            ``None`` uses default shim resolution.
+        connected_elsewhere : Callable[[str | None, object | None], bool] | None
             Cross-interface ownership probe used to suppress conflicting
-            temporary client creation.
+            temporary client creation. ``None`` uses default shim resolution.
 
         Returns
         -------
@@ -415,8 +452,8 @@ class BLEManagementCommandsService:
         address: str | None = None,
         *,
         await_timeout: float,
-        ble_client_factory: Callable[..., BLEClient],
-        connected_elsewhere: Callable[[str | None, object | None], bool],
+        ble_client_factory: Callable[..., BLEClient] | None = None,
+        connected_elsewhere: Callable[[str | None, object | None], bool] | None = None,
     ) -> None:
         """Unpair BLE device using active or temporary client.
 
@@ -428,11 +465,12 @@ class BLEManagementCommandsService:
             Optional explicit target address.
         await_timeout : float
             Timeout for BLE unpair call.
-        ble_client_factory : Callable[..., BLEClient]
-            Factory used for temporary management clients.
-        connected_elsewhere : Callable[[str | None, object | None], bool]
+        ble_client_factory : Callable[..., BLEClient] | None
+            Optional factory used for temporary management clients.
+            ``None`` uses default shim resolution.
+        connected_elsewhere : Callable[[str | None, object | None], bool] | None
             Cross-interface ownership probe used to suppress conflicting
-            temporary client creation.
+            temporary client creation. ``None`` uses default shim resolution.
 
         Returns
         -------
@@ -507,12 +545,12 @@ class BLEManagementCommandsService:
         address: str | None = None,
         *,
         timeout: float = BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS,
-        sys_module: object,
-        shutil_module: object,
-        subprocess_module: object,
-        trust_hex_blob_re: re.Pattern[str],
-        trust_token_re: re.Pattern[str],
-        trust_command_output_max_chars: int,
+        sys_module: object | None = None,
+        shutil_module: object | None = None,
+        subprocess_module: object | None = None,
+        trust_hex_blob_re: re.Pattern[str] | None = None,
+        trust_token_re: re.Pattern[str] | None = None,
+        trust_command_output_max_chars: int | None = None,
     ) -> None:
         """Mark BLE device as trusted via Linux bluetoothctl.
 
@@ -524,18 +562,20 @@ class BLEManagementCommandsService:
             Optional explicit target address. ``None`` uses implicit binding.
         timeout : float
             Command timeout in seconds.
-        sys_module : object
-            Injected ``sys``-compatible module.
-        shutil_module : object
-            Injected ``shutil``-compatible module.
-        subprocess_module : object
-            Injected ``subprocess``-compatible module.
-        trust_hex_blob_re : re.Pattern[str]
-            Redaction pattern for long hexadecimal output fragments.
-        trust_token_re : re.Pattern[str]
-            Redaction pattern for long token-like output fragments.
-        trust_command_output_max_chars : int
-            Maximum sanitized output characters included in raised errors.
+        sys_module : object | None
+            Optional injected ``sys``-compatible module. ``None`` uses stdlib ``sys``.
+        shutil_module : object | None
+            Optional injected ``shutil``-compatible module. ``None`` uses stdlib ``shutil``.
+        subprocess_module : object | None
+            Optional injected ``subprocess``-compatible module. ``None`` uses stdlib ``subprocess``.
+        trust_hex_blob_re : re.Pattern[str] | None
+            Optional redaction pattern for long hexadecimal output fragments.
+            ``None`` uses runtime default.
+        trust_token_re : re.Pattern[str] | None
+            Optional redaction pattern for long token-like output fragments.
+            ``None`` uses runtime default.
+        trust_command_output_max_chars : int | None
+            Optional maximum sanitized output length. ``None`` uses runtime default.
 
         Returns
         -------
@@ -547,6 +587,20 @@ class BLEManagementCommandsService:
             If address validation, environment preconditions, target resolution,
             or command execution fails.
         """
+        sys_module = sys_stdlib if sys_module is None else sys_module
+        shutil_module = shutil_stdlib if shutil_module is None else shutil_module
+        subprocess_module = (
+            subprocess_stdlib if subprocess_module is None else subprocess_module
+        )
+        trust_hex_blob_re = (
+            TRUST_HEX_BLOB_RE if trust_hex_blob_re is None else trust_hex_blob_re
+        )
+        trust_token_re = TRUST_TOKEN_RE if trust_token_re is None else trust_token_re
+        trust_command_output_max_chars = (
+            TRUST_COMMAND_OUTPUT_MAX_CHARS
+            if trust_command_output_max_chars is None
+            else trust_command_output_max_chars
+        )
         BLEManagementCommandsService._handler_for_shim(iface).trust(
             address,
             timeout=timeout,

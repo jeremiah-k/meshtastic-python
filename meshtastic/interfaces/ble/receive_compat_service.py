@@ -11,8 +11,19 @@ if TYPE_CHECKING:
     from meshtastic.interfaces.ble.coordination import ThreadCoordinator
     from meshtastic.interfaces.ble.interface import BLEInterface
 
+
 class BLEReceiveRecoveryService:
     """Service helpers for BLE receive-loop and recovery behavior."""
+
+    @staticmethod
+    def _controller_for_shim(iface: "BLEInterface") -> BLEReceiveRecoveryController:
+        """Return iface-bound receive controller, falling back to direct construction."""
+        get_controller = getattr(iface, "_get_receive_recovery_controller", None)
+        if callable(get_controller):
+            resolved = get_controller()
+            if isinstance(resolved, BLEReceiveRecoveryController):
+                return resolved
+        return BLEReceiveRecoveryController(iface)
 
     @staticmethod
     def _handle_read_loop_disconnect(
@@ -35,7 +46,9 @@ class BLEReceiveRecoveryService:
             ``True`` when receive-loop processing should continue, otherwise
             ``False``.
         """
-        return BLEReceiveRecoveryController(iface).handle_read_loop_disconnect(
+        return BLEReceiveRecoveryService._controller_for_shim(
+            iface
+        ).handle_read_loop_disconnect(
             error_message,
             previous_client,
         )
@@ -158,7 +171,9 @@ class BLEReceiveRecoveryService:
             ``(proceed, poll_without_notify)`` where ``proceed`` indicates
             whether the caller should continue the loop iteration.
         """
-        return BLEReceiveRecoveryController(iface)._wait_for_read_trigger(
+        return BLEReceiveRecoveryService._controller_for_shim(
+            iface
+        )._wait_for_read_trigger(
             coordinator=coordinator,
             wait_timeout=wait_timeout,
             wait_for_event=lambda target_coordinator, event_name, timeout: BLEReceiveRecoveryService._coordinator_wait_for_event(  # noqa: E501
@@ -192,7 +207,9 @@ class BLEReceiveRecoveryService:
         tuple[BLEClient | None, bool, bool, bool]
             ``(client, is_connecting, publish_pending, is_closing)``.
         """
-        return BLEReceiveRecoveryController(iface)._snapshot_client_state()
+        return BLEReceiveRecoveryService._controller_for_shim(
+            iface
+        )._snapshot_client_state()
 
     @staticmethod
     def _process_client_state(
@@ -230,7 +247,9 @@ class BLEReceiveRecoveryService:
             ``True`` when the caller should break out of the inner receive
             loop, otherwise ``False``.
         """
-        return BLEReceiveRecoveryController(iface)._process_client_state(
+        return BLEReceiveRecoveryService._controller_for_shim(
+            iface
+        )._process_client_state(
             coordinator=coordinator,
             wait_timeout=wait_timeout,
             client=client,
@@ -258,7 +277,9 @@ class BLEReceiveRecoveryService:
         None
             Returns ``None`` after best-effort counter reset.
         """
-        BLEReceiveRecoveryController(iface)._reset_recovery_after_stability()
+        BLEReceiveRecoveryService._controller_for_shim(
+            iface
+        )._reset_recovery_after_stability()
 
     @staticmethod
     def _read_and_handle_payload(
@@ -283,7 +304,9 @@ class BLEReceiveRecoveryService:
         bool
             ``True`` to continue the inner loop, ``False`` to stop.
         """
-        return BLEReceiveRecoveryController(iface)._read_and_handle_payload(
+        return BLEReceiveRecoveryService._controller_for_shim(
+            iface
+        )._read_and_handle_payload(
             client,
             poll_without_notify=poll_without_notify,
         )
@@ -318,7 +341,9 @@ class BLEReceiveRecoveryService:
         KeyboardInterrupt
             Propagated when process termination is requested.
         """
-        return BLEReceiveRecoveryController(iface)._handle_payload_read(
+        return BLEReceiveRecoveryService._controller_for_shim(
+            iface
+        )._handle_payload_read(
             client,
             poll_without_notify=poll_without_notify,
         )
@@ -347,7 +372,7 @@ class BLEReceiveRecoveryService:
             ``True`` when the loop exited naturally, ``False`` when a fatal
             read path requested immediate receive-loop stop.
         """
-        return BLEReceiveRecoveryController(iface)._run_receive_cycle(
+        return BLEReceiveRecoveryService._controller_for_shim(iface)._run_receive_cycle(
             coordinator=coordinator,
             wait_timeout=wait_timeout,
         )
@@ -367,7 +392,7 @@ class BLEReceiveRecoveryService:
             Returns ``None``. Fatal receive-loop failures trigger recovery or
             close side effects before exiting.
         """
-        BLEReceiveRecoveryController(iface).receive_from_radio_impl()
+        BLEReceiveRecoveryService._controller_for_shim(iface).receive_from_radio_impl()
 
     @staticmethod
     def _recover_receive_thread(iface: "BLEInterface", disconnect_reason: str) -> None:
@@ -385,7 +410,9 @@ class BLEReceiveRecoveryService:
         None
             Returns ``None`` after scheduling recovery or stopping receive.
         """
-        BLEReceiveRecoveryController(iface).recover_receive_thread(disconnect_reason)
+        BLEReceiveRecoveryService._controller_for_shim(iface).recover_receive_thread(
+            disconnect_reason
+        )
 
     @staticmethod
     def _read_from_radio_with_retries(
@@ -410,7 +437,9 @@ class BLEReceiveRecoveryService:
         bytes | None
             Non-empty payload bytes when available, otherwise ``None``.
         """
-        return BLEReceiveRecoveryController(iface).read_from_radio_with_retries(
+        return BLEReceiveRecoveryService._controller_for_shim(
+            iface
+        ).read_from_radio_with_retries(
             client,
             retry_on_empty=retry_on_empty,
         )
@@ -438,7 +467,9 @@ class BLEReceiveRecoveryService:
         BLEError
             If transient retry attempts are exhausted.
         """
-        BLEReceiveRecoveryController(iface).handle_transient_read_error(error)
+        BLEReceiveRecoveryService._controller_for_shim(
+            iface
+        ).handle_transient_read_error(error)
 
     @staticmethod
     def _log_empty_read_warning(iface: "BLEInterface") -> None:
@@ -454,4 +485,4 @@ class BLEReceiveRecoveryService:
         None
             Returns ``None`` after logging or suppressing warning output.
         """
-        BLEReceiveRecoveryController(iface).log_empty_read_warning()
+        BLEReceiveRecoveryService._controller_for_shim(iface).log_empty_read_warning()

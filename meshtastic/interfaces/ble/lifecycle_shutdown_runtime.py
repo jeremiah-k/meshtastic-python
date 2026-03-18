@@ -15,6 +15,11 @@ from meshtastic.interfaces.ble.constants import (
     logger,
 )
 from meshtastic.interfaces.ble.gating import _addr_key
+from meshtastic.interfaces.ble.lifecycle_primitives import (
+    _LifecycleErrorAccess,
+    _LifecycleStateAccess,
+    _LifecycleThreadAccess,
+)
 from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
@@ -22,15 +27,11 @@ from meshtastic.interfaces.ble.utils import (
     _thread_start_probe,
 )
 from meshtastic.mesh_interface import MeshInterface
-from meshtastic.interfaces.ble.lifecycle_primitives import (
-    _LifecycleErrorAccess,
-    _LifecycleStateAccess,
-    _LifecycleThreadAccess,
-)
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
     from meshtastic.interfaces.ble.interface import BLEInterface
+
 
 class BLEShutdownLifecycleCoordinator:
     """Own interface shutdown orchestration and terminal cleanup behavior."""
@@ -119,9 +120,8 @@ class BLEShutdownLifecycleCoordinator:
                         iface._connection_alias_key,
                         getattr(current_state, "value", current_state),
                     )
-                    if (
-                        not do_reset_to_disconnected()
-                        and not do_transition_to(ConnectionState.DISCONNECTED)
+                    if not do_reset_to_disconnected() and not do_transition_to(
+                        ConnectionState.DISCONNECTED
                     ):
                         fallback_state = get_current_state()
                         logger.error(
@@ -203,9 +203,7 @@ class BLEShutdownLifecycleCoordinator:
     def _close_mesh_interface(
         self,
         *,
-        safe_execute: (
-            Callable[[Callable[[], object]], object | None] | None
-        ) = None,
+        safe_execute: Callable[[Callable[[], object]], object | None] | None = None,
     ) -> None:
         """Run `MeshInterface.close` through guarded error-handler execution."""
         iface = self._iface
@@ -358,9 +356,8 @@ class BLEShutdownLifecycleCoordinator:
                     iface._connection_alias_key,
                     getattr(current_state, "value", current_state),
                 )
-                if (
-                    not do_reset_to_disconnected()
-                    and not do_transition_to(ConnectionState.DISCONNECTED)
+                if not do_reset_to_disconnected() and not do_transition_to(
+                    ConnectionState.DISCONNECTED
                 ):
                     fallback_state = get_current_state()
                     logger.error(

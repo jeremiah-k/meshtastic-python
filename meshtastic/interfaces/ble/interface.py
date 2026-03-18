@@ -69,7 +69,11 @@ from meshtastic.interfaces.ble.constants import (
     ERROR_TRUST_ADDRESS_NOT_RESOLVED,
     ERROR_WRITING_BLE,
     GATT_IO_TIMEOUT,
+)
+from meshtastic.interfaces.ble.constants import (
     MALFORMED_NOTIFICATION_THRESHOLD as _MALFORMED_NOTIFICATION_THRESHOLD,
+)
+from meshtastic.interfaces.ble.constants import (
     READ_TRIGGER_EVENT,
     RECONNECTED_EVENT,
     SERVICE_UUID,
@@ -758,8 +762,7 @@ class BLEInterface(MeshInterface):
             awaitable,
             timeout,
             label,
-            timeout_error_factory=lambda timeout_label,
-            timeout_seconds: BLEInterface.BLEError(
+            timeout_error_factory=lambda timeout_label, timeout_seconds: BLEInterface.BLEError(
                 ERROR_TIMEOUT.format(timeout_label, timeout_seconds)
             ),
         )
@@ -967,11 +970,15 @@ class BLEInterface(MeshInterface):
 
     def _get_current_implicit_management_binding_locked(self) -> str | None:
         """Return implicit management binding via management collaborator."""
-        return self._get_management_command_handler().get_current_implicit_management_binding_locked()
+        return (
+            self._get_management_command_handler().get_current_implicit_management_binding_locked()
+        )
 
     def _get_current_implicit_management_address_locked(self) -> str | None:
         """Return implicit management concrete address via collaborator."""
-        return self._get_management_command_handler().get_current_implicit_management_address_locked()
+        return (
+            self._get_management_command_handler().get_current_implicit_management_address_locked()
+        )
 
     def _revalidate_implicit_management_target(
         self,
