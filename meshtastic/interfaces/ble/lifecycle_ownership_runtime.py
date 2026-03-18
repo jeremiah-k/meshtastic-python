@@ -278,7 +278,9 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         should_reset_state = False
         should_publish_disconnect = False
         is_closing = False
+        disconnect_session_epoch = 0
         with iface._state_lock:
+            disconnect_session_epoch = getattr(iface, "_connection_session_epoch", 0)
             if iface.client is client:
                 (
                     should_reset_state,
@@ -318,7 +320,13 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 do_transition_to_disconnected=do_transition_to_disconnected,
             )
         if should_publish_disconnect and not is_closing:
-            iface._disconnected()
+            with iface._state_lock:
+                publish_disconnect = (
+                    getattr(iface, "_connection_session_epoch", 0)
+                    == disconnect_session_epoch
+                )
+            if publish_disconnect:
+                iface._disconnected()
 
     def _verify_and_publish_connected(
         self,
@@ -379,11 +387,12 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         publish_claimed = False
         with iface._state_lock:
             still_owned, is_closing = get_connected_status_locked(connected_client)
-            if still_owned and not is_closing and not iface._client_publish_pending:
-                iface._client_publish_pending = True
+            if still_owned and not is_closing:
+                publish_claimed = bool(getattr(iface, "_client_publish_pending", False))
+                if not publish_claimed:
+                    iface._client_publish_pending = True
+                    publish_claimed = True
                 iface._client_replacement_pending = False
-                publish_claimed = True
-            if still_owned and not is_closing and publish_claimed:
                 should_publish_connected = True
         snapshot = snapshot_provider(
             connected_client,
@@ -391,8 +400,6 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             connection_alias_key,
         )
         if not should_publish_connected:
-            if still_owned and not is_closing and not publish_claimed:
-                return
             _raise_invalidated(snapshot)
         publish_committed = False
         if should_publish_connected:
@@ -448,7 +455,12 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     iface._disconnected()
                 return
 
-        _raise_invalidated(snapshot)
+        post_check_snapshot = snapshot_provider(
+            connected_client,
+            connected_device_key,
+            connection_alias_key,
+        )
+        _raise_invalidated(post_check_snapshot)
 
     def _finalize_connection_gates(
         self,

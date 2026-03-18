@@ -100,6 +100,50 @@ class BLEReceiveRecoveryController:
             return False
         return raw_ever_connected is True
 
+    @staticmethod
+    def _normalize_bool_probe(raw_value: object) -> bool:
+        """Normalize a bool-like probe while filtering mock placeholders."""
+        if _is_unconfigured_mock_member(raw_value):
+            return False
+        if callable(raw_value) and not _is_unconfigured_mock_callable(raw_value):
+            try:
+                result = raw_value()
+                return result if isinstance(result, bool) else False
+            except Exception:  # noqa: BLE001 - probe remains best effort
+                return False
+        if isinstance(raw_value, bool):
+            return raw_value
+        return False
+
+    def _is_connection_closing_locked(self) -> bool:
+        """Return whether connection-closing probes indicate closing while lock is held."""
+        iface = self._iface
+        state_manager = getattr(iface, "_state_manager", None)
+        if state_manager is None:
+            raw_is_closing = getattr(iface, "_is_connection_closing", False)
+            state_is_closing = self._normalize_bool_probe(raw_is_closing)
+        else:
+            raw_is_closing = getattr(state_manager, "is_closing", None)
+            if callable(raw_is_closing) and not _is_unconfigured_mock_callable(
+                raw_is_closing
+            ):
+                try:
+                    result = raw_is_closing()
+                    state_is_closing = result if isinstance(result, bool) else False
+                except Exception:  # noqa: BLE001 - closing probe must remain best effort
+                    state_is_closing = False
+            elif not _is_unconfigured_mock_member(raw_is_closing) and isinstance(
+                raw_is_closing, bool
+            ):
+                state_is_closing = raw_is_closing
+            else:
+                legacy_is_closing = getattr(state_manager, "_is_closing", None)
+                state_is_closing = self._normalize_bool_probe(legacy_is_closing)
+
+        raw_closed = getattr(iface, "_closed", False)
+        closed = self._normalize_bool_probe(raw_closed)
+        return state_is_closing or closed
+
     def _is_connection_closing(self) -> bool:
         """Return whether receive-loop behavior should treat the interface as closing."""
         lifecycle_controller = self._get_lifecycle_controller()
@@ -112,67 +156,7 @@ class BLEReceiveRecoveryController:
                 return bool(is_connection_closing_fn())
         iface = self._iface
         with iface._state_lock:
-            state_manager = getattr(iface, "_state_manager", None)
-            if state_manager is None:
-                raw_is_closing = getattr(iface, "_is_connection_closing", False)
-                if _is_unconfigured_mock_member(raw_is_closing):
-                    state_is_closing = False
-                elif callable(raw_is_closing) and not _is_unconfigured_mock_callable(
-                    raw_is_closing
-                ):
-                    try:
-                        result = raw_is_closing()
-                        state_is_closing = result if isinstance(result, bool) else False
-                    except Exception:  # noqa: BLE001 - closing probe must remain best effort
-                        state_is_closing = False
-                elif isinstance(raw_is_closing, bool):
-                    state_is_closing = raw_is_closing
-                else:
-                    state_is_closing = False
-            else:
-                raw_is_closing = getattr(state_manager, "is_closing", False)
-                if _is_unconfigured_mock_member(raw_is_closing):
-                    state_is_closing = False
-                elif callable(raw_is_closing) and not _is_unconfigured_mock_callable(
-                    raw_is_closing
-                ):
-                    try:
-                        result = raw_is_closing()
-                        state_is_closing = result if isinstance(result, bool) else False
-                    except Exception:  # noqa: BLE001 - closing probe must remain best effort
-                        state_is_closing = False
-                elif isinstance(raw_is_closing, bool):
-                    state_is_closing = raw_is_closing
-                else:
-                    legacy_is_closing = getattr(state_manager, "_is_closing", False)
-                    if _is_unconfigured_mock_member(legacy_is_closing):
-                        state_is_closing = False
-                    elif callable(legacy_is_closing) and not _is_unconfigured_mock_callable(
-                        legacy_is_closing
-                    ):
-                        try:
-                            result = legacy_is_closing()
-                            state_is_closing = result if isinstance(result, bool) else False
-                        except Exception:  # noqa: BLE001 - closing probe must remain best effort
-                            state_is_closing = False
-                    elif isinstance(legacy_is_closing, bool):
-                        state_is_closing = legacy_is_closing
-                    else:
-                        state_is_closing = False
-            raw_closed = getattr(iface, "_closed", False)
-            if _is_unconfigured_mock_member(raw_closed):
-                closed = False
-            elif callable(raw_closed) and not _is_unconfigured_mock_callable(raw_closed):
-                try:
-                    result = raw_closed()
-                    closed = result if isinstance(result, bool) else False
-                except Exception:  # noqa: BLE001 - closing probe must remain best effort
-                    closed = False
-            elif isinstance(raw_closed, bool):
-                closed = raw_closed
-            else:
-                closed = False
-            return state_is_closing or closed
+            return self._is_connection_closing_locked()
 
     @staticmethod
     def _coordinator_wait_for_event(
@@ -327,7 +311,6 @@ class BLEReceiveRecoveryController:
 
     def _close_after_fatal_read(self) -> None:
         """Close interface via lifecycle collaborator after fatal read failures."""
-        iface = self._iface
         override_close = self._resolve_iface_receive_hook_override("close")
         if callable(override_close):
             override_close()
@@ -346,9 +329,6 @@ class BLEReceiveRecoveryController:
                     management_wait_poll_seconds=interface_mod._MANAGEMENT_CONNECT_WAIT_POLL_SECONDS,
                 )
                 return
-        close = getattr(iface, "close", None)
-        if callable(close):
-            close()
 
     @staticmethod
     def _is_default_iface_receive_hook(method_name: str, hook: object) -> bool:
@@ -493,7 +473,7 @@ class BLEReceiveRecoveryController:
                 else:
                     is_connecting = False
             publish_pending = iface._client_publish_pending
-            is_closing = self._is_connection_closing()
+            is_closing = self._is_connection_closing_locked()
         return client, is_connecting, publish_pending, is_closing
 
     def _process_client_state(

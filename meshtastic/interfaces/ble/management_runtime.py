@@ -42,11 +42,13 @@ if TYPE_CHECKING:
 
 BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS: float = 10.0
 TRUST_COMMAND_OUTPUT_MAX_CHARS: int = 200
-TRUST_HEX_BLOB_RE = re.compile(r"\b[0-9A-Fa-f]{16,}\b")
-TRUST_TOKEN_RE = re.compile(r"\b[A-Za-z0-9+/=_-]{40,}\b")
-_DISCOVERY_FACTORY_LOG_KWARG = "log_if_no_address"
-_HEX_MAC_COLON_RE = re.compile(r"^[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}$")
-_HEX_MAC_NO_SEPARATOR_RE = re.compile(r"^[0-9A-Fa-f]{12}$")
+TRUST_HEX_BLOB_RE: re.Pattern[str] = re.compile(r"\b[0-9A-Fa-f]{16,}\b")
+TRUST_TOKEN_RE: re.Pattern[str] = re.compile(r"\b[A-Za-z0-9+/=_-]{40,}\b")
+_DISCOVERY_FACTORY_LOG_KWARG: str = "log_if_no_address"
+_HEX_MAC_COLON_RE: re.Pattern[str] = re.compile(
+    r"^[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}$"
+)
+_HEX_MAC_NO_SEPARATOR_RE: re.Pattern[str] = re.compile(r"^[0-9A-Fa-f]{12}$")
 
 T = TypeVar("T")
 
@@ -283,12 +285,15 @@ class BLEManagementCommandHandler:
         """Return whether a candidate client appears currently connected."""
         if client is None:
             return False
-        is_connected = getattr(client, "isConnected", None)
-        if callable(is_connected) and not _is_unconfigured_mock_callable(is_connected):
-            try:
-                return bool(is_connected())
-            except Exception:  # noqa: BLE001 - connectivity probe must remain best effort
-                return False
+        for attr_name in ("isConnected", "is_connected"):
+            is_connected = getattr(client, attr_name, None)
+            if callable(is_connected) and not _is_unconfigured_mock_callable(
+                is_connected
+            ):
+                try:
+                    return bool(is_connected())
+                except Exception:  # noqa: BLE001 - connectivity probe must remain best effort
+                    continue
         return False
 
     def get_current_implicit_management_binding_locked(self) -> str | None:

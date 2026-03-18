@@ -1,5 +1,6 @@
 """Lifecycle compatibility shim service for BLE."""
 
+from inspect import signature
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast, NoReturn
@@ -29,6 +30,10 @@ from meshtastic.interfaces.ble.lifecycle_shutdown_runtime import (
     BLEShutdownLifecycleCoordinator,
 )
 from meshtastic.interfaces.ble.state import ConnectionState
+from meshtastic.interfaces.ble.utils import (
+    _is_unconfigured_mock_callable,
+    _is_unconfigured_mock_member,
+)
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
@@ -46,9 +51,23 @@ class _DisconnectCallbackBundle:
     close_previous_client_async: Callable[["BLEClient | None"], None]
     clear_events: Callable[..., None]
 
-
 class BLELifecycleService:
+    # COMPAT_STABLE_SHIM: compatibility lifecycle shim surface retained for historical entrypoints.
     """Service helpers for BLEInterface lifecycle responsibilities."""
+
+    @staticmethod
+    def _is_receive_lifecycle_coordinator_like(candidate: object) -> bool:
+        """Return whether a candidate exposes receive lifecycle coordinator hooks."""
+        required_methods = (
+            "set_receive_wanted",
+            "should_run_receive_loop",
+            "start_receive_thread",
+        )
+        for method_name in required_methods:
+            method = getattr(candidate, method_name, None)
+            if not callable(method) or _is_unconfigured_mock_callable(method):
+                return False
+        return True
 
     @staticmethod
     def _receive_lifecycle_coordinator(
@@ -72,16 +91,28 @@ class BLELifecycleService:
         unavailable on partial test doubles.
         """
         get_or_create = getattr(iface, "_get_or_create_collaborator", None)
-        if callable(get_or_create):
+        if callable(get_or_create) and not _is_unconfigured_mock_callable(get_or_create):
             try:
+                signature(get_or_create).bind(
+                    "_ble_receive_lifecycle_coordinator",
+                    lambda: BLEReceiveLifecycleCoordinator(iface),
+                )
+            except (TypeError, ValueError):
+                # Partial test doubles may provide incompatible helper signatures.
+                pass
+            else:
                 coordinator = get_or_create(
                     "_ble_receive_lifecycle_coordinator",
                     lambda: BLEReceiveLifecycleCoordinator(iface),
                 )
-                return cast(BLEReceiveLifecycleCoordinator, coordinator)
-            except TypeError:
-                # Partial test doubles may provide incompatible helper signatures.
-                pass
+                if (
+                    coordinator is not None
+                    and not _is_unconfigured_mock_member(coordinator)
+                    and BLELifecycleService._is_receive_lifecycle_coordinator_like(
+                        coordinator
+                    )
+                ):
+                    return cast(BLEReceiveLifecycleCoordinator, coordinator)
         return BLEReceiveLifecycleCoordinator(iface)
 
     @staticmethod

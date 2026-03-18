@@ -52,9 +52,9 @@ class BLEDisconnectLifecycleCoordinator:
         """Schedule background auto-reconnect work when reconnect is enabled."""
         iface = self._iface
         get_is_closing = is_closing_getter or self._state_access.is_closing
-        if not iface.auto_reconnect:
-            return
         with iface._state_lock:
+            if not iface.auto_reconnect:
+                return
             if iface._closed:
                 logger.debug(
                     "Skipping auto-reconnect scheduling because interface is closed."

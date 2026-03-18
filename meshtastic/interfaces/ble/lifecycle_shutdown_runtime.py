@@ -298,17 +298,10 @@ class BLEShutdownLifecycleCoordinator:
         client_address = iface._extract_client_address(client)
         notification_manager = iface._notification_manager
 
-        def _resolve_notification_cleanup(
-            public_name: str, legacy_name: str
-        ) -> Callable[..., object] | None:
-            method = getattr(notification_manager, public_name, None)
+        def _resolve_notification_cleanup(method_name: str) -> Callable[..., object] | None:
+            method = getattr(notification_manager, method_name, None)
             if callable(method) and not _is_unconfigured_mock_callable(method):
                 return cast(Callable[..., object], method)
-            legacy_method = getattr(notification_manager, legacy_name, None)
-            if callable(legacy_method) and not _is_unconfigured_mock_callable(
-                legacy_method
-            ):
-                return cast(Callable[..., object], legacy_method)
             return None
 
         if client is not None:
@@ -320,9 +313,7 @@ class BLEShutdownLifecycleCoordinator:
                 else contextlib.nullcontext()
             )
             with gate_context:
-                unsubscribe_all = _resolve_notification_cleanup(
-                    "unsubscribe_all", "_unsubscribe_all"
-                )
+                unsubscribe_all = _resolve_notification_cleanup("_unsubscribe_all")
                 if unsubscribe_all is not None:
                     run_safe_cleanup(
                         lambda: unsubscribe_all(
@@ -332,17 +323,17 @@ class BLEShutdownLifecycleCoordinator:
                     )
                 else:
                     logger.debug(
-                        "Notification manager is missing unsubscribe_all/_unsubscribe_all"
+                        "Notification manager is missing _unsubscribe_all"
                     )
                 run_safe_cleanup(
                     lambda: iface._disconnect_and_close_client(client),
                     "BLE client disconnect/close",
                 )
-        cleanup_all = _resolve_notification_cleanup("cleanup_all", "_cleanup_all")
+        cleanup_all = _resolve_notification_cleanup("_cleanup_all")
         if cleanup_all is not None:
             run_safe_cleanup(cleanup_all, "notification manager cleanup")
         else:
-            logger.debug("Notification manager is missing cleanup_all/_cleanup_all")
+            logger.debug("Notification manager is missing _cleanup_all")
 
         if consume_disconnect_state():
             iface._disconnected()

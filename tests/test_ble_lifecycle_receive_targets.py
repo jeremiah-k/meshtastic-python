@@ -747,10 +747,31 @@ def test_lifecycle_shutdown_receive_thread_skips_self_join_by_ident(
         iface.close()
 
 
-def test_receive_controller_filters_unconfigured_lifecycle_hooks(
+def test_receive_controller_hook_resolution_helpers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Receive controller should treat unconfigured lifecycle mocks as absent."""
+    """Receive controller helper resolution should treat null hooks as unusable."""
+    iface = _make_iface(monkeypatch)
+    original_close = iface.close
+    try:
+        controller = iface._get_receive_recovery_controller()
+        monkeypatch.setattr(
+            controller,
+            "_resolve_iface_receive_hook_override",
+            lambda _name: None,
+            raising=True,
+        )
+        assert controller._as_usable_callable(None) is None
+        assert controller._is_unusable_mock_value(None) is True
+        assert controller._is_unusable_mock_value("ready") is False
+    finally:
+        original_close()
+
+
+def test_receive_controller_filters_unconfigured_lifecycle_controllers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Receive controller should treat unconfigured lifecycle controllers as absent."""
     iface = _make_iface(monkeypatch)
     original_close = iface.close
     original_get_lifecycle_controller = iface._get_lifecycle_controller
@@ -762,17 +783,30 @@ def test_receive_controller_filters_unconfigured_lifecycle_hooks(
             lambda _name: None,
             raising=True,
         )
-
-        assert controller._as_usable_callable(None) is None
-        assert controller._is_unusable_mock_value(None) is True
-        assert controller._is_unusable_mock_value("ready") is False
-
         iface._get_lifecycle_controller = MagicMock()
         assert controller._get_lifecycle_controller() is None
-
         iface._get_lifecycle_controller = lambda: MagicMock()
         assert controller._get_lifecycle_controller() is None
+    finally:
+        iface._get_lifecycle_controller = original_get_lifecycle_controller
+        original_close()
 
+
+def test_receive_controller_delegates_to_lifecycle_controller(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Receive controller should delegate lifecycle-owned operations."""
+    iface = _make_iface(monkeypatch)
+    original_close = iface.close
+    original_get_lifecycle_controller = iface._get_lifecycle_controller
+    try:
+        controller = iface._get_receive_recovery_controller()
+        monkeypatch.setattr(
+            controller,
+            "_resolve_iface_receive_hook_override",
+            lambda _name: None,
+            raising=True,
+        )
         lifecycle_calls: list[tuple[str, object]] = []
         iface._get_lifecycle_controller = lambda: SimpleNamespace(
             has_ever_connected_session=lambda: True,
@@ -798,7 +832,6 @@ def test_receive_controller_filters_unconfigured_lifecycle_hooks(
                 )
             ),
         )
-
         assert controller._has_ever_connected_session() is True
         assert controller._is_connection_closing() is True
         assert controller._should_run_receive_loop() is True
@@ -810,7 +843,26 @@ def test_receive_controller_filters_unconfigured_lifecycle_hooks(
         assert ("disconnect", "reason") in lifecycle_calls
         assert ("start", ("rx", False)) in lifecycle_calls
         assert any(call[0] == "close" for call in lifecycle_calls)
+    finally:
+        iface._get_lifecycle_controller = original_get_lifecycle_controller
+        original_close()
 
+
+def test_receive_controller_close_without_usable_hook_skips_iface_close(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Receive controller should avoid recursive default `iface.close()` fallback."""
+    iface = _make_iface(monkeypatch)
+    original_close = iface.close
+    original_get_lifecycle_controller = iface._get_lifecycle_controller
+    try:
+        controller = iface._get_receive_recovery_controller()
+        monkeypatch.setattr(
+            controller,
+            "_resolve_iface_receive_hook_override",
+            lambda _name: None,
+            raising=True,
+        )
         iface._get_lifecycle_controller = lambda: SimpleNamespace(
             should_run_receive_loop=MagicMock(),
             set_receive_wanted=MagicMock(),
@@ -830,11 +882,11 @@ def test_receive_controller_filters_unconfigured_lifecycle_hooks(
         assert controller._handle_disconnect("ignored", client=None) is False
         controller._start_receive_thread(name="ignored", reset_recovery=True)
         controller._close_after_fatal_read()
-        assert close_calls == ["iface-close"]
+        assert close_calls == []
 
         iface._get_lifecycle_controller = lambda: None
         controller._close_after_fatal_read()
-        assert close_calls == ["iface-close", "iface-close"]
+        assert close_calls == []
     finally:
         iface._get_lifecycle_controller = original_get_lifecycle_controller
         original_close()
@@ -1108,7 +1160,8 @@ def test_receive_service_branch_targets_disconnect_and_wait_paths(
             coordinator=SimpleNamespace(),
             wait_timeout=0.1,
         )
-        assert proceed and poll_without_notify
+        assert proceed is True
+        assert poll_without_notify is True
 
         monkeypatch.setattr(
             BLEReceiveRecoveryService,
@@ -1722,7 +1775,7 @@ def test_lifecycle_remaining_verify_finalize_and_shutdown_branches(
             restore_address=None,
             restore_last_connection_request=None,
         )
-        assert disconnected_calls == []
+        assert disconnected_calls == ["disconnected"]
 
         monkeypatch.setattr(
             BLELifecycleService,

@@ -5097,6 +5097,9 @@ def test_start_receive_thread_pending_marker_allows_later_restart(
 ) -> None:
     """Verify inconclusive start markers allow restart after pending-timeout expiry."""
     from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
+    from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
+        RECEIVE_START_PENDING_TIMEOUT_SECONDS,
+    )
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     try:
@@ -5128,7 +5131,17 @@ def test_start_receive_thread_pending_marker_allows_later_restart(
             lambda thread: start_calls.append(thread),
             raising=True,
         )
-        monotonic_values = iter([100.0, 100.2, 101.6, 101.7])
+        t0 = 100.0
+        small_delta = max(RECEIVE_START_PENDING_TIMEOUT_SECONDS / 10.0, 0.01)
+        monotonic_values = iter(
+            [
+                t0,
+                t0 + small_delta,
+                t0 + RECEIVE_START_PENDING_TIMEOUT_SECONDS - small_delta,
+                t0 + RECEIVE_START_PENDING_TIMEOUT_SECONDS + small_delta,
+                t0 + RECEIVE_START_PENDING_TIMEOUT_SECONDS + (2 * small_delta),
+            ]
+        )
         original_monotonic = time.monotonic
 
         def _monotonic() -> float:
@@ -5152,11 +5165,78 @@ def test_start_receive_thread_pending_marker_allows_later_restart(
         assert iface._receiveThread is thread_one
         assert iface._receive_start_pending is True
 
+        BLELifecycleService._start_receive_thread(
+            iface, name="BLEReceivePendingStillWithinTimeout"
+        )
+        assert start_calls == [thread_one]
+        assert iface._receiveThread is thread_one
+        assert iface._receive_start_pending is True
+
         BLELifecycleService._start_receive_thread(iface, name="BLEReceivePendingTwo")
         assert start_calls == [thread_one, thread_two]
         assert iface._receiveThread is thread_two
         assert iface._receive_start_pending is False
     finally:
+        iface.close()
+
+
+def test_start_receive_thread_from_current_thread_defers_restart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Restart requests from the active receive thread should defer replacement."""
+    from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
+
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    original_receive_thread = iface._receiveThread
+    try:
+        with iface._state_lock:
+            iface._want_receive = True
+            iface._receiveThread = threading.current_thread()
+            iface._receive_start_pending = False
+            iface._receive_start_pending_since = None
+
+        create_calls: list[str] = []
+
+        def _create_receive_thread(**_kwargs: object) -> SimpleNamespace:
+            create_calls.append("create")
+            return SimpleNamespace(
+                name="BLEReceiveDeferred",
+                ident=123,
+                is_alive=lambda: True,
+            )
+
+        monkeypatch.setattr(
+            iface.thread_coordinator,
+            "_create_thread",
+            _create_receive_thread,
+            raising=True,
+        )
+
+        monotonic_values = iter([200.0])
+        original_monotonic = time.monotonic
+
+        def _monotonic() -> float:
+            try:
+                return next(monotonic_values)
+            except StopIteration:
+                return original_monotonic()
+
+        monkeypatch.setattr(
+            "meshtastic.interfaces.ble.lifecycle_receive_runtime.time.monotonic",
+            _monotonic,
+        )
+
+        BLELifecycleService._start_receive_thread(iface, name="BLEReceiveDeferred")
+
+        assert create_calls == []
+        assert iface._receiveThread is threading.current_thread()
+        assert iface._receive_start_pending is True
+        assert iface._receive_start_pending_since == 200.0
+    finally:
+        with iface._state_lock:
+            iface._receiveThread = original_receive_thread
+            iface._receive_start_pending = False
+            iface._receive_start_pending_since = None
         iface.close()
 
 

@@ -41,7 +41,7 @@ recommended patterns for code that embeds `meshtastic-python`.
   collaborators (`state`, `coordination`, and compatibility shims);
   runtime ownership is in controllers/coordinators/dispatchers.
 - `BLEInterface` uses collaborator APIs for state/notification interactions
-  (for example `NotificationManager.get_callback()/subscribe()` and
+  (for example `NotificationManager._get_callback()/_subscribe()` and
   `BLEStateManager` accessors such as `current_state`, `is_connected`,
   `is_closing`, `can_connect`, `transition_to()`, `reset_to_disconnected()`) instead
   of direct collaborator-private member reach-through.
@@ -184,24 +184,24 @@ from meshtastic.interfaces.ble.notifications import NotificationManager
 mgr = NotificationManager()
 
 # Register a callback for a characteristic UUID; returns an opaque token.
-token = mgr.subscribe(uuid, callback)
+token = mgr._subscribe(uuid, callback)
 
 # Retrieve the most-recently-registered callback for a UUID.
-cb = mgr.get_callback(uuid)
+cb = mgr._get_callback(uuid)
 
 # Stop all notifications through a BLEClient (e.g. during shutdown).
-mgr.unsubscribe_all(client, timeout=5.0)
+mgr._unsubscribe_all(client, timeout=5.0)
 
 # Re-register all subscriptions on a new client (e.g. after reconnect).
-mgr.resubscribe_all(client, timeout=5.0)
+mgr._resubscribe_all(client, timeout=5.0)
 
 # Clear internal subscription state (called after full disconnect + cleanup).
-mgr.cleanup_all()
+mgr._cleanup_all()
 ```
 
-Compatibility note: underscore methods remain available for legacy/internal
-callers; public-first wrappers (`subscribe`, `get_callback`, `unsubscribe_all`,
-`resubscribe_all`, `cleanup_all`) are preferred for new code.
+Compatibility note: `NotificationManager` is an internal collaborator. Its
+underscore helpers are the canonical call surface used by dispatcher/lifecycle
+runtime code.
 
 ### `BLENotificationDispatcher`
 

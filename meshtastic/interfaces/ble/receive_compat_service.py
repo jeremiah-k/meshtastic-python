@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
     from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryController
 
-
+# COMPAT_STABLE_SHIM: historical receive service entrypoints retained for compatibility.
 class BLEReceiveRecoveryService:
     """Service helpers for BLE receive-loop and recovery behavior."""
 

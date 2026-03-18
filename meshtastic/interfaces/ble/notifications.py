@@ -4,8 +4,9 @@ import contextlib
 import logging
 import re
 import struct
+from collections.abc import Callable
 from threading import RLock
-from typing import TYPE_CHECKING, Any, Callable, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from bleak.exc import BleakDBusError, BleakError
 
@@ -256,55 +257,6 @@ class NotificationManager:
         """
         with self._lock:
             return self._characteristic_to_callback.get(characteristic)
-
-    def subscribe(
-        self, characteristic: str, callback: Callable[[Any, Any], None]
-    ) -> int:
-        """Track a notification callback for a BLE characteristic.
-
-        Parameters
-        ----------
-        characteristic : str
-            BLE characteristic identifier (e.g., UUID string).
-        callback : Callable[[Any, Any], None]
-            Function invoked when a notification arrives.
-
-        Returns
-        -------
-        int
-            Unique token identifying the tracked subscription.
-        """
-        return self._subscribe(characteristic, callback)
-
-    def get_callback(
-        self, characteristic: str
-    ) -> Callable[[Any, Any], None] | None:
-        """Retrieve callback currently registered for a BLE characteristic.
-
-        Parameters
-        ----------
-        characteristic : str
-            BLE characteristic identifier to look up.
-
-        Returns
-        -------
-        Callable[[Any, Any], None] | None
-            Registered callback for ``characteristic`` or ``None`` when absent.
-        """
-        return self._get_callback(characteristic)
-
-    def cleanup_all(self) -> None:
-        """Clear all tracked BLE notification subscriptions and callbacks."""
-        self._cleanup_all()
-
-    def unsubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
-        """Stop notifications for every characteristic currently tracked."""
-        self._unsubscribe_all(client, timeout=timeout)
-
-    def resubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
-        """Resubscribe tracked notifications for the active client."""
-        self._resubscribe_all(client, timeout=timeout)
-
 
 class BLENotificationDispatcher:
     """Own notification callback safety, FROMNUM parsing, and registration flow."""
@@ -704,10 +656,10 @@ class BLENotificationDispatcher:
         def _get_or_create_handler(
             uuid: str, factory: Callable[[], Callable[[Any, Any], None]]
         ) -> Callable[[Any, Any], None]:
-            handler = self._notification_manager.get_callback(uuid)
+            handler = self._notification_manager._get_callback(uuid)
             if handler is None:
                 handler = factory()
-                self._notification_manager.subscribe(uuid, handler)
+                self._notification_manager._subscribe(uuid, handler)
             return handler
 
         def _is_notify_acquired_error(err: BaseException) -> bool:
