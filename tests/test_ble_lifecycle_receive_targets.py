@@ -928,7 +928,9 @@ def test_receive_controller_honors_class_level_disconnect_override(
     try:
         override_calls: list[tuple[str, DummyClient]] = []
 
-        def _class_override(_self: object, error_message: str, previous_client: DummyClient) -> bool:
+        def _class_override(
+            _self: object, error_message: str, previous_client: DummyClient
+        ) -> bool:
             override_calls.append((error_message, previous_client))
             return False
 

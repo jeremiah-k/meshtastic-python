@@ -27,28 +27,6 @@ class BLEManagementCommandsService:
     """Service helpers for BLE management command paths."""
 
     @staticmethod
-    def _is_handler_like(candidate: object) -> bool:
-        """Return whether ``candidate`` implements management handler API."""
-        required_methods = (
-            "start_management_phase",
-            "resolve_management_target",
-            "acquire_client_for_target",
-            "execute_with_client",
-            "execute_management_command",
-            "validate_management_await_timeout",
-            "validate_trust_timeout",
-            "validate_connect_timeout_override",
-            "pair",
-            "unpair",
-            "run_bluetoothctl_trust_command",
-            "trust",
-        )
-        return all(
-            callable(getattr(candidate, method_name, None))
-            for method_name in required_methods
-        )
-
-    @staticmethod
     def _handler_for_shim(
         iface: "BLEInterface",
         *,
@@ -60,12 +38,7 @@ class BLEManagementCommandsService:
             get_handler = getattr(iface, "_get_management_command_handler", None)
             if callable(get_handler):
                 resolved = get_handler()
-                if isinstance(resolved, BLEManagementCommandHandler):
-                    return resolved
-                if (
-                    resolved is not None
-                    and BLEManagementCommandsService._is_handler_like(resolved)
-                ):
+                if resolved is not None:
                     return cast(BLEManagementCommandHandler, resolved)
         if ble_client_factory is None:
             ble_client_factory = BLEClient

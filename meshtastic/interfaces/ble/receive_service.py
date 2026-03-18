@@ -35,10 +35,15 @@ COORDINATOR_WAIT_FALLBACK_SLEEP_SEC = 0.001
 RECEIVE_THREAD_FATAL_REASON = "receive_thread_fatal"
 _INTERFACE_MODULE_NAME = "meshtastic.interfaces.ble.interface"
 _DEFAULT_RECURSIVE_IFACE_RECEIVE_HOOK_QUALNAMES = {
+    "_should_run_receive_loop": "BLEInterface._should_run_receive_loop",
+    "_set_receive_wanted": "BLEInterface._set_receive_wanted",
+    "_handle_disconnect": "BLEInterface._handle_disconnect",
+    "_start_receive_thread": "BLEInterface._start_receive_thread",
     "_handle_read_loop_disconnect": "BLEInterface._handle_read_loop_disconnect",
     "_read_from_radio_with_retries": "BLEInterface._read_from_radio_with_retries",
     "_handle_transient_read_error": "BLEInterface._handle_transient_read_error",
     "_log_empty_read_warning": "BLEInterface._log_empty_read_warning",
+    "close": "BLEInterface.close",
 }
 
 
@@ -167,9 +172,8 @@ class BLEReceiveRecoveryController:
 
     def _should_run_receive_loop(self) -> bool:
         """Return whether the lifecycle currently wants receive-loop execution."""
-        iface = self._iface
-        override_should_run_receive_loop = getattr(
-            iface, "_should_run_receive_loop", None
+        override_should_run_receive_loop = self._resolve_iface_receive_hook_override(
+            "_should_run_receive_loop"
         )
         if callable(override_should_run_receive_loop):
             return bool(override_should_run_receive_loop())
@@ -184,8 +188,9 @@ class BLEReceiveRecoveryController:
 
     def _set_receive_wanted(self, *, want_receive: bool) -> None:
         """Set receive-loop intent through lifecycle controller or legacy iface hook."""
-        iface = self._iface
-        override_set_receive_wanted = getattr(iface, "_set_receive_wanted", None)
+        override_set_receive_wanted = self._resolve_iface_receive_hook_override(
+            "_set_receive_wanted"
+        )
         if callable(override_set_receive_wanted):
             override_set_receive_wanted(want_receive=want_receive)
             return
@@ -196,7 +201,6 @@ class BLEReceiveRecoveryController:
             )
             if callable(set_receive_wanted):
                 set_receive_wanted(want_receive=want_receive)
-        return
 
     def _handle_disconnect(
         self,
@@ -205,8 +209,9 @@ class BLEReceiveRecoveryController:
         client: BLEClient | None,
     ) -> bool:
         """Invoke disconnect handling through lifecycle controller or legacy hook."""
-        iface = self._iface
-        override_handle_disconnect = getattr(iface, "_handle_disconnect", None)
+        override_handle_disconnect = self._resolve_iface_receive_hook_override(
+            "_handle_disconnect"
+        )
         if callable(override_handle_disconnect):
             return bool(override_handle_disconnect(disconnect_reason, client=client))
         lifecycle_controller = self._get_lifecycle_controller()
@@ -224,8 +229,9 @@ class BLEReceiveRecoveryController:
 
     def _start_receive_thread(self, *, name: str, reset_recovery: bool) -> None:
         """Start receive thread through lifecycle controller or legacy hook."""
-        iface = self._iface
-        override_start_receive_thread = getattr(iface, "_start_receive_thread", None)
+        override_start_receive_thread = self._resolve_iface_receive_hook_override(
+            "_start_receive_thread"
+        )
         if callable(override_start_receive_thread):
             override_start_receive_thread(name=name, reset_recovery=reset_recovery)
             return
@@ -240,12 +246,11 @@ class BLEReceiveRecoveryController:
                 name=name,
                 reset_recovery=reset_recovery,
             )
-        return
 
     def _close_after_fatal_read(self) -> None:
         """Close interface via lifecycle collaborator after fatal read failures."""
         iface = self._iface
-        override_close = getattr(iface, "close", None)
+        override_close = self._resolve_iface_receive_hook_override("close")
         if callable(override_close):
             override_close()
             return
@@ -304,8 +309,8 @@ class BLEReceiveRecoveryController:
     ) -> bool:
         """Handle read-loop disconnect logic for the bound interface."""
         iface = self._iface
-        override_handle_read_loop_disconnect = self._resolve_iface_receive_hook_override(
-            "_handle_read_loop_disconnect"
+        override_handle_read_loop_disconnect = (
+            self._resolve_iface_receive_hook_override("_handle_read_loop_disconnect")
         )
         if callable(override_handle_read_loop_disconnect):
             return bool(
@@ -534,12 +539,12 @@ class BLEReceiveRecoveryController:
                 return False, False
             except iface.BLEError:
                 logger.error("Fatal BLE read error after retries: %s", exc)
-                if not iface._is_connection_closing:
+                if not self._is_connection_closing():
                     self._close_after_fatal_read()
                 return True, True
         except (RuntimeError, OSError) as exc:
             logger.error("Fatal error in BLE receive thread: %s", exc)
-            if not iface._is_connection_closing:
+            if not self._is_connection_closing():
                 self._close_after_fatal_read()
             return True, True
         except Exception as exc:  # noqa: BLE001  # pragma: no cover
@@ -621,7 +626,7 @@ class BLEReceiveRecoveryController:
     def recover_receive_thread(self, disconnect_reason: str) -> None:
         """Recover the receive thread for the bound interface."""
         iface = self._iface
-        if iface._is_connection_closing:
+        if self._is_connection_closing():
             return
         with iface._state_lock:
             current_client = iface.client
@@ -713,8 +718,8 @@ class BLEReceiveRecoveryController:
     ) -> bytes | None:
         """Read FROMRADIO payload for the bound interface with retry policy."""
         iface = self._iface
-        override_read_from_radio_with_retries = self._resolve_iface_receive_hook_override(
-            "_read_from_radio_with_retries"
+        override_read_from_radio_with_retries = (
+            self._resolve_iface_receive_hook_override("_read_from_radio_with_retries")
         )
         if callable(override_read_from_radio_with_retries):
             return cast(
@@ -744,8 +749,8 @@ class BLEReceiveRecoveryController:
     ) -> None:
         """Apply transient-read retry policy for the bound interface."""
         iface = self._iface
-        override_handle_transient_read_error = self._resolve_iface_receive_hook_override(
-            "_handle_transient_read_error"
+        override_handle_transient_read_error = (
+            self._resolve_iface_receive_hook_override("_handle_transient_read_error")
         )
         if callable(override_handle_transient_read_error):
             override_handle_transient_read_error(error)
@@ -794,6 +799,7 @@ class BLEReceiveRecoveryController:
             iface._suppressed_empty_read_warnings,
             cooldown,
         )
+
 
 # COMPAT_STABLE_SHIM: Re-export legacy receive service name for compatibility.
 # Deferred import avoids circular dependency with `receive_compat_service`.

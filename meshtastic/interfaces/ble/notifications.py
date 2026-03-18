@@ -655,7 +655,12 @@ class BLENotificationDispatcher:
                 )
             except BleakDBusError as err:
                 if not _is_notify_acquired_error(err):
-                    raise
+                    logger.warning(
+                        "Unable to start FROMNUM notifications for %s: %s; falling back to polling reads.",
+                        FROMNUM_UUID,
+                        err,
+                    )
+                    return
                 logger.debug(
                     "FROMNUM notify already acquired for %s; retrying after best-effort stop_notify (attempt %d/%d)",
                     FROMNUM_UUID,
@@ -674,6 +679,13 @@ class BLENotificationDispatcher:
                     "Unable to start FROMNUM notifications for %s after %d attempts due to BlueZ 'Notify acquired'; falling back to polling reads.",
                     FROMNUM_UUID,
                     max_attempts,
+                )
+                return
+            except optional_errors as err:
+                logger.warning(
+                    "Unable to start FROMNUM notifications for %s: %s; falling back to polling reads.",
+                    FROMNUM_UUID,
+                    err,
                 )
                 return
             else:

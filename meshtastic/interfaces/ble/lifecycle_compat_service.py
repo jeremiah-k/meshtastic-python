@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, NoReturn
 from bleak import BleakClient as BleakRootClient
 
 from meshtastic.interfaces.ble.coordination import ThreadLike
+from meshtastic.interfaces.ble.gating import _is_currently_connected_elsewhere
 from meshtastic.interfaces.ble.lifecycle_disconnect_runtime import (
     BLEDisconnectLifecycleCoordinator,
 )
@@ -624,7 +625,7 @@ class BLELifecycleService:
         """
         BLEConnectionOwnershipLifecycleCoordinator(
             iface
-        ).emit_verified_connection_side_effects(connected_client)
+        )._emit_verified_connection_side_effects(connected_client)
 
     @staticmethod
     def _discard_invalidated_connected_client(
@@ -654,7 +655,7 @@ class BLELifecycleService:
         """
         BLEConnectionOwnershipLifecycleCoordinator(
             iface
-        ).discard_invalidated_connected_client(
+        )._discard_invalidated_connected_client(
             client,
             restore_address=restore_address,
             restore_last_connection_request=restore_last_connection_request,
@@ -907,13 +908,9 @@ class BLELifecycleService:
             ``True`` when any non-``None`` key is currently owned by another
             interface; otherwise ``False``.
         """
-        from meshtastic.interfaces.ble import lifecycle_service as lifecycle_service_mod
-
         return any(
             key is not None
-            and lifecycle_service_mod._is_currently_connected_elsewhere(
-                key, owner=iface
-            )
+            and _is_currently_connected_elsewhere(key, owner=iface)
             for key in keys
         )
 
@@ -1025,7 +1022,7 @@ class BLELifecycleService:
         """
         return BLEConnectionOwnershipLifecycleCoordinator(
             iface
-        ).has_ever_connected_session()
+        )._has_ever_connected_session()
 
     @staticmethod
     def _verify_and_publish_connected(
@@ -1064,7 +1061,7 @@ class BLELifecycleService:
         BLEError
             Raised when ownership is invalidated before or during publication.
         """
-        BLEConnectionOwnershipLifecycleCoordinator(iface).verify_and_publish_connected(
+        BLEConnectionOwnershipLifecycleCoordinator(iface)._verify_and_publish_connected(
             connected_client,
             connected_device_key,
             connection_alias_key,
@@ -1151,7 +1148,7 @@ class BLELifecycleService:
         None
             Returns ``None`` after gate publication or stale-claim cleanup.
         """
-        BLEConnectionOwnershipLifecycleCoordinator(iface).finalize_connection_gates(
+        BLEConnectionOwnershipLifecycleCoordinator(iface)._finalize_connection_gates(
             connected_client,
             connected_device_key,
             connection_alias_key,

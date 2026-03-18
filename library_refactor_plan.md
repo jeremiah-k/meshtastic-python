@@ -1,4 +1,7 @@
-# AGOR Architectural Refactor Program
+# AGOR Architectural Refactor Program (INTERNAL/DRAFT)
+
+> INTERNAL planning artifact for architecture pass coordination.
+> Not user-facing library documentation; remove or relocate before release.
 
 ## Coordinator Directive (High-Level Execution Plan)
 

@@ -103,7 +103,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         )
         with iface._state_lock:
             still_owned, is_closing = get_connected_status_locked(connected_client)
-            prior_ever_connected = self.has_ever_connected_session()
+            prior_ever_connected = self._has_ever_connected_session()
         return _OwnershipSnapshot(
             still_owned=still_owned,
             is_closing=is_closing,
@@ -111,14 +111,14 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             prior_ever_connected=prior_ever_connected,
         )
 
-    def has_ever_connected_session(self) -> bool:
+    def _has_ever_connected_session(self) -> bool:
         """Return mock-safe `True` when this interface published a connection."""
         raw_ever_connected = getattr(self._iface, "_ever_connected", False)
         if _is_unconfigured_mock_member(raw_ever_connected):
             return False
         return raw_ever_connected is True
 
-    def emit_verified_connection_side_effects(
+    def _emit_verified_connection_side_effects(
         self, connected_client: "BLEClient"
     ) -> None:
         """Emit reconnect wake signal and success logging after verified publish."""
@@ -149,7 +149,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             getattr(connected_client, "address", "unknown"),
         )
 
-    def discard_invalidated_connected_client(
+    def _discard_invalidated_connected_client(
         self,
         client: "BLEClient",
         *,
@@ -230,7 +230,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                                 getattr(fallback_state, "value", fallback_state),
                             )
 
-    def verify_and_publish_connected(
+    def _verify_and_publish_connected(
         self,
         connected_client: "BLEClient",
         connected_device_key: str | None,
@@ -326,7 +326,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 with iface._state_lock:
                     iface._ever_connected = True
                     iface._prior_publish_was_reconnect = prior_ever_connected
-                self.emit_verified_connection_side_effects(connected_client)
+                self._emit_verified_connection_side_effects(connected_client)
                 with iface._state_lock:
                     if iface.client is connected_client:
                         iface._client_publish_pending = False
@@ -348,7 +348,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
 
         _raise_invalidated(snapshot)
 
-    def finalize_connection_gates(
+    def _finalize_connection_gates(
         self,
         connected_client: "BLEClient",
         connected_device_key: str | None,
@@ -409,7 +409,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 getattr(connected_client, "address", "unknown"),
             )
 
-    def is_owned_connected_client(self, client: "BLEClient") -> bool:
+    def _is_owned_connected_client(self, client: "BLEClient") -> bool:
         """Return whether interface still owns the provided connected client."""
         is_owned, _ = self._get_connected_client_status(client)
         return is_owned

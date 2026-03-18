@@ -8,6 +8,10 @@ from bleak import BleakClient as BleakRootClient
 from meshtastic.interfaces.ble.lifecycle_disconnect_runtime import (
     BLEDisconnectLifecycleCoordinator,
 )
+from meshtastic.interfaces.ble.lifecycle_compat_service import (
+    _ORIGINAL_GET_CONNECTED_CLIENT_STATUS,
+    _ORIGINAL_GET_CONNECTED_CLIENT_STATUS_LOCKED,
+)
 from meshtastic.interfaces.ble.lifecycle_ownership_runtime import (
     BLEConnectionOwnershipLifecycleCoordinator,
 )
@@ -88,7 +92,7 @@ class BLELifecycleController:
         ) = None,
     ) -> None:
         """Verify ownership and publish connected side effects."""
-        self._connection_ownership.verify_and_publish_connected(
+        self._connection_ownership._verify_and_publish_connected(
             connected_client,
             connected_device_key,
             connection_alias_key,
@@ -102,7 +106,7 @@ class BLELifecycleController:
         self, connected_client: "BLEClient"
     ) -> None:
         """Emit verified-connection side effects for the bound interface."""
-        self._connection_ownership.emit_verified_connection_side_effects(
+        self._connection_ownership._emit_verified_connection_side_effects(
             connected_client
         )
 
@@ -114,7 +118,7 @@ class BLELifecycleController:
         restore_last_connection_request: str | None = None,
     ) -> None:
         """Discard stale connect result for the bound interface."""
-        self._connection_ownership.discard_invalidated_connected_client(
+        self._connection_ownership._discard_invalidated_connected_client(
             client,
             restore_address=restore_address,
             restore_last_connection_request=restore_last_connection_request,
@@ -131,10 +135,9 @@ class BLELifecycleController:
             lifecycle_service_mod.BLELifecycleService._get_connected_client_status_locked
         )
         return (
-            service_get_status
-            is not lifecycle_service_mod._ORIGINAL_GET_CONNECTED_CLIENT_STATUS
+            service_get_status is not _ORIGINAL_GET_CONNECTED_CLIENT_STATUS
             or service_get_status_locked
-            is not lifecycle_service_mod._ORIGINAL_GET_CONNECTED_CLIENT_STATUS_LOCKED
+            is not _ORIGINAL_GET_CONNECTED_CLIENT_STATUS_LOCKED
         )
 
     def finalize_connection_gates(
@@ -156,7 +159,7 @@ class BLELifecycleController:
                 connection_alias_key,
             )
             return
-        self._connection_ownership.finalize_connection_gates(
+        self._connection_ownership._finalize_connection_gates(
             connected_client,
             connected_device_key,
             connection_alias_key,
@@ -172,11 +175,11 @@ class BLELifecycleController:
             return lifecycle_service_mod.BLELifecycleService._is_owned_connected_client(
                 self._iface, client
             )
-        return self._connection_ownership.is_owned_connected_client(client)
+        return self._connection_ownership._is_owned_connected_client(client)
 
     def has_ever_connected_session(self) -> bool:
         """Return whether this interface has published at least one connection."""
-        return self._connection_ownership.has_ever_connected_session()
+        return self._connection_ownership._has_ever_connected_session()
 
     def is_connection_closing(self) -> bool:
         """Return whether shutdown is in progress for the bound interface."""

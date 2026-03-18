@@ -1,5 +1,6 @@
 """Receive compatibility shim service for BLE."""
 
+import contextlib
 from typing import TYPE_CHECKING, cast
 
 from bleak.exc import BleakError
@@ -17,13 +18,30 @@ class BLEReceiveRecoveryService:
 
     @staticmethod
     def _controller_for_shim(iface: "BLEInterface") -> BLEReceiveRecoveryController:
-        """Return iface-bound receive controller, falling back to direct construction."""
+        """Return iface-bound receive controller, falling back to cached construction.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface to resolve or attach the receive-recovery controller.
+
+        Returns
+        -------
+        BLEReceiveRecoveryController
+            Controller bound to ``iface``.
+        """
         get_controller = getattr(iface, "_get_receive_recovery_controller", None)
         if callable(get_controller):
             resolved = get_controller()
             if resolved is not None:
                 return cast(BLEReceiveRecoveryController, resolved)
-        return BLEReceiveRecoveryController(iface)
+        cached = getattr(iface, "_receive_recovery_controller", None)
+        if cached is not None:
+            return cast(BLEReceiveRecoveryController, cached)
+        controller = BLEReceiveRecoveryController(iface)
+        with contextlib.suppress(Exception):  # noqa: BLE001 - best-effort cache attach
+            iface._receive_recovery_controller = controller
+        return controller
 
     @staticmethod
     def _handle_read_loop_disconnect(

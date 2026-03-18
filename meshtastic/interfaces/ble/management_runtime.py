@@ -4,8 +4,8 @@ import math
 import numbers
 import re
 import subprocess as subprocess_stdlib
-from contextlib import ExitStack
 from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypeVar, cast
 
@@ -248,6 +248,8 @@ class BLEManagementCommandHandler:
         if current_client is not None and current_client.isConnected():
             return current_client
         normalized_request = sanitize_address(requested_identifier)
+        if address is not None and normalized_request is None:
+            return None
         return iface._get_existing_client_if_valid(normalized_request)
 
     def get_management_client_for_target(
@@ -402,7 +404,9 @@ class BLEManagementCommandHandler:
                     start_context.expected_implicit_binding,
                 ):
                     raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
-                target_candidate = iface._extract_client_address(refreshed_existing_client)
+                target_candidate = iface._extract_client_address(
+                    refreshed_existing_client
+                )
         else:
             with iface._connect_lock, iface._management_lock:
                 iface._validate_management_preconditions()
@@ -413,7 +417,9 @@ class BLEManagementCommandHandler:
                 )
                 if refreshed_existing_client is None:
                     raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
-                target_candidate = iface._extract_client_address(refreshed_existing_client)
+                target_candidate = iface._extract_client_address(
+                    refreshed_existing_client
+                )
                 if target_candidate is None:
                     # Cannot safely gate an unknown-address client; force
                     # reacquisition by resolved concrete target.

@@ -379,6 +379,8 @@ class _LifecycleErrorAccess:
                         or _is_unexpected_keyword_error(exc, "cleanup_name")
                     ):
                         raise
+                    if cleanup_ran:
+                        return
                     hook_result = safe_cleanup(_tracked_cleanup, operation_name)
                 if cleanup_ran or bool(hook_result):
                     return
@@ -417,6 +419,8 @@ class _LifecycleErrorAccess:
                     return result
             except TypeError as exc:
                 if _is_unexpected_keyword_error(exc, "error_msg"):
+                    if func_ran:
+                        return None
                     try:
                         result = safe_execute(_tracked_func, error_msg)
                         if func_ran:

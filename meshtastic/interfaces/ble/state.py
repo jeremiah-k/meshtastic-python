@@ -135,6 +135,7 @@ class BLEStateManager:
             return self._state
 
     @property
+    # COMPAT_STABLE_SHIM: public-first alias for `_current_state`.
     def current_state(self) -> ConnectionState:
         """Public-first state snapshot accessor.
 
@@ -161,6 +162,7 @@ class BLEStateManager:
         return self._current_state == ConnectionState.CONNECTED
 
     @property
+    # COMPAT_STABLE_SHIM: public-first alias for `_is_connected`.
     def is_connected(self) -> bool:
         """Public-first connected-state snapshot accessor."""
         return self._is_connected
@@ -181,6 +183,7 @@ class BLEStateManager:
         return self._current_state == ConnectionState.DISCONNECTING
 
     @property
+    # COMPAT_STABLE_SHIM: public-first alias for `_is_closing`.
     def is_closing(self) -> bool:
         """Public-first closing-state snapshot accessor."""
         return self._is_closing
@@ -204,6 +207,7 @@ class BLEStateManager:
         )
 
     @property
+    # COMPAT_STABLE_SHIM: public-first alias for `_can_connect`.
     def can_connect(self) -> bool:
         """Public-first connect-capability snapshot accessor."""
         return self._can_connect
@@ -258,6 +262,7 @@ class BLEStateManager:
         )
 
     @property
+    # COMPAT_STABLE_SHIM: public-first alias for `_is_active`.
     def is_active(self) -> bool:
         """Public-first active-state snapshot accessor."""
         return self._is_active
@@ -298,6 +303,7 @@ class BLEStateManager:
         with self._state_lock:
             return self._transition_to_unlocked(new_state)
 
+    # COMPAT_STABLE_SHIM: public-first alias for `_transition_to`.
     def transition_to(self, new_state: ConnectionState) -> bool:
         """Public-first wrapper for state transitions."""
         return self._transition_to(new_state)
@@ -365,6 +371,7 @@ class BLEStateManager:
             # disconnected and remains resilient to future transition-map edits.
             return self._transition_to_unlocked(ConnectionState.DISCONNECTED)
 
+    # COMPAT_STABLE_SHIM: public-first alias for `_reset_to_disconnected`.
     def reset_to_disconnected(self) -> bool:
         """Public-first wrapper that forces DISCONNECTED state."""
         return self._reset_to_disconnected()

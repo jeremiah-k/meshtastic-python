@@ -634,6 +634,7 @@ def test_ble_interface_pair_prefers_active_client(
             "Unexpected temporary BLEClient created during active-client pair reuse test"
         ),
     )
+    iface._management_command_handler = None
 
     iface.pair(confirm=True, await_timeout=12.5)
     assert client.pair_calls == 1
@@ -665,6 +666,7 @@ def test_ble_interface_pair_prefers_active_client_without_address(
             "Unexpected temporary BLEClient created during active-client address-less pair reuse test"
         ),
     )
+    iface._management_command_handler = None
 
     iface.pair(confirm=True, await_timeout=9.5)
     assert client.pair_calls == 1
@@ -692,6 +694,7 @@ def test_ble_interface_unpair_prefers_active_client(
             "Unexpected temporary BLEClient created during active-client unpair reuse test"
         ),
     )
+    iface._management_command_handler = None
 
     def _on_unpair() -> None:
         iface._handle_disconnect("test-unpair", client=cast(BLEClient, client))
@@ -737,6 +740,7 @@ def test_ble_interface_pair_uses_existing_client_when_request_matches(
             "Unexpected temporary BLEClient created during existing-client pair reuse test"
         ),
     )
+    iface._management_command_handler = None
 
     iface.pair("mesh-node", confirm=True, await_timeout=7.0)
 
@@ -807,6 +811,7 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
         "meshtastic.interfaces.ble.interface.BLEClient",
         _temp_client_factory,
     )
+    iface._management_command_handler = None
     monkeypatch.setattr(
         iface._client_manager,
         "_safe_close_client",
@@ -855,6 +860,7 @@ def test_ble_interface_close_waits_for_temporary_pair_operation(
         "meshtastic.interfaces.ble.interface.BLEClient",
         lambda _address, **_kwargs: temp_client,
     )
+    iface._management_command_handler = None
     monkeypatch.setattr(
         iface._client_manager,
         "_safe_close_client",
@@ -936,6 +942,7 @@ def test_ble_interface_unpair_uses_temporary_client_when_disconnected(
         "meshtastic.interfaces.ble.interface.BLEClient",
         _temp_client_factory,
     )
+    iface._management_command_handler = None
     monkeypatch.setattr(
         iface._client_manager,
         "_safe_close_client",
@@ -1000,6 +1007,7 @@ def test_ble_interface_management_rejects_temp_client_when_target_owned_elsewher
             "Temporary BLEClient should not be created when target is owned elsewhere"
         ),
     )
+    iface._management_command_handler = None
 
     if method_name == "pair":
         with pytest.raises(BLEInterface.BLEError, match=ERROR_CONNECTION_SUPPRESSED):
@@ -1359,6 +1367,7 @@ def test_ble_interface_management_allows_bound_name_when_target_stays_resolved(
             "meshtastic.interfaces.ble.interface.BLEClient",
             lambda _address, **_kwargs: temp_client,
         )
+        iface._management_command_handler = None
         monkeypatch.setattr(
             iface._client_manager,
             "_safe_close_client",
@@ -2360,6 +2369,7 @@ def test_ble_interface_pair_waits_for_connect_lock(
         "meshtastic.interfaces.ble.interface.BLEClient",
         _temp_client_factory,
     )
+    iface._management_command_handler = None
     monkeypatch.setattr(
         iface._client_manager,
         "_safe_close_client",
@@ -2460,6 +2470,7 @@ def test_ble_interface_pair_waits_for_address_gate(
         "meshtastic.interfaces.ble.interface.BLEClient",
         _temp_client_factory,
     )
+    iface._management_command_handler = None
     monkeypatch.setattr(
         iface._client_manager,
         "_safe_close_client",
@@ -5062,7 +5073,9 @@ def test_report_notification_handler_error_covers_hook_and_fallback_paths(
     assert "missing-hook" in debug_calls
 
 
-def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure() -> None:
+def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure() -> (
+    None
+):
     """Positional safe_execute failures should not trigger a second handler invocation."""
 
     calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
@@ -5096,7 +5109,9 @@ def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure
     assert len(calls) == 2
 
 
-def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signature_error() -> None:
+def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signature_error() -> (
+    None
+):
     """Positional signature mismatch should continue to callable-only compatibility probe."""
 
     calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
@@ -5131,7 +5146,9 @@ def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signatu
     assert len(calls) == 3
 
 
-def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_paths() -> None:
+def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_paths() -> (
+    None
+):
     """safe_execute compatibility helper should cover success/fallback branches."""
 
     def _run_scenario(
@@ -5499,7 +5516,9 @@ def test_discovery_manager_accepts_discover_underscore_only_factory() -> None:
     assert devices == [filtered_device]
 
 
-def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> None:
+def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> (
+    None
+):
     """Verify discovery prefers configured ``_discover`` over unconfigured ``discover``.
 
     Returns

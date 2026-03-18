@@ -57,6 +57,7 @@ class BLECompatibilityEventPublisher:
             publishing_thread=self._publishing_thread_provider(),
         )
 
+    # COMPAT_STABLE_SHIM: retained bound alias for compatibility callers.
     def publish_connection_status_legacy(self, connected: bool) -> None:
         """Backwards-compatible status publication entrypoint."""
         BLECompatibilityEventService.publish_connection_status_legacy(
