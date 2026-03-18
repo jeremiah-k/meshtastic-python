@@ -69,11 +69,7 @@ from meshtastic.interfaces.ble.constants import (
     ERROR_TRUST_ADDRESS_NOT_RESOLVED,
     ERROR_WRITING_BLE,
     GATT_IO_TIMEOUT,
-)
-from meshtastic.interfaces.ble.constants import (
     MALFORMED_NOTIFICATION_THRESHOLD as _MALFORMED_NOTIFICATION_THRESHOLD,
-)
-from meshtastic.interfaces.ble.constants import (
     READ_TRIGGER_EVENT,
     RECONNECTED_EVENT,
     SERVICE_UUID,
