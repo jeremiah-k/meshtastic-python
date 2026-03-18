@@ -36,7 +36,7 @@ import threading
 import time
 from collections.abc import Awaitable, Callable
 from threading import Event
-from typing import IO, Any, TypeVar, cast
+from typing import IO, Any, NoReturn, TypeVar, cast
 
 from bleak import BleakClient as BleakRootClient
 from bleak.backends.device import BLEDevice
@@ -761,7 +761,8 @@ class BLEInterface(MeshInterface):
             awaitable,
             timeout,
             label,
-            timeout_error_factory=lambda timeout_label, timeout_seconds: BLEInterface.BLEError(
+            timeout_error_factory=lambda timeout_label,
+            timeout_seconds: BLEInterface.BLEError(
                 ERROR_TIMEOUT.format(timeout_label, timeout_seconds)
             ),
         )
@@ -969,15 +970,11 @@ class BLEInterface(MeshInterface):
 
     def _get_current_implicit_management_binding_locked(self) -> str | None:
         """Return implicit management binding via management collaborator."""
-        return (
-            self._get_management_command_handler().get_current_implicit_management_binding_locked()
-        )
+        return self._get_management_command_handler().get_current_implicit_management_binding_locked()
 
     def _get_current_implicit_management_address_locked(self) -> str | None:
         """Return implicit management concrete address via collaborator."""
-        return (
-            self._get_management_command_handler().get_current_implicit_management_address_locked()
-        )
+        return self._get_management_command_handler().get_current_implicit_management_address_locked()
 
     def _revalidate_implicit_management_target(
         self,
@@ -2060,7 +2057,7 @@ class BLEInterface(MeshInterface):
         lost_gate_ownership: bool,
         restore_address: str | None,
         restore_last_connection_request: str | None,
-    ) -> None:
+    ) -> NoReturn:
         """Clean up a stale connect result and raise the appropriate BLEError."""
         stale_keys = self._sorted_address_keys(
             connected_device_key,
