@@ -94,7 +94,6 @@ from meshtastic.interfaces.ble.gating import (
     _mark_connecting,
     _mark_disconnected,
 )
-from meshtastic.interfaces.ble import lifecycle_service as lifecycle_service_mod
 from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleController
 from meshtastic.interfaces.ble.management_service import (
     BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS as _BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS,
@@ -2160,25 +2159,6 @@ class BLEInterface(MeshInterface):
         connection_alias_key : str | None
             Optional alias key used when claiming connection gates, or `None` if not used.
         """
-        service_get_status = (
-            lifecycle_service_mod.BLELifecycleService._get_connected_client_status
-        )
-        service_get_status_locked = (
-            lifecycle_service_mod.BLELifecycleService._get_connected_client_status_locked
-        )
-        if (
-            service_get_status
-            is not lifecycle_service_mod._ORIGINAL_GET_CONNECTED_CLIENT_STATUS
-            or service_get_status_locked
-            is not lifecycle_service_mod._ORIGINAL_GET_CONNECTED_CLIENT_STATUS_LOCKED
-        ):
-            lifecycle_service_mod.BLELifecycleService._finalize_connection_gates(
-                self,
-                connected_client,
-                connected_device_key,
-                connection_alias_key,
-            )
-            return
         self._get_lifecycle_controller().finalize_connection_gates(
             connected_client,
             connected_device_key,
@@ -2199,16 +2179,6 @@ class BLEInterface(MeshInterface):
             `True` when the interface is not closed, still references `client`,
             and the state machine reports CONNECTED.
         """
-        service_get_status = (
-            lifecycle_service_mod.BLELifecycleService._get_connected_client_status
-        )
-        if (
-            service_get_status
-            is not lifecycle_service_mod._ORIGINAL_GET_CONNECTED_CLIENT_STATUS
-        ):
-            return lifecycle_service_mod.BLELifecycleService._is_owned_connected_client(
-                self, client
-            )
         return self._get_lifecycle_controller().is_owned_connected_client(client)
 
     # ---------------------------------------------------------------------
