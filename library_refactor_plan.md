@@ -4,7 +4,7 @@
 ## Execution Progress
 
 - Program status: **PASS 1 Complete (BLE ownership transfer)**
-- Last updated: **2026-03-17 (strict runtime authority retirement pass)**
+- Last updated: **2026-03-17 (receive/management runtime static-core retirement follow-through)**
 
 ### Progress Log
 
@@ -58,6 +58,17 @@
   - `ruff check meshtastic/interfaces/ble/lifecycle_service.py meshtastic/interfaces/ble/interface.py meshtastic/interfaces/ble/management_service.py meshtastic/interfaces/ble/notifications.py`: passed.
   - `poetry run pytest -q tests/test_ble_interface_core.py tests/test_ble_utils_service_targets.py tests/test_ble_lifecycle_receive_targets.py tests/test_ble_connection_discovery_client_targets.py`: **264 passed**.
   - `poetry run pytest -q`: **1454 passed, 3 skipped, 92 deselected**.
+
+#### PASS 1 — Follow-through Update (Current)
+
+- Additional ownership transfer completed:
+  - `BLEReceiveRecoveryService` runtime-heavy static entrypoints now delegate to `BLEReceiveRecoveryController` owners.
+  - Removed static receive-path direct interface authority calls (`iface.close()`, `iface._recover_receive_thread(...)`) from receive runtime entrypoints.
+  - `BLEManagementCommandHandler` now owns management timeout/connect-timeout validation, trust command execution, and trust lifecycle flow.
+  - `BLEManagementCommandsService` static entrypoints now route through handler-owned runtime implementations.
+- Validation completed for this tranche:
+  - `ruff check meshtastic/interfaces/ble/receive_service.py meshtastic/interfaces/ble/management_service.py tests/test_ble_lifecycle_receive_targets.py tests/test_ble_utils_service_targets.py`: passed.
+  - `pytest -q tests/test_ble_lifecycle_receive_targets.py tests/test_ble_utils_service_targets.py tests/test_ble_interface_core.py -k "receive or management or safe_execute or retry_policy or publishing_thread or malformed_fromnum"`: **110 passed, 135 deselected**.
 
 You are operating as a project coordinator responsible for executing a **large-scale architectural refinement program** on an existing codebase.
 

@@ -18,6 +18,7 @@ from meshtastic.interfaces.ble.compatibility_service import BLECompatibilityEven
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator, _InertThread
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.management_service import (
+    BLEManagementCommandHandler,
     BLEManagementCommandsService,
     _create_management_client,
     _is_blank_or_malformed_address_like,
@@ -463,7 +464,8 @@ def test_management_helpers_cover_factory_and_target_edge_paths(
 
         with pytest.raises(RuntimeError, match="target resolution failure"):
             BLEManagementCommandsService._start_management_phase(iface, None)
-        iface._finish_management_operation.assert_called_once()
+        with iface._management_lock:
+            assert iface._management_inflight == 0
     finally:
         iface.close()
 
@@ -572,22 +574,20 @@ def test_management_execute_management_command_existing_client_and_trust_edges(
             use_existing_client_without_resolved_address=False,
         )
         monkeypatch.setattr(
-            BLEManagementCommandsService,
+            BLEManagementCommandHandler,
             "_start_management_phase",
-            staticmethod(lambda _iface, _address: start_context),
+            lambda _self, _address: start_context,
         )
         refreshed_client = DummyClient()
         monkeypatch.setattr(
-            BLEManagementCommandsService,
+            BLEManagementCommandHandler,
             "_resolve_management_target",
-            staticmethod(lambda _iface, _address, _ctx: (None, refreshed_client)),
+            lambda _self, _address, _ctx: (None, refreshed_client),
         )
         monkeypatch.setattr(
-            BLEManagementCommandsService,
+            BLEManagementCommandHandler,
             "_acquire_client_for_target",
-            staticmethod(
-                lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError())
-            ),
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError()),
         )
 
         assert (
@@ -630,14 +630,14 @@ def test_management_execute_management_command_existing_client_and_trust_edges(
             )
 
         monkeypatch.setattr(
-            BLEManagementCommandsService,
+            BLEManagementCommandHandler,
             "_start_management_phase",
-            staticmethod(lambda _iface, _address: start_context),
+            lambda _self, _address: start_context,
         )
         monkeypatch.setattr(
-            BLEManagementCommandsService,
+            BLEManagementCommandHandler,
             "_resolve_management_target",
-            staticmethod(lambda _iface, _address, _ctx: (None, None)),
+            lambda _self, _address, _ctx: (None, None),
         )
 
         with pytest.raises(bluetooth_iface.BLEError, match="require"):

@@ -28,6 +28,7 @@ from meshtastic.interfaces.ble.discovery import _looks_like_ble_address
 from meshtastic.interfaces.ble.gating import (
     _addr_lock_context,
     _addr_key,
+    _is_currently_connected_elsewhere,
 )
 from meshtastic.interfaces.ble.utils import (
     _call_factory_with_optional_kwarg,
@@ -557,13 +558,28 @@ class BLEManagementCommandHandler:
 
     def validate_management_await_timeout(self, await_timeout: object) -> float:
         """Validate bounded await timeout for management operations."""
-        return BLEManagementCommandsService._validate_management_await_timeout(
-            self._iface, await_timeout
-        )
+        iface = self._iface
+        if (
+            await_timeout is None
+            or isinstance(await_timeout, bool)
+            or not isinstance(await_timeout, numbers.Real)
+            or not math.isfinite(await_timeout)
+            or await_timeout <= 0
+        ):
+            raise iface.BLEError(ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID)
+        return float(await_timeout)
 
     def validate_trust_timeout(self, timeout: object) -> float:
         """Validate bounded timeout for trust command."""
-        return BLEManagementCommandsService._validate_trust_timeout(self._iface, timeout)
+        iface = self._iface
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, numbers.Real)
+            or not math.isfinite(timeout)
+            or timeout <= 0
+        ):
+            raise iface.BLEError(ERROR_TRUST_INVALID_TIMEOUT)
+        return float(timeout)
 
     def validate_connect_timeout_override(
         self,
@@ -572,11 +588,23 @@ class BLEManagementCommandHandler:
         pair_on_connect: bool,
     ) -> None:
         """Validate optional connect-timeout override."""
-        BLEManagementCommandsService._validate_connect_timeout_override(
-            self._iface,
-            connect_timeout,
-            pair_on_connect=pair_on_connect,
-        )
+        iface = self._iface
+        if connect_timeout is None:
+            return
+        if isinstance(connect_timeout, bool) or not isinstance(
+            connect_timeout, numbers.Real
+        ):
+            exc = ValueError(
+                "connect_timeout must be a finite positive number of seconds."
+            )
+            raise iface.BLEError(ERROR_INVALID_CONNECT_TIMEOUT.format(exc=exc)) from exc
+        try:
+            ConnectionOrchestrator._resolve_connect_timeout(
+                pair_on_connect=pair_on_connect,
+                connect_timeout=float(connect_timeout),
+            )
+        except (TypeError, ValueError) as exc:
+            raise iface.BLEError(ERROR_INVALID_CONNECT_TIMEOUT.format(exc=exc)) from exc
 
     def pair(
         self,
@@ -617,631 +645,7 @@ class BLEManagementCommandHandler:
         trust_command_output_max_chars: int,
     ) -> None:
         """Run bluetoothctl trust command and map failures to BLEError."""
-        BLEManagementCommandsService._run_bluetoothctl_trust_command(
-            self._iface,
-            bluetoothctl_path,
-            canonical_address,
-            validated_timeout,
-            subprocess_module=subprocess_module,
-            trust_hex_blob_re=trust_hex_blob_re,
-            trust_token_re=trust_token_re,
-            trust_command_output_max_chars=trust_command_output_max_chars,
-        )
-
-    def trust(
-        self,
-        address: str | None = None,
-        *,
-        timeout: float = BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS,
-        sys_module: object,
-        shutil_module: object,
-        subprocess_module: object,
-        trust_hex_blob_re: re.Pattern[str],
-        trust_token_re: re.Pattern[str],
-        trust_command_output_max_chars: int,
-    ) -> None:
-        """Mark BLE device as trusted via Linux bluetoothctl."""
-        BLEManagementCommandsService.trust(
-            self._iface,
-            address,
-            timeout=timeout,
-            sys_module=sys_module,
-            shutil_module=shutil_module,
-            subprocess_module=subprocess_module,
-            trust_hex_blob_re=trust_hex_blob_re,
-            trust_token_re=trust_token_re,
-            trust_command_output_max_chars=trust_command_output_max_chars,
-        )
-
-
-class BLEManagementCommandsService:
-    """Service helpers for BLE management command paths."""
-
-    @staticmethod
-    def _start_management_phase(
-        iface: "BLEInterface", address: str | None
-    ) -> _ManagementStartContext:
-        """Begin management operation and capture startup context.
-
-        Parameters
-        ----------
-        iface : BLEInterface
-            Interface providing management locks and state helpers.
-        address : str | None
-            Explicit target address or ``None`` for implicit targeting.
-
-        Returns
-        -------
-        _ManagementStartContext
-            Captured startup context used by downstream management steps.
-
-        Raises
-        ------
-        BLEError
-            Propagated when management preconditions fail.
-        Exception
-            Re-raises any startup failure after finishing the management
-            operation token.
-        """
-        expected_implicit_binding: str | None = None
-        with iface._connect_lock, iface._management_lock, iface._state_lock:
-            iface._validate_management_preconditions()
-            if address is None:
-                expected_implicit_binding = (
-                    iface._get_current_implicit_management_binding_locked()
-                )
-            iface._begin_management_operation_locked()
-            try:
-                existing_client = iface._get_management_client_if_available(address)
-                target_address = iface._extract_client_address(existing_client)
-                use_existing_client_without_resolved_address = (
-                    existing_client is not None and target_address is None
-                )
-            except BaseException:
-                iface._finish_management_operation()
-                raise
-        return _ManagementStartContext(
-            expected_implicit_binding=expected_implicit_binding,
-            target_address=target_address,
-            use_existing_client_without_resolved_address=use_existing_client_without_resolved_address,
-        )
-
-    @staticmethod
-    def _resolve_management_target(
-        iface: "BLEInterface",
-        address: str | None,
-        start_context: _ManagementStartContext,
-    ) -> tuple[str | None, BLEClient | None]:
-        """Resolve management target address and optional existing client.
-
-        Parameters
-        ----------
-        iface : BLEInterface
-            Interface providing target-resolution and validation helpers.
-        address : str | None
-            Explicit target address or ``None`` for implicit targeting.
-        start_context : _ManagementStartContext
-            Context captured at management startup.
-
-        Returns
-        -------
-        tuple[str | None, BLEClient | None]
-            ``(target_address, refreshed_existing_client)`` where the client is
-            only populated for existing-client paths that do not require
-            temporary-client acquisition.
-
-        Raises
-        ------
-        BLEError
-            If a refreshed existing client disappears or implicit binding
-            changes mid-operation.
-        """
-        target_address = start_context.target_address
-        if (
-            target_address is None
-            and not start_context.use_existing_client_without_resolved_address
-        ):
-            target_address = iface._resolve_target_address_for_management(address)
-
-        if start_context.use_existing_client_without_resolved_address:
-            current_binding: str | None = None
-            target_candidate: str | None = None
-            use_refreshed_existing_client = True
-            if address is None:
-                with iface._connect_lock, iface._management_lock, iface._state_lock:
-                    iface._validate_management_preconditions()
-                    refreshed_existing_client = (
-                        iface._get_management_client_if_available(address)
-                    )
-                    if refreshed_existing_client is None:
-                        raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
-                    current_binding = (
-                        iface._get_current_implicit_management_binding_locked()
-                    )
-                    if sanitize_address(current_binding) != sanitize_address(
-                        start_context.expected_implicit_binding
-                    ):
-                        raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
-                    target_candidate = iface._extract_client_address(
-                        refreshed_existing_client
-                    )
-            else:
-                with iface._connect_lock, iface._management_lock:
-                    iface._validate_management_preconditions()
-                    refreshed_existing_client = (
-                        iface._get_management_client_if_available(address)
-                    )
-                    if refreshed_existing_client is None:
-                        raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
-                    target_candidate = iface._extract_client_address(
-                        refreshed_existing_client
-                    )
-                    if target_candidate is None:
-                        target_candidate = iface._resolve_target_address_for_management(
-                            address
-                        )
-                        # Explicit re-resolution outside the refreshed client
-                        # can drift from the client binding; force reacquisition.
-                        use_refreshed_existing_client = False
-
-            if target_candidate is None:
-                target_candidate = current_binding
-            if target_candidate is not None:
-                candidate = target_candidate.strip() or None
-                normalized_candidate = sanitize_address(candidate)
-                if (
-                    normalized_candidate is not None
-                    and _HEX_MAC_NO_SEPARATOR_RE.fullmatch(normalized_candidate)
-                    is not None
-                ):
-                    target_address = candidate
-                else:
-                    target_address = None
-            return (
-                target_address,
-                refreshed_existing_client if use_refreshed_existing_client else None,
-            )
-
-        return target_address, None
-
-    @staticmethod
-    def _acquire_client_for_target(
-        iface: "BLEInterface",
-        *,
-        address: str | None,
-        target_address: str,
-        expected_implicit_binding: str | None,
-        connected_elsewhere: Callable[[str | None, object | None], bool],
-        ble_client_factory: Callable[..., BLEClient],
-    ) -> tuple[BLEClient, BLEClient | None]:
-        """Acquire active or temporary client for a resolved management target.
-
-        Parameters
-        ----------
-        iface : BLEInterface
-            Interface providing management/client lookup helpers.
-        address : str | None
-            Explicit target address or ``None`` for implicit targeting.
-        target_address : str
-            Resolved management target address.
-        expected_implicit_binding : str | None
-            Binding snapshot captured at operation startup for revalidation.
-        connected_elsewhere : Callable[[str | None, object | None], bool]
-            Function used to detect target ownership by another interface.
-        ble_client_factory : Callable[..., BLEClient]
-            Factory used to create a temporary client when needed.
-
-        Returns
-        -------
-        tuple[BLEClient, BLEClient | None]
-            ``(client_to_use, temporary_client)`` where ``temporary_client`` is
-            populated only when a new temporary client was created.
-
-        Raises
-        ------
-        BLEError
-            If target ownership has changed or is currently held elsewhere.
-        """
-        client_to_use: BLEClient | None = None
-        target_key: str | None = None
-        temporary_client: BLEClient | None = None
-
-        with iface._connect_lock, iface._management_lock:
-            iface._validate_management_preconditions()
-            if address is None:
-                iface._revalidate_implicit_management_target(
-                    target_address,
-                    expected_binding=expected_implicit_binding,
-                )
-            client_to_use = iface._get_management_client_for_target(
-                target_address,
-                prefer_current_client=address is None,
-            )
-            if client_to_use is None:
-                target_key = _addr_key(target_address)
-
-        if client_to_use is None:
-            if target_key is not None and connected_elsewhere(target_key, iface):
-                raise iface.BLEError(ERROR_CONNECTION_SUPPRESSED)
-            temporary_client = _create_management_client(
-                ble_client_factory, target_address
-            )
-            client_to_use = temporary_client
-
-        return client_to_use, temporary_client
-
-    @staticmethod
-    def _execute_with_client(
-        iface: "BLEInterface",
-        *,
-        client_to_use: BLEClient,
-        temporary_client: BLEClient | None,
-        command: Callable[[BLEClient], T],
-    ) -> T:
-        """Execute a management command and close temporary client on exit.
-
-        Parameters
-        ----------
-        iface : BLEInterface
-            Interface providing client-close helpers.
-        client_to_use : BLEClient
-            Client passed to ``command``.
-        temporary_client : BLEClient | None
-            Temporary client to close after execution when present.
-        command : Callable[[BLEClient], T]
-            Management command callable.
-
-        Returns
-        -------
-        T
-            Value returned by ``command``.
-
-        Raises
-        ------
-        Exception
-            Propagates any exception raised by ``command`` after temporary
-            client cleanup is attempted.
-        """
-        try:
-            return command(client_to_use)
-        finally:
-            if temporary_client is not None:
-                try:
-                    iface._client_manager_safe_close_client(temporary_client)
-                except Exception:  # noqa: BLE001 - best-effort cleanup must not mask command outcome
-                    logger.debug(
-                        "Failed to close temporary management client.",
-                        exc_info=True,
-                    )
-
-    @staticmethod
-    def _execute_management_command(
-        iface: "BLEInterface",
-        address: str | None,
-        command: Callable[[BLEClient], T],
-        *,
-        ble_client_factory: Callable[..., BLEClient],
-        connected_elsewhere: Callable[[str | None, object | None], bool],
-    ) -> T:
-        """Run management command using active, existing, or temporary BLE client.
-
-        Parameters
-        ----------
-        iface : BLEInterface
-            Interface providing locks, state, and helper methods for management
-            operations.
-        address : str | None
-            Explicit management target address. ``None`` means use current
-            implicit management binding.
-        command : Callable[[BLEClient], T]
-            Management callable executed against the selected client.
-        ble_client_factory : Callable[..., BLEClient]
-            Factory used to construct a temporary client when no suitable active
-            client is available.
-        connected_elsewhere : Callable[[str | None, object | None], bool]
-            Function used to reject temporary-client creation when a target is
-            currently owned by another interface.
-
-        Returns
-        -------
-        T
-            Result returned by ``command``.
-
-        Raises
-        ------
-        BLEError
-            If preconditions fail, target resolution fails, or target ownership
-            changes while entering the management gate.
-        """
-        if _is_blank_or_malformed_address_like(address):
-            raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
-
-        management_started = False
-        try:
-            start_context = BLEManagementCommandsService._start_management_phase(
-                iface, address
-            )
-            management_started = True
-            target_address, refreshed_existing_client = (
-                BLEManagementCommandsService._resolve_management_target(
-                    iface,
-                    address,
-                    start_context,
-                )
-            )
-
-            if target_address is None:
-                if refreshed_existing_client is not None:
-                    return command(refreshed_existing_client)
-                raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_REQUIRED)
-
-            with iface._management_target_gate(target_address):
-                if refreshed_existing_client is not None:
-                    with iface._connect_lock, iface._management_lock:
-                        iface._validate_management_preconditions()
-                        if address is None:
-                            iface._revalidate_implicit_management_target(
-                                target_address,
-                                expected_binding=start_context.expected_implicit_binding,
-                            )
-                    return command(refreshed_existing_client)
-                client_to_use, temporary_client = (
-                    BLEManagementCommandsService._acquire_client_for_target(
-                        iface,
-                        address=address,
-                        target_address=target_address,
-                        expected_implicit_binding=start_context.expected_implicit_binding,
-                        connected_elsewhere=connected_elsewhere,
-                        ble_client_factory=ble_client_factory,
-                    )
-                )
-                return BLEManagementCommandsService._execute_with_client(
-                    iface,
-                    client_to_use=client_to_use,
-                    temporary_client=temporary_client,
-                    command=command,
-                )
-        finally:
-            if management_started:
-                iface._finish_management_operation()
-
-    @staticmethod
-    def _validate_management_await_timeout(
-        iface: "BLEInterface", await_timeout: object
-    ) -> float:
-        """Validate and return bounded await timeout for management operations.
-
-        Parameters
-        ----------
-        iface : BLEInterface
-            Interface providing the ``BLEError`` type.
-        await_timeout : object
-            Candidate timeout value.
-
-        Returns
-        -------
-        float
-            Validated positive finite timeout value.
-
-        Raises
-        ------
-        BLEError
-            If ``await_timeout`` is not a finite positive real number.
-        """
-        if (
-            await_timeout is None
-            or isinstance(await_timeout, bool)
-            or not isinstance(await_timeout, numbers.Real)
-            or not math.isfinite(await_timeout)
-            or await_timeout <= 0
-        ):
-            raise iface.BLEError(ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID)
-        return float(await_timeout)
-
-    @staticmethod
-    def _validate_trust_timeout(iface: "BLEInterface", timeout: object) -> float:
-        """Validate and return bounded timeout for trust command.
-
-        Parameters
-        ----------
-        iface : BLEInterface
-            Interface providing the ``BLEError`` type.
-        timeout : object
-            Candidate timeout value.
-
-        Returns
-        -------
-        float
-            Validated positive finite timeout.
-
-        Raises
-        ------
-        BLEError
-            If ``timeout`` is not a finite positive real number.
-        """
-        if (
-            isinstance(timeout, bool)
-            or not isinstance(timeout, numbers.Real)
-            or not math.isfinite(timeout)
-            or timeout <= 0
-        ):
-            raise iface.BLEError(ERROR_TRUST_INVALID_TIMEOUT)
-        return float(timeout)
-
-    @staticmethod
-    def _validate_connect_timeout_override(
-        iface: "BLEInterface",
-        connect_timeout: object,
-        *,
-        pair_on_connect: bool,
-    ) -> None:
-        """Validate connect timeout override before orchestration.
-
-        Parameters
-        ----------
-        iface : BLEInterface
-            Interface providing the ``BLEError`` type.
-        connect_timeout : object
-            Optional override timeout supplied by callers.
-        pair_on_connect : bool
-            Whether connect attempts request pairing; forwarded to orchestrator
-            timeout validation.
-
-        Returns
-        -------
-        None
-
-        Raises
-        ------
-        BLEError
-            If ``connect_timeout`` is invalid for orchestrated connection logic.
-        """
-        if connect_timeout is None:
-            return
-        if isinstance(connect_timeout, bool) or not isinstance(
-            connect_timeout, numbers.Real
-        ):
-            exc = ValueError(
-                "connect_timeout must be a finite positive number of seconds."
-            )
-            raise iface.BLEError(ERROR_INVALID_CONNECT_TIMEOUT.format(exc=exc)) from exc
-        try:
-            ConnectionOrchestrator._resolve_connect_timeout(
-                pair_on_connect=pair_on_connect,
-                connect_timeout=float(connect_timeout),
-            )
-        except (TypeError, ValueError) as exc:
-            raise iface.BLEError(ERROR_INVALID_CONNECT_TIMEOUT.format(exc=exc)) from exc
-
-    @staticmethod
-    def pair(
-        iface: "BLEInterface",
-        address: str | None = None,
-        *,
-        await_timeout: float,
-        kwargs: dict[str, object],
-        ble_client_factory: Callable[..., BLEClient],
-        connected_elsewhere: Callable[[str | None, object | None], bool],
-    ) -> None:
-        """Pair with BLE device using active or temporary client.
-
-        Parameters
-        ----------
-        iface : BLEInterface
-            Interface used for management orchestration.
-        address : str | None
-            Optional explicit target address.
-        await_timeout : float
-            Timeout for BLE pairing call.
-        kwargs : dict[str, object]
-            Extra keyword arguments forwarded to ``BLEClient.pair``.
-        ble_client_factory : Callable[..., BLEClient]
-            Factory used for temporary management clients.
-        connected_elsewhere : Callable[[str | None, object | None], bool]
-            Cross-interface ownership probe used to suppress conflicting
-            temporary client creation.
-
-        Returns
-        -------
-        None
-        """
-        validated_timeout = (
-            BLEManagementCommandsService._validate_management_await_timeout(
-                iface, await_timeout
-            )
-        )
-        BLEManagementCommandsService._execute_management_command(
-            iface,
-            address,
-            lambda client: client.pair(await_timeout=validated_timeout, **kwargs),
-            ble_client_factory=ble_client_factory,
-            connected_elsewhere=connected_elsewhere,
-        )
-
-    @staticmethod
-    def unpair(
-        iface: "BLEInterface",
-        address: str | None = None,
-        *,
-        await_timeout: float,
-        ble_client_factory: Callable[..., BLEClient],
-        connected_elsewhere: Callable[[str | None, object | None], bool],
-    ) -> None:
-        """Unpair BLE device using active or temporary client.
-
-        Parameters
-        ----------
-        iface : BLEInterface
-            Interface used for management orchestration.
-        address : str | None
-            Optional explicit target address.
-        await_timeout : float
-            Timeout for BLE unpair call.
-        ble_client_factory : Callable[..., BLEClient]
-            Factory used for temporary management clients.
-        connected_elsewhere : Callable[[str | None, object | None], bool]
-            Cross-interface ownership probe used to suppress conflicting
-            temporary client creation.
-
-        Returns
-        -------
-        None
-        """
-        validated_timeout = (
-            BLEManagementCommandsService._validate_management_await_timeout(
-                iface, await_timeout
-            )
-        )
-        BLEManagementCommandsService._execute_management_command(
-            iface,
-            address,
-            lambda client: client.unpair(await_timeout=validated_timeout),
-            ble_client_factory=ble_client_factory,
-            connected_elsewhere=connected_elsewhere,
-        )
-
-    @staticmethod
-    def _run_bluetoothctl_trust_command(
-        iface: "BLEInterface",
-        bluetoothctl_path: str,
-        canonical_address: str,
-        validated_timeout: float,
-        *,
-        subprocess_module: object,
-        trust_hex_blob_re: re.Pattern[str],
-        trust_token_re: re.Pattern[str],
-        trust_command_output_max_chars: int,
-    ) -> None:
-        """Run bluetoothctl trust command and map failures to BLEError.
-
-        Parameters
-        ----------
-        iface : BLEInterface
-            Interface providing ``BLEError`` for mapped failures.
-        bluetoothctl_path : str
-            Path to ``bluetoothctl`` executable.
-        canonical_address : str
-            Address passed to ``bluetoothctl trust``.
-        validated_timeout : float
-            Positive finite timeout for subprocess execution.
-        subprocess_module : object
-            Injected subprocess-like module for runtime/test compatibility.
-        trust_hex_blob_re : re.Pattern[str]
-            Pattern used to redact long hexadecimal blobs from command output.
-        trust_token_re : re.Pattern[str]
-            Pattern used to redact long token-like output fragments.
-        trust_command_output_max_chars : int
-            Maximum sanitized output characters included in raised errors.
-
-        Returns
-        -------
-        None
-
-        Raises
-        ------
-        BLEError
-            If command execution fails, times out, or returns non-zero status.
-        """
+        iface = self._iface
 
         def _sanitize_trust_command_output(output: str) -> str:
             sanitized = " ".join(output.splitlines())
@@ -1314,6 +718,503 @@ class BLEManagementCommandsService:
             )
         logger.info("Trusted BLE device via bluetoothctl: %s", canonical_address)
 
+    def trust(
+        self,
+        address: str | None = None,
+        *,
+        timeout: float = BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS,
+        sys_module: object,
+        shutil_module: object,
+        subprocess_module: object,
+        trust_hex_blob_re: re.Pattern[str],
+        trust_token_re: re.Pattern[str],
+        trust_command_output_max_chars: int,
+    ) -> None:
+        """Mark BLE device as trusted via Linux bluetoothctl."""
+        iface = self._iface
+        if _is_blank_or_malformed_address_like(address):
+            raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
+
+        validated_timeout = self.validate_trust_timeout(timeout)
+        if not sys_module.platform.startswith("linux"):  # type: ignore[attr-defined]
+            raise iface.BLEError(ERROR_TRUST_LINUX_ONLY)
+        bluetoothctl_path = shutil_module.which("bluetoothctl")  # type: ignore[attr-defined]
+        if bluetoothctl_path is None:
+            raise iface.BLEError(ERROR_TRUST_BLUETOOTHCTL_MISSING)
+
+        management_started = False
+        try:
+            start_context = self._start_management_phase(address)
+            management_started = True
+            target_address, _ = self._resolve_management_target(
+                address,
+                start_context,
+            )
+            if target_address is None:
+                raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_REQUIRED)
+            canonical_address = iface._format_bluetoothctl_address(target_address)
+            with iface._management_target_gate(target_address):
+                with iface._connect_lock, iface._management_lock:
+                    iface._validate_management_preconditions()
+                    if address is None:
+                        self.revalidate_implicit_management_target(
+                            target_address,
+                            expected_binding=start_context.expected_implicit_binding,
+                        )
+                self.run_bluetoothctl_trust_command(
+                    bluetoothctl_path,
+                    canonical_address,
+                    validated_timeout,
+                    subprocess_module=subprocess_module,
+                    trust_hex_blob_re=trust_hex_blob_re,
+                    trust_token_re=trust_token_re,
+                    trust_command_output_max_chars=trust_command_output_max_chars,
+                )
+        finally:
+            if management_started:
+                self.finish_management_operation()
+
+class BLEManagementCommandsService:
+    """Service helpers for BLE management command paths."""
+
+    @staticmethod
+    def _make_handler(
+        iface: "BLEInterface",
+        *,
+        ble_client_factory: Callable[..., BLEClient] | None = None,
+        connected_elsewhere: Callable[[str | None, object | None], bool] | None = None,
+    ) -> BLEManagementCommandHandler:
+        """Create bound handler for static compatibility entry points."""
+        if ble_client_factory is None:
+            ble_client_factory = BLEClient
+        if connected_elsewhere is None:
+            connected_elsewhere = lambda key, owner=None: _is_currently_connected_elsewhere(  # noqa: E731
+                key, owner
+            )
+        return BLEManagementCommandHandler(
+            iface,
+            ble_client_factory=ble_client_factory,
+            connected_elsewhere=connected_elsewhere,
+        )
+
+    @staticmethod
+    def _start_management_phase(
+        iface: "BLEInterface", address: str | None
+    ) -> _ManagementStartContext:
+        """Begin management operation and capture startup context.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing management locks and state helpers.
+        address : str | None
+            Explicit target address or ``None`` for implicit targeting.
+
+        Returns
+        -------
+        _ManagementStartContext
+            Captured startup context used by downstream management steps.
+
+        Raises
+        ------
+        BLEError
+            Propagated when management preconditions fail.
+        Exception
+            Re-raises any startup failure after finishing the management
+            operation token.
+        """
+        return BLEManagementCommandsService._make_handler(iface)._start_management_phase(
+            address
+        )
+
+    @staticmethod
+    def _resolve_management_target(
+        iface: "BLEInterface",
+        address: str | None,
+        start_context: _ManagementStartContext,
+    ) -> tuple[str | None, BLEClient | None]:
+        """Resolve management target address and optional existing client.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing target-resolution and validation helpers.
+        address : str | None
+            Explicit target address or ``None`` for implicit targeting.
+        start_context : _ManagementStartContext
+            Context captured at management startup.
+
+        Returns
+        -------
+        tuple[str | None, BLEClient | None]
+            ``(target_address, refreshed_existing_client)`` where the client is
+            only populated for existing-client paths that do not require
+            temporary-client acquisition.
+
+        Raises
+        ------
+        BLEError
+            If a refreshed existing client disappears or implicit binding
+            changes mid-operation.
+        """
+        return BLEManagementCommandsService._make_handler(iface)._resolve_management_target(
+            address,
+            start_context,
+        )
+
+    @staticmethod
+    def _acquire_client_for_target(
+        iface: "BLEInterface",
+        *,
+        address: str | None,
+        target_address: str,
+        expected_implicit_binding: str | None,
+        connected_elsewhere: Callable[[str | None, object | None], bool],
+        ble_client_factory: Callable[..., BLEClient],
+    ) -> tuple[BLEClient, BLEClient | None]:
+        """Acquire active or temporary client for a resolved management target.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing management/client lookup helpers.
+        address : str | None
+            Explicit target address or ``None`` for implicit targeting.
+        target_address : str
+            Resolved management target address.
+        expected_implicit_binding : str | None
+            Binding snapshot captured at operation startup for revalidation.
+        connected_elsewhere : Callable[[str | None, object | None], bool]
+            Function used to detect target ownership by another interface.
+        ble_client_factory : Callable[..., BLEClient]
+            Factory used to create a temporary client when needed.
+
+        Returns
+        -------
+        tuple[BLEClient, BLEClient | None]
+            ``(client_to_use, temporary_client)`` where ``temporary_client`` is
+            populated only when a new temporary client was created.
+
+        Raises
+        ------
+        BLEError
+            If target ownership has changed or is currently held elsewhere.
+        """
+        return BLEManagementCommandsService._make_handler(
+            iface,
+            ble_client_factory=ble_client_factory,
+            connected_elsewhere=connected_elsewhere,
+        )._acquire_client_for_target(
+            address=address,
+            target_address=target_address,
+            expected_implicit_binding=expected_implicit_binding,
+        )
+
+    @staticmethod
+    def _execute_with_client(
+        iface: "BLEInterface",
+        *,
+        client_to_use: BLEClient,
+        temporary_client: BLEClient | None,
+        command: Callable[[BLEClient], T],
+    ) -> T:
+        """Execute a management command and close temporary client on exit.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing client-close helpers.
+        client_to_use : BLEClient
+            Client passed to ``command``.
+        temporary_client : BLEClient | None
+            Temporary client to close after execution when present.
+        command : Callable[[BLEClient], T]
+            Management command callable.
+
+        Returns
+        -------
+        T
+            Value returned by ``command``.
+
+        Raises
+        ------
+        Exception
+            Propagates any exception raised by ``command`` after temporary
+            client cleanup is attempted.
+        """
+        return BLEManagementCommandsService._make_handler(iface)._execute_with_client(
+            client_to_use=client_to_use,
+            temporary_client=temporary_client,
+            command=command,
+        )
+
+    @staticmethod
+    def _execute_management_command(
+        iface: "BLEInterface",
+        address: str | None,
+        command: Callable[[BLEClient], T],
+        *,
+        ble_client_factory: Callable[..., BLEClient],
+        connected_elsewhere: Callable[[str | None, object | None], bool],
+    ) -> T:
+        """Run management command using active, existing, or temporary BLE client.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing locks, state, and helper methods for management
+            operations.
+        address : str | None
+            Explicit management target address. ``None`` means use current
+            implicit management binding.
+        command : Callable[[BLEClient], T]
+            Management callable executed against the selected client.
+        ble_client_factory : Callable[..., BLEClient]
+            Factory used to construct a temporary client when no suitable active
+            client is available.
+        connected_elsewhere : Callable[[str | None, object | None], bool]
+            Function used to reject temporary-client creation when a target is
+            currently owned by another interface.
+
+        Returns
+        -------
+        T
+            Result returned by ``command``.
+
+        Raises
+        ------
+        BLEError
+            If preconditions fail, target resolution fails, or target ownership
+            changes while entering the management gate.
+        """
+        return BLEManagementCommandsService._make_handler(
+            iface,
+            ble_client_factory=ble_client_factory,
+            connected_elsewhere=connected_elsewhere,
+        ).execute_management_command(
+            address,
+            command,
+        )
+
+    @staticmethod
+    def _validate_management_await_timeout(
+        iface: "BLEInterface", await_timeout: object
+    ) -> float:
+        """Validate and return bounded await timeout for management operations.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing the ``BLEError`` type.
+        await_timeout : object
+            Candidate timeout value.
+
+        Returns
+        -------
+        float
+            Validated positive finite timeout value.
+
+        Raises
+        ------
+        BLEError
+            If ``await_timeout`` is not a finite positive real number.
+        """
+        return BLEManagementCommandsService._make_handler(
+            iface
+        ).validate_management_await_timeout(await_timeout)
+
+    @staticmethod
+    def _validate_trust_timeout(iface: "BLEInterface", timeout: object) -> float:
+        """Validate and return bounded timeout for trust command.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing the ``BLEError`` type.
+        timeout : object
+            Candidate timeout value.
+
+        Returns
+        -------
+        float
+            Validated positive finite timeout.
+
+        Raises
+        ------
+        BLEError
+            If ``timeout`` is not a finite positive real number.
+        """
+        return BLEManagementCommandsService._make_handler(iface).validate_trust_timeout(
+            timeout
+        )
+
+    @staticmethod
+    def _validate_connect_timeout_override(
+        iface: "BLEInterface",
+        connect_timeout: object,
+        *,
+        pair_on_connect: bool,
+    ) -> None:
+        """Validate connect timeout override before orchestration.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing the ``BLEError`` type.
+        connect_timeout : object
+            Optional override timeout supplied by callers.
+        pair_on_connect : bool
+            Whether connect attempts request pairing; forwarded to orchestrator
+            timeout validation.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        BLEError
+            If ``connect_timeout`` is invalid for orchestrated connection logic.
+        """
+        BLEManagementCommandsService._make_handler(iface).validate_connect_timeout_override(
+            connect_timeout,
+            pair_on_connect=pair_on_connect,
+        )
+
+    @staticmethod
+    def pair(
+        iface: "BLEInterface",
+        address: str | None = None,
+        *,
+        await_timeout: float,
+        kwargs: dict[str, object],
+        ble_client_factory: Callable[..., BLEClient],
+        connected_elsewhere: Callable[[str | None, object | None], bool],
+    ) -> None:
+        """Pair with BLE device using active or temporary client.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface used for management orchestration.
+        address : str | None
+            Optional explicit target address.
+        await_timeout : float
+            Timeout for BLE pairing call.
+        kwargs : dict[str, object]
+            Extra keyword arguments forwarded to ``BLEClient.pair``.
+        ble_client_factory : Callable[..., BLEClient]
+            Factory used for temporary management clients.
+        connected_elsewhere : Callable[[str | None, object | None], bool]
+            Cross-interface ownership probe used to suppress conflicting
+            temporary client creation.
+
+        Returns
+        -------
+        None
+        """
+        BLEManagementCommandsService._make_handler(
+            iface,
+            ble_client_factory=ble_client_factory,
+            connected_elsewhere=connected_elsewhere,
+        ).pair(
+            address,
+            await_timeout=await_timeout,
+            kwargs=kwargs,
+        )
+
+    @staticmethod
+    def unpair(
+        iface: "BLEInterface",
+        address: str | None = None,
+        *,
+        await_timeout: float,
+        ble_client_factory: Callable[..., BLEClient],
+        connected_elsewhere: Callable[[str | None, object | None], bool],
+    ) -> None:
+        """Unpair BLE device using active or temporary client.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface used for management orchestration.
+        address : str | None
+            Optional explicit target address.
+        await_timeout : float
+            Timeout for BLE unpair call.
+        ble_client_factory : Callable[..., BLEClient]
+            Factory used for temporary management clients.
+        connected_elsewhere : Callable[[str | None, object | None], bool]
+            Cross-interface ownership probe used to suppress conflicting
+            temporary client creation.
+
+        Returns
+        -------
+        None
+        """
+        BLEManagementCommandsService._make_handler(
+            iface,
+            ble_client_factory=ble_client_factory,
+            connected_elsewhere=connected_elsewhere,
+        ).unpair(
+            address,
+            await_timeout=await_timeout,
+        )
+
+    @staticmethod
+    def _run_bluetoothctl_trust_command(
+        iface: "BLEInterface",
+        bluetoothctl_path: str,
+        canonical_address: str,
+        validated_timeout: float,
+        *,
+        subprocess_module: object,
+        trust_hex_blob_re: re.Pattern[str],
+        trust_token_re: re.Pattern[str],
+        trust_command_output_max_chars: int,
+    ) -> None:
+        """Run bluetoothctl trust command and map failures to BLEError.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing ``BLEError`` for mapped failures.
+        bluetoothctl_path : str
+            Path to ``bluetoothctl`` executable.
+        canonical_address : str
+            Address passed to ``bluetoothctl trust``.
+        validated_timeout : float
+            Positive finite timeout for subprocess execution.
+        subprocess_module : object
+            Injected subprocess-like module for runtime/test compatibility.
+        trust_hex_blob_re : re.Pattern[str]
+            Pattern used to redact long hexadecimal blobs from command output.
+        trust_token_re : re.Pattern[str]
+            Pattern used to redact long token-like output fragments.
+        trust_command_output_max_chars : int
+            Maximum sanitized output characters included in raised errors.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        BLEError
+            If command execution fails, times out, or returns non-zero status.
+        """
+        BLEManagementCommandsService._make_handler(
+            iface
+        ).run_bluetoothctl_trust_command(
+            bluetoothctl_path,
+            canonical_address,
+            validated_timeout,
+            subprocess_module=subprocess_module,
+            trust_hex_blob_re=trust_hex_blob_re,
+            trust_token_re=trust_token_re,
+            trust_command_output_max_chars=trust_command_output_max_chars,
+        )
+
     @staticmethod
     def trust(
         iface: "BLEInterface",
@@ -1360,50 +1261,13 @@ class BLEManagementCommandsService:
             If address validation, environment preconditions, target resolution,
             or command execution fails.
         """
-        if _is_blank_or_malformed_address_like(address):
-            raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
-
-        validated_timeout = BLEManagementCommandsService._validate_trust_timeout(
-            iface, timeout
+        BLEManagementCommandsService._make_handler(iface).trust(
+            address,
+            timeout=timeout,
+            sys_module=sys_module,
+            shutil_module=shutil_module,
+            subprocess_module=subprocess_module,
+            trust_hex_blob_re=trust_hex_blob_re,
+            trust_token_re=trust_token_re,
+            trust_command_output_max_chars=trust_command_output_max_chars,
         )
-        if not sys_module.platform.startswith("linux"):  # type: ignore[attr-defined]
-            raise iface.BLEError(ERROR_TRUST_LINUX_ONLY)
-        bluetoothctl_path = shutil_module.which("bluetoothctl")  # type: ignore[attr-defined]
-        if bluetoothctl_path is None:
-            raise iface.BLEError(ERROR_TRUST_BLUETOOTHCTL_MISSING)
-
-        management_started = False
-        try:
-            start_context = BLEManagementCommandsService._start_management_phase(
-                iface, address
-            )
-            management_started = True
-            target_address, _ = BLEManagementCommandsService._resolve_management_target(
-                iface,
-                address,
-                start_context,
-            )
-            if target_address is None:
-                raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_REQUIRED)
-            canonical_address = iface._format_bluetoothctl_address(target_address)
-            with iface._management_target_gate(target_address):
-                with iface._connect_lock, iface._management_lock:
-                    iface._validate_management_preconditions()
-                    if address is None:
-                        iface._revalidate_implicit_management_target(
-                            target_address,
-                            expected_binding=start_context.expected_implicit_binding,
-                        )
-                BLEManagementCommandsService._run_bluetoothctl_trust_command(
-                    iface,
-                    bluetoothctl_path,
-                    canonical_address,
-                    validated_timeout,
-                    subprocess_module=subprocess_module,
-                    trust_hex_blob_re=trust_hex_blob_re,
-                    trust_token_re=trust_token_re,
-                    trust_command_output_max_chars=trust_command_output_max_chars,
-                )
-        finally:
-            if management_started:
-                iface._finish_management_operation()

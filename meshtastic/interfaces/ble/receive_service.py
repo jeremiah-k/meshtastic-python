@@ -883,23 +883,10 @@ class BLEReceiveRecoveryService:
         bool
             ``True`` to continue the inner loop, ``False`` to stop.
         """
-        payload = iface._read_from_radio_with_retries(
+        return BLEReceiveRecoveryController(iface)._read_and_handle_payload(
             client,
-            retry_on_empty=not poll_without_notify,
+            poll_without_notify=poll_without_notify,
         )
-        if not payload:
-            iface._read_retry_count = 0
-            return False
-        logger.debug("FROMRADIO read: %s", payload.hex())
-        try:
-            iface._handle_from_radio(payload)
-        except DecodeError as exc:
-            logger.warning("Failed to parse FromRadio packet, discarding: %s", exc)
-            iface._read_retry_count = 0
-            return True
-        BLEReceiveRecoveryService._reset_recovery_after_stability(iface)
-        iface._read_retry_count = 0
-        return True
 
     @staticmethod
     def _handle_payload_read(
@@ -931,39 +918,10 @@ class BLEReceiveRecoveryService:
         KeyboardInterrupt
             Propagated when process termination is requested.
         """
-        try:
-            if not BLEReceiveRecoveryService._read_and_handle_payload(
-                iface,
-                client,
-                poll_without_notify=poll_without_notify,
-            ):
-                return True, False
-            return False, False
-        except BleakDBusError as exc:
-            if iface._handle_read_loop_disconnect(repr(exc), client):
-                return True, False
-            return True, True
-        except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
-            raise
-        except (BleakError, BLEClient.BLEError) as exc:
-            try:
-                iface._handle_transient_read_error(exc)
-                return False, False
-            except iface.BLEError:
-                logger.error("Fatal BLE read error after retries: %s", exc)
-                if not iface._is_connection_closing:
-                    iface.close()
-                return True, True
-        except (RuntimeError, OSError) as exc:
-            logger.error("Fatal error in BLE receive thread: %s", exc)
-            if not iface._is_connection_closing:
-                iface.close()
-            return True, True
-        except Exception as exc:  # noqa: BLE001  # pragma: no cover
-            logger.exception("Unexpected error in BLE read loop")
-            if iface._handle_read_loop_disconnect(repr(exc), client):
-                return True, False
-            return True, True
+        return BLEReceiveRecoveryController(iface)._handle_payload_read(
+            client,
+            poll_without_notify=poll_without_notify,
+        )
 
     @staticmethod
     def _run_receive_cycle(
@@ -989,47 +947,10 @@ class BLEReceiveRecoveryService:
             ``True`` when the loop exited naturally, ``False`` when a fatal
             read path requested immediate receive-loop stop.
         """
-        while iface._should_run_receive_loop():
-            proceed, poll_without_notify = (
-                BLEReceiveRecoveryService._wait_for_read_trigger(
-                    iface,
-                    coordinator=coordinator,
-                    wait_timeout=wait_timeout,
-                )
-            )
-            if not proceed:
-                continue
-
-            while iface._should_run_receive_loop():
-                client, is_connecting, publish_pending, is_closing = (
-                    BLEReceiveRecoveryService._snapshot_client_state(iface)
-                )
-                if BLEReceiveRecoveryService._process_client_state(
-                    iface,
-                    coordinator=coordinator,
-                    wait_timeout=wait_timeout,
-                    client=client,
-                    is_connecting=is_connecting,
-                    publish_pending=publish_pending,
-                    is_closing=is_closing,
-                ):
-                    break
-
-                if client is None:  # pragma: no cover
-                    break
-
-                break_inner_loop, stop_receive_loop = (
-                    BLEReceiveRecoveryService._handle_payload_read(
-                        iface,
-                        client,
-                        poll_without_notify=poll_without_notify,
-                    )
-                )
-                if stop_receive_loop:
-                    return False
-                if break_inner_loop:
-                    break
-        return True
+        return BLEReceiveRecoveryController(iface)._run_receive_cycle(
+            coordinator=coordinator,
+            wait_timeout=wait_timeout,
+        )
 
     @staticmethod
     def _receive_from_radio_impl(iface: "BLEInterface") -> None:
@@ -1046,31 +967,7 @@ class BLEReceiveRecoveryService:
             Returns ``None``. Fatal receive-loop failures trigger recovery or
             close side effects before exiting.
         """
-        coordinator = iface.thread_coordinator
-        wait_timeout = BLEConfig.RECEIVE_WAIT_TIMEOUT
-        try:
-            should_continue = BLEReceiveRecoveryService._run_receive_cycle(
-                iface,
-                coordinator=coordinator,
-                wait_timeout=wait_timeout,
-            )
-            if not should_continue:
-                return
-        except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
-            raise
-        except (
-            BleakDBusError,
-            BLEClient.BLEError,
-            BleakError,
-            DecodeError,
-            RuntimeError,
-            OSError,
-        ):
-            logger.exception("Fatal error in BLE receive thread")
-            iface._recover_receive_thread(RECEIVE_THREAD_FATAL_REASON)
-        except Exception:  # noqa: BLE001
-            logger.exception("Unexpected fatal error in BLE receive thread")
-            iface._recover_receive_thread(RECEIVE_THREAD_FATAL_REASON)
+        BLEReceiveRecoveryController(iface).receive_from_radio_impl()
 
     @staticmethod
     def _recover_receive_thread(iface: "BLEInterface", disconnect_reason: str) -> None:
@@ -1113,20 +1010,10 @@ class BLEReceiveRecoveryService:
         bytes | None
             Non-empty payload bytes when available, otherwise ``None``.
         """
-        max_retries = BLEConfig.EMPTY_READ_MAX_RETRIES if retry_on_empty else 0
-        read_timeout = (
-            GATT_IO_TIMEOUT if retry_on_empty else BLEConfig.RECEIVE_WAIT_TIMEOUT
+        return BLEReceiveRecoveryController(iface).read_from_radio_with_retries(
+            client,
+            retry_on_empty=retry_on_empty,
         )
-        for attempt in range(max_retries + 1):
-            payload = client.read_gatt_char(FROMRADIO_UUID, timeout=read_timeout)
-            if payload:
-                iface._suppressed_empty_read_warnings = 0
-                return payload
-            if attempt < max_retries:
-                _sleep(iface._retry_policy_get_delay(iface._empty_read_policy, attempt))
-        if retry_on_empty:
-            iface._log_empty_read_warning()
-        return None
 
     @staticmethod
     def _handle_transient_read_error(
@@ -1151,19 +1038,7 @@ class BLEReceiveRecoveryService:
         BLEError
             If transient retry attempts are exhausted.
         """
-        transient_policy = iface._transient_read_policy
-        if iface._retry_policy_should_retry(transient_policy, iface._read_retry_count):
-            attempt_index = iface._read_retry_count
-            iface._read_retry_count += 1
-            logger.debug(
-                "Transient BLE read error, retrying (%d/%d)",
-                iface._read_retry_count,
-                BLEConfig.TRANSIENT_READ_MAX_RETRIES,
-            )
-            _sleep(iface._retry_policy_get_delay(transient_policy, attempt_index))
-            return
-        iface._read_retry_count = 0
-        raise iface.BLEError(ERROR_READING_BLE) from error
+        BLEReceiveRecoveryController(iface).handle_transient_read_error(error)
 
     @staticmethod
     def _log_empty_read_warning(iface: "BLEInterface") -> None:
@@ -1179,24 +1054,4 @@ class BLEReceiveRecoveryService:
         None
             Returns ``None`` after logging or suppressing warning output.
         """
-        now = time.monotonic()
-        cooldown = BLEConfig.EMPTY_READ_WARNING_COOLDOWN
-        if now - iface._last_empty_read_warning >= cooldown:
-            suppressed = iface._suppressed_empty_read_warnings
-            message = f"Exceeded max retries for empty BLE read from {FROMRADIO_UUID}"
-            if suppressed:
-                message = (
-                    f"{message} (suppressed {suppressed} repeats in the last "
-                    f"{cooldown:.0f}s)"
-                )
-            logger.warning(message)
-            iface._last_empty_read_warning = now
-            iface._suppressed_empty_read_warnings = 0
-            return
-
-        iface._suppressed_empty_read_warnings += 1
-        logger.debug(
-            "Suppressed repeated empty BLE read warning (%d within %.0fs window)",
-            iface._suppressed_empty_read_warnings,
-            cooldown,
-        )
+        BLEReceiveRecoveryController(iface).log_empty_read_warning()

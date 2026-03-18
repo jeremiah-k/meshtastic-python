@@ -54,6 +54,17 @@ recommended patterns for code that embeds `meshtastic-python`.
 - Receive-loop and recovery runtime orchestration routes through
   `BLEReceiveRecoveryController`; interface-level receive helpers are facade
   shims that delegate to the collaborator.
+- `BLEReceiveRecoveryService._*` receive runtime entrypoints are compatibility
+  shims that delegate to `BLEReceiveRecoveryController` owners
+  (`_read_and_handle_payload`, `_handle_payload_read`, `_run_receive_cycle`,
+  `_receive_from_radio_impl`, `_recover_receive_thread`,
+  `_read_from_radio_with_retries`, `_handle_transient_read_error`,
+  `_log_empty_read_warning`).
+- `BLEManagementCommandHandler` owns management timeout validation,
+  trust-command execution, and trust lifecycle orchestration in addition to
+  pair/unpair and command execution ownership.
+- `BLEManagementCommandsService._*` entrypoints are compatibility shims that
+  delegate to `BLEManagementCommandHandler` for runtime behavior.
 - `BLEInterface` remains the compatibility boundary: patch-sensitive
   collaborators (for example `publishingThread`, `BLEClient`,
   `_is_currently_connected_elsewhere`, `sys/shutil/subprocess`) are delegated
@@ -64,9 +75,10 @@ recommended patterns for code that embeds `meshtastic-python`.
 - `BLELifecycleService._*` methods are retained as compatibility/test shim
   entrypoints and delegate to coordinator-owned implementations.
 - `BLEReceiveRecoveryService._*` and `BLEManagementCommandsService._*` remain
-  available for compatibility-targeted direct service/test entrypoints; runtime
-  `BLEInterface` call paths are collaborator-owned (`BLEReceiveRecoveryController`
-  and `BLEManagementCommandHandler`).
+  available for compatibility-targeted direct service/test entrypoints;
+  collaborator owners remain authoritative for runtime behavior in
+  `BLEInterface` call paths (`BLEReceiveRecoveryController` and
+  `BLEManagementCommandHandler`).
 
 ### Key design choices
 
