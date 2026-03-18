@@ -69,6 +69,7 @@
 - Validation completed for this tranche:
   - `ruff check meshtastic/interfaces/ble/receive_service.py meshtastic/interfaces/ble/management_service.py tests/test_ble_lifecycle_receive_targets.py tests/test_ble_utils_service_targets.py`: passed.
   - `pytest -q tests/test_ble_lifecycle_receive_targets.py tests/test_ble_utils_service_targets.py tests/test_ble_interface_core.py -k "receive or management or safe_execute or retry_policy or publishing_thread or malformed_fromnum"`: **110 passed, 135 deselected**.
+  - `pytest -q tests/test_ble_interface_core.py tests/test_ble_lifecycle_receive_targets.py tests/test_ble_utils_service_targets.py tests/test_ble_connection_discovery_client_targets.py`: **264 passed**.
 
 You are operating as a project coordinator responsible for executing a **large-scale architectural refinement program** on an existing codebase.
 
