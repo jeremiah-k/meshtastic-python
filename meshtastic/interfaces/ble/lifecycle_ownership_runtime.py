@@ -149,6 +149,86 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             getattr(connected_client, "address", "unknown"),
         )
 
+    @staticmethod
+    def _apply_owned_client_invalidation(
+        iface: "BLEInterface",
+        *,
+        get_is_closing: Callable[[], bool],
+        restored_address: str | None,
+        restore_last_connection_request: str | None,
+    ) -> tuple[bool, bool, bool]:
+        """Apply state mutations when the invalidated client is currently bound."""
+        replacement_pending = bool(getattr(iface, "_client_replacement_pending", False))
+        already_notified = bool(getattr(iface, "_disconnect_notified", False))
+        is_closing = get_is_closing() or iface._closed
+        iface.client = None
+        iface._client_publish_pending = False
+        iface._client_replacement_pending = False
+        iface._disconnect_notified = True
+        should_publish_disconnect = replacement_pending and not already_notified
+        if not is_closing:
+            iface.address = restored_address
+            iface._last_connection_request = restore_last_connection_request
+            iface._connection_alias_key = None
+            return True, should_publish_disconnect, is_closing
+        iface._last_connection_request = None
+        return False, should_publish_disconnect, is_closing
+
+    @staticmethod
+    def _apply_publish_pending_invalidation(
+        iface: "BLEInterface",
+        *,
+        get_is_closing: Callable[[], bool],
+        restored_address: str | None,
+        restore_last_connection_request: str | None,
+    ) -> tuple[bool, bool, bool]:
+        """Apply state mutations for publish-pending invalidation branch."""
+        replacement_pending = bool(getattr(iface, "_client_replacement_pending", False))
+        already_notified = bool(getattr(iface, "_disconnect_notified", False))
+        iface._client_publish_pending = False
+        iface._client_replacement_pending = False
+        should_publish_disconnect = replacement_pending and not already_notified
+        if should_publish_disconnect:
+            iface._disconnect_notified = True
+        is_closing = get_is_closing() or iface._closed
+        if not is_closing:
+            iface.address = restored_address
+            iface._last_connection_request = restore_last_connection_request
+            iface._connection_alias_key = None
+            return True, should_publish_disconnect, is_closing
+        iface._last_connection_request = None
+        return False, should_publish_disconnect, is_closing
+
+    @staticmethod
+    def _apply_post_cleanup_state_correction(
+        iface: "BLEInterface",
+        *,
+        should_reset_state: bool,
+        do_reset_to_disconnected: Callable[[], bool],
+        get_current_state: Callable[[], ConnectionState],
+        do_transition_to_disconnected: Callable[[], bool],
+    ) -> None:
+        """Ensure state converges to disconnected after invalidation cleanup."""
+        if not should_reset_state:
+            return
+        with iface._state_lock:
+            if not do_reset_to_disconnected():
+                current_state = get_current_state()
+                logger.error(
+                    "Failed to reset state after invalidated connect result (alias=%s current=%s); forcing transition to %s.",
+                    iface._connection_alias_key,
+                    getattr(current_state, "value", current_state),
+                    ConnectionState.DISCONNECTED.value,
+                )
+                if not do_transition_to_disconnected():
+                    fallback_state = get_current_state()
+                    logger.error(
+                        "Failed forced transition to %s after invalidated connect result (alias=%s current=%s).",
+                        ConnectionState.DISCONNECTED.value,
+                        iface._connection_alias_key,
+                        getattr(fallback_state, "value", fallback_state),
+                    )
+
     def _discard_invalidated_connected_client(
         self,
         client: "BLEClient",
@@ -182,43 +262,29 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         is_closing = False
         with iface._state_lock:
             if iface.client is client:
-                replacement_pending = bool(
-                    getattr(iface, "_client_replacement_pending", False)
+                (
+                    should_reset_state,
+                    should_publish_disconnect,
+                    is_closing,
+                ) = self._apply_owned_client_invalidation(
+                    iface,
+                    get_is_closing=get_is_closing,
+                    restored_address=restored_address,
+                    restore_last_connection_request=restore_last_connection_request,
                 )
-                already_notified = bool(getattr(iface, "_disconnect_notified", False))
-                is_closing = get_is_closing() or iface._closed
-                iface.client = None
-                iface._client_publish_pending = False
-                iface._client_replacement_pending = False
-                iface._disconnect_notified = True
-                should_publish_disconnect = replacement_pending and not already_notified
-                if not is_closing:
-                    iface.address = restored_address
-                    iface._last_connection_request = restore_last_connection_request
-                    iface._connection_alias_key = None
-                    should_reset_state = True
-                else:
-                    iface._last_connection_request = None
             elif iface.client is None and bool(
                 getattr(iface, "_client_publish_pending", False)
             ):
-                replacement_pending = bool(
-                    getattr(iface, "_client_replacement_pending", False)
+                (
+                    should_reset_state,
+                    should_publish_disconnect,
+                    is_closing,
+                ) = self._apply_publish_pending_invalidation(
+                    iface,
+                    get_is_closing=get_is_closing,
+                    restored_address=restored_address,
+                    restore_last_connection_request=restore_last_connection_request,
                 )
-                already_notified = bool(getattr(iface, "_disconnect_notified", False))
-                iface._client_publish_pending = False
-                iface._client_replacement_pending = False
-                if replacement_pending and not already_notified:
-                    iface._disconnect_notified = True
-                    should_publish_disconnect = True
-                is_closing = get_is_closing() or iface._closed
-                if not is_closing:
-                    iface.address = restored_address
-                    iface._last_connection_request = restore_last_connection_request
-                    iface._connection_alias_key = None
-                    should_reset_state = True
-                else:
-                    iface._last_connection_request = None
 
         try:
             run_safe_cleanup(
@@ -226,24 +292,13 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 "BLE client close for invalidated connection result",
             )
         finally:
-            if should_reset_state:
-                with iface._state_lock:
-                    if not do_reset_to_disconnected():
-                        current_state = get_current_state()
-                        logger.error(
-                            "Failed to reset state after invalidated connect result (alias=%s current=%s); forcing transition to %s.",
-                            iface._connection_alias_key,
-                            getattr(current_state, "value", current_state),
-                            ConnectionState.DISCONNECTED.value,
-                        )
-                        if not do_transition_to_disconnected():
-                            fallback_state = get_current_state()
-                            logger.error(
-                                "Failed forced transition to %s after invalidated connect result (alias=%s current=%s).",
-                                ConnectionState.DISCONNECTED.value,
-                                iface._connection_alias_key,
-                                getattr(fallback_state, "value", fallback_state),
-                            )
+            self._apply_post_cleanup_state_correction(
+                iface,
+                should_reset_state=should_reset_state,
+                do_reset_to_disconnected=do_reset_to_disconnected,
+                get_current_state=get_current_state,
+                do_transition_to_disconnected=do_transition_to_disconnected,
+            )
         if should_publish_disconnect and not is_closing:
             iface._disconnected()
 

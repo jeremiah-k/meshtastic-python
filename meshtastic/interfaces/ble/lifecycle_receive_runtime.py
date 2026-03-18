@@ -103,13 +103,31 @@ class BLEReceiveLifecycleCoordinator:
             raise
         thread_ident, thread_is_alive = _thread_start_probe(thread)
         if thread_ident is None and not thread_is_alive:
-            with iface._state_lock:
-                if iface._receiveThread is thread:
-                    iface._receiveThread = None
-            logger.debug(
-                "Receive thread %s did not start; cleared stale thread reference.",
-                name,
-            )
+            started_event = getattr(thread, "_started", None)
+            is_started = getattr(started_event, "is_set", None)
+            start_failure_confirmed = False
+            if callable(is_started):
+                try:
+                    start_failure_confirmed = not bool(is_started())
+                except Exception:  # noqa: BLE001 - probe remains best effort
+                    start_failure_confirmed = False
+            elif isinstance(thread, threading.Thread):
+                # Native thread with no ident and not alive indicates startup never happened.
+                start_failure_confirmed = True
+
+            if start_failure_confirmed:
+                with iface._state_lock:
+                    if iface._receiveThread is thread:
+                        iface._receiveThread = None
+                logger.debug(
+                    "Receive thread %s did not start; cleared stale thread reference.",
+                    name,
+                )
+            else:
+                logger.debug(
+                    "Receive thread %s start probe inconclusive; keeping thread reference.",
+                    name,
+                )
             return
         if reset_recovery:
             with iface._state_lock:

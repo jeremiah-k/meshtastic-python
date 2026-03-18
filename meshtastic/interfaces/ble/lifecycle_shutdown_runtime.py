@@ -202,7 +202,7 @@ class BLEShutdownLifecycleCoordinator:
                     RECEIVE_THREAD_JOIN_TIMEOUT,
                 )
         with iface._state_lock:
-            if iface._receiveThread is receive_thread:
+            if iface._receiveThread is receive_thread and not thread_is_alive:
                 iface._receiveThread = None
 
     def _close_mesh_interface(

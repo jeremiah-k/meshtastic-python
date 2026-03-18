@@ -680,7 +680,7 @@ def test_lifecycle_shutdown_receive_thread_skips_self_join_by_ident(
         )
         BLELifecycleService._shutdown_receive_thread(iface)
         assert join_calls == []
-        assert iface._receiveThread is None
+        assert iface._receiveThread is not None
     finally:
         iface.close()
 
@@ -899,7 +899,10 @@ def test_receive_service_branch_targets(monkeypatch: pytest.MonkeyPatch) -> None
 
     iface._read_retry_count = 3
     iface._handle_disconnect = lambda *_args, **_kwargs: False
-    iface._set_receive_wanted = MagicMock()
+    set_receive_wanted_calls: list[bool] = []
+    iface._set_receive_wanted = lambda *, want_receive: set_receive_wanted_calls.append(
+        want_receive
+    )
     assert (
         BLEReceiveRecoveryService._handle_read_loop_disconnect(
             iface,
@@ -909,7 +912,7 @@ def test_receive_service_branch_targets(monkeypatch: pytest.MonkeyPatch) -> None
         is False
     )
     assert iface._read_retry_count == 0
-    iface._set_receive_wanted.assert_called_once_with(want_receive=False)
+    assert set_receive_wanted_calls == [False]
 
     wait_calls: list[float] = []
     monkeypatch.setattr(
@@ -1831,12 +1834,15 @@ def test_receive_service_remaining_recovery_and_empty_read_branches(
         client.read_gatt_char = lambda *_args, **_kwargs: b""
         iface._retry_policy_get_delay = lambda _policy, _attempt: 0.01
         iface._empty_read_policy = object()
-        iface._log_empty_read_warning = MagicMock()
+        empty_read_warning_calls: list[str] = []
+        iface._log_empty_read_warning = (
+            lambda: empty_read_warning_calls.append("warned")
+        )
         assert (
             BLEReceiveRecoveryService._read_from_radio_with_retries(iface, client)
             is None
         )
-        iface._log_empty_read_warning.assert_called_once()
+        assert empty_read_warning_calls == ["warned"]
     finally:
         _reset_state_manager(iface)
         iface._shutdown_event = threading.Event()

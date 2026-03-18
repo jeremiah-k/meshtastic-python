@@ -32,7 +32,13 @@ class BLEManagementCommandsService:
 
     @staticmethod
     def _has_required_handler_entrypoint(candidate: object) -> bool:
-        """Return whether ``candidate`` exposes minimal handler API for shim reuse."""
+        """Return whether ``candidate`` exposes any usable shim entrypoint.
+
+        This helper intentionally accepts partial doubles: it returns ``True``
+        as soon as it finds the first callable/non-mock method from the
+        compatibility entrypoint list, and returns ``False`` only when none of
+        the listed entrypoints are usable.
+        """
         if _is_unconfigured_mock_member(candidate):
             return False
         required_entrypoints = (

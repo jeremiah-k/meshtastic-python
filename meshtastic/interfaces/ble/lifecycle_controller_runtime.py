@@ -11,6 +11,7 @@ from meshtastic.interfaces.ble.lifecycle_disconnect_runtime import (
 from meshtastic.interfaces.ble.lifecycle_compat_service import (
     _ORIGINAL_GET_CONNECTED_CLIENT_STATUS,
     _ORIGINAL_GET_CONNECTED_CLIENT_STATUS_LOCKED,
+    BLELifecycleService,
 )
 from meshtastic.interfaces.ble.lifecycle_ownership_runtime import (
     BLEConnectionOwnershipLifecycleCoordinator,
@@ -22,6 +23,7 @@ from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
 from meshtastic.interfaces.ble.lifecycle_shutdown_runtime import (
     BLEShutdownLifecycleCoordinator,
 )
+from meshtastic.interfaces.ble.state import ConnectionState
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
@@ -118,10 +120,29 @@ class BLELifecycleController:
         restore_last_connection_request: str | None = None,
     ) -> None:
         """Discard stale connect result for the bound interface."""
+        iface = self._iface
         self._connection_ownership._discard_invalidated_connected_client(
             client,
             restore_address=restore_address,
             restore_last_connection_request=restore_last_connection_request,
+            is_closing_getter=lambda: BLELifecycleService._state_manager_is_closing(
+                iface
+            ),
+            reset_to_disconnected=lambda: BLELifecycleService._state_manager_reset_to_disconnected(  # noqa: E501
+                iface
+            ),
+            current_state_getter=lambda: BLELifecycleService._state_manager_current_state(
+                iface
+            ),
+            transition_to_disconnected=lambda: BLELifecycleService._state_manager_transition_to(  # noqa: E501
+                iface,
+                ConnectionState.DISCONNECTED,
+            ),
+            safe_cleanup=lambda cleanup, operation_name: BLELifecycleService._error_handler_safe_cleanup(  # noqa: E501
+                iface,
+                cleanup,
+                operation_name,
+            ),
         )
 
     def _uses_compat_connection_status_overrides(self) -> bool:

@@ -276,6 +276,19 @@ class BLEManagementCommandHandler:
                 return current_client
         return iface._get_existing_client_if_valid(normalized_target)
 
+    @staticmethod
+    def _is_client_connected(client: BLEClient | None) -> bool:
+        """Return whether a candidate client appears currently connected."""
+        if client is None:
+            return False
+        is_connected = getattr(client, "isConnected", None)
+        if callable(is_connected) and not _is_unconfigured_mock_callable(is_connected):
+            try:
+                return bool(is_connected())
+            except Exception:  # noqa: BLE001 - connectivity probe must remain best effort
+                return False
+        return False
+
     def get_current_implicit_management_binding_locked(self) -> str | None:
         """Return current implicit management binding while holding state lock."""
         iface = self._iface
@@ -622,7 +635,18 @@ class BLEManagementCommandHandler:
                                 target_address,
                                 expected_binding=start_context.expected_implicit_binding,
                             )
-                    return command(refreshed_existing_client)
+                    if self._is_client_connected(refreshed_existing_client):
+                        return command(refreshed_existing_client)
+                    client_to_use, temporary_client = self._acquire_client_for_target(
+                        address=address,
+                        target_address=target_address,
+                        expected_implicit_binding=start_context.expected_implicit_binding,
+                    )
+                    return self._execute_with_client(
+                        client_to_use=client_to_use,
+                        temporary_client=temporary_client,
+                        command=command,
+                    )
                 client_to_use, temporary_client = self._acquire_client_for_target(
                     address=address,
                     target_address=target_address,

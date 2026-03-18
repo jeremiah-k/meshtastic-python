@@ -405,6 +405,46 @@ class _LifecycleErrorAccess:
         except Exception:  # noqa: BLE001 - shutdown cleanup must remain best effort
             logger.debug("Error during %s", operation_name, exc_info=True)
 
+    @staticmethod
+    def _try_safe_execute_variants(
+        safe_execute: Callable[..., object],
+        tracked_func: Callable[[], object],
+        *,
+        error_msg: str,
+        did_run: Callable[[], bool],
+    ) -> tuple[bool, object | None]:
+        """Attempt execute-hook signatures and report whether `tracked_func` ran."""
+        try:
+            result = safe_execute(tracked_func, error_msg=error_msg)
+            return did_run(), result
+        except TypeError as exc:
+            if not _is_unexpected_keyword_error(exc, "error_msg"):
+                logger.debug(error_msg, exc_info=True)
+                return did_run(), None
+            if did_run():
+                return True, None
+            try:
+                result = safe_execute(tracked_func, error_msg)
+                if did_run():
+                    return True, result
+            except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
+                logger.debug(error_msg, exc_info=True)
+                if did_run():
+                    return True, None
+            try:
+                result = safe_execute(tracked_func)
+                if did_run():
+                    return True, result
+            except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
+                logger.debug(error_msg, exc_info=True)
+                if did_run():
+                    return True, None
+        except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
+            logger.debug(error_msg, exc_info=True)
+            if did_run():
+                return True, None
+        return False, None
+
     def safe_execute(
         self,
         func: Callable[[], object],
@@ -421,42 +461,14 @@ class _LifecycleErrorAccess:
             return func()
 
         if safe_execute is not None:
-            try:
-                result = safe_execute(_tracked_func, error_msg=error_msg)
-                if func_ran:
-                    return result
-            except TypeError as exc:
-                if _is_unexpected_keyword_error(exc, "error_msg"):
-                    if func_ran:
-                        return None
-                    try:
-                        result = safe_execute(_tracked_func, error_msg)
-                        if func_ran:
-                            return result
-                    except (
-                        Exception
-                    ):  # noqa: BLE001 - hook failures must not abort shutdown
-                        logger.debug(error_msg, exc_info=True)
-                        if func_ran:
-                            return None
-                    try:
-                        result = safe_execute(_tracked_func)
-                        if func_ran:
-                            return result
-                    except (
-                        Exception
-                    ):  # noqa: BLE001 - hook failures must not abort shutdown
-                        logger.debug(error_msg, exc_info=True)
-                        if func_ran:
-                            return None
-                else:
-                    logger.debug(error_msg, exc_info=True)
-                    if func_ran:
-                        return None
-            except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
-                logger.debug(error_msg, exc_info=True)
-                if func_ran:
-                    return None
+            hook_ran, hook_result = self._try_safe_execute_variants(
+                safe_execute,
+                _tracked_func,
+                error_msg=error_msg,
+                did_run=lambda: func_ran,
+            )
+            if hook_ran:
+                return hook_result
         try:
             return func()
         except Exception:  # noqa: BLE001 - shutdown execution must remain best effort

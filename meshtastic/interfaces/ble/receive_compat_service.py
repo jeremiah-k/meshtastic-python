@@ -91,7 +91,7 @@ class BLEReceiveRecoveryService:
 
     @staticmethod
     def _coordinator_wait_for_event(
-        coordinator: "ThreadCoordinator", event_name: str, *, timeout: float | None
+        coordinator: "ThreadCoordinator", event_name: str, timeout: float | None
     ) -> bool:
         """Wait for a coordinator event using compatibility dispatch.
 
@@ -194,19 +194,9 @@ class BLEReceiveRecoveryService:
         )._wait_for_read_trigger(
             coordinator=coordinator,
             wait_timeout=wait_timeout,
-            wait_for_event=lambda target_coordinator, event_name, timeout: BLEReceiveRecoveryService._coordinator_wait_for_event(  # noqa: E501
-                target_coordinator,
-                event_name,
-                timeout=timeout,
-            ),
-            check_and_clear_event=lambda target_coordinator, event_name: BLEReceiveRecoveryService._coordinator_check_and_clear_event(  # noqa: E501
-                target_coordinator,
-                event_name,
-            ),
-            clear_event=lambda target_coordinator, event_name: BLEReceiveRecoveryService._coordinator_clear_event(  # noqa: E501
-                target_coordinator,
-                event_name,
-            ),
+            wait_for_event=BLEReceiveRecoveryService._coordinator_wait_for_event,
+            check_and_clear_event=BLEReceiveRecoveryService._coordinator_check_and_clear_event,
+            clear_event=BLEReceiveRecoveryService._coordinator_clear_event,
         )
 
     @staticmethod
@@ -274,11 +264,7 @@ class BLEReceiveRecoveryService:
             is_connecting=is_connecting,
             publish_pending=publish_pending,
             is_closing=is_closing,
-            wait_for_event=lambda target_coordinator, event_name, timeout: BLEReceiveRecoveryService._coordinator_wait_for_event(  # noqa: E501
-                target_coordinator,
-                event_name,
-                timeout=timeout,
-            ),
+            wait_for_event=BLEReceiveRecoveryService._coordinator_wait_for_event,
         )
 
     @staticmethod

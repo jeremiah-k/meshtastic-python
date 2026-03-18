@@ -5080,7 +5080,7 @@ def test_start_receive_thread_clears_cached_thread_when_start_noops(
         BLELifecycleService._start_receive_thread(iface, name="BLEReceiveStartNoop")
 
         assert start_calls == [thread_like]
-        assert iface._receiveThread is None
+        assert iface._receiveThread is thread_like
     finally:
         iface.close()
 

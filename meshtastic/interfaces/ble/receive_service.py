@@ -157,7 +157,6 @@ class BLEReceiveRecoveryController:
     def _coordinator_wait_for_event(
         coordinator: "ThreadCoordinator",
         event_name: str,
-        *,
         timeout: float | None,
     ) -> bool:
         """Wait for a coordinator event using compatibility dispatch."""
@@ -351,10 +350,14 @@ class BLEReceiveRecoveryController:
         """Resolve instance/class override while avoiding default recursion shims."""
         iface = self._iface
         instance_override = iface.__dict__.get(method_name)
-        if callable(instance_override):
+        if callable(instance_override) and not _is_unconfigured_mock_callable(
+            instance_override
+        ):
             return cast(Callable[..., object], instance_override)
         class_or_subclass_override = getattr(iface, method_name, None)
-        if callable(class_or_subclass_override):
+        if callable(class_or_subclass_override) and not _is_unconfigured_mock_callable(
+            class_or_subclass_override
+        ):
             if self._is_default_iface_receive_hook(
                 method_name,
                 class_or_subclass_override,

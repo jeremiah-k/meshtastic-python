@@ -624,20 +624,21 @@ class BLEInterface(MeshInterface):
     def _resolve_thread_event_dispatcher(
         coordinator: object,
     ) -> Callable[[str], None] | None:
-        """Resolve set-event hook with class-first compatibility behavior."""
-        class_set_event = getattr(type(coordinator), "set_event", None)
-        if callable(class_set_event) and not _is_unconfigured_mock_callable(
-            class_set_event
-        ):
-            def _dispatch_class_event(event_name: str) -> None:
-                class_set_event(coordinator, event_name)
-
-            return _dispatch_class_event
+        """Resolve set-event hook with instance-override compatibility behavior."""
         instance_set_event = getattr(coordinator, "__dict__", {}).get("set_event")
         if callable(instance_set_event) and not _is_unconfigured_mock_callable(
             instance_set_event
         ):
             return cast(Callable[[str], None], instance_set_event)
+        class_set_event = getattr(type(coordinator), "set_event", None)
+        if callable(class_set_event) and not _is_unconfigured_mock_callable(
+            class_set_event
+        ):
+
+            def _dispatch_class_event(event_name: str) -> None:
+                class_set_event(coordinator, event_name)
+
+            return _dispatch_class_event
         legacy_set_event = getattr(coordinator, "_set_event", None)
         if callable(legacy_set_event) and not _is_unconfigured_mock_callable(
             legacy_set_event
@@ -1017,7 +1018,7 @@ class BLEInterface(MeshInterface):
     def _get_or_create_error_handler(self) -> BLEErrorHandler:
         """Return bound error handler, creating one lazily for partial test doubles."""
         handler = getattr(self, "error_handler", None)
-        if handler is None:
+        if handler is None or _is_unconfigured_mock_member(handler):
             handler = BLEErrorHandler()
             self.error_handler = handler
         return cast(BLEErrorHandler, handler)
@@ -1031,18 +1032,18 @@ class BLEInterface(MeshInterface):
         to lockless initialization for partial test doubles that bypass `__init__`.
         """
         collaborator = getattr(self, attr_name, None)
-        if collaborator is not None:
+        if collaborator is not None and not _is_unconfigured_mock_member(collaborator):
             return cast(T, collaborator)
         state_lock = getattr(self, "_state_lock", None)
         if state_lock is None or _is_unconfigured_mock_member(state_lock):
             collaborator = getattr(self, attr_name, None)
-            if collaborator is None:
+            if collaborator is None or _is_unconfigured_mock_member(collaborator):
                 collaborator = factory()
                 setattr(self, attr_name, collaborator)
             return cast(T, collaborator)
         with state_lock:
             collaborator = getattr(self, attr_name, None)
-            if collaborator is None:
+            if collaborator is None or _is_unconfigured_mock_member(collaborator):
                 collaborator = factory()
                 setattr(self, attr_name, collaborator)
         return cast(T, collaborator)

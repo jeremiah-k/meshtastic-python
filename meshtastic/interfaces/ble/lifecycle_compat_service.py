@@ -51,6 +51,24 @@ class BLELifecycleService:
     """Service helpers for BLEInterface lifecycle responsibilities."""
 
     @staticmethod
+    def _receive_lifecycle_coordinator(
+        iface: "BLEInterface",
+    ) -> BLEReceiveLifecycleCoordinator:
+        """Return cached receive-lifecycle coordinator when collaborator cache exists."""
+        get_or_create = getattr(iface, "_get_or_create_collaborator", None)
+        if callable(get_or_create):
+            try:
+                coordinator = get_or_create(
+                    "_ble_receive_lifecycle_coordinator",
+                    lambda: BLEReceiveLifecycleCoordinator(iface),
+                )
+                return cast(BLEReceiveLifecycleCoordinator, coordinator)
+            except TypeError:
+                # Partial test doubles may provide incompatible helper signatures.
+                pass
+        return BLEReceiveLifecycleCoordinator(iface)
+
+    @staticmethod
     def _resolve_error_handler_hook(
         iface: "BLEInterface", public_name: str, legacy_name: str
     ) -> Callable[..., object] | None:
@@ -145,7 +163,7 @@ class BLELifecycleService:
         None
             Always returns ``None``.
         """
-        BLEReceiveLifecycleCoordinator(iface).set_receive_wanted(
+        BLELifecycleService._receive_lifecycle_coordinator(iface).set_receive_wanted(
             want_receive=want_receive
         )
 
@@ -163,7 +181,9 @@ class BLELifecycleService:
         bool
             ``True`` when receive is requested and shutdown has not started.
         """
-        return BLEReceiveLifecycleCoordinator(iface).should_run_receive_loop()
+        return BLELifecycleService._receive_lifecycle_coordinator(
+            iface
+        ).should_run_receive_loop()
 
     @staticmethod
     def _thread_create_thread(
@@ -334,7 +354,7 @@ class BLELifecycleService:
         Exception
             Propagates thread-start failures after clearing stale thread state.
         """
-        BLEReceiveLifecycleCoordinator(iface).start_receive_thread(
+        BLELifecycleService._receive_lifecycle_coordinator(iface).start_receive_thread(
             name=name,
             reset_recovery=reset_recovery,
             create_thread=lambda **kwargs: BLELifecycleService._thread_create_thread(
