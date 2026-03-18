@@ -12,7 +12,7 @@ recommended patterns for code that embeds `meshtastic-python`.
 | `BLEInterface`                               | User-facing entry point; extends `MeshInterface` with BLE lifecycle management                       |
 | `BLEClient`                                  | Synchronous wrapper around Bleak; delegates async calls to the singleton runner                      |
 | `BLECoroutineRunner`                         | Process-wide singleton with one background thread and one asyncio event loop                         |
-| `BLEStateManager`                            | Centralized state machine (`DISCONNECTED → CONNECTING → CONNECTED → DISCONNECTING → RECONNECTING → ERROR`) |
+| `BLEStateManager`                            | Centralized state machine (states: `DISCONNECTED`, `CONNECTING`, `CONNECTED`, `DISCONNECTING`, `RECONNECTING`, `ERROR`) |
 | `BLEErrorHandler`                            | Unified exception-handling helpers used across the BLE subsystem                                     |
 | `NotificationManager`                        | Tracks active GATT notification subscriptions so they can be resubscribed after reconnects           |
 | `BLENotificationDispatcher`                  | Owns notification safety wrappers, FROMNUM parsing, malformed-counter logic, and notify registration |
@@ -42,13 +42,14 @@ recommended patterns for code that embeds `meshtastic-python`.
   runtime ownership is in controllers/coordinators/dispatchers.
 - `BLEInterface` uses collaborator APIs for state/notification interactions
   (for example `NotificationManager.get_callback()/subscribe()` and
-  `BLEStateManager.current_state/is_connected/is_closing/can_connect`) instead
+  `BLEStateManager` accessors such as `current_state`, `is_connected`,
+  `is_closing`, `can_connect`, `transition_to()`, `reset_to_disconnected()`) instead
   of direct collaborator-private member reach-through.
 - Notification execution/registration paths are owned by
-  `BLENotificationDispatcher`; `BLEInterface` exposes compatibility wrappers
-  (`_register_notifications`, `_from_num_handler`,
-  `_report_notification_handler_error`, `_invoke_safe_execute_compat`) that
-  delegate to dispatcher-owned logic.
+  `BLENotificationDispatcher`; `BLEInterface` wrappers call dispatcher APIs
+  (`register_notifications`, `from_num_handler`,
+  `report_notification_handler_error`, `invoke_safe_execute_compat`) rather
+  than touching dispatcher internals directly.
 - Management command orchestration routes through
   `BLEManagementCommandHandler`; interface-level management helpers are facade
   shims that delegate to the collaborator.

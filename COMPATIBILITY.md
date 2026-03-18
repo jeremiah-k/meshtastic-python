@@ -58,6 +58,9 @@ Additional approved BLE compatibility and promotions:
 | `BLEErrorHandler.safe_cleanup`                                  | `COMPAT_STABLE_SHIM` | Silent         | Wrapper alias for `_safe_cleanup`.                 |
 | `BLECompatibilityEventService.publish_connection_status_legacy` | `COMPAT_STABLE_SHIM` | Silent         | Wrapper alias for `publish_connection_status`.     |
 | `BLECompatibilityEventPublisher.publish_connection_status_legacy` | `COMPAT_STABLE_SHIM` | Silent       | Bound wrapper alias for `publish_connection_status`. |
+| `meshtastic.interfaces.ble.lifecycle_service._is_currently_connected_elsewhere` | `COMPAT_STABLE_SHIM` | Silent | Monkeypatch-target alias re-export from `gating` used by lifecycle compatibility probes. |
+| `meshtastic.interfaces.ble.lifecycle_service._ORIGINAL_GET_CONNECTED_CLIENT_STATUS` | `COMPAT_STABLE_SHIM` | Silent | Runtime baseline alias for connected-status monkeypatch detection. |
+| `meshtastic.interfaces.ble.lifecycle_service._ORIGINAL_GET_CONNECTED_CLIENT_STATUS_LOCKED` | `COMPAT_STABLE_SHIM` | Silent | Runtime baseline alias for locked connected-status monkeypatch detection. |
 | `BLEInterface.find_device`                                      | `COMPAT_STABLE_SHIM` | Silent         | Historical snake_case wrapper.                     |
 | `BLEInterface.findDevice`                                       | `PRIMARY`            | Silent         | Approved promoted camelCase name.                  |
 | `BLEClient._discover`                                           | `COMPAT_STABLE_SHIM` | Silent         | Historical internal discovery entrypoint.          |
@@ -179,6 +182,9 @@ details. Treat the compatibility symbol column as the intended external entrypoi
 | `meshtastic.interfaces.ble.errors`                | `BLEErrorHandler.safe_cleanup()`                                  | `BLEErrorHandler._safe_cleanup()`                          |
 | `meshtastic.interfaces.ble.compatibility_service` | `BLECompatibilityEventService.publish_connection_status_legacy()` | `BLECompatibilityEventService.publish_connection_status()` |
 | `meshtastic.interfaces.ble.compatibility_service` | `BLECompatibilityEventPublisher.publish_connection_status_legacy()` | `BLECompatibilityEventPublisher.publish_connection_status()` |
+| `meshtastic.interfaces.ble.lifecycle_service`     | `_is_currently_connected_elsewhere`                               | `meshtastic.interfaces.ble.gating._is_currently_connected_elsewhere` |
+| `meshtastic.interfaces.ble.lifecycle_service`     | `_ORIGINAL_GET_CONNECTED_CLIENT_STATUS`                           | `meshtastic.interfaces.ble.lifecycle_compat_service._ORIGINAL_GET_CONNECTED_CLIENT_STATUS` |
+| `meshtastic.interfaces.ble.lifecycle_service`     | `_ORIGINAL_GET_CONNECTED_CLIENT_STATUS_LOCKED`                    | `meshtastic.interfaces.ble.lifecycle_compat_service._ORIGINAL_GET_CONNECTED_CLIENT_STATUS_LOCKED` |
 | `meshtastic.interfaces.ble.interface`             | `find_device()`                                                   | `findDevice()`                                             |
 | `meshtastic.interfaces.ble.interface`             | `from_num_handler()`                                              | `_from_num_handler()`                                      |
 | `meshtastic.interfaces.ble.interface`             | `log_radio_handler()`                                             | `_log_radio_handler()`                                     |
@@ -260,3 +266,5 @@ When adding/changing compatibility behavior:
    - inventory marker check (`rg -n "COMPAT_STABLE_SHIM|COMPAT_DEPRECATE" meshtastic`)
    - compatibility-focused pytest targets for alias callability and warning behavior
 6. Run full project checks as documented in `CONTRIBUTING.md`.
+7. If a compatibility symbol is listed in both BLE status and module-mapping
+   tables, update both entries in the same change to keep inventories aligned.

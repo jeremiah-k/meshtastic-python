@@ -5,7 +5,7 @@ import logging
 import re
 import struct
 from threading import RLock
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 from bleak.exc import BleakDBusError, BleakError
 
@@ -316,6 +316,9 @@ class BLENotificationDispatcher:
         self._fromnum_notify_enabled = False
         self._malformed_notification_count = 0
         self._malformed_notification_lock = RLock()
+        self._current_legacy_log_handler: Callable[[Any, Any], None] | None = None
+        self._current_log_handler: Callable[[Any, Any], None] | None = None
+        self._current_from_num_handler: Callable[[Any, Any], None] | None = None
 
     @property
     def fromnum_notify_enabled(self) -> bool:
@@ -519,6 +522,9 @@ class BLENotificationDispatcher:
         from_num_handler: Callable[[Any, bytes], None],
     ) -> None:
         """Register BLE characteristic notification handlers on ``client``."""
+        self._current_legacy_log_handler = legacy_log_handler
+        self._current_log_handler = log_handler
+        self._current_from_num_handler = from_num_handler
 
         def _safe_call(
             handler: Callable[[Any, Any], None],
@@ -564,24 +570,48 @@ class BLENotificationDispatcher:
             )
 
         def _safe_legacy_handler(sender: Any, data: bytes | bytearray) -> None:
+            current_legacy_handler = cast(
+                Callable[[Any, Any], None],
+                getattr(
+                    self,
+                    "_current_legacy_log_handler",
+                    legacy_log_handler,
+                ),
+            )
             _safe_call(
-                legacy_log_handler,
+                current_legacy_handler,
                 sender,
                 data,
                 "Error in legacy log notification handler",
             )
 
         def _safe_log_handler(sender: Any, data: bytes | bytearray) -> None:
+            current_log_handler = cast(
+                Callable[[Any, Any], None],
+                getattr(
+                    self,
+                    "_current_log_handler",
+                    log_handler,
+                ),
+            )
             _safe_call(
-                log_handler,
+                current_log_handler,
                 sender,
                 data,
                 "Error in log notification handler",
             )
 
         def _safe_from_num_handler(sender: Any, data: bytes) -> None:
+            current_from_num_handler = cast(
+                Callable[[Any, Any], None],
+                getattr(
+                    self,
+                    "_current_from_num_handler",
+                    from_num_handler,
+                ),
+            )
             _safe_call(
-                from_num_handler,
+                current_from_num_handler,
                 sender,
                 data,
                 "Error in FROMNUM notification handler",

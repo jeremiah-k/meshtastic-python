@@ -186,6 +186,8 @@ class _LifecycleStateAccess:
             legacy_is_closing, bool
         ):
             return legacy_is_closing
+        # Deliberate graceful-degradation asymmetry: close/shutdown paths should
+        # not raise when optional state-manager hooks are absent.
         return False
 
     def client_is_connected(self, client: "BLEClient") -> bool:
@@ -194,7 +196,13 @@ class _LifecycleStateAccess:
 
 
 class _LifecycleThreadAccess:
-    """Thread/event compatibility access owned by lifecycle collaborators."""
+    """Thread/event compatibility access owned by lifecycle collaborators.
+
+    Contract: critical operations (`create_thread`, `start_thread`) raise
+    `AttributeError` when required hooks are missing; non-critical operations
+    (`join_thread`, `set_event`, `clear_events`, `wake_waiting_threads`) log and
+    return to keep shutdown/recovery paths best effort.
+    """
 
     def __init__(self, iface: "BLEInterface") -> None:
         """Bind thread-coordinator access to a specific interface."""

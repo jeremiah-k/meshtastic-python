@@ -620,24 +620,37 @@ class BLEInterface(MeshInterface):
         """
         self._get_lifecycle_controller().schedule_auto_reconnect()
 
-    def _set_thread_event(self, event_name: str) -> None:
-        """Set thread-coordinator event via public-first compatibility dispatch."""
-        coordinator = self.thread_coordinator
+    @staticmethod
+    def _resolve_thread_event_dispatcher(
+        coordinator: object,
+    ) -> Callable[[str], None] | None:
+        """Resolve set-event hook with class-first compatibility behavior."""
         class_set_event = getattr(type(coordinator), "set_event", None)
-        if callable(class_set_event):
-            class_set_event(coordinator, event_name)
-            return
+        if callable(class_set_event) and not _is_unconfigured_mock_callable(
+            class_set_event
+        ):
+            def _dispatch_class_event(event_name: str) -> None:
+                class_set_event(coordinator, event_name)
+
+            return _dispatch_class_event
         instance_set_event = getattr(coordinator, "__dict__", {}).get("set_event")
         if callable(instance_set_event) and not _is_unconfigured_mock_callable(
             instance_set_event
         ):
-            instance_set_event(event_name)
-            return
+            return cast(Callable[[str], None], instance_set_event)
         legacy_set_event = getattr(coordinator, "_set_event", None)
         if callable(legacy_set_event) and not _is_unconfigured_mock_callable(
             legacy_set_event
         ):
-            legacy_set_event(event_name)
+            return cast(Callable[[str], None], legacy_set_event)
+        return None
+
+    def _set_thread_event(self, event_name: str) -> None:
+        """Set thread-coordinator event via public-first compatibility dispatch."""
+        coordinator = self.thread_coordinator
+        dispatch_event = self._resolve_thread_event_dispatcher(coordinator)
+        if dispatch_event is not None:
+            dispatch_event(event_name)
             return
         logger.debug(
             "No callable thread event dispatcher available for event %s",

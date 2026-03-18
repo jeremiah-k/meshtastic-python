@@ -54,13 +54,33 @@ class BLEReceiveRecoveryController:
         """Bind receive/recovery helpers to a specific interface instance."""
         self._iface = iface
 
+    @staticmethod
+    def _as_usable_callable(
+        candidate: object | None,
+    ) -> Callable[..., object] | None:
+        """Return callable hook when usable (not an unconfigured mock)."""
+        if callable(candidate) and not _is_unconfigured_mock_callable(candidate):
+            return cast(Callable[..., object], candidate)
+        return None
+
+    @classmethod
+    def _is_unusable_mock_value(cls, value: object | None) -> bool:
+        """Return whether value is absent or an unconfigured mock placeholder."""
+        if value is None or _is_unconfigured_mock_member(value):
+            return True
+        return callable(value) and _is_unconfigured_mock_callable(value)
+
     def _get_lifecycle_controller(self) -> object | None:
         """Return lifecycle controller when available on the bound interface."""
         get_lifecycle_controller = getattr(
             self._iface, "_get_lifecycle_controller", None
         )
-        if callable(get_lifecycle_controller):
-            return cast("object | None", get_lifecycle_controller())
+        get_lifecycle_controller_fn = self._as_usable_callable(get_lifecycle_controller)
+        if get_lifecycle_controller_fn is not None:
+            controller = get_lifecycle_controller_fn()
+            if self._is_unusable_mock_value(controller):
+                return None
+            return controller
         return None
 
     def _has_ever_connected_session(self) -> bool:
@@ -70,8 +90,11 @@ class BLEReceiveRecoveryController:
             has_ever_connected_session = getattr(
                 lifecycle_controller, "has_ever_connected_session", None
             )
-            if callable(has_ever_connected_session):
-                return bool(has_ever_connected_session())
+            has_ever_connected_session_fn = self._as_usable_callable(
+                has_ever_connected_session
+            )
+            if has_ever_connected_session_fn is not None:
+                return bool(has_ever_connected_session_fn())
         raw_ever_connected = getattr(self._iface, "_ever_connected", False)
         if _is_unconfigured_mock_member(raw_ever_connected):
             return False
@@ -84,8 +107,9 @@ class BLEReceiveRecoveryController:
             is_connection_closing = getattr(
                 lifecycle_controller, "is_connection_closing", None
             )
-            if callable(is_connection_closing):
-                return bool(is_connection_closing())
+            is_connection_closing_fn = self._as_usable_callable(is_connection_closing)
+            if is_connection_closing_fn is not None:
+                return bool(is_connection_closing_fn())
         iface = self._iface
         with iface._state_lock:
             state_manager = getattr(iface, "_state_manager", None)
@@ -210,8 +234,11 @@ class BLEReceiveRecoveryController:
             should_run_receive_loop = getattr(
                 lifecycle_controller, "should_run_receive_loop", None
             )
-            if callable(should_run_receive_loop):
-                return bool(should_run_receive_loop())
+            should_run_receive_loop_fn = self._as_usable_callable(
+                should_run_receive_loop
+            )
+            if should_run_receive_loop_fn is not None:
+                return bool(should_run_receive_loop_fn())
         return False
 
     def _set_receive_wanted(self, *, want_receive: bool) -> None:
@@ -227,8 +254,9 @@ class BLEReceiveRecoveryController:
             set_receive_wanted = getattr(
                 lifecycle_controller, "set_receive_wanted", None
             )
-            if callable(set_receive_wanted):
-                set_receive_wanted(want_receive=want_receive)
+            set_receive_wanted_fn = self._as_usable_callable(set_receive_wanted)
+            if set_receive_wanted_fn is not None:
+                set_receive_wanted_fn(want_receive=want_receive)
 
     def _handle_disconnect(
         self,
@@ -245,10 +273,11 @@ class BLEReceiveRecoveryController:
         lifecycle_controller = self._get_lifecycle_controller()
         if lifecycle_controller is not None:
             handle_disconnect = getattr(lifecycle_controller, "handle_disconnect", None)
-            if not callable(handle_disconnect):
+            handle_disconnect_fn = self._as_usable_callable(handle_disconnect)
+            if handle_disconnect_fn is None:
                 return False
             return bool(
-                handle_disconnect(
+                handle_disconnect_fn(
                     disconnect_reason,
                     client=client,
                 )
@@ -268,9 +297,10 @@ class BLEReceiveRecoveryController:
             start_receive_thread = getattr(
                 lifecycle_controller, "start_receive_thread", None
             )
-            if not callable(start_receive_thread):
+            start_receive_thread_fn = self._as_usable_callable(start_receive_thread)
+            if start_receive_thread_fn is None:
                 return
-            start_receive_thread(
+            start_receive_thread_fn(
                 name=name,
                 reset_recovery=reset_recovery,
             )
@@ -285,11 +315,12 @@ class BLEReceiveRecoveryController:
         lifecycle_controller = self._get_lifecycle_controller()
         if lifecycle_controller is not None:
             close = getattr(lifecycle_controller, "close", None)
-            if not callable(close):
+            close_fn = self._as_usable_callable(close)
+            if close_fn is None:
                 return
             from meshtastic.interfaces.ble import interface as interface_mod
 
-            close(
+            close_fn(
                 management_shutdown_wait_timeout=(
                     interface_mod._MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS
                 ),

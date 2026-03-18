@@ -18,6 +18,10 @@ from meshtastic.interfaces.ble.management_runtime import (
     T,
     _ManagementStartContext,
 )
+from meshtastic.interfaces.ble.utils import (
+    _is_unconfigured_mock_callable,
+    _is_unconfigured_mock_member,
+)
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
@@ -25,6 +29,31 @@ if TYPE_CHECKING:
 
 class BLEManagementCommandsService:
     """Service helpers for BLE management command paths."""
+
+    @staticmethod
+    def _has_required_handler_entrypoint(candidate: object) -> bool:
+        """Return whether ``candidate`` exposes minimal handler API for shim reuse."""
+        if _is_unconfigured_mock_member(candidate):
+            return False
+        required_entrypoints = (
+            "execute_management_command",
+            "start_management_phase",
+            "resolve_management_target",
+            "acquire_client_for_target",
+            "execute_with_client",
+            "pair",
+            "unpair",
+            "trust",
+            "validate_management_await_timeout",
+            "validate_trust_timeout",
+            "validate_connect_timeout_override",
+            "run_bluetoothctl_trust_command",
+        )
+        for method_name in required_entrypoints:
+            method = getattr(candidate, method_name, None)
+            if callable(method) and not _is_unconfigured_mock_callable(method):
+                return True
+        return False
 
     @staticmethod
     def _is_handler_like(candidate: object) -> bool:
@@ -70,7 +99,12 @@ class BLEManagementCommandsService:
                     return resolved
                 if (
                     resolved is not None
-                    and BLEManagementCommandsService._is_handler_like(resolved)
+                    and (
+                        BLEManagementCommandsService._is_handler_like(resolved)
+                        or BLEManagementCommandsService._has_required_handler_entrypoint(
+                            resolved
+                        )
+                    )
                 ):
                     return cast(BLEManagementCommandHandler, resolved)
         if ble_client_factory is None:

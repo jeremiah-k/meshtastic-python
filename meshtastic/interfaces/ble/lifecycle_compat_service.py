@@ -924,6 +924,8 @@ class BLELifecycleService:
             ``True`` when any non-``None`` key is currently owned by another
             interface; otherwise ``False``.
         """
+        # Support lifecycle_service module monkeypatches in compatibility tests;
+        # fall back to the canonical gating import when no override is present.
         from meshtastic.interfaces.ble import lifecycle_service as lifecycle_service_mod
 
         connected_elsewhere = getattr(

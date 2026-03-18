@@ -188,7 +188,10 @@ class BLEShutdownLifecycleCoordinator:
                 "Skipping receive thread join during close: worker never started."
             )
             return
-        if receive_thread is threading.current_thread():
+        current_ident = threading.get_ident()
+        if (
+            thread_ident is not None and thread_ident == current_ident
+        ) or receive_thread is threading.current_thread():
             logger.debug("close() called from receive thread; skipping self-join")
         else:
             join_runtime_thread(receive_thread, RECEIVE_THREAD_JOIN_TIMEOUT)
