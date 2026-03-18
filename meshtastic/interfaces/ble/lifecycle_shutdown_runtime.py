@@ -185,6 +185,7 @@ class BLEShutdownLifecycleCoordinator:
                 if iface._receiveThread is receive_thread:
                     iface._receiveThread = None
                     iface._receive_start_pending = False
+                    iface._receive_start_pending_since = None
             logger.debug(
                 "Skipping receive thread join during close: worker never started."
             )
@@ -206,6 +207,7 @@ class BLEShutdownLifecycleCoordinator:
             if iface._receiveThread is receive_thread and not thread_is_alive:
                 iface._receiveThread = None
                 iface._receive_start_pending = False
+                iface._receive_start_pending_since = None
 
     def _close_mesh_interface(
         self,

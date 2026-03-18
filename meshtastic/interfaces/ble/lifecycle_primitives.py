@@ -397,8 +397,34 @@ class _LifecycleThreadAccess:
                     exc_info=True,
                 )
             return
+        set_event = getattr(self._iface.thread_coordinator, "set_event", None)
+        if callable(set_event) and not _is_unconfigured_mock_callable(set_event):
+            for event_name in event_names:
+                try:
+                    set_event(event_name)
+                except Exception:  # noqa: BLE001 - non-critical wake stays best effort
+                    logger.debug(
+                        "Error in thread_coordinator.set_event fallback for %s",
+                        event_name,
+                        exc_info=True,
+                    )
+            return
+        legacy_set_event = getattr(self._iface.thread_coordinator, "_set_event", None)
+        if callable(legacy_set_event) and not _is_unconfigured_mock_callable(
+            legacy_set_event
+        ):
+            for event_name in event_names:
+                try:
+                    legacy_set_event(event_name)
+                except Exception:  # noqa: BLE001 - non-critical wake stays best effort
+                    logger.debug(
+                        "Error in thread_coordinator._set_event fallback for %s",
+                        event_name,
+                        exc_info=True,
+                    )
+            return
         logger.debug(
-            "Thread coordinator is missing wake_waiting_threads/_wake_waiting_threads"
+            "Thread coordinator is missing wake_waiting_threads/_wake_waiting_threads/set_event/_set_event"
         )
 
 

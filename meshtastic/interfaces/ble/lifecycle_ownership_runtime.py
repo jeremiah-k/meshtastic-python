@@ -162,7 +162,12 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         Returns
         -------
         tuple[bool, bool, bool]
-            ``(should_reset_state, should_publish_disconnect, is_closing)``.
+            ``(should_reset_state, should_publish_disconnect, is_closing)``
+            where:
+            ``should_reset_state`` indicates whether disconnected-state
+            correction should run, ``should_publish_disconnect`` indicates
+            whether a disconnect event should be emitted, and ``is_closing``
+            indicates whether shutdown is active.
         """
         replacement_pending = bool(getattr(iface, "_client_replacement_pending", False))
         already_notified = bool(getattr(iface, "_disconnect_notified", False))
@@ -188,7 +193,14 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         restored_address: str | None,
         restore_last_connection_request: str | None,
     ) -> tuple[bool, bool, bool]:
-        """Apply state mutations for publish-pending invalidation branch."""
+        """Apply state mutations for publish-pending invalidation branch.
+
+        Returns
+        -------
+        tuple[bool, bool, bool]
+            ``(should_reset_state, should_publish_disconnect, is_closing)``
+            using the same semantics as `_apply_owned_client_invalidation`.
+        """
         replacement_pending = bool(getattr(iface, "_client_replacement_pending", False))
         already_notified = bool(getattr(iface, "_disconnect_notified", False))
         iface._client_publish_pending = False
@@ -389,30 +401,35 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 ):
                     publish_committed = True
             if publish_committed:
-                post_commit_snapshot = snapshot_provider(
-                    connected_client,
-                    connected_device_key,
-                    connection_alias_key,
-                )
-                if (
-                    not post_commit_snapshot.still_owned
-                    or post_commit_snapshot.is_closing
-                    or post_commit_snapshot.lost_gate_ownership
-                ):
-                    _raise_invalidated(post_commit_snapshot)
-                iface._connected()
-                with iface._state_lock:
-                    iface._ever_connected = True
-                    iface._prior_publish_was_reconnect = prior_ever_connected
-                self._emit_verified_connection_side_effects(connected_client)
-                with iface._state_lock:
-                    if iface.client is connected_client:
-                        iface._client_publish_pending = False
-                        iface._client_replacement_pending = False
-                    still_owned_after, is_closing_after = get_connected_status_locked(
-                        connected_client
+                still_owned_after = True
+                is_closing_after = False
+                disconnect_notified = False
+                try:
+                    post_commit_snapshot = snapshot_provider(
+                        connected_client,
+                        connected_device_key,
+                        connection_alias_key,
                     )
-                    disconnect_notified = iface._disconnect_notified
+                    if (
+                        not post_commit_snapshot.still_owned
+                        or post_commit_snapshot.is_closing
+                        or post_commit_snapshot.lost_gate_ownership
+                    ):
+                        _raise_invalidated(post_commit_snapshot)
+                    iface._connected()
+                    with iface._state_lock:
+                        iface._ever_connected = True
+                        iface._prior_publish_was_reconnect = prior_ever_connected
+                    self._emit_verified_connection_side_effects(connected_client)
+                finally:
+                    with iface._state_lock:
+                        if iface.client is connected_client:
+                            iface._client_publish_pending = False
+                            iface._client_replacement_pending = False
+                        still_owned_after, is_closing_after = get_connected_status_locked(
+                            connected_client
+                        )
+                        disconnect_notified = iface._disconnect_notified
                 if (
                     not still_owned_after
                     and disconnect_notified

@@ -374,6 +374,7 @@ class BLEInterface(MeshInterface):
         with self._state_lock:
             self._want_receive = True
             self._receive_start_pending = False
+            self._receive_start_pending_since: float | None = None
         self._receiveThread: ThreadLike | None = None
         self._start_receive_thread(name="BLEReceive")
         logger.debug("Threads running")
@@ -965,10 +966,11 @@ class BLEInterface(MeshInterface):
         octets = [sanitized[index : index + 2].upper() for index in range(0, 12, 2)]
         return ":".join(octets)
 
-    @staticmethod
-    def _management_target_gate(target_address: str) -> contextlib.ExitStack:
+    def _management_target_gate(self, target_address: str) -> contextlib.ExitStack:
         """Compatibility wrapper for address-gated management execution."""
-        return BLEManagementCommandHandler.management_target_gate(target_address)
+        return self._get_management_command_handler().management_target_gate(
+            target_address
+        )
 
     def _get_management_client_if_available(
         self, address: str | None

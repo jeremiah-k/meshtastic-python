@@ -65,6 +65,17 @@ class BLECompatibilityEventPublisher:
         ``publish_connection_status_legacy(connected)`` directly on the bound
         compatibility publisher while runtime behavior remains delegated to the
         canonical ``publish_connection_status`` implementation.
+
+        Parameters
+        ----------
+        connected : bool
+            Connection status flag (``True`` for connected, ``False`` for
+            disconnected).
+
+        Returns
+        -------
+        None
+            Always returns ``None``.
         """
         BLECompatibilityEventService.publish_connection_status_legacy(
             self._iface,

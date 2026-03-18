@@ -399,7 +399,11 @@ class BLELifecycleService:
         None
             Returns ``None`` after delegating to disconnect handling.
         """
-        BLEDisconnectLifecycleCoordinator(iface).on_ble_disconnect(client)
+        BLELifecycleService._handle_disconnect(
+            iface,
+            "bleak_callback",
+            bleak_client=client,
+        )
 
     @staticmethod
     def _schedule_auto_reconnect(iface: "BLEInterface") -> None:

@@ -103,12 +103,20 @@ class BLEManagementCommandsService:
         connected_elsewhere: Callable[[str | None, object | None], bool] | None = None,
     ) -> BLEManagementCommandHandler:
         """Resolve handler for compatibility shims, preferring iface-owned collaborator."""
-        if ble_client_factory is None and connected_elsewhere is None:
-            get_handler = getattr(iface, "_get_management_command_handler", None)
-            if callable(get_handler):
-                resolved = get_handler()
-                if resolved is not None and not _is_unconfigured_mock_member(resolved):
-                    return cast(BLEManagementCommandHandler, resolved)
+        get_handler = getattr(iface, "_get_management_command_handler", None)
+        if callable(get_handler) and not _is_unconfigured_mock_callable(get_handler):
+            resolved = get_handler()
+            if (
+                resolved is not None
+                and not _is_unconfigured_mock_member(resolved)
+                and (
+                    BLEManagementCommandsService._is_handler_like(resolved)
+                    or BLEManagementCommandsService._has_required_handler_entrypoint(
+                        resolved
+                    )
+                )
+            ):
+                return cast(BLEManagementCommandHandler, resolved)
         if ble_client_factory is None:
             ble_client_factory = BLEClient
         if connected_elsewhere is None:

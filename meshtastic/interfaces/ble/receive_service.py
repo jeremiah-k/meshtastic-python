@@ -120,9 +120,15 @@ class BLEReceiveRecoveryController:
                 elif callable(raw_is_closing) and not _is_unconfigured_mock_callable(
                     raw_is_closing
                 ):
-                    state_is_closing = bool(raw_is_closing())
+                    try:
+                        result = raw_is_closing()
+                        state_is_closing = result if isinstance(result, bool) else False
+                    except Exception:  # noqa: BLE001 - closing probe must remain best effort
+                        state_is_closing = False
+                elif isinstance(raw_is_closing, bool):
+                    state_is_closing = raw_is_closing
                 else:
-                    state_is_closing = bool(raw_is_closing)
+                    state_is_closing = False
             else:
                 raw_is_closing = getattr(state_manager, "is_closing", False)
                 if _is_unconfigured_mock_member(raw_is_closing):
@@ -151,7 +157,19 @@ class BLEReceiveRecoveryController:
                         state_is_closing = legacy_is_closing
                     else:
                         state_is_closing = False
-            return state_is_closing or bool(getattr(iface, "_closed", False))
+            raw_closed = getattr(iface, "_closed", False)
+            if _is_unconfigured_mock_member(raw_closed):
+                closed = False
+            elif callable(raw_closed) and not _is_unconfigured_mock_callable(raw_closed):
+                try:
+                    closed = bool(raw_closed())
+                except Exception:  # noqa: BLE001 - closing probe must remain best effort
+                    closed = False
+            elif isinstance(raw_closed, bool):
+                closed = raw_closed
+            else:
+                closed = False
+            return state_is_closing or closed
 
     @staticmethod
     def _coordinator_wait_for_event(

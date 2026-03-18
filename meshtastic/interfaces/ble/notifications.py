@@ -196,6 +196,10 @@ class NotificationManager:
             with self._lock:
                 if epoch != self._resubscribe_epoch:
                     return
+            if characteristic == FROMNUM_UUID:
+                # FROMNUM startup requires dispatcher-owned retry/fallback logic
+                # and fromnum_notify_enabled synchronization.
+                continue
             try:
                 client.start_notify(
                     characteristic,
@@ -252,6 +256,18 @@ class NotificationManager:
         """
         with self._lock:
             return self._characteristic_to_callback.get(characteristic)
+
+    def subscribe(
+        self, characteristic: str, callback: Callable[[Any, Any], None]
+    ) -> int:
+        """Public wrapper for subscription tracking."""
+        return self._subscribe(characteristic, callback)
+
+    def get_callback(
+        self, characteristic: str
+    ) -> Callable[[Any, Any], None] | None:
+        """Public wrapper for callback lookup."""
+        return self._get_callback(characteristic)
 
 
 class BLENotificationDispatcher:
@@ -351,14 +367,38 @@ class BLENotificationDispatcher:
         *,
         error_msg: str,
         fallback: Callable[[], None],
+        report_handler_error: Callable[[BaseException], None] | None = None,
     ) -> None:
         """Invoke ``safe_execute`` with compatibility signature fallbacks."""
         executed = False
+        handler_failed = False
+        handler_exception: BaseException | None = None
 
         def _tracked_handler_thunk() -> None:
-            nonlocal executed
+            nonlocal executed, handler_failed, handler_exception
             executed = True
-            handler_thunk()
+            try:
+                handler_thunk()
+            except Exception as exc:  # noqa: BLE001 - callback errors are reported below
+                handler_failed = True
+                handler_exception = exc
+                raise
+
+        def _report_handler_failure() -> None:
+            if (
+                not handler_failed
+                or handler_exception is None
+                or report_handler_error is None
+            ):
+                return
+            try:
+                report_handler_error(handler_exception)
+            except Exception:  # noqa: BLE001 - error reporting remains best effort
+                logger.debug(
+                    "Failed to report notification handler error (%s).",
+                    error_msg,
+                    exc_info=True,
+                )
 
         def _fallback_if_not_executed() -> None:
             if not executed:
@@ -367,6 +407,7 @@ class BLENotificationDispatcher:
         try:
             safe_execute(_tracked_handler_thunk, error_msg=error_msg)
             if executed:
+                _report_handler_failure()
                 return
             _fallback_if_not_executed()
             return
@@ -378,6 +419,9 @@ class BLENotificationDispatcher:
                     exc,
                     exc_info=True,
                 )
+                if executed:
+                    _report_handler_failure()
+                    return
                 _fallback_if_not_executed()
                 return
             if executed:
@@ -387,6 +431,7 @@ class BLENotificationDispatcher:
                     exc,
                     exc_info=True,
                 )
+                _report_handler_failure()
         except (
             Exception
         ) as exc:  # noqa: BLE001 - notification callbacks must stay best effort
@@ -396,15 +441,20 @@ class BLENotificationDispatcher:
                 exc,
                 exc_info=True,
             )
+            if executed:
+                _report_handler_failure()
+                return
             _fallback_if_not_executed()
             return
 
         if executed:
+            _report_handler_failure()
             return
 
         try:
             safe_execute(_tracked_handler_thunk, error_msg)
             if executed:
+                _report_handler_failure()
                 return
             _fallback_if_not_executed()
             return
@@ -417,12 +467,16 @@ class BLENotificationDispatcher:
                         exc,
                         exc_info=True,
                     )
+                    _report_handler_failure()
             else:
                 logger.debug(
                     "safe_execute positional probe raised TypeError for notification handler (%s); skipping callable-only probe to avoid duplicate handler execution.",
                     error_msg,
                     exc_info=True,
                 )
+                if executed:
+                    _report_handler_failure()
+                    return
                 _fallback_if_not_executed()
                 return
         except (
@@ -434,15 +488,20 @@ class BLENotificationDispatcher:
                 exc,
                 exc_info=True,
             )
+            if executed:
+                _report_handler_failure()
+                return
             _fallback_if_not_executed()
             return
 
         if executed:
+            _report_handler_failure()
             return
 
         try:
             safe_execute(_tracked_handler_thunk)
             if executed:
+                _report_handler_failure()
                 return
             _fallback_if_not_executed()
             return
@@ -455,6 +514,9 @@ class BLENotificationDispatcher:
                 exc,
                 exc_info=True,
             )
+            if executed:
+                _report_handler_failure()
+                return
             _fallback_if_not_executed()
 
     def from_num_handler(self, _: Any, b: bytes | bytearray) -> None:
@@ -552,6 +614,7 @@ class BLENotificationDispatcher:
                 _invoke_handler,
                 error_msg=error_msg,
                 fallback=_fallback_invoke_handler,
+                report_handler_error=lambda _error: _report_notification_error(),
             )
 
         def _safe_legacy_handler(sender: Any, data: bytes | bytearray) -> None:
@@ -605,10 +668,10 @@ class BLENotificationDispatcher:
         def _get_or_create_handler(
             uuid: str, factory: Callable[[], Callable[[Any, Any], None]]
         ) -> Callable[[Any, Any], None]:
-            handler = self._notification_manager._get_callback(uuid)
+            handler = self._notification_manager.get_callback(uuid)
             if handler is None:
                 handler = factory()
-                self._notification_manager._subscribe(uuid, handler)
+                self._notification_manager.subscribe(uuid, handler)
             return handler
 
         def _is_notify_acquired_error(err: BaseException) -> bool:

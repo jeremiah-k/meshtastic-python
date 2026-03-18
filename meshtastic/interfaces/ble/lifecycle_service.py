@@ -4,8 +4,11 @@ from meshtastic.interfaces.ble.gating import (  # noqa: F401  # COMPAT_STABLE_SH
     _is_currently_connected_elsewhere,
 )
 from meshtastic.interfaces.ble.lifecycle_compat_service import (  # noqa: F401  # COMPAT_STABLE_SHIM: runtime monkeypatch detection baseline
+    _ORIGINAL_FINALIZE_CONNECTION_GATES,
     _ORIGINAL_GET_CONNECTED_CLIENT_STATUS,
     _ORIGINAL_GET_CONNECTED_CLIENT_STATUS_LOCKED,
+    _ORIGINAL_IS_OWNED_CONNECTED_CLIENT,
+    _ORIGINAL_VERIFY_OWNERSHIP_SNAPSHOT,
     BLELifecycleService,
 )
 from meshtastic.interfaces.ble.lifecycle_controller_runtime import (

@@ -57,6 +57,10 @@ from meshtastic.interfaces.ble.discovery import (
 )
 from meshtastic.interfaces.ble.reconnection import ReconnectScheduler, ReconnectWorker
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
+from meshtastic.interfaces.ble.notifications import (
+    BLENotificationDispatcher,
+    NotificationManager,
+)
 
 # Import common fixtures
 from tests.test_ble_interface_fixtures import DummyClient, _build_interface
@@ -617,6 +621,7 @@ def test_get_management_command_handler_preserves_injected_handler(
         iface._management_command_handler = cast(Any, injected_handler)
         assert iface._get_management_command_handler() is injected_handler
     finally:
+        _clear_management_handler(iface)
         iface.close()
 
 
@@ -3535,6 +3540,7 @@ def test_thread_event_dispatcher_resolution_paths(
     """Thread-event dispatcher resolution should cover class/instance/legacy/missing hooks."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     original_close = iface.close
+    original_thread_coordinator = iface.thread_coordinator
     try:
         class_calls: list[str] = []
 
@@ -3589,6 +3595,7 @@ def test_thread_event_dispatcher_resolution_paths(
             for message in debug_messages
         )
     finally:
+        iface.thread_coordinator = original_thread_coordinator
         original_close()
 
 
@@ -5088,7 +5095,7 @@ def test_start_receive_thread_retains_cached_thread_when_start_noops(
 def test_start_receive_thread_pending_marker_allows_later_restart(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify inconclusive start markers are one-shot and do not block future restarts."""
+    """Verify inconclusive start markers allow restart after pending-timeout expiry."""
     from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
@@ -5121,6 +5128,12 @@ def test_start_receive_thread_pending_marker_allows_later_restart(
             lambda thread: start_calls.append(thread),
             raising=True,
         )
+        monotonic_values = iter([100.0, 100.2, 101.6, 101.7])
+        original_monotonic = time.monotonic
+        monkeypatch.setattr(
+            "meshtastic.interfaces.ble.lifecycle_receive_runtime.time.monotonic",
+            lambda: next(monotonic_values, original_monotonic()),
+        )
 
         BLELifecycleService._start_receive_thread(iface, name="BLEReceivePendingOne")
         assert start_calls == [thread_one]
@@ -5130,7 +5143,7 @@ def test_start_receive_thread_pending_marker_allows_later_restart(
         BLELifecycleService._start_receive_thread(iface, name="BLEReceivePendingSkip")
         assert start_calls == [thread_one]
         assert iface._receiveThread is thread_one
-        assert iface._receive_start_pending is False
+        assert iface._receive_start_pending is True
 
         BLELifecycleService._start_receive_thread(iface, name="BLEReceivePendingTwo")
         assert start_calls == [thread_one, thread_two]
@@ -5308,6 +5321,35 @@ def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signatu
     assert handler_runs == ["run"]
     assert fallbacks == []
     assert len(calls) == 3
+
+
+def test_invoke_safe_execute_compat_reports_handler_failure_after_execution() -> None:
+    """Handler exceptions should be reported when compat safe_execute re-raises."""
+    dispatcher = BLENotificationDispatcher(
+        notification_manager=NotificationManager(),
+        error_handler_provider=lambda: SimpleNamespace(),
+        trigger_read_event=lambda: None,
+    )
+    reported_errors: list[BaseException] = []
+    fallback_runs: list[str] = []
+
+    def _handler() -> None:
+        raise RuntimeError("handler boom")
+
+    def _safe_execute(func: Callable[[], None], *_args: object, **_kwargs: object) -> None:
+        func()
+
+    dispatcher.invoke_safe_execute_compat(
+        _safe_execute,
+        _handler,
+        error_msg="notification error",
+        fallback=lambda: fallback_runs.append("fallback"),
+        report_handler_error=lambda exc: reported_errors.append(exc),
+    )
+
+    assert fallback_runs == []
+    assert len(reported_errors) == 1
+    assert isinstance(reported_errors[0], RuntimeError)
 
 
 def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_paths() -> None:

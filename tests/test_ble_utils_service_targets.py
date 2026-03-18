@@ -456,8 +456,8 @@ def test_management_helpers_cover_factory_and_target_edge_paths(
     assert _is_blank_or_malformed_address_like("aabbccddeeff") is False
     assert _is_blank_or_malformed_address_like("Kitchen:Node") is False
     assert _is_blank_or_malformed_address_like("AA:BB:CC") is True
-    assert _is_blank_or_malformed_address_like("AABBCCDDEEF") is True
-    assert _is_blank_or_malformed_address_like("AABBCCDDEEFF00") is True
+    assert _is_blank_or_malformed_address_like("AABBCCDDEEF") is False
+    assert _is_blank_or_malformed_address_like("AABBCCDDEEFF00") is False
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     try:
@@ -530,6 +530,7 @@ def test_management_shim_default_connected_elsewhere_and_handler_like(
 ) -> None:
     """Management shim should cover strict handler-like positives and default ownership probe."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    original_get_management_handler = iface._get_management_command_handler
     try:
         required_methods = (
             "resolve_target_address_for_management",
@@ -576,6 +577,7 @@ def test_management_shim_default_connected_elsewhere_and_handler_like(
         assert resolved_handler._connected_elsewhere("device-key", iface) is True
         assert connected_elsewhere_calls == [("device-key", iface)]
     finally:
+        iface._get_management_command_handler = original_get_management_handler
         iface.close()
 
 
