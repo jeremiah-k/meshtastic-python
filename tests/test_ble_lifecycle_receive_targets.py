@@ -1438,7 +1438,9 @@ def test_receive_service_remaining_payload_read_branches(
         monkeypatch.setattr(
             BLEReceiveRecoveryController,
             "_read_and_handle_payload",
-            lambda *_args, **_kwargs: (_ for _ in ()).throw(BleakDBusError("err", "dbus")),
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                BleakDBusError("err", "dbus")
+            ),
         )
         iface._handle_read_loop_disconnect = lambda *_args, **_kwargs: False
         assert BLEReceiveRecoveryService._handle_payload_read(

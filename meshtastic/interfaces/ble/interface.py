@@ -332,12 +332,14 @@ class BLEInterface(MeshInterface):
             self,
             publishing_thread_provider=self._get_publishing_thread,
         )
+
+        def _connected_elsewhere(key: str | None, owner: object | None = None) -> bool:
+            return _is_currently_connected_elsewhere(key, owner)
+
         self._management_command_handler = BLEManagementCommandHandler(
             self,
-            ble_client_factory=lambda *args, **kwargs: BLEClient(*args, **kwargs),
-            connected_elsewhere=lambda key, owner=None: _is_currently_connected_elsewhere(
-                key, owner
-            ),
+            ble_client_factory=BLEClient,
+            connected_elsewhere=_connected_elsewhere,
         )
 
         # Event coordination for reconnection and read operations
@@ -756,7 +758,8 @@ class BLEInterface(MeshInterface):
             awaitable,
             timeout,
             label,
-            timeout_error_factory=lambda timeout_label, timeout_seconds: BLEInterface.BLEError(
+            timeout_error_factory=lambda timeout_label,
+            timeout_seconds: BLEInterface.BLEError(
                 ERROR_TIMEOUT.format(timeout_label, timeout_seconds)
             ),
         )
@@ -944,8 +947,10 @@ class BLEInterface(MeshInterface):
         self, address: str | None
     ) -> BLEClient | None:
         """Return available management client via management collaborator."""
-        return self._get_management_command_handler().get_management_client_if_available(
-            address
+        return (
+            self._get_management_command_handler().get_management_client_if_available(
+                address
+            )
         )
 
     def _get_management_client_for_target(
@@ -962,15 +967,11 @@ class BLEInterface(MeshInterface):
 
     def _get_current_implicit_management_binding_locked(self) -> str | None:
         """Return implicit management binding via management collaborator."""
-        return (
-            self._get_management_command_handler().get_current_implicit_management_binding_locked()
-        )
+        return self._get_management_command_handler().get_current_implicit_management_binding_locked()
 
     def _get_current_implicit_management_address_locked(self) -> str | None:
         """Return implicit management concrete address via collaborator."""
-        return (
-            self._get_management_command_handler().get_current_implicit_management_address_locked()
-        )
+        return self._get_management_command_handler().get_current_implicit_management_address_locked()
 
     def _revalidate_implicit_management_target(
         self,
@@ -1075,12 +1076,16 @@ class BLEInterface(MeshInterface):
         """
         handler = getattr(self, "_management_command_handler", None)
         if handler is None:
+
+            def _connected_elsewhere(
+                key: str | None, owner: object | None = None
+            ) -> bool:
+                return _is_currently_connected_elsewhere(key, owner)
+
             handler = BLEManagementCommandHandler(
                 self,
-                ble_client_factory=lambda *args, **kwargs: BLEClient(*args, **kwargs),
-                connected_elsewhere=lambda key, owner=None: _is_currently_connected_elsewhere(
-                    key, owner
-                ),
+                ble_client_factory=BLEClient,
+                connected_elsewhere=_connected_elsewhere,
             )
             self._management_command_handler = handler
         return cast(BLEManagementCommandHandler, handler)
@@ -2414,7 +2419,9 @@ class BLEInterface(MeshInterface):
         disconnect_reason : str
             Reason string passed to disconnect handling for diagnostics.
         """
-        self._get_receive_recovery_controller().recover_receive_thread(disconnect_reason)
+        self._get_receive_recovery_controller().recover_receive_thread(
+            disconnect_reason
+        )
 
     def _read_from_radio_with_retries(
         self,

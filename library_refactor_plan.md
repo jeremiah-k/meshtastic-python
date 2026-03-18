@@ -1,4 +1,5 @@
 # AGOR Architectural Refactor Program
+
 ## Coordinator Directive (High-Level Execution Plan)
 
 ## Execution Progress
@@ -76,6 +77,7 @@ You are operating as a project coordinator responsible for executing a **large-s
 This program is **not feature development**. It is a **structural, architectural, and maintainability improvement initiative**.
 
 You may execute work yourself or delegate to other agents. You are responsible for:
+
 - Planning each pass
 - Ensuring cohesion of changes
 - Verifying correctness
@@ -86,27 +88,32 @@ You may execute work yourself or delegate to other agents. You are responsible f
 # Core Principles
 
 ## 1. Large, Focused Passes
+
 - Work must be executed in **large, cohesive chunks**
 - Avoid micro-iterations and small scattered edits
 - Each pass should significantly improve one major aspect of the system
 
 ## 2. No Behavioral Changes
+
 - Do NOT change public behavior
 - Do NOT break compatibility
 - Do NOT change APIs, event semantics, or outputs unless explicitly required
 
 ## 3. Extract and Clarify Ownership
+
 - Each subsystem should have:
   - clear ownership
   - minimal external knowledge
   - well-defined responsibilities
 
 ## 4. Reduce Complexity Concentration
+
 - Eliminate “god objects”
 - Reduce central orchestration pressure
 - Push logic into well-defined collaborators
 
 ## 5. No Shortcut Refactors
+
 - Do NOT create thin wrappers that still rely on original structures
 - Refactors must result in **real separation**, not cosmetic movement
 
@@ -131,34 +138,42 @@ This program addresses those issues in **structured passes**.
 Each pass must follow this structure:
 
 ## 1. Define Scope
+
 - What subsystem or concern is being addressed
 - Why it is important
 
 ## 2. Execute Refactor
+
 - Perform structural changes only
 - Maintain behavior
 - Improve boundaries and ownership
 
 ## 3. Internal Validation
+
 - Ensure code compiles logically
 - Ensure no broken references
 - Ensure compatibility paths still function
 
 ## 4. Report (REQUIRED)
+
 Each pass MUST end with a structured report containing:
 
 ### Summary
+
 - What was changed
 
 ### Key Improvements
+
 - Architectural gains
 - Complexity reduction
 
 ### Risks / Tradeoffs
+
 - Any introduced risks
 - Areas needing future attention
 
 ### Next Recommended Pass
+
 - What should be done next and why
 
 ---
@@ -168,15 +183,18 @@ Each pass MUST end with a structured report containing:
 ## PASS 1 — BLE Ownership Refactor (Highest Priority)
 
 ### Goal
+
 Convert BLE services from procedural helpers into real collaborators.
 
 ### Required Changes
+
 - Replace static-style service usage with instantiated objects
 - Move state ownership into appropriate collaborators
 - Remove passing of entire interface object into services
 - Enforce clean public APIs between components
 
 ### Critical Rule
+
 NO cross-component private member access.
 
 ---
@@ -184,10 +202,13 @@ NO cross-component private member access.
 ## PASS 2 — BLE Interface Decomposition
 
 ### Goal
+
 Reduce BLEInterface into a thin orchestration layer.
 
 ### Required Changes
+
 Extract responsibilities into:
+
 - lifecycle controller
 - receive controller
 - management command handler
@@ -195,6 +216,7 @@ Extract responsibilities into:
 - compatibility publisher
 
 BLEInterface should:
+
 - delegate
 - enforce policy
 - expose public API
@@ -204,9 +226,11 @@ BLEInterface should:
 ## PASS 3 — Mesh Interface Dispatch Refactor
 
 ### Goal
+
 Break apart central radio handling logic.
 
 ### Required Changes
+
 - Replace monolithic dispatch with handler map
 - Separate:
   - parsing
@@ -219,9 +243,11 @@ Break apart central radio handling logic.
 ## PASS 4 — Node Transaction Extraction
 
 ### Goal
+
 Remove complex transactional logic from Node class.
 
 ### Required Changes
+
 - Extract channel update transaction object
 - Move rollback and staging logic out of Node
 - Keep Node as orchestration layer
@@ -231,10 +257,13 @@ Remove complex transactional logic from Node class.
 ## PASS 5 — CLI Decomposition
 
 ### Goal
+
 Separate CLI concerns.
 
 ### Required Changes
+
 Split into:
+
 - parser
 - actions
 - compatibility layer
@@ -245,9 +274,11 @@ Split into:
 ## PASS 6 — Compatibility Layer Isolation
 
 ### Goal
+
 Remove compatibility logic from core runtime paths.
 
 ### Required Changes
+
 - Move shims into dedicated modules
 - Ensure canonical paths remain clean
 - Reduce inline compatibility branching
@@ -257,9 +288,11 @@ Remove compatibility logic from core runtime paths.
 ## PASS 7 — Test Suite Restructuring
 
 ### Goal
+
 Improve maintainability of tests.
 
 ### Required Changes
+
 - Split large test files by behavior domain
 - Preserve coverage
 - Improve readability and isolation
@@ -269,9 +302,11 @@ Improve maintainability of tests.
 ## PASS 8 — Exception Handling Audit
 
 ### Goal
+
 Improve reliability and diagnosability.
 
 ### Required Changes
+
 - Classify all broad exception handling
 - Narrow where possible
 - Add explicit intent (cleanup, fallback, etc.)
@@ -293,6 +328,7 @@ Improve reliability and diagnosability.
 This is a **boundary-hardening program**, not a feature expansion.
 
 Success is defined by:
+
 - clearer ownership
 - smaller, more focused components
 - reduced coupling

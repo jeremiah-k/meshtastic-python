@@ -7,29 +7,29 @@ recommended patterns for code that embeds `meshtastic-python`.
 
 ## Architecture overview
 
-| Component                                | Responsibility                                                                                |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `BLEInterface`                           | User-facing entry point; extends `MeshInterface` with BLE lifecycle management                |
-| `BLEClient`                              | Synchronous wrapper around Bleak; delegates async calls to the singleton runner               |
-| `BLECoroutineRunner`                     | Process-wide singleton with one background thread and one asyncio event loop                  |
-| `BLEStateManager`                        | Centralized state machine (`DISCONNECTED → CONNECTING → CONNECTED → DISCONNECTING`)           |
-| `BLEErrorHandler`                        | Unified exception-handling helpers used across the BLE subsystem                              |
-| `NotificationManager`                    | Tracks active GATT notification subscriptions so they can be resubscribed after reconnects    |
-| `BLENotificationDispatcher`              | Owns notification safety wrappers, FROMNUM parsing, malformed-counter logic, and notify registration |
-| `DiscoveryManager`                       | Scan-based BLE device discovery with address normalization                                    |
-| `ConnectionValidator`                    | Enforces connection preconditions before any lock is acquired                                 |
-| `ClientManager`                          | Owns `BLEClient` lifecycle and safe-close operations                                          |
-| `ConnectionOrchestrator`                 | Coordinates a full connection attempt: validate → discover → connect → register notifications |
-| `ReconnectScheduler` / `ReconnectWorker` | Policy-driven background reconnect loop                                                       |
-| `BLEManagementCommandHandler`            | Instance-bound management collaborator for pair/unpair/trust and temporary-client handling    |
-| `BLELifecycleController`                 | Instance-bound lifecycle facade; delegates lifecycle domains to dedicated coordinators          |
-| `BLEReceiveLifecycleCoordinator`         | Owns receive intent and receive-thread lifecycle start policy                                  |
-| `BLEDisconnectLifecycleCoordinator`      | Owns disconnect target resolution, side effects, and auto-reconnect scheduling                 |
-| `BLEConnectionOwnershipLifecycleCoordinator` | Owns verified-connect publication, stale-client cleanup, and gate finalization             |
-| `BLEShutdownLifecycleCoordinator`        | Owns close/shutdown sequencing and terminal cleanup orchestration                              |
-| `BLEReceiveRecoveryController`           | Instance-bound receive collaborator for read-loop execution, retry, and recovery              |
-| `BLECompatibilityEventPublisher`         | Instance-bound publisher for legacy status events and publish-queue drain/flush               |
-| `*...Service` classes                    | Compatibility shim surfaces and shared helper logic behind collaborator-owned runtime flows    |
+| Component                                    | Responsibility                                                                                       |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `BLEInterface`                               | User-facing entry point; extends `MeshInterface` with BLE lifecycle management                       |
+| `BLEClient`                                  | Synchronous wrapper around Bleak; delegates async calls to the singleton runner                      |
+| `BLECoroutineRunner`                         | Process-wide singleton with one background thread and one asyncio event loop                         |
+| `BLEStateManager`                            | Centralized state machine (`DISCONNECTED → CONNECTING → CONNECTED → DISCONNECTING`)                  |
+| `BLEErrorHandler`                            | Unified exception-handling helpers used across the BLE subsystem                                     |
+| `NotificationManager`                        | Tracks active GATT notification subscriptions so they can be resubscribed after reconnects           |
+| `BLENotificationDispatcher`                  | Owns notification safety wrappers, FROMNUM parsing, malformed-counter logic, and notify registration |
+| `DiscoveryManager`                           | Scan-based BLE device discovery with address normalization                                           |
+| `ConnectionValidator`                        | Enforces connection preconditions before any lock is acquired                                        |
+| `ClientManager`                              | Owns `BLEClient` lifecycle and safe-close operations                                                 |
+| `ConnectionOrchestrator`                     | Coordinates a full connection attempt: validate → discover → connect → register notifications        |
+| `ReconnectScheduler` / `ReconnectWorker`     | Policy-driven background reconnect loop                                                              |
+| `BLEManagementCommandHandler`                | Instance-bound management collaborator for pair/unpair/trust and temporary-client handling           |
+| `BLELifecycleController`                     | Instance-bound lifecycle facade; delegates lifecycle domains to dedicated coordinators               |
+| `BLEReceiveLifecycleCoordinator`             | Owns receive intent and receive-thread lifecycle start policy                                        |
+| `BLEDisconnectLifecycleCoordinator`          | Owns disconnect target resolution, side effects, and auto-reconnect scheduling                       |
+| `BLEConnectionOwnershipLifecycleCoordinator` | Owns verified-connect publication, stale-client cleanup, and gate finalization                       |
+| `BLEShutdownLifecycleCoordinator`            | Owns close/shutdown sequencing and terminal cleanup orchestration                                    |
+| `BLEReceiveRecoveryController`               | Instance-bound receive collaborator for read-loop execution, retry, and recovery                     |
+| `BLECompatibilityEventPublisher`             | Instance-bound publisher for legacy status events and publish-queue drain/flush                      |
+| `*...Service` classes                        | Compatibility shim surfaces and shared helper logic behind collaborator-owned runtime flows          |
 
 ### Boundary contract (current)
 

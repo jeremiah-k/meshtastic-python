@@ -6,7 +6,7 @@ import re
 import subprocess as subprocess_stdlib
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, TypeVar, cast
 
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.connection import ConnectionOrchestrator
@@ -26,8 +26,8 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.discovery import _looks_like_ble_address
 from meshtastic.interfaces.ble.gating import (
-    _addr_lock_context,
     _addr_key,
+    _addr_lock_context,
     _is_currently_connected_elsewhere,
 )
 from meshtastic.interfaces.ble.utils import (
@@ -170,7 +170,7 @@ class BLEManagementCommandHandler:
         """Call instance-level iface override when present, else fallback."""
         override = self._iface.__dict__.get(method_name)
         if callable(override):
-            return override(*args, **kwargs)
+            return cast(T, override(*args, **kwargs))
         return fallback(*args, **kwargs)
 
     def resolve_target_address_for_management(self, address: str | None) -> str:
@@ -213,7 +213,9 @@ class BLEManagementCommandHandler:
             stack.enter_context(addr_lock)
         return stack
 
-    def get_management_client_if_available(self, address: str | None) -> BLEClient | None:
+    def get_management_client_if_available(
+        self, address: str | None
+    ) -> BLEClient | None:
         """Return active/reusable management client when available."""
         iface = self._iface
         requested_identifier = address if address is not None else iface.address
@@ -517,7 +519,9 @@ class BLEManagementCommandHandler:
             if temporary_client is not None:
                 try:
                     iface._client_manager_safe_close_client(temporary_client)
-                except Exception:  # noqa: BLE001 - best-effort cleanup must not mask command outcome
+                except (
+                    Exception
+                ):  # noqa: BLE001 - best-effort cleanup must not mask command outcome
                     logger.debug(
                         "Failed to close temporary management client.",
                         exc_info=True,
@@ -724,7 +728,9 @@ class BLEManagementCommandHandler:
                 check=False,
                 timeout=validated_timeout,
             )
-        except Exception as exc:  # noqa: BLE001 - preserve injected module compatibility
+        except (
+            Exception
+        ) as exc:  # noqa: BLE001 - preserve injected module compatibility
             if isinstance(exc, timeout_exc_type):
                 raise iface.BLEError(
                     ERROR_TRUST_COMMAND_TIMEOUT.format(
@@ -818,6 +824,7 @@ class BLEManagementCommandHandler:
             if management_started:
                 self.finish_management_operation()
 
+
 class BLEManagementCommandsService:
     """Service helpers for BLE management command paths."""
 
@@ -838,9 +845,13 @@ class BLEManagementCommandsService:
         if ble_client_factory is None:
             ble_client_factory = BLEClient
         if connected_elsewhere is None:
-            connected_elsewhere = lambda key, owner=None: _is_currently_connected_elsewhere(  # noqa: E731
-                key, owner
-            )
+
+            def _default_connected_elsewhere(
+                key: str | None, owner: object | None = None
+            ) -> bool:
+                return _is_currently_connected_elsewhere(key, owner)
+
+            connected_elsewhere = _default_connected_elsewhere
         return BLEManagementCommandHandler(
             iface,
             ble_client_factory=ble_client_factory,
@@ -1111,9 +1122,9 @@ class BLEManagementCommandsService:
         BLEError
             If ``timeout`` is not a finite positive real number.
         """
-        return BLEManagementCommandsService._resolve_handler(iface).validate_trust_timeout(
-            timeout
-        )
+        return BLEManagementCommandsService._resolve_handler(
+            iface
+        ).validate_trust_timeout(timeout)
 
     @staticmethod
     def _validate_connect_timeout_override(
