@@ -602,6 +602,19 @@ def test_ble_interface_extract_client_address_prefers_bleak_and_falls_back() -> 
     assert BLEInterface._extract_client_address(None) is None
 
 
+def test_get_management_command_handler_preserves_injected_handler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Management handler getter should preserve injected collaborators."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    try:
+        injected_handler = SimpleNamespace(name="injected-handler")
+        iface._management_command_handler = cast(Any, injected_handler)
+        assert iface._get_management_command_handler() is injected_handler
+    finally:
+        iface.close()
+
+
 def test_ble_interface_pair_prefers_active_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -5049,9 +5062,7 @@ def test_report_notification_handler_error_covers_hook_and_fallback_paths(
     assert "missing-hook" in debug_calls
 
 
-def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure() -> (
-    None
-):
+def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure() -> None:
     """Positional safe_execute failures should not trigger a second handler invocation."""
 
     calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
@@ -5085,9 +5096,7 @@ def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure
     assert len(calls) == 2
 
 
-def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signature_error() -> (
-    None
-):
+def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signature_error() -> None:
     """Positional signature mismatch should continue to callable-only compatibility probe."""
 
     calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
@@ -5122,9 +5131,7 @@ def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signatu
     assert len(calls) == 3
 
 
-def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_paths() -> (
-    None
-):
+def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_paths() -> None:
     """safe_execute compatibility helper should cover success/fallback branches."""
 
     def _run_scenario(
@@ -5156,6 +5163,12 @@ def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_
         lambda func, *_args, **_kwargs: func(),
         expect_handler_runs=1,
         expect_fallback_runs=0,
+    )
+
+    _run_scenario(
+        lambda _func, *_args, **_kwargs: None,
+        expect_handler_runs=0,
+        expect_fallback_runs=1,
     )
 
     def _keyword_typeerror(
@@ -5486,9 +5499,7 @@ def test_discovery_manager_accepts_discover_underscore_only_factory() -> None:
     assert devices == [filtered_device]
 
 
-def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> (
-    None
-):
+def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> None:
     """Verify discovery prefers configured ``_discover`` over unconfigured ``discover``.
 
     Returns

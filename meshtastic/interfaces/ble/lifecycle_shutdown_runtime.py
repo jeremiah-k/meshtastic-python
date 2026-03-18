@@ -198,7 +198,9 @@ class BLEShutdownLifecycleCoordinator:
                     "BLE receive thread did not exit within %.1fs",
                     RECEIVE_THREAD_JOIN_TIMEOUT,
                 )
-        iface._receiveThread = None
+        with iface._state_lock:
+            if iface._receiveThread is receive_thread:
+                iface._receiveThread = None
 
     def _close_mesh_interface(
         self,

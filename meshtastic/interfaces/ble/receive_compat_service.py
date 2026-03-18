@@ -1,6 +1,6 @@
 """Receive compatibility shim service for BLE."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from bleak.exc import BleakError
 
@@ -21,8 +21,8 @@ class BLEReceiveRecoveryService:
         get_controller = getattr(iface, "_get_receive_recovery_controller", None)
         if callable(get_controller):
             resolved = get_controller()
-            if isinstance(resolved, BLEReceiveRecoveryController):
-                return resolved
+            if resolved is not None:
+                return cast(BLEReceiveRecoveryController, resolved)
         return BLEReceiveRecoveryController(iface)
 
     @staticmethod

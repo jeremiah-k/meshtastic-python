@@ -212,7 +212,7 @@ from meshtastic.interfaces.ble.notifications import BLENotificationDispatcher
 dispatcher = BLENotificationDispatcher(
     notification_manager=notification_manager,
     error_handler_provider=lambda: iface.error_handler,
-    trigger_read_event=lambda: iface.thread_coordinator._set_event("read_trigger"),
+    trigger_read_event=lambda: iface._set_thread_event("read_trigger"),
 )
 
 # Register handlers for LOGRADIO/legacy/FROMNUM with safe_execute compatibility probing.

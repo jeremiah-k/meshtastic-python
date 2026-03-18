@@ -298,6 +298,10 @@ class BLEStateManager:
         with self._state_lock:
             return self._transition_to_unlocked(new_state)
 
+    def transition_to(self, new_state: ConnectionState) -> bool:
+        """Public-first wrapper for state transitions."""
+        return self._transition_to(new_state)
+
     def _is_valid_transition(
         self, from_state: ConnectionState, to_state: ConnectionState
     ) -> bool:
@@ -360,3 +364,7 @@ class BLEStateManager:
             # Prefer validated transition semantics; this is a no-op when already
             # disconnected and remains resilient to future transition-map edits.
             return self._transition_to_unlocked(ConnectionState.DISCONNECTED)
+
+    def reset_to_disconnected(self) -> bool:
+        """Public-first wrapper that forces DISCONNECTED state."""
+        return self._reset_to_disconnected()

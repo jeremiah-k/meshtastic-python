@@ -1,7 +1,7 @@
 """Lifecycle compatibility shim service for BLE."""
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NoReturn
 
 from bleak import BleakClient as BleakRootClient
 
@@ -928,7 +928,7 @@ class BLELifecycleService:
         lost_gate_ownership: bool,
         restore_address: str | None,
         restore_last_connection_request: str | None,
-    ) -> None:
+    ) -> NoReturn:
         """Clean up invalidated connect result and raise the corresponding BLEError.
 
         Parameters

@@ -33,6 +33,13 @@ if TYPE_CHECKING:
 
 COORDINATOR_WAIT_FALLBACK_SLEEP_SEC = 0.001
 RECEIVE_THREAD_FATAL_REASON = "receive_thread_fatal"
+_INTERFACE_MODULE_NAME = "meshtastic.interfaces.ble.interface"
+_DEFAULT_RECURSIVE_IFACE_RECEIVE_HOOK_QUALNAMES = {
+    "_handle_read_loop_disconnect": "BLEInterface._handle_read_loop_disconnect",
+    "_read_from_radio_with_retries": "BLEInterface._read_from_radio_with_retries",
+    "_handle_transient_read_error": "BLEInterface._handle_transient_read_error",
+    "_log_empty_read_warning": "BLEInterface._log_empty_read_warning",
+}
 
 
 class BLEReceiveRecoveryController:
@@ -260,12 +267,44 @@ class BLEReceiveRecoveryController:
         if callable(close):
             close()
 
+    @staticmethod
+    def _is_default_iface_receive_hook(method_name: str, hook: object) -> bool:
+        """Return whether a hook resolves to the default BLEInterface shim."""
+        expected_qualname = _DEFAULT_RECURSIVE_IFACE_RECEIVE_HOOK_QUALNAMES.get(
+            method_name
+        )
+        if expected_qualname is None:
+            return False
+        hook_func = getattr(hook, "__func__", hook)
+        return (
+            getattr(hook_func, "__module__", None) == _INTERFACE_MODULE_NAME
+            and getattr(hook_func, "__qualname__", None) == expected_qualname
+        )
+
+    def _resolve_iface_receive_hook_override(
+        self, method_name: str
+    ) -> Callable[..., object] | None:
+        """Resolve instance/class override while avoiding default recursion shims."""
+        iface = self._iface
+        instance_override = iface.__dict__.get(method_name)
+        if callable(instance_override):
+            return cast(Callable[..., object], instance_override)
+        class_or_subclass_override = getattr(iface, method_name, None)
+        if callable(class_or_subclass_override):
+            if self._is_default_iface_receive_hook(
+                method_name,
+                class_or_subclass_override,
+            ):
+                return None
+            return cast(Callable[..., object], class_or_subclass_override)
+        return None
+
     def handle_read_loop_disconnect(
         self, error_message: str, previous_client: BLEClient
     ) -> bool:
         """Handle read-loop disconnect logic for the bound interface."""
         iface = self._iface
-        override_handle_read_loop_disconnect = iface.__dict__.get(
+        override_handle_read_loop_disconnect = self._resolve_iface_receive_hook_override(
             "_handle_read_loop_disconnect"
         )
         if callable(override_handle_read_loop_disconnect):
@@ -674,7 +713,7 @@ class BLEReceiveRecoveryController:
     ) -> bytes | None:
         """Read FROMRADIO payload for the bound interface with retry policy."""
         iface = self._iface
-        override_read_from_radio_with_retries = iface.__dict__.get(
+        override_read_from_radio_with_retries = self._resolve_iface_receive_hook_override(
             "_read_from_radio_with_retries"
         )
         if callable(override_read_from_radio_with_retries):
@@ -705,7 +744,7 @@ class BLEReceiveRecoveryController:
     ) -> None:
         """Apply transient-read retry policy for the bound interface."""
         iface = self._iface
-        override_handle_transient_read_error = iface.__dict__.get(
+        override_handle_transient_read_error = self._resolve_iface_receive_hook_override(
             "_handle_transient_read_error"
         )
         if callable(override_handle_transient_read_error):
@@ -728,7 +767,9 @@ class BLEReceiveRecoveryController:
     def log_empty_read_warning(self) -> None:
         """Emit empty-read warning for the bound interface."""
         iface = self._iface
-        override_log_empty_read_warning = iface.__dict__.get("_log_empty_read_warning")
+        override_log_empty_read_warning = self._resolve_iface_receive_hook_override(
+            "_log_empty_read_warning"
+        )
         if callable(override_log_empty_read_warning):
             override_log_empty_read_warning()
             return
@@ -754,7 +795,8 @@ class BLEReceiveRecoveryController:
             cooldown,
         )
 
-
+# COMPAT_STABLE_SHIM: Re-export legacy receive service name for compatibility.
+# Deferred import avoids circular dependency with `receive_compat_service`.
 from meshtastic.interfaces.ble.receive_compat_service import (  # noqa: E402
     BLEReceiveRecoveryService,
 )

@@ -366,9 +366,7 @@ def test_connection_validator_check_existing_client_matching_address() -> None:
 
 
 @pytest.mark.unit
-def test_connection_validator_check_existing_client_uses_cached_client_address() -> (
-    None
-):
+def test_connection_validator_check_existing_client_uses_cached_client_address() -> None:
     """check_existing_client should match when only client.address is populated."""
     state_manager = BLEStateManager()
     lock = RLock()
@@ -486,9 +484,7 @@ def test_client_manager_update_client_reference_schedules_close() -> None:
 
 
 @pytest.mark.unit
-def test_client_manager_connect_client_refreshes_services_on_non_callable_probe() -> (
-    None
-):
+def test_client_manager_connect_client_refreshes_services_on_non_callable_probe() -> None:
     """_connect_client should refresh services when get_characteristic is non-callable."""
     state_manager = BLEStateManager()
     state_lock = RLock()
@@ -632,9 +628,7 @@ def test_connection_orchestrator_aborts_fallback_when_interface_closing() -> Non
 
 
 @pytest.mark.unit
-def test_transition_failure_to_disconnected_forces_reset_when_transitions_reject() -> (
-    None
-):
+def test_transition_failure_to_disconnected_forces_reset_when_transitions_reject() -> None:
     """_transition_failure_to_disconnected should force reset if transition calls fail."""
     state_manager = MagicMock()
     state_manager._current_state = ConnectionState.CONNECTING
@@ -658,9 +652,7 @@ def test_transition_failure_to_disconnected_forces_reset_when_transitions_reject
 
 
 @pytest.mark.unit
-def test_finalize_connection_sets_reconnected_event_and_logs_normalized_address() -> (
-    None
-):
+def test_finalize_connection_sets_reconnected_event_and_logs_normalized_address() -> None:
     """_finalize_connection should call on_connected and set reconnected_event for prior sessions."""
     state_manager = BLEStateManager()
     state_lock = RLock()
@@ -766,9 +758,7 @@ def test_establish_connection_rejects_whitespace_target_address() -> None:
 
 
 @pytest.mark.unit
-def test_connection_orchestrator_rejects_direct_connect_when_interface_already_closed() -> (
-    None
-):
+def test_connection_orchestrator_rejects_direct_connect_when_interface_already_closed() -> None:
     """_establish_connection should fail before creating a client when shutdown is in progress."""
     state_manager = BLEStateManager()
     state_lock = RLock()
@@ -1119,9 +1109,7 @@ def test_connection_orchestrator_rejects_invalid_connect_timeout_override(
 
 
 @pytest.mark.unit
-def test_connection_orchestrator_preserves_pair_on_connect_across_direct_retry() -> (
-    None
-):
+def test_connection_orchestrator_preserves_pair_on_connect_across_direct_retry() -> None:
     """Direct-connect retry paths should preserve pair_on_connect and full timeout."""
     state_manager = BLEStateManager()
     state_lock = RLock()
@@ -1175,9 +1163,7 @@ def test_connection_orchestrator_preserves_pair_on_connect_across_direct_retry()
 
 
 @pytest.mark.unit
-def test_connection_orchestrator_preserves_pair_on_connect_across_scan_fallback() -> (
-    None
-):
+def test_connection_orchestrator_preserves_pair_on_connect_across_scan_fallback() -> None:
     """Discovery fallback client creation should also preserve pair_on_connect."""
     state_manager = BLEStateManager()
     state_lock = RLock()
@@ -1296,9 +1282,7 @@ def test_connection_orchestrator_uses_full_timeout_for_non_pairing_fallback() ->
 
 
 @pytest.mark.unit
-def test_connection_orchestrator_skips_scan_after_direct_device_not_found_for_explicit_address() -> (
-    None
-):
+def test_connection_orchestrator_skips_scan_after_direct_device_not_found_for_explicit_address() -> None:
     """Explicit-address direct device-not-found should skip discovery scan fallback."""
     state_manager = BLEStateManager()
     state_lock = RLock()
@@ -1363,9 +1347,7 @@ def test_connection_orchestrator_skips_scan_after_direct_device_not_found_for_ex
 
 
 @pytest.mark.unit
-def test_connection_orchestrator_uses_discovery_for_non_address_identifier_after_direct_failure() -> (
-    None
-):
+def test_connection_orchestrator_uses_discovery_for_non_address_identifier_after_direct_failure() -> None:
     """Non-address identifiers should still use discovery fallback after direct failures."""
     state_manager = BLEStateManager()
     state_lock = RLock()
@@ -1432,9 +1414,7 @@ def test_connection_orchestrator_uses_discovery_for_non_address_identifier_after
 
 
 @pytest.mark.unit
-def test_connection_orchestrator_falls_back_to_find_device_when_findDevice_missing() -> (
-    None
-):
+def test_connection_orchestrator_falls_back_to_find_device_when_findDevice_missing() -> None:
     """Explicit-address retry should use find_device() when findDevice() is absent."""
     state_manager = BLEStateManager()
     state_lock = RLock()
@@ -1536,9 +1516,7 @@ def test_connection_orchestrator_falls_back_to_underscore_find_device() -> None:
 
 
 @pytest.mark.unit
-def test_connection_orchestrator_falls_back_to_scan_when_direct_retry_still_device_not_found() -> (
-    None
-):
+def test_connection_orchestrator_falls_back_to_scan_when_direct_retry_still_device_not_found() -> None:
     """Explicit-address retries that keep failing with device-not-found should use discovery fallback."""
     state_manager = BLEStateManager()
     state_lock = RLock()

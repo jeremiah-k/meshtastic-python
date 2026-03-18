@@ -920,6 +920,37 @@ def test_receive_service_branch_targets(monkeypatch: pytest.MonkeyPatch) -> None
     iface.close()
 
 
+def test_receive_controller_honors_class_level_disconnect_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Class-level disconnect hook overrides should be honored by receive controller."""
+    iface = _make_iface(monkeypatch)
+    try:
+        override_calls: list[tuple[str, DummyClient]] = []
+
+        def _class_override(_self: object, error_message: str, previous_client: DummyClient) -> bool:
+            override_calls.append((error_message, previous_client))
+            return False
+
+        monkeypatch.setattr(
+            type(iface),
+            "_handle_read_loop_disconnect",
+            _class_override,
+            raising=True,
+        )
+
+        previous_client = DummyClient()
+        assert (
+            BLEReceiveRecoveryService._handle_read_loop_disconnect(
+                iface, "override-test", previous_client
+            )
+            is False
+        )
+        assert override_calls == [("override-test", previous_client)]
+    finally:
+        iface.close()
+
+
 @pytest.mark.parametrize("raw_ever_connected", [MagicMock(), "invalid-state"])
 def test_wait_for_read_trigger_normalizes_non_bool_ever_connected(
     monkeypatch: pytest.MonkeyPatch,

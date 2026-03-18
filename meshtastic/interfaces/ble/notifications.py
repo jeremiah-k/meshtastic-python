@@ -398,6 +398,9 @@ class BLENotificationDispatcher:
 
         try:
             safe_execute(_tracked_handler_thunk, error_msg=error_msg)
+            if executed:
+                return
+            _fallback_if_not_executed()
             return
         except TypeError as exc:
             if not _is_unexpected_keyword_error(exc, "error_msg"):
@@ -433,6 +436,9 @@ class BLENotificationDispatcher:
 
         try:
             safe_execute(_tracked_handler_thunk, error_msg)
+            if executed:
+                return
+            _fallback_if_not_executed()
             return
         except TypeError as exc:
             if _SAFE_EXECUTE_POSITIONAL_SIGNATURE_MISMATCH_RE.search(str(exc)):
@@ -468,6 +474,9 @@ class BLENotificationDispatcher:
 
         try:
             safe_execute(_tracked_handler_thunk)
+            if executed:
+                return
+            _fallback_if_not_executed()
             return
         except (
             Exception

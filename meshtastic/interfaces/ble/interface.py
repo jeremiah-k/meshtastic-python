@@ -297,9 +297,7 @@ class BLEInterface(MeshInterface):
         self._notification_dispatcher = BLENotificationDispatcher(
             notification_manager=self._notification_manager,
             error_handler_provider=lambda: self.error_handler,
-            trigger_read_event=lambda: self.thread_coordinator._set_event(
-                READ_TRIGGER_EVENT
-            ),
+            trigger_read_event=lambda: self._set_thread_event(READ_TRIGGER_EVENT),
         )
         self._discovery_manager: DiscoveryManager | None = DiscoveryManager()
         self._connection_validator = ConnectionValidator(
@@ -333,13 +331,10 @@ class BLEInterface(MeshInterface):
             publishing_thread_provider=self._get_publishing_thread,
         )
 
-        def _connected_elsewhere(key: str | None, owner: object | None = None) -> bool:
-            return _is_currently_connected_elsewhere(key, owner)
-
         self._management_command_handler = BLEManagementCommandHandler(
             self,
             ble_client_factory=BLEClient,
-            connected_elsewhere=_connected_elsewhere,
+            connected_elsewhere=_is_currently_connected_elsewhere,
         )
 
         # Event coordination for reconnection and read operations
@@ -627,6 +622,14 @@ class BLEInterface(MeshInterface):
         Does nothing if automatic reconnection is disabled or the interface is closing or already closed.
         """
         self._get_lifecycle_controller().schedule_auto_reconnect()
+
+    def _set_thread_event(self, event_name: str) -> None:
+        """Set thread-coordinator event via public-first compatibility dispatch."""
+        set_event = getattr(self.thread_coordinator, "set_event", None)
+        if callable(set_event):
+            set_event(event_name)
+            return
+        self.thread_coordinator._set_event(event_name)
 
     def _handle_malformed_fromnum(self, reason: str, exc_info: bool = False) -> None:
         """Track malformed FROMNUM notifications through dispatcher ownership."""
@@ -997,7 +1000,7 @@ class BLEInterface(MeshInterface):
                 notification_manager = NotificationManager()
                 self._notification_manager = notification_manager
 
-            def _error_handler_provider() -> object:
+            def _error_handler_provider() -> BLEErrorHandler:
                 handler = getattr(self, "error_handler", None)
                 if handler is None:
                     handler = BLEErrorHandler()
@@ -1005,9 +1008,7 @@ class BLEInterface(MeshInterface):
                 return handler
 
             def _trigger_read_event() -> None:
-                coordinator = getattr(self, "thread_coordinator", None)
-                if coordinator is not None:
-                    coordinator._set_event(READ_TRIGGER_EVENT)
+                self._set_thread_event(READ_TRIGGER_EVENT)
 
             dispatcher = BLENotificationDispatcher(
                 notification_manager=notification_manager,
@@ -1078,19 +1079,15 @@ class BLEInterface(MeshInterface):
             Lazily initialized management command collaborator.
         """
         handler = getattr(self, "_management_command_handler", None)
-        existing_factory = getattr(handler, "_ble_client_factory", None)
-        needs_refresh = handler is None or existing_factory is not BLEClient
+        needs_refresh = handler is None
+        if type(handler) is BLEManagementCommandHandler:
+            existing_factory = getattr(handler, "_ble_client_factory", None)
+            needs_refresh = existing_factory is not BLEClient
         if needs_refresh:
-
-            def _connected_elsewhere(
-                key: str | None, owner: object | None = None
-            ) -> bool:
-                return _is_currently_connected_elsewhere(key, owner)
-
             handler = BLEManagementCommandHandler(
                 self,
                 ble_client_factory=BLEClient,
-                connected_elsewhere=_connected_elsewhere,
+                connected_elsewhere=_is_currently_connected_elsewhere,
             )
             self._management_command_handler = handler
         return cast(BLEManagementCommandHandler, handler)

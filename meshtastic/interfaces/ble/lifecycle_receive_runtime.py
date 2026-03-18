@@ -39,10 +39,24 @@ class BLEReceiveLifecycleCoordinator:
         create_thread: Callable[..., ThreadLike] | None = None,
         start_thread: Callable[[object], None] | None = None,
     ) -> None:
-        """Create and start the background receive thread."""
+        """Create and start the background receive thread.
+
+        Parameters
+        ----------
+        name : str
+            Thread name used for diagnostics/logging.
+        reset_recovery : bool
+            Whether to reset ``_receive_recovery_attempts`` after successful
+            startup.
+        create_thread : Callable[..., ThreadLike] | None
+            Optional thread factory override used by tests/compatibility flows.
+        start_thread : Callable[[object], None] | None
+            Optional thread starter override used by tests/compatibility flows.
+        """
         iface = self._iface
         create_runtime_thread = create_thread or self._thread_access.create_thread
         start_runtime_thread = start_thread or self._thread_access.start_thread
+        recovery_attempts_before_start: int | None = None
         with iface._state_lock:
             if iface._closed or not iface._want_receive:
                 logger.debug(
@@ -71,6 +85,8 @@ class BLEReceiveLifecycleCoordinator:
                 daemon=True,
             )
             iface._receiveThread = thread
+            if reset_recovery:
+                recovery_attempts_before_start = iface._receive_recovery_attempts
         try:
             start_runtime_thread(thread)
         except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
@@ -97,4 +113,9 @@ class BLEReceiveLifecycleCoordinator:
             return
         if reset_recovery:
             with iface._state_lock:
-                iface._receive_recovery_attempts = 0
+                if (
+                    recovery_attempts_before_start is not None
+                    and iface._receive_recovery_attempts
+                    == recovery_attempts_before_start
+                ):
+                    iface._receive_recovery_attempts = 0

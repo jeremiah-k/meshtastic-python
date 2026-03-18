@@ -50,7 +50,7 @@
     of static service-style namespaces.
   - Ownership domains are explicit across management, notification, lifecycle,
     receive-recovery, and compatibility publication.
-  - Static service methods are not the primary runtime authority for
+  - Static service methods are no longer the primary runtime authority for
     `BLEInterface` call paths; they remain compatibility surfaces (including
     some intentionally non-trivial direct service entrypoints used by
     compatibility-targeted tests).

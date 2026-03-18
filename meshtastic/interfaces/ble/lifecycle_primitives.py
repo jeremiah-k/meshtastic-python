@@ -89,11 +89,23 @@ class _LifecycleStateAccess:
     def is_connected(self) -> bool:
         """Return connected-state flag from public-first state-manager members."""
         public_is_connected = getattr(self._iface._state_manager, "is_connected", None)
+        if callable(public_is_connected) and not _is_unconfigured_mock_callable(
+            public_is_connected
+        ):
+            result = public_is_connected()
+            if isinstance(result, bool):
+                return result
         if not _is_unconfigured_mock_member(public_is_connected) and isinstance(
             public_is_connected, bool
         ):
             return public_is_connected
         legacy_is_connected = getattr(self._iface._state_manager, "_is_connected", None)
+        if callable(legacy_is_connected) and not _is_unconfigured_mock_callable(
+            legacy_is_connected
+        ):
+            result = legacy_is_connected()
+            if isinstance(result, bool):
+                return result
         if not _is_unconfigured_mock_member(legacy_is_connected) and isinstance(
             legacy_is_connected, bool
         ):
@@ -153,11 +165,23 @@ class _LifecycleStateAccess:
     def is_closing(self) -> bool:
         """Return closing-state flag from public-first state-manager members."""
         public_is_closing = getattr(self._iface._state_manager, "is_closing", None)
+        if callable(public_is_closing) and not _is_unconfigured_mock_callable(
+            public_is_closing
+        ):
+            result = public_is_closing()
+            if isinstance(result, bool):
+                return result
         if not _is_unconfigured_mock_member(public_is_closing) and isinstance(
             public_is_closing, bool
         ):
             return public_is_closing
         legacy_is_closing = getattr(self._iface._state_manager, "_is_closing", None)
+        if callable(legacy_is_closing) and not _is_unconfigured_mock_callable(
+            legacy_is_closing
+        ):
+            result = legacy_is_closing()
+            if isinstance(result, bool):
+                return result
         if not _is_unconfigured_mock_member(legacy_is_closing) and isinstance(
             legacy_is_closing, bool
         ):
@@ -343,16 +367,21 @@ class _LifecycleErrorAccess:
 
         if safe_cleanup is not None:
             try:
+                hook_result: object | None = None
                 try:
-                    safe_cleanup(func=_tracked_cleanup, cleanup_name=operation_name)
+                    hook_result = safe_cleanup(
+                        func=_tracked_cleanup,
+                        cleanup_name=operation_name,
+                    )
                 except TypeError as exc:
                     if not (
                         _is_unexpected_keyword_error(exc, "func")
                         or _is_unexpected_keyword_error(exc, "cleanup_name")
                     ):
                         raise
-                    safe_cleanup(_tracked_cleanup, operation_name)
-                return
+                    hook_result = safe_cleanup(_tracked_cleanup, operation_name)
+                if cleanup_ran or bool(hook_result):
+                    return
             except Exception:  # noqa: BLE001 - hook failure must not abort shutdown
                 logger.debug(
                     "Error running safe_cleanup hook for %s",
@@ -383,11 +412,15 @@ class _LifecycleErrorAccess:
 
         if safe_execute is not None:
             try:
-                return safe_execute(_tracked_func, error_msg=error_msg)
+                result = safe_execute(_tracked_func, error_msg=error_msg)
+                if func_ran:
+                    return result
             except TypeError as exc:
                 if _is_unexpected_keyword_error(exc, "error_msg"):
                     try:
-                        return safe_execute(_tracked_func, error_msg)
+                        result = safe_execute(_tracked_func, error_msg)
+                        if func_ran:
+                            return result
                     except (
                         Exception
                     ):  # noqa: BLE001 - hook failures must not abort shutdown
@@ -395,7 +428,9 @@ class _LifecycleErrorAccess:
                         if func_ran:
                             return None
                     try:
-                        return safe_execute(_tracked_func)
+                        result = safe_execute(_tracked_func)
+                        if func_ran:
+                            return result
                     except (
                         Exception
                     ):  # noqa: BLE001 - hook failures must not abort shutdown

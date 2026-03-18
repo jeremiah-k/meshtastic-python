@@ -25,10 +25,10 @@ from meshtastic.interfaces.ble.lifecycle_shutdown_runtime import (
 )
 
 __all__ = [
+    "BLEConnectionOwnershipLifecycleCoordinator",
+    "BLEDisconnectLifecycleCoordinator",
     "BLELifecycleController",
     "BLELifecycleService",
     "BLEReceiveLifecycleCoordinator",
-    "BLEDisconnectLifecycleCoordinator",
-    "BLEConnectionOwnershipLifecycleCoordinator",
     "BLEShutdownLifecycleCoordinator",
 ]

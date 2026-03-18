@@ -20,6 +20,13 @@ if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
     from meshtastic.interfaces.ble.interface import BLEInterface
 
+_LOG_INTERFACE_CLOSED_DURING_CONNECT = (
+    "Interface closed during connect(), cleaning up gate claim for %s"
+)
+_LOG_INTERFACE_LOST_OWNERSHIP_DURING_CONNECT = (
+    "Interface lost ownership during connect(), cleaning up gate claim for %s"
+)
+
 
 class BLEConnectionOwnershipLifecycleCoordinator:
     """Own verified-connection publication and ownership/finalization behavior."""
@@ -126,6 +133,20 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         logger.info(
             "Connection successful to %s",
             normalized_device_address or "unknown",
+        )
+
+    @staticmethod
+    def _log_gate_cleanup(connected_client: "BLEClient", *, is_closing: bool) -> None:
+        """Log why gate ownership cleanup is running during connect finalization."""
+        if is_closing:
+            logger.debug(
+                _LOG_INTERFACE_CLOSED_DURING_CONNECT,
+                getattr(connected_client, "address", "unknown"),
+            )
+            return
+        logger.debug(
+            _LOG_INTERFACE_LOST_OWNERSHIP_DURING_CONNECT,
+            getattr(connected_client, "address", "unknown"),
         )
 
     def discard_invalidated_connected_client(
@@ -267,11 +288,11 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         should_publish_connected = False
         with iface._state_lock:
             still_owned, is_closing = get_connected_status_locked(connected_client)
+            if still_owned and not is_closing and not iface._client_publish_pending:
+                iface._client_publish_pending = True
+                iface._client_replacement_pending = False
             if still_owned and not is_closing:
-                if not iface._client_publish_pending:
-                    iface._client_publish_pending = True
-                    iface._client_replacement_pending = False
-            should_publish_connected = True
+                should_publish_connected = True
         snapshot = snapshot_provider(
             connected_client,
             connected_device_key,
@@ -357,16 +378,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 else:
                     iface._connection_alias_key = None
             if not still_active:
-                if is_closing:
-                    logger.debug(
-                        "Interface closed during connect(), cleaning up gate claim for %s",
-                        getattr(connected_client, "address", "unknown"),
-                    )
-                else:
-                    logger.debug(
-                        "Interface lost ownership during connect(), cleaning up gate claim for %s",
-                        getattr(connected_client, "address", "unknown"),
-                    )
+                self._log_gate_cleanup(connected_client, is_closing=is_closing)
                 iface._mark_address_keys_disconnected(
                     connected_device_key, connection_alias_key
                 )
@@ -379,16 +391,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             with iface._state_lock:
                 still_active, is_closing = get_status_locked(connected_client)
                 if not still_active:
-                    if is_closing:
-                        logger.debug(
-                            "Interface closed during connect(), cleaning up gate claim for %s",
-                            getattr(connected_client, "address", "unknown"),
-                        )
-                    else:
-                        logger.debug(
-                            "Interface lost ownership during connect(), cleaning up gate claim for %s",
-                            getattr(connected_client, "address", "unknown"),
-                        )
+                    self._log_gate_cleanup(connected_client, is_closing=is_closing)
                     iface._connection_alias_key = None
                     needs_cleanup = True
             if needs_cleanup:
