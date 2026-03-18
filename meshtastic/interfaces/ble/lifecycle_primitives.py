@@ -472,7 +472,12 @@ class _LifecycleErrorAccess:
         error_msg: str,
         did_run: Callable[[], bool],
     ) -> tuple[bool, object | None]:
-        """Attempt execute-hook signatures and report whether `tracked_func` ran."""
+        """Attempt execute-hook signatures and report whether `tracked_func` ran.
+
+        Tries signatures in order: ``(func, error_msg=...)``,
+        ``(func, error_msg)``, then ``(func)``.
+        Returns ``(True, result)`` only when ``tracked_func`` executed.
+        """
         try:
             result = safe_execute(tracked_func, error_msg=error_msg)
             return did_run(), result

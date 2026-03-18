@@ -157,7 +157,13 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         restored_address: str | None,
         restore_last_connection_request: str | None,
     ) -> tuple[bool, bool, bool]:
-        """Apply state mutations when the invalidated client is currently bound."""
+        """Apply state mutations when the invalidated client is currently bound.
+
+        Returns
+        -------
+        tuple[bool, bool, bool]
+            ``(should_reset_state, should_publish_disconnect, is_closing)``.
+        """
         replacement_pending = bool(getattr(iface, "_client_replacement_pending", False))
         already_notified = bool(getattr(iface, "_disconnect_notified", False))
         is_closing = get_is_closing() or iface._closed

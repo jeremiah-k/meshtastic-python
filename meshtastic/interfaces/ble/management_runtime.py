@@ -623,7 +623,11 @@ class BLEManagementCommandHandler:
 
             if target_address is None:
                 if refreshed_existing_client is not None:
-                    return command(refreshed_existing_client)
+                    with iface._connect_lock, iface._management_lock:
+                        iface._validate_management_preconditions()
+                    if self._is_client_connected(refreshed_existing_client):
+                        return command(refreshed_existing_client)
+                    raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
                 raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_REQUIRED)
 
             with iface._management_target_gate(target_address):
@@ -768,6 +772,9 @@ class BLEManagementCommandHandler:
             else subprocess_stdlib.TimeoutExpired
         )
         try:
+            # Safety: command is executed without a shell; `canonical_address` is
+            # normalized to strict MAC-octet format and `bluetoothctl_path`
+            # comes from shutil.which("bluetoothctl").
             result = subprocess_module.run(  # type: ignore[attr-defined]  # noqa: S603
                 [bluetoothctl_path, "trust", canonical_address],
                 capture_output=True,

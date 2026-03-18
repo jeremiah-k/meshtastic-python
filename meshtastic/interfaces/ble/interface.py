@@ -373,6 +373,7 @@ class BLEInterface(MeshInterface):
         logger.debug("Threads starting")
         with self._state_lock:
             self._want_receive = True
+            self._receive_start_pending = False
         self._receiveThread: ThreadLike | None = None
         self._start_receive_thread(name="BLEReceive")
         logger.debug("Threads running")
@@ -993,15 +994,13 @@ class BLEInterface(MeshInterface):
 
     def _get_current_implicit_management_binding_locked(self) -> str | None:
         """Return implicit management binding via management collaborator."""
-        return (
-            self._get_management_command_handler().get_current_implicit_management_binding_locked()
-        )
+        with self._state_lock:
+            return self._get_management_command_handler().get_current_implicit_management_binding_locked()
 
     def _get_current_implicit_management_address_locked(self) -> str | None:
         """Return implicit management concrete address via collaborator."""
-        return (
-            self._get_management_command_handler().get_current_implicit_management_address_locked()
-        )
+        with self._state_lock:
+            return self._get_management_command_handler().get_current_implicit_management_address_locked()
 
     def _revalidate_implicit_management_target(
         self,
@@ -1166,7 +1165,8 @@ class BLEInterface(MeshInterface):
 
     def _begin_management_operation_locked(self) -> None:
         """Record management operation via collaborator."""
-        self._get_management_command_handler().begin_management_operation_locked()
+        with self._management_lock:
+            self._get_management_command_handler().begin_management_operation_locked()
 
     def _finish_management_operation(self) -> None:
         """Mark completion of management operation via collaborator."""

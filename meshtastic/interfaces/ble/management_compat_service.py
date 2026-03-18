@@ -107,17 +107,7 @@ class BLEManagementCommandsService:
             get_handler = getattr(iface, "_get_management_command_handler", None)
             if callable(get_handler):
                 resolved = get_handler()
-                if isinstance(resolved, BLEManagementCommandHandler):
-                    return resolved
-                if (
-                    resolved is not None
-                    and (
-                        BLEManagementCommandsService._is_handler_like(resolved)
-                        or BLEManagementCommandsService._has_required_handler_entrypoint(
-                            resolved
-                        )
-                    )
-                ):
+                if resolved is not None and not _is_unconfigured_mock_member(resolved):
                     return cast(BLEManagementCommandHandler, resolved)
         if ble_client_factory is None:
             ble_client_factory = BLEClient

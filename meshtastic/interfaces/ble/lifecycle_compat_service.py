@@ -54,7 +54,23 @@ class BLELifecycleService:
     def _receive_lifecycle_coordinator(
         iface: "BLEInterface",
     ) -> BLEReceiveLifecycleCoordinator:
-        """Return cached receive-lifecycle coordinator when collaborator cache exists."""
+        """Return cached receive-lifecycle coordinator when collaborator cache exists.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing optional collaborator-cache helpers.
+
+        Returns
+        -------
+        BLEReceiveLifecycleCoordinator
+            Cached coordinator when available; otherwise a fresh instance.
+
+        Notes
+        -----
+        Falls back to direct instantiation when collaborator caching is
+        unavailable on partial test doubles.
+        """
         get_or_create = getattr(iface, "_get_or_create_collaborator", None)
         if callable(get_or_create):
             try:
@@ -507,7 +523,21 @@ class BLELifecycleService:
     def _build_disconnect_callback_bundle(
         iface: "BLEInterface",
     ) -> _DisconnectCallbackBundle:
-        """Return canonical disconnect callback wiring for lifecycle compat entrypoints."""
+        """Return canonical disconnect callback wiring for lifecycle compat entrypoints.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface providing state-manager and thread-coordinator access.
+
+        Returns
+        -------
+        _DisconnectCallbackBundle
+            Callback bundle for disconnect orchestration containing:
+            ``is_closing_getter``, ``current_state_getter``,
+            ``transition_to_disconnected``, ``reset_to_disconnected``,
+            ``close_previous_client_async``, and ``clear_events``.
+        """
         return _DisconnectCallbackBundle(
             is_closing_getter=lambda: BLELifecycleService._state_manager_is_closing(
                 iface
@@ -999,11 +1029,6 @@ class BLELifecycleService:
         restore_last_connection_request : str | None
             Last-request value restored when cleanup preserves local state.
 
-        Returns
-        -------
-        None
-            This method always raises and does not return normally.
-
         Raises
         ------
         BLEError
@@ -1464,3 +1489,9 @@ _ORIGINAL_GET_CONNECTED_CLIENT_STATUS = BLELifecycleService._get_connected_clien
 _ORIGINAL_GET_CONNECTED_CLIENT_STATUS_LOCKED = (
     BLELifecycleService._get_connected_client_status_locked
 )
+# COMPAT_STABLE_SHIM: captured original symbol for monkeypatch detection.
+_ORIGINAL_VERIFY_OWNERSHIP_SNAPSHOT = BLELifecycleService._verify_ownership_snapshot
+# COMPAT_STABLE_SHIM: captured original symbol for monkeypatch detection.
+_ORIGINAL_FINALIZE_CONNECTION_GATES = BLELifecycleService._finalize_connection_gates
+# COMPAT_STABLE_SHIM: captured original symbol for monkeypatch detection.
+_ORIGINAL_IS_OWNED_CONNECTED_CLIENT = BLELifecycleService._is_owned_connected_client

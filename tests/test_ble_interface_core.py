@@ -5085,6 +5085,61 @@ def test_start_receive_thread_retains_cached_thread_when_start_noops(
         iface.close()
 
 
+def test_start_receive_thread_pending_marker_allows_later_restart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify inconclusive start markers are one-shot and do not block future restarts."""
+    from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
+
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    try:
+        with iface._state_lock:
+            iface._want_receive = True
+
+        thread_one = SimpleNamespace(
+            name="BLEReceivePendingOne",
+            ident=None,
+            is_alive=lambda: False,
+        )
+        thread_two = SimpleNamespace(
+            name="BLEReceivePendingTwo",
+            ident=42,
+            is_alive=lambda: False,
+        )
+        created_threads = [thread_one, thread_two]
+        monkeypatch.setattr(
+            iface.thread_coordinator,
+            "_create_thread",
+            lambda **_kwargs: created_threads.pop(0),
+            raising=True,
+        )
+
+        start_calls: list[object] = []
+        monkeypatch.setattr(
+            iface.thread_coordinator,
+            "_start_thread",
+            lambda thread: start_calls.append(thread),
+            raising=True,
+        )
+
+        BLELifecycleService._start_receive_thread(iface, name="BLEReceivePendingOne")
+        assert start_calls == [thread_one]
+        assert iface._receiveThread is thread_one
+        assert iface._receive_start_pending is True
+
+        BLELifecycleService._start_receive_thread(iface, name="BLEReceivePendingSkip")
+        assert start_calls == [thread_one]
+        assert iface._receiveThread is thread_one
+        assert iface._receive_start_pending is False
+
+        BLELifecycleService._start_receive_thread(iface, name="BLEReceivePendingTwo")
+        assert start_calls == [thread_one, thread_two]
+        assert iface._receiveThread is thread_two
+        assert iface._receive_start_pending is False
+    finally:
+        iface.close()
+
+
 def test_find_device_multiple_matches_raises() -> None:
     """Providing an address that matches multiple devices should raise BLEError."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface

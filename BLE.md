@@ -15,7 +15,7 @@ recommended patterns for code that embeds `meshtastic-python`.
 | `BLEStateManager`                            | Centralized state machine (states: `DISCONNECTED`, `CONNECTING`, `CONNECTED`, `DISCONNECTING`, `RECONNECTING`, `ERROR`) |
 | `BLEErrorHandler`                            | Unified exception-handling helpers used across the BLE subsystem                                     |
 | `NotificationManager`                        | Tracks active GATT notification subscriptions so they can be resubscribed after reconnects           |
-| `BLENotificationDispatcher`                  | Owns notification safety wrappers, FROMNUM parsing, malformed-counter logic, and notify registration |
+| `BLENotificationDispatcher`                  | Owns notification safety wrappers, FROMNUM parsing (decode little-endian 4-byte notify counters), malformed-counter logic, and notify registration |
 | `DiscoveryManager`                           | Scan-based BLE device discovery with address normalization                                           |
 | `ConnectionValidator`                        | Enforces connection preconditions before any lock is acquired                                        |
 | `ClientManager`                              | Owns `BLEClient` lifecycle and safe-close operations                                                 |
@@ -41,7 +41,7 @@ recommended patterns for code that embeds `meshtastic-python`.
   collaborators (`state`, `coordination`, and compatibility shims);
   runtime ownership is in controllers/coordinators/dispatchers.
 - `BLEInterface` uses collaborator APIs for state/notification interactions
-  (for example NotificationManager callback/subscription APIs and
+  (for example `NotificationManager.get_callback()/subscribe()` and
   `BLEStateManager` accessors such as `current_state`, `is_connected`,
   `is_closing`, `can_connect`, `transition_to()`, `reset_to_disconnected()`) instead
   of direct collaborator-private member reach-through.

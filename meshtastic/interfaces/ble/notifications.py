@@ -498,7 +498,27 @@ class BLENotificationDispatcher:
             error_msg: str,
         ) -> None:
             def _report_notification_error() -> None:
-                iface._report_notification_handler_error(error_msg)
+                report_notification_error = getattr(
+                    iface,
+                    "report_notification_handler_error",
+                    None,
+                )
+                if callable(report_notification_error) and not _is_unconfigured_mock_callable(
+                    report_notification_error
+                ):
+                    report_notification_error(error_msg)
+                    return
+                legacy_report_notification_error = getattr(
+                    iface,
+                    "_report_notification_handler_error",
+                    None,
+                )
+                if callable(legacy_report_notification_error) and not _is_unconfigured_mock_callable(
+                    legacy_report_notification_error
+                ):
+                    legacy_report_notification_error(error_msg)
+                    return
+                self.report_notification_handler_error(error_msg)
 
             def _invoke_handler() -> None:
                 handler(sender, data)

@@ -1,23 +1,34 @@
 """Receive compatibility shim service for BLE."""
 
 import contextlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from bleak.exc import BleakError
 
 from meshtastic.interfaces.ble.client import BLEClient
-from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryController
+from meshtastic.interfaces.ble.utils import (
+    _is_unconfigured_mock_callable,
+    _is_unconfigured_mock_member,
+)
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.coordination import ThreadCoordinator
     from meshtastic.interfaces.ble.interface import BLEInterface
+    from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryController
 
 
 class BLEReceiveRecoveryService:
     """Service helpers for BLE receive-loop and recovery behavior."""
 
     @staticmethod
-    def _controller_for_shim(iface: "BLEInterface") -> BLEReceiveRecoveryController:
+    def _controller_class() -> type["BLEReceiveRecoveryController"]:
+        """Resolve the receive controller class with a local import."""
+        from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryController
+
+        return BLEReceiveRecoveryController
+
+    @staticmethod
+    def _controller_for_shim(iface: "BLEInterface") -> "BLEReceiveRecoveryController":
         """Return iface-bound receive controller, falling back to cached construction.
 
         Parameters
@@ -30,15 +41,18 @@ class BLEReceiveRecoveryService:
         BLEReceiveRecoveryController
             Controller bound to ``iface``.
         """
+        controller_cls = BLEReceiveRecoveryService._controller_class()
         get_controller = getattr(iface, "_get_receive_recovery_controller", None)
-        if callable(get_controller):
+        if callable(get_controller) and not _is_unconfigured_mock_callable(
+            get_controller
+        ):
             resolved = get_controller()
-            if isinstance(resolved, BLEReceiveRecoveryController):
-                return resolved
+            if resolved is not None and not _is_unconfigured_mock_member(resolved):
+                return cast("BLEReceiveRecoveryController", resolved)
         cached = getattr(iface, "_receive_recovery_controller", None)
-        if isinstance(cached, BLEReceiveRecoveryController):
-            return cached
-        controller = BLEReceiveRecoveryController(iface)
+        if cached is not None and not _is_unconfigured_mock_member(cached):
+            return cast("BLEReceiveRecoveryController", cached)
+        controller = controller_cls(iface)
         with contextlib.suppress(Exception):  # noqa: BLE001 - best-effort cache attach
             iface._receive_recovery_controller = controller
         return controller
@@ -112,7 +126,7 @@ class BLEReceiveRecoveryService:
         bool
             ``True`` when the event was signaled, otherwise ``False``.
         """
-        return BLEReceiveRecoveryController._coordinator_wait_for_event(
+        return BLEReceiveRecoveryService._controller_class()._coordinator_wait_for_event(
             coordinator,
             event_name,
             timeout=timeout,
@@ -137,7 +151,7 @@ class BLEReceiveRecoveryService:
             ``True`` when the event was set before clearing, otherwise
             ``False``.
         """
-        return BLEReceiveRecoveryController._coordinator_check_and_clear_event(
+        return BLEReceiveRecoveryService._controller_class()._coordinator_check_and_clear_event(
             coordinator,
             event_name,
         )
@@ -160,7 +174,7 @@ class BLEReceiveRecoveryService:
         None
             Returns ``None`` after best-effort event clearing.
         """
-        BLEReceiveRecoveryController._coordinator_clear_event(
+        BLEReceiveRecoveryService._controller_class()._coordinator_clear_event(
             coordinator,
             event_name,
         )

@@ -9,9 +9,11 @@ from meshtastic.interfaces.ble.lifecycle_disconnect_runtime import (
     BLEDisconnectLifecycleCoordinator,
 )
 from meshtastic.interfaces.ble.lifecycle_compat_service import (
+    _ORIGINAL_FINALIZE_CONNECTION_GATES,
     _ORIGINAL_GET_CONNECTED_CLIENT_STATUS,
     _ORIGINAL_GET_CONNECTED_CLIENT_STATUS_LOCKED,
-    BLELifecycleService,
+    _ORIGINAL_IS_OWNED_CONNECTED_CLIENT,
+    _ORIGINAL_VERIFY_OWNERSHIP_SNAPSHOT,
 )
 from meshtastic.interfaces.ble.lifecycle_ownership_runtime import (
     BLEConnectionOwnershipLifecycleCoordinator,
@@ -153,25 +155,29 @@ class BLELifecycleController:
         restore_last_connection_request: str | None = None,
     ) -> None:
         """Discard stale connect result for the bound interface."""
+        from meshtastic.interfaces.ble import (
+            lifecycle_service as lifecycle_service_mod,
+        )
+
         iface = self._iface
         self._connection_ownership._discard_invalidated_connected_client(
             client,
             restore_address=restore_address,
             restore_last_connection_request=restore_last_connection_request,
-            is_closing_getter=lambda: BLELifecycleService._state_manager_is_closing(
+            is_closing_getter=lambda: lifecycle_service_mod.BLELifecycleService._state_manager_is_closing(  # noqa: E501
                 iface
             ),
-            reset_to_disconnected=lambda: BLELifecycleService._state_manager_reset_to_disconnected(  # noqa: E501
+            reset_to_disconnected=lambda: lifecycle_service_mod.BLELifecycleService._state_manager_reset_to_disconnected(  # noqa: E501
                 iface
             ),
-            current_state_getter=lambda: BLELifecycleService._state_manager_current_state(
+            current_state_getter=lambda: lifecycle_service_mod.BLELifecycleService._state_manager_current_state(  # noqa: E501
                 iface
             ),
-            transition_to_disconnected=lambda: BLELifecycleService._state_manager_transition_to(  # noqa: E501
+            transition_to_disconnected=lambda: lifecycle_service_mod.BLELifecycleService._state_manager_transition_to(  # noqa: E501
                 iface,
                 ConnectionState.DISCONNECTED,
             ),
-            safe_cleanup=lambda cleanup, operation_name: BLELifecycleService._error_handler_safe_cleanup(  # noqa: E501
+            safe_cleanup=lambda cleanup, operation_name: lifecycle_service_mod.BLELifecycleService._error_handler_safe_cleanup(  # noqa: E501
                 iface,
                 cleanup,
                 operation_name,
@@ -188,10 +194,23 @@ class BLELifecycleController:
         service_get_status_locked = (
             lifecycle_service_mod.BLELifecycleService._get_connected_client_status_locked
         )
+        service_verify_snapshot = (
+            lifecycle_service_mod.BLELifecycleService._verify_ownership_snapshot
+        )
+        service_finalize_connection_gates = (
+            lifecycle_service_mod.BLELifecycleService._finalize_connection_gates
+        )
+        service_is_owned_connected_client = (
+            lifecycle_service_mod.BLELifecycleService._is_owned_connected_client
+        )
         return (
             service_get_status is not _ORIGINAL_GET_CONNECTED_CLIENT_STATUS
             or service_get_status_locked
             is not _ORIGINAL_GET_CONNECTED_CLIENT_STATUS_LOCKED
+            or service_verify_snapshot is not _ORIGINAL_VERIFY_OWNERSHIP_SNAPSHOT
+            or service_finalize_connection_gates is not _ORIGINAL_FINALIZE_CONNECTION_GATES
+            or service_is_owned_connected_client
+            is not _ORIGINAL_IS_OWNED_CONNECTED_CLIENT
         )
 
     def finalize_connection_gates(

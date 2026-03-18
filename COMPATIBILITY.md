@@ -65,15 +65,15 @@ Additional approved BLE compatibility and promotions:
 | `BLEInterface.findDevice`                                       | `PRIMARY`            | Silent         | Approved promoted camelCase name.                  |
 | `BLEClient._discover`                                           | `COMPAT_STABLE_SHIM` | Silent         | Historical internal discovery entrypoint.          |
 | `BLEReceiveRecoveryService`                                     | `COMPAT_STABLE_SHIM` | Silent         | Legacy receive-service class alias re-exported from `receive_service`. |
-| `BLEStateManager.current_state`                                 | `INTERNAL_COMPAT`    | Silent         | Internal compatibility alias for `_current_state`. |
-| `BLEStateManager.is_connected`                                  | `INTERNAL_COMPAT`    | Silent         | Internal compatibility alias for `_is_connected`.  |
-| `BLEStateManager.is_closing`                                    | `INTERNAL_COMPAT`    | Silent         | Internal compatibility alias for `_is_closing`.    |
-| `BLEStateManager.can_connect`                                   | `INTERNAL_COMPAT`    | Silent         | Internal compatibility alias for `_can_connect`.   |
+| `BLEStateManager.current_state`                                 | `COMPAT_STABLE_SHIM` | Silent         | Public-first alias for `_current_state`.           |
+| `BLEStateManager.is_connected`                                  | `COMPAT_STABLE_SHIM` | Silent         | Public-first alias for `_is_connected`.            |
+| `BLEStateManager.is_closing`                                    | `COMPAT_STABLE_SHIM` | Silent         | Public-first alias for `_is_closing`.              |
+| `BLEStateManager.can_connect`                                   | `COMPAT_STABLE_SHIM` | Silent         | Public-first alias for `_can_connect`.             |
 | `BLEStateManager.is_connecting`                                 | `COMPAT_STABLE_SHIM` | Silent         | Public property alias for `_is_connecting`.        |
-| `BLEStateManager.is_active`                                     | `INTERNAL_COMPAT`    | Silent         | Internal compatibility alias for `_is_active`.     |
+| `BLEStateManager.is_active`                                     | `COMPAT_STABLE_SHIM` | Silent         | Public-first alias for `_is_active`.               |
 | `BLEStateManager.transition_to()`                               | `COMPAT_STABLE_SHIM` | Silent         | Public-first wrapper for `_transition_to()`.        |
 | `BLEStateManager.reset_to_disconnected()`                       | `COMPAT_STABLE_SHIM` | Silent         | Public-first wrapper for `_reset_to_disconnected()`. |
-| `BLEStateManager._lock`                                         | `INTERNAL_COMPAT`    | Silent         | Legacy alias for `lock` property.                  |
+| `BLEStateManager._lock`                                         | `COMPAT_STABLE_SHIM` | Silent         | Legacy alias for `lock` property.                  |
 | `meshtastic.ble_interface.BleakClient`                          | `COMPAT_STABLE_SHIM` | Silent         | Legacy module-level import compatibility.          |
 | `meshtastic.ble_interface.BleakScanner`                         | `COMPAT_STABLE_SHIM` | Silent         | Legacy module-level import compatibility.          |
 | `meshtastic.ble_interface.BLEDevice`                            | `COMPAT_STABLE_SHIM` | Silent         | Legacy module-level import compatibility.          |

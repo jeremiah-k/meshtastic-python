@@ -102,13 +102,16 @@ class BLEDisconnectLifecycleCoordinator:
         should_schedule_reconnect = should_reconnect and not iface._closed
         if should_reconnect:
             if previous_client is not None:
-                previous_address = getattr(previous_client, "address", iface.address)
+                previous_address = getattr(previous_client, "address", address)
+                if not previous_address or previous_address == "unknown":
+                    previous_address = address if address != "unknown" else iface.address
                 device_key = _addr_key(previous_address) if previous_address else None
                 return (
                     iface._sorted_address_keys(device_key, alias_key),
                     should_schedule_reconnect,
                 )
-            fallback_key = _addr_key(iface.address)
+            resolved_fallback = address if address != "unknown" else iface.address
+            fallback_key = _addr_key(resolved_fallback)
             return (
                 iface._sorted_address_keys(fallback_key, alias_key),
                 should_schedule_reconnect,
@@ -282,6 +285,8 @@ class BLEDisconnectLifecycleCoordinator:
                 _sleep(CLOSE_THREAD_START_PROBE_DELAY_SEC)
                 thread_ident, thread_is_alive = _thread_start_probe(close_thread)
             if thread_ident is None and not thread_is_alive:
+                # Probe Thread._started to distinguish "failed to start" from
+                # custom thread-likes with delayed ident/is_alive publication.
                 started_event = getattr(close_thread, "_started", None)
                 is_started = getattr(started_event, "is_set", None)
                 start_failure_confirmed = False
