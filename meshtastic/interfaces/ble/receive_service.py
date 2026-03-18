@@ -20,7 +20,6 @@ from meshtastic.interfaces.ble.constants import (
     logger,
 )
 from meshtastic.interfaces.ble.errors import DecodeError
-from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
 from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
     _is_unconfigured_mock_member,
@@ -42,15 +41,175 @@ class BLEReceiveRecoveryController:
         """Bind receive/recovery helpers to a specific interface instance."""
         self._iface = iface
 
+    def _get_lifecycle_controller(self) -> object | None:
+        """Return lifecycle controller when available on the bound interface."""
+        get_lifecycle_controller = getattr(self._iface, "_get_lifecycle_controller", None)
+        if callable(get_lifecycle_controller):
+            return get_lifecycle_controller()
+        return None
+
+    def _has_ever_connected_session(self) -> bool:
+        """Return mock-safe ever-connected state for receive-loop behavior."""
+        lifecycle_controller = self._get_lifecycle_controller()
+        if lifecycle_controller is not None:
+            has_ever_connected_session = getattr(
+                lifecycle_controller, "has_ever_connected_session", None
+            )
+            if callable(has_ever_connected_session):
+                return bool(has_ever_connected_session())
+        raw_ever_connected = getattr(self._iface, "_ever_connected", False)
+        if _is_unconfigured_mock_member(raw_ever_connected):
+            return False
+        return raw_ever_connected is True
+
+    def _is_connection_closing(self) -> bool:
+        """Return whether receive-loop behavior should treat the interface as closing."""
+        lifecycle_controller = self._get_lifecycle_controller()
+        if lifecycle_controller is not None:
+            is_connection_closing = getattr(
+                lifecycle_controller, "is_connection_closing", None
+            )
+            if callable(is_connection_closing):
+                return bool(is_connection_closing())
+        iface = self._iface
+        with iface._state_lock:
+            raw_is_closing = getattr(iface._state_manager, "is_closing", False)
+            if _is_unconfigured_mock_member(raw_is_closing):
+                state_is_closing = False
+            elif isinstance(raw_is_closing, bool):
+                state_is_closing = raw_is_closing
+            else:
+                legacy_is_closing = getattr(iface._state_manager, "_is_closing", False)
+                if _is_unconfigured_mock_member(legacy_is_closing):
+                    state_is_closing = False
+                else:
+                    state_is_closing = bool(legacy_is_closing)
+            return state_is_closing or iface._closed
+
+    @staticmethod
+    def _coordinator_wait_for_event(
+        coordinator: "ThreadCoordinator",
+        event_name: str,
+        *,
+        timeout: float | None,
+    ) -> bool:
+        """Wait for a coordinator event using compatibility dispatch."""
+        wait_for_event = getattr(coordinator, "wait_for_event", None)
+        if callable(wait_for_event) and not _is_unconfigured_mock_callable(
+            wait_for_event
+        ):
+            return bool(wait_for_event(event_name, timeout=timeout))
+        legacy_wait_for_event = getattr(coordinator, "_wait_for_event", None)
+        if callable(legacy_wait_for_event) and not _is_unconfigured_mock_callable(
+            legacy_wait_for_event
+        ):
+            return bool(legacy_wait_for_event(event_name, timeout=timeout))
+        if timeout is None:
+            _sleep(COORDINATOR_WAIT_FALLBACK_SLEEP_SEC)
+        elif timeout > 0:
+            _sleep(min(timeout, COORDINATOR_WAIT_FALLBACK_SLEEP_SEC))
+        return False
+
+    def _coordinator_wait_for_event_compat(
+        self,
+        coordinator: "ThreadCoordinator",
+        event_name: str,
+        *,
+        timeout: float | None,
+    ) -> bool:
+        """Respect monkeypatched service shims while defaulting to controller-owned behavior."""
+        service_wait_for_event = BLEReceiveRecoveryService._coordinator_wait_for_event
+        if service_wait_for_event is not _ORIGINAL_COORDINATOR_WAIT_FOR_EVENT:
+            return bool(
+                service_wait_for_event(
+                    coordinator,
+                    event_name,
+                    timeout=timeout,
+                )
+            )
+        return self._coordinator_wait_for_event(
+            coordinator,
+            event_name,
+            timeout=timeout,
+        )
+
+    @staticmethod
+    def _coordinator_check_and_clear_event(
+        coordinator: "ThreadCoordinator",
+        event_name: str,
+    ) -> bool:
+        """Check and clear a coordinator event using compatibility dispatch."""
+        check_and_clear_event = getattr(coordinator, "check_and_clear_event", None)
+        if callable(check_and_clear_event) and not _is_unconfigured_mock_callable(
+            check_and_clear_event
+        ):
+            return bool(check_and_clear_event(event_name))
+        legacy_check_and_clear_event = getattr(
+            coordinator, "_check_and_clear_event", None
+        )
+        if callable(legacy_check_and_clear_event) and not _is_unconfigured_mock_callable(
+            legacy_check_and_clear_event
+        ):
+            return bool(legacy_check_and_clear_event(event_name))
+        return False
+
+    def _coordinator_check_and_clear_event_compat(
+        self,
+        coordinator: "ThreadCoordinator",
+        event_name: str,
+    ) -> bool:
+        """Respect monkeypatched service shims while defaulting to controller-owned behavior."""
+        service_check_and_clear = BLEReceiveRecoveryService._coordinator_check_and_clear_event
+        if service_check_and_clear is not _ORIGINAL_COORDINATOR_CHECK_AND_CLEAR_EVENT:
+            return bool(service_check_and_clear(coordinator, event_name))
+        return self._coordinator_check_and_clear_event(coordinator, event_name)
+
+    @staticmethod
+    def _coordinator_clear_event(coordinator: "ThreadCoordinator", event_name: str) -> None:
+        """Clear a coordinator event using compatibility dispatch."""
+        clear_events = getattr(coordinator, "clear_events", None)
+        if callable(clear_events) and not _is_unconfigured_mock_callable(clear_events):
+            clear_events(event_name)
+            return
+        legacy_clear_events = getattr(coordinator, "_clear_events", None)
+        if callable(legacy_clear_events) and not _is_unconfigured_mock_callable(
+            legacy_clear_events
+        ):
+            legacy_clear_events(event_name)
+            return
+        clear_event = getattr(coordinator, "clear_event", None)
+        if callable(clear_event) and not _is_unconfigured_mock_callable(clear_event):
+            clear_event(event_name)
+            return
+        legacy_clear_event = getattr(coordinator, "_clear_event", None)
+        if callable(legacy_clear_event) and not _is_unconfigured_mock_callable(
+            legacy_clear_event
+        ):
+            legacy_clear_event(event_name)
+
+    def _coordinator_clear_event_compat(
+        self, coordinator: "ThreadCoordinator", event_name: str
+    ) -> None:
+        """Respect monkeypatched service shims while defaulting to controller-owned behavior."""
+        service_clear_event = BLEReceiveRecoveryService._coordinator_clear_event
+        if service_clear_event is not _ORIGINAL_COORDINATOR_CLEAR_EVENT:
+            service_clear_event(coordinator, event_name)
+            return
+        self._coordinator_clear_event(coordinator, event_name)
+
     def _should_run_receive_loop(self) -> bool:
         """Return whether the lifecycle currently wants receive-loop execution."""
         iface = self._iface
         override_should_run_receive_loop = iface.__dict__.get("_should_run_receive_loop")
         if callable(override_should_run_receive_loop):
             return bool(override_should_run_receive_loop())
-        get_lifecycle_controller = getattr(iface, "_get_lifecycle_controller", None)
-        if callable(get_lifecycle_controller):
-            return bool(get_lifecycle_controller().should_run_receive_loop())
+        lifecycle_controller = self._get_lifecycle_controller()
+        if lifecycle_controller is not None:
+            should_run_receive_loop = getattr(
+                lifecycle_controller, "should_run_receive_loop", None
+            )
+            if callable(should_run_receive_loop):
+                return bool(should_run_receive_loop())
         should_run_receive_loop = getattr(iface, "_should_run_receive_loop", None)
         if callable(should_run_receive_loop):
             return bool(should_run_receive_loop())
@@ -63,10 +222,12 @@ class BLEReceiveRecoveryController:
         if callable(override_set_receive_wanted):
             override_set_receive_wanted(want_receive=want_receive)
             return
-        get_lifecycle_controller = getattr(iface, "_get_lifecycle_controller", None)
-        if callable(get_lifecycle_controller):
-            get_lifecycle_controller().set_receive_wanted(want_receive=want_receive)
-            return
+        lifecycle_controller = self._get_lifecycle_controller()
+        if lifecycle_controller is not None:
+            set_receive_wanted = getattr(lifecycle_controller, "set_receive_wanted", None)
+            if callable(set_receive_wanted):
+                set_receive_wanted(want_receive=want_receive)
+                return
         set_receive_wanted = getattr(iface, "_set_receive_wanted", None)
         if callable(set_receive_wanted):
             set_receive_wanted(want_receive=want_receive)
@@ -82,10 +243,13 @@ class BLEReceiveRecoveryController:
         override_handle_disconnect = iface.__dict__.get("_handle_disconnect")
         if callable(override_handle_disconnect):
             return bool(override_handle_disconnect(disconnect_reason, client=client))
-        get_lifecycle_controller = getattr(iface, "_get_lifecycle_controller", None)
-        if callable(get_lifecycle_controller):
+        lifecycle_controller = self._get_lifecycle_controller()
+        if lifecycle_controller is not None:
+            handle_disconnect = getattr(lifecycle_controller, "handle_disconnect", None)
+            if not callable(handle_disconnect):
+                return False
             return bool(
-                get_lifecycle_controller().handle_disconnect(
+                handle_disconnect(
                     disconnect_reason,
                     client=client,
                 )
@@ -102,9 +266,12 @@ class BLEReceiveRecoveryController:
         if callable(override_start_receive_thread):
             override_start_receive_thread(name=name, reset_recovery=reset_recovery)
             return
-        get_lifecycle_controller = getattr(iface, "_get_lifecycle_controller", None)
-        if callable(get_lifecycle_controller):
-            get_lifecycle_controller().start_receive_thread(
+        lifecycle_controller = self._get_lifecycle_controller()
+        if lifecycle_controller is not None:
+            start_receive_thread = getattr(lifecycle_controller, "start_receive_thread", None)
+            if not callable(start_receive_thread):
+                return
+            start_receive_thread(
                 name=name,
                 reset_recovery=reset_recovery,
             )
@@ -120,11 +287,14 @@ class BLEReceiveRecoveryController:
         if callable(override_close):
             override_close()
             return
-        get_lifecycle_controller = getattr(iface, "_get_lifecycle_controller", None)
-        if callable(get_lifecycle_controller):
+        lifecycle_controller = self._get_lifecycle_controller()
+        if lifecycle_controller is not None:
+            close = getattr(lifecycle_controller, "close", None)
+            if not callable(close):
+                return
             from meshtastic.interfaces.ble import interface as interface_mod
 
-            get_lifecycle_controller().close(
+            close(
                 management_shutdown_wait_timeout=(
                     interface_mod._MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS
                 ),
@@ -169,28 +339,25 @@ class BLEReceiveRecoveryController:
         wait_timeout: float,
     ) -> tuple[bool, bool]:
         """Wait for read trigger and compute fallback poll mode."""
-        event_signaled = BLEReceiveRecoveryService._coordinator_wait_for_event(
+        event_signaled = self._coordinator_wait_for_event_compat(
             coordinator,
             READ_TRIGGER_EVENT,
             timeout=wait_timeout,
         )
         poll_without_notify = False
-        ever_connected = BLELifecycleService._ever_connected_flag(self._iface)
+        ever_connected = self._has_ever_connected_session()
         if not event_signaled:
             if (
                 ever_connected
-                and BLEReceiveRecoveryService._coordinator_check_and_clear_event(
-                    coordinator,
-                    RECONNECTED_EVENT,
+                and self._coordinator_check_and_clear_event_compat(
+                    coordinator, RECONNECTED_EVENT
                 )
             ):
                 logger.debug("Detected reconnection, resuming normal operation")
             poll_without_notify = self._should_poll_without_notify()
             return poll_without_notify, poll_without_notify
 
-        BLEReceiveRecoveryService._coordinator_clear_event(
-            coordinator, READ_TRIGGER_EVENT
-        )
+        self._coordinator_clear_event_compat(coordinator, READ_TRIGGER_EVENT)
         return True, poll_without_notify
 
     def _snapshot_client_state(self) -> tuple[BLEClient | None, bool, bool, bool]:
@@ -226,8 +393,7 @@ class BLEReceiveRecoveryController:
                 else:
                     is_connecting = False
             publish_pending = iface._client_publish_pending
-            state_is_closing = BLELifecycleService._state_manager_is_closing(iface)
-            is_closing = state_is_closing or iface._closed
+            is_closing = self._is_connection_closing()
         return client, is_connecting, publish_pending, is_closing
 
     def _process_client_state(
@@ -251,7 +417,7 @@ class BLEReceiveRecoveryController:
             logger.debug(
                 "Skipping BLE read while connect publication is pending verification."
             )
-            BLEReceiveRecoveryService._coordinator_wait_for_event(
+            self._coordinator_wait_for_event_compat(
                 coordinator,
                 RECONNECTED_EVENT,
                 timeout=wait_timeout,
@@ -264,7 +430,7 @@ class BLEReceiveRecoveryController:
         if iface.auto_reconnect or is_connecting:
             wait_reason = "connection establishment" if is_connecting else "auto-reconnect"
             logger.debug("BLE client is None; waiting for %s", wait_reason)
-            BLEReceiveRecoveryService._coordinator_wait_for_event(
+            self._coordinator_wait_for_event_compat(
                 coordinator,
                 RECONNECTED_EVENT,
                 timeout=wait_timeout,
@@ -665,21 +831,11 @@ class BLEReceiveRecoveryService:
         bool
             ``True`` when the event was signaled, otherwise ``False``.
         """
-        wait_for_event = getattr(coordinator, "wait_for_event", None)
-        if callable(wait_for_event) and not _is_unconfigured_mock_callable(
-            wait_for_event
-        ):
-            return bool(wait_for_event(event_name, timeout=timeout))
-        legacy_wait_for_event = getattr(coordinator, "_wait_for_event", None)
-        if callable(legacy_wait_for_event) and not _is_unconfigured_mock_callable(
-            legacy_wait_for_event
-        ):
-            return bool(legacy_wait_for_event(event_name, timeout=timeout))
-        if timeout is None:
-            _sleep(COORDINATOR_WAIT_FALLBACK_SLEEP_SEC)
-        elif timeout > 0:
-            _sleep(min(timeout, COORDINATOR_WAIT_FALLBACK_SLEEP_SEC))
-        return False
+        return BLEReceiveRecoveryController._coordinator_wait_for_event(
+            coordinator,
+            event_name,
+            timeout=timeout,
+        )
 
     @staticmethod
     def _coordinator_check_and_clear_event(
@@ -700,19 +856,10 @@ class BLEReceiveRecoveryService:
             ``True`` when the event was set before clearing, otherwise
             ``False``.
         """
-        check_and_clear_event = getattr(coordinator, "check_and_clear_event", None)
-        if callable(check_and_clear_event) and not _is_unconfigured_mock_callable(
-            check_and_clear_event
-        ):
-            return bool(check_and_clear_event(event_name))
-        legacy_check_and_clear_event = getattr(
-            coordinator, "_check_and_clear_event", None
+        return BLEReceiveRecoveryController._coordinator_check_and_clear_event(
+            coordinator,
+            event_name,
         )
-        if callable(
-            legacy_check_and_clear_event
-        ) and not _is_unconfigured_mock_callable(legacy_check_and_clear_event):
-            return bool(legacy_check_and_clear_event(event_name))
-        return False
 
     @staticmethod
     def _coordinator_clear_event(
@@ -732,25 +879,10 @@ class BLEReceiveRecoveryService:
         None
             Returns ``None`` after best-effort event clearing.
         """
-        clear_events = getattr(coordinator, "clear_events", None)
-        if callable(clear_events) and not _is_unconfigured_mock_callable(clear_events):
-            clear_events(event_name)
-            return
-        legacy_clear_events = getattr(coordinator, "_clear_events", None)
-        if callable(legacy_clear_events) and not _is_unconfigured_mock_callable(
-            legacy_clear_events
-        ):
-            legacy_clear_events(event_name)
-            return
-        clear_event = getattr(coordinator, "clear_event", None)
-        if callable(clear_event) and not _is_unconfigured_mock_callable(clear_event):
-            clear_event(event_name)
-            return
-        legacy_clear_event = getattr(coordinator, "_clear_event", None)
-        if callable(legacy_clear_event) and not _is_unconfigured_mock_callable(
-            legacy_clear_event
-        ):
-            legacy_clear_event(event_name)
+        BLEReceiveRecoveryController._coordinator_clear_event(
+            coordinator,
+            event_name,
+        )
 
     @staticmethod
     def _wait_for_read_trigger(
@@ -1055,3 +1187,10 @@ class BLEReceiveRecoveryService:
             Returns ``None`` after logging or suppressing warning output.
         """
         BLEReceiveRecoveryController(iface).log_empty_read_warning()
+
+
+_ORIGINAL_COORDINATOR_WAIT_FOR_EVENT = BLEReceiveRecoveryService._coordinator_wait_for_event
+_ORIGINAL_COORDINATOR_CHECK_AND_CLEAR_EVENT = (
+    BLEReceiveRecoveryService._coordinator_check_and_clear_event
+)
+_ORIGINAL_COORDINATOR_CLEAR_EVENT = BLEReceiveRecoveryService._coordinator_clear_event

@@ -314,7 +314,7 @@ class BLEManagementCommandHandler:
             if iface._management_inflight == 0:
                 iface._management_idle_condition.notify_all()
 
-    def _start_management_phase(self, address: str | None) -> _ManagementStartContext:
+    def start_management_phase(self, address: str | None) -> _ManagementStartContext:
         """Begin management operation and capture startup context."""
         iface = self._iface
         expected_implicit_binding: str | None = None
@@ -344,7 +344,12 @@ class BLEManagementCommandHandler:
             use_existing_client_without_resolved_address=use_existing_client_without_resolved_address,
         )
 
-    def _resolve_management_target(
+    # COMPAT_STABLE_SHIM: historical helper alias retained for compatibility targets.
+    def _start_management_phase(self, address: str | None) -> _ManagementStartContext:
+        """Compatibility alias for `start_management_phase`."""
+        return self.start_management_phase(address)
+
+    def resolve_management_target(
         self,
         address: str | None,
         start_context: _ManagementStartContext,
@@ -432,7 +437,16 @@ class BLEManagementCommandHandler:
 
         return target_address, None
 
-    def _acquire_client_for_target(
+    # COMPAT_STABLE_SHIM: historical helper alias retained for compatibility targets.
+    def _resolve_management_target(
+        self,
+        address: str | None,
+        start_context: _ManagementStartContext,
+    ) -> tuple[str | None, BLEClient | None]:
+        """Compatibility alias for `resolve_management_target`."""
+        return self.resolve_management_target(address, start_context)
+
+    def acquire_client_for_target(
         self,
         *,
         address: str | None,
@@ -473,7 +487,22 @@ class BLEManagementCommandHandler:
 
         return client_to_use, temporary_client
 
-    def _execute_with_client(
+    # COMPAT_STABLE_SHIM: historical helper alias retained for compatibility targets.
+    def _acquire_client_for_target(
+        self,
+        *,
+        address: str | None,
+        target_address: str,
+        expected_implicit_binding: str | None,
+    ) -> tuple[BLEClient, BLEClient | None]:
+        """Compatibility alias for `acquire_client_for_target`."""
+        return self.acquire_client_for_target(
+            address=address,
+            target_address=target_address,
+            expected_implicit_binding=expected_implicit_binding,
+        )
+
+    def execute_with_client(
         self,
         *,
         client_to_use: BLEClient,
@@ -493,6 +522,21 @@ class BLEManagementCommandHandler:
                         "Failed to close temporary management client.",
                         exc_info=True,
                     )
+
+    # COMPAT_STABLE_SHIM: historical helper alias retained for compatibility targets.
+    def _execute_with_client(
+        self,
+        *,
+        client_to_use: BLEClient,
+        temporary_client: BLEClient | None,
+        command: Callable[[BLEClient], T],
+    ) -> T:
+        """Compatibility alias for `execute_with_client`."""
+        return self.execute_with_client(
+            client_to_use=client_to_use,
+            temporary_client=temporary_client,
+            command=command,
+        )
 
     def execute_management_command(
         self,
@@ -778,13 +822,19 @@ class BLEManagementCommandsService:
     """Service helpers for BLE management command paths."""
 
     @staticmethod
-    def _make_handler(
+    def _resolve_handler(
         iface: "BLEInterface",
         *,
         ble_client_factory: Callable[..., BLEClient] | None = None,
         connected_elsewhere: Callable[[str | None, object | None], bool] | None = None,
     ) -> BLEManagementCommandHandler:
-        """Create bound handler for static compatibility entry points."""
+        """Resolve handler for compatibility shims, preferring iface-owned collaborator."""
+        if ble_client_factory is None and connected_elsewhere is None:
+            get_handler = getattr(iface, "_get_management_command_handler", None)
+            if callable(get_handler):
+                resolved = get_handler()
+                if isinstance(resolved, BLEManagementCommandHandler):
+                    return resolved
         if ble_client_factory is None:
             ble_client_factory = BLEClient
         if connected_elsewhere is None:
@@ -792,6 +842,21 @@ class BLEManagementCommandsService:
                 key, owner
             )
         return BLEManagementCommandHandler(
+            iface,
+            ble_client_factory=ble_client_factory,
+            connected_elsewhere=connected_elsewhere,
+        )
+
+    # COMPAT_STABLE_SHIM: retain historical helper alias for static compatibility tests.
+    @staticmethod
+    def _make_handler(
+        iface: "BLEInterface",
+        *,
+        ble_client_factory: Callable[..., BLEClient] | None = None,
+        connected_elsewhere: Callable[[str | None, object | None], bool] | None = None,
+    ) -> BLEManagementCommandHandler:
+        """Compatibility alias for `_resolve_handler`."""
+        return BLEManagementCommandsService._resolve_handler(
             iface,
             ble_client_factory=ble_client_factory,
             connected_elsewhere=connected_elsewhere,
@@ -823,9 +888,9 @@ class BLEManagementCommandsService:
             Re-raises any startup failure after finishing the management
             operation token.
         """
-        return BLEManagementCommandsService._make_handler(iface)._start_management_phase(
-            address
-        )
+        return BLEManagementCommandsService._resolve_handler(
+            iface
+        ).start_management_phase(address)
 
     @staticmethod
     def _resolve_management_target(
@@ -857,7 +922,9 @@ class BLEManagementCommandsService:
             If a refreshed existing client disappears or implicit binding
             changes mid-operation.
         """
-        return BLEManagementCommandsService._make_handler(iface)._resolve_management_target(
+        return BLEManagementCommandsService._resolve_handler(
+            iface
+        ).resolve_management_target(
             address,
             start_context,
         )
@@ -900,11 +967,11 @@ class BLEManagementCommandsService:
         BLEError
             If target ownership has changed or is currently held elsewhere.
         """
-        return BLEManagementCommandsService._make_handler(
+        return BLEManagementCommandsService._resolve_handler(
             iface,
             ble_client_factory=ble_client_factory,
             connected_elsewhere=connected_elsewhere,
-        )._acquire_client_for_target(
+        ).acquire_client_for_target(
             address=address,
             target_address=target_address,
             expected_implicit_binding=expected_implicit_binding,
@@ -942,7 +1009,7 @@ class BLEManagementCommandsService:
             Propagates any exception raised by ``command`` after temporary
             client cleanup is attempted.
         """
-        return BLEManagementCommandsService._make_handler(iface)._execute_with_client(
+        return BLEManagementCommandsService._resolve_handler(iface).execute_with_client(
             client_to_use=client_to_use,
             temporary_client=temporary_client,
             command=command,
@@ -987,7 +1054,7 @@ class BLEManagementCommandsService:
             If preconditions fail, target resolution fails, or target ownership
             changes while entering the management gate.
         """
-        return BLEManagementCommandsService._make_handler(
+        return BLEManagementCommandsService._resolve_handler(
             iface,
             ble_client_factory=ble_client_factory,
             connected_elsewhere=connected_elsewhere,
@@ -1019,7 +1086,7 @@ class BLEManagementCommandsService:
         BLEError
             If ``await_timeout`` is not a finite positive real number.
         """
-        return BLEManagementCommandsService._make_handler(
+        return BLEManagementCommandsService._resolve_handler(
             iface
         ).validate_management_await_timeout(await_timeout)
 
@@ -1044,7 +1111,7 @@ class BLEManagementCommandsService:
         BLEError
             If ``timeout`` is not a finite positive real number.
         """
-        return BLEManagementCommandsService._make_handler(iface).validate_trust_timeout(
+        return BLEManagementCommandsService._resolve_handler(iface).validate_trust_timeout(
             timeout
         )
 
@@ -1076,7 +1143,9 @@ class BLEManagementCommandsService:
         BLEError
             If ``connect_timeout`` is invalid for orchestrated connection logic.
         """
-        BLEManagementCommandsService._make_handler(iface).validate_connect_timeout_override(
+        BLEManagementCommandsService._resolve_handler(
+            iface
+        ).validate_connect_timeout_override(
             connect_timeout,
             pair_on_connect=pair_on_connect,
         )
@@ -1113,7 +1182,7 @@ class BLEManagementCommandsService:
         -------
         None
         """
-        BLEManagementCommandsService._make_handler(
+        BLEManagementCommandsService._resolve_handler(
             iface,
             ble_client_factory=ble_client_factory,
             connected_elsewhere=connected_elsewhere,
@@ -1152,7 +1221,7 @@ class BLEManagementCommandsService:
         -------
         None
         """
-        BLEManagementCommandsService._make_handler(
+        BLEManagementCommandsService._resolve_handler(
             iface,
             ble_client_factory=ble_client_factory,
             connected_elsewhere=connected_elsewhere,
@@ -1203,7 +1272,7 @@ class BLEManagementCommandsService:
         BLEError
             If command execution fails, times out, or returns non-zero status.
         """
-        BLEManagementCommandsService._make_handler(
+        BLEManagementCommandsService._resolve_handler(
             iface
         ).run_bluetoothctl_trust_command(
             bluetoothctl_path,
@@ -1261,7 +1330,7 @@ class BLEManagementCommandsService:
             If address validation, environment preconditions, target resolution,
             or command execution fails.
         """
-        BLEManagementCommandsService._make_handler(iface).trust(
+        BLEManagementCommandsService._resolve_handler(iface).trust(
             address,
             timeout=timeout,
             sys_module=sys_module,
