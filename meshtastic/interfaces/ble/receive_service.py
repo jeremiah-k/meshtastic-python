@@ -2,6 +2,7 @@
 
 import math
 import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
 from bleak.exc import BleakDBusError, BleakError
@@ -112,29 +113,6 @@ class BLEReceiveRecoveryController:
             _sleep(min(timeout, COORDINATOR_WAIT_FALLBACK_SLEEP_SEC))
         return False
 
-    def _coordinator_wait_for_event_compat(
-        self,
-        coordinator: "ThreadCoordinator",
-        event_name: str,
-        *,
-        timeout: float | None,
-    ) -> bool:
-        """Respect monkeypatched service shims while defaulting to controller-owned behavior."""
-        service_wait_for_event = BLEReceiveRecoveryService._coordinator_wait_for_event
-        if service_wait_for_event is not _ORIGINAL_COORDINATOR_WAIT_FOR_EVENT:
-            return bool(
-                service_wait_for_event(
-                    coordinator,
-                    event_name,
-                    timeout=timeout,
-                )
-            )
-        return self._coordinator_wait_for_event(
-            coordinator,
-            event_name,
-            timeout=timeout,
-        )
-
     @staticmethod
     def _coordinator_check_and_clear_event(
         coordinator: "ThreadCoordinator",
@@ -154,19 +132,6 @@ class BLEReceiveRecoveryController:
         ) and not _is_unconfigured_mock_callable(legacy_check_and_clear_event):
             return bool(legacy_check_and_clear_event(event_name))
         return False
-
-    def _coordinator_check_and_clear_event_compat(
-        self,
-        coordinator: "ThreadCoordinator",
-        event_name: str,
-    ) -> bool:
-        """Respect monkeypatched service shims while defaulting to controller-owned behavior."""
-        service_check_and_clear = (
-            BLEReceiveRecoveryService._coordinator_check_and_clear_event
-        )
-        if service_check_and_clear is not _ORIGINAL_COORDINATOR_CHECK_AND_CLEAR_EVENT:
-            return bool(service_check_and_clear(coordinator, event_name))
-        return self._coordinator_check_and_clear_event(coordinator, event_name)
 
     @staticmethod
     def _coordinator_clear_event(
@@ -192,16 +157,6 @@ class BLEReceiveRecoveryController:
             legacy_clear_event
         ):
             legacy_clear_event(event_name)
-
-    def _coordinator_clear_event_compat(
-        self, coordinator: "ThreadCoordinator", event_name: str
-    ) -> None:
-        """Respect monkeypatched service shims while defaulting to controller-owned behavior."""
-        service_clear_event = BLEReceiveRecoveryService._coordinator_clear_event
-        if service_clear_event is not _ORIGINAL_COORDINATOR_CLEAR_EVENT:
-            service_clear_event(coordinator, event_name)
-            return
-        self._coordinator_clear_event(coordinator, event_name)
 
     def _should_run_receive_loop(self) -> bool:
         """Return whether the lifecycle currently wants receive-loop execution."""
@@ -349,24 +304,44 @@ class BLEReceiveRecoveryController:
         *,
         coordinator: "ThreadCoordinator",
         wait_timeout: float,
+        wait_for_event: (
+            Callable[["ThreadCoordinator", str, float | None], bool] | None
+        ) = None,
+        check_and_clear_event: (
+            Callable[["ThreadCoordinator", str], bool] | None
+        ) = None,
+        clear_event: Callable[["ThreadCoordinator", str], None] | None = None,
     ) -> tuple[bool, bool]:
         """Wait for read trigger and compute fallback poll mode."""
-        event_signaled = self._coordinator_wait_for_event_compat(
+        wait_for_runtime_event = wait_for_event or (
+            lambda target_coordinator, event_name, timeout: self._coordinator_wait_for_event(
+                target_coordinator,
+                event_name,
+                timeout=timeout,
+            )
+        )
+        check_and_clear_runtime_event = check_and_clear_event or (
+            self._coordinator_check_and_clear_event
+        )
+        clear_runtime_event = clear_event or self._coordinator_clear_event
+
+        event_signaled = wait_for_runtime_event(
             coordinator,
             READ_TRIGGER_EVENT,
-            timeout=wait_timeout,
+            wait_timeout,
         )
         poll_without_notify = False
         ever_connected = self._has_ever_connected_session()
         if not event_signaled:
-            if ever_connected and self._coordinator_check_and_clear_event_compat(
-                coordinator, RECONNECTED_EVENT
+            if ever_connected and check_and_clear_runtime_event(
+                coordinator,
+                RECONNECTED_EVENT,
             ):
                 logger.debug("Detected reconnection, resuming normal operation")
             poll_without_notify = self._should_poll_without_notify()
             return poll_without_notify, poll_without_notify
 
-        self._coordinator_clear_event_compat(coordinator, READ_TRIGGER_EVENT)
+        clear_runtime_event(coordinator, READ_TRIGGER_EVENT)
         return True, poll_without_notify
 
     def _snapshot_client_state(self) -> tuple[BLEClient | None, bool, bool, bool]:
@@ -418,9 +393,19 @@ class BLEReceiveRecoveryController:
         is_connecting: bool,
         publish_pending: bool,
         is_closing: bool,
+        wait_for_event: (
+            Callable[["ThreadCoordinator", str, float | None], bool] | None
+        ) = None,
     ) -> bool:
         """Process current client state and decide whether to break loop."""
         iface = self._iface
+        wait_for_runtime_event = wait_for_event or (
+            lambda target_coordinator, event_name, timeout: self._coordinator_wait_for_event(
+                target_coordinator,
+                event_name,
+                timeout=timeout,
+            )
+        )
         if client is None and is_closing:
             logger.debug("BLE client is None, shutting down")
             self._set_receive_wanted(want_receive=False)
@@ -430,10 +415,10 @@ class BLEReceiveRecoveryController:
             logger.debug(
                 "Skipping BLE read while connect publication is pending verification."
             )
-            self._coordinator_wait_for_event_compat(
+            wait_for_runtime_event(
                 coordinator,
                 RECONNECTED_EVENT,
-                timeout=wait_timeout,
+                wait_timeout,
             )
             return True
 
@@ -445,10 +430,10 @@ class BLEReceiveRecoveryController:
                 "connection establishment" if is_connecting else "auto-reconnect"
             )
             logger.debug("BLE client is None; waiting for %s", wait_reason)
-            self._coordinator_wait_for_event_compat(
+            wait_for_runtime_event(
                 coordinator,
                 RECONNECTED_EVENT,
-                timeout=wait_timeout,
+                wait_timeout,
             )
             return True
 
@@ -934,6 +919,19 @@ class BLEReceiveRecoveryService:
         return BLEReceiveRecoveryController(iface)._wait_for_read_trigger(
             coordinator=coordinator,
             wait_timeout=wait_timeout,
+            wait_for_event=lambda target_coordinator, event_name, timeout: BLEReceiveRecoveryService._coordinator_wait_for_event(  # noqa: E501
+                target_coordinator,
+                event_name,
+                timeout=timeout,
+            ),
+            check_and_clear_event=lambda target_coordinator, event_name: BLEReceiveRecoveryService._coordinator_check_and_clear_event(  # noqa: E501
+                target_coordinator,
+                event_name,
+            ),
+            clear_event=lambda target_coordinator, event_name: BLEReceiveRecoveryService._coordinator_clear_event(  # noqa: E501
+                target_coordinator,
+                event_name,
+            ),
         )
 
     @staticmethod
@@ -997,6 +995,11 @@ class BLEReceiveRecoveryService:
             is_connecting=is_connecting,
             publish_pending=publish_pending,
             is_closing=is_closing,
+            wait_for_event=lambda target_coordinator, event_name, timeout: BLEReceiveRecoveryService._coordinator_wait_for_event(  # noqa: E501
+                target_coordinator,
+                event_name,
+                timeout=timeout,
+            ),
         )
 
     @staticmethod
@@ -1210,12 +1213,3 @@ class BLEReceiveRecoveryService:
             Returns ``None`` after logging or suppressing warning output.
         """
         BLEReceiveRecoveryController(iface).log_empty_read_warning()
-
-
-_ORIGINAL_COORDINATOR_WAIT_FOR_EVENT = (
-    BLEReceiveRecoveryService._coordinator_wait_for_event
-)
-_ORIGINAL_COORDINATOR_CHECK_AND_CLEAR_EVENT = (
-    BLEReceiveRecoveryService._coordinator_check_and_clear_event
-)
-_ORIGINAL_COORDINATOR_CLEAR_EVENT = BLEReceiveRecoveryService._coordinator_clear_event

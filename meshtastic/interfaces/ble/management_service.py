@@ -829,7 +829,7 @@ class BLEManagementCommandsService:
     """Service helpers for BLE management command paths."""
 
     @staticmethod
-    def _resolve_handler(
+    def _handler_for_shim(
         iface: "BLEInterface",
         *,
         ble_client_factory: Callable[..., BLEClient] | None = None,
@@ -858,6 +858,21 @@ class BLEManagementCommandsService:
             connected_elsewhere=connected_elsewhere,
         )
 
+    # COMPAT_STABLE_SHIM: retained for historical monkeypatch/test compatibility.
+    @staticmethod
+    def _resolve_handler(
+        iface: "BLEInterface",
+        *,
+        ble_client_factory: Callable[..., BLEClient] | None = None,
+        connected_elsewhere: Callable[[str | None, object | None], bool] | None = None,
+    ) -> BLEManagementCommandHandler:
+        """Compatibility alias for shim handler resolution."""
+        return BLEManagementCommandsService._handler_for_shim(
+            iface,
+            ble_client_factory=ble_client_factory,
+            connected_elsewhere=connected_elsewhere,
+        )
+
     # COMPAT_STABLE_SHIM: retain historical helper alias for static compatibility tests.
     @staticmethod
     def _make_handler(
@@ -866,8 +881,8 @@ class BLEManagementCommandsService:
         ble_client_factory: Callable[..., BLEClient] | None = None,
         connected_elsewhere: Callable[[str | None, object | None], bool] | None = None,
     ) -> BLEManagementCommandHandler:
-        """Compatibility alias for `_resolve_handler`."""
-        return BLEManagementCommandsService._resolve_handler(
+        """Compatibility alias for shim handler resolution."""
+        return BLEManagementCommandsService._handler_for_shim(
             iface,
             ble_client_factory=ble_client_factory,
             connected_elsewhere=connected_elsewhere,
@@ -899,7 +914,7 @@ class BLEManagementCommandsService:
             Re-raises any startup failure after finishing the management
             operation token.
         """
-        return BLEManagementCommandsService._resolve_handler(
+        return BLEManagementCommandsService._handler_for_shim(
             iface
         ).start_management_phase(address)
 
@@ -933,7 +948,7 @@ class BLEManagementCommandsService:
             If a refreshed existing client disappears or implicit binding
             changes mid-operation.
         """
-        return BLEManagementCommandsService._resolve_handler(
+        return BLEManagementCommandsService._handler_for_shim(
             iface
         ).resolve_management_target(
             address,
@@ -978,7 +993,7 @@ class BLEManagementCommandsService:
         BLEError
             If target ownership has changed or is currently held elsewhere.
         """
-        return BLEManagementCommandsService._resolve_handler(
+        return BLEManagementCommandsService._handler_for_shim(
             iface,
             ble_client_factory=ble_client_factory,
             connected_elsewhere=connected_elsewhere,
@@ -1020,7 +1035,7 @@ class BLEManagementCommandsService:
             Propagates any exception raised by ``command`` after temporary
             client cleanup is attempted.
         """
-        return BLEManagementCommandsService._resolve_handler(iface).execute_with_client(
+        return BLEManagementCommandsService._handler_for_shim(iface).execute_with_client(
             client_to_use=client_to_use,
             temporary_client=temporary_client,
             command=command,
@@ -1065,7 +1080,7 @@ class BLEManagementCommandsService:
             If preconditions fail, target resolution fails, or target ownership
             changes while entering the management gate.
         """
-        return BLEManagementCommandsService._resolve_handler(
+        return BLEManagementCommandsService._handler_for_shim(
             iface,
             ble_client_factory=ble_client_factory,
             connected_elsewhere=connected_elsewhere,
@@ -1097,7 +1112,7 @@ class BLEManagementCommandsService:
         BLEError
             If ``await_timeout`` is not a finite positive real number.
         """
-        return BLEManagementCommandsService._resolve_handler(
+        return BLEManagementCommandsService._handler_for_shim(
             iface
         ).validate_management_await_timeout(await_timeout)
 
@@ -1122,7 +1137,7 @@ class BLEManagementCommandsService:
         BLEError
             If ``timeout`` is not a finite positive real number.
         """
-        return BLEManagementCommandsService._resolve_handler(
+        return BLEManagementCommandsService._handler_for_shim(
             iface
         ).validate_trust_timeout(timeout)
 
@@ -1154,7 +1169,7 @@ class BLEManagementCommandsService:
         BLEError
             If ``connect_timeout`` is invalid for orchestrated connection logic.
         """
-        BLEManagementCommandsService._resolve_handler(
+        BLEManagementCommandsService._handler_for_shim(
             iface
         ).validate_connect_timeout_override(
             connect_timeout,
@@ -1193,7 +1208,7 @@ class BLEManagementCommandsService:
         -------
         None
         """
-        BLEManagementCommandsService._resolve_handler(
+        BLEManagementCommandsService._handler_for_shim(
             iface,
             ble_client_factory=ble_client_factory,
             connected_elsewhere=connected_elsewhere,
@@ -1232,7 +1247,7 @@ class BLEManagementCommandsService:
         -------
         None
         """
-        BLEManagementCommandsService._resolve_handler(
+        BLEManagementCommandsService._handler_for_shim(
             iface,
             ble_client_factory=ble_client_factory,
             connected_elsewhere=connected_elsewhere,
@@ -1283,7 +1298,7 @@ class BLEManagementCommandsService:
         BLEError
             If command execution fails, times out, or returns non-zero status.
         """
-        BLEManagementCommandsService._resolve_handler(
+        BLEManagementCommandsService._handler_for_shim(
             iface
         ).run_bluetoothctl_trust_command(
             bluetoothctl_path,
@@ -1341,7 +1356,7 @@ class BLEManagementCommandsService:
             If address validation, environment preconditions, target resolution,
             or command execution fails.
         """
-        BLEManagementCommandsService._resolve_handler(iface).trust(
+        BLEManagementCommandsService._handler_for_shim(iface).trust(
             address,
             timeout=timeout,
             sys_module=sys_module,
