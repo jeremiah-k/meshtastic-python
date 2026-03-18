@@ -58,6 +58,8 @@ class BLEManagementCommandsService:
     @staticmethod
     def _is_handler_like(candidate: object) -> bool:
         """Return whether ``candidate`` exposes the management handler API surface."""
+        if _is_unconfigured_mock_member(candidate):
+            return False
         required_methods = (
             "resolve_target_address_for_management",
             "management_target_gate",
@@ -81,7 +83,11 @@ class BLEManagementCommandsService:
             "run_bluetoothctl_trust_command",
             "trust",
         )
-        return all(callable(getattr(candidate, method_name, None)) for method_name in required_methods)
+        for method_name in required_methods:
+            method = getattr(candidate, method_name, None)
+            if not callable(method) or _is_unconfigured_mock_callable(method):
+                return False
+        return True
 
     @staticmethod
     def _handler_for_shim(

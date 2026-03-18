@@ -498,6 +498,87 @@ def test_management_helpers_cover_factory_and_target_edge_paths(
         fresh_iface.close()
 
 
+def test_management_shim_handler_resolution_preserves_minimal_iface_double(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Shim handler resolution should keep usable iface doubles and reject unconfigured mocks."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    try:
+        minimal_handler = SimpleNamespace(
+            execute_management_command=lambda *_args, **_kwargs: "ok"
+        )
+        iface._get_management_command_handler = lambda: minimal_handler
+        resolved = BLEManagementCommandsService._handler_for_shim(iface)
+        assert resolved is minimal_handler
+        assert BLEManagementCommandsService._has_required_handler_entrypoint(
+            minimal_handler
+        )
+
+        iface._get_management_command_handler = lambda: MagicMock()
+        fallback_handler = BLEManagementCommandsService._handler_for_shim(iface)
+        assert isinstance(fallback_handler, BLEManagementCommandHandler)
+        assert (
+            BLEManagementCommandsService._has_required_handler_entrypoint(object())
+            is False
+        )
+    finally:
+        iface.close()
+
+
+def test_management_shim_default_connected_elsewhere_and_handler_like(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Management shim should cover strict handler-like positives and default ownership probe."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    try:
+        required_methods = (
+            "resolve_target_address_for_management",
+            "management_target_gate",
+            "get_management_client_if_available",
+            "get_management_client_for_target",
+            "get_current_implicit_management_binding_locked",
+            "get_current_implicit_management_address_locked",
+            "revalidate_implicit_management_target",
+            "start_management_phase",
+            "resolve_management_target",
+            "acquire_client_for_target",
+            "execute_with_client",
+            "execute_management_command",
+            "begin_management_operation_locked",
+            "finish_management_operation",
+            "validate_management_await_timeout",
+            "validate_trust_timeout",
+            "validate_connect_timeout_override",
+            "pair",
+            "unpair",
+            "run_bluetoothctl_trust_command",
+            "trust",
+        )
+        handler_like_candidate = SimpleNamespace(
+            **{
+                method_name: (lambda *_args, **_kwargs: None)
+                for method_name in required_methods
+            }
+        )
+        assert BLEManagementCommandsService._is_handler_like(handler_like_candidate)
+
+        connected_elsewhere_calls: list[tuple[str | None, object | None]] = []
+        monkeypatch.setattr(
+            "meshtastic.interfaces.ble.management_compat_service._is_currently_connected_elsewhere",
+            lambda key, owner=None: (
+                connected_elsewhere_calls.append((key, owner)),
+                True,
+            )[1],
+        )
+        iface._get_management_command_handler = lambda: None
+        resolved_handler = BLEManagementCommandsService._handler_for_shim(iface)
+        assert isinstance(resolved_handler, BLEManagementCommandHandler)
+        assert resolved_handler._connected_elsewhere("device-key", iface) is True
+        assert connected_elsewhere_calls == [("device-key", iface)]
+    finally:
+        iface.close()
+
+
 def test_resolve_management_target_existing_client_explicit_address_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

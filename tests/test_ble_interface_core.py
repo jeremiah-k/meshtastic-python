@@ -3529,6 +3529,69 @@ def test_emit_verified_connection_side_effects_sets_reconnected_event(
     iface.close()
 
 
+def test_thread_event_dispatcher_resolution_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Thread-event dispatcher resolution should cover class/instance/legacy/missing hooks."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    original_close = iface.close
+    try:
+        class_calls: list[str] = []
+
+        class _ClassCoordinator:
+            def set_event(self, event_name: str) -> None:
+                class_calls.append(event_name)
+
+        class_dispatch = BLEInterface._resolve_thread_event_dispatcher(
+            _ClassCoordinator()
+        )
+        assert callable(class_dispatch)
+        cast(Callable[[str], None], class_dispatch)("class-evt")
+        assert class_calls == ["class-evt"]
+        iface.thread_coordinator = _ClassCoordinator()
+        iface._set_thread_event("class-evt-2")
+        assert class_calls == ["class-evt", "class-evt-2"]
+
+        instance_calls: list[str] = []
+        instance_coordinator = SimpleNamespace(
+            set_event=lambda event_name: instance_calls.append(event_name)
+        )
+        instance_dispatch = BLEInterface._resolve_thread_event_dispatcher(
+            instance_coordinator
+        )
+        assert callable(instance_dispatch)
+        cast(Callable[[str], None], instance_dispatch)("instance-evt")
+        assert instance_calls == ["instance-evt"]
+
+        legacy_calls: list[str] = []
+        legacy_coordinator = SimpleNamespace(
+            _set_event=lambda event_name: legacy_calls.append(event_name)
+        )
+        legacy_dispatch = BLEInterface._resolve_thread_event_dispatcher(
+            legacy_coordinator
+        )
+        assert callable(legacy_dispatch)
+        cast(Callable[[str], None], legacy_dispatch)("legacy-evt")
+        assert legacy_calls == ["legacy-evt"]
+
+        missing_coordinator = SimpleNamespace()
+        assert BLEInterface._resolve_thread_event_dispatcher(missing_coordinator) is None
+
+        debug_messages: list[str] = []
+        monkeypatch.setattr(
+            "meshtastic.interfaces.ble.interface.logger.debug",
+            lambda message, *_args, **_kwargs: debug_messages.append(cast(str, message)),
+        )
+        iface.thread_coordinator = missing_coordinator
+        iface._set_thread_event("missing-evt")
+        assert any(
+            "No callable thread event dispatcher available" in message
+            for message in debug_messages
+        )
+    finally:
+        original_close()
+
+
 def test_concurrent_connect_and_disconnect_do_not_deadlock(
     monkeypatch: pytest.MonkeyPatch, clear_registry: Any
 ) -> None:
@@ -6515,7 +6578,7 @@ def test_register_notifications_safe_call_inline_fallback_when_safe_execute_unco
             self.callbacks: dict[str, Callable[[Any, bytes], None]] = {}
 
         def has_characteristic(self, uuid: str) -> bool:
-            return uuid in {LOGRADIO_UUID, FROMNUM_UUID}
+            return uuid in {LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, FROMNUM_UUID}
 
         def start_notify(self, *args: object, **kwargs: object) -> None:
             _ = kwargs
@@ -6568,7 +6631,7 @@ def test_register_notifications_safe_execute_fallback_still_invokes_handler(
             self.callbacks: dict[str, Callable[[Any, bytes], None]] = {}
 
         def has_characteristic(self, uuid: str) -> bool:
-            return uuid in {LOGRADIO_UUID, FROMNUM_UUID}
+            return uuid in {LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, FROMNUM_UUID}
 
         def start_notify(self, *args: object, **kwargs: object) -> None:
             _ = kwargs
@@ -6611,6 +6674,97 @@ def test_register_notifications_safe_execute_fallback_still_invokes_handler(
         assert log_calls == [("sender", b"log")]
         assert len(safe_execute_calls) == 2
         error_hook.assert_not_called()
+    finally:
+        iface.close()
+
+
+def test_register_notifications_reuses_cached_wrapper_with_latest_handlers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cached notification wrappers should dispatch to latest handlers after re-registration."""
+
+    class _ClientWithCallbacks(DummyClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.callbacks: dict[str, Callable[[Any, bytes], None]] = {}
+
+        def has_characteristic(self, uuid: str) -> bool:
+            return uuid in {LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, FROMNUM_UUID}
+
+        def start_notify(self, *args: object, **kwargs: object) -> None:
+            _ = kwargs
+            if len(args) >= 2:
+                self.callbacks[str(args[0])] = cast(
+                    Callable[[Any, bytes], None], args[1]
+                )
+
+    client = _ClientWithCallbacks()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    log_handler_calls: list[tuple[str, bytes]] = []
+    legacy_handler_calls: list[tuple[str, bytes]] = []
+    from_num_calls: list[tuple[str, bytes]] = []
+    try:
+        monkeypatch.setattr(
+            iface,
+            "_log_radio_handler",
+            lambda _sender, payload: log_handler_calls.append(("first", payload)),
+            raising=True,
+        )
+        monkeypatch.setattr(
+            iface,
+            "_legacy_log_radio_handler",
+            lambda _sender, payload: legacy_handler_calls.append(("first", payload)),
+            raising=True,
+        )
+        monkeypatch.setattr(
+            iface,
+            "_from_num_handler",
+            lambda _sender, payload: from_num_calls.append(("first", bytes(payload))),
+            raising=True,
+        )
+        iface._register_notifications(cast(BLEClient, client))
+        first_wrapper = client.callbacks[LOGRADIO_UUID]
+        first_legacy_wrapper = client.callbacks[LEGACY_LOGRADIO_UUID]
+        first_from_num_wrapper = client.callbacks[FROMNUM_UUID]
+        first_wrapper("sender", b"one")
+        first_legacy_wrapper("sender", b"legacy-one")
+        first_from_num_wrapper("sender", b"fromnum-one")
+
+        monkeypatch.setattr(
+            iface,
+            "_log_radio_handler",
+            lambda _sender, payload: log_handler_calls.append(("second", payload)),
+            raising=True,
+        )
+        monkeypatch.setattr(
+            iface,
+            "_legacy_log_radio_handler",
+            lambda _sender, payload: legacy_handler_calls.append(("second", payload)),
+            raising=True,
+        )
+        monkeypatch.setattr(
+            iface,
+            "_from_num_handler",
+            lambda _sender, payload: from_num_calls.append(("second", bytes(payload))),
+            raising=True,
+        )
+        iface._register_notifications(cast(BLEClient, client))
+        assert client.callbacks[LOGRADIO_UUID] is first_wrapper
+        assert client.callbacks[LEGACY_LOGRADIO_UUID] is first_legacy_wrapper
+        assert client.callbacks[FROMNUM_UUID] is first_from_num_wrapper
+        client.callbacks[LOGRADIO_UUID]("sender", b"two")
+        client.callbacks[LEGACY_LOGRADIO_UUID]("sender", b"legacy-two")
+        client.callbacks[FROMNUM_UUID]("sender", b"fromnum-two")
+
+        assert log_handler_calls == [("first", b"one"), ("second", b"two")]
+        assert legacy_handler_calls == [
+            ("first", b"legacy-one"),
+            ("second", b"legacy-two"),
+        ]
+        assert from_num_calls == [
+            ("first", b"fromnum-one"),
+            ("second", b"fromnum-two"),
+        ]
     finally:
         iface.close()
 
