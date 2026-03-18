@@ -1,7 +1,7 @@
 """Lifecycle compatibility shim service for BLE."""
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, NoReturn
+from typing import TYPE_CHECKING, cast, NoReturn
 
 from bleak import BleakClient as BleakRootClient
 
@@ -908,9 +908,23 @@ class BLELifecycleService:
             ``True`` when any non-``None`` key is currently owned by another
             interface; otherwise ``False``.
         """
+        from meshtastic.interfaces.ble import lifecycle_service as lifecycle_service_mod
+
+        connected_elsewhere = getattr(
+            lifecycle_service_mod,
+            "_is_currently_connected_elsewhere",
+            _is_currently_connected_elsewhere,
+        )
+        if not callable(connected_elsewhere):
+            connected_elsewhere = _is_currently_connected_elsewhere
+        connected_elsewhere_fn = cast(
+            Callable[[str | None, object | None], bool],
+            connected_elsewhere,
+        )
+
         return any(
             key is not None
-            and _is_currently_connected_elsewhere(key, owner=iface)
+            and connected_elsewhere_fn(key, iface)
             for key in keys
         )
 

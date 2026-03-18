@@ -6611,10 +6611,10 @@ def test_register_notifications_retries_fromnum_notify_acquired_once(
     iface.close()
 
 
-def test_register_notifications_re_raises_non_notify_acquired_dbus_error(
+def test_register_notifications_falls_back_on_non_notify_acquired_dbus_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """_register_notifications should re-raise FROMNUM start_notify DBus errors not matching Notify acquired."""
+    """_register_notifications should fall back to polling on non-Notify acquired DBus errors."""
 
     class MockClientFatalFromNumNotify(DummyClient):
         """Mock client that always raises a non-recoverable DBus notify error."""
@@ -6633,10 +6633,11 @@ def test_register_notifications_re_raises_non_notify_acquired_dbus_error(
     client = MockClientFatalFromNumNotify()
     iface = _build_interface(monkeypatch, client, start_receive_thread=False)
 
-    with pytest.raises(BleakDBusError):
-        iface._register_notifications(cast(BLEClient, client))
+    iface._register_notifications(cast(BLEClient, client))
 
     assert client.stop_notify_calls == []
+    with iface._state_lock:
+        assert iface._fromnum_notify_enabled is False
 
     iface.close()
 

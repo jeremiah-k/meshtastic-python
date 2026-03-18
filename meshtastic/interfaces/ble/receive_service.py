@@ -88,18 +88,30 @@ class BLEReceiveRecoveryController:
                 return bool(is_connection_closing())
         iface = self._iface
         with iface._state_lock:
-            raw_is_closing = getattr(iface._state_manager, "is_closing", False)
-            if _is_unconfigured_mock_member(raw_is_closing):
-                state_is_closing = False
-            elif isinstance(raw_is_closing, bool):
-                state_is_closing = raw_is_closing
-            else:
-                legacy_is_closing = getattr(iface._state_manager, "_is_closing", False)
-                if _is_unconfigured_mock_member(legacy_is_closing):
+            state_manager = getattr(iface, "_state_manager", None)
+            if state_manager is None:
+                raw_is_closing = getattr(iface, "_is_connection_closing", False)
+                if _is_unconfigured_mock_member(raw_is_closing):
                     state_is_closing = False
+                elif callable(raw_is_closing) and not _is_unconfigured_mock_callable(
+                    raw_is_closing
+                ):
+                    state_is_closing = bool(raw_is_closing())
                 else:
-                    state_is_closing = bool(legacy_is_closing)
-            return state_is_closing or iface._closed
+                    state_is_closing = bool(raw_is_closing)
+            else:
+                raw_is_closing = getattr(state_manager, "is_closing", False)
+                if _is_unconfigured_mock_member(raw_is_closing):
+                    state_is_closing = False
+                elif isinstance(raw_is_closing, bool):
+                    state_is_closing = raw_is_closing
+                else:
+                    legacy_is_closing = getattr(state_manager, "_is_closing", False)
+                    if _is_unconfigured_mock_member(legacy_is_closing):
+                        state_is_closing = False
+                    else:
+                        state_is_closing = bool(legacy_is_closing)
+            return state_is_closing or bool(getattr(iface, "_closed", False))
 
     @staticmethod
     def _coordinator_wait_for_event(
