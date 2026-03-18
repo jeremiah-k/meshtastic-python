@@ -164,17 +164,21 @@ class BLEShutdownLifecycleCoordinator:
         self,
         *,
         wake_waiting_threads: Callable[..., None] | None = None,
-        join_thread: Callable[[object, float | None], None] | None = None,
+        join_thread: Callable[..., None] | None = None,
     ) -> None:
         """Wake and join receive thread, then clear cached thread reference."""
         iface = self._iface
         wake_waiters = wake_waiting_threads or self._thread_access.wake_waiting_threads
-        join_runtime_thread = join_thread or (
-            lambda thread, timeout: self._thread_access.join_thread(
-                thread,
-                timeout=timeout,
-            )
-        )
+        if join_thread is None:
+            join_runtime_thread = self._thread_access.join_thread
+        else:
+
+            def join_runtime_thread(thread: object, *, timeout: float | None) -> None:
+                try:
+                    join_thread(thread, timeout=timeout)
+                except TypeError:
+                    join_thread(thread, timeout)
+
         wake_waiters(READ_TRIGGER_EVENT, RECONNECTED_EVENT)
         receive_thread = iface._receiveThread
         if receive_thread is None:
@@ -196,7 +200,10 @@ class BLEShutdownLifecycleCoordinator:
         ) or receive_thread is threading.current_thread():
             logger.debug("close() called from receive thread; skipping self-join")
         else:
-            join_runtime_thread(receive_thread, RECEIVE_THREAD_JOIN_TIMEOUT)
+            join_runtime_thread(
+                receive_thread,
+                timeout=RECEIVE_THREAD_JOIN_TIMEOUT,
+            )
             _, thread_is_alive = _thread_start_probe(receive_thread)
             if thread_is_alive:
                 logger.warning(

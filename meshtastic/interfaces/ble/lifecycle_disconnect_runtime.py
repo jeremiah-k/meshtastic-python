@@ -120,8 +120,10 @@ class BLEDisconnectLifecycleCoordinator:
         address_for_registry = (
             getattr(previous_client, "address", None)
             if previous_client is not None
-            else (address if address != "unknown" else iface.address)
+            else None
         )
+        if not address_for_registry or address_for_registry == "unknown":
+            address_for_registry = address if address != "unknown" else iface.address
         addr_disconnect_key = _addr_key(address_for_registry)
         return (
             iface._sorted_address_keys(addr_disconnect_key, alias_key),
@@ -243,6 +245,7 @@ class BLEDisconnectLifecycleCoordinator:
                 early_return=None,
                 previous_client=previous_client,
                 client_at_start=client_at_start,
+                session_epoch=getattr(iface, "_connection_session_epoch", 0),
                 address=address,
                 disconnect_keys=tuple(disconnect_keys),
                 should_reconnect=should_reconnect,
@@ -327,31 +330,38 @@ class BLEDisconnectLifecycleCoordinator:
         plan: _DisconnectPlan,
         source: str,
         close_previous_client_async: Callable[["BLEClient | None"], None] | None = None,
-        clear_events: Callable[[tuple[str, ...]], None] | None = None,
+        clear_events: Callable[..., None] | None = None,
     ) -> bool:
         """Execute disconnect publication/cleanup side effects."""
         iface = self._iface
         close_previous = (
             close_previous_client_async or self._close_previous_client_async
         )
-        clear_runtime_events = clear_events or (
-            lambda events: self._thread_access.clear_events(*events)
-        )
+        clear_runtime_events = clear_events or self._thread_access.clear_events
         disconnect_keys = list(plan.disconnect_keys)
         skip_side_effects = False
         stale_disconnect_keys: list[str] = []
         with iface._state_lock:
             active_client = iface.client
-            if active_client is not None and active_client is not plan.client_at_start:
-                active_keys = set(
-                    iface._sorted_address_keys(
-                        _addr_key(getattr(active_client, "address", None)),
-                        iface._connection_alias_key,
-                    )
+            active_session_epoch = getattr(iface, "_connection_session_epoch", 0)
+            if (
+                active_session_epoch != plan.session_epoch
+                or (
+                    active_client is not None and active_client is not plan.client_at_start
                 )
-                stale_disconnect_keys = [
-                    key for key in disconnect_keys if key not in active_keys
-                ]
+            ):
+                if active_client is not None:
+                    active_keys = set(
+                        iface._sorted_address_keys(
+                            _addr_key(getattr(active_client, "address", None)),
+                            iface._connection_alias_key,
+                        )
+                    )
+                    stale_disconnect_keys = [
+                        key for key in disconnect_keys if key not in active_keys
+                    ]
+                else:
+                    stale_disconnect_keys = list(disconnect_keys)
                 skip_side_effects = True
 
         if skip_side_effects:
@@ -381,7 +391,7 @@ class BLEDisconnectLifecycleCoordinator:
 
         if plan.should_reconnect:
             if plan.should_schedule_reconnect:
-                clear_runtime_events((READ_TRIGGER_EVENT, RECONNECTED_EVENT))
+                clear_runtime_events(READ_TRIGGER_EVENT, RECONNECTED_EVENT)
                 self.schedule_auto_reconnect()
             return True
 
@@ -399,7 +409,7 @@ class BLEDisconnectLifecycleCoordinator:
         transition_to_disconnected: Callable[[], bool] | None = None,
         reset_to_disconnected: Callable[[], bool] | None = None,
         close_previous_client_async: Callable[["BLEClient | None"], None] | None = None,
-        clear_events: Callable[[tuple[str, ...]], None] | None = None,
+        clear_events: Callable[..., None] | None = None,
     ) -> bool:
         """Handle disconnect orchestration and reconnect decisions."""
         iface = self._iface

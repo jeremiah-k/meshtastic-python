@@ -33,12 +33,23 @@ class BLECompatibilityEventPublisher:
         self._iface = iface
         self._publishing_thread_provider = publishing_thread_provider
 
+    def _resolve_publishing_thread(self) -> object | None:
+        """Return publishing thread when available, else ``None`` on provider failure."""
+        try:
+            return self._publishing_thread_provider()
+        except Exception:  # noqa: BLE001 - teardown path must stay best effort
+            logger.debug(
+                "Error resolving publishing thread for compatibility publisher.",
+                exc_info=True,
+            )
+            return None
+
     def wait_for_disconnect_notifications(self, timeout: float | None = None) -> None:
         """Wait for disconnect-notification queue flush on the bound interface."""
         BLECompatibilityEventService.wait_for_disconnect_notifications(
             self._iface,
             timeout,
-            publishing_thread=self._publishing_thread_provider(),
+            publishing_thread=self._resolve_publishing_thread(),
         )
 
     def drain_publish_queue(self, flush_event: Event) -> None:
@@ -46,7 +57,7 @@ class BLECompatibilityEventPublisher:
         BLECompatibilityEventService.drain_publish_queue(
             self._iface,
             flush_event,
-            publishing_thread=self._publishing_thread_provider(),
+            publishing_thread=self._resolve_publishing_thread(),
         )
 
     def publish_connection_status(self, *, connected: bool) -> None:
@@ -54,7 +65,7 @@ class BLECompatibilityEventPublisher:
         BLECompatibilityEventService.publish_connection_status(
             self._iface,
             connected=connected,
-            publishing_thread=self._publishing_thread_provider(),
+            publishing_thread=self._resolve_publishing_thread(),
         )
 
     # COMPAT_STABLE_SHIM: retained bound alias for compatibility callers.
@@ -80,7 +91,7 @@ class BLECompatibilityEventPublisher:
         BLECompatibilityEventService.publish_connection_status_legacy(
             self._iface,
             connected,
-            publishing_thread=self._publishing_thread_provider(),
+            publishing_thread=self._resolve_publishing_thread(),
         )
 
 

@@ -26,6 +26,7 @@ from meshtastic.interfaces.ble.lifecycle_shutdown_runtime import (
     BLEShutdownLifecycleCoordinator,
 )
 from meshtastic.interfaces.ble.state import ConnectionState
+from meshtastic.interfaces.ble.utils import _is_unconfigured_mock_callable
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
@@ -160,25 +161,59 @@ class BLELifecycleController:
         )
 
         iface = self._iface
+        is_closing = getattr(iface, "_state_manager_is_closing", None)
+        if not callable(is_closing) or _is_unconfigured_mock_callable(is_closing):
+            def is_closing() -> bool:
+                return lifecycle_service_mod.BLELifecycleService._state_manager_is_closing(
+                    iface
+                )
+
+        reset_to_disconnected = getattr(iface, "_state_manager_reset_to_disconnected", None)
+        if not callable(reset_to_disconnected) or _is_unconfigured_mock_callable(
+            reset_to_disconnected
+        ):
+            def reset_to_disconnected() -> bool:
+                return lifecycle_service_mod.BLELifecycleService._state_manager_reset_to_disconnected(  # noqa: E501
+                    iface
+                )
+
+        current_state = getattr(iface, "_state_manager_current_state", None)
+        if not callable(current_state) or _is_unconfigured_mock_callable(current_state):
+            def current_state() -> ConnectionState:
+                return lifecycle_service_mod.BLELifecycleService._state_manager_current_state(  # noqa: E501
+                    iface
+                )
+
+        transition_to_state = getattr(iface, "_state_manager_transition_to", None)
+        if not callable(transition_to_state) or _is_unconfigured_mock_callable(
+            transition_to_state
+        ):
+            def transition_to_state(state: ConnectionState) -> bool:
+                return lifecycle_service_mod.BLELifecycleService._state_manager_transition_to(  # noqa: E501
+                    iface,
+                    state,
+                )
+
+        safe_cleanup = getattr(iface, "_error_handler_safe_cleanup", None)
+        if not callable(safe_cleanup) or _is_unconfigured_mock_callable(safe_cleanup):
+            def safe_cleanup(cleanup: Callable[[], object], operation_name: str) -> None:
+                lifecycle_service_mod.BLELifecycleService._error_handler_safe_cleanup(  # noqa: E501
+                    iface,
+                    cleanup,
+                    operation_name,
+                )
+
         self._connection_ownership._discard_invalidated_connected_client(
             client,
             restore_address=restore_address,
             restore_last_connection_request=restore_last_connection_request,
-            is_closing_getter=lambda: lifecycle_service_mod.BLELifecycleService._state_manager_is_closing(  # noqa: E501
-                iface
+            is_closing_getter=lambda: is_closing(),
+            reset_to_disconnected=lambda: reset_to_disconnected(),
+            current_state_getter=lambda: current_state(),
+            transition_to_disconnected=lambda: transition_to_state(
+                ConnectionState.DISCONNECTED
             ),
-            reset_to_disconnected=lambda: lifecycle_service_mod.BLELifecycleService._state_manager_reset_to_disconnected(  # noqa: E501
-                iface
-            ),
-            current_state_getter=lambda: lifecycle_service_mod.BLELifecycleService._state_manager_current_state(  # noqa: E501
-                iface
-            ),
-            transition_to_disconnected=lambda: lifecycle_service_mod.BLELifecycleService._state_manager_transition_to(  # noqa: E501
-                iface,
-                ConnectionState.DISCONNECTED,
-            ),
-            safe_cleanup=lambda cleanup, operation_name: lifecycle_service_mod.BLELifecycleService._error_handler_safe_cleanup(  # noqa: E501
-                iface,
+            safe_cleanup=lambda cleanup, operation_name: safe_cleanup(
                 cleanup,
                 operation_name,
             ),

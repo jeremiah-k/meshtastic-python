@@ -137,7 +137,8 @@ class BLEReceiveRecoveryController:
                     raw_is_closing
                 ):
                     try:
-                        state_is_closing = bool(raw_is_closing())
+                        result = raw_is_closing()
+                        state_is_closing = result if isinstance(result, bool) else False
                     except Exception:  # noqa: BLE001 - closing probe must remain best effort
                         state_is_closing = False
                 elif isinstance(raw_is_closing, bool):
@@ -150,7 +151,8 @@ class BLEReceiveRecoveryController:
                         legacy_is_closing
                     ):
                         try:
-                            state_is_closing = bool(legacy_is_closing())
+                            result = legacy_is_closing()
+                            state_is_closing = result if isinstance(result, bool) else False
                         except Exception:  # noqa: BLE001 - closing probe must remain best effort
                             state_is_closing = False
                     elif isinstance(legacy_is_closing, bool):
@@ -162,7 +164,8 @@ class BLEReceiveRecoveryController:
                 closed = False
             elif callable(raw_closed) and not _is_unconfigured_mock_callable(raw_closed):
                 try:
-                    closed = bool(raw_closed())
+                    result = raw_closed()
+                    closed = result if isinstance(result, bool) else False
                 except Exception:  # noqa: BLE001 - closing probe must remain best effort
                     closed = False
             elif isinstance(raw_closed, bool):

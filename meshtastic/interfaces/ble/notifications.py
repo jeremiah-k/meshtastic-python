@@ -260,14 +260,50 @@ class NotificationManager:
     def subscribe(
         self, characteristic: str, callback: Callable[[Any, Any], None]
     ) -> int:
-        """Public wrapper for subscription tracking."""
+        """Track a notification callback for a BLE characteristic.
+
+        Parameters
+        ----------
+        characteristic : str
+            BLE characteristic identifier (e.g., UUID string).
+        callback : Callable[[Any, Any], None]
+            Function invoked when a notification arrives.
+
+        Returns
+        -------
+        int
+            Unique token identifying the tracked subscription.
+        """
         return self._subscribe(characteristic, callback)
 
     def get_callback(
         self, characteristic: str
     ) -> Callable[[Any, Any], None] | None:
-        """Public wrapper for callback lookup."""
+        """Retrieve callback currently registered for a BLE characteristic.
+
+        Parameters
+        ----------
+        characteristic : str
+            BLE characteristic identifier to look up.
+
+        Returns
+        -------
+        Callable[[Any, Any], None] | None
+            Registered callback for ``characteristic`` or ``None`` when absent.
+        """
         return self._get_callback(characteristic)
+
+    def cleanup_all(self) -> None:
+        """Clear all tracked BLE notification subscriptions and callbacks."""
+        self._cleanup_all()
+
+    def unsubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
+        """Stop notifications for every characteristic currently tracked."""
+        self._unsubscribe_all(client, timeout=timeout)
+
+    def resubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
+        """Resubscribe tracked notifications for the active client."""
+        self._resubscribe_all(client, timeout=timeout)
 
 
 class BLENotificationDispatcher:

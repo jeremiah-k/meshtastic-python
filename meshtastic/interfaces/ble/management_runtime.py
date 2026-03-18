@@ -135,10 +135,9 @@ def _is_blank_or_malformed_address_like(address: str | None) -> bool:
         return False
     if ":" not in stripped_address:
         if all(char in "0123456789abcdefABCDEF" for char in stripped_address):
-            return (
-                len(stripped_address) == 12
-                and _HEX_MAC_NO_SEPARATOR_RE.fullmatch(stripped_address) is None
-            )
+            if len(stripped_address) != 12:
+                return False
+            return _HEX_MAC_NO_SEPARATOR_RE.fullmatch(stripped_address) is None
         return False
     # Treat colon-containing identifiers as malformed only when they look
     # like hex/MAC text but fail strict MAC validation.
@@ -739,8 +738,9 @@ class BLEManagementCommandHandler:
         self,
         bluetoothctl_path: str,
         canonical_address: str,
-        validated_timeout: float,
+        validated_timeout: float | None = None,
         *,
+        timeout: float | None = None,
         subprocess_module: object,
         trust_hex_blob_re: re.Pattern[str],
         trust_token_re: re.Pattern[str],
@@ -748,6 +748,11 @@ class BLEManagementCommandHandler:
     ) -> None:
         """Run bluetoothctl trust command and map failures to BLEError."""
         iface = self._iface
+        command_timeout = timeout if timeout is not None else validated_timeout
+        if command_timeout is None:
+            raise TypeError(
+                "run_bluetoothctl_trust_command requires timeout or validated_timeout"
+            )
 
         def _sanitize_trust_command_output(output: str) -> str:
             sanitized = " ".join(output.splitlines())
@@ -766,7 +771,7 @@ class BLEManagementCommandHandler:
         logger.debug(
             "Running bluetoothctl trust command: %s (timeout=%.1fs)",
             [bluetoothctl_path, "trust", canonical_address],
-            validated_timeout,
+            command_timeout,
         )
         timeout_exc = getattr(subprocess_module, "TimeoutExpired", None)
         timeout_exc_type = (
@@ -783,7 +788,7 @@ class BLEManagementCommandHandler:
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=validated_timeout,
+                timeout=command_timeout,
             )
         except (
             Exception
@@ -791,7 +796,7 @@ class BLEManagementCommandHandler:
             if isinstance(exc, timeout_exc_type):
                 raise iface.BLEError(
                     ERROR_TRUST_COMMAND_TIMEOUT.format(
-                        timeout=validated_timeout, address=canonical_address
+                        timeout=command_timeout, address=canonical_address
                     )
                 ) from exc
             detail = _sanitize_trust_command_output(str(exc))
@@ -879,7 +884,7 @@ class BLEManagementCommandHandler:
                 self.run_bluetoothctl_trust_command(
                     bluetoothctl_path,
                     canonical_address,
-                    validated_timeout,
+                    timeout=validated_timeout,
                     subprocess_module=subprocess_module,
                     trust_hex_blob_re=trust_hex_blob_re,
                     trust_token_re=trust_token_re,

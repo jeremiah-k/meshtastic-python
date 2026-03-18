@@ -376,24 +376,31 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         prior_ever_connected = snapshot.prior_ever_connected
 
         should_publish_connected = False
+        publish_claimed = False
         with iface._state_lock:
             still_owned, is_closing = get_connected_status_locked(connected_client)
             if still_owned and not is_closing and not iface._client_publish_pending:
                 iface._client_publish_pending = True
                 iface._client_replacement_pending = False
-            if still_owned and not is_closing:
+                publish_claimed = True
+            if still_owned and not is_closing and publish_claimed:
                 should_publish_connected = True
         snapshot = snapshot_provider(
             connected_client,
             connected_device_key,
             connection_alias_key,
         )
+        if not should_publish_connected:
+            if still_owned and not is_closing and not publish_claimed:
+                return
+            _raise_invalidated(snapshot)
         publish_committed = False
         if should_publish_connected:
             with iface._state_lock:
                 still_owned, is_closing = get_connected_status_locked(connected_client)
                 if (
-                    snapshot.still_owned
+                    publish_claimed
+                    and snapshot.still_owned
                     and not snapshot.is_closing
                     and not snapshot.lost_gate_ownership
                     and still_owned

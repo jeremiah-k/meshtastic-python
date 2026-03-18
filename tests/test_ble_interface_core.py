@@ -5111,7 +5111,7 @@ def test_start_receive_thread_pending_marker_allows_later_restart(
         thread_two = SimpleNamespace(
             name="BLEReceivePendingTwo",
             ident=42,
-            is_alive=lambda: False,
+            is_alive=lambda: True,
         )
         created_threads = [thread_one, thread_two]
         monkeypatch.setattr(
@@ -5130,9 +5130,16 @@ def test_start_receive_thread_pending_marker_allows_later_restart(
         )
         monotonic_values = iter([100.0, 100.2, 101.6, 101.7])
         original_monotonic = time.monotonic
+
+        def _monotonic() -> float:
+            try:
+                return next(monotonic_values)
+            except StopIteration:
+                return original_monotonic()
+
         monkeypatch.setattr(
             "meshtastic.interfaces.ble.lifecycle_receive_runtime.time.monotonic",
-            lambda: next(monotonic_values, original_monotonic()),
+            _monotonic,
         )
 
         BLELifecycleService._start_receive_thread(iface, name="BLEReceivePendingOne")
@@ -5149,6 +5156,44 @@ def test_start_receive_thread_pending_marker_allows_later_restart(
         assert start_calls == [thread_one, thread_two]
         assert iface._receiveThread is thread_two
         assert iface._receive_start_pending is False
+    finally:
+        iface.close()
+
+
+def test_start_receive_thread_ident_only_probe_keeps_pending_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ident-only start probes should not clear pending marker or recovery attempts."""
+    from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
+
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    try:
+        with iface._state_lock:
+            iface._want_receive = True
+            iface._receive_recovery_attempts = 4
+        thread_like = SimpleNamespace(
+            name="BLEReceiveIdentOnly",
+            ident=101,
+            is_alive=lambda: False,
+        )
+        monkeypatch.setattr(
+            iface.thread_coordinator,
+            "_create_thread",
+            lambda **_kwargs: thread_like,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            iface.thread_coordinator,
+            "_start_thread",
+            lambda _thread: None,
+            raising=True,
+        )
+
+        BLELifecycleService._start_receive_thread(iface, name="BLEReceiveIdentOnly")
+
+        assert iface._receiveThread is thread_like
+        assert iface._receive_start_pending is True
+        assert iface._receive_recovery_attempts == 4
     finally:
         iface.close()
 

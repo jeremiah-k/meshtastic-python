@@ -350,6 +350,8 @@ class BLEInterface(MeshInterface):
         self._ever_connected = (
             False  # Track first successful connection to tune logging
         )
+        # Monotonic session counter used to suppress stale disconnect side effects.
+        self._connection_session_epoch = 0
         # Recovery throttling to prevent tight crash→spawn loops
         self._receive_recovery_attempts = 0
         self._last_recovery_time = 0.0  # monotonic clock
@@ -995,14 +997,18 @@ class BLEInterface(MeshInterface):
         )
 
     def _get_current_implicit_management_binding_locked(self) -> str | None:
-        """Return implicit management binding via management collaborator."""
-        with self._state_lock:
-            return self._get_management_command_handler().get_current_implicit_management_binding_locked()
+        """Return implicit management binding via management collaborator.
+
+        Caller must hold ``_state_lock``.
+        """
+        return self._get_management_command_handler().get_current_implicit_management_binding_locked()
 
     def _get_current_implicit_management_address_locked(self) -> str | None:
-        """Return implicit management concrete address via collaborator."""
-        with self._state_lock:
-            return self._get_management_command_handler().get_current_implicit_management_address_locked()
+        """Return implicit management concrete address via collaborator.
+
+        Caller must hold ``_state_lock``.
+        """
+        return self._get_management_command_handler().get_current_implicit_management_address_locked()
 
     def _revalidate_implicit_management_target(
         self,
@@ -1326,7 +1332,7 @@ class BLEInterface(MeshInterface):
         self._get_management_command_handler().run_bluetoothctl_trust_command(
             bluetoothctl_path,
             canonical_address,
-            validated_timeout,
+            timeout=validated_timeout,
             subprocess_module=subprocess,
             trust_hex_blob_re=_TRUST_HEX_BLOB_RE,
             trust_token_re=_TRUST_TOKEN_RE,
@@ -2703,5 +2709,9 @@ class BLEInterface(MeshInterface):
 
     def _connected(self) -> None:
         """Mark the interface as connected and publish the legacy connection status event for backwards compatibility."""
+        with self._state_lock:
+            self._connection_session_epoch = (
+                getattr(self, "_connection_session_epoch", 0) + 1
+            )
         super()._connected()
         self._publish_connection_status(connected=True)

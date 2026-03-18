@@ -34,6 +34,18 @@ class BLEReceiveLifecycleCoordinator:
         with self._iface._state_lock:
             return self._iface._want_receive and not self._iface._closed
 
+    @staticmethod
+    def _is_thread_start_failure_confirmed(thread: ThreadLike) -> bool:
+        """Return whether startup probes confirm that ``thread`` failed to start."""
+        started_event = getattr(thread, "_started", None)
+        is_started = getattr(started_event, "is_set", None)
+        if callable(is_started):
+            try:
+                return not bool(is_started())
+            except Exception:  # noqa: BLE001 - probe remains best effort
+                return False
+        return isinstance(thread, threading.Thread)
+
     def _check_receive_start_conditions(
         self,
         *,
@@ -87,6 +99,22 @@ class BLEReceiveLifecycleCoordinator:
                     )
                     iface._receive_start_pending = False
                     iface._receive_start_pending_since = None
+                else:
+                    if not self._is_thread_start_failure_confirmed(existing):
+                        pending_since = getattr(
+                            iface, "_receive_start_pending_since", None
+                        )
+                        if not isinstance(pending_since, (float, int)):
+                            iface._receive_start_pending_since = time.monotonic()
+                        iface._receive_start_pending = True
+                        logger.debug(
+                            "Skipping receive thread start (%s): %s liveness probe inconclusive.",
+                            name,
+                            existing.name,
+                        )
+                        return None, None
+                    iface._receive_start_pending = False
+                    iface._receive_start_pending_since = None
             thread = create_runtime_thread(
                 target=iface._receive_from_radio_impl,
                 name=name,
@@ -128,25 +156,14 @@ class BLEReceiveLifecycleCoordinator:
     def _probe_receive_thread_start(self, thread: ThreadLike, *, name: str) -> bool:
         """Probe receive-thread startup and clear stale references on failure."""
         iface = self._iface
-        thread_ident, thread_is_alive = _thread_start_probe(thread)
-        if thread_ident is not None or thread_is_alive:
+        _, thread_is_alive = _thread_start_probe(thread)
+        if thread_is_alive:
             with iface._state_lock:
                 if iface._receiveThread is thread:
                     iface._receive_start_pending = False
                     iface._receive_start_pending_since = None
             return True
-        # Probe Thread._started (internal event) to disambiguate startup races.
-        started_event = getattr(thread, "_started", None)
-        is_started = getattr(started_event, "is_set", None)
-        start_failure_confirmed = False
-        if callable(is_started):
-            try:
-                start_failure_confirmed = not bool(is_started())
-            except Exception:  # noqa: BLE001 - probe remains best effort
-                start_failure_confirmed = False
-        elif isinstance(thread, threading.Thread):
-            # Native thread with no ident and not alive indicates startup never happened.
-            start_failure_confirmed = True
+        start_failure_confirmed = self._is_thread_start_failure_confirmed(thread)
 
         if start_failure_confirmed:
             with iface._state_lock:

@@ -44,7 +44,7 @@ class _DisconnectCallbackBundle:
     transition_to_disconnected: Callable[[], bool]
     reset_to_disconnected: Callable[[], bool]
     close_previous_client_async: Callable[["BLEClient | None"], None]
-    clear_events: Callable[[tuple[str, ...]], None]
+    clear_events: Callable[..., None]
 
 
 class BLELifecycleService:
@@ -560,7 +560,7 @@ class BLELifecycleService:
                 iface,
                 previous_client,
             ),
-            clear_events=lambda events: BLELifecycleService._thread_clear_events(
+            clear_events=lambda *events: BLELifecycleService._thread_clear_events(
                 iface, *events
             ),
         )

@@ -281,6 +281,16 @@ def test_lifecycle_disconnect_planning_and_side_effect_paths(
     )
     assert plan[0][0] == _addr_key("11:22:33:44:55:66")
     assert plan[1] is True
+    unknown_previous = DummyClient()
+    unknown_previous.address = "unknown"
+    fallback_plan = BLELifecycleService._compute_disconnect_keys(
+        iface,
+        previous_client=unknown_previous,
+        alias_key="alias",
+        should_reconnect=False,
+        address="22:33:44:55:66:77",
+    )
+    assert fallback_plan[0][0] == _addr_key("22:33:44:55:66:77")
 
     with iface._state_lock:
         iface.client = DummyClient()
@@ -350,6 +360,29 @@ def test_lifecycle_disconnect_planning_and_side_effect_paths(
     )
     assert disconnected_keys == ["stale-key"]
     assert closed_previous == ["closed-previous"]
+
+    iface.client = None
+    iface._connection_session_epoch = 3
+    disconnected_keys.clear()
+    closed_previous.clear()
+    stale_epoch_plan = _DisconnectPlan(
+        early_return=None,
+        previous_client=DummyClient(),
+        client_at_start=DummyClient(),
+        session_epoch=2,
+        address="addr",
+        disconnect_keys=("stale-epoch-key",),
+        should_reconnect=False,
+        should_schedule_reconnect=False,
+        was_publish_pending=False,
+        was_replacement_pending=False,
+    )
+    assert BLELifecycleService._execute_disconnect_side_effects(
+        iface, plan=stale_epoch_plan, source="stale-epoch"
+    )
+    assert disconnected_keys == ["stale-epoch-key"]
+    assert closed_previous == ["closed-previous"]
+    iface._connection_session_epoch = 0
 
     iface._disconnected = MagicMock()
     provisional_plan = _DisconnectPlan(
@@ -1477,6 +1510,16 @@ def test_lifecycle_remaining_thread_and_disconnect_target_branches(
         assert clear_calls == ["clear-me"]
         assert wake_calls == ["wake-me"]
 
+        fallback_set_calls: list[str] = []
+        iface.thread_coordinator = SimpleNamespace(
+            wake_waiting_threads=lambda *_names: (_ for _ in ()).throw(
+                RuntimeError("wake failed")
+            ),
+            set_event=lambda name: fallback_set_calls.append(name),
+        )
+        BLELifecycleService._thread_wake_waiting_threads(iface, "wake-a", "wake-b")
+        assert fallback_set_calls == ["wake-a", "wake-b"]
+
         iface.thread_coordinator = SimpleNamespace()
         BLELifecycleService._thread_join_thread(iface, SimpleNamespace(), timeout=0.1)
 
@@ -1679,7 +1722,7 @@ def test_lifecycle_remaining_verify_finalize_and_shutdown_branches(
             restore_address=None,
             restore_last_connection_request=None,
         )
-        assert disconnected_calls == ["disconnected"]
+        assert disconnected_calls == []
 
         monkeypatch.setattr(
             BLELifecycleService,

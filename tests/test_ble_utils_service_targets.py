@@ -14,7 +14,10 @@ import pytest
 
 import meshtastic.interfaces.ble.compatibility_service as compatibility_mod
 import meshtastic.interfaces.ble.utils as ble_utils
-from meshtastic.interfaces.ble.compatibility_service import BLECompatibilityEventService
+from meshtastic.interfaces.ble.compatibility_service import (
+    BLECompatibilityEventPublisher,
+    BLECompatibilityEventService,
+)
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator, _InertThread
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.management_service import (
@@ -842,6 +845,72 @@ def test_compatibility_resolve_safe_execute_wrapper() -> None:
     resolved = BLECompatibilityEventService._resolve_safe_execute(iface)
     assert callable(resolved)
     assert resolved(lambda: "ok") == "ok"
+
+
+def test_compatibility_publisher_swallows_provider_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bound compatibility publisher should treat provider failures as best effort."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    try:
+        publisher = BLECompatibilityEventPublisher(
+            iface,
+            publishing_thread_provider=lambda: (_ for _ in ()).throw(
+                RuntimeError("provider boom")
+            ),
+        )
+        wait_threads: list[object | None] = []
+        drain_threads: list[object | None] = []
+        publish_threads: list[object | None] = []
+        publish_legacy_threads: list[object | None] = []
+        monkeypatch.setattr(
+            BLECompatibilityEventService,
+            "wait_for_disconnect_notifications",
+            staticmethod(
+                lambda _iface, _timeout=None, publishing_thread=None: wait_threads.append(
+                    publishing_thread
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            BLECompatibilityEventService,
+            "drain_publish_queue",
+            staticmethod(
+                lambda _iface, _flush_event, publishing_thread=None: drain_threads.append(
+                    publishing_thread
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            BLECompatibilityEventService,
+            "publish_connection_status",
+            staticmethod(
+                lambda _iface, *, connected, publishing_thread=None: publish_threads.append(  # noqa: ARG005
+                    publishing_thread
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            BLECompatibilityEventService,
+            "publish_connection_status_legacy",
+            staticmethod(
+                lambda _iface, _connected, publishing_thread=None: publish_legacy_threads.append(  # noqa: ARG005
+                    publishing_thread
+                )
+            ),
+        )
+
+        publisher.wait_for_disconnect_notifications(timeout=0.1)
+        publisher.drain_publish_queue(Event())
+        publisher.publish_connection_status(connected=True)
+        publisher.publish_connection_status_legacy(True)
+
+        assert wait_threads == [None]
+        assert drain_threads == [None]
+        assert publish_threads == [None]
+        assert publish_legacy_threads == [None]
+    finally:
+        iface.close()
 
 
 def test_compatibility_enqueue_returns_false_when_no_enqueue_path() -> None:

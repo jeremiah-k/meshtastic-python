@@ -1,7 +1,5 @@
 """Unit tests for BLE notification subscription management."""
 
-from typing import Any
-
 import pytest
 
 from meshtastic.interfaces.ble.notifications import (
@@ -47,7 +45,7 @@ def test_resubscribe_all_stops_after_cleanup_epoch_change(
         def start_notify(
             self,
             characteristic: str,
-            _callback: Any,
+            _callback: object,
             *,
             timeout: float | None = None,
         ) -> None:
@@ -80,7 +78,7 @@ def test_resubscribe_all_skips_fromnum_characteristic(
         def start_notify(
             self,
             characteristic: str,
-            _callback: Any,
+            _callback: object,
             *,
             timeout: float | None = None,
         ) -> None:

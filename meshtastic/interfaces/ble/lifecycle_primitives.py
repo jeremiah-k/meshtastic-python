@@ -45,6 +45,7 @@ class _DisconnectPlan:
     early_return: bool | None
     previous_client: "BLEClient | None" = None
     client_at_start: "BLEClient | None" = None
+    session_epoch: int = 0
     address: str = "unknown"
     disconnect_keys: tuple[str, ...] = ()
     should_reconnect: bool = False
@@ -375,13 +376,13 @@ class _LifecycleThreadAccess:
         ):
             try:
                 wake_waiting_threads(*event_names)
+                return
             except Exception:  # noqa: BLE001 - non-critical wake stays best effort
                 logger.debug(
                     "Error in thread_coordinator.wake_waiting_threads for %s",
                     event_names,
                     exc_info=True,
                 )
-            return
         legacy_wake_waiting_threads = getattr(
             self._iface.thread_coordinator, "_wake_waiting_threads", None
         )
@@ -390,13 +391,13 @@ class _LifecycleThreadAccess:
         ):
             try:
                 legacy_wake_waiting_threads(*event_names)
+                return
             except Exception:  # noqa: BLE001 - non-critical wake stays best effort
                 logger.debug(
                     "Error in thread_coordinator._wake_waiting_threads for %s",
                     event_names,
                     exc_info=True,
                 )
-            return
         set_event = getattr(self._iface.thread_coordinator, "set_event", None)
         if callable(set_event) and not _is_unconfigured_mock_callable(set_event):
             for event_name in event_names:
