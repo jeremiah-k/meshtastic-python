@@ -12,7 +12,7 @@ recommended patterns for code that embeds `meshtastic-python`.
 | `BLEInterface`                               | User-facing entry point; extends `MeshInterface` with BLE lifecycle management                       |
 | `BLEClient`                                  | Synchronous wrapper around Bleak; delegates async calls to the singleton runner                      |
 | `BLECoroutineRunner`                         | Process-wide singleton with one background thread and one asyncio event loop                         |
-| `BLEStateManager`                            | Centralized state machine (`DISCONNECTED → CONNECTING → CONNECTED → DISCONNECTING`)                  |
+| `BLEStateManager`                            | Centralized state machine (`DISCONNECTED → CONNECTING → CONNECTED → DISCONNECTING → RECONNECTING → ERROR`) |
 | `BLEErrorHandler`                            | Unified exception-handling helpers used across the BLE subsystem                                     |
 | `NotificationManager`                        | Tracks active GATT notification subscriptions so they can be resubscribed after reconnects           |
 | `BLENotificationDispatcher`                  | Owns notification safety wrappers, FROMNUM parsing, malformed-counter logic, and notify registration |

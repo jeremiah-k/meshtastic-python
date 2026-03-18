@@ -295,11 +295,7 @@ class BLEInterface(MeshInterface):
         # Thread management infrastructure
         self.thread_coordinator = ThreadCoordinator()
         self._notification_manager = NotificationManager()
-        self._notification_dispatcher = BLENotificationDispatcher(
-            notification_manager=self._notification_manager,
-            error_handler_provider=lambda: self.error_handler,
-            trigger_read_event=lambda: self._set_thread_event(READ_TRIGGER_EVENT),
-        )
+        self._notification_dispatcher = self._create_notification_dispatcher()
         self._discovery_manager: DiscoveryManager | None = DiscoveryManager()
         self._connection_validator = ConnectionValidator(
             self._state_manager, self._state_lock, self.BLEError
@@ -643,6 +639,10 @@ class BLEInterface(MeshInterface):
         ):
             legacy_set_event(event_name)
             return
+        logger.debug(
+            "No callable thread event dispatcher available for event %s",
+            event_name,
+        )
 
     def _handle_malformed_fromnum(self, reason: str, exc_info: bool = False) -> None:
         """Track malformed FROMNUM notifications through dispatcher ownership."""
@@ -725,7 +725,7 @@ class BLEInterface(MeshInterface):
 
     def _legacy_log_radio_handler(self, _: Any, b: bytes | bytearray) -> None:
         """Decode and dispatch legacy UTF-8 log notification via dispatcher owner."""
-        message = BLENotificationDispatcher.legacy_log_radio_handler(_, b)
+        message = self._get_notification_dispatcher().legacy_log_radio_handler(_, b)
         if message is not None:
             self._handle_log_line(message)
 
@@ -1001,31 +1001,35 @@ class BLEInterface(MeshInterface):
             expected_binding=expected_binding,
         )
 
+    def _get_or_create_error_handler(self) -> BLEErrorHandler:
+        """Return bound error handler, creating one lazily for partial test doubles."""
+        handler = getattr(self, "error_handler", None)
+        if handler is None:
+            handler = BLEErrorHandler()
+            self.error_handler = handler
+        return cast(BLEErrorHandler, handler)
+
+    def _create_notification_dispatcher(self) -> BLENotificationDispatcher:
+        """Build notification dispatcher with canonical collaborator wiring."""
+        notification_manager = getattr(self, "_notification_manager", None)
+        if notification_manager is None:
+            notification_manager = NotificationManager()
+            self._notification_manager = notification_manager
+        return BLENotificationDispatcher(
+            notification_manager=notification_manager,
+            error_handler_provider=self._get_or_create_error_handler,
+            trigger_read_event=lambda: self._set_thread_event(READ_TRIGGER_EVENT),
+        )
+
     def _get_notification_dispatcher(self) -> BLENotificationDispatcher:
         """Return notification dispatcher collaborator, creating it lazily."""
         dispatcher = getattr(self, "_notification_dispatcher", None)
         if dispatcher is None:
-            notification_manager = getattr(self, "_notification_manager", None)
-            if notification_manager is None:
-                notification_manager = NotificationManager()
-                self._notification_manager = notification_manager
-
-            def _error_handler_provider() -> BLEErrorHandler:
-                handler = getattr(self, "error_handler", None)
-                if handler is None:
-                    handler = BLEErrorHandler()
-                    self.error_handler = handler
-                return handler
-
-            def _trigger_read_event() -> None:
-                self._set_thread_event(READ_TRIGGER_EVENT)
-
-            dispatcher = BLENotificationDispatcher(
-                notification_manager=notification_manager,
-                error_handler_provider=_error_handler_provider,
-                trigger_read_event=_trigger_read_event,
-            )
-            self._notification_dispatcher = dispatcher
+            with self._state_lock:
+                dispatcher = getattr(self, "_notification_dispatcher", None)
+                if dispatcher is None:
+                    dispatcher = self._create_notification_dispatcher()
+                    self._notification_dispatcher = dispatcher
         return cast(BLENotificationDispatcher, dispatcher)
 
     @property
@@ -1057,27 +1061,36 @@ class BLEInterface(MeshInterface):
         """Return lifecycle collaborator, creating one lazily when needed."""
         controller = getattr(self, "_lifecycle_controller", None)
         if controller is None:
-            controller = BLELifecycleController(self)
-            self._lifecycle_controller = controller
+            with self._state_lock:
+                controller = getattr(self, "_lifecycle_controller", None)
+                if controller is None:
+                    controller = BLELifecycleController(self)
+                    self._lifecycle_controller = controller
         return cast(BLELifecycleController, controller)
 
     def _get_receive_recovery_controller(self) -> BLEReceiveRecoveryController:
         """Return receive/recovery collaborator, creating one lazily when needed."""
         controller = getattr(self, "_receive_recovery_controller", None)
         if controller is None:
-            controller = BLEReceiveRecoveryController(self)
-            self._receive_recovery_controller = controller
+            with self._state_lock:
+                controller = getattr(self, "_receive_recovery_controller", None)
+                if controller is None:
+                    controller = BLEReceiveRecoveryController(self)
+                    self._receive_recovery_controller = controller
         return cast(BLEReceiveRecoveryController, controller)
 
     def _get_compatibility_publisher(self) -> BLECompatibilityEventPublisher:
         """Return compatibility publisher collaborator, creating one lazily when needed."""
         publisher = getattr(self, "_compatibility_publisher", None)
         if publisher is None:
-            publisher = BLECompatibilityEventPublisher(
-                self,
-                publishing_thread_provider=self._get_publishing_thread,
-            )
-            self._compatibility_publisher = publisher
+            with self._state_lock:
+                publisher = getattr(self, "_compatibility_publisher", None)
+                if publisher is None:
+                    publisher = BLECompatibilityEventPublisher(
+                        self,
+                        publishing_thread_provider=self._get_publishing_thread,
+                    )
+                    self._compatibility_publisher = publisher
         return cast(BLECompatibilityEventPublisher, publisher)
 
     def _get_management_command_handler(self) -> BLEManagementCommandHandler:
@@ -1090,12 +1103,15 @@ class BLEInterface(MeshInterface):
         """
         handler = getattr(self, "_management_command_handler", None)
         if handler is None:
-            handler = BLEManagementCommandHandler(
-                self,
-                ble_client_factory=BLEClient,
-                connected_elsewhere=_is_currently_connected_elsewhere,
-            )
-            self._management_command_handler = handler
+            with self._state_lock:
+                handler = getattr(self, "_management_command_handler", None)
+                if handler is None:
+                    handler = BLEManagementCommandHandler(
+                        self,
+                        ble_client_factory=BLEClient,
+                        connected_elsewhere=_is_currently_connected_elsewhere,
+                    )
+                    self._management_command_handler = handler
         return cast(BLEManagementCommandHandler, handler)
 
     def _execute_management_command(

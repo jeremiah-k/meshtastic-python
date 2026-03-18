@@ -266,10 +266,12 @@ class BLEDisconnectLifecycleCoordinator:
                 "BLE client close during disconnect",
             )
 
+        def _close_target() -> None:
+            _close_inline()
+
         try:
             close_thread = create_runtime_thread(
-                target=iface._client_manager_safe_close_client,
-                args=(previous_client,),
+                target=_close_target,
                 name="BLEClientClose",
                 daemon=True,
             )

@@ -103,14 +103,30 @@ class BLEReceiveRecoveryController:
                 raw_is_closing = getattr(state_manager, "is_closing", False)
                 if _is_unconfigured_mock_member(raw_is_closing):
                     state_is_closing = False
+                elif callable(raw_is_closing) and not _is_unconfigured_mock_callable(
+                    raw_is_closing
+                ):
+                    try:
+                        state_is_closing = bool(raw_is_closing())
+                    except Exception:  # noqa: BLE001 - closing probe must remain best effort
+                        state_is_closing = False
                 elif isinstance(raw_is_closing, bool):
                     state_is_closing = raw_is_closing
                 else:
                     legacy_is_closing = getattr(state_manager, "_is_closing", False)
                     if _is_unconfigured_mock_member(legacy_is_closing):
                         state_is_closing = False
+                    elif callable(legacy_is_closing) and not _is_unconfigured_mock_callable(
+                        legacy_is_closing
+                    ):
+                        try:
+                            state_is_closing = bool(legacy_is_closing())
+                        except Exception:  # noqa: BLE001 - closing probe must remain best effort
+                            state_is_closing = False
+                    elif isinstance(legacy_is_closing, bool):
+                        state_is_closing = legacy_is_closing
                     else:
-                        state_is_closing = bool(legacy_is_closing)
+                        state_is_closing = False
             return state_is_closing or bool(getattr(iface, "_closed", False))
 
     @staticmethod

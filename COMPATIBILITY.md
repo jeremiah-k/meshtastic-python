@@ -57,17 +57,19 @@ Additional approved BLE compatibility and promotions:
 | `BLEErrorHandler.safe_execute`                                  | `COMPAT_STABLE_SHIM` | Silent         | Wrapper alias for `_safe_execute`.                 |
 | `BLEErrorHandler.safe_cleanup`                                  | `COMPAT_STABLE_SHIM` | Silent         | Wrapper alias for `_safe_cleanup`.                 |
 | `BLECompatibilityEventService.publish_connection_status_legacy` | `COMPAT_STABLE_SHIM` | Silent         | Wrapper alias for `publish_connection_status`.     |
+| `BLECompatibilityEventPublisher.publish_connection_status_legacy` | `COMPAT_STABLE_SHIM` | Silent       | Bound wrapper alias for `publish_connection_status`. |
 | `BLEInterface.find_device`                                      | `COMPAT_STABLE_SHIM` | Silent         | Historical snake_case wrapper.                     |
 | `BLEInterface.findDevice`                                       | `PRIMARY`            | Silent         | Approved promoted camelCase name.                  |
 | `BLEClient._discover`                                           | `COMPAT_STABLE_SHIM` | Silent         | Historical internal discovery entrypoint.          |
-| `BLEStateManager.current_state`                                 | `INTERNAL_COMPAT`    | Silent         | Public-first alias for `_current_state`.           |
-| `BLEStateManager.is_connected`                                  | `INTERNAL_COMPAT`    | Silent         | Public-first alias for `_is_connected`.            |
-| `BLEStateManager.is_closing`                                    | `INTERNAL_COMPAT`    | Silent         | Public-first alias for `_is_closing`.              |
-| `BLEStateManager.can_connect`                                   | `INTERNAL_COMPAT`    | Silent         | Public-first alias for `_can_connect`.             |
+| `BLEReceiveRecoveryService`                                     | `COMPAT_STABLE_SHIM` | Silent         | Legacy receive-service class alias re-exported from `receive_service`. |
+| `BLEStateManager.current_state`                                 | `INTERNAL_COMPAT`    | Silent         | Internal compatibility alias for `_current_state`. |
+| `BLEStateManager.is_connected`                                  | `INTERNAL_COMPAT`    | Silent         | Internal compatibility alias for `_is_connected`.  |
+| `BLEStateManager.is_closing`                                    | `INTERNAL_COMPAT`    | Silent         | Internal compatibility alias for `_is_closing`.    |
+| `BLEStateManager.can_connect`                                   | `INTERNAL_COMPAT`    | Silent         | Internal compatibility alias for `_can_connect`.   |
 | `BLEStateManager.is_connecting`                                 | `COMPAT_STABLE_SHIM` | Silent         | Public property alias for `_is_connecting`.        |
-| `BLEStateManager.is_active`                                     | `INTERNAL_COMPAT`    | Silent         | Public-first alias for `_is_active`.               |
-| `BLEStateManager.transition_to()`                               | `INTERNAL_COMPAT`    | Silent         | Public-first alias for `_transition_to()`.         |
-| `BLEStateManager.reset_to_disconnected()`                       | `INTERNAL_COMPAT`    | Silent         | Public-first alias for `_reset_to_disconnected()`. |
+| `BLEStateManager.is_active`                                     | `INTERNAL_COMPAT`    | Silent         | Internal compatibility alias for `_is_active`.     |
+| `BLEStateManager.transition_to()`                               | `INTERNAL_COMPAT`    | Silent         | Internal compatibility alias for `_transition_to()`. |
+| `BLEStateManager.reset_to_disconnected()`                       | `INTERNAL_COMPAT`    | Silent         | Internal compatibility alias for `_reset_to_disconnected()`. |
 | `BLEStateManager._lock`                                         | `INTERNAL_COMPAT`    | Silent         | Legacy alias for `lock` property.                  |
 | `meshtastic.ble_interface.BleakClient`                          | `COMPAT_STABLE_SHIM` | Silent         | Legacy module-level import compatibility.          |
 | `meshtastic.ble_interface.BleakScanner`                         | `COMPAT_STABLE_SHIM` | Silent         | Legacy module-level import compatibility.          |
@@ -176,10 +178,12 @@ details. Treat the compatibility symbol column as the intended external entrypoi
 | `meshtastic.interfaces.ble.errors`                | `BLEErrorHandler.safe_execute()`                                  | `BLEErrorHandler._safe_execute()`                          |
 | `meshtastic.interfaces.ble.errors`                | `BLEErrorHandler.safe_cleanup()`                                  | `BLEErrorHandler._safe_cleanup()`                          |
 | `meshtastic.interfaces.ble.compatibility_service` | `BLECompatibilityEventService.publish_connection_status_legacy()` | `BLECompatibilityEventService.publish_connection_status()` |
+| `meshtastic.interfaces.ble.compatibility_service` | `BLECompatibilityEventPublisher.publish_connection_status_legacy()` | `BLECompatibilityEventPublisher.publish_connection_status()` |
 | `meshtastic.interfaces.ble.interface`             | `find_device()`                                                   | `findDevice()`                                             |
 | `meshtastic.interfaces.ble.interface`             | `from_num_handler()`                                              | `_from_num_handler()`                                      |
 | `meshtastic.interfaces.ble.interface`             | `log_radio_handler()`                                             | `_log_radio_handler()`                                     |
 | `meshtastic.interfaces.ble.interface`             | `legacy_log_radio_handler()`                                      | `_legacy_log_radio_handler()`                              |
+| `meshtastic.interfaces.ble.receive_service`       | `BLEReceiveRecoveryService`                                       | `BLEReceiveRecoveryController`                             |
 | `meshtastic.interfaces.ble.state`                 | `current_state`                                                   | `_current_state`                                           |
 | `meshtastic.interfaces.ble.state`                 | `is_connected`                                                    | `_is_connected`                                            |
 | `meshtastic.interfaces.ble.state`                 | `is_closing`                                                      | `_is_closing`                                              |

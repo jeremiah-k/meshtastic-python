@@ -27,6 +27,34 @@ class BLEManagementCommandsService:
     """Service helpers for BLE management command paths."""
 
     @staticmethod
+    def _is_handler_like(candidate: object) -> bool:
+        """Return whether ``candidate`` exposes the management handler API surface."""
+        required_methods = (
+            "resolve_target_address_for_management",
+            "management_target_gate",
+            "get_management_client_if_available",
+            "get_management_client_for_target",
+            "get_current_implicit_management_binding_locked",
+            "get_current_implicit_management_address_locked",
+            "revalidate_implicit_management_target",
+            "start_management_phase",
+            "resolve_management_target",
+            "acquire_client_for_target",
+            "execute_with_client",
+            "execute_management_command",
+            "begin_management_operation_locked",
+            "finish_management_operation",
+            "validate_management_await_timeout",
+            "validate_trust_timeout",
+            "validate_connect_timeout_override",
+            "pair",
+            "unpair",
+            "run_bluetoothctl_trust_command",
+            "trust",
+        )
+        return all(callable(getattr(candidate, method_name, None)) for method_name in required_methods)
+
+    @staticmethod
     def _handler_for_shim(
         iface: "BLEInterface",
         *,
@@ -38,7 +66,12 @@ class BLEManagementCommandsService:
             get_handler = getattr(iface, "_get_management_command_handler", None)
             if callable(get_handler):
                 resolved = get_handler()
-                if resolved is not None:
+                if isinstance(resolved, BLEManagementCommandHandler):
+                    return resolved
+                if (
+                    resolved is not None
+                    and BLEManagementCommandsService._is_handler_like(resolved)
+                ):
                     return cast(BLEManagementCommandHandler, resolved)
         if ble_client_factory is None:
             ble_client_factory = BLEClient

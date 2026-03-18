@@ -20,6 +20,8 @@ from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.management_service import (
     BLEManagementCommandHandler,
     BLEManagementCommandsService,
+)
+from meshtastic.interfaces.ble.management_runtime import (
     _create_management_client,
     _is_blank_or_malformed_address_like,
 )
@@ -454,6 +456,8 @@ def test_management_helpers_cover_factory_and_target_edge_paths(
     assert _is_blank_or_malformed_address_like("aabbccddeeff") is False
     assert _is_blank_or_malformed_address_like("Kitchen:Node") is False
     assert _is_blank_or_malformed_address_like("AA:BB:CC") is True
+    assert _is_blank_or_malformed_address_like("AABBCCDDEEF") is True
+    assert _is_blank_or_malformed_address_like("AABBCCDDEEFF00") is True
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     try:

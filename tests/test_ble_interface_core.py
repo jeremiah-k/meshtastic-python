@@ -122,6 +122,11 @@ def _capture_management_wait_event(
     return wait_entered
 
 
+def _clear_management_handler(iface: BLEInterface) -> None:
+    """Reset cached management-command handler for collaborator-refresh tests."""
+    iface._management_command_handler = None
+
+
 if TYPE_CHECKING:
 
     class _PubProtocol(Protocol):
@@ -634,7 +639,7 @@ def test_ble_interface_pair_prefers_active_client(
             "Unexpected temporary BLEClient created during active-client pair reuse test"
         ),
     )
-    iface._management_command_handler = None
+    _clear_management_handler(iface)
 
     iface.pair(confirm=True, await_timeout=12.5)
     assert client.pair_calls == 1
@@ -666,7 +671,7 @@ def test_ble_interface_pair_prefers_active_client_without_address(
             "Unexpected temporary BLEClient created during active-client address-less pair reuse test"
         ),
     )
-    iface._management_command_handler = None
+    _clear_management_handler(iface)
 
     iface.pair(confirm=True, await_timeout=9.5)
     assert client.pair_calls == 1
@@ -694,7 +699,7 @@ def test_ble_interface_unpair_prefers_active_client(
             "Unexpected temporary BLEClient created during active-client unpair reuse test"
         ),
     )
-    iface._management_command_handler = None
+    _clear_management_handler(iface)
 
     def _on_unpair() -> None:
         iface._handle_disconnect("test-unpair", client=cast(BLEClient, client))
@@ -740,7 +745,7 @@ def test_ble_interface_pair_uses_existing_client_when_request_matches(
             "Unexpected temporary BLEClient created during existing-client pair reuse test"
         ),
     )
-    iface._management_command_handler = None
+    _clear_management_handler(iface)
 
     iface.pair("mesh-node", confirm=True, await_timeout=7.0)
 
@@ -811,7 +816,7 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
         "meshtastic.interfaces.ble.interface.BLEClient",
         _temp_client_factory,
     )
-    iface._management_command_handler = None
+    _clear_management_handler(iface)
     monkeypatch.setattr(
         iface._client_manager,
         "_safe_close_client",
@@ -860,7 +865,7 @@ def test_ble_interface_close_waits_for_temporary_pair_operation(
         "meshtastic.interfaces.ble.interface.BLEClient",
         lambda _address, **_kwargs: temp_client,
     )
-    iface._management_command_handler = None
+    _clear_management_handler(iface)
     monkeypatch.setattr(
         iface._client_manager,
         "_safe_close_client",
@@ -942,7 +947,7 @@ def test_ble_interface_unpair_uses_temporary_client_when_disconnected(
         "meshtastic.interfaces.ble.interface.BLEClient",
         _temp_client_factory,
     )
-    iface._management_command_handler = None
+    _clear_management_handler(iface)
     monkeypatch.setattr(
         iface._client_manager,
         "_safe_close_client",
@@ -1007,7 +1012,7 @@ def test_ble_interface_management_rejects_temp_client_when_target_owned_elsewher
             "Temporary BLEClient should not be created when target is owned elsewhere"
         ),
     )
-    iface._management_command_handler = None
+    _clear_management_handler(iface)
 
     if method_name == "pair":
         with pytest.raises(BLEInterface.BLEError, match=ERROR_CONNECTION_SUPPRESSED):
@@ -1367,7 +1372,7 @@ def test_ble_interface_management_allows_bound_name_when_target_stays_resolved(
             "meshtastic.interfaces.ble.interface.BLEClient",
             lambda _address, **_kwargs: temp_client,
         )
-        iface._management_command_handler = None
+        _clear_management_handler(iface)
         monkeypatch.setattr(
             iface._client_manager,
             "_safe_close_client",
@@ -2369,7 +2374,7 @@ def test_ble_interface_pair_waits_for_connect_lock(
         "meshtastic.interfaces.ble.interface.BLEClient",
         _temp_client_factory,
     )
-    iface._management_command_handler = None
+    _clear_management_handler(iface)
     monkeypatch.setattr(
         iface._client_manager,
         "_safe_close_client",
@@ -2470,7 +2475,7 @@ def test_ble_interface_pair_waits_for_address_gate(
         "meshtastic.interfaces.ble.interface.BLEClient",
         _temp_client_factory,
     )
-    iface._management_command_handler = None
+    _clear_management_handler(iface)
     monkeypatch.setattr(
         iface._client_manager,
         "_safe_close_client",
@@ -3348,6 +3353,51 @@ def test_discard_invalidated_connected_client_clears_pending_when_already_detach
         assert iface.client is None
         assert iface._client_publish_pending is False
         assert iface._disconnect_notified is False
+
+    iface.close()
+
+
+def test_discard_invalidated_connected_client_emits_disconnect_for_retired_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Replacement-pending stale sessions should emit one disconnect publication."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    discarded_client = DummyClient()
+    discarded_client.address = "AA:BB:CC:DD:EE:45"
+    discarded_client.bleak_client = SimpleNamespace(address=discarded_client.address)
+    closed_clients: list[BLEClient] = []
+    disconnected_calls: list[bool] = []
+
+    monkeypatch.setattr(
+        iface._client_manager,
+        "_safe_close_client",
+        lambda client: closed_clients.append(client),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        iface,
+        "_disconnected",
+        lambda: disconnected_calls.append(True),
+        raising=True,
+    )
+
+    with iface._state_lock:
+        cast(Any, iface).client = None
+        iface._client_publish_pending = True
+        iface._client_replacement_pending = True
+        iface._disconnect_notified = False
+        iface._state_manager._reset_to_disconnected()
+        assert iface._state_manager._transition_to(ConnectionState.CONNECTING) is True
+
+    iface._discard_invalidated_connected_client(cast(BLEClient, discarded_client))
+
+    assert closed_clients == [cast(BLEClient, discarded_client)]
+    assert disconnected_calls == [True]
+    with iface._state_lock:
+        assert iface.client is None
+        assert iface._client_publish_pending is False
+        assert iface._client_replacement_pending is False
+        assert iface._disconnect_notified is True
 
     iface.close()
 
@@ -5073,9 +5123,7 @@ def test_report_notification_handler_error_covers_hook_and_fallback_paths(
     assert "missing-hook" in debug_calls
 
 
-def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure() -> (
-    None
-):
+def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure() -> None:
     """Positional safe_execute failures should not trigger a second handler invocation."""
 
     calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
@@ -5109,9 +5157,7 @@ def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure
     assert len(calls) == 2
 
 
-def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signature_error() -> (
-    None
-):
+def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signature_error() -> None:
     """Positional signature mismatch should continue to callable-only compatibility probe."""
 
     calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
@@ -5146,9 +5192,7 @@ def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signatu
     assert len(calls) == 3
 
 
-def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_paths() -> (
-    None
-):
+def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_paths() -> None:
     """safe_execute compatibility helper should cover success/fallback branches."""
 
     def _run_scenario(
@@ -5516,9 +5560,7 @@ def test_discovery_manager_accepts_discover_underscore_only_factory() -> None:
     assert devices == [filtered_device]
 
 
-def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> (
-    None
-):
+def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> None:
     """Verify discovery prefers configured ``_discover`` over unconfigured ``discover``.
 
     Returns

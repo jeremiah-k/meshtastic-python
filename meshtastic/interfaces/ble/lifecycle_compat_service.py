@@ -1,6 +1,7 @@
 """Lifecycle compatibility shim service for BLE."""
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast, NoReturn
 
 from bleak import BleakClient as BleakRootClient
@@ -32,6 +33,18 @@ from meshtastic.interfaces.ble.state import ConnectionState
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
     from meshtastic.interfaces.ble.interface import BLEInterface
+
+
+@dataclass(frozen=True)
+class _DisconnectCallbackBundle:
+    """Typed callback bundle for disconnect coordinator compatibility dispatch."""
+
+    is_closing_getter: Callable[[], bool]
+    current_state_getter: Callable[[], ConnectionState]
+    transition_to_disconnected: Callable[[], bool]
+    reset_to_disconnected: Callable[[], bool]
+    close_previous_client_async: Callable[["BLEClient | None"], None]
+    clear_events: Callable[[tuple[str, ...]], None]
 
 
 class BLELifecycleService:
@@ -459,14 +472,27 @@ class BLELifecycleService:
         _DisconnectPlan
             Planned side effects and ownership metadata for disconnect flow.
         """
+        callbacks = BLELifecycleService._build_disconnect_callback_bundle(iface)
         return BLEDisconnectLifecycleCoordinator(iface)._resolve_disconnect_target(
             source,
             client,
             bleak_client,
-            current_state_getter=lambda: BLELifecycleService._state_manager_current_state(
+            current_state_getter=callbacks.current_state_getter,
+            is_closing_getter=callbacks.is_closing_getter,
+            transition_to_disconnected=callbacks.transition_to_disconnected,
+            reset_to_disconnected=callbacks.reset_to_disconnected,
+        )
+
+    @staticmethod
+    def _build_disconnect_callback_bundle(
+        iface: "BLEInterface",
+    ) -> _DisconnectCallbackBundle:
+        """Return canonical disconnect callback wiring for lifecycle compat entrypoints."""
+        return _DisconnectCallbackBundle(
+            is_closing_getter=lambda: BLELifecycleService._state_manager_is_closing(
                 iface
             ),
-            is_closing_getter=lambda: BLELifecycleService._state_manager_is_closing(
+            current_state_getter=lambda: BLELifecycleService._state_manager_current_state(
                 iface
             ),
             transition_to_disconnected=lambda: BLELifecycleService._state_manager_transition_to(  # noqa: E501
@@ -475,6 +501,13 @@ class BLELifecycleService:
             ),
             reset_to_disconnected=lambda: BLELifecycleService._state_manager_reset_to_disconnected(  # noqa: E501
                 iface
+            ),
+            close_previous_client_async=lambda previous_client: BLELifecycleService._close_previous_client_async(  # noqa: E501
+                iface,
+                previous_client,
+            ),
+            clear_events=lambda events: BLELifecycleService._thread_clear_events(
+                iface, *events
             ),
         )
 
@@ -538,18 +571,14 @@ class BLELifecycleService:
             ``True`` when reconnect flow should continue; ``False`` when
             disconnect handling should stop.
         """
+        callbacks = BLELifecycleService._build_disconnect_callback_bundle(iface)
         return BLEDisconnectLifecycleCoordinator(
             iface
         )._execute_disconnect_side_effects(
             plan=plan,
             source=source,
-            close_previous_client_async=lambda previous_client: BLELifecycleService._close_previous_client_async(  # noqa: E501
-                iface,
-                previous_client,
-            ),
-            clear_events=lambda events: BLELifecycleService._thread_clear_events(
-                iface, *events
-            ),
+            close_previous_client_async=callbacks.close_previous_client_async,
+            clear_events=callbacks.clear_events,
         )
 
     @staticmethod
@@ -579,30 +608,17 @@ class BLELifecycleService:
             ``True`` when reconnect processing should continue; ``False`` when
             disconnect flow should stop.
         """
+        callbacks = BLELifecycleService._build_disconnect_callback_bundle(iface)
         return BLEDisconnectLifecycleCoordinator(iface).handle_disconnect(
             source,
             client=client,
             bleak_client=bleak_client,
-            is_closing_getter=lambda: BLELifecycleService._state_manager_is_closing(
-                iface
-            ),
-            current_state_getter=lambda: BLELifecycleService._state_manager_current_state(
-                iface
-            ),
-            transition_to_disconnected=lambda: BLELifecycleService._state_manager_transition_to(  # noqa: E501
-                iface,
-                ConnectionState.DISCONNECTED,
-            ),
-            reset_to_disconnected=lambda: BLELifecycleService._state_manager_reset_to_disconnected(  # noqa: E501
-                iface
-            ),
-            close_previous_client_async=lambda previous_client: BLELifecycleService._close_previous_client_async(  # noqa: E501
-                iface,
-                previous_client,
-            ),
-            clear_events=lambda events: BLELifecycleService._thread_clear_events(
-                iface, *events
-            ),
+            is_closing_getter=callbacks.is_closing_getter,
+            current_state_getter=callbacks.current_state_getter,
+            transition_to_disconnected=callbacks.transition_to_disconnected,
+            reset_to_disconnected=callbacks.reset_to_disconnected,
+            close_previous_client_async=callbacks.close_previous_client_async,
+            clear_events=callbacks.clear_events,
         )
 
     @staticmethod

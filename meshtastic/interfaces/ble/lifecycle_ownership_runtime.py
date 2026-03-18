@@ -178,14 +178,18 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             else None
         )
         should_reset_state = False
+        should_publish_disconnect = False
         is_closing = False
         with iface._state_lock:
             if iface.client is client:
+                replacement_pending = iface._client_replacement_pending
+                already_notified = iface._disconnect_notified
                 is_closing = get_is_closing() or iface._closed
                 iface.client = None
                 iface._client_publish_pending = False
                 iface._client_replacement_pending = False
                 iface._disconnect_notified = True
+                should_publish_disconnect = replacement_pending and not already_notified
                 if not is_closing:
                     iface.address = restored_address
                     iface._last_connection_request = restore_last_connection_request
@@ -194,8 +198,13 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 else:
                     iface._last_connection_request = None
             elif iface.client is None and iface._client_publish_pending:
+                replacement_pending = iface._client_replacement_pending
+                already_notified = iface._disconnect_notified
                 iface._client_publish_pending = False
                 iface._client_replacement_pending = False
+                if replacement_pending and not already_notified:
+                    iface._disconnect_notified = True
+                    should_publish_disconnect = True
                 is_closing = get_is_closing() or iface._closed
                 if not is_closing:
                     iface.address = restored_address
@@ -229,6 +238,8 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                                 iface._connection_alias_key,
                                 getattr(fallback_state, "value", fallback_state),
                             )
+        if should_publish_disconnect and not is_closing:
+            iface._disconnected()
 
     def _verify_and_publish_connected(
         self,

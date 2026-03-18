@@ -134,6 +134,8 @@ def _is_blank_or_malformed_address_like(address: str | None) -> bool:
     ):
         return False
     if ":" not in stripped_address:
+        if all(char in "0123456789abcdefABCDEF" for char in stripped_address):
+            return _HEX_MAC_NO_SEPARATOR_RE.fullmatch(stripped_address) is None
         return False
     # Treat colon-containing identifiers as malformed only when they look
     # like hex/MAC text but fail strict MAC validation.

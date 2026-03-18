@@ -10,9 +10,6 @@ from meshtastic.interfaces.ble.management_runtime import (
     TRUST_HEX_BLOB_RE,
     TRUST_TOKEN_RE,
     BLEManagementCommandHandler,
-    _create_management_client,
-    _is_blank_or_malformed_address_like,
-    _ManagementStartContext,
 )
 
 __all__ = [
@@ -22,7 +19,4 @@ __all__ = [
     "TRUST_COMMAND_OUTPUT_MAX_CHARS",
     "TRUST_HEX_BLOB_RE",
     "TRUST_TOKEN_RE",
-    "_ManagementStartContext",
-    "_create_management_client",
-    "_is_blank_or_malformed_address_like",
 ]
