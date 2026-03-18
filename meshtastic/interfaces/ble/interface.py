@@ -1009,6 +1009,31 @@ class BLEInterface(MeshInterface):
             self.error_handler = handler
         return cast(BLEErrorHandler, handler)
 
+    def _get_or_create_collaborator(
+        self, attr_name: str, factory: Callable[[], T]
+    ) -> T:
+        """Return collaborator by attribute name, creating it lazily.
+
+        Uses `_state_lock` double-checked locking when available, and degrades
+        to lockless initialization for partial test doubles that bypass `__init__`.
+        """
+        collaborator = getattr(self, attr_name, None)
+        if collaborator is not None:
+            return cast(T, collaborator)
+        state_lock = getattr(self, "_state_lock", None)
+        if state_lock is None or _is_unconfigured_mock_member(state_lock):
+            collaborator = getattr(self, attr_name, None)
+            if collaborator is None:
+                collaborator = factory()
+                setattr(self, attr_name, collaborator)
+            return cast(T, collaborator)
+        with state_lock:
+            collaborator = getattr(self, attr_name, None)
+            if collaborator is None:
+                collaborator = factory()
+                setattr(self, attr_name, collaborator)
+        return cast(T, collaborator)
+
     def _create_notification_dispatcher(self) -> BLENotificationDispatcher:
         """Build notification dispatcher with canonical collaborator wiring."""
         notification_manager = getattr(self, "_notification_manager", None)
@@ -1023,14 +1048,9 @@ class BLEInterface(MeshInterface):
 
     def _get_notification_dispatcher(self) -> BLENotificationDispatcher:
         """Return notification dispatcher collaborator, creating it lazily."""
-        dispatcher = getattr(self, "_notification_dispatcher", None)
-        if dispatcher is None:
-            with self._state_lock:
-                dispatcher = getattr(self, "_notification_dispatcher", None)
-                if dispatcher is None:
-                    dispatcher = self._create_notification_dispatcher()
-                    self._notification_dispatcher = dispatcher
-        return cast(BLENotificationDispatcher, dispatcher)
+        return self._get_or_create_collaborator(
+            "_notification_dispatcher", self._create_notification_dispatcher
+        )
 
     @property
     def _fromnum_notify_enabled(self) -> bool:
@@ -1059,39 +1079,25 @@ class BLEInterface(MeshInterface):
 
     def _get_lifecycle_controller(self) -> BLELifecycleController:
         """Return lifecycle collaborator, creating one lazily when needed."""
-        controller = getattr(self, "_lifecycle_controller", None)
-        if controller is None:
-            with self._state_lock:
-                controller = getattr(self, "_lifecycle_controller", None)
-                if controller is None:
-                    controller = BLELifecycleController(self)
-                    self._lifecycle_controller = controller
-        return cast(BLELifecycleController, controller)
+        return self._get_or_create_collaborator(
+            "_lifecycle_controller", lambda: BLELifecycleController(self)
+        )
 
     def _get_receive_recovery_controller(self) -> BLEReceiveRecoveryController:
         """Return receive/recovery collaborator, creating one lazily when needed."""
-        controller = getattr(self, "_receive_recovery_controller", None)
-        if controller is None:
-            with self._state_lock:
-                controller = getattr(self, "_receive_recovery_controller", None)
-                if controller is None:
-                    controller = BLEReceiveRecoveryController(self)
-                    self._receive_recovery_controller = controller
-        return cast(BLEReceiveRecoveryController, controller)
+        return self._get_or_create_collaborator(
+            "_receive_recovery_controller", lambda: BLEReceiveRecoveryController(self)
+        )
 
     def _get_compatibility_publisher(self) -> BLECompatibilityEventPublisher:
         """Return compatibility publisher collaborator, creating one lazily when needed."""
-        publisher = getattr(self, "_compatibility_publisher", None)
-        if publisher is None:
-            with self._state_lock:
-                publisher = getattr(self, "_compatibility_publisher", None)
-                if publisher is None:
-                    publisher = BLECompatibilityEventPublisher(
-                        self,
-                        publishing_thread_provider=self._get_publishing_thread,
-                    )
-                    self._compatibility_publisher = publisher
-        return cast(BLECompatibilityEventPublisher, publisher)
+        return self._get_or_create_collaborator(
+            "_compatibility_publisher",
+            lambda: BLECompatibilityEventPublisher(
+                self,
+                publishing_thread_provider=self._get_publishing_thread,
+            ),
+        )
 
     def _get_management_command_handler(self) -> BLEManagementCommandHandler:
         """Return the bound management-command collaborator.
@@ -1101,18 +1107,14 @@ class BLEInterface(MeshInterface):
         BLEManagementCommandHandler
             Lazily initialized management command collaborator.
         """
-        handler = getattr(self, "_management_command_handler", None)
-        if handler is None:
-            with self._state_lock:
-                handler = getattr(self, "_management_command_handler", None)
-                if handler is None:
-                    handler = BLEManagementCommandHandler(
-                        self,
-                        ble_client_factory=BLEClient,
-                        connected_elsewhere=_is_currently_connected_elsewhere,
-                    )
-                    self._management_command_handler = handler
-        return cast(BLEManagementCommandHandler, handler)
+        return self._get_or_create_collaborator(
+            "_management_command_handler",
+            lambda: BLEManagementCommandHandler(
+                self,
+                ble_client_factory=BLEClient,
+                connected_elsewhere=_is_currently_connected_elsewhere,
+            ),
+        )
 
     def _execute_management_command(
         self,

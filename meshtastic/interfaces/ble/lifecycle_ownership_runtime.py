@@ -182,8 +182,10 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         is_closing = False
         with iface._state_lock:
             if iface.client is client:
-                replacement_pending = iface._client_replacement_pending
-                already_notified = iface._disconnect_notified
+                replacement_pending = bool(
+                    getattr(iface, "_client_replacement_pending", False)
+                )
+                already_notified = bool(getattr(iface, "_disconnect_notified", False))
                 is_closing = get_is_closing() or iface._closed
                 iface.client = None
                 iface._client_publish_pending = False
@@ -197,9 +199,13 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     should_reset_state = True
                 else:
                     iface._last_connection_request = None
-            elif iface.client is None and iface._client_publish_pending:
-                replacement_pending = iface._client_replacement_pending
-                already_notified = iface._disconnect_notified
+            elif iface.client is None and bool(
+                getattr(iface, "_client_publish_pending", False)
+            ):
+                replacement_pending = bool(
+                    getattr(iface, "_client_replacement_pending", False)
+                )
+                already_notified = bool(getattr(iface, "_disconnect_notified", False))
                 iface._client_publish_pending = False
                 iface._client_replacement_pending = False
                 if replacement_pending and not already_notified:
