@@ -73,8 +73,6 @@ class BLELifecycleService:
     @staticmethod
     def _receive_lifecycle_coordinator(
         iface: "BLEInterface",
-        *,
-        require_start_overrides: bool = False,
     ) -> BLEReceiveLifecycleCoordinator:
         """Return cached receive-lifecycle coordinator when collaborator cache exists.
 
@@ -82,9 +80,6 @@ class BLELifecycleService:
         ----------
         iface : BLEInterface
             Interface providing optional collaborator-cache helpers.
-        require_start_overrides : bool
-            When ``True``, only accept candidates whose ``start_receive_thread``
-            supports injected ``create_thread``/``start_thread`` overrides.
 
         Returns
         -------
@@ -96,22 +91,6 @@ class BLELifecycleService:
         Falls back to direct instantiation when collaborator caching is
         unavailable on partial test doubles.
         """
-
-        def _supports_start_overrides(candidate: object) -> bool:
-            start_receive_thread = getattr(candidate, "start_receive_thread", None)
-            if not callable(start_receive_thread) or _is_unconfigured_mock_callable(
-                start_receive_thread
-            ):
-                return False
-            try:
-                params = signature(start_receive_thread).parameters
-            except (TypeError, ValueError):
-                return False
-            if "create_thread" in params and "start_thread" in params:
-                return True
-            return any(
-                parameter.kind is parameter.VAR_KEYWORD for parameter in params.values()
-            )
 
         get_lifecycle_controller = getattr(iface, "_get_lifecycle_controller", None)
         if callable(get_lifecycle_controller) and not _is_unconfigured_mock_callable(
@@ -133,17 +112,10 @@ class BLELifecycleService:
                         and BLELifecycleService._is_receive_lifecycle_coordinator_like(
                             receive_coordinator
                         )
-                        and (
-                            not require_start_overrides
-                            or _supports_start_overrides(receive_coordinator)
-                        )
                     ):
                         return cast(BLEReceiveLifecycleCoordinator, receive_coordinator)
                 if BLELifecycleService._is_receive_lifecycle_coordinator_like(
                     lifecycle_controller
-                ) and (
-                    not require_start_overrides
-                    or _supports_start_overrides(lifecycle_controller)
                 ):
                     return cast(BLEReceiveLifecycleCoordinator, lifecycle_controller)
 
@@ -169,10 +141,6 @@ class BLELifecycleService:
                     and not _is_unconfigured_mock_member(coordinator)
                     and BLELifecycleService._is_receive_lifecycle_coordinator_like(
                         coordinator
-                    )
-                    and (
-                        not require_start_overrides
-                        or _supports_start_overrides(coordinator)
                     )
                 ):
                     return cast(BLEReceiveLifecycleCoordinator, coordinator)
@@ -464,20 +432,36 @@ class BLELifecycleService:
         Exception
             Propagates thread-start failures after clearing stale thread state.
         """
-        BLELifecycleService._receive_lifecycle_coordinator(
-            iface,
-            require_start_overrides=True,
-        ).start_receive_thread(
+        coordinator = BLELifecycleService._receive_lifecycle_coordinator(iface)
+        start_receive_thread = getattr(coordinator, "start_receive_thread")
+        supports_injected_hooks = False
+        try:
+            params = signature(start_receive_thread).parameters
+        except (TypeError, ValueError):
+            supports_injected_hooks = False
+        else:
+            supports_injected_hooks = (
+                "create_thread" in params and "start_thread" in params
+            ) or any(
+                parameter.kind is parameter.VAR_KEYWORD for parameter in params.values()
+            )
+        if supports_injected_hooks:
+            start_receive_thread(
+                name=name,
+                reset_recovery=reset_recovery,
+                create_thread=lambda **kwargs: BLELifecycleService._thread_create_thread(
+                    iface,
+                    **kwargs,
+                ),
+                start_thread=lambda thread: BLELifecycleService._thread_start_thread(
+                    iface,
+                    thread,
+                ),
+            )
+            return
+        start_receive_thread(
             name=name,
             reset_recovery=reset_recovery,
-            create_thread=lambda **kwargs: BLELifecycleService._thread_create_thread(
-                iface,
-                **kwargs,
-            ),
-            start_thread=lambda thread: BLELifecycleService._thread_start_thread(
-                iface,
-                thread,
-            ),
         )
 
     @staticmethod

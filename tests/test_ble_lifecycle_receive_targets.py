@@ -625,6 +625,65 @@ def test_lifecycle_controller_detects_verify_snapshot_compat_override(
         iface.close()
 
 
+def test_lifecycle_controller_keeps_injected_status_getter_when_snapshot_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Compat controller path should not inject snapshot fallback over explicit status getter."""
+    iface = _make_iface(monkeypatch)
+    try:
+        controller = iface._get_lifecycle_controller()
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_verify_ownership_snapshot",
+            staticmethod(
+                lambda *_args, **_kwargs: _OwnershipSnapshot(
+                    still_owned=True,
+                    is_closing=False,
+                    lost_gate_ownership=False,
+                    prior_ever_connected=False,
+                )
+            ),
+        )
+        captured_calls: list[tuple[object | None, object | None]] = []
+
+        def _capture_verify_and_publish_connected(
+            _connected_client: DummyClient,
+            _connected_device_key: str | None,
+            _connection_alias_key: str | None,
+            *,
+            restore_address: str | None,
+            restore_last_connection_request: str | None,
+            verify_ownership_snapshot: object | None = None,
+            get_connected_client_status_locked: object | None = None,
+        ) -> None:
+            _ = restore_address
+            _ = restore_last_connection_request
+            captured_calls.append(
+                (verify_ownership_snapshot, get_connected_client_status_locked)
+            )
+
+        monkeypatch.setattr(
+            controller._connection_ownership,
+            "_verify_and_publish_connected",
+            _capture_verify_and_publish_connected,
+            raising=True,
+        )
+        def status_getter(_client: object) -> tuple[bool, bool]:
+            return True, False
+
+        controller.verify_and_publish_connected(
+            DummyClient(),
+            "dev",
+            "alias",
+            restore_address=None,
+            restore_last_connection_request=None,
+            get_connected_client_status_locked=status_getter,
+        )
+        assert captured_calls == [(None, status_getter)]
+    finally:
+        iface.close()
+
+
 def test_lifecycle_shutdown_and_finalize_close_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1595,7 +1654,13 @@ def test_lifecycle_remaining_thread_and_disconnect_target_branches(
         assert fallback_set_calls == ["wake-a", "wake-b"]
 
         iface.thread_coordinator = SimpleNamespace()
-        BLELifecycleService._thread_join_thread(iface, SimpleNamespace(), timeout=0.1)
+        fallback_join_calls: list[float | None] = []
+        BLELifecycleService._thread_join_thread(
+            iface,
+            SimpleNamespace(join=lambda timeout=None: fallback_join_calls.append(timeout)),
+            timeout=0.1,
+        )
+        assert fallback_join_calls == [0.1]
 
         with iface._state_lock:
             iface.client = DummyClient()

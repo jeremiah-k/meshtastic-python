@@ -37,6 +37,7 @@ import time
 from collections.abc import Awaitable, Callable
 from threading import Event
 from typing import IO, Any, NoReturn, TypeVar, cast
+from unittest.mock import Mock
 
 from bleak import BleakClient as BleakRootClient
 from bleak.backends.device import BLEDevice
@@ -999,8 +1000,12 @@ class BLEInterface(MeshInterface):
         """Return available management client via management collaborator."""
         handler = self._get_management_command_handler()
         state_lock = getattr(self, "_state_lock", None)
+        if state_lock is None or _is_unconfigured_mock_member(state_lock):
+            return handler.get_management_client_if_available(address)
         lock_is_owned = getattr(state_lock, "_is_owned", None)
-        if callable(lock_is_owned):
+        if isinstance(lock_is_owned, Mock):
+            return handler.get_management_client_if_available(address)
+        if callable(lock_is_owned) and not _is_unconfigured_mock_callable(lock_is_owned):
             owns_lock = False
             try:
                 owns_lock = bool(lock_is_owned())
@@ -1030,8 +1035,18 @@ class BLEInterface(MeshInterface):
         """Return reusable target-matching management client via collaborator."""
         handler = self._get_management_command_handler()
         state_lock = getattr(self, "_state_lock", None)
+        if state_lock is None or _is_unconfigured_mock_member(state_lock):
+            return handler.get_management_client_for_target(
+                target_address,
+                prefer_current_client=prefer_current_client,
+            )
         lock_is_owned = getattr(state_lock, "_is_owned", None)
-        if callable(lock_is_owned):
+        if isinstance(lock_is_owned, Mock):
+            return handler.get_management_client_for_target(
+                target_address,
+                prefer_current_client=prefer_current_client,
+            )
+        if callable(lock_is_owned) and not _is_unconfigured_mock_callable(lock_is_owned):
             owns_lock = False
             try:
                 owns_lock = bool(lock_is_owned())

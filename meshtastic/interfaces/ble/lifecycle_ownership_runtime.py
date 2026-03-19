@@ -229,23 +229,22 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         """Ensure state converges to disconnected after invalidation cleanup."""
         if not should_reset_state:
             return
-        with iface._state_lock:
-            if not do_reset_to_disconnected():
-                current_state = get_current_state()
+        if not do_reset_to_disconnected():
+            current_state = get_current_state()
+            logger.error(
+                "Failed to reset state after invalidated connect result (alias=%s current=%s); forcing transition to %s.",
+                iface._connection_alias_key,
+                getattr(current_state, "value", current_state),
+                ConnectionState.DISCONNECTED.value,
+            )
+            if not do_transition_to_disconnected():
+                fallback_state = get_current_state()
                 logger.error(
-                    "Failed to reset state after invalidated connect result (alias=%s current=%s); forcing transition to %s.",
-                    iface._connection_alias_key,
-                    getattr(current_state, "value", current_state),
+                    "Failed forced transition to %s after invalidated connect result (alias=%s current=%s).",
                     ConnectionState.DISCONNECTED.value,
+                    iface._connection_alias_key,
+                    getattr(fallback_state, "value", fallback_state),
                 )
-                if not do_transition_to_disconnected():
-                    fallback_state = get_current_state()
-                    logger.error(
-                        "Failed forced transition to %s after invalidated connect result (alias=%s current=%s).",
-                        ConnectionState.DISCONNECTED.value,
-                        iface._connection_alias_key,
-                        getattr(fallback_state, "value", fallback_state),
-                    )
 
     def _discard_invalidated_connected_client(
         self,
@@ -525,7 +524,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 still_active, is_closing = get_status_locked(connected_client)
                 if still_active:
                     iface._connection_alias_key = connection_alias_key
-                else:
+                elif iface._connection_alias_key == connection_alias_key:
                     iface._connection_alias_key = None
             if not still_active:
                 self._log_gate_cleanup(connected_client, is_closing=is_closing)
@@ -542,7 +541,8 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 still_active, is_closing = get_status_locked(connected_client)
                 if not still_active:
                     self._log_gate_cleanup(connected_client, is_closing=is_closing)
-                    iface._connection_alias_key = None
+                    if iface._connection_alias_key == connection_alias_key:
+                        iface._connection_alias_key = None
                     needs_cleanup = True
             if needs_cleanup:
                 iface._mark_address_keys_disconnected(

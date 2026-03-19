@@ -32,17 +32,21 @@ class BLECompatibilityEventPublisher:
         """Bind publisher helpers to a specific interface instance."""
         self._iface = iface
         self._publishing_thread_provider = publishing_thread_provider
+        self._last_publishing_thread: object | None = None
 
     def _resolve_publishing_thread(self) -> object | None:
         """Return publishing thread when available, else ``None`` on provider failure."""
         try:
-            return self._publishing_thread_provider()
+            publishing_thread = self._publishing_thread_provider()
+            if publishing_thread is not None:
+                self._last_publishing_thread = publishing_thread
+            return publishing_thread
         except Exception:  # noqa: BLE001 - teardown path must stay best effort
             logger.debug(
                 "Error resolving publishing thread for compatibility publisher.",
                 exc_info=True,
             )
-            return None
+            return self._last_publishing_thread
 
     def wait_for_disconnect_notifications(self, timeout: float | None = None) -> None:
         """Wait for disconnect-notification queue flush on the bound interface."""

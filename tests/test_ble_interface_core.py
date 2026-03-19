@@ -1518,7 +1518,7 @@ def test_ble_interface_resolve_management_address_accepts_explicit_ble_address(
 
     assert (
         iface._resolve_target_address_for_management("AA-BB-CC-DD-EE-FF")
-        == "AA-BB-CC-DD-EE-FF"
+        == "aabbccddeeff"
     )
     assert discovery_called is False
     iface.close()
@@ -6945,9 +6945,6 @@ def test_register_notifications_safe_call_inline_fallback_when_safe_execute_unco
         def __init__(self) -> None:
             super().__init__()
             self.callbacks: dict[str, Callable[[Any, bytes], None]] = {}
-            self.start_notify_calls: dict[str, int] = {}
-            self.start_notify_calls: dict[str, int] = {}
-            self.start_notify_calls: dict[str, int] = {}
             self.start_notify_calls: dict[str, int] = {}
 
         def has_characteristic(self, uuid: str) -> bool:

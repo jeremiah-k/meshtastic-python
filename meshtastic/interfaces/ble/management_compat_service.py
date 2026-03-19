@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 
 class BLEManagementCommandsService:
     """Service helpers for BLE management command paths."""
+    # COMPAT_STABLE_SHIM: compatibility management shim surface retained for historical entrypoints.
 
     @staticmethod
     def _has_required_handler_entrypoint(
@@ -649,7 +650,7 @@ class BLEManagementCommandsService:
         ).run_bluetoothctl_trust_command(
             bluetoothctl_path,
             canonical_address,
-            timeout=validated_timeout,
+            validated_timeout,
             subprocess_module=subprocess_module,
             trust_hex_blob_re=trust_hex_blob_re,
             trust_token_re=trust_token_re,

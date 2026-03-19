@@ -290,6 +290,9 @@ class BLENotificationDispatcher:
         self._current_legacy_log_handler: Callable[[Any, Any], None] | None = None
         self._current_log_handler: Callable[[Any, Any], None] | None = None
         self._current_from_num_handler: Callable[[Any, Any], None] | None = None
+        self._safe_legacy_handler: Callable[[Any, Any], None] | None = None
+        self._safe_log_handler: Callable[[Any, Any], None] | None = None
+        self._safe_from_num_handler: Callable[[Any, Any], None] | None = None
         self._registered_notification_session_epoch: int | None = None
         self._started_notify_characteristics: set[str] = set()
 
@@ -602,6 +605,7 @@ class BLENotificationDispatcher:
             self._registered_notification_session_epoch = current_session_epoch
             self._started_notify_characteristics.clear()
             self.fromnum_notify_enabled = False
+            self.malformed_notification_count = 0
 
         def _safe_call(
             handler: Callable[[Any, Any], None],
@@ -723,13 +727,30 @@ class BLENotificationDispatcher:
             )
 
         def _get_or_create_handler(
-            uuid: str, factory: Callable[[], Callable[[Any, Any], None]]
+            uuid: str,
+            *,
+            cache_attr: str,
+            factory: Callable[[], Callable[[Any, Any], None]],
         ) -> Callable[[Any, Any], None]:
-            handler = self._notification_manager._get_callback(uuid)
-            if handler is None:
-                handler = factory()
-                self._notification_manager._subscribe(uuid, handler)
-            return handler
+            cached_handler = getattr(self, cache_attr, None)
+            if not callable(cached_handler):
+                cached_handler = factory()
+                setattr(self, cache_attr, cached_handler)
+            active_handler = self._notification_manager._get_callback(uuid)
+            if active_handler is not cached_handler:
+                self._notification_manager._subscribe(uuid, cached_handler)
+            return cast(Callable[[Any, Any], None], cached_handler)
+
+        def _get_or_create_cached_handler(
+            *,
+            cache_attr: str,
+            factory: Callable[[], Callable[[Any, Any], None]],
+        ) -> Callable[[Any, Any], None]:
+            cached_handler = getattr(self, cache_attr, None)
+            if not callable(cached_handler):
+                cached_handler = factory()
+                setattr(self, cache_attr, cached_handler)
+            return cast(Callable[[Any, Any], None], cached_handler)
 
         def _is_notify_acquired_error(err: BaseException) -> bool:
             return _NOTIFY_ACQUIRED_FRAGMENT in str(err).casefold()
@@ -756,7 +777,9 @@ class BLENotificationDispatcher:
                     has_legacy_logradio = False
             if has_legacy_logradio:
                 legacy_handler = _get_or_create_handler(
-                    LEGACY_LOGRADIO_UUID, lambda: _safe_legacy_handler
+                    LEGACY_LOGRADIO_UUID,
+                    cache_attr="_safe_legacy_handler",
+                    factory=lambda: _safe_legacy_handler,
                 )
                 try:
                     client.start_notify(
@@ -787,7 +810,9 @@ class BLENotificationDispatcher:
                     has_logradio = False
             if has_logradio:
                 log_callback = _get_or_create_handler(
-                    LOGRADIO_UUID, lambda: _safe_log_handler
+                    LOGRADIO_UUID,
+                    cache_attr="_safe_log_handler",
+                    factory=lambda: _safe_log_handler,
                 )
                 try:
                     client.start_notify(
@@ -804,10 +829,14 @@ class BLENotificationDispatcher:
                 else:
                     self._started_notify_characteristics.add(LOGRADIO_UUID)
 
-        ingress_handler = self._notification_manager._get_callback(FROMNUM_UUID)
-        if ingress_handler is None:
-            ingress_handler = _safe_from_num_handler
+        ingress_handler = _get_or_create_cached_handler(
+            cache_attr="_safe_from_num_handler",
+            factory=lambda: _safe_from_num_handler,
+        )
         if FROMNUM_UUID in self._started_notify_characteristics:
+            current_ingress_handler = self._notification_manager._get_callback(FROMNUM_UUID)
+            if current_ingress_handler is not ingress_handler:
+                self._notification_manager._subscribe(FROMNUM_UUID, ingress_handler)
             self.fromnum_notify_enabled = True
             return
         self.fromnum_notify_enabled = False
@@ -855,7 +884,10 @@ class BLENotificationDispatcher:
                 )
                 return
             else:
-                if self._notification_manager._get_callback(FROMNUM_UUID) is None:
+                current_ingress_handler = self._notification_manager._get_callback(
+                    FROMNUM_UUID
+                )
+                if current_ingress_handler is not ingress_handler:
                     self._notification_manager._subscribe(FROMNUM_UUID, ingress_handler)
                 self._started_notify_characteristics.add(FROMNUM_UUID)
                 self.fromnum_notify_enabled = True

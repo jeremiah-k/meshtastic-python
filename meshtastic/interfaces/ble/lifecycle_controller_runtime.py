@@ -102,7 +102,10 @@ class BLELifecycleController:
                 lifecycle_service as lifecycle_service_mod,
             )
 
-            if verify_ownership_snapshot is None:
+            if (
+                verify_ownership_snapshot is None
+                and get_connected_client_status_locked is None
+            ):
 
                 def _compat_verify_snapshot(
                     client: "BLEClient",

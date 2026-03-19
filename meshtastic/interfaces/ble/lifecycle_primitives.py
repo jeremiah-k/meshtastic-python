@@ -326,31 +326,31 @@ class _LifecycleThreadAccess:
         coordinator = getattr(self._iface, "thread_coordinator", None)
         if coordinator is None or _is_unconfigured_mock_member(coordinator):
             logger.debug("Thread coordinator is missing join_thread/_join_thread")
-            return
-        join_thread = getattr(coordinator, "join_thread", None)
-        if callable(join_thread) and not _is_unconfigured_mock_callable(join_thread):
-            try:
-                join_thread(thread, timeout=timeout)
-            except Exception:  # noqa: BLE001 - non-critical join stays best effort
-                logger.debug(
-                    "Error in thread_coordinator.join_thread for %r",
-                    thread,
-                    exc_info=True,
-                )
-            return
-        legacy_join_thread = getattr(coordinator, "_join_thread", None)
-        if callable(legacy_join_thread) and not _is_unconfigured_mock_callable(
-            legacy_join_thread
-        ):
-            try:
-                legacy_join_thread(thread, timeout=timeout)
-            except Exception:  # noqa: BLE001 - non-critical join stays best effort
-                logger.debug(
-                    "Error in thread_coordinator._join_thread for %r",
-                    thread,
-                    exc_info=True,
-                )
-            return
+        else:
+            join_thread = getattr(coordinator, "join_thread", None)
+            if callable(join_thread) and not _is_unconfigured_mock_callable(join_thread):
+                try:
+                    join_thread(thread, timeout=timeout)
+                except Exception:  # noqa: BLE001 - non-critical join stays best effort
+                    logger.debug(
+                        "Error in thread_coordinator.join_thread for %r",
+                        thread,
+                        exc_info=True,
+                    )
+                return
+            legacy_join_thread = getattr(coordinator, "_join_thread", None)
+            if callable(legacy_join_thread) and not _is_unconfigured_mock_callable(
+                legacy_join_thread
+            ):
+                try:
+                    legacy_join_thread(thread, timeout=timeout)
+                except Exception:  # noqa: BLE001 - non-critical join stays best effort
+                    logger.debug(
+                        "Error in thread_coordinator._join_thread for %r",
+                        thread,
+                        exc_info=True,
+                    )
+                return
         thread_join = getattr(thread, "join", None)
         if callable(thread_join) and not _is_unconfigured_mock_callable(thread_join):
             try:

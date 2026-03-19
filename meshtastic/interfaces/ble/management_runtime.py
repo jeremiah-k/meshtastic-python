@@ -229,8 +229,8 @@ class BLEManagementCommandHandler:
             existing_client_address = iface._extract_client_address(existing_client)
             if existing_client_address:
                 return existing_client_address
-        if requested_identifier and _looks_like_ble_address(requested_identifier):
-            return requested_identifier
+            if _looks_like_ble_address(normalized_request):
+                return normalized_request
         return iface.findDevice(requested_identifier).address
 
     @staticmethod
@@ -310,11 +310,13 @@ class BLEManagementCommandHandler:
         """Return whether a candidate client appears currently connected."""
         if client is None:
             return False
-        for attr_name in ("isConnected", "is_connected", "_is_connected"):
+        callable_probe_seen = False
+        for attr_name in ("isConnected", "is_connected"):
             is_connected = getattr(client, attr_name, None)
             if callable(is_connected) and not _is_unconfigured_mock_callable(
                 is_connected
             ):
+                callable_probe_seen = True
                 try:
                     return bool(is_connected())
                 except (
@@ -325,9 +327,27 @@ class BLEManagementCommandHandler:
                         attr_name,
                         exc_info=True,
                     )
-                    continue
+                    return False
             if isinstance(is_connected, bool):
                 return is_connected
+        if callable_probe_seen:
+            return False
+        legacy_is_connected = getattr(client, "_is_connected", None)
+        if callable(legacy_is_connected) and not _is_unconfigured_mock_callable(
+            legacy_is_connected
+        ):
+            try:
+                return bool(legacy_is_connected())
+            except (
+                Exception
+            ):  # noqa: BLE001 - connectivity probe must remain best effort
+                logger.debug(
+                    "Error probing BLE client connectivity via _is_connected",
+                    exc_info=True,
+                )
+                return False
+        if isinstance(legacy_is_connected, bool):
+            return legacy_is_connected
         return False
 
     def get_current_implicit_management_binding_locked(self) -> str | None:
