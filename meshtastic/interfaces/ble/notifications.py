@@ -117,6 +117,10 @@ class NotificationManager:
             self._characteristic_to_callback[characteristic] = callback
             return token
 
+    def subscribe(self, characteristic: str, callback: Callable[[Any, Any], None]) -> int:
+        """Public wrapper for compatibility-safe subscription registration."""
+        return self._subscribe(characteristic, callback)
+
     def _cleanup_all(self) -> None:
         """Clear all tracked BLE notification subscriptions and per-characteristic callbacks.
 
@@ -257,6 +261,10 @@ class NotificationManager:
         """
         with self._lock:
             return self._characteristic_to_callback.get(characteristic)
+
+    def get_callback(self, characteristic: str) -> Callable[[Any, Any], None] | None:
+        """Public wrapper for compatibility-safe callback lookup."""
+        return self._get_callback(characteristic)
 
 
 class BLENotificationDispatcher:
@@ -548,27 +556,32 @@ class BLENotificationDispatcher:
             error_msg: str,
         ) -> None:
             def _report_notification_error() -> None:
+                def _try_report(hook: object | None) -> bool:
+                    if not callable(hook) or _is_unconfigured_mock_callable(hook):
+                        return False
+                    try:
+                        hook(error_msg)
+                    except Exception:  # noqa: BLE001 - reporting must stay best effort
+                        logger.debug(
+                            "Notification error reporter failed; trying fallback.",
+                            exc_info=True,
+                        )
+                        return False
+                    return True
+
                 report_notification_error = getattr(
                     iface,
                     "report_notification_handler_error",
                     None,
                 )
-                if callable(
-                    report_notification_error
-                ) and not _is_unconfigured_mock_callable(report_notification_error):
-                    report_notification_error(error_msg)
+                if _try_report(report_notification_error):
                     return
                 legacy_report_notification_error = getattr(
                     iface,
                     "_report_notification_handler_error",
                     None,
                 )
-                if callable(
-                    legacy_report_notification_error
-                ) and not _is_unconfigured_mock_callable(
-                    legacy_report_notification_error
-                ):
-                    legacy_report_notification_error(error_msg)
+                if _try_report(legacy_report_notification_error):
                     return
                 self.report_notification_handler_error(error_msg)
 
@@ -654,10 +667,10 @@ class BLENotificationDispatcher:
         def _get_or_create_handler(
             uuid: str, factory: Callable[[], Callable[[Any, Any], None]]
         ) -> Callable[[Any, Any], None]:
-            handler = self._notification_manager._get_callback(uuid)
+            handler = self._notification_manager.get_callback(uuid)
             if handler is None:
                 handler = factory()
-                self._notification_manager._subscribe(uuid, handler)
+                self._notification_manager.subscribe(uuid, handler)
             return handler
 
         def _is_notify_acquired_error(err: BaseException) -> bool:
@@ -723,7 +736,7 @@ class BLENotificationDispatcher:
                         err,
                     )
 
-        ingress_handler = self._notification_manager._get_callback(FROMNUM_UUID)
+        ingress_handler = self._notification_manager.get_callback(FROMNUM_UUID)
         if ingress_handler is None:
             ingress_handler = _safe_from_num_handler
         self.fromnum_notify_enabled = False
@@ -771,8 +784,8 @@ class BLENotificationDispatcher:
                 )
                 return
             else:
-                if self._notification_manager._get_callback(FROMNUM_UUID) is None:
-                    self._notification_manager._subscribe(FROMNUM_UUID, ingress_handler)
+                if self._notification_manager.get_callback(FROMNUM_UUID) is None:
+                    self._notification_manager.subscribe(FROMNUM_UUID, ingress_handler)
                 self.fromnum_notify_enabled = True
                 return
 
@@ -805,7 +818,6 @@ class BLENotificationDispatcher:
             return None
 
     # COMPAT_STABLE_SHIM (2.7.7): historical underscore callback entrypoint.
-    @staticmethod
-    def _legacy_log_radio_handler(_: Any, b: bytes | bytearray) -> str | None:
+    def _legacy_log_radio_handler(self, sender: object, b: bytes | bytearray) -> str | None:
         """Decode legacy UTF-8 log payload and return normalized message."""
-        return BLENotificationDispatcher.legacy_log_radio_handler(_, b)
+        return self.legacy_log_radio_handler(sender, b)

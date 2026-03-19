@@ -392,7 +392,6 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 if not publish_claimed:
                     iface._client_publish_pending = True
                     publish_claimed = True
-                iface._client_replacement_pending = False
                 should_publish_connected = True
         snapshot = snapshot_provider(
             connected_client,
@@ -419,6 +418,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 is_closing_after = False
                 disconnect_notified = False
                 published_session_epoch = 0
+                publish_completed = False
                 try:
                     post_commit_snapshot = snapshot_provider(
                         connected_client,
@@ -432,6 +432,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     ):
                         _raise_invalidated(post_commit_snapshot)
                     iface._connected()
+                    publish_completed = True
                     with iface._state_lock:
                         iface._ever_connected = True
                         iface._prior_publish_was_reconnect = prior_ever_connected
@@ -443,7 +444,8 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     with iface._state_lock:
                         if iface.client is connected_client:
                             iface._client_publish_pending = False
-                            iface._client_replacement_pending = False
+                            if publish_completed:
+                                iface._client_replacement_pending = False
                         still_owned_after, is_closing_after = get_connected_status_locked(
                             connected_client
                         )

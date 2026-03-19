@@ -652,10 +652,23 @@ class BLEInterface(MeshInterface):
 
     def _set_thread_event(self, event_name: str) -> None:
         """Set thread-coordinator event via public-first compatibility dispatch."""
-        coordinator = self.thread_coordinator
+        coordinator = getattr(self, "thread_coordinator", None)
+        if coordinator is None or _is_unconfigured_mock_member(coordinator):
+            logger.debug(
+                "Thread coordinator is missing set_event/_set_event for event %s",
+                event_name,
+            )
+            return
         dispatch_event = self._resolve_thread_event_dispatcher(coordinator)
         if dispatch_event is not None:
-            dispatch_event(event_name)
+            try:
+                dispatch_event(event_name)
+            except Exception:  # noqa: BLE001 - event wakeups must remain best effort
+                logger.debug(
+                    "Error setting thread event %s",
+                    event_name,
+                    exc_info=True,
+                )
             return
         logger.debug(
             "No callable thread event dispatcher available for event %s",
@@ -690,6 +703,8 @@ class BLEInterface(MeshInterface):
             fallback=fallback,
         )
 
+    # COMPAT_STABLE_SHIM (2.7.7): historical internal BLE callback entrypoint.
+    # Keep callable without deprecation warning.
     def _from_num_handler(self, _: object, b: bytes | bytearray) -> None:
         """Process a FROMNUM notification via notification dispatcher."""
         self._get_notification_dispatcher().from_num_handler(_, b)
@@ -718,6 +733,8 @@ class BLEInterface(MeshInterface):
             from_num_handler=self._from_num_handler,
         )
 
+    # COMPAT_STABLE_SHIM (2.7.7): historical internal BLE callback entrypoint.
+    # Keep callable without deprecation warning.
     def _log_radio_handler(self, _: object, b: bytes | bytearray) -> None:
         """Decode and dispatch protobuf log notification via dispatcher owner."""
         message = self._get_notification_dispatcher().log_radio_handler(_, b)
@@ -743,6 +760,8 @@ class BLEInterface(MeshInterface):
         # so legacy callback ordering/side-effects remain synchronous.
         self._log_radio_handler(sender, b)
 
+    # COMPAT_STABLE_SHIM (2.7.7): historical internal BLE callback entrypoint.
+    # Keep callable without deprecation warning.
     def _legacy_log_radio_handler(self, _: object, b: bytes | bytearray) -> None:
         """Decode and dispatch legacy UTF-8 log notification via dispatcher owner."""
         message = self._get_notification_dispatcher().legacy_log_radio_handler(_, b)
@@ -980,10 +999,23 @@ class BLEInterface(MeshInterface):
         self, address: str | None
     ) -> BLEClient | None:
         """Return available management client via management collaborator."""
-        return (
-            self._get_management_command_handler().get_management_client_if_available(
-                address
-            )
+        handler = self._get_management_command_handler()
+        state_lock = getattr(self, "_state_lock", None)
+        lock_is_owned = getattr(state_lock, "_is_owned", None)
+        if callable(lock_is_owned):
+            try:
+                if bool(lock_is_owned()):
+                    return handler.get_management_client_if_available_locked(address)
+            except Exception:  # noqa: BLE001 - lock probe remains best effort
+                pass
+        return handler.get_management_client_if_available(address)
+
+    def _get_management_client_if_available_locked(
+        self, address: str | None
+    ) -> BLEClient | None:
+        """Return available management client while caller already holds ``_state_lock``."""
+        return self._get_management_command_handler().get_management_client_if_available_locked(
+            address
         )
 
     def _get_management_client_for_target(
@@ -2015,6 +2047,7 @@ class BLEInterface(MeshInterface):
         original_publish_pending: bool
         original_replacement_pending: bool
         original_disconnect_notified: bool
+        original_connection_session_epoch: int
         with self._state_lock:
             original_client = self.client
             original_address = self.address
@@ -2029,6 +2062,9 @@ class BLEInterface(MeshInterface):
             )
             original_disconnect_notified = bool(
                 getattr(self, "_disconnect_notified", False)
+            )
+            original_connection_session_epoch = getattr(
+                self, "_connection_session_epoch", 0
             )
             # Claim a provisional session before orchestration moves shared
             # state to CONNECTED so disconnect callbacks stay publication-safe.
@@ -2101,6 +2137,9 @@ class BLEInterface(MeshInterface):
                         self._client_publish_pending = original_publish_pending
                         self._client_replacement_pending = original_replacement_pending
                         self._disconnect_notified = original_disconnect_notified
+                        self._connection_session_epoch = (
+                            original_connection_session_epoch
+                        )
                 if client is not original_client:
                     try:
                         self._client_manager_safe_close_client(client)

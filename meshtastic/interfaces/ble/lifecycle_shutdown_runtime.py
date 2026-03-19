@@ -2,6 +2,7 @@
 
 import atexit
 import contextlib
+import inspect
 import threading
 import time
 from collections.abc import Callable
@@ -172,14 +173,37 @@ class BLEShutdownLifecycleCoordinator:
         if join_thread is None:
             join_runtime_thread = self._thread_access.join_thread
         else:
+            join_accepts_timeout_kwarg = True
+            try:
+                parameters = inspect.signature(join_thread).parameters
+            except (TypeError, ValueError):
+                join_accepts_timeout_kwarg = True
+            else:
+                timeout_parameter = parameters.get("timeout")
+                if timeout_parameter is not None:
+                    join_accepts_timeout_kwarg = timeout_parameter.kind in (
+                        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                        inspect.Parameter.KEYWORD_ONLY,
+                    )
+                else:
+                    join_accepts_timeout_kwarg = any(
+                        parameter.kind is inspect.Parameter.VAR_KEYWORD
+                        for parameter in parameters.values()
+                    )
 
             def join_runtime_thread(thread: object, *, timeout: float | None) -> None:
-                try:
+                if join_accepts_timeout_kwarg:
                     join_thread(thread, timeout=timeout)
-                except TypeError:
-                    join_thread(thread, timeout)
+                    return
+                join_thread(thread, timeout)
 
-        wake_waiters(READ_TRIGGER_EVENT, RECONNECTED_EVENT)
+        try:
+            wake_waiters(READ_TRIGGER_EVENT, RECONNECTED_EVENT)
+        except Exception:  # noqa: BLE001 - close must remain best effort
+            logger.debug(
+                "Error waking BLE receive-thread waiters during close",
+                exc_info=True,
+            )
         receive_thread = iface._receiveThread
         if receive_thread is None:
             return

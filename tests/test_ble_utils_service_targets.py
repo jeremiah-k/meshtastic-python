@@ -23,8 +23,6 @@ from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.management_service import (
     BLEManagementCommandHandler,
     BLEManagementCommandsService,
-)
-from meshtastic.interfaces.ble.management_runtime import (
     _create_management_client,
     _is_blank_or_malformed_address_like,
 )

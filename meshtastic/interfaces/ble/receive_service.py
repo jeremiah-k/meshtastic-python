@@ -53,6 +53,7 @@ class BLEReceiveRecoveryController:
     def __init__(self, iface: "BLEInterface") -> None:
         """Bind receive/recovery helpers to a specific interface instance."""
         self._iface = iface
+        self._dispatching_iface_receive_hooks: set[str] = set()
 
     @staticmethod
     def _as_usable_callable(
@@ -94,7 +95,11 @@ class BLEReceiveRecoveryController:
                 has_ever_connected_session
             )
             if has_ever_connected_session_fn is not None:
-                return bool(has_ever_connected_session_fn())
+                try:
+                    result = has_ever_connected_session_fn()
+                except Exception:  # noqa: BLE001 - probe remains best effort
+                    return False
+                return result if isinstance(result, bool) else False
         raw_ever_connected = getattr(self._iface, "_ever_connected", False)
         if _is_unconfigured_mock_member(raw_ever_connected):
             return False
@@ -153,7 +158,11 @@ class BLEReceiveRecoveryController:
             )
             is_connection_closing_fn = self._as_usable_callable(is_connection_closing)
             if is_connection_closing_fn is not None:
-                return bool(is_connection_closing_fn())
+                try:
+                    result = is_connection_closing_fn()
+                except Exception:  # noqa: BLE001 - probe remains best effort
+                    return False
+                return result if isinstance(result, bool) else False
         iface = self._iface
         with iface._state_lock:
             return self._is_connection_closing_locked()
@@ -359,12 +368,29 @@ class BLEReceiveRecoveryController:
         self, method_name: str
     ) -> Callable[..., object] | None:
         """Resolve instance/class override while avoiding default recursion shims."""
+        if method_name in self._dispatching_iface_receive_hooks:
+            return None
+
+        def _wrap_override(
+            override: Callable[..., object],
+        ) -> Callable[..., object]:
+            def _guarded_override(*args: object, **kwargs: object) -> object:
+                if method_name in self._dispatching_iface_receive_hooks:
+                    return None
+                self._dispatching_iface_receive_hooks.add(method_name)
+                try:
+                    return override(*args, **kwargs)
+                finally:
+                    self._dispatching_iface_receive_hooks.discard(method_name)
+
+            return _guarded_override
+
         iface = self._iface
         instance_override = iface.__dict__.get(method_name)
         if callable(instance_override) and not _is_unconfigured_mock_callable(
             instance_override
         ):
-            return cast(Callable[..., object], instance_override)
+            return _wrap_override(cast(Callable[..., object], instance_override))
         class_or_subclass_override = getattr(iface, method_name, None)
         if callable(class_or_subclass_override) and not _is_unconfigured_mock_callable(
             class_or_subclass_override
@@ -374,7 +400,9 @@ class BLEReceiveRecoveryController:
                 class_or_subclass_override,
             ):
                 return None
-            return cast(Callable[..., object], class_or_subclass_override)
+            return _wrap_override(
+                cast(Callable[..., object], class_or_subclass_override)
+            )
         return None
 
     def handle_read_loop_disconnect(

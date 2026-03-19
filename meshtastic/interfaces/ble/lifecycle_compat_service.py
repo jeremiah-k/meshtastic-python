@@ -134,6 +134,7 @@ class BLELifecycleService:
                         and BLELifecycleService._is_receive_lifecycle_coordinator_like(
                             receive_coordinator
                         )
+                        and _supports_start_overrides(receive_coordinator)
                     ):
                         return cast(
                             BLEReceiveLifecycleCoordinator, receive_coordinator
@@ -167,6 +168,7 @@ class BLELifecycleService:
                     and BLELifecycleService._is_receive_lifecycle_coordinator_like(
                         coordinator
                     )
+                    and _supports_start_overrides(coordinator)
                 ):
                     return cast(BLEReceiveLifecycleCoordinator, coordinator)
         return BLEReceiveLifecycleCoordinator(iface)

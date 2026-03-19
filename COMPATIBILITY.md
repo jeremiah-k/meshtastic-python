@@ -50,6 +50,8 @@ Additional approved BLE compatibility and promotions:
 | --------------------------------------------------------------- | -------------------- | -------------- | -------------------------------------------------- |
 | `BLEClient.find_device`                                         | `COMPAT_STABLE_SHIM` | Silent         | Historical snake_case.                             |
 | `BLEClient.findDevice`                                          | `PRIMARY`            | Silent         | Approved promoted camelCase name.                  |
+| `BLEClient.read_gatt_char`                                      | `COMPAT_STABLE_SHIM` | Silent         | Historical snake_case alias for `readGattChar`.    |
+| `BLEClient.start_notify`                                        | `COMPAT_STABLE_SHIM` | Silent         | Historical snake_case alias for `startNotify`.     |
 | `BLEClient.is_connected`                                        | `COMPAT_STABLE_SHIM` | Silent         | Shim for `isConnected`.                            |
 | `BLEClient.isConnected`                                         | `PRIMARY`            | Silent         | Approved promoted camelCase name.                  |
 | `BLEClient.stop_notify`                                         | `COMPAT_STABLE_SHIM` | Silent         | Shim for `stopNotify`.                             |

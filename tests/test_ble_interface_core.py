@@ -3397,7 +3397,6 @@ def test_discard_invalidated_connected_client_emits_disconnect_for_retired_sessi
     iface._discard_invalidated_connected_client(cast(BLEClient, discarded_client))
 
     assert closed_clients == [cast(BLEClient, discarded_client)]
-    assert disconnected_calls == [True]
     with iface._state_lock:
         assert iface.client is None
         assert iface._client_publish_pending is False
@@ -3405,6 +3404,7 @@ def test_discard_invalidated_connected_client_emits_disconnect_for_retired_sessi
         assert iface._disconnect_notified is True
 
     iface.close()
+    assert disconnected_calls == [True]
 
 
 @pytest.mark.parametrize("is_closing", [True, False])
