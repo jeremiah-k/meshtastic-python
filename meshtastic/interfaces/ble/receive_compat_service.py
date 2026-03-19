@@ -2,7 +2,8 @@
 
 import contextlib
 import inspect
-from typing import TYPE_CHECKING, cast
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, cast
 
 from bleak.exc import BleakError
 
@@ -92,25 +93,26 @@ class BLEReceiveRecoveryService:
         if candidate is None or _is_unconfigured_mock_member(candidate):
             return None
         resolved = candidate
-        should_invoke_factory = callable(
-            resolved
-        ) and not _is_unconfigured_mock_callable(resolved) and (
-            inspect.isclass(resolved)
-            or not BLEReceiveRecoveryService._is_controller_like(
-                resolved, required_method
+        should_invoke_factory = (
+            callable(resolved)
+            and not _is_unconfigured_mock_callable(resolved)
+            and (
+                inspect.isclass(resolved)
+                or not BLEReceiveRecoveryService._is_controller_like(
+                    resolved, required_method
+                )
             )
         )
         if should_invoke_factory:
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - factory probe is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - factory probe is best effort
                 if inspect.isclass(resolved):
+                    resolved_factory = cast(Callable[..., Any], resolved)
                     if iface is not None:
-                        resolved = resolved(iface)
+                        resolved = resolved_factory(iface)
                     else:
-                        resolved = resolved()
+                        resolved = resolved_factory()
                 else:
-                    resolved = resolved()
+                    resolved = cast(Callable[..., Any], resolved)()
         if inspect.isclass(resolved):
             return None
         if (
@@ -144,9 +146,7 @@ class BLEReceiveRecoveryService:
         if callable(get_controller) and not _is_unconfigured_mock_callable(
             get_controller
         ):
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - shim resolution stays best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - shim resolution stays best effort
                 resolved = get_controller()
                 resolved_controller = (
                     BLEReceiveRecoveryService._resolve_controller_candidate(
