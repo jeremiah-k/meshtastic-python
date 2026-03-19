@@ -71,7 +71,15 @@ def _client_is_connected_compat(client: "BLEClient") -> bool:
         if callable(candidate):
             if _is_unconfigured_mock_callable(candidate):
                 continue
-            connected = candidate()
+            try:
+                connected = candidate()
+            except Exception:  # noqa: BLE001 - connectivity probes stay best effort
+                logger.debug(
+                    "Error probing BLE client connectivity via %s",
+                    candidate_name,
+                    exc_info=True,
+                )
+                continue
             if isinstance(connected, bool):
                 return connected
             continue
@@ -273,7 +281,11 @@ class _LifecycleThreadAccess:
 
     def join_thread(self, thread: object, *, timeout: float | None) -> None:
         """Join thread via public-first coordinator compatibility dispatch."""
-        join_thread = getattr(self._iface.thread_coordinator, "join_thread", None)
+        coordinator = getattr(self._iface, "thread_coordinator", None)
+        if coordinator is None or _is_unconfigured_mock_member(coordinator):
+            logger.debug("Thread coordinator is missing join_thread/_join_thread")
+            return
+        join_thread = getattr(coordinator, "join_thread", None)
         if callable(join_thread) and not _is_unconfigured_mock_callable(join_thread):
             try:
                 join_thread(thread, timeout=timeout)
@@ -284,9 +296,7 @@ class _LifecycleThreadAccess:
                     exc_info=True,
                 )
             return
-        legacy_join_thread = getattr(
-            self._iface.thread_coordinator, "_join_thread", None
-        )
+        legacy_join_thread = getattr(coordinator, "_join_thread", None)
         if callable(legacy_join_thread) and not _is_unconfigured_mock_callable(
             legacy_join_thread
         ):
@@ -310,7 +320,11 @@ class _LifecycleThreadAccess:
 
     def set_event(self, event_name: str) -> None:
         """Set event via public-first coordinator compatibility dispatch."""
-        set_event = getattr(self._iface.thread_coordinator, "set_event", None)
+        coordinator = getattr(self._iface, "thread_coordinator", None)
+        if coordinator is None or _is_unconfigured_mock_member(coordinator):
+            logger.debug("Thread coordinator is missing set_event/_set_event")
+            return
+        set_event = getattr(coordinator, "set_event", None)
         if callable(set_event) and not _is_unconfigured_mock_callable(set_event):
             try:
                 set_event(event_name)
@@ -321,7 +335,7 @@ class _LifecycleThreadAccess:
                     exc_info=True,
                 )
             return
-        legacy_set_event = getattr(self._iface.thread_coordinator, "_set_event", None)
+        legacy_set_event = getattr(coordinator, "_set_event", None)
         if callable(legacy_set_event) and not _is_unconfigured_mock_callable(
             legacy_set_event
         ):
@@ -338,7 +352,11 @@ class _LifecycleThreadAccess:
 
     def clear_events(self, *event_names: str) -> None:
         """Clear events via public-first coordinator compatibility dispatch."""
-        clear_events = getattr(self._iface.thread_coordinator, "clear_events", None)
+        coordinator = getattr(self._iface, "thread_coordinator", None)
+        if coordinator is None or _is_unconfigured_mock_member(coordinator):
+            logger.debug("Thread coordinator is missing clear_events/_clear_events")
+            return
+        clear_events = getattr(coordinator, "clear_events", None)
         if callable(clear_events) and not _is_unconfigured_mock_callable(clear_events):
             try:
                 clear_events(*event_names)
@@ -349,9 +367,7 @@ class _LifecycleThreadAccess:
                     exc_info=True,
                 )
             return
-        legacy_clear_events = getattr(
-            self._iface.thread_coordinator, "_clear_events", None
-        )
+        legacy_clear_events = getattr(coordinator, "_clear_events", None)
         if callable(legacy_clear_events) and not _is_unconfigured_mock_callable(
             legacy_clear_events
         ):
@@ -368,9 +384,13 @@ class _LifecycleThreadAccess:
 
     def wake_waiting_threads(self, *event_names: str) -> None:
         """Wake waiters via public-first coordinator compatibility dispatch."""
-        wake_waiting_threads = getattr(
-            self._iface.thread_coordinator, "wake_waiting_threads", None
-        )
+        coordinator = getattr(self._iface, "thread_coordinator", None)
+        if coordinator is None or _is_unconfigured_mock_member(coordinator):
+            logger.debug(
+                "Thread coordinator is missing wake_waiting_threads/_wake_waiting_threads/set_event/_set_event"
+            )
+            return
+        wake_waiting_threads = getattr(coordinator, "wake_waiting_threads", None)
         if callable(wake_waiting_threads) and not _is_unconfigured_mock_callable(
             wake_waiting_threads
         ):
@@ -383,9 +403,7 @@ class _LifecycleThreadAccess:
                     event_names,
                     exc_info=True,
                 )
-        legacy_wake_waiting_threads = getattr(
-            self._iface.thread_coordinator, "_wake_waiting_threads", None
-        )
+        legacy_wake_waiting_threads = getattr(coordinator, "_wake_waiting_threads", None)
         if callable(legacy_wake_waiting_threads) and not _is_unconfigured_mock_callable(
             legacy_wake_waiting_threads
         ):
@@ -398,7 +416,7 @@ class _LifecycleThreadAccess:
                     event_names,
                     exc_info=True,
                 )
-        set_event = getattr(self._iface.thread_coordinator, "set_event", None)
+        set_event = getattr(coordinator, "set_event", None)
         if callable(set_event) and not _is_unconfigured_mock_callable(set_event):
             for event_name in event_names:
                 try:
@@ -410,7 +428,7 @@ class _LifecycleThreadAccess:
                         exc_info=True,
                     )
             return
-        legacy_set_event = getattr(self._iface.thread_coordinator, "_set_event", None)
+        legacy_set_event = getattr(coordinator, "_set_event", None)
         if callable(legacy_set_event) and not _is_unconfigured_mock_callable(
             legacy_set_event
         ):

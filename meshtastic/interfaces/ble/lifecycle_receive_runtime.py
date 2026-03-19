@@ -68,26 +68,34 @@ class BLEReceiveLifecycleCoordinator:
                 _thread_start_probe(existing)[1] if existing is not None else False
             )
             if existing is threading.current_thread():
-                now = time.monotonic()
-                pending_since = getattr(iface, "_receive_start_pending_since", None)
-                if (
-                    not existing_start_pending
-                    or not isinstance(pending_since, (float, int))
-                ):
-                    iface._receive_start_pending_since = now
-                    pending_age = 0.0
+                if not reset_recovery:
+                    iface._receive_start_pending = False
+                    iface._receive_start_pending_since = None
+                    logger.debug(
+                        "Starting replacement receive thread (%s) from recovery while current receive thread unwinds.",
+                        name,
+                    )
                 else:
-                    pending_age = now - float(pending_since)
-                    if pending_age >= RECEIVE_START_PENDING_TIMEOUT_SECONDS:
+                    now = time.monotonic()
+                    pending_since = getattr(iface, "_receive_start_pending_since", None)
+                    if (
+                        not existing_start_pending
+                        or not isinstance(pending_since, (float, int))
+                    ):
                         iface._receive_start_pending_since = now
                         pending_age = 0.0
-                iface._receive_start_pending = True
-                logger.debug(
-                    "Deferring receive thread start (%s): current receive thread is still unwinding (pending %.3fs).",
-                    name,
-                    pending_age,
-                )
-                return None, None
+                    else:
+                        pending_age = now - float(pending_since)
+                        if pending_age >= RECEIVE_START_PENDING_TIMEOUT_SECONDS:
+                            iface._receive_start_pending_since = now
+                            pending_age = 0.0
+                    iface._receive_start_pending = True
+                    logger.debug(
+                        "Deferring receive thread start (%s): current receive thread is still unwinding (pending %.3fs).",
+                        name,
+                        pending_age,
+                    )
+                    return None, None
             if existing is not None and existing is not threading.current_thread():
                 if existing_is_alive:
                     iface._receive_start_pending = False

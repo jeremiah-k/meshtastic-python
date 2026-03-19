@@ -122,7 +122,7 @@ from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import mesh_pb2
 
 T = TypeVar("T")
-MALFORMED_NOTIFICATION_THRESHOLD = _ble_constants.MALFORMED_NOTIFICATION_THRESHOLD
+MALFORMED_NOTIFICATION_THRESHOLD: int = _ble_constants.MALFORMED_NOTIFICATION_THRESHOLD
 _MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS: float = 30.0
 _MANAGEMENT_CONNECT_WAIT_POLL_SECONDS: float = 0.5
 _MANAGEMENT_CONNECT_WAIT_TIMEOUT_SECONDS: float = 30.0
@@ -1112,6 +1112,11 @@ class BLEInterface(MeshInterface):
         """Compatibility bridge exposing malformed FROMNUM lock."""
         return self._get_notification_dispatcher().malformed_notification_lock
 
+    @_malformed_notification_lock.setter
+    def _malformed_notification_lock(self, lock: threading.RLock) -> None:
+        """Compatibility bridge setter for malformed FROMNUM lock."""
+        self._get_notification_dispatcher().malformed_notification_lock = lock
+
     def _get_lifecycle_controller(self) -> BLELifecycleController:
         """Return lifecycle collaborator, creating one lazily when needed."""
         return self._get_or_create_collaborator(
@@ -2058,6 +2063,9 @@ class BLEInterface(MeshInterface):
                 previous_client = self.client
                 self.address = device_address
                 self.client = client
+                self._connection_session_epoch = (
+                    getattr(self, "_connection_session_epoch", 0) + 1
+                )
                 self._disconnect_notified = False
                 self._client_publish_pending = True
                 normalized_device_address = sanitize_address(device_address or "")
@@ -2714,9 +2722,5 @@ class BLEInterface(MeshInterface):
 
     def _connected(self) -> None:
         """Mark the interface as connected and publish the legacy connection status event for backwards compatibility."""
-        with self._state_lock:
-            self._connection_session_epoch = (
-                getattr(self, "_connection_session_epoch", 0) + 1
-            )
         super()._connected()
         self._publish_connection_status(connected=True)

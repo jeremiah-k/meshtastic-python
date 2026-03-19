@@ -418,6 +418,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 still_owned_after = True
                 is_closing_after = False
                 disconnect_notified = False
+                published_session_epoch = 0
                 try:
                     post_commit_snapshot = snapshot_provider(
                         connected_client,
@@ -434,6 +435,9 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     with iface._state_lock:
                         iface._ever_connected = True
                         iface._prior_publish_was_reconnect = prior_ever_connected
+                        published_session_epoch = getattr(
+                            iface, "_connection_session_epoch", 0
+                        )
                     self._emit_verified_connection_side_effects(connected_client)
                 finally:
                     with iface._state_lock:
@@ -452,7 +456,13 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     logger.debug(
                         "Connected publication raced with disconnect; emitting compensating disconnect event."
                     )
-                    iface._disconnected()
+                    with iface._state_lock:
+                        same_session = (
+                            getattr(iface, "_connection_session_epoch", 0)
+                            == published_session_epoch
+                        )
+                    if same_session:
+                        iface._disconnected()
                 return
 
         post_check_snapshot = snapshot_provider(

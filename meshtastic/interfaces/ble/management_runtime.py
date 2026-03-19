@@ -135,6 +135,11 @@ def _is_blank_or_malformed_address_like(address: str | None) -> bool:
         and _HEX_MAC_NO_SEPARATOR_RE.fullmatch(normalized_address) is not None
     ):
         return False
+    if (
+        normalized_address is None
+        and _HEX_MAC_NO_SEPARATOR_RE.fullmatch(stripped_address) is not None
+    ):
+        return True
     if ":" not in stripped_address:
         if all(char in "0123456789abcdefABCDEF" for char in stripped_address):
             if len(stripped_address) != 12:

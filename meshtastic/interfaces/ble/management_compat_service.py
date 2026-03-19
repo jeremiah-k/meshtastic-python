@@ -103,20 +103,39 @@ class BLEManagementCommandsService:
         connected_elsewhere: Callable[[str | None, object | None], bool] | None = None,
     ) -> BLEManagementCommandHandler:
         """Resolve handler for compatibility shims, preferring iface-owned collaborator."""
-        get_handler = getattr(iface, "_get_management_command_handler", None)
-        if callable(get_handler) and not _is_unconfigured_mock_callable(get_handler):
-            resolved = get_handler()
-            if (
-                resolved is not None
-                and not _is_unconfigured_mock_member(resolved)
-                and (
-                    BLEManagementCommandsService._is_handler_like(resolved)
-                    or BLEManagementCommandsService._has_required_handler_entrypoint(
-                        resolved
+        use_iface_owned_handler = (
+            ble_client_factory is None and connected_elsewhere is None
+        )
+        if use_iface_owned_handler:
+            getter_available = False
+            get_handler = getattr(iface, "_get_management_command_handler", None)
+            if callable(get_handler) and not _is_unconfigured_mock_callable(get_handler):
+                getter_available = True
+                resolved = get_handler()
+                if (
+                    resolved is not None
+                    and not _is_unconfigured_mock_member(resolved)
+                    and (
+                        BLEManagementCommandsService._is_handler_like(resolved)
+                        or BLEManagementCommandsService._has_required_handler_entrypoint(
+                            resolved
+                        )
                     )
-                )
-            ):
-                return cast(BLEManagementCommandHandler, resolved)
+                ):
+                    return cast(BLEManagementCommandHandler, resolved)
+            if not getter_available:
+                direct_handler = getattr(iface, "_management_command_handler", None)
+                if (
+                    direct_handler is not None
+                    and not _is_unconfigured_mock_member(direct_handler)
+                    and (
+                        BLEManagementCommandsService._is_handler_like(direct_handler)
+                        or BLEManagementCommandsService._has_required_handler_entrypoint(
+                            direct_handler
+                        )
+                    )
+                ):
+                    return cast(BLEManagementCommandHandler, direct_handler)
         if ble_client_factory is None:
             ble_client_factory = BLEClient
         if connected_elsewhere is None:

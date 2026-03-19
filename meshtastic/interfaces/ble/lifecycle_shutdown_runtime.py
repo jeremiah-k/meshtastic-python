@@ -211,10 +211,16 @@ class BLEShutdownLifecycleCoordinator:
         ) or receive_thread is threading.current_thread():
             logger.debug("close() called from receive thread; skipping self-join")
         else:
-            join_runtime_thread(
-                receive_thread,
-                timeout=RECEIVE_THREAD_JOIN_TIMEOUT,
-            )
+            try:
+                join_runtime_thread(
+                    receive_thread,
+                    timeout=RECEIVE_THREAD_JOIN_TIMEOUT,
+                )
+            except Exception:  # noqa: BLE001 - close must remain best effort
+                logger.debug(
+                    "Error joining BLE receive thread during close",
+                    exc_info=True,
+                )
             _, thread_is_alive = _thread_start_probe(receive_thread)
             if thread_is_alive:
                 logger.warning(

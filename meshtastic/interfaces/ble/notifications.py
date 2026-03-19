@@ -674,38 +674,56 @@ class BLENotificationDispatcher:
         )
 
         try:
-            if client.has_characteristic(LEGACY_LOGRADIO_UUID):
-                legacy_handler = _get_or_create_handler(
-                    LEGACY_LOGRADIO_UUID, lambda: _safe_legacy_handler
-                )
-                client.start_notify(
-                    LEGACY_LOGRADIO_UUID,
-                    legacy_handler,
-                    timeout=NOTIFICATION_START_TIMEOUT,
-                )
+            has_legacy_logradio = client.has_characteristic(LEGACY_LOGRADIO_UUID)
         except optional_errors as err:
             logger.debug(
                 "Failed to start optional legacy log notifications for %s: %s",
                 LEGACY_LOGRADIO_UUID,
                 err,
             )
+        else:
+            if has_legacy_logradio:
+                legacy_handler = _get_or_create_handler(
+                    LEGACY_LOGRADIO_UUID, lambda: _safe_legacy_handler
+                )
+                try:
+                    client.start_notify(
+                        LEGACY_LOGRADIO_UUID,
+                        legacy_handler,
+                        timeout=NOTIFICATION_START_TIMEOUT,
+                    )
+                except optional_errors as err:
+                    logger.debug(
+                        "Failed to start optional legacy log notifications for %s: %s",
+                        LEGACY_LOGRADIO_UUID,
+                        err,
+                    )
 
         try:
-            if client.has_characteristic(LOGRADIO_UUID):
-                log_callback = _get_or_create_handler(
-                    LOGRADIO_UUID, lambda: _safe_log_handler
-                )
-                client.start_notify(
-                    LOGRADIO_UUID,
-                    log_callback,
-                    timeout=NOTIFICATION_START_TIMEOUT,
-                )
+            has_logradio = client.has_characteristic(LOGRADIO_UUID)
         except optional_errors as err:
             logger.debug(
                 "Failed to start optional log notifications for %s: %s",
                 LOGRADIO_UUID,
                 err,
             )
+        else:
+            if has_logradio:
+                log_callback = _get_or_create_handler(
+                    LOGRADIO_UUID, lambda: _safe_log_handler
+                )
+                try:
+                    client.start_notify(
+                        LOGRADIO_UUID,
+                        log_callback,
+                        timeout=NOTIFICATION_START_TIMEOUT,
+                    )
+                except optional_errors as err:
+                    logger.debug(
+                        "Failed to start optional log notifications for %s: %s",
+                        LOGRADIO_UUID,
+                        err,
+                    )
 
         ingress_handler = self._notification_manager._get_callback(FROMNUM_UUID)
         if ingress_handler is None:
@@ -772,6 +790,11 @@ class BLENotificationDispatcher:
             logger.warning("Malformed LogRecord received. Skipping.")
             return None
 
+    # COMPAT_STABLE_SHIM (2.7.7): historical underscore callback entrypoint.
+    def _log_radio_handler(self, _: Any, b: bytes | bytearray) -> str | None:
+        """Decode protobuf log payload and return formatted message."""
+        return self.log_radio_handler(_, b)
+
     @staticmethod
     def legacy_log_radio_handler(_: Any, b: bytes | bytearray) -> str | None:
         """Decode legacy UTF-8 log payload and return normalized message."""
@@ -782,3 +805,9 @@ class BLENotificationDispatcher:
                 "Malformed legacy LogRecord received (not valid utf-8). Skipping."
             )
             return None
+
+    # COMPAT_STABLE_SHIM (2.7.7): historical underscore callback entrypoint.
+    @staticmethod
+    def _legacy_log_radio_handler(_: Any, b: bytes | bytearray) -> str | None:
+        """Decode legacy UTF-8 log payload and return normalized message."""
+        return BLENotificationDispatcher.legacy_log_radio_handler(_, b)
