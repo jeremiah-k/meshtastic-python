@@ -5112,12 +5112,6 @@ def _patch_receive_start_threads(
 
     monkeypatch.setattr(
         iface.thread_coordinator,
-        "create_thread",
-        _create_thread,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        iface.thread_coordinator,
         "_create_thread",
         _create_thread,
         raising=True,
@@ -5130,12 +5124,6 @@ def _patch_receive_start_threads(
         if on_start is not None:
             on_start(thread)
 
-    monkeypatch.setattr(
-        iface.thread_coordinator,
-        "start_thread",
-        _start_thread,
-        raising=False,
-    )
     monkeypatch.setattr(
         iface.thread_coordinator,
         "_start_thread",
@@ -6957,6 +6945,10 @@ def test_register_notifications_safe_call_inline_fallback_when_safe_execute_unco
         def __init__(self) -> None:
             super().__init__()
             self.callbacks: dict[str, Callable[[Any, bytes], None]] = {}
+            self.start_notify_calls: dict[str, int] = {}
+            self.start_notify_calls: dict[str, int] = {}
+            self.start_notify_calls: dict[str, int] = {}
+            self.start_notify_calls: dict[str, int] = {}
 
         def has_characteristic(self, uuid: str) -> bool:
             return uuid in {LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, FROMNUM_UUID}
@@ -6964,7 +6956,9 @@ def test_register_notifications_safe_call_inline_fallback_when_safe_execute_unco
         def start_notify(self, *args: object, **kwargs: object) -> None:
             _ = kwargs
             if len(args) >= 2:
-                self.callbacks[str(args[0])] = cast(
+                uuid = str(args[0])
+                self.start_notify_calls[uuid] = self.start_notify_calls.get(uuid, 0) + 1
+                self.callbacks[uuid] = cast(
                     Callable[[Any, bytes], None], args[1]
                 )
 
@@ -7010,6 +7004,7 @@ def test_register_notifications_safe_execute_fallback_still_invokes_handler(
         def __init__(self) -> None:
             super().__init__()
             self.callbacks: dict[str, Callable[[Any, bytes], None]] = {}
+            self.start_notify_calls: dict[str, int] = {}
 
         def has_characteristic(self, uuid: str) -> bool:
             return uuid in {LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, FROMNUM_UUID}
@@ -7017,7 +7012,9 @@ def test_register_notifications_safe_execute_fallback_still_invokes_handler(
         def start_notify(self, *args: object, **kwargs: object) -> None:
             _ = kwargs
             if len(args) >= 2:
-                self.callbacks[str(args[0])] = cast(
+                uuid = str(args[0])
+                self.start_notify_calls[uuid] = self.start_notify_calls.get(uuid, 0) + 1
+                self.callbacks[uuid] = cast(
                     Callable[[Any, bytes], None], args[1]
                 )
 
@@ -7068,6 +7065,7 @@ def test_register_notifications_reuses_cached_wrapper_with_latest_handlers(
         def __init__(self) -> None:
             super().__init__()
             self.callbacks: dict[str, Callable[[Any, bytes], None]] = {}
+            self.start_notify_calls: dict[str, int] = {}
 
         def has_characteristic(self, uuid: str) -> bool:
             return uuid in {LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, FROMNUM_UUID}
@@ -7075,7 +7073,9 @@ def test_register_notifications_reuses_cached_wrapper_with_latest_handlers(
         def start_notify(self, *args: object, **kwargs: object) -> None:
             _ = kwargs
             if len(args) >= 2:
-                self.callbacks[str(args[0])] = cast(
+                uuid = str(args[0])
+                self.start_notify_calls[uuid] = self.start_notify_calls.get(uuid, 0) + 1
+                self.callbacks[uuid] = cast(
                     Callable[[Any, bytes], None], args[1]
                 )
 
@@ -7104,6 +7104,9 @@ def test_register_notifications_reuses_cached_wrapper_with_latest_handlers(
             raising=True,
         )
         iface._register_notifications(cast(BLEClient, client))
+        assert client.start_notify_calls.get(LOGRADIO_UUID, 0) == 1
+        assert client.start_notify_calls.get(LEGACY_LOGRADIO_UUID, 0) == 1
+        assert client.start_notify_calls.get(FROMNUM_UUID, 0) == 1
         first_wrapper = client.callbacks[LOGRADIO_UUID]
         first_legacy_wrapper = client.callbacks[LEGACY_LOGRADIO_UUID]
         first_from_num_wrapper = client.callbacks[FROMNUM_UUID]
@@ -7133,6 +7136,9 @@ def test_register_notifications_reuses_cached_wrapper_with_latest_handlers(
         assert client.callbacks[LOGRADIO_UUID] is first_wrapper
         assert client.callbacks[LEGACY_LOGRADIO_UUID] is first_legacy_wrapper
         assert client.callbacks[FROMNUM_UUID] is first_from_num_wrapper
+        assert client.start_notify_calls.get(LOGRADIO_UUID, 0) == 1
+        assert client.start_notify_calls.get(LEGACY_LOGRADIO_UUID, 0) == 1
+        assert client.start_notify_calls.get(FROMNUM_UUID, 0) == 1
         client.callbacks[LOGRADIO_UUID]("sender", b"two")
         client.callbacks[LEGACY_LOGRADIO_UUID]("sender", b"legacy-two")
         client.callbacks[FROMNUM_UUID]("sender", b"fromnum-two")

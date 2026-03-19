@@ -290,6 +290,8 @@ class BLENotificationDispatcher:
         self._current_legacy_log_handler: Callable[[Any, Any], None] | None = None
         self._current_log_handler: Callable[[Any, Any], None] | None = None
         self._current_from_num_handler: Callable[[Any, Any], None] | None = None
+        self._registered_notification_session_epoch: int | None = None
+        self._started_notify_characteristics: set[str] = set()
 
     @property
     def fromnum_notify_enabled(self) -> bool:
@@ -336,7 +338,14 @@ class BLENotificationDispatcher:
                 self._malformed_notification_count = 0
 
     def _resolve_error_handler(self) -> object | None:
-        """Resolve current error handler, suppressing provider failures."""
+        """Resolve current error handler, suppressing provider failures.
+
+        Returns
+        -------
+        object | None
+            Resolved error-handler object, or ``None`` when provider lookup
+            fails or returns an unconfigured mock placeholder.
+        """
         try:
             error_handler = self._error_handler_provider()
         except Exception:  # noqa: BLE001 - notification paths must remain best effort
@@ -588,6 +597,11 @@ class BLENotificationDispatcher:
         self._current_legacy_log_handler = legacy_log_handler
         self._current_log_handler = log_handler
         self._current_from_num_handler = from_num_handler
+        current_session_epoch = int(getattr(iface, "_connection_session_epoch", 0))
+        if self._registered_notification_session_epoch != current_session_epoch:
+            self._registered_notification_session_epoch = current_session_epoch
+            self._started_notify_characteristics.clear()
+            self.fromnum_notify_enabled = False
 
         def _safe_call(
             handler: Callable[[Any, Any], None],
@@ -738,6 +752,9 @@ class BLENotificationDispatcher:
             )
         else:
             if has_legacy_logradio:
+                if LEGACY_LOGRADIO_UUID in self._started_notify_characteristics:
+                    has_legacy_logradio = False
+            if has_legacy_logradio:
                 legacy_handler = _get_or_create_handler(
                     LEGACY_LOGRADIO_UUID, lambda: _safe_legacy_handler
                 )
@@ -753,6 +770,8 @@ class BLENotificationDispatcher:
                         LEGACY_LOGRADIO_UUID,
                         err,
                     )
+                else:
+                    self._started_notify_characteristics.add(LEGACY_LOGRADIO_UUID)
 
         try:
             has_logradio = client.has_characteristic(LOGRADIO_UUID)
@@ -763,6 +782,9 @@ class BLENotificationDispatcher:
                 err,
             )
         else:
+            if has_logradio:
+                if LOGRADIO_UUID in self._started_notify_characteristics:
+                    has_logradio = False
             if has_logradio:
                 log_callback = _get_or_create_handler(
                     LOGRADIO_UUID, lambda: _safe_log_handler
@@ -779,10 +801,15 @@ class BLENotificationDispatcher:
                         LOGRADIO_UUID,
                         err,
                     )
+                else:
+                    self._started_notify_characteristics.add(LOGRADIO_UUID)
 
         ingress_handler = self._notification_manager._get_callback(FROMNUM_UUID)
         if ingress_handler is None:
             ingress_handler = _safe_from_num_handler
+        if FROMNUM_UUID in self._started_notify_characteristics:
+            self.fromnum_notify_enabled = True
+            return
         self.fromnum_notify_enabled = False
         max_attempts = BLEConfig.SERVICE_CHARACTERISTIC_RETRY_COUNT + 1
         for attempt in range(max_attempts):
@@ -830,6 +857,7 @@ class BLENotificationDispatcher:
             else:
                 if self._notification_manager._get_callback(FROMNUM_UUID) is None:
                     self._notification_manager._subscribe(FROMNUM_UUID, ingress_handler)
+                self._started_notify_characteristics.add(FROMNUM_UUID)
                 self.fromnum_notify_enabled = True
                 return
 

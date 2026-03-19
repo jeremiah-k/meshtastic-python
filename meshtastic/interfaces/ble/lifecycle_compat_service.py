@@ -73,6 +73,8 @@ class BLELifecycleService:
     @staticmethod
     def _receive_lifecycle_coordinator(
         iface: "BLEInterface",
+        *,
+        require_start_overrides: bool = False,
     ) -> BLEReceiveLifecycleCoordinator:
         """Return cached receive-lifecycle coordinator when collaborator cache exists.
 
@@ -80,6 +82,9 @@ class BLELifecycleService:
         ----------
         iface : BLEInterface
             Interface providing optional collaborator-cache helpers.
+        require_start_overrides : bool
+            When ``True``, only accept candidates whose ``start_receive_thread``
+            supports injected ``create_thread``/``start_thread`` overrides.
 
         Returns
         -------
@@ -128,12 +133,18 @@ class BLELifecycleService:
                         and BLELifecycleService._is_receive_lifecycle_coordinator_like(
                             receive_coordinator
                         )
-                        and _supports_start_overrides(receive_coordinator)
+                        and (
+                            not require_start_overrides
+                            or _supports_start_overrides(receive_coordinator)
+                        )
                     ):
                         return cast(BLEReceiveLifecycleCoordinator, receive_coordinator)
                 if BLELifecycleService._is_receive_lifecycle_coordinator_like(
                     lifecycle_controller
-                ) and _supports_start_overrides(lifecycle_controller):
+                ) and (
+                    not require_start_overrides
+                    or _supports_start_overrides(lifecycle_controller)
+                ):
                     return cast(BLEReceiveLifecycleCoordinator, lifecycle_controller)
 
         get_or_create = getattr(iface, "_get_or_create_collaborator", None)
@@ -159,7 +170,10 @@ class BLELifecycleService:
                     and BLELifecycleService._is_receive_lifecycle_coordinator_like(
                         coordinator
                     )
-                    and _supports_start_overrides(coordinator)
+                    and (
+                        not require_start_overrides
+                        or _supports_start_overrides(coordinator)
+                    )
                 ):
                     return cast(BLEReceiveLifecycleCoordinator, coordinator)
         return BLEReceiveLifecycleCoordinator(iface)
@@ -450,7 +464,10 @@ class BLELifecycleService:
         Exception
             Propagates thread-start failures after clearing stale thread state.
         """
-        BLELifecycleService._receive_lifecycle_coordinator(iface).start_receive_thread(
+        BLELifecycleService._receive_lifecycle_coordinator(
+            iface,
+            require_start_overrides=True,
+        ).start_receive_thread(
             name=name,
             reset_recovery=reset_recovery,
             create_thread=lambda **kwargs: BLELifecycleService._thread_create_thread(

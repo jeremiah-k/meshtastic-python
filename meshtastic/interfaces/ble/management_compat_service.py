@@ -161,13 +161,24 @@ class BLEManagementCommandsService:
         if ble_client_factory is None:
             ble_client_factory = BLEClient
         if connected_elsewhere is None:
+            iface_connected_elsewhere = getattr(
+                iface, "_connected_elsewhere_late_bound", None
+            )
+            if callable(iface_connected_elsewhere) and not _is_unconfigured_mock_callable(
+                iface_connected_elsewhere
+            ):
+                connected_elsewhere = cast(
+                    Callable[[str | None, object | None], bool],
+                    iface_connected_elsewhere,
+                )
+            else:
 
-            def _default_connected_elsewhere(
-                key: str | None, owner: object | None = None
-            ) -> bool:
-                return _is_currently_connected_elsewhere(key, owner)
+                def _default_connected_elsewhere(
+                    key: str | None, owner: object | None = None
+                ) -> bool:
+                    return _is_currently_connected_elsewhere(key, owner=owner)
 
-            connected_elsewhere = _default_connected_elsewhere
+                connected_elsewhere = _default_connected_elsewhere
         return BLEManagementCommandHandler(
             iface,
             ble_client_factory=ble_client_factory,

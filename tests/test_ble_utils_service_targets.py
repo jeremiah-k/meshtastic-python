@@ -515,7 +515,9 @@ def test_management_shim_handler_resolution_preserves_minimal_iface_double(
             minimal_handler
         )
 
-        iface._get_management_command_handler = lambda: MagicMock()
+        iface._get_management_command_handler = MagicMock(
+            side_effect=lambda: MagicMock()
+        )
         fallback_handler = BLEManagementCommandsService._handler_for_shim(iface)
         assert isinstance(fallback_handler, BLEManagementCommandHandler)
         assert (
@@ -566,12 +568,22 @@ def test_management_shim_default_connected_elsewhere_and_handler_like(
         assert BLEManagementCommandsService._is_handler_like(handler_like_candidate)
 
         connected_elsewhere_calls: list[tuple[str | None, object | None]] = []
+        late_bound_calls: list[tuple[str | None, object | None]] = []
         monkeypatch.setattr(
             "meshtastic.interfaces.ble.management_compat_service._is_currently_connected_elsewhere",
             lambda key, owner=None: (
                 connected_elsewhere_calls.append((key, owner)),
                 True,
             )[1],
+        )
+        monkeypatch.setattr(
+            iface,
+            "_connected_elsewhere_late_bound",
+            lambda key, owner=None: (
+                late_bound_calls.append((key, owner)),
+                True,
+            )[1],
+            raising=True,
         )
         iface._get_management_command_handler = lambda: None
         resolved_direct_handler = BLEManagementCommandsService._handler_for_shim(iface)
@@ -581,7 +593,8 @@ def test_management_shim_default_connected_elsewhere_and_handler_like(
         resolved_handler = BLEManagementCommandsService._handler_for_shim(iface)
         assert isinstance(resolved_handler, BLEManagementCommandHandler)
         assert resolved_handler._connected_elsewhere("device-key", iface) is True
-        assert connected_elsewhere_calls == [("device-key", iface)]
+        assert late_bound_calls == [("device-key", iface)]
+        assert connected_elsewhere_calls == []
     finally:
         iface._get_management_command_handler = original_get_management_handler
         iface._management_command_handler = original_direct_handler

@@ -182,7 +182,7 @@ class BLEReceiveLifecycleCoordinator:
                         )
                 else:
                     logger.debug(
-                        "Deferring receive thread start (%s) and queueing recovery restart after current thread unwind.",
+                        "Deferring receive thread start (%s) and queueing restart after current thread unwind.",
                         name,
                     )
             if existing is not None and not self._is_current_receive_thread(existing):

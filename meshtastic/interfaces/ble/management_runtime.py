@@ -310,8 +310,7 @@ class BLEManagementCommandHandler:
         """Return whether a candidate client appears currently connected."""
         if client is None:
             return False
-        callable_probe_failed = False
-        for attr_name in ("isConnected", "is_connected"):
+        for attr_name in ("isConnected", "is_connected", "_is_connected"):
             is_connected = getattr(client, attr_name, None)
             if callable(is_connected) and not _is_unconfigured_mock_callable(
                 is_connected
@@ -321,24 +320,14 @@ class BLEManagementCommandHandler:
                 except (
                     Exception
                 ):  # noqa: BLE001 - connectivity probe must remain best effort
-                    callable_probe_failed = True
-                    break
+                    logger.debug(
+                        "Error probing BLE client connectivity via %s",
+                        attr_name,
+                        exc_info=True,
+                    )
+                    continue
             if isinstance(is_connected, bool):
                 return is_connected
-        if callable_probe_failed:
-            return False
-        legacy_is_connected = getattr(client, "_is_connected", None)
-        if callable(legacy_is_connected) and not _is_unconfigured_mock_callable(
-            legacy_is_connected
-        ):
-            try:
-                return bool(legacy_is_connected())
-            except (
-                Exception
-            ):  # noqa: BLE001 - connectivity probe must remain best effort
-                return False
-        if isinstance(legacy_is_connected, bool):
-            return legacy_is_connected
         return False
 
     def get_current_implicit_management_binding_locked(self) -> str | None:

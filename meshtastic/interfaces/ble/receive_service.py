@@ -107,7 +107,10 @@ class BLEReceiveRecoveryController:
                 try:
                     result = has_ever_connected_session_fn()
                 except Exception:  # noqa: BLE001 - probe remains best effort
-                    pass
+                    logger.debug(
+                        "Probe has_ever_connected_session_fn failed",
+                        exc_info=True,
+                    )
                 else:
                     return result if isinstance(result, bool) else False
         raw_ever_connected = getattr(self._iface, "_ever_connected", False)
@@ -184,7 +187,10 @@ class BLEReceiveRecoveryController:
                 try:
                     result = is_connection_closing_fn()
                 except Exception:  # noqa: BLE001 - probe remains best effort
-                    pass
+                    logger.debug(
+                        "Probe is_connection_closing_fn failed",
+                        exc_info=True,
+                    )
                 else:
                     return result if isinstance(result, bool) else False
         iface = self._iface
