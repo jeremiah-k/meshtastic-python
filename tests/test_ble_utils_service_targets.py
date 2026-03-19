@@ -532,6 +532,7 @@ def test_management_shim_default_connected_elsewhere_and_handler_like(
     """Management shim should cover strict handler-like positives and default ownership probe."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     original_get_management_handler = iface._get_management_command_handler
+    original_direct_handler = getattr(iface, "_management_command_handler", None)
     try:
         required_methods = (
             "resolve_target_address_for_management",
@@ -573,12 +574,17 @@ def test_management_shim_default_connected_elsewhere_and_handler_like(
             )[1],
         )
         iface._get_management_command_handler = lambda: None
+        resolved_direct_handler = BLEManagementCommandsService._handler_for_shim(iface)
+        assert resolved_direct_handler is original_direct_handler
+
+        iface._management_command_handler = None
         resolved_handler = BLEManagementCommandsService._handler_for_shim(iface)
         assert isinstance(resolved_handler, BLEManagementCommandHandler)
         assert resolved_handler._connected_elsewhere("device-key", iface) is True
         assert connected_elsewhere_calls == [("device-key", iface)]
     finally:
         iface._get_management_command_handler = original_get_management_handler
+        iface._management_command_handler = original_direct_handler
         iface.close()
 
 

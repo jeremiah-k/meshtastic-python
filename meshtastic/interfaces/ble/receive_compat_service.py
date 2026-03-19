@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
     from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryController
 
+
 # COMPAT_STABLE_SHIM: historical receive service entrypoints retained for compatibility.
 class BLEReceiveRecoveryService:
     """Service helpers for BLE receive-loop and recovery behavior."""
@@ -23,21 +24,66 @@ class BLEReceiveRecoveryService:
     @staticmethod
     def _controller_class() -> type["BLEReceiveRecoveryController"]:
         """Resolve the receive controller class with a local import."""
-        from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryController
+        from meshtastic.interfaces.ble.receive_service import (
+            BLEReceiveRecoveryController,
+        )
 
         return BLEReceiveRecoveryController
 
     @staticmethod
-    def _is_controller_like(candidate: object) -> bool:
-        """Return whether a candidate exposes the receive-controller API shape."""
-        handle_disconnect = getattr(candidate, "handle_read_loop_disconnect", None)
-        return callable(handle_disconnect) and not _is_unconfigured_mock_callable(
-            handle_disconnect
+    def _is_controller_like(
+        candidate: object, required_method: str | None = None
+    ) -> bool:
+        """Return whether candidate exposes the receive-controller API shape.
+
+        Parameters
+        ----------
+        candidate : object
+            Object to check.
+        required_method : str | None
+            If provided, only check for this specific method. If None, check
+            for the full compatibility surface.
+
+        Returns
+        -------
+        bool
+            True if candidate has the required method(s).
+        """
+        if _is_unconfigured_mock_member(candidate):
+            return False
+        if required_method is not None:
+            method = getattr(candidate, required_method, None)
+            return callable(method) and not _is_unconfigured_mock_callable(method)
+        # Full compatibility surface check
+        required_methods = (
+            "handle_read_loop_disconnect",
+            "_wait_for_read_trigger",
+            "_snapshot_client_state",
+            "_process_client_state",
+            "_reset_recovery_after_stability",
+            "_read_and_handle_payload",
+            "_handle_payload_read",
+            "_run_receive_cycle",
+            "receive_from_radio_impl",
+            "recover_receive_thread",
+            "read_from_radio_with_retries",
+            "handle_transient_read_error",
+            "log_empty_read_warning",
+            "_should_run_receive_loop",
+            "_set_receive_wanted",
+            "_handle_disconnect",
+            "_start_receive_thread",
         )
+        for method_name in required_methods:
+            method = getattr(candidate, method_name, None)
+            if not callable(method) or _is_unconfigured_mock_callable(method):
+                return False
+        return True
 
     @staticmethod
     def _resolve_controller_candidate(
         candidate: object,
+        required_method: str | None = None,
     ) -> "BLEReceiveRecoveryController | None":
         """Resolve concrete controller instances from eager or lazy candidates."""
         if candidate is None or _is_unconfigured_mock_member(candidate):
@@ -46,26 +92,32 @@ class BLEReceiveRecoveryService:
         if (
             callable(resolved)
             and not _is_unconfigured_mock_callable(resolved)
-            and not BLEReceiveRecoveryService._is_controller_like(resolved)
+            and not BLEReceiveRecoveryService._is_controller_like(
+                resolved, required_method
+            )
         ):
             with contextlib.suppress(Exception):  # noqa: BLE001 - factory probe is best effort
                 resolved = resolved()
         if (
             resolved is not None
             and not _is_unconfigured_mock_member(resolved)
-            and BLEReceiveRecoveryService._is_controller_like(resolved)
+            and BLEReceiveRecoveryService._is_controller_like(resolved, required_method)
         ):
             return cast("BLEReceiveRecoveryController", resolved)
         return None
 
     @staticmethod
-    def _controller_for_shim(iface: "BLEInterface") -> "BLEReceiveRecoveryController":
+    def _controller_for_shim(
+        iface: "BLEInterface", required_method: str | None = None
+    ) -> "BLEReceiveRecoveryController":
         """Return iface-bound receive controller, falling back to cached construction.
 
         Parameters
         ----------
         iface : BLEInterface
             Interface to resolve or attach the receive-recovery controller.
+        required_method : str | None
+            Required method name if specific method is needed by caller.
 
         Returns
         -------
@@ -80,12 +132,16 @@ class BLEReceiveRecoveryService:
             with contextlib.suppress(Exception):  # noqa: BLE001 - shim resolution stays best effort
                 resolved = get_controller()
                 resolved_controller = (
-                    BLEReceiveRecoveryService._resolve_controller_candidate(resolved)
+                    BLEReceiveRecoveryService._resolve_controller_candidate(
+                        resolved, required_method
+                    )
                 )
                 if resolved_controller is not None:
                     return resolved_controller
         cached = getattr(iface, "_receive_recovery_controller", None)
-        cached_controller = BLEReceiveRecoveryService._resolve_controller_candidate(cached)
+        cached_controller = BLEReceiveRecoveryService._resolve_controller_candidate(
+            cached, required_method
+        )
         if cached_controller is not None:
             return cached_controller
         controller = controller_cls(iface)
@@ -115,7 +171,7 @@ class BLEReceiveRecoveryService:
             ``False``.
         """
         return BLEReceiveRecoveryService._controller_for_shim(
-            iface
+            iface, "handle_read_loop_disconnect"
         ).handle_read_loop_disconnect(
             error_message,
             previous_client,
@@ -162,10 +218,12 @@ class BLEReceiveRecoveryService:
         bool
             ``True`` when the event was signaled, otherwise ``False``.
         """
-        return BLEReceiveRecoveryService._controller_class()._coordinator_wait_for_event(
-            coordinator,
-            event_name,
-            timeout=timeout,
+        return (
+            BLEReceiveRecoveryService._controller_class()._coordinator_wait_for_event(
+                coordinator,
+                event_name,
+                timeout=timeout,
+            )
         )
 
     @staticmethod
@@ -240,7 +298,8 @@ class BLEReceiveRecoveryService:
             whether the caller should continue the loop iteration.
         """
         return BLEReceiveRecoveryService._controller_for_shim(
-            iface
+            iface,
+            "_wait_for_read_trigger",
         )._wait_for_read_trigger(
             coordinator=coordinator,
             wait_timeout=wait_timeout,
@@ -266,7 +325,8 @@ class BLEReceiveRecoveryService:
             ``(client, is_connecting, publish_pending, is_closing)``.
         """
         return BLEReceiveRecoveryService._controller_for_shim(
-            iface
+            iface,
+            "_snapshot_client_state",
         )._snapshot_client_state()
 
     @staticmethod
@@ -306,7 +366,8 @@ class BLEReceiveRecoveryService:
             loop, otherwise ``False``.
         """
         return BLEReceiveRecoveryService._controller_for_shim(
-            iface
+            iface,
+            "_process_client_state",
         )._process_client_state(
             coordinator=coordinator,
             wait_timeout=wait_timeout,
@@ -332,7 +393,8 @@ class BLEReceiveRecoveryService:
             Returns ``None`` after best-effort counter reset.
         """
         BLEReceiveRecoveryService._controller_for_shim(
-            iface
+            iface,
+            "_reset_recovery_after_stability",
         )._reset_recovery_after_stability()
 
     @staticmethod
@@ -359,7 +421,8 @@ class BLEReceiveRecoveryService:
             ``True`` to continue the inner loop, ``False`` to stop.
         """
         return BLEReceiveRecoveryService._controller_for_shim(
-            iface
+            iface,
+            "_read_and_handle_payload",
         )._read_and_handle_payload(
             client,
             poll_without_notify=poll_without_notify,
@@ -396,7 +459,8 @@ class BLEReceiveRecoveryService:
             Propagated when process termination is requested.
         """
         return BLEReceiveRecoveryService._controller_for_shim(
-            iface
+            iface,
+            "_handle_payload_read",
         )._handle_payload_read(
             client,
             poll_without_notify=poll_without_notify,
@@ -426,7 +490,10 @@ class BLEReceiveRecoveryService:
             ``True`` when the loop exited naturally, ``False`` when a fatal
             read path requested immediate receive-loop stop.
         """
-        return BLEReceiveRecoveryService._controller_for_shim(iface)._run_receive_cycle(
+        return BLEReceiveRecoveryService._controller_for_shim(
+            iface,
+            "_run_receive_cycle",
+        )._run_receive_cycle(
             coordinator=coordinator,
             wait_timeout=wait_timeout,
         )
@@ -446,7 +513,10 @@ class BLEReceiveRecoveryService:
             Returns ``None``. Fatal receive-loop failures trigger recovery or
             close side effects before exiting.
         """
-        BLEReceiveRecoveryService._controller_for_shim(iface).receive_from_radio_impl()
+        BLEReceiveRecoveryService._controller_for_shim(
+            iface,
+            "receive_from_radio_impl",
+        ).receive_from_radio_impl()
 
     @staticmethod
     def _recover_receive_thread(iface: "BLEInterface", disconnect_reason: str) -> None:
@@ -464,7 +534,10 @@ class BLEReceiveRecoveryService:
         None
             Returns ``None`` after scheduling recovery or stopping receive.
         """
-        BLEReceiveRecoveryService._controller_for_shim(iface).recover_receive_thread(
+        BLEReceiveRecoveryService._controller_for_shim(
+            iface,
+            "recover_receive_thread",
+        ).recover_receive_thread(
             disconnect_reason
         )
 
@@ -492,7 +565,8 @@ class BLEReceiveRecoveryService:
             Non-empty payload bytes when available, otherwise ``None``.
         """
         return BLEReceiveRecoveryService._controller_for_shim(
-            iface
+            iface,
+            "read_from_radio_with_retries",
         ).read_from_radio_with_retries(
             client,
             retry_on_empty=retry_on_empty,
@@ -522,7 +596,8 @@ class BLEReceiveRecoveryService:
             If transient retry attempts are exhausted.
         """
         BLEReceiveRecoveryService._controller_for_shim(
-            iface
+            iface,
+            "handle_transient_read_error",
         ).handle_transient_read_error(error)
 
     @staticmethod
@@ -539,4 +614,7 @@ class BLEReceiveRecoveryService:
         None
             Returns ``None`` after logging or suppressing warning output.
         """
-        BLEReceiveRecoveryService._controller_for_shim(iface).log_empty_read_warning()
+        BLEReceiveRecoveryService._controller_for_shim(
+            iface,
+            "log_empty_read_warning",
+        ).log_empty_read_warning()

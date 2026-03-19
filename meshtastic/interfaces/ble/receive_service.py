@@ -1,6 +1,7 @@
 """Receive-loop and recovery helpers for BLE interface orchestration."""
 
 import math
+import threading
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
@@ -53,7 +54,15 @@ class BLEReceiveRecoveryController:
     def __init__(self, iface: "BLEInterface") -> None:
         """Bind receive/recovery helpers to a specific interface instance."""
         self._iface = iface
-        self._dispatching_iface_receive_hooks: set[str] = set()
+        self._dispatching_iface_receive_hooks = threading.local()
+
+    def _dispatching_hooks(self) -> set[str]:
+        """Return the per-thread reentrancy guard set."""
+        hooks = getattr(self._dispatching_iface_receive_hooks, "value", None)
+        if hooks is None:
+            hooks = set()
+            self._dispatching_iface_receive_hooks.value = hooks
+        return hooks
 
     @staticmethod
     def _as_usable_callable(
@@ -98,8 +107,9 @@ class BLEReceiveRecoveryController:
                 try:
                     result = has_ever_connected_session_fn()
                 except Exception:  # noqa: BLE001 - probe remains best effort
-                    return False
-                return result if isinstance(result, bool) else False
+                    pass
+                else:
+                    return result if isinstance(result, bool) else False
         raw_ever_connected = getattr(self._iface, "_ever_connected", False)
         if _is_unconfigured_mock_member(raw_ever_connected):
             return False
@@ -119,6 +129,17 @@ class BLEReceiveRecoveryController:
         if isinstance(raw_value, bool):
             return raw_value
         return False
+
+    @staticmethod
+    def _call_bool_hook(
+        hook: Callable[..., object], *args: object, **kwargs: object
+    ) -> bool:
+        """Call a hook and return True only if result is a real bool True."""
+        try:
+            result = hook(*args, **kwargs)
+        except Exception:  # noqa: BLE001 - hook probes remain best effort
+            return False
+        return result if isinstance(result, bool) else False
 
     def _is_connection_closing_locked(self) -> bool:
         """Return whether connection-closing probes indicate closing while lock is held."""
@@ -161,8 +182,9 @@ class BLEReceiveRecoveryController:
                 try:
                     result = is_connection_closing_fn()
                 except Exception:  # noqa: BLE001 - probe remains best effort
-                    return False
-                return result if isinstance(result, bool) else False
+                    pass
+                else:
+                    return result if isinstance(result, bool) else False
         iface = self._iface
         with iface._state_lock:
             return self._is_connection_closing_locked()
@@ -241,7 +263,7 @@ class BLEReceiveRecoveryController:
             "_should_run_receive_loop"
         )
         if callable(override_should_run_receive_loop):
-            return bool(override_should_run_receive_loop())
+            return self._call_bool_hook(override_should_run_receive_loop)
         lifecycle_controller = self._get_lifecycle_controller()
         if lifecycle_controller is not None:
             should_run_receive_loop = getattr(
@@ -251,7 +273,7 @@ class BLEReceiveRecoveryController:
                 should_run_receive_loop
             )
             if should_run_receive_loop_fn is not None:
-                return bool(should_run_receive_loop_fn())
+                return self._call_bool_hook(should_run_receive_loop_fn)
         return False
 
     def _set_receive_wanted(self, *, want_receive: bool) -> None:
@@ -282,18 +304,21 @@ class BLEReceiveRecoveryController:
             "_handle_disconnect"
         )
         if callable(override_handle_disconnect):
-            return bool(override_handle_disconnect(disconnect_reason, client=client))
+            return self._call_bool_hook(
+                override_handle_disconnect,
+                disconnect_reason,
+                client=client,
+            )
         lifecycle_controller = self._get_lifecycle_controller()
         if lifecycle_controller is not None:
             handle_disconnect = getattr(lifecycle_controller, "handle_disconnect", None)
             handle_disconnect_fn = self._as_usable_callable(handle_disconnect)
             if handle_disconnect_fn is None:
                 return False
-            return bool(
-                handle_disconnect_fn(
-                    disconnect_reason,
-                    client=client,
-                )
+            return self._call_bool_hook(
+                handle_disconnect_fn,
+                disconnect_reason,
+                client=client,
             )
         return False
 
@@ -368,20 +393,20 @@ class BLEReceiveRecoveryController:
         self, method_name: str
     ) -> Callable[..., object] | None:
         """Resolve instance/class override while avoiding default recursion shims."""
-        if method_name in self._dispatching_iface_receive_hooks:
+        if method_name in self._dispatching_hooks():
             return None
 
         def _wrap_override(
             override: Callable[..., object],
         ) -> Callable[..., object]:
             def _guarded_override(*args: object, **kwargs: object) -> object:
-                if method_name in self._dispatching_iface_receive_hooks:
+                if method_name in self._dispatching_hooks():
                     return None
-                self._dispatching_iface_receive_hooks.add(method_name)
+                self._dispatching_hooks().add(method_name)
                 try:
                     return override(*args, **kwargs)
                 finally:
-                    self._dispatching_iface_receive_hooks.discard(method_name)
+                    self._dispatching_hooks().discard(method_name)
 
             return _guarded_override
 
@@ -414,8 +439,10 @@ class BLEReceiveRecoveryController:
             self._resolve_iface_receive_hook_override("_handle_read_loop_disconnect")
         )
         if callable(override_handle_read_loop_disconnect):
-            return bool(
-                override_handle_read_loop_disconnect(error_message, previous_client)
+            return self._call_bool_hook(
+                override_handle_read_loop_disconnect,
+                error_message,
+                previous_client,
             )
         logger.debug("Device disconnected: %s", error_message)
         should_continue = self._handle_disconnect(
@@ -445,7 +472,9 @@ class BLEReceiveRecoveryController:
     ) -> tuple[bool, bool]:
         """Wait for read trigger and compute fallback poll mode."""
         wait_for_runtime_event = wait_for_event or (
-            lambda target_coordinator, event_name, timeout: self._coordinator_wait_for_event(
+            lambda target_coordinator,
+            event_name,
+            timeout: self._coordinator_wait_for_event(
                 target_coordinator,
                 event_name,
                 timeout=timeout,
@@ -531,7 +560,9 @@ class BLEReceiveRecoveryController:
         """Process current client state and decide whether to break loop."""
         iface = self._iface
         wait_for_runtime_event = wait_for_event or (
-            lambda target_coordinator, event_name, timeout: self._coordinator_wait_for_event(
+            lambda target_coordinator,
+            event_name,
+            timeout: self._coordinator_wait_for_event(
                 target_coordinator,
                 event_name,
                 timeout=timeout,

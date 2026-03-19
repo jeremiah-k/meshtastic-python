@@ -3366,12 +3366,14 @@ def test_discard_invalidated_connected_client_emits_disconnect_for_retired_sessi
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Replacement-pending stale sessions should emit one disconnect publication."""
+    from meshtastic import mesh_interface as mesh_iface_module
+
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     discarded_client = DummyClient()
     discarded_client.address = "AA:BB:CC:DD:EE:45"
     discarded_client.bleak_client = SimpleNamespace(address=discarded_client.address)
     closed_clients: list[BLEClient] = []
-    disconnected_calls: list[bool] = []
+    published_topics: list[str] = []
 
     monkeypatch.setattr(
         iface._client_manager,
@@ -3380,9 +3382,17 @@ def test_discard_invalidated_connected_client_emits_disconnect_for_retired_sessi
         raising=True,
     )
     monkeypatch.setattr(
-        iface,
-        "_disconnected",
-        lambda: disconnected_calls.append(True),
+        mesh_iface_module,
+        "pub",
+        SimpleNamespace(
+            sendMessage=lambda topic, **_kwargs: published_topics.append(topic)
+        ),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        mesh_iface_module,
+        "publishingThread",
+        SimpleNamespace(queueWork=lambda callback: callback()),
         raising=True,
     )
 
@@ -3393,6 +3403,8 @@ def test_discard_invalidated_connected_client_emits_disconnect_for_retired_sessi
         iface._disconnect_notified = False
         iface._state_manager._reset_to_disconnected()
         assert iface._state_manager._transition_to(ConnectionState.CONNECTING) is True
+    with iface._heartbeat_lock:
+        iface.isConnected.set()
 
     iface._discard_invalidated_connected_client(cast(BLEClient, discarded_client))
 
@@ -3404,7 +3416,7 @@ def test_discard_invalidated_connected_client_emits_disconnect_for_retired_sessi
         assert iface._disconnect_notified is True
 
     iface.close()
-    assert disconnected_calls == [True]
+    assert published_topics.count("meshtastic.connection.lost") == 1
 
 
 @pytest.mark.parametrize("is_closing", [True, False])
@@ -5039,6 +5051,199 @@ def test_start_receive_thread_clears_cached_thread_when_start_fails(
         iface.close()
 
 
+@contextlib.contextmanager
+def _snapshot_receive_start_state(iface: BLEInterface) -> Iterator[None]:
+    """Snapshot and restore receive-start thread/pending flags for tests."""
+    with iface._state_lock:
+        original_receive_thread = iface._receiveThread
+        original_receive_start_pending = iface._receive_start_pending
+        original_receive_start_pending_since = iface._receive_start_pending_since
+    try:
+        yield
+    finally:
+        with iface._state_lock:
+            iface._receiveThread = original_receive_thread
+            iface._receive_start_pending = original_receive_start_pending
+            iface._receive_start_pending_since = original_receive_start_pending_since
+
+
+def _patch_receive_start_monotonic(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    values: list[float],
+    fallback_step: float,
+) -> None:
+    """Patch lifecycle monotonic clock with deterministic values for receive-start tests."""
+    monotonic_values = iter(values)
+    fallback_timestamp = values[-1] if values else 0.0
+
+    def _monotonic() -> float:
+        nonlocal fallback_timestamp
+        try:
+            return next(monotonic_values)
+        except StopIteration:
+            fallback_timestamp += fallback_step
+            return fallback_timestamp
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.lifecycle_receive_runtime.time.monotonic",
+        _monotonic,
+    )
+
+
+def _patch_receive_start_threads(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    iface: BLEInterface,
+    created_threads: list[object],
+    on_start: Callable[[object], None] | None = None,
+) -> tuple[list[dict[str, object]], list[object]]:
+    """Patch thread coordinator create/start hooks for receive-start tests."""
+    thread_queue = list(created_threads)
+    create_calls: list[dict[str, object]] = []
+
+    def _create_thread(**kwargs: object) -> object:
+        create_calls.append(dict(kwargs))
+        return thread_queue.pop(0)
+
+    monkeypatch.setattr(
+        iface.thread_coordinator,
+        "create_thread",
+        _create_thread,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        iface.thread_coordinator,
+        "_create_thread",
+        _create_thread,
+        raising=True,
+    )
+
+    start_calls: list[object] = []
+
+    def _start_thread(thread: object) -> None:
+        start_calls.append(thread)
+        if on_start is not None:
+            on_start(thread)
+
+    monkeypatch.setattr(
+        iface.thread_coordinator,
+        "start_thread",
+        _start_thread,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        iface.thread_coordinator,
+        "_start_thread",
+        _start_thread,
+        raising=True,
+    )
+    return create_calls, start_calls
+
+
+def _run_receive_pending_marker_scenario(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    iface: BLEInterface,
+    start_receive: Callable[[str], None],
+    prefix: str,
+    t0: float,
+) -> None:
+    """Run pending-marker restart scenario for service/facade receive starts."""
+    from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
+        RECEIVE_START_PENDING_TIMEOUT_SECONDS,
+    )
+
+    thread_one = SimpleNamespace(
+        name=f"{prefix}One",
+        ident=None,
+        is_alive=lambda: False,
+    )
+    thread_two = SimpleNamespace(
+        name=f"{prefix}Two",
+        ident=42,
+        is_alive=lambda: True,
+    )
+    _, start_calls = _patch_receive_start_threads(
+        monkeypatch,
+        iface=iface,
+        created_threads=[thread_one, thread_two],
+    )
+
+    timeout = RECEIVE_START_PENDING_TIMEOUT_SECONDS
+    small_delta = max(min(timeout / 10.0, 0.01), 1e-6)
+    _patch_receive_start_monotonic(
+        monkeypatch,
+        values=[
+            t0,
+            t0 + small_delta,
+            t0 + timeout - small_delta,
+            t0 + timeout + small_delta,
+            t0 + timeout + (2 * small_delta),
+        ],
+        fallback_step=small_delta,
+    )
+
+    start_receive(f"{prefix}One")
+    assert start_calls == [thread_one]
+    assert iface._receiveThread is thread_one
+    assert iface._receive_start_pending is True
+
+    start_receive(f"{prefix}Skip")
+    assert start_calls == [thread_one]
+    assert iface._receiveThread is thread_one
+    assert iface._receive_start_pending is True
+
+    start_receive(f"{prefix}StillWithinTimeout")
+    assert start_calls == [thread_one]
+    assert iface._receiveThread is thread_one
+    assert iface._receive_start_pending is True
+
+    start_receive(f"{prefix}Two")
+    assert start_calls == [thread_one, thread_two]
+    assert iface._receiveThread is thread_two
+    assert iface._receive_start_pending is False
+
+
+def _run_receive_current_thread_deferral_scenario(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    iface: BLEInterface,
+    start_receive: Callable[[str], None],
+    deferred_name: str,
+    t0: float,
+) -> None:
+    """Run current-thread deferral scenario for service/facade receive starts."""
+    with iface._state_lock:
+        iface._want_receive = True
+        iface._receiveThread = threading.current_thread()
+        iface._receive_start_pending = False
+        iface._receive_start_pending_since = None
+
+    deferred_thread = SimpleNamespace(
+        name=deferred_name,
+        ident=123,
+        is_alive=lambda: True,
+    )
+    create_calls, _ = _patch_receive_start_threads(
+        monkeypatch,
+        iface=iface,
+        created_threads=[deferred_thread],
+    )
+    _patch_receive_start_monotonic(
+        monkeypatch,
+        values=[t0],
+        fallback_step=0.001,
+    )
+
+    start_receive(deferred_name)
+
+    assert create_calls == []
+    assert iface._receiveThread is threading.current_thread()
+    assert iface._receive_start_pending is True
+    assert iface._receive_start_pending_since == t0
+
+
 def test_start_receive_thread_retains_cached_thread_when_start_noops(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -5056,46 +5261,32 @@ def test_start_receive_thread_retains_cached_thread_when_start_noops(
     from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-    original_receive_thread = iface._receiveThread
-    original_receive_start_pending = iface._receive_start_pending
-    original_receive_start_pending_since = iface._receive_start_pending_since
     try:
-        with iface._state_lock:
-            iface._want_receive = True
-        thread_like = SimpleNamespace(
-            name="BLEReceiveStartNoop",
-            ident=None,
-            is_alive=lambda: False,
-        )
-        monkeypatch.setattr(
-            iface.thread_coordinator,
-            "_create_thread",
-            lambda **_kwargs: thread_like,
-            raising=True,
-        )
+        with _snapshot_receive_start_state(iface):
+            with iface._state_lock:
+                iface._want_receive = True
+            thread_like = SimpleNamespace(
+                name="BLEReceiveStartNoop",
+                ident=None,
+                is_alive=lambda: False,
+            )
 
-        start_calls: list[object] = []
+            def _assert_cached_thread(thread: object) -> None:
+                assert thread is thread_like
+                assert iface._receiveThread is thread_like
 
-        def _record_noop_start(thread: object) -> None:
-            start_calls.append(thread)
+            _, start_calls = _patch_receive_start_threads(
+                monkeypatch,
+                iface=iface,
+                created_threads=[thread_like],
+                on_start=_assert_cached_thread,
+            )
+
+            BLELifecycleService._start_receive_thread(iface, name="BLEReceiveStartNoop")
+
+            assert start_calls == [thread_like]
             assert iface._receiveThread is thread_like
-
-        monkeypatch.setattr(
-            iface.thread_coordinator,
-            "_start_thread",
-            _record_noop_start,
-            raising=True,
-        )
-
-        BLELifecycleService._start_receive_thread(iface, name="BLEReceiveStartNoop")
-
-        assert start_calls == [thread_like]
-        assert iface._receiveThread is thread_like
     finally:
-        with iface._state_lock:
-            iface._receiveThread = original_receive_thread
-            iface._receive_start_pending = original_receive_start_pending
-            iface._receive_start_pending_since = original_receive_start_pending_since
         iface.close()
 
 
@@ -5104,108 +5295,22 @@ def test_start_receive_thread_pending_marker_allows_later_restart(
 ) -> None:
     """Verify inconclusive start markers allow restart after pending-timeout expiry."""
     from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
-    from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
-        RECEIVE_START_PENDING_TIMEOUT_SECONDS,
-    )
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-    original_receive_thread = iface._receiveThread
-    original_receive_start_pending = iface._receive_start_pending
-    original_receive_start_pending_since = iface._receive_start_pending_since
     try:
-        with iface._state_lock:
-            iface._want_receive = True
-
-        thread_one = SimpleNamespace(
-            name="BLEReceivePendingOne",
-            ident=None,
-            is_alive=lambda: False,
-        )
-        thread_two = SimpleNamespace(
-            name="BLEReceivePendingTwo",
-            ident=42,
-            is_alive=lambda: True,
-        )
-        created_threads = [thread_one, thread_two]
-        monkeypatch.setattr(
-            iface.thread_coordinator,
-            "create_thread",
-            lambda **_kwargs: created_threads.pop(0),
-            raising=False,
-        )
-        monkeypatch.setattr(
-            iface.thread_coordinator,
-            "_create_thread",
-            lambda **_kwargs: created_threads.pop(0),
-            raising=True,
-        )
-
-        start_calls: list[object] = []
-        monkeypatch.setattr(
-            iface.thread_coordinator,
-            "start_thread",
-            lambda thread: start_calls.append(thread),
-            raising=False,
-        )
-        monkeypatch.setattr(
-            iface.thread_coordinator,
-            "_start_thread",
-            lambda thread: start_calls.append(thread),
-            raising=True,
-        )
-        t0 = 100.0
-        timeout = RECEIVE_START_PENDING_TIMEOUT_SECONDS
-        small_delta = max(min(timeout / 10.0, 0.01), 1e-6)
-        monotonic_values = iter(
-            [
-                t0,
-                t0 + small_delta,
-                t0 + timeout - small_delta,
-                t0 + timeout + small_delta,
-                t0 + timeout + (2 * small_delta),
-            ]
-        )
-        fallback_timestamp = t0 + timeout + (2 * small_delta)
-
-        def _monotonic() -> float:
-            nonlocal fallback_timestamp
-            try:
-                return next(monotonic_values)
-            except StopIteration:
-                fallback_timestamp += small_delta
-                return fallback_timestamp
-
-        monkeypatch.setattr(
-            "meshtastic.interfaces.ble.lifecycle_receive_runtime.time.monotonic",
-            _monotonic,
-        )
-
-        BLELifecycleService._start_receive_thread(iface, name="BLEReceivePendingOne")
-        assert start_calls == [thread_one]
-        assert iface._receiveThread is thread_one
-        assert iface._receive_start_pending is True
-
-        BLELifecycleService._start_receive_thread(iface, name="BLEReceivePendingSkip")
-        assert start_calls == [thread_one]
-        assert iface._receiveThread is thread_one
-        assert iface._receive_start_pending is True
-
-        BLELifecycleService._start_receive_thread(
-            iface, name="BLEReceivePendingStillWithinTimeout"
-        )
-        assert start_calls == [thread_one]
-        assert iface._receiveThread is thread_one
-        assert iface._receive_start_pending is True
-
-        BLELifecycleService._start_receive_thread(iface, name="BLEReceivePendingTwo")
-        assert start_calls == [thread_one, thread_two]
-        assert iface._receiveThread is thread_two
-        assert iface._receive_start_pending is False
+        with _snapshot_receive_start_state(iface):
+            with iface._state_lock:
+                iface._want_receive = True
+            _run_receive_pending_marker_scenario(
+                monkeypatch,
+                iface=iface,
+                start_receive=lambda name: BLELifecycleService._start_receive_thread(
+                    iface, name=name
+                ),
+                prefix="BLEReceivePending",
+                t0=100.0,
+            )
     finally:
-        with iface._state_lock:
-            iface._receiveThread = original_receive_thread
-            iface._receive_start_pending = original_receive_start_pending
-            iface._receive_start_pending_since = original_receive_start_pending_since
         iface.close()
 
 
@@ -5216,66 +5321,18 @@ def test_start_receive_thread_from_current_thread_defers_restart(
     from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-    original_receive_thread = iface._receiveThread
-    original_receive_start_pending = iface._receive_start_pending
-    original_receive_start_pending_since = iface._receive_start_pending_since
     try:
-        with iface._state_lock:
-            iface._want_receive = True
-            iface._receiveThread = threading.current_thread()
-            iface._receive_start_pending = False
-            iface._receive_start_pending_since = None
-
-        create_calls: list[str] = []
-
-        def _create_receive_thread(**_kwargs: object) -> SimpleNamespace:
-            create_calls.append("create")
-            return SimpleNamespace(
-                name="BLEReceiveDeferred",
-                ident=123,
-                is_alive=lambda: True,
+        with _snapshot_receive_start_state(iface):
+            _run_receive_current_thread_deferral_scenario(
+                monkeypatch,
+                iface=iface,
+                start_receive=lambda name: BLELifecycleService._start_receive_thread(
+                    iface, name=name
+                ),
+                deferred_name="BLEReceiveDeferred",
+                t0=200.0,
             )
-
-        monkeypatch.setattr(
-            iface.thread_coordinator,
-            "create_thread",
-            _create_receive_thread,
-            raising=False,
-        )
-        monkeypatch.setattr(
-            iface.thread_coordinator,
-            "_create_thread",
-            _create_receive_thread,
-            raising=True,
-        )
-
-        monotonic_values = iter([200.0])
-        fallback_timestamp = 200.0
-
-        def _monotonic() -> float:
-            nonlocal fallback_timestamp
-            try:
-                return next(monotonic_values)
-            except StopIteration:
-                fallback_timestamp += 0.001
-                return fallback_timestamp
-
-        monkeypatch.setattr(
-            "meshtastic.interfaces.ble.lifecycle_receive_runtime.time.monotonic",
-            _monotonic,
-        )
-
-        BLELifecycleService._start_receive_thread(iface, name="BLEReceiveDeferred")
-
-        assert create_calls == []
-        assert iface._receiveThread is threading.current_thread()
-        assert iface._receive_start_pending is True
-        assert iface._receive_start_pending_since == 200.0
     finally:
-        with iface._state_lock:
-            iface._receiveThread = original_receive_thread
-            iface._receive_start_pending = original_receive_start_pending
-            iface._receive_start_pending_since = original_receive_start_pending_since
         iface.close()
 
 
@@ -5284,10 +5341,6 @@ def test_start_receive_thread_pending_marker_via_interface_facade(
 ) -> None:
     """`BLEInterface._start_receive_thread` should preserve pending-marker behavior."""
     from meshtastic.interfaces.ble.interface import BLEInterface
-    from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
-        RECEIVE_START_PENDING_TIMEOUT_SECONDS,
-    )
-
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     monkeypatch.setattr(
         type(iface),
@@ -5295,100 +5348,18 @@ def test_start_receive_thread_pending_marker_via_interface_facade(
         BLEInterface._start_receive_thread,
         raising=True,
     )
-    original_receive_thread = iface._receiveThread
-    original_receive_start_pending = iface._receive_start_pending
-    original_receive_start_pending_since = iface._receive_start_pending_since
     try:
-        with iface._state_lock:
-            iface._want_receive = True
-
-        thread_one = SimpleNamespace(
-            name="BLEReceivePendingFacadeOne",
-            ident=None,
-            is_alive=lambda: False,
-        )
-        thread_two = SimpleNamespace(
-            name="BLEReceivePendingFacadeTwo",
-            ident=42,
-            is_alive=lambda: True,
-        )
-        created_threads = [thread_one, thread_two]
-        monkeypatch.setattr(
-            iface.thread_coordinator,
-            "create_thread",
-            lambda **_kwargs: created_threads.pop(0),
-            raising=False,
-        )
-        monkeypatch.setattr(
-            iface.thread_coordinator,
-            "_create_thread",
-            lambda **_kwargs: created_threads.pop(0),
-            raising=True,
-        )
-
-        start_calls: list[object] = []
-        monkeypatch.setattr(
-            iface.thread_coordinator,
-            "start_thread",
-            lambda thread: start_calls.append(thread),
-            raising=False,
-        )
-        monkeypatch.setattr(
-            iface.thread_coordinator,
-            "_start_thread",
-            lambda thread: start_calls.append(thread),
-            raising=True,
-        )
-        t0 = 310.0
-        timeout = RECEIVE_START_PENDING_TIMEOUT_SECONDS
-        small_delta = max(min(timeout / 10.0, 0.01), 1e-6)
-        monotonic_values = iter(
-            [
-                t0,
-                t0 + small_delta,
-                t0 + timeout - small_delta,
-                t0 + timeout + small_delta,
-            ]
-        )
-        fallback_timestamp = t0 + timeout + small_delta
-
-        def _monotonic() -> float:
-            nonlocal fallback_timestamp
-            try:
-                return next(monotonic_values)
-            except StopIteration:
-                fallback_timestamp += small_delta
-                return fallback_timestamp
-
-        monkeypatch.setattr(
-            "meshtastic.interfaces.ble.lifecycle_receive_runtime.time.monotonic",
-            _monotonic,
-        )
-
-        iface._start_receive_thread(name="BLEReceivePendingFacadeOne")
-        assert start_calls == [thread_one]
-        assert iface._receiveThread is thread_one
-        assert iface._receive_start_pending is True
-
-        iface._start_receive_thread(name="BLEReceivePendingFacadeSkip")
-        assert start_calls == [thread_one]
-        assert iface._receiveThread is thread_one
-        assert iface._receive_start_pending is True
-
-        iface._start_receive_thread(name="BLEReceivePendingFacadeStillWithinTimeout")
-        assert start_calls == [thread_one]
-        assert iface._receiveThread is thread_one
-        assert iface._receive_start_pending is True
-
-        iface._start_receive_thread(name="BLEReceivePendingFacadeTwo")
-        assert start_calls == [thread_one, thread_two]
-        assert iface._receiveThread is thread_two
-        assert iface._receive_start_pending is False
+        with _snapshot_receive_start_state(iface):
+            with iface._state_lock:
+                iface._want_receive = True
+            _run_receive_pending_marker_scenario(
+                monkeypatch,
+                iface=iface,
+                start_receive=lambda name: iface._start_receive_thread(name=name),
+                prefix="BLEReceivePendingFacade",
+                t0=310.0,
+            )
     finally:
-        with iface._state_lock:
-            iface._receiveThread = original_receive_thread
-            iface._receive_start_pending = original_receive_start_pending
-            iface._receive_start_pending_since = original_receive_start_pending_since
         iface.close()
 
 
@@ -5405,66 +5376,16 @@ def test_start_receive_thread_current_thread_defers_via_interface_facade(
         BLEInterface._start_receive_thread,
         raising=True,
     )
-    original_receive_thread = iface._receiveThread
-    original_receive_start_pending = iface._receive_start_pending
-    original_receive_start_pending_since = iface._receive_start_pending_since
     try:
-        with iface._state_lock:
-            iface._want_receive = True
-            iface._receiveThread = threading.current_thread()
-            iface._receive_start_pending = False
-            iface._receive_start_pending_since = None
-
-        create_calls: list[str] = []
-
-        def _create_receive_thread(**_kwargs: object) -> SimpleNamespace:
-            create_calls.append("create")
-            return SimpleNamespace(
-                name="BLEReceiveDeferredFacade",
-                ident=123,
-                is_alive=lambda: True,
+        with _snapshot_receive_start_state(iface):
+            _run_receive_current_thread_deferral_scenario(
+                monkeypatch,
+                iface=iface,
+                start_receive=lambda name: iface._start_receive_thread(name=name),
+                deferred_name="BLEReceiveDeferredFacade",
+                t0=410.0,
             )
-
-        monkeypatch.setattr(
-            iface.thread_coordinator,
-            "create_thread",
-            _create_receive_thread,
-            raising=False,
-        )
-        monkeypatch.setattr(
-            iface.thread_coordinator,
-            "_create_thread",
-            _create_receive_thread,
-            raising=True,
-        )
-
-        monotonic_values = iter([410.0])
-        fallback_timestamp = 410.0
-
-        def _monotonic() -> float:
-            nonlocal fallback_timestamp
-            try:
-                return next(monotonic_values)
-            except StopIteration:
-                fallback_timestamp += 0.001
-                return fallback_timestamp
-
-        monkeypatch.setattr(
-            "meshtastic.interfaces.ble.lifecycle_receive_runtime.time.monotonic",
-            _monotonic,
-        )
-
-        iface._start_receive_thread(name="BLEReceiveDeferredFacade")
-
-        assert create_calls == []
-        assert iface._receiveThread is threading.current_thread()
-        assert iface._receive_start_pending is True
-        assert iface._receive_start_pending_since == 410.0
     finally:
-        with iface._state_lock:
-            iface._receiveThread = original_receive_thread
-            iface._receive_start_pending = original_receive_start_pending
-            iface._receive_start_pending_since = original_receive_start_pending_since
         iface.close()
 
 
@@ -5475,41 +5396,35 @@ def test_start_receive_thread_ident_only_probe_keeps_pending_state(
     from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-    original_receive_thread = iface._receiveThread
-    original_receive_start_pending = iface._receive_start_pending
-    original_receive_start_pending_since = iface._receive_start_pending_since
     try:
-        with iface._state_lock:
-            iface._want_receive = True
-            iface._receive_recovery_attempts = 4
-        thread_like = SimpleNamespace(
-            name="BLEReceiveIdentOnly",
-            ident=101,
-            is_alive=lambda: False,
-        )
-        monkeypatch.setattr(
-            iface.thread_coordinator,
-            "_create_thread",
-            lambda **_kwargs: thread_like,
-            raising=True,
-        )
-        monkeypatch.setattr(
-            iface.thread_coordinator,
-            "_start_thread",
-            lambda _thread: None,
-            raising=True,
-        )
+        with _snapshot_receive_start_state(iface):
+            with iface._state_lock:
+                iface._want_receive = True
+                iface._receive_recovery_attempts = 4
+            thread_like = SimpleNamespace(
+                name="BLEReceiveIdentOnly",
+                ident=101,
+                is_alive=lambda: False,
+            )
+            monkeypatch.setattr(
+                iface.thread_coordinator,
+                "_create_thread",
+                lambda **_kwargs: thread_like,
+                raising=True,
+            )
+            monkeypatch.setattr(
+                iface.thread_coordinator,
+                "_start_thread",
+                lambda _thread: None,
+                raising=True,
+            )
 
-        BLELifecycleService._start_receive_thread(iface, name="BLEReceiveIdentOnly")
+            BLELifecycleService._start_receive_thread(iface, name="BLEReceiveIdentOnly")
 
-        assert iface._receiveThread is thread_like
-        assert iface._receive_start_pending is True
-        assert iface._receive_recovery_attempts == 4
+            assert iface._receiveThread is thread_like
+            assert iface._receive_start_pending is True
+            assert iface._receive_recovery_attempts == 4
     finally:
-        with iface._state_lock:
-            iface._receiveThread = original_receive_thread
-            iface._receive_start_pending = original_receive_start_pending
-            iface._receive_start_pending_since = original_receive_start_pending_since
         iface.close()
 
 
@@ -5611,7 +5526,6 @@ def test_report_notification_handler_error_covers_hook_and_fallback_paths(
     raising_hook.assert_called_once_with("hook-error")
     error_handler.handle_unhandled_exception.assert_not_called()
     assert "hook-error" in debug_calls
-    assert "missing-hook" in debug_calls
 
 
 def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure() -> None:

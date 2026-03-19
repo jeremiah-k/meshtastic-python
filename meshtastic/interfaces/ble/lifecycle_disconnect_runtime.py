@@ -102,9 +102,13 @@ class BLEDisconnectLifecycleCoordinator:
         should_schedule_reconnect = should_reconnect and not iface._closed
         if should_reconnect:
             if previous_client is not None:
-                previous_address = getattr(previous_client, "address", address)
+                previous_address = (
+                    iface._extract_client_address(previous_client) or address
+                )
                 if not previous_address or previous_address == "unknown":
-                    previous_address = address if address != "unknown" else iface.address
+                    previous_address = (
+                        address if address != "unknown" else iface.address
+                    )
                 device_key = _addr_key(previous_address) if previous_address else None
                 return (
                     iface._sorted_address_keys(device_key, alias_key),
@@ -118,7 +122,7 @@ class BLEDisconnectLifecycleCoordinator:
             )
 
         address_for_registry = (
-            getattr(previous_client, "address", None)
+            iface._extract_client_address(previous_client)
             if previous_client is not None
             else None
         )
@@ -344,11 +348,8 @@ class BLEDisconnectLifecycleCoordinator:
         with iface._state_lock:
             active_client = iface.client
             active_session_epoch = getattr(iface, "_connection_session_epoch", 0)
-            if (
-                active_session_epoch != plan.session_epoch
-                or (
-                    active_client is not None and active_client is not plan.client_at_start
-                )
+            if active_session_epoch != plan.session_epoch or (
+                active_client is not None and active_client is not plan.client_at_start
             ):
                 if active_client is not None:
                     active_keys = set(

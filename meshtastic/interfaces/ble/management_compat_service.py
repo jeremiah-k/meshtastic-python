@@ -31,16 +31,21 @@ class BLEManagementCommandsService:
     """Service helpers for BLE management command paths."""
 
     @staticmethod
-    def _has_required_handler_entrypoint(candidate: object) -> bool:
-        """Return whether ``candidate`` exposes any usable shim entrypoint.
+    def _has_required_handler_entrypoint(
+        candidate: object, expected_method: str | None = None
+    ) -> bool:
+        """Return whether ``candidate`` exposes usable shim entrypoint(s).
 
-        This helper intentionally accepts partial doubles: it returns ``True``
-        as soon as it finds the first callable/non-mock method from the
-        compatibility entrypoint list, and returns ``False`` only when none of
-        the listed entrypoints are usable.
+        When ``expected_method`` is provided, this requires that specific
+        delegated method to be callable/non-mock. Otherwise, it returns ``True``
+        as soon as it finds any callable/non-mock method from the compatibility
+        entrypoint list.
         """
         if _is_unconfigured_mock_member(candidate):
             return False
+        if expected_method is not None:
+            expected = getattr(candidate, expected_method, None)
+            return callable(expected) and not _is_unconfigured_mock_callable(expected)
         required_entrypoints = (
             "execute_management_command",
             "start_management_phase",
@@ -99,6 +104,7 @@ class BLEManagementCommandsService:
     def _handler_for_shim(
         iface: "BLEInterface",
         *,
+        expected_method: str | None = None,
         ble_client_factory: Callable[..., BLEClient] | None = None,
         connected_elsewhere: Callable[[str | None, object | None], bool] | None = None,
     ) -> BLEManagementCommandHandler:
@@ -107,10 +113,10 @@ class BLEManagementCommandsService:
             ble_client_factory is None and connected_elsewhere is None
         )
         if use_iface_owned_handler:
-            getter_available = False
             get_handler = getattr(iface, "_get_management_command_handler", None)
-            if callable(get_handler) and not _is_unconfigured_mock_callable(get_handler):
-                getter_available = True
+            if callable(get_handler) and not _is_unconfigured_mock_callable(
+                get_handler
+            ):
                 resolved = get_handler()
                 if (
                     resolved is not None
@@ -118,24 +124,25 @@ class BLEManagementCommandsService:
                     and (
                         BLEManagementCommandsService._is_handler_like(resolved)
                         or BLEManagementCommandsService._has_required_handler_entrypoint(
-                            resolved
+                            resolved,
+                            expected_method,
                         )
                     )
                 ):
                     return cast(BLEManagementCommandHandler, resolved)
-            if not getter_available:
-                direct_handler = getattr(iface, "_management_command_handler", None)
-                if (
-                    direct_handler is not None
-                    and not _is_unconfigured_mock_member(direct_handler)
-                    and (
-                        BLEManagementCommandsService._is_handler_like(direct_handler)
-                        or BLEManagementCommandsService._has_required_handler_entrypoint(
-                            direct_handler
-                        )
+            direct_handler = getattr(iface, "_management_command_handler", None)
+            if (
+                direct_handler is not None
+                and not _is_unconfigured_mock_member(direct_handler)
+                and (
+                    BLEManagementCommandsService._is_handler_like(direct_handler)
+                    or BLEManagementCommandsService._has_required_handler_entrypoint(
+                        direct_handler,
+                        expected_method,
                     )
-                ):
-                    return cast(BLEManagementCommandHandler, direct_handler)
+                )
+            ):
+                return cast(BLEManagementCommandHandler, direct_handler)
         if ble_client_factory is None:
             ble_client_factory = BLEClient
         if connected_elsewhere is None:
@@ -157,12 +164,14 @@ class BLEManagementCommandsService:
     def _resolve_handler(
         iface: "BLEInterface",
         *,
+        expected_method: str | None = None,
         ble_client_factory: Callable[..., BLEClient] | None = None,
         connected_elsewhere: Callable[[str | None, object | None], bool] | None = None,
     ) -> BLEManagementCommandHandler:
         """Compatibility alias for shim handler resolution."""
         return BLEManagementCommandsService._handler_for_shim(
             iface,
+            expected_method=expected_method,
             ble_client_factory=ble_client_factory,
             connected_elsewhere=connected_elsewhere,
         )
@@ -172,12 +181,14 @@ class BLEManagementCommandsService:
     def _make_handler(
         iface: "BLEInterface",
         *,
+        expected_method: str | None = None,
         ble_client_factory: Callable[..., BLEClient] | None = None,
         connected_elsewhere: Callable[[str | None, object | None], bool] | None = None,
     ) -> BLEManagementCommandHandler:
         """Compatibility alias for shim handler resolution."""
         return BLEManagementCommandsService._handler_for_shim(
             iface,
+            expected_method=expected_method,
             ble_client_factory=ble_client_factory,
             connected_elsewhere=connected_elsewhere,
         )
@@ -209,7 +220,8 @@ class BLEManagementCommandsService:
             operation token.
         """
         return BLEManagementCommandsService._handler_for_shim(
-            iface
+            iface,
+            expected_method="start_management_phase",
         ).start_management_phase(address)
 
     @staticmethod
@@ -243,7 +255,8 @@ class BLEManagementCommandsService:
             changes mid-operation.
         """
         return BLEManagementCommandsService._handler_for_shim(
-            iface
+            iface,
+            expected_method="resolve_management_target",
         ).resolve_management_target(
             address,
             start_context,
@@ -289,6 +302,7 @@ class BLEManagementCommandsService:
         """
         return BLEManagementCommandsService._handler_for_shim(
             iface,
+            expected_method="acquire_client_for_target",
             ble_client_factory=ble_client_factory,
             connected_elsewhere=connected_elsewhere,
         ).acquire_client_for_target(
@@ -330,7 +344,8 @@ class BLEManagementCommandsService:
             client cleanup is attempted.
         """
         return BLEManagementCommandsService._handler_for_shim(
-            iface
+            iface,
+            expected_method="execute_with_client",
         ).execute_with_client(
             client_to_use=client_to_use,
             temporary_client=temporary_client,
@@ -378,6 +393,7 @@ class BLEManagementCommandsService:
         """
         return BLEManagementCommandsService._handler_for_shim(
             iface,
+            expected_method="execute_management_command",
             ble_client_factory=ble_client_factory,
             connected_elsewhere=connected_elsewhere,
         ).execute_management_command(
@@ -409,7 +425,8 @@ class BLEManagementCommandsService:
             If ``await_timeout`` is not a finite positive real number.
         """
         return BLEManagementCommandsService._handler_for_shim(
-            iface
+            iface,
+            expected_method="validate_management_await_timeout",
         ).validate_management_await_timeout(await_timeout)
 
     @staticmethod
@@ -434,7 +451,8 @@ class BLEManagementCommandsService:
             If ``timeout`` is not a finite positive real number.
         """
         return BLEManagementCommandsService._handler_for_shim(
-            iface
+            iface,
+            expected_method="validate_trust_timeout",
         ).validate_trust_timeout(timeout)
 
     @staticmethod
@@ -466,7 +484,8 @@ class BLEManagementCommandsService:
             If ``connect_timeout`` is invalid for orchestrated connection logic.
         """
         BLEManagementCommandsService._handler_for_shim(
-            iface
+            iface,
+            expected_method="validate_connect_timeout_override",
         ).validate_connect_timeout_override(
             connect_timeout,
             pair_on_connect=pair_on_connect,
@@ -507,6 +526,7 @@ class BLEManagementCommandsService:
         """
         BLEManagementCommandsService._handler_for_shim(
             iface,
+            expected_method="pair",
             ble_client_factory=ble_client_factory,
             connected_elsewhere=connected_elsewhere,
         ).pair(
@@ -547,6 +567,7 @@ class BLEManagementCommandsService:
         """
         BLEManagementCommandsService._handler_for_shim(
             iface,
+            expected_method="unpair",
             ble_client_factory=ble_client_factory,
             connected_elsewhere=connected_elsewhere,
         ).unpair(
@@ -597,7 +618,8 @@ class BLEManagementCommandsService:
             If command execution fails, times out, or returns non-zero status.
         """
         BLEManagementCommandsService._handler_for_shim(
-            iface
+            iface,
+            expected_method="run_bluetoothctl_trust_command",
         ).run_bluetoothctl_trust_command(
             bluetoothctl_path,
             canonical_address,
@@ -670,7 +692,10 @@ class BLEManagementCommandsService:
             if trust_command_output_max_chars is None
             else trust_command_output_max_chars
         )
-        BLEManagementCommandsService._handler_for_shim(iface).trust(
+        BLEManagementCommandsService._handler_for_shim(
+            iface,
+            expected_method="trust",
+        ).trust(
             address,
             timeout=timeout,
             sys_module=sys_module,

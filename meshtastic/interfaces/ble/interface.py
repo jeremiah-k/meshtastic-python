@@ -675,9 +675,7 @@ class BLEInterface(MeshInterface):
             event_name,
         )
 
-    def _handle_malformed_fromnum(
-        self, reason: str, *, exc_info: bool = False
-    ) -> None:
+    def _handle_malformed_fromnum(self, reason: str, *, exc_info: bool = False) -> None:
         """Track malformed FROMNUM notifications through dispatcher ownership."""
         self._get_notification_dispatcher().handle_malformed_fromnum(
             reason, exc_info=exc_info
@@ -813,7 +811,8 @@ class BLEInterface(MeshInterface):
             awaitable,
             timeout,
             label,
-            timeout_error_factory=lambda timeout_label, timeout_seconds: BLEInterface.BLEError(
+            timeout_error_factory=lambda timeout_label,
+            timeout_seconds: BLEInterface.BLEError(
                 ERROR_TIMEOUT.format(timeout_label, timeout_seconds)
             ),
         )
@@ -1003,11 +1002,16 @@ class BLEInterface(MeshInterface):
         state_lock = getattr(self, "_state_lock", None)
         lock_is_owned = getattr(state_lock, "_is_owned", None)
         if callable(lock_is_owned):
+            owns_lock = False
             try:
-                if bool(lock_is_owned()):
-                    return handler.get_management_client_if_available_locked(address)
+                owns_lock = bool(lock_is_owned())
             except Exception:  # noqa: BLE001 - lock probe remains best effort
-                pass
+                logger.debug(
+                    "Failed to probe _state_lock ownership before management lookup",
+                    exc_info=True,
+                )
+            if owns_lock:
+                return handler.get_management_client_if_available_locked(address)
         return handler.get_management_client_if_available(address)
 
     def _get_management_client_if_available_locked(
@@ -1025,7 +1029,36 @@ class BLEInterface(MeshInterface):
         prefer_current_client: bool,
     ) -> BLEClient | None:
         """Return reusable target-matching management client via collaborator."""
-        return self._get_management_command_handler().get_management_client_for_target(
+        handler = self._get_management_command_handler()
+        state_lock = getattr(self, "_state_lock", None)
+        lock_is_owned = getattr(state_lock, "_is_owned", None)
+        if callable(lock_is_owned):
+            owns_lock = False
+            try:
+                owns_lock = bool(lock_is_owned())
+            except Exception:  # noqa: BLE001 - lock probe remains best effort
+                logger.debug(
+                    "Failed to probe _state_lock ownership before target lookup",
+                    exc_info=True,
+                )
+            if owns_lock:
+                return handler.get_management_client_for_target_locked(
+                    target_address,
+                    prefer_current_client=prefer_current_client,
+                )
+        return handler.get_management_client_for_target(
+            target_address,
+            prefer_current_client=prefer_current_client,
+        )
+
+    def _get_management_client_for_target_locked(
+        self,
+        target_address: str,
+        *,
+        prefer_current_client: bool,
+    ) -> BLEClient | None:
+        """Return reusable target-matching client while ``_state_lock`` is held."""
+        return self._get_management_command_handler().get_management_client_for_target_locked(
             target_address,
             prefer_current_client=prefer_current_client,
         )

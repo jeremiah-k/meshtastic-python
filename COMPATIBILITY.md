@@ -50,8 +50,8 @@ Additional approved BLE compatibility and promotions:
 | --------------------------------------------------------------- | -------------------- | -------------- | -------------------------------------------------- |
 | `BLEClient.find_device`                                         | `COMPAT_STABLE_SHIM` | Silent         | Historical snake_case.                             |
 | `BLEClient.findDevice`                                          | `PRIMARY`            | Silent         | Approved promoted camelCase name.                  |
-| `BLEClient.read_gatt_char`                                      | `COMPAT_STABLE_SHIM` | Silent         | Historical snake_case alias for `readGattChar`.    |
-| `BLEClient.start_notify`                                        | `COMPAT_STABLE_SHIM` | Silent         | Historical snake_case alias for `startNotify`.     |
+| `BLEClient.read_gatt_char`                                      | `COMPAT_STABLE_SHIM` | Silent         | Historical snake_case BLE API; no promoted camelCase alias. |
+| `BLEClient.start_notify`                                        | `COMPAT_STABLE_SHIM` | Silent         | Historical snake_case BLE API; no promoted camelCase alias. |
 | `BLEClient.is_connected`                                        | `COMPAT_STABLE_SHIM` | Silent         | Shim for `isConnected`.                            |
 | `BLEClient.isConnected`                                         | `PRIMARY`            | Silent         | Approved promoted camelCase name.                  |
 | `BLEClient.stop_notify`                                         | `COMPAT_STABLE_SHIM` | Silent         | Shim for `stopNotify`.                             |
@@ -190,6 +190,8 @@ compatibility/patching and are not recommended public surface.
 | ------------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------- |
 | `meshtastic.interfaces.ble.client`                | `find_device()`                                                   | `findDevice()`                                             |
 | `meshtastic.interfaces.ble.client`                | `_discover()`                                                     | `discover()`                                               |
+| `meshtastic.interfaces.ble.client`                | `read_gatt_char()`                                                | Historical snake_case method (no promoted camelCase alias) |
+| `meshtastic.interfaces.ble.client`                | `start_notify()`                                                  | Historical snake_case method (no promoted camelCase alias) |
 | `meshtastic.interfaces.ble.client`                | `is_connected()`                                                  | `isConnected()`                                            |
 | `meshtastic.interfaces.ble.client`                | `stop_notify()`                                                   | `stopNotify()`                                             |
 | `meshtastic.interfaces.ble.client`                | `async_await()`                                                   | `_async_await()`                                           |

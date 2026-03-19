@@ -275,19 +275,34 @@ class BLEManagementCommandHandler:
         prefer_current_client: bool,
     ) -> BLEClient | None:
         """Return reusable management client matching ``target_address``."""
-        iface = self._iface
-        target_lookup = sanitize_address(target_address) or target_address
-        with iface._state_lock:
-            current_client = (
-                iface.client
-                if prefer_current_client
-                and not getattr(iface, "_client_publish_pending", False)
-                else None
+        with self._iface._state_lock:
+            return self.get_management_client_for_target_locked(
+                target_address,
+                prefer_current_client=prefer_current_client,
             )
+
+    def get_management_client_for_target_locked(
+        self,
+        target_address: str,
+        *,
+        prefer_current_client: bool,
+    ) -> BLEClient | None:
+        """Return reusable management client matching ``target_address``.
+
+        Caller must already hold ``_state_lock``.
+        """
+        iface = self._iface
+        current_client = (
+            iface.client
+            if prefer_current_client
+            and not getattr(iface, "_client_publish_pending", False)
+            else None
+        )
         if self._is_client_connected(current_client):
             current_address = iface._extract_client_address(current_client)
             if _same_management_binding(current_address, target_address):
                 return current_client
+        target_lookup = sanitize_address(target_address) or target_address
         return iface._get_existing_client_if_valid(target_lookup)
 
     @staticmethod
@@ -295,7 +310,7 @@ class BLEManagementCommandHandler:
         """Return whether a candidate client appears currently connected."""
         if client is None:
             return False
-        for attr_name in ("isConnected", "is_connected"):
+        for attr_name in ("isConnected", "is_connected", "_is_connected"):
             is_connected = getattr(client, attr_name, None)
             if callable(is_connected) and not _is_unconfigured_mock_callable(
                 is_connected
@@ -304,6 +319,8 @@ class BLEManagementCommandHandler:
                     return bool(is_connected())
                 except Exception:  # noqa: BLE001 - connectivity probe must remain best effort
                     continue
+            if isinstance(is_connected, bool):
+                return is_connected
         return False
 
     def get_current_implicit_management_binding_locked(self) -> str | None:
@@ -346,7 +363,9 @@ class BLEManagementCommandHandler:
                 raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
             current_target_address = expected_target_address
 
-        if not _same_management_binding(current_target_address, expected_target_address):
+        if not _same_management_binding(
+            current_target_address, expected_target_address
+        ):
             raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
 
     def begin_management_operation_locked(self) -> None:
@@ -382,7 +401,7 @@ class BLEManagementCommandHandler:
             try:
                 existing_client = self._call_iface_override(
                     "_get_management_client_if_available",
-                    self.get_management_client_if_available,
+                    self.get_management_client_if_available_locked,
                     address,
                 )
                 target_address = iface._extract_client_address(existing_client)
@@ -420,7 +439,7 @@ class BLEManagementCommandHandler:
                 iface._validate_management_preconditions()
                 refreshed_existing_client = self._call_iface_override(
                     "_get_management_client_if_available",
-                    self.get_management_client_if_available,
+                    self.get_management_client_if_available_locked,
                     address,
                 )
                 if refreshed_existing_client is None:
@@ -442,7 +461,7 @@ class BLEManagementCommandHandler:
                 iface._validate_management_preconditions()
                 refreshed_existing_client = self._call_iface_override(
                     "_get_management_client_if_available",
-                    self.get_management_client_if_available,
+                    self.get_management_client_if_available_locked,
                     address,
                 )
                 if refreshed_existing_client is None:
@@ -461,13 +480,21 @@ class BLEManagementCommandHandler:
                     address,
                 )
 
-        if target_candidate is None:
-            target_candidate = current_binding
+        if (
+            target_candidate is None
+            and current_binding is not None
+            and not use_refreshed_existing_client
+        ):
+            target_candidate = self._call_iface_override(
+                "_resolve_target_address_for_management",
+                self.resolve_target_address_for_management,
+                current_binding,
+            )
 
         target_address: str | None = None
         if target_candidate is not None:
             candidate = target_candidate.strip() or None
-            if candidate is not None:
+            if candidate is not None and _looks_like_ble_address(candidate):
                 target_address = candidate
         return (
             target_address,
@@ -529,7 +556,7 @@ class BLEManagementCommandHandler:
                 )
             client_to_use = self._call_iface_override(
                 "_get_management_client_for_target",
-                self.get_management_client_for_target,
+                self.get_management_client_for_target_locked,
                 target_address,
                 prefer_current_client=address is None,
             )
@@ -576,9 +603,7 @@ class BLEManagementCommandHandler:
             if temporary_client is not None:
                 try:
                     iface._client_manager_safe_close_client(temporary_client)
-                except (
-                    Exception
-                ):  # noqa: BLE001 - best-effort cleanup must not mask command outcome
+                except Exception:  # noqa: BLE001 - best-effort cleanup must not mask command outcome
                     logger.debug(
                         "Failed to close temporary management client.",
                         exc_info=True,
@@ -804,9 +829,7 @@ class BLEManagementCommandHandler:
                 check=False,
                 timeout=command_timeout,
             )
-        except (
-            Exception
-        ) as exc:  # noqa: BLE001 - preserve injected module compatibility
+        except Exception as exc:  # noqa: BLE001 - preserve injected module compatibility
             if isinstance(exc, timeout_exc_type):
                 raise iface.BLEError(
                     ERROR_TRUST_COMMAND_TIMEOUT.format(

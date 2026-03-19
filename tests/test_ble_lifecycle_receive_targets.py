@@ -283,6 +283,7 @@ def test_lifecycle_disconnect_planning_and_side_effect_paths(
     assert plan[1] is True
     unknown_previous = DummyClient()
     unknown_previous.address = "unknown"
+    unknown_previous.bleak_client.address = "unknown"
     fallback_plan = BLELifecycleService._compute_disconnect_keys(
         iface,
         previous_client=unknown_previous,
@@ -1062,7 +1063,7 @@ def test_receive_controller_transient_error_override_capture(
 def test_receive_compat_controller_for_shim_accepts_injected_controller_double(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Receive shim should reuse injected non-mock controller doubles."""
+    """Receive shim should reuse injected doubles only when required method is present."""
     iface = _make_iface(monkeypatch)
     try:
         injected_controller = SimpleNamespace(
@@ -1070,8 +1071,14 @@ def test_receive_compat_controller_for_shim_accepts_injected_controller_double(
         )
         iface._get_receive_recovery_controller = lambda: injected_controller
         assert (
-            BLEReceiveRecoveryService._controller_for_shim(iface)
+            BLEReceiveRecoveryService._controller_for_shim(
+                iface, "handle_read_loop_disconnect"
+            )
             is injected_controller
+        )
+        assert (
+            BLEReceiveRecoveryService._controller_for_shim(iface)
+            is not injected_controller
         )
     finally:
         iface.close()
@@ -1761,7 +1768,7 @@ def test_lifecycle_remaining_verify_finalize_and_shutdown_branches(
             "_get_connected_client_status_locked",
             staticmethod(lambda *_args, **_kwargs: status_values.pop(0)),
         )
-        iface._client_publish_pending = True
+        iface._client_publish_pending = False
         iface._client_replacement_pending = True
         iface._disconnect_notified = True
         iface.client = DummyClient()

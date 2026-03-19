@@ -388,11 +388,16 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         with iface._state_lock:
             still_owned, is_closing = get_connected_status_locked(connected_client)
             if still_owned and not is_closing:
-                publish_claimed = bool(getattr(iface, "_client_publish_pending", False))
-                if not publish_claimed:
+                publish_pending = bool(getattr(iface, "_client_publish_pending", False))
+                if not publish_pending:
                     iface._client_publish_pending = True
                     publish_claimed = True
-                should_publish_connected = True
+                    should_publish_connected = True
+                elif iface.client is connected_client:
+                    # The connect flow may have already claimed publish-pending
+                    # for this exact client before reaching verification.
+                    publish_claimed = True
+                    should_publish_connected = True
         snapshot = snapshot_provider(
             connected_client,
             connected_device_key,
@@ -414,57 +419,15 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 ):
                     publish_committed = True
             if publish_committed:
-                still_owned_after = True
-                is_closing_after = False
-                disconnect_notified = False
-                published_session_epoch = 0
-                publish_completed = False
-                try:
-                    post_commit_snapshot = snapshot_provider(
-                        connected_client,
-                        connected_device_key,
-                        connection_alias_key,
-                    )
-                    if (
-                        not post_commit_snapshot.still_owned
-                        or post_commit_snapshot.is_closing
-                        or post_commit_snapshot.lost_gate_ownership
-                    ):
-                        _raise_invalidated(post_commit_snapshot)
-                    iface._connected()
-                    publish_completed = True
-                    with iface._state_lock:
-                        iface._ever_connected = True
-                        iface._prior_publish_was_reconnect = prior_ever_connected
-                        published_session_epoch = getattr(
-                            iface, "_connection_session_epoch", 0
-                        )
-                    self._emit_verified_connection_side_effects(connected_client)
-                finally:
-                    with iface._state_lock:
-                        if iface.client is connected_client:
-                            iface._client_publish_pending = False
-                            if publish_completed:
-                                iface._client_replacement_pending = False
-                        still_owned_after, is_closing_after = get_connected_status_locked(
-                            connected_client
-                        )
-                        disconnect_notified = iface._disconnect_notified
-                if (
-                    not still_owned_after
-                    and disconnect_notified
-                    and not is_closing_after
-                ):
-                    logger.debug(
-                        "Connected publication raced with disconnect; emitting compensating disconnect event."
-                    )
-                    with iface._state_lock:
-                        same_session = (
-                            getattr(iface, "_connection_session_epoch", 0)
-                            == published_session_epoch
-                        )
-                    if same_session:
-                        iface._disconnected()
+                self._commit_and_publish_connected(
+                    connected_client=connected_client,
+                    connected_device_key=connected_device_key,
+                    connection_alias_key=connection_alias_key,
+                    snapshot_provider=snapshot_provider,
+                    get_connected_status_locked=get_connected_status_locked,
+                    prior_ever_connected=prior_ever_connected,
+                    raise_invalidated=_raise_invalidated,
+                )
                 return
 
         post_check_snapshot = snapshot_provider(
@@ -473,6 +436,67 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             connection_alias_key,
         )
         _raise_invalidated(post_check_snapshot)
+
+    def _commit_and_publish_connected(
+        self,
+        *,
+        connected_client: "BLEClient",
+        connected_device_key: str | None,
+        connection_alias_key: str | None,
+        snapshot_provider: Callable[
+            ["BLEClient", str | None, str | None], _OwnershipSnapshot
+        ],
+        get_connected_status_locked: Callable[["BLEClient"], tuple[bool, bool]],
+        prior_ever_connected: bool,
+        raise_invalidated: Callable[[_OwnershipSnapshot], None],
+    ) -> None:
+        """Run the committed connected-publication sequence."""
+        iface = self._iface
+        still_owned_after = True
+        is_closing_after = False
+        disconnect_notified = False
+        published_session_epoch = 0
+        publish_completed = False
+        try:
+            post_commit_snapshot = snapshot_provider(
+                connected_client,
+                connected_device_key,
+                connection_alias_key,
+            )
+            if (
+                not post_commit_snapshot.still_owned
+                or post_commit_snapshot.is_closing
+                or post_commit_snapshot.lost_gate_ownership
+            ):
+                raise_invalidated(post_commit_snapshot)
+            iface._connected()
+            publish_completed = True
+            with iface._state_lock:
+                iface._ever_connected = True
+                iface._prior_publish_was_reconnect = prior_ever_connected
+                published_session_epoch = getattr(iface, "_connection_session_epoch", 0)
+            self._emit_verified_connection_side_effects(connected_client)
+        finally:
+            with iface._state_lock:
+                if iface.client is connected_client:
+                    iface._client_publish_pending = False
+                    if publish_completed:
+                        iface._client_replacement_pending = False
+                still_owned_after, is_closing_after = get_connected_status_locked(
+                    connected_client
+                )
+                disconnect_notified = iface._disconnect_notified
+        if not still_owned_after and disconnect_notified and not is_closing_after:
+            logger.debug(
+                "Connected publication raced with disconnect; emitting compensating disconnect event."
+            )
+            with iface._state_lock:
+                same_session = (
+                    getattr(iface, "_connection_session_epoch", 0)
+                    == published_session_epoch
+                )
+            if same_session:
+                iface._disconnected()
 
     def _finalize_connection_gates(
         self,
