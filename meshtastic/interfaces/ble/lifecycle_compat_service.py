@@ -112,11 +112,7 @@ class BLELifecycleService:
         if callable(get_lifecycle_controller) and not _is_unconfigured_mock_callable(
             get_lifecycle_controller
         ):
-            lifecycle_controller: object | None = None
-            try:
-                lifecycle_controller = get_lifecycle_controller()
-            except Exception:  # noqa: BLE001 - compatibility probes stay best effort
-                lifecycle_controller = None
+            lifecycle_controller = get_lifecycle_controller()
             if lifecycle_controller is not None and not _is_unconfigured_mock_member(
                 lifecycle_controller
             ):

@@ -5229,7 +5229,7 @@ def _run_receive_current_thread_deferral_scenario(
         ident=123,
         is_alive=lambda: True,
     )
-    create_calls, _ = _patch_receive_start_threads(
+    create_calls, start_calls = _patch_receive_start_threads(
         monkeypatch,
         iface=iface,
         created_threads=[deferred_thread],
@@ -5243,6 +5243,7 @@ def _run_receive_current_thread_deferral_scenario(
     start_receive(deferred_name)
 
     assert create_calls == []
+    assert start_calls == []
     assert iface._receiveThread is threading.current_thread()
     assert iface._receive_start_pending is True
     assert iface._receive_start_pending_since == t0
@@ -5411,17 +5412,10 @@ def test_start_receive_thread_ident_only_probe_keeps_pending_state(
                 ident=101,
                 is_alive=lambda: False,
             )
-            monkeypatch.setattr(
-                iface.thread_coordinator,
-                "_create_thread",
-                lambda **_kwargs: thread_like,
-                raising=True,
-            )
-            monkeypatch.setattr(
-                iface.thread_coordinator,
-                "_start_thread",
-                lambda _thread: None,
-                raising=True,
+            _, start_calls = _patch_receive_start_threads(
+                monkeypatch,
+                iface=iface,
+                created_threads=[thread_like],
             )
 
             BLELifecycleService._start_receive_thread(iface, name="BLEReceiveIdentOnly")
@@ -5429,6 +5423,7 @@ def test_start_receive_thread_ident_only_probe_keeps_pending_state(
             assert iface._receiveThread is thread_like
             assert iface._receive_start_pending is True
             assert iface._receive_recovery_attempts == 4
+            assert start_calls == [thread_like]
     finally:
         iface.close()
 

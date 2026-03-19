@@ -23,6 +23,65 @@ class BLEReceiveLifecycleCoordinator:
         """Bind receive lifecycle ownership to a specific interface."""
         self._iface = iface
         self._thread_access = _LifecycleThreadAccess(iface)
+        self._deferred_restart_lock = threading.Lock()
+        self._deferred_restart_inflight = False
+
+    def _schedule_deferred_receive_restart(
+        self,
+        *,
+        existing_thread: ThreadLike,
+        name: str,
+        reset_recovery: bool,
+    ) -> None:
+        """Schedule a best-effort receive restart after current-thread deferral.
+
+        This helper avoids replacing ``_receiveThread`` inline while the active
+        receive thread is unwinding. A short-lived daemon task waits for the
+        deferred thread to unwind (or for the wait window to elapse), then
+        re-enters ``start_receive_thread``.
+        """
+        iface = self._iface
+        with self._deferred_restart_lock:
+            if self._deferred_restart_inflight:
+                return
+            self._deferred_restart_inflight = True
+
+        def _deferred_restart() -> None:
+            try:
+                wait_deadline = time.monotonic() + RECEIVE_START_PENDING_TIMEOUT_SECONDS
+                while True:
+                    with iface._state_lock:
+                        if iface._closed or not iface._want_receive:
+                            return
+                        current = iface._receiveThread
+                    if current is not existing_thread:
+                        break
+                    _, current_is_alive = _thread_start_probe(existing_thread)
+                    if not current_is_alive:
+                        break
+                    if time.monotonic() >= wait_deadline:
+                        logger.debug(
+                            "Deferred receive restart (%s) timed out waiting for current thread unwind; retrying start probe.",
+                            name,
+                        )
+                        break
+                    time.sleep(0.01)
+                self.start_receive_thread(name=name, reset_recovery=reset_recovery)
+            except Exception:  # noqa: BLE001 - deferred restart remains best effort
+                logger.debug(
+                    "Deferred receive restart (%s) failed.",
+                    name,
+                    exc_info=True,
+                )
+            finally:
+                with self._deferred_restart_lock:
+                    self._deferred_restart_inflight = False
+
+        threading.Thread(
+            target=_deferred_restart,
+            name=f"{name}DeferredStart",
+            daemon=True,
+        ).start()
 
     def set_receive_wanted(self, *, want_receive: bool) -> None:
         """Request or clear receive-loop intent."""
@@ -69,6 +128,10 @@ class BLEReceiveLifecycleCoordinator:
     ) -> tuple[ThreadLike | None, int | None]:
         """Validate start preconditions and create a staged receive thread."""
         iface = self._iface
+        expected_existing: ThreadLike | None = None
+        recovery_attempts_before_start: int | None = None
+        deferred_current_thread: ThreadLike | None = None
+        deferred_current_thread_waiting = False
         with iface._state_lock:
             if iface._closed or not iface._want_receive:
                 logger.debug(
@@ -89,27 +152,39 @@ class BLEReceiveLifecycleCoordinator:
                 if not existing_start_pending or not isinstance(
                     pending_since, (float, int)
                 ):
-                    iface._receive_start_pending_since = now
                     pending_age = 0.0
                 else:
                     pending_age = now - float(pending_since)
                     if pending_age >= RECEIVE_START_PENDING_TIMEOUT_SECONDS:
+                        iface._receive_start_pending = False
+                        iface._receive_start_pending_since = None
+                        deferred_current_thread = existing
+                        logger.debug(
+                            "Receive-thread deferral timeout reached (%s): scheduling deferred restart.",
+                            name,
+                        )
+                if deferred_current_thread is None:
+                    deferred_current_thread_waiting = True
+                    iface._receive_start_pending = True
+                    if not isinstance(pending_since, (float, int)):
                         iface._receive_start_pending_since = now
-                        pending_age = 0.0
-                iface._receive_start_pending = True
-                if not reset_recovery:
-                    logger.debug(
-                        "Deferring replacement receive thread start (%s): current receive thread is still unwinding (pending %.3fs).",
-                        name,
-                        pending_age,
-                    )
+                    if not reset_recovery:
+                        logger.debug(
+                            "Deferring replacement receive thread start (%s): current receive thread is still unwinding (pending %.3fs).",
+                            name,
+                            pending_age,
+                        )
+                    else:
+                        logger.debug(
+                            "Deferring receive thread start (%s): current receive thread is still unwinding (pending %.3fs).",
+                            name,
+                            pending_age,
+                        )
                 else:
                     logger.debug(
-                        "Deferring receive thread start (%s): current receive thread is still unwinding (pending %.3fs).",
+                        "Deferring receive thread start (%s) and queueing recovery restart after current thread unwind.",
                         name,
-                        pending_age,
                     )
-                return None, None
             if existing is not None and not self._is_current_receive_thread(existing):
                 if existing_is_alive:
                     iface._receive_start_pending = False
@@ -158,17 +233,45 @@ class BLEReceiveLifecycleCoordinator:
                         return None, None
                     iface._receive_start_pending = False
                     iface._receive_start_pending_since = None
-            thread = create_runtime_thread(
-                target=iface._receive_from_radio_impl,
+            if deferred_current_thread is None:
+                expected_existing = existing
+                recovery_attempts_before_start = (
+                    iface._receive_recovery_attempts if reset_recovery else None
+                )
+        if deferred_current_thread_waiting:
+            return None, None
+        if deferred_current_thread is not None:
+            self._schedule_deferred_receive_restart(
+                existing_thread=deferred_current_thread,
                 name=name,
-                daemon=True,
+                reset_recovery=reset_recovery,
             )
+            return None, None
+        thread = create_runtime_thread(
+            target=iface._receive_from_radio_impl,
+            name=name,
+            daemon=True,
+        )
+        with iface._state_lock:
+            if iface._closed or not iface._want_receive:
+                return None, None
+            if iface._receiveThread is not expected_existing:
+                logger.debug(
+                    "Skipping receive thread publish (%s): receive thread reference changed concurrently.",
+                    name,
+                )
+                return None, None
+            if expected_existing is not None and _thread_start_probe(expected_existing)[1]:
+                iface._receive_start_pending = False
+                iface._receive_start_pending_since = None
+                logger.debug(
+                    "Skipping receive thread start (%s): existing thread became active while staging replacement.",
+                    name,
+                )
+                return None, None
             iface._receiveThread = thread
             iface._receive_start_pending = True
             iface._receive_start_pending_since = time.monotonic()
-            recovery_attempts_before_start = (
-                iface._receive_recovery_attempts if reset_recovery else None
-            )
             return thread, recovery_attempts_before_start
 
     def _create_and_start_receive_thread(

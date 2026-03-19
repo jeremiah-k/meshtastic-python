@@ -310,7 +310,8 @@ class BLEManagementCommandHandler:
         """Return whether a candidate client appears currently connected."""
         if client is None:
             return False
-        for attr_name in ("isConnected", "is_connected", "_is_connected"):
+        callable_probe_failed = False
+        for attr_name in ("isConnected", "is_connected"):
             is_connected = getattr(client, attr_name, None)
             if callable(is_connected) and not _is_unconfigured_mock_callable(
                 is_connected
@@ -320,9 +321,24 @@ class BLEManagementCommandHandler:
                 except (
                     Exception
                 ):  # noqa: BLE001 - connectivity probe must remain best effort
-                    continue
+                    callable_probe_failed = True
+                    break
             if isinstance(is_connected, bool):
                 return is_connected
+        if callable_probe_failed:
+            return False
+        legacy_is_connected = getattr(client, "_is_connected", None)
+        if callable(legacy_is_connected) and not _is_unconfigured_mock_callable(
+            legacy_is_connected
+        ):
+            try:
+                return bool(legacy_is_connected())
+            except (
+                Exception
+            ):  # noqa: BLE001 - connectivity probe must remain best effort
+                return False
+        if isinstance(legacy_is_connected, bool):
+            return legacy_is_connected
         return False
 
     def get_current_implicit_management_binding_locked(self) -> str | None:
@@ -665,6 +681,19 @@ class BLEManagementCommandHandler:
                 if refreshed_existing_client is not None:
                     with iface._connect_lock, iface._management_lock, iface._state_lock:
                         iface._validate_management_preconditions()
+                        if (
+                            address is None
+                            and start_context.expected_implicit_binding is not None
+                        ):
+                            current_binding = self._call_iface_override(
+                                "_get_current_implicit_management_binding_locked",
+                                self.get_current_implicit_management_binding_locked,
+                            )
+                            if not _same_management_binding(
+                                current_binding,
+                                start_context.expected_implicit_binding,
+                            ):
+                                raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
                         client_still_connected = self._is_client_connected(
                             refreshed_existing_client
                         )

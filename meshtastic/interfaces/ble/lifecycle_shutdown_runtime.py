@@ -208,16 +208,20 @@ class BLEShutdownLifecycleCoordinator:
         if receive_thread is None:
             return
         thread_ident, thread_is_alive = _thread_start_probe(receive_thread)
+        start_failure_confirmed = False
         if thread_ident is None and not thread_is_alive:
             started_event = getattr(receive_thread, "_started", None)
             is_started = getattr(started_event, "is_set", None)
-            start_failure_confirmed = False
             if callable(is_started):
                 try:
                     start_failure_confirmed = not bool(is_started())
                 except Exception:  # noqa: BLE001 - probe remains best effort
                     start_failure_confirmed = False
             elif isinstance(receive_thread, threading.Thread):
+                start_failure_confirmed = True
+            elif callable(getattr(receive_thread, "is_alive", None)):
+                # ThreadLike placeholders that explicitly report not alive are
+                # treated as definitive start failures for shutdown cleanup.
                 start_failure_confirmed = True
             if start_failure_confirmed:
                 with iface._state_lock:
@@ -245,14 +249,20 @@ class BLEShutdownLifecycleCoordinator:
                     "Error joining BLE receive thread during close",
                     exc_info=True,
                 )
-            _, thread_is_alive = _thread_start_probe(receive_thread)
-            if thread_is_alive:
+            post_join_ident, post_join_is_alive = _thread_start_probe(receive_thread)
+            if post_join_is_alive:
                 logger.warning(
                     "BLE receive thread did not exit within %.1fs",
                     RECEIVE_THREAD_JOIN_TIMEOUT,
                 )
+            thread_ident = post_join_ident
+            thread_is_alive = post_join_is_alive
         with iface._state_lock:
-            if iface._receiveThread is receive_thread and not thread_is_alive:
+            probe_confirms_stopped = thread_ident is not None and not thread_is_alive
+            if (
+                iface._receiveThread is receive_thread
+                and (start_failure_confirmed or probe_confirms_stopped)
+            ):
                 iface._receiveThread = None
                 iface._receive_start_pending = False
                 iface._receive_start_pending_since = None

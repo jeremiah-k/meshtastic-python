@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
 from meshtastic.interfaces.ble.client import BLEClient
+from meshtastic.interfaces.ble.constants import logger
 from meshtastic.interfaces.ble.gating import _is_currently_connected_elsewhere
 from meshtastic.interfaces.ble.management_runtime import (
     BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS,
@@ -113,23 +114,37 @@ class BLEManagementCommandsService:
             ble_client_factory is None and connected_elsewhere is None
         )
         if use_iface_owned_handler:
-            get_handler = getattr(iface, "_get_management_command_handler", None)
+            get_handler: object | None = None
+            try:
+                get_handler = getattr(iface, "_get_management_command_handler", None)
+            except Exception:  # noqa: BLE001 - compatibility resolution is best effort
+                logger.debug(
+                    "Error resolving _get_management_command_handler; falling back to direct handler field.",
+                    exc_info=True,
+                )
             if callable(get_handler) and not _is_unconfigured_mock_callable(
                 get_handler
             ):
-                resolved = get_handler()
-                if (
-                    resolved is not None
-                    and not _is_unconfigured_mock_member(resolved)
-                    and (
-                        BLEManagementCommandsService._is_handler_like(resolved)
-                        or BLEManagementCommandsService._has_required_handler_entrypoint(
-                            resolved,
-                            expected_method,
-                        )
+                try:
+                    resolved = get_handler()
+                except Exception:  # noqa: BLE001 - compatibility resolution is best effort
+                    logger.debug(
+                        "Error calling _get_management_command_handler; falling back to direct handler field.",
+                        exc_info=True,
                     )
-                ):
-                    return cast(BLEManagementCommandHandler, resolved)
+                else:
+                    if (
+                        resolved is not None
+                        and not _is_unconfigured_mock_member(resolved)
+                        and (
+                            BLEManagementCommandsService._is_handler_like(resolved)
+                            or BLEManagementCommandsService._has_required_handler_entrypoint(
+                                resolved,
+                                expected_method,
+                            )
+                        )
+                    ):
+                        return cast(BLEManagementCommandHandler, resolved)
             direct_handler = getattr(iface, "_management_command_handler", None)
             if (
                 direct_handler is not None

@@ -1925,7 +1925,11 @@ class BLEInterface(MeshInterface):
         with self._state_lock:
             return (
                 self._state_manager_current_state()
-                in (ConnectionState.DISCONNECTED, ConnectionState.ERROR)
+                in (
+                    ConnectionState.DISCONNECTED,
+                    ConnectionState.RECONNECTING,
+                    ConnectionState.ERROR,
+                )
                 and not self._closed
             )
 

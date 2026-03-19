@@ -335,10 +335,24 @@ class BLENotificationDispatcher:
                 )
                 self._malformed_notification_count = 0
 
+    def _resolve_error_handler(self) -> object | None:
+        """Resolve current error handler, suppressing provider failures."""
+        try:
+            error_handler = self._error_handler_provider()
+        except Exception:  # noqa: BLE001 - notification paths must remain best effort
+            logger.debug(
+                "Error resolving notification error-handler provider.",
+                exc_info=True,
+            )
+            return None
+        if _is_unconfigured_mock_member(error_handler):
+            return None
+        return error_handler
+
     def report_notification_handler_error(self, error_msg: str) -> None:
         """Report notification-handler failures through configured hooks."""
-        error_handler = self._error_handler_provider()
-        if _is_unconfigured_mock_member(error_handler):
+        error_handler = self._resolve_error_handler()
+        if error_handler is None:
             logger.debug(error_msg)
             return
         report_exception: Callable[[str], Any] | None = None
@@ -622,7 +636,7 @@ class BLENotificationDispatcher:
                 ):  # noqa: BLE001 - notification callbacks must stay best effort
                     _report_notification_error()
 
-            error_handler = self._error_handler_provider()
+            error_handler = self._resolve_error_handler()
             safe_execute = getattr(error_handler, "safe_execute", None)
             if not callable(safe_execute) or _is_unconfigured_mock_callable(
                 safe_execute

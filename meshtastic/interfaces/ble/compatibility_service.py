@@ -241,7 +241,7 @@ class BLECompatibilityEventService:
         iface: "BLEInterface",
         timeout: float | None = None,
         *,
-        publishing_thread: object,
+        publishing_thread: object | None,
     ) -> None:
         """Wait for queued disconnect notifications to flush.
 
@@ -252,7 +252,7 @@ class BLECompatibilityEventService:
         timeout : float | None
             Maximum seconds to wait for flush completion. ``None`` uses the
             default disconnect timeout.
-        publishing_thread : object
+        publishing_thread : object | None
             Publishing-thread façade used to queue and drain callbacks.
 
         Returns
@@ -263,6 +263,8 @@ class BLECompatibilityEventService:
         """
         if timeout is None:
             timeout = DISCONNECT_TIMEOUT_SECONDS
+        if publishing_thread is None:
+            return
         flush_event = Event()
 
         def _queue_flush_notification() -> bool:
@@ -308,7 +310,10 @@ class BLECompatibilityEventService:
 
     @staticmethod
     def drain_publish_queue(
-        iface: "BLEInterface", flush_event: Event, *, publishing_thread: object
+        iface: "BLEInterface",
+        flush_event: Event,
+        *,
+        publishing_thread: object | None,
     ) -> None:
         """Drain pending publish callbacks on the current thread.
 
@@ -318,7 +323,7 @@ class BLECompatibilityEventService:
             Interface providing safe execution helpers.
         flush_event : Event
             Event set by queued flush callbacks to indicate completion.
-        publishing_thread : object
+        publishing_thread : object | None
             Publishing-thread façade exposing queue-drain internals.
 
         Returns
@@ -326,6 +331,8 @@ class BLECompatibilityEventService:
         None
             Drains callbacks best-effort and suppresses callback failures.
         """
+        if publishing_thread is None:
+            return
         thread = getattr(publishing_thread, "thread", None)
         thread_drain = getattr(thread, "_drain_publish_queue", None)
         if callable(thread_drain) and not _is_unconfigured_mock_callable(thread_drain):
@@ -383,7 +390,10 @@ class BLECompatibilityEventService:
 
     @staticmethod
     def publish_connection_status(
-        iface: "BLEInterface", connected: bool, *, publishing_thread: object
+        iface: "BLEInterface",
+        connected: bool,
+        *,
+        publishing_thread: object | None,
     ) -> None:
         """Publish legacy connection-status event for compatibility.
 
@@ -393,7 +403,7 @@ class BLECompatibilityEventService:
             Interface associated with the status event payload.
         connected : bool
             Connection status flag to publish.
-        publishing_thread : object
+        publishing_thread : object | None
             Publishing-thread façade used for deferred publish scheduling.
 
         Returns
@@ -420,6 +430,10 @@ class BLECompatibilityEventService:
                     exc_info=True,
                 )
 
+        if publishing_thread is None:
+            _publish_status()
+            return
+
         try:
             queued = BLECompatibilityEventService._enqueue_publish_callback(
                 publishing_thread,
@@ -438,7 +452,10 @@ class BLECompatibilityEventService:
     # COMPAT_STABLE_SHIM: retained for existing callers during service migration.
     @staticmethod
     def publish_connection_status_legacy(
-        iface: "BLEInterface", connected: bool, *, publishing_thread: object
+        iface: "BLEInterface",
+        connected: bool,
+        *,
+        publishing_thread: object | None,
     ) -> None:
         """Backward-compatible alias for ``publish_connection_status``.
 
@@ -448,7 +465,7 @@ class BLECompatibilityEventService:
             Interface whose connection status is being published.
         connected : bool
             ``True`` for connected status and ``False`` for disconnected.
-        publishing_thread : object
+        publishing_thread : object | None
             Publishing-thread facade used to enqueue/send the legacy message.
 
         Returns

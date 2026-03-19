@@ -101,9 +101,16 @@ class _LifecycleStateAccess:
         if callable(public_is_connected) and not _is_unconfigured_mock_callable(
             public_is_connected
         ):
-            result = public_is_connected()
-            if isinstance(result, bool):
-                return result
+            try:
+                result = public_is_connected()
+            except Exception:  # noqa: BLE001 - compatibility probe must fall through
+                logger.debug(
+                    "Error probing state manager is_connected()",
+                    exc_info=True,
+                )
+            else:
+                if isinstance(result, bool):
+                    return result
         if not _is_unconfigured_mock_member(public_is_connected) and isinstance(
             public_is_connected, bool
         ):
@@ -112,9 +119,16 @@ class _LifecycleStateAccess:
         if callable(legacy_is_connected) and not _is_unconfigured_mock_callable(
             legacy_is_connected
         ):
-            result = legacy_is_connected()
-            if isinstance(result, bool):
-                return result
+            try:
+                result = legacy_is_connected()
+            except Exception:  # noqa: BLE001 - compatibility probe must fall through
+                logger.debug(
+                    "Error probing state manager _is_connected()",
+                    exc_info=True,
+                )
+            else:
+                if isinstance(result, bool):
+                    return result
         if not _is_unconfigured_mock_member(legacy_is_connected) and isinstance(
             legacy_is_connected, bool
         ):
@@ -125,18 +139,32 @@ class _LifecycleStateAccess:
         """Return current connection state from public-first state-manager members."""
         public_state = getattr(self._iface._state_manager, "current_state", None)
         if callable(public_state) and not _is_unconfigured_mock_callable(public_state):
-            result = public_state()
-            if isinstance(result, ConnectionState):
-                return result
+            try:
+                result = public_state()
+            except Exception:  # noqa: BLE001 - compatibility probe must fall through
+                logger.debug(
+                    "Error probing state manager current_state()",
+                    exc_info=True,
+                )
+            else:
+                if isinstance(result, ConnectionState):
+                    return result
         if not _is_unconfigured_mock_member(public_state) and isinstance(
             public_state, ConnectionState
         ):
             return public_state
         legacy_state = getattr(self._iface._state_manager, "_current_state", None)
         if callable(legacy_state) and not _is_unconfigured_mock_callable(legacy_state):
-            result = legacy_state()
-            if isinstance(result, ConnectionState):
-                return result
+            try:
+                result = legacy_state()
+            except Exception:  # noqa: BLE001 - compatibility probe must fall through
+                logger.debug(
+                    "Error probing state manager _current_state()",
+                    exc_info=True,
+                )
+            else:
+                if isinstance(result, ConnectionState):
+                    return result
         if not _is_unconfigured_mock_member(legacy_state) and isinstance(
             legacy_state, ConnectionState
         ):
@@ -177,9 +205,16 @@ class _LifecycleStateAccess:
         if callable(public_is_closing) and not _is_unconfigured_mock_callable(
             public_is_closing
         ):
-            result = public_is_closing()
-            if isinstance(result, bool):
-                return result
+            try:
+                result = public_is_closing()
+            except Exception:  # noqa: BLE001 - compatibility probe must fall through
+                logger.debug(
+                    "Error probing state manager is_closing()",
+                    exc_info=True,
+                )
+            else:
+                if isinstance(result, bool):
+                    return result
         if not _is_unconfigured_mock_member(public_is_closing) and isinstance(
             public_is_closing, bool
         ):
@@ -188,9 +223,16 @@ class _LifecycleStateAccess:
         if callable(legacy_is_closing) and not _is_unconfigured_mock_callable(
             legacy_is_closing
         ):
-            result = legacy_is_closing()
-            if isinstance(result, bool):
-                return result
+            try:
+                result = legacy_is_closing()
+            except Exception:  # noqa: BLE001 - compatibility probe must fall through
+                logger.debug(
+                    "Error probing state manager _is_closing()",
+                    exc_info=True,
+                )
+            else:
+                if isinstance(result, bool):
+                    return result
         if not _is_unconfigured_mock_member(legacy_is_closing) and isinstance(
             legacy_is_closing, bool
         ):

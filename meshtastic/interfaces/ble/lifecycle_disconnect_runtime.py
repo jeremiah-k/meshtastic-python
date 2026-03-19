@@ -352,9 +352,10 @@ class BLEDisconnectLifecycleCoordinator:
                 active_client is not None and active_client is not plan.client_at_start
             ):
                 if active_client is not None:
+                    active_address = iface._extract_client_address(active_client)
                     active_keys = set(
                         iface._sorted_address_keys(
-                            _addr_key(getattr(active_client, "address", None)),
+                            _addr_key(active_address) if active_address else None,
                             iface._connection_alias_key,
                         )
                     )

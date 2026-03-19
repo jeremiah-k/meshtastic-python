@@ -192,7 +192,9 @@ cb = mgr._get_callback(uuid)
 # Stop all notifications through a BLEClient (e.g. during shutdown).
 mgr._unsubscribe_all(client, timeout=5.0)
 
-# Re-register all subscriptions on a new client (e.g. after reconnect).
+# Re-register tracked non-FROMNUM subscriptions on a new client
+# (e.g. after reconnect). FROMNUM_UUID is intentionally skipped here;
+# BLENotificationDispatcher owns FROMNUM startup/retry orchestration.
 mgr._resubscribe_all(client, timeout=5.0)
 
 # Clear internal subscription state (called after full disconnect + cleanup).
@@ -201,7 +203,9 @@ mgr._cleanup_all()
 
 Compatibility note: `NotificationManager` is an internal collaborator. Its
 underscore helpers are the canonical call surface used by dispatcher/lifecycle
-runtime code.
+runtime code. `_resubscribe_all()` intentionally does **not** re-register
+`FROMNUM_UUID`; FROMNUM registration and fallback behavior are owned by
+`BLENotificationDispatcher`.
 
 ### `BLENotificationDispatcher`
 
@@ -478,7 +482,7 @@ with BLEInterface(address="DD:DD:13:27:74:29") as iface:
 | Multiple `BLEInterface` instances per address | Reuse one instance; multiple instances collide on the address gate.                                                               |
 | Layered reconnect loops                       | Use either the library's `auto_reconnect=True` **or** your own loop, never both.                                                  |
 | Aggressive retry cadence                      | Include exponential backoff; long `scan + connect` calls during rapid retries exhaust BlueZ.                                      |
-| Forgetting to resubscribe notifications       | Use the same instance so `NotificationManager` can call `_resubscribe_all()` automatically after reconnects.                      |
+| Forgetting to resubscribe notifications       | Use the same instance so `NotificationManager` can call `_resubscribe_all()` automatically after reconnects (non-`FROMNUM_UUID`; dispatcher owns FROMNUM). |
 | Not closing the interface                     | Always call `close()` or use the context-manager pattern; unclosed BLE handles on Linux prevent future connections (BlueZ quirk). |
 
 ---
