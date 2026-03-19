@@ -177,12 +177,16 @@ class _LifecycleStateAccess:
         if callable(public_transition) and not _is_unconfigured_mock_callable(
             public_transition
         ):
-            return bool(public_transition(new_state))
+            result = public_transition(new_state)
+            if isinstance(result, bool):
+                return result
         legacy_transition = getattr(self._iface._state_manager, "_transition_to", None)
         if callable(legacy_transition) and not _is_unconfigured_mock_callable(
             legacy_transition
         ):
-            return bool(legacy_transition(new_state))
+            result = legacy_transition(new_state)
+            if isinstance(result, bool):
+                return result
         raise AttributeError(STATE_MANAGER_MISSING_TRANSITION_MSG)
 
     def reset_to_disconnected(self) -> bool:
@@ -191,12 +195,16 @@ class _LifecycleStateAccess:
             self._iface._state_manager, "reset_to_disconnected", None
         )
         if callable(public_reset) and not _is_unconfigured_mock_callable(public_reset):
-            return bool(public_reset())
+            result = public_reset()
+            if isinstance(result, bool):
+                return result
         legacy_reset = getattr(
             self._iface._state_manager, "_reset_to_disconnected", None
         )
         if callable(legacy_reset) and not _is_unconfigured_mock_callable(legacy_reset):
-            return bool(legacy_reset())
+            result = legacy_reset()
+            if isinstance(result, bool):
+                return result
         raise AttributeError(STATE_MANAGER_MISSING_RESET_MSG)
 
     def is_closing(self) -> bool:

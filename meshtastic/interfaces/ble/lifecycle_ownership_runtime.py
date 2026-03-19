@@ -520,31 +520,45 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         still_active, is_closing = get_status(connected_client)
 
         if still_active:
+            should_clear_gate_keys = False
             with iface._state_lock:
                 still_active, is_closing = get_status_locked(connected_client)
                 if still_active:
                     iface._connection_alias_key = connection_alias_key
-                elif iface._connection_alias_key == connection_alias_key:
-                    iface._connection_alias_key = None
+                else:
+                    active_client = iface.client
+                    owns_alias = iface._connection_alias_key == connection_alias_key
+                    should_clear_gate_keys = owns_alias and (
+                        active_client is connected_client or active_client is None
+                    )
+                    if should_clear_gate_keys:
+                        iface._connection_alias_key = None
             if not still_active:
                 self._log_gate_cleanup(connected_client, is_closing=is_closing)
-                iface._mark_address_keys_disconnected(
-                    connected_device_key, connection_alias_key
-                )
+                if should_clear_gate_keys:
+                    iface._mark_address_keys_disconnected(
+                        connected_device_key, connection_alias_key
+                    )
                 return
 
             iface._mark_address_keys_connected(
                 connected_device_key, connection_alias_key
             )
             needs_cleanup = False
+            should_clear_gate_keys = False
             with iface._state_lock:
                 still_active, is_closing = get_status_locked(connected_client)
                 if not still_active:
                     self._log_gate_cleanup(connected_client, is_closing=is_closing)
-                    if iface._connection_alias_key == connection_alias_key:
+                    active_client = iface.client
+                    owns_alias = iface._connection_alias_key == connection_alias_key
+                    should_clear_gate_keys = owns_alias and (
+                        active_client is connected_client or active_client is None
+                    )
+                    if should_clear_gate_keys:
                         iface._connection_alias_key = None
                     needs_cleanup = True
-            if needs_cleanup:
+            if needs_cleanup and should_clear_gate_keys:
                 iface._mark_address_keys_disconnected(
                     connected_device_key, connection_alias_key
                 )

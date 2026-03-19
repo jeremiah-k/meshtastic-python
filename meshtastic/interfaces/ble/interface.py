@@ -2261,13 +2261,18 @@ class BLEInterface(MeshInterface):
         if not lost_gate_ownership:
             with self._state_lock:
                 active_client = self.client
-                active_keys = set(
-                    self._sorted_address_keys(
-                        _addr_key(self._extract_client_address(active_client)),
-                        self._connection_alias_key,
+                active_keys = (
+                    set(
+                        self._sorted_address_keys(
+                            _addr_key(self._extract_client_address(active_client)),
+                            self._connection_alias_key,
+                        )
                     )
+                    if active_client is not None and active_client is not connected_client
+                    else set()
                 )
-            stale_keys = [key for key in stale_keys if key not in active_keys]
+            if active_keys:
+                stale_keys = [key for key in stale_keys if key not in active_keys]
         if stale_keys:
             self._mark_address_keys_disconnected(*stale_keys)
         self._discard_invalidated_connected_client(

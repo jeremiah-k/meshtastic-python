@@ -519,10 +519,22 @@ class BLEReceiveRecoveryController:
             if callable(state_is_connecting) and not _is_unconfigured_mock_callable(
                 state_is_connecting
             ):
-                connecting_result = state_is_connecting()
-                is_connecting = (
-                    connecting_result if isinstance(connecting_result, bool) else False
-                )
+                try:
+                    connecting_result = state_is_connecting()
+                except (
+                    Exception
+                ):  # noqa: BLE001 - snapshot probe must remain best effort
+                    logger.debug(
+                        "Error probing state manager is_connecting()",
+                        exc_info=True,
+                    )
+                    is_connecting = False
+                else:
+                    is_connecting = (
+                        connecting_result
+                        if isinstance(connecting_result, bool)
+                        else False
+                    )
             elif not _is_unconfigured_mock_member(state_is_connecting) and isinstance(
                 state_is_connecting, bool
             ):
@@ -534,12 +546,22 @@ class BLEReceiveRecoveryController:
                 if callable(
                     legacy_is_connecting
                 ) and not _is_unconfigured_mock_callable(legacy_is_connecting):
-                    connecting_result = legacy_is_connecting()
-                    is_connecting = (
-                        connecting_result
-                        if isinstance(connecting_result, bool)
-                        else False
-                    )
+                    try:
+                        connecting_result = legacy_is_connecting()
+                    except (
+                        Exception
+                    ):  # noqa: BLE001 - snapshot probe must remain best effort
+                        logger.debug(
+                            "Error probing state manager _is_connecting()",
+                            exc_info=True,
+                        )
+                        is_connecting = False
+                    else:
+                        is_connecting = (
+                            connecting_result
+                            if isinstance(connecting_result, bool)
+                            else False
+                        )
                 elif not _is_unconfigured_mock_member(
                     legacy_is_connecting
                 ) and isinstance(legacy_is_connecting, bool):

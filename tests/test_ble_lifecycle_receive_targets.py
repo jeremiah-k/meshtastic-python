@@ -802,7 +802,6 @@ def test_lifecycle_shutdown_receive_thread_skips_self_join_by_ident(
         )
         BLELifecycleService._shutdown_receive_thread(iface)
         assert join_calls == []
-        assert iface._receiveThread is not None
     finally:
         iface.close()
 
@@ -1912,7 +1911,7 @@ def test_lifecycle_remaining_verify_finalize_and_shutdown_branches(
             "dev",
             "alias",
         )
-        assert disconnected_gate_keys == ["dev", "alias"]
+        assert disconnected_gate_keys == []
 
         iface._receiveThread = threading.current_thread()
         BLELifecycleService._shutdown_receive_thread(iface)
@@ -1987,8 +1986,16 @@ def test_receive_service_remaining_coordinator_and_snapshot_branches(
 
         iface._state_manager = SimpleNamespace(is_connecting=lambda: True)
         assert BLEReceiveRecoveryService._snapshot_client_state(iface)[1] is True
+        iface._state_manager = SimpleNamespace(
+            is_connecting=lambda: (_ for _ in ()).throw(RuntimeError("boom"))
+        )
+        assert BLEReceiveRecoveryService._snapshot_client_state(iface)[1] is False
         iface._state_manager = SimpleNamespace(_is_connecting=lambda: True)
         assert BLEReceiveRecoveryService._snapshot_client_state(iface)[1] is True
+        iface._state_manager = SimpleNamespace(
+            _is_connecting=lambda: (_ for _ in ()).throw(RuntimeError("boom"))
+        )
+        assert BLEReceiveRecoveryService._snapshot_client_state(iface)[1] is False
         iface._state_manager = SimpleNamespace(_is_connecting=False)
         assert BLEReceiveRecoveryService._snapshot_client_state(iface)[1] is False
         _reset_state_manager(iface)

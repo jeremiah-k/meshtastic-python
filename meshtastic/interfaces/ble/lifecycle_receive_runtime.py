@@ -77,11 +77,21 @@ class BLEReceiveLifecycleCoordinator:
                 with self._deferred_restart_lock:
                     self._deferred_restart_inflight = False
 
-        threading.Thread(
-            target=_deferred_restart,
-            name=f"{name}DeferredStart",
-            daemon=True,
-        ).start()
+        try:
+            deferred_restart_thread = threading.Thread(
+                target=_deferred_restart,
+                name=f"{name}DeferredStart",
+                daemon=True,
+            )
+            deferred_restart_thread.start()
+        except Exception:  # noqa: BLE001 - helper launch remains best effort
+            with self._deferred_restart_lock:
+                self._deferred_restart_inflight = False
+            logger.debug(
+                "Failed to launch deferred receive restart helper (%s).",
+                name,
+                exc_info=True,
+            )
 
     def set_receive_wanted(self, *, want_receive: bool) -> None:
         """Request or clear receive-loop intent."""
@@ -132,6 +142,7 @@ class BLEReceiveLifecycleCoordinator:
         recovery_attempts_before_start: int | None = None
         deferred_current_thread: ThreadLike | None = None
         deferred_current_thread_waiting = False
+        schedule_deferred_restart_for: ThreadLike | None = None
         with iface._state_lock:
             if iface._closed or not iface._want_receive:
                 logger.debug(
@@ -168,6 +179,9 @@ class BLEReceiveLifecycleCoordinator:
                     iface._receive_start_pending = True
                     if not isinstance(pending_since, (float, int)):
                         iface._receive_start_pending_since = now
+                        schedule_deferred_restart_for = existing
+                    elif not existing_start_pending:
+                        schedule_deferred_restart_for = existing
                     if not reset_recovery:
                         logger.debug(
                             "Deferring replacement receive thread start (%s): current receive thread is still unwinding (pending %.3fs).",
@@ -239,6 +253,12 @@ class BLEReceiveLifecycleCoordinator:
                     iface._receive_recovery_attempts if reset_recovery else None
                 )
         if deferred_current_thread_waiting:
+            if schedule_deferred_restart_for is not None:
+                self._schedule_deferred_receive_restart(
+                    existing_thread=schedule_deferred_restart_for,
+                    name=name,
+                    reset_recovery=reset_recovery,
+                )
             return None, None
         if deferred_current_thread is not None:
             self._schedule_deferred_receive_restart(

@@ -5059,6 +5059,8 @@ def test_start_receive_thread_clears_cached_thread_when_start_fails(
 def _snapshot_receive_start_state(iface: BLEInterface) -> Iterator[None]:
     """Snapshot and restore receive-start thread/pending flags for tests."""
     with iface._state_lock:
+        original_want_receive = iface._want_receive
+        original_receive_recovery_attempts = iface._receive_recovery_attempts
         original_receive_thread = iface._receiveThread
         original_receive_start_pending = iface._receive_start_pending
         original_receive_start_pending_since = iface._receive_start_pending_since
@@ -5066,6 +5068,8 @@ def _snapshot_receive_start_state(iface: BLEInterface) -> Iterator[None]:
         yield
     finally:
         with iface._state_lock:
+            iface._want_receive = original_want_receive
+            iface._receive_recovery_attempts = original_receive_recovery_attempts
             iface._receiveThread = original_receive_thread
             iface._receive_start_pending = original_receive_start_pending
             iface._receive_start_pending_since = original_receive_start_pending_since
@@ -6936,28 +6940,29 @@ def test_log_notification_registration(
     iface.close()
 
 
+class _ClientWithCallbacks(DummyClient):
+    """Reusable notification test double that captures callback and notify registrations."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.callbacks: dict[str, Callable[[Any, bytes], None]] = {}
+        self.start_notify_calls: dict[str, int] = {}
+
+    def has_characteristic(self, uuid: str) -> bool:
+        return uuid in {LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, FROMNUM_UUID}
+
+    def start_notify(self, *args: object, **kwargs: object) -> None:
+        _ = kwargs
+        if len(args) >= 2:
+            uuid = str(args[0])
+            self.start_notify_calls[uuid] = self.start_notify_calls.get(uuid, 0) + 1
+            self.callbacks[uuid] = cast(Callable[[Any, bytes], None], args[1])
+
+
 def test_register_notifications_safe_call_inline_fallback_when_safe_execute_unconfigured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Notification wrappers should use inline fallback when safe_execute hooks are unconfigured."""
-
-    class _ClientWithCallbacks(DummyClient):
-        def __init__(self) -> None:
-            super().__init__()
-            self.callbacks: dict[str, Callable[[Any, bytes], None]] = {}
-            self.start_notify_calls: dict[str, int] = {}
-
-        def has_characteristic(self, uuid: str) -> bool:
-            return uuid in {LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, FROMNUM_UUID}
-
-        def start_notify(self, *args: object, **kwargs: object) -> None:
-            _ = kwargs
-            if len(args) >= 2:
-                uuid = str(args[0])
-                self.start_notify_calls[uuid] = self.start_notify_calls.get(uuid, 0) + 1
-                self.callbacks[uuid] = cast(
-                    Callable[[Any, bytes], None], args[1]
-                )
 
     client = _ClientWithCallbacks()
     iface = _build_interface(monkeypatch, client, start_receive_thread=False)
@@ -6996,24 +7001,6 @@ def test_register_notifications_safe_execute_fallback_still_invokes_handler(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Incompatible safe_execute signatures should fallback to direct handler invocation."""
-
-    class _ClientWithCallbacks(DummyClient):
-        def __init__(self) -> None:
-            super().__init__()
-            self.callbacks: dict[str, Callable[[Any, bytes], None]] = {}
-            self.start_notify_calls: dict[str, int] = {}
-
-        def has_characteristic(self, uuid: str) -> bool:
-            return uuid in {LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, FROMNUM_UUID}
-
-        def start_notify(self, *args: object, **kwargs: object) -> None:
-            _ = kwargs
-            if len(args) >= 2:
-                uuid = str(args[0])
-                self.start_notify_calls[uuid] = self.start_notify_calls.get(uuid, 0) + 1
-                self.callbacks[uuid] = cast(
-                    Callable[[Any, bytes], None], args[1]
-                )
 
     safe_execute_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
 
@@ -7057,24 +7044,6 @@ def test_register_notifications_reuses_cached_wrapper_with_latest_handlers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Cached notification wrappers should dispatch to latest handlers after re-registration."""
-
-    class _ClientWithCallbacks(DummyClient):
-        def __init__(self) -> None:
-            super().__init__()
-            self.callbacks: dict[str, Callable[[Any, bytes], None]] = {}
-            self.start_notify_calls: dict[str, int] = {}
-
-        def has_characteristic(self, uuid: str) -> bool:
-            return uuid in {LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, FROMNUM_UUID}
-
-        def start_notify(self, *args: object, **kwargs: object) -> None:
-            _ = kwargs
-            if len(args) >= 2:
-                uuid = str(args[0])
-                self.start_notify_calls[uuid] = self.start_notify_calls.get(uuid, 0) + 1
-                self.callbacks[uuid] = cast(
-                    Callable[[Any, bytes], None], args[1]
-                )
 
     client = _ClientWithCallbacks()
     iface = _build_interface(monkeypatch, client, start_receive_thread=False)

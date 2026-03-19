@@ -40,7 +40,8 @@ class BLECompatibilityEventPublisher:
             publishing_thread = self._publishing_thread_provider()
             if publishing_thread is not None:
                 self._last_publishing_thread = publishing_thread
-            return publishing_thread
+                return publishing_thread
+            return self._last_publishing_thread
         except Exception:  # noqa: BLE001 - teardown path must stay best effort
             logger.debug(
                 "Error resolving publishing thread for compatibility publisher.",

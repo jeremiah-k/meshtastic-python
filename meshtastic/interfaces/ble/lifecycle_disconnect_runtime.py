@@ -385,6 +385,18 @@ class BLEDisconnectLifecycleCoordinator:
             iface._mark_address_keys_disconnected(*disconnect_keys)
 
         close_previous(plan.previous_client)
+        with iface._state_lock:
+            active_client = iface.client
+            active_session_epoch = getattr(iface, "_connection_session_epoch", 0)
+            stale_after_close = active_session_epoch != plan.session_epoch or (
+                active_client is not None and active_client is not plan.client_at_start
+            )
+        if stale_after_close:
+            logger.debug(
+                "Skipping stale disconnect publication/reconnect from %s after close_previous().",
+                source,
+            )
+            return True
         if not plan.was_publish_pending or plan.was_replacement_pending:
             iface._disconnected()
         else:

@@ -433,7 +433,7 @@ class BLELifecycleService:
             Propagates thread-start failures after clearing stale thread state.
         """
         coordinator = BLELifecycleService._receive_lifecycle_coordinator(iface)
-        start_receive_thread = getattr(coordinator, "start_receive_thread")
+        start_receive_thread = coordinator.start_receive_thread
         supports_injected_hooks = False
         try:
             params = signature(start_receive_thread).parameters

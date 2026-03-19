@@ -964,6 +964,46 @@ def test_compatibility_publisher_reuses_last_good_thread_on_provider_failure(
         assert publisher._resolve_publishing_thread() is publishing_thread
         publisher.wait_for_disconnect_notifications(timeout=0.1)
         assert wait_threads == [publishing_thread]
+        assert provider_calls == 2
+    finally:
+        iface.close()
+
+
+def test_compatibility_publisher_reuses_last_good_thread_on_provider_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bound publisher should reuse last successful thread when provider later returns None."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    try:
+        publishing_thread = object()
+        provider_calls = 0
+
+        def _provider() -> object | None:
+            nonlocal provider_calls
+            provider_calls += 1
+            if provider_calls == 1:
+                return publishing_thread
+            return None
+
+        publisher = BLECompatibilityEventPublisher(
+            iface,
+            publishing_thread_provider=_provider,
+        )
+        wait_threads: list[object | None] = []
+        monkeypatch.setattr(
+            BLECompatibilityEventService,
+            "wait_for_disconnect_notifications",
+            staticmethod(
+                lambda _iface, _timeout=None, publishing_thread=None: wait_threads.append(
+                    publishing_thread
+                )
+            ),
+        )
+
+        assert publisher._resolve_publishing_thread() is publishing_thread
+        publisher.wait_for_disconnect_notifications(timeout=0.1)
+        assert wait_threads == [publishing_thread]
+        assert provider_calls == 2
     finally:
         iface.close()
 

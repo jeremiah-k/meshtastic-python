@@ -1,6 +1,7 @@
 """Receive compatibility shim service for BLE."""
 
 import contextlib
+import inspect
 from typing import TYPE_CHECKING, cast
 
 from bleak.exc import BleakError
@@ -84,22 +85,34 @@ class BLEReceiveRecoveryService:
     def _resolve_controller_candidate(
         candidate: object,
         required_method: str | None = None,
+        *,
+        iface: "BLEInterface | None" = None,
     ) -> "BLEReceiveRecoveryController | None":
         """Resolve concrete controller instances from eager or lazy candidates."""
         if candidate is None or _is_unconfigured_mock_member(candidate):
             return None
         resolved = candidate
-        if (
-            callable(resolved)
-            and not _is_unconfigured_mock_callable(resolved)
-            and not BLEReceiveRecoveryService._is_controller_like(
+        should_invoke_factory = callable(
+            resolved
+        ) and not _is_unconfigured_mock_callable(resolved) and (
+            inspect.isclass(resolved)
+            or not BLEReceiveRecoveryService._is_controller_like(
                 resolved, required_method
             )
-        ):
+        )
+        if should_invoke_factory:
             with contextlib.suppress(
                 Exception
             ):  # noqa: BLE001 - factory probe is best effort
-                resolved = resolved()
+                if inspect.isclass(resolved):
+                    if iface is not None:
+                        resolved = resolved(iface)
+                    else:
+                        resolved = resolved()
+                else:
+                    resolved = resolved()
+        if inspect.isclass(resolved):
+            return None
         if (
             resolved is not None
             and not _is_unconfigured_mock_member(resolved)
@@ -137,14 +150,16 @@ class BLEReceiveRecoveryService:
                 resolved = get_controller()
                 resolved_controller = (
                     BLEReceiveRecoveryService._resolve_controller_candidate(
-                        resolved, required_method
+                        resolved, required_method, iface=iface
                     )
                 )
                 if resolved_controller is not None:
                     return resolved_controller
         cached = getattr(iface, "_receive_recovery_controller", None)
         cached_controller = BLEReceiveRecoveryService._resolve_controller_candidate(
-            cached, required_method
+            cached,
+            required_method,
+            iface=iface,
         )
         if cached_controller is not None:
             return cached_controller
@@ -197,7 +212,10 @@ class BLEReceiveRecoveryService:
             otherwise ``False``.
         """
         with iface._state_lock:
-            return not iface._fromnum_notify_enabled
+            notify_enabled = getattr(iface, "_fromnum_notify_enabled", False)
+            if _is_unconfigured_mock_member(notify_enabled):
+                notify_enabled = False
+            return not bool(notify_enabled)
 
     @staticmethod
     def _coordinator_wait_for_event(
