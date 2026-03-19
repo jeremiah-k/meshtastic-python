@@ -1018,7 +1018,9 @@ class BLELifecycleService:
             "_is_currently_connected_elsewhere",
             _is_currently_connected_elsewhere,
         )
-        if not callable(connected_elsewhere):
+        if not callable(connected_elsewhere) or _is_unconfigured_mock_callable(
+            connected_elsewhere
+        ):
             connected_elsewhere = _is_currently_connected_elsewhere
         connected_elsewhere_fn = cast(
             Callable[[str | None, object | None], bool],

@@ -5056,6 +5056,9 @@ def test_start_receive_thread_retains_cached_thread_when_start_noops(
     from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    original_receive_thread = iface._receiveThread
+    original_receive_start_pending = iface._receive_start_pending
+    original_receive_start_pending_since = iface._receive_start_pending_since
     try:
         with iface._state_lock:
             iface._want_receive = True
@@ -5089,6 +5092,10 @@ def test_start_receive_thread_retains_cached_thread_when_start_noops(
         assert start_calls == [thread_like]
         assert iface._receiveThread is thread_like
     finally:
+        with iface._state_lock:
+            iface._receiveThread = original_receive_thread
+            iface._receive_start_pending = original_receive_start_pending
+            iface._receive_start_pending_since = original_receive_start_pending_since
         iface.close()
 
 
@@ -5102,6 +5109,9 @@ def test_start_receive_thread_pending_marker_allows_later_restart(
     )
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    original_receive_thread = iface._receiveThread
+    original_receive_start_pending = iface._receive_start_pending
+    original_receive_start_pending_since = iface._receive_start_pending_since
     try:
         with iface._state_lock:
             iface._want_receive = True
@@ -5132,23 +5142,26 @@ def test_start_receive_thread_pending_marker_allows_later_restart(
             raising=True,
         )
         t0 = 100.0
-        small_delta = max(RECEIVE_START_PENDING_TIMEOUT_SECONDS / 10.0, 0.01)
+        timeout = RECEIVE_START_PENDING_TIMEOUT_SECONDS
+        small_delta = max(min(timeout / 10.0, 0.01), 1e-6)
         monotonic_values = iter(
             [
                 t0,
                 t0 + small_delta,
-                t0 + RECEIVE_START_PENDING_TIMEOUT_SECONDS - small_delta,
-                t0 + RECEIVE_START_PENDING_TIMEOUT_SECONDS + small_delta,
-                t0 + RECEIVE_START_PENDING_TIMEOUT_SECONDS + (2 * small_delta),
+                t0 + timeout - small_delta,
+                t0 + timeout + small_delta,
+                t0 + timeout + (2 * small_delta),
             ]
         )
-        original_monotonic = time.monotonic
+        fallback_timestamp = t0 + timeout + (2 * small_delta)
 
         def _monotonic() -> float:
+            nonlocal fallback_timestamp
             try:
                 return next(monotonic_values)
             except StopIteration:
-                return original_monotonic()
+                fallback_timestamp += small_delta
+                return fallback_timestamp
 
         monkeypatch.setattr(
             "meshtastic.interfaces.ble.lifecycle_receive_runtime.time.monotonic",
@@ -5177,6 +5190,10 @@ def test_start_receive_thread_pending_marker_allows_later_restart(
         assert iface._receiveThread is thread_two
         assert iface._receive_start_pending is False
     finally:
+        with iface._state_lock:
+            iface._receiveThread = original_receive_thread
+            iface._receive_start_pending = original_receive_start_pending
+            iface._receive_start_pending_since = original_receive_start_pending_since
         iface.close()
 
 
@@ -5213,13 +5230,15 @@ def test_start_receive_thread_from_current_thread_defers_restart(
         )
 
         monotonic_values = iter([200.0])
-        original_monotonic = time.monotonic
+        fallback_timestamp = 200.0
 
         def _monotonic() -> float:
+            nonlocal fallback_timestamp
             try:
                 return next(monotonic_values)
             except StopIteration:
-                return original_monotonic()
+                fallback_timestamp += 0.001
+                return fallback_timestamp
 
         monkeypatch.setattr(
             "meshtastic.interfaces.ble.lifecycle_receive_runtime.time.monotonic",
@@ -5247,6 +5266,9 @@ def test_start_receive_thread_ident_only_probe_keeps_pending_state(
     from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    original_receive_thread = iface._receiveThread
+    original_receive_start_pending = iface._receive_start_pending
+    original_receive_start_pending_since = iface._receive_start_pending_since
     try:
         with iface._state_lock:
             iface._want_receive = True
@@ -5275,6 +5297,10 @@ def test_start_receive_thread_ident_only_probe_keeps_pending_state(
         assert iface._receive_start_pending is True
         assert iface._receive_recovery_attempts == 4
     finally:
+        with iface._state_lock:
+            iface._receiveThread = original_receive_thread
+            iface._receive_start_pending = original_receive_start_pending
+            iface._receive_start_pending_since = original_receive_start_pending_since
         iface.close()
 
 
@@ -7058,6 +7084,9 @@ def test_register_notifications_falls_back_on_non_notify_acquired_dbus_error(
         assert iface._fromnum_notify_enabled is False
 
     iface.close()
+    with iface._state_lock:
+        assert iface._fromnum_notify_enabled is False
+    assert client.stop_notify_calls == []
 
 
 def test_register_notifications_falls_back_to_polling_after_repeated_notify_acquired(

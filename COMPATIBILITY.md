@@ -83,6 +83,9 @@ Additional approved BLE compatibility and promotions:
 | `BLEManagementCommandHandler._execute_with_client()`            | `INTERNAL_COMPAT`    | Silent         | Internal compatibility alias for `execute_with_client()`. |
 | `BLEManagementCommandsService._resolve_handler()`               | `INTERNAL_COMPAT`    | Silent         | Internal compatibility alias for service shim handler resolution. |
 | `BLEManagementCommandsService._make_handler()`                  | `INTERNAL_COMPAT`    | Silent         | Internal compatibility alias for service shim handler resolution. |
+| `BLEInterface._fromnum_notify_enabled`                          | `INTERNAL_COMPAT`    | Silent         | Internal compatibility bridge to dispatcher-backed FROMNUM notify state. |
+| `BLEInterface._malformed_notification_count`                    | `INTERNAL_COMPAT`    | Silent         | Internal compatibility bridge to dispatcher-backed malformed-notification counter. |
+| `BLEInterface._malformed_notification_lock`                     | `INTERNAL_COMPAT`    | Silent         | Internal compatibility bridge to dispatcher-backed malformed-notification lock. |
 | `meshtastic.ble_interface.BleakClient`                          | `COMPAT_STABLE_SHIM` | Silent         | Legacy module-level import compatibility.          |
 | `meshtastic.ble_interface.BleakScanner`                         | `COMPAT_STABLE_SHIM` | Silent         | Legacy module-level import compatibility.          |
 | `meshtastic.ble_interface.BLEDevice`                            | `COMPAT_STABLE_SHIM` | Silent         | Legacy module-level import compatibility.          |
@@ -203,6 +206,9 @@ compatibility/patching and are not recommended public surface.
 | `meshtastic.interfaces.ble.interface`             | `from_num_handler()`                                              | `_from_num_handler()`                                      |
 | `meshtastic.interfaces.ble.interface`             | `log_radio_handler()`                                             | `_log_radio_handler()`                                     |
 | `meshtastic.interfaces.ble.interface`             | `legacy_log_radio_handler()`                                      | `_legacy_log_radio_handler()`                              |
+| `meshtastic.interfaces.ble.interface`             | `_fromnum_notify_enabled`                                         | `BLENotificationDispatcher.fromnum_notify_enabled`         |
+| `meshtastic.interfaces.ble.interface`             | `_malformed_notification_count`                                   | `BLENotificationDispatcher.malformed_notification_count`   |
+| `meshtastic.interfaces.ble.interface`             | `_malformed_notification_lock`                                    | `BLENotificationDispatcher.malformed_notification_lock`    |
 | `meshtastic.interfaces.ble.receive_service`       | `BLEReceiveRecoveryService`                                       | `BLEReceiveRecoveryController`                             |
 | `meshtastic.interfaces.ble.management_runtime`    | `BLEManagementCommandHandler._start_management_phase()`           | `BLEManagementCommandHandler.start_management_phase()`     |
 | `meshtastic.interfaces.ble.management_runtime`    | `BLEManagementCommandHandler._resolve_management_target()`        | `BLEManagementCommandHandler.resolve_management_target()`  |

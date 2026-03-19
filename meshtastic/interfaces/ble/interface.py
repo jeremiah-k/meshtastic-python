@@ -662,7 +662,9 @@ class BLEInterface(MeshInterface):
             event_name,
         )
 
-    def _handle_malformed_fromnum(self, reason: str, exc_info: bool = False) -> None:
+    def _handle_malformed_fromnum(
+        self, reason: str, *, exc_info: bool = False
+    ) -> None:
         """Track malformed FROMNUM notifications through dispatcher ownership."""
         self._get_notification_dispatcher().handle_malformed_fromnum(
             reason, exc_info=exc_info
@@ -688,7 +690,7 @@ class BLEInterface(MeshInterface):
             fallback=fallback,
         )
 
-    def _from_num_handler(self, _: Any, b: bytes | bytearray) -> None:
+    def _from_num_handler(self, _: object, b: bytes | bytearray) -> None:
         """Process a FROMNUM notification via notification dispatcher."""
         self._get_notification_dispatcher().from_num_handler(_, b)
 
@@ -716,7 +718,7 @@ class BLEInterface(MeshInterface):
             from_num_handler=self._from_num_handler,
         )
 
-    def _log_radio_handler(self, _: Any, b: bytes | bytearray) -> None:
+    def _log_radio_handler(self, _: object, b: bytes | bytearray) -> None:
         """Decode and dispatch protobuf log notification via dispatcher owner."""
         message = self._get_notification_dispatcher().log_radio_handler(_, b)
         if message is not None:
@@ -741,7 +743,7 @@ class BLEInterface(MeshInterface):
         # so legacy callback ordering/side-effects remain synchronous.
         self._log_radio_handler(sender, b)
 
-    def _legacy_log_radio_handler(self, _: Any, b: bytes | bytearray) -> None:
+    def _legacy_log_radio_handler(self, _: object, b: bytes | bytearray) -> None:
         """Decode and dispatch legacy UTF-8 log notification via dispatcher owner."""
         message = self._get_notification_dispatcher().legacy_log_radio_handler(_, b)
         if message is not None:
@@ -1082,6 +1084,7 @@ class BLEInterface(MeshInterface):
             "_notification_dispatcher", self._create_notification_dispatcher
         )
 
+    # COMPAT_STABLE_SHIM: internal bridge for historical FROMNUM notify state probes.
     @property
     def _fromnum_notify_enabled(self) -> bool:
         """Compatibility bridge exposing FROMNUM notification-active state."""
@@ -1092,6 +1095,7 @@ class BLEInterface(MeshInterface):
         """Compatibility bridge setter for FROMNUM notification-active state."""
         self._get_notification_dispatcher().fromnum_notify_enabled = bool(enabled)
 
+    # COMPAT_STABLE_SHIM: internal bridge for historical malformed-notification counter access.
     @property
     def _malformed_notification_count(self) -> int:
         """Compatibility bridge exposing malformed FROMNUM counter."""
@@ -1102,6 +1106,7 @@ class BLEInterface(MeshInterface):
         """Compatibility bridge setter for malformed FROMNUM counter."""
         self._get_notification_dispatcher().malformed_notification_count = int(count)
 
+    # COMPAT_STABLE_SHIM: internal bridge for historical malformed-notification lock access.
     @property
     def _malformed_notification_lock(self) -> threading.RLock:
         """Compatibility bridge exposing malformed FROMNUM lock."""

@@ -1065,7 +1065,9 @@ def test_receive_compat_controller_for_shim_accepts_injected_controller_double(
     """Receive shim should reuse injected non-mock controller doubles."""
     iface = _make_iface(monkeypatch)
     try:
-        injected_controller = SimpleNamespace()
+        injected_controller = SimpleNamespace(
+            handle_read_loop_disconnect=lambda *_args, **_kwargs: True
+        )
         iface._get_receive_recovery_controller = lambda: injected_controller
         assert (
             BLEReceiveRecoveryService._controller_for_shim(iface)

@@ -185,15 +185,26 @@ class BLEShutdownLifecycleCoordinator:
             return
         thread_ident, thread_is_alive = _thread_start_probe(receive_thread)
         if thread_ident is None and not thread_is_alive:
-            with iface._state_lock:
-                if iface._receiveThread is receive_thread:
-                    iface._receiveThread = None
-                    iface._receive_start_pending = False
-                    iface._receive_start_pending_since = None
-            logger.debug(
-                "Skipping receive thread join during close: worker never started."
-            )
-            return
+            started_event = getattr(receive_thread, "_started", None)
+            is_started = getattr(started_event, "is_set", None)
+            start_failure_confirmed = False
+            if callable(is_started):
+                try:
+                    start_failure_confirmed = not bool(is_started())
+                except Exception:  # noqa: BLE001 - probe remains best effort
+                    start_failure_confirmed = False
+            elif isinstance(receive_thread, threading.Thread):
+                start_failure_confirmed = True
+            if start_failure_confirmed:
+                with iface._state_lock:
+                    if iface._receiveThread is receive_thread:
+                        iface._receiveThread = None
+                        iface._receive_start_pending = False
+                        iface._receive_start_pending_since = None
+                logger.debug(
+                    "Skipping receive thread join during close: worker never started."
+                )
+                return
         current_ident = threading.get_ident()
         if (
             thread_ident is not None and thread_ident == current_ident

@@ -223,6 +223,7 @@ class BLEReceiveLifecycleCoordinator:
             if (
                 iface._receiveThread is thread
                 and iface._receive_recovery_attempts == recovery_attempts_before_start
+                and _thread_start_probe(thread)[1]
             ):
                 iface._receive_recovery_attempts = 0
 

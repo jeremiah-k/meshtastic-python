@@ -28,6 +28,37 @@ class BLEReceiveRecoveryService:
         return BLEReceiveRecoveryController
 
     @staticmethod
+    def _is_controller_like(candidate: object) -> bool:
+        """Return whether a candidate exposes the receive-controller API shape."""
+        handle_disconnect = getattr(candidate, "handle_read_loop_disconnect", None)
+        return callable(handle_disconnect) and not _is_unconfigured_mock_callable(
+            handle_disconnect
+        )
+
+    @staticmethod
+    def _resolve_controller_candidate(
+        candidate: object,
+    ) -> "BLEReceiveRecoveryController | None":
+        """Resolve concrete controller instances from eager or lazy candidates."""
+        if candidate is None or _is_unconfigured_mock_member(candidate):
+            return None
+        resolved = candidate
+        if (
+            callable(resolved)
+            and not _is_unconfigured_mock_callable(resolved)
+            and not BLEReceiveRecoveryService._is_controller_like(resolved)
+        ):
+            with contextlib.suppress(Exception):  # noqa: BLE001 - factory probe is best effort
+                resolved = resolved()
+        if (
+            resolved is not None
+            and not _is_unconfigured_mock_member(resolved)
+            and BLEReceiveRecoveryService._is_controller_like(resolved)
+        ):
+            return cast("BLEReceiveRecoveryController", resolved)
+        return None
+
+    @staticmethod
     def _controller_for_shim(iface: "BLEInterface") -> "BLEReceiveRecoveryController":
         """Return iface-bound receive controller, falling back to cached construction.
 
@@ -47,11 +78,15 @@ class BLEReceiveRecoveryService:
             get_controller
         ):
             resolved = get_controller()
-            if resolved is not None and not _is_unconfigured_mock_member(resolved):
-                return cast("BLEReceiveRecoveryController", resolved)
+            resolved_controller = BLEReceiveRecoveryService._resolve_controller_candidate(
+                resolved
+            )
+            if resolved_controller is not None:
+                return resolved_controller
         cached = getattr(iface, "_receive_recovery_controller", None)
-        if cached is not None and not _is_unconfigured_mock_member(cached):
-            return cast("BLEReceiveRecoveryController", cached)
+        cached_controller = BLEReceiveRecoveryService._resolve_controller_candidate(cached)
+        if cached_controller is not None:
+            return cached_controller
         controller = controller_cls(iface)
         with contextlib.suppress(Exception):  # noqa: BLE001 - best-effort cache attach
             iface._receive_recovery_controller = controller

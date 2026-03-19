@@ -707,9 +707,9 @@ class BLENotificationDispatcher:
                 err,
             )
 
-        ingress_handler = _get_or_create_handler(
-            FROMNUM_UUID, lambda: _safe_from_num_handler
-        )
+        ingress_handler = self._notification_manager._get_callback(FROMNUM_UUID)
+        if ingress_handler is None:
+            ingress_handler = _safe_from_num_handler
         self.fromnum_notify_enabled = False
         max_attempts = BLEConfig.SERVICE_CHARACTERISTIC_RETRY_COUNT + 1
         for attempt in range(max_attempts):
@@ -755,6 +755,8 @@ class BLENotificationDispatcher:
                 )
                 return
             else:
+                if self._notification_manager._get_callback(FROMNUM_UUID) is None:
+                    self._notification_manager._subscribe(FROMNUM_UUID, ingress_handler)
                 self.fromnum_notify_enabled = True
                 return
 

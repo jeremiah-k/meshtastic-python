@@ -311,6 +311,7 @@ class BLEReceiveRecoveryController:
 
     def _close_after_fatal_read(self) -> None:
         """Close interface via lifecycle collaborator after fatal read failures."""
+        iface = self._iface
         override_close = self._resolve_iface_receive_hook_override("close")
         if callable(override_close):
             override_close()
@@ -329,6 +330,16 @@ class BLEReceiveRecoveryController:
                     management_wait_poll_seconds=interface_mod._MANAGEMENT_CONNECT_WAIT_POLL_SECONDS,
                 )
                 return
+        from meshtastic.interfaces.ble import interface as interface_mod
+        from meshtastic.interfaces.ble import lifecycle_service as lifecycle_service_mod
+
+        lifecycle_service_mod.BLELifecycleService._close(
+            iface,
+            management_shutdown_wait_timeout=(
+                interface_mod._MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS
+            ),
+            management_wait_poll_seconds=interface_mod._MANAGEMENT_CONNECT_WAIT_POLL_SECONDS,
+        )
 
     @staticmethod
     def _is_default_iface_receive_hook(method_name: str, hook: object) -> bool:
