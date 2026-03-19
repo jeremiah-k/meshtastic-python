@@ -258,6 +258,7 @@ class NotificationManager:
         with self._lock:
             return self._characteristic_to_callback.get(characteristic)
 
+
 class BLENotificationDispatcher:
     """Own notification callback safety, FROMNUM parsing, and registration flow."""
 
@@ -315,6 +316,11 @@ class BLENotificationDispatcher:
     def malformed_notification_lock(self) -> RLock:
         """Expose malformed-notification lock for compatibility callers."""
         return self._malformed_notification_lock
+
+    @malformed_notification_lock.setter
+    def malformed_notification_lock(self, lock: RLock) -> None:
+        """Set malformed-notification lock for compatibility callers."""
+        self._malformed_notification_lock = lock
 
     def handle_malformed_fromnum(self, reason: str, exc_info: bool = False) -> None:
         """Track malformed FROMNUM notifications and emit threshold warnings."""
@@ -420,9 +426,7 @@ class BLENotificationDispatcher:
                     exc_info=True,
                 )
                 _report_handler_failure()
-        except (
-            Exception
-        ) as exc:  # noqa: BLE001 - notification callbacks must stay best effort
+        except Exception as exc:  # noqa: BLE001 - notification callbacks must stay best effort
             logger.debug(
                 "safe_execute keyword probe failed for notification handler (%s): %s",
                 error_msg,
@@ -467,9 +471,7 @@ class BLENotificationDispatcher:
                     return
                 _fallback_if_not_executed()
                 return
-        except (
-            Exception
-        ) as exc:  # noqa: BLE001 - notification callbacks must stay best effort
+        except Exception as exc:  # noqa: BLE001 - notification callbacks must stay best effort
             logger.debug(
                 "safe_execute positional probe failed for notification handler (%s): %s; skipping callable-only probe to avoid duplicate handler execution.",
                 error_msg,
@@ -493,9 +495,7 @@ class BLENotificationDispatcher:
                 return
             _fallback_if_not_executed()
             return
-        except (
-            Exception
-        ) as exc:  # noqa: BLE001 - notification callbacks must stay best effort
+        except Exception as exc:  # noqa: BLE001 - notification callbacks must stay best effort
             logger.debug(
                 "safe_execute callable-only probe failed for notification handler (%s): %s.",
                 error_msg,
@@ -553,9 +553,9 @@ class BLENotificationDispatcher:
                     "report_notification_handler_error",
                     None,
                 )
-                if callable(report_notification_error) and not _is_unconfigured_mock_callable(
+                if callable(
                     report_notification_error
-                ):
+                ) and not _is_unconfigured_mock_callable(report_notification_error):
                     report_notification_error(error_msg)
                     return
                 legacy_report_notification_error = getattr(
@@ -563,7 +563,9 @@ class BLENotificationDispatcher:
                     "_report_notification_handler_error",
                     None,
                 )
-                if callable(legacy_report_notification_error) and not _is_unconfigured_mock_callable(
+                if callable(
+                    legacy_report_notification_error
+                ) and not _is_unconfigured_mock_callable(
                     legacy_report_notification_error
                 ):
                     legacy_report_notification_error(error_msg)
@@ -576,9 +578,7 @@ class BLENotificationDispatcher:
             def _fallback_invoke_handler() -> None:
                 try:
                     _invoke_handler()
-                except (
-                    Exception
-                ):  # noqa: BLE001 - notification callbacks must stay best effort
+                except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
                     _report_notification_error()
 
             error_handler = self._error_handler_provider()
@@ -592,9 +592,7 @@ class BLENotificationDispatcher:
             ):
                 try:
                     _invoke_handler()
-                except (
-                    Exception
-                ):  # noqa: BLE001 - notification callbacks must stay best effort
+                except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
                     _report_notification_error()
                 return
             self.invoke_safe_execute_compat(
