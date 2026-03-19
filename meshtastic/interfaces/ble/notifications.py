@@ -259,6 +259,7 @@ class NotificationManager:
         with self._lock:
             return self._characteristic_to_callback.get(characteristic)
 
+
 class BLENotificationDispatcher:
     """Own notification callback safety, FROMNUM parsing, and registration flow."""
 
@@ -398,7 +399,9 @@ class BLENotificationDispatcher:
             executed = True
             try:
                 handler_thunk()
-            except Exception as exc:  # noqa: BLE001 - callback errors are reported below
+            except (
+                Exception
+            ) as exc:  # noqa: BLE001 - callback errors are reported below
                 handler_failed = True
                 handler_exception = exc
                 raise
@@ -451,7 +454,9 @@ class BLENotificationDispatcher:
                     exc_info=True,
                 )
                 _report_handler_failure()
-        except Exception as exc:  # noqa: BLE001 - notification callbacks must stay best effort
+        except (
+            Exception
+        ) as exc:  # noqa: BLE001 - notification callbacks must stay best effort
             logger.debug(
                 "safe_execute keyword probe failed for notification handler (%s): %s",
                 error_msg,
@@ -496,7 +501,9 @@ class BLENotificationDispatcher:
                     return
                 _fallback_if_not_executed()
                 return
-        except Exception as exc:  # noqa: BLE001 - notification callbacks must stay best effort
+        except (
+            Exception
+        ) as exc:  # noqa: BLE001 - notification callbacks must stay best effort
             logger.debug(
                 "safe_execute positional probe failed for notification handler (%s): %s; skipping callable-only probe to avoid duplicate handler execution.",
                 error_msg,
@@ -520,7 +527,9 @@ class BLENotificationDispatcher:
                 return
             _fallback_if_not_executed()
             return
-        except Exception as exc:  # noqa: BLE001 - notification callbacks must stay best effort
+        except (
+            Exception
+        ) as exc:  # noqa: BLE001 - notification callbacks must stay best effort
             logger.debug(
                 "safe_execute callable-only probe failed for notification handler (%s): %s.",
                 error_msg,
@@ -608,7 +617,9 @@ class BLENotificationDispatcher:
             def _fallback_invoke_handler() -> None:
                 try:
                     _invoke_handler()
-                except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
+                except (
+                    Exception
+                ):  # noqa: BLE001 - notification callbacks must stay best effort
                     _report_notification_error()
 
             error_handler = self._error_handler_provider()
@@ -622,7 +633,9 @@ class BLENotificationDispatcher:
             ):
                 try:
                     _invoke_handler()
-                except Exception:  # noqa: BLE001 - notification callbacks must stay best effort
+                except (
+                    Exception
+                ):  # noqa: BLE001 - notification callbacks must stay best effort
                     _report_notification_error()
                 return
             self.invoke_safe_execute_compat(
@@ -835,6 +848,8 @@ class BLENotificationDispatcher:
             return None
 
     # COMPAT_STABLE_SHIM (2.7.7): historical underscore callback entrypoint.
-    def _legacy_log_radio_handler(self, sender: Any, b: bytes | bytearray) -> str | None:
+    def _legacy_log_radio_handler(
+        self, sender: Any, b: bytes | bytearray
+    ) -> str | None:
         """Decode legacy UTF-8 log payload and return normalized message."""
         return self.legacy_log_radio_handler(sender, b)

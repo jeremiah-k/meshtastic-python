@@ -96,7 +96,9 @@ class BLEReceiveRecoveryService:
                 resolved, required_method
             )
         ):
-            with contextlib.suppress(Exception):  # noqa: BLE001 - factory probe is best effort
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - factory probe is best effort
                 resolved = resolved()
         if (
             resolved is not None
@@ -129,7 +131,9 @@ class BLEReceiveRecoveryService:
         if callable(get_controller) and not _is_unconfigured_mock_callable(
             get_controller
         ):
-            with contextlib.suppress(Exception):  # noqa: BLE001 - shim resolution stays best effort
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - shim resolution stays best effort
                 resolved = get_controller()
                 resolved_controller = (
                     BLEReceiveRecoveryService._resolve_controller_candidate(
@@ -537,9 +541,7 @@ class BLEReceiveRecoveryService:
         BLEReceiveRecoveryService._controller_for_shim(
             iface,
             "recover_receive_thread",
-        ).recover_receive_thread(
-            disconnect_reason
-        )
+        ).recover_receive_thread(disconnect_reason)
 
     @staticmethod
     def _read_from_radio_with_retries(

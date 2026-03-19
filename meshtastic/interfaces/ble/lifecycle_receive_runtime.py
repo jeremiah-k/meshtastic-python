@@ -86,7 +86,9 @@ class BLEReceiveLifecycleCoordinator:
             if self._is_current_receive_thread(existing):
                 now = time.monotonic()
                 pending_since = getattr(iface, "_receive_start_pending_since", None)
-                if not existing_start_pending or not isinstance(pending_since, (float, int)):
+                if not existing_start_pending or not isinstance(
+                    pending_since, (float, int)
+                ):
                     iface._receive_start_pending_since = now
                     pending_age = 0.0
                 else:
@@ -186,7 +188,9 @@ class BLEReceiveLifecycleCoordinator:
                     iface._receive_start_pending = False
                     iface._receive_start_pending_since = None
             raise
-        except Exception:  # noqa: BLE001 - start failure must clear stale thread reference
+        except (
+            Exception
+        ):  # noqa: BLE001 - start failure must clear stale thread reference
             with iface._state_lock:
                 if iface._receiveThread is thread:
                     iface._receiveThread = None

@@ -317,7 +317,9 @@ class BLEManagementCommandHandler:
             ):
                 try:
                     return bool(is_connected())
-                except Exception:  # noqa: BLE001 - connectivity probe must remain best effort
+                except (
+                    Exception
+                ):  # noqa: BLE001 - connectivity probe must remain best effort
                     continue
             if isinstance(is_connected, bool):
                 return is_connected
@@ -603,7 +605,9 @@ class BLEManagementCommandHandler:
             if temporary_client is not None:
                 try:
                     iface._client_manager_safe_close_client(temporary_client)
-                except Exception:  # noqa: BLE001 - best-effort cleanup must not mask command outcome
+                except (
+                    Exception
+                ):  # noqa: BLE001 - best-effort cleanup must not mask command outcome
                     logger.debug(
                         "Failed to close temporary management client.",
                         exc_info=True,
@@ -829,7 +833,9 @@ class BLEManagementCommandHandler:
                 check=False,
                 timeout=command_timeout,
             )
-        except Exception as exc:  # noqa: BLE001 - preserve injected module compatibility
+        except (
+            Exception
+        ) as exc:  # noqa: BLE001 - preserve injected module compatibility
             if isinstance(exc, timeout_exc_type):
                 raise iface.BLEError(
                     ERROR_TRUST_COMMAND_TIMEOUT.format(

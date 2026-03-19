@@ -811,8 +811,7 @@ class BLEInterface(MeshInterface):
             awaitable,
             timeout,
             label,
-            timeout_error_factory=lambda timeout_label,
-            timeout_seconds: BLEInterface.BLEError(
+            timeout_error_factory=lambda timeout_label, timeout_seconds: BLEInterface.BLEError(
                 ERROR_TIMEOUT.format(timeout_label, timeout_seconds)
             ),
         )
@@ -1068,14 +1067,18 @@ class BLEInterface(MeshInterface):
 
         Caller must hold ``_state_lock``.
         """
-        return self._get_management_command_handler().get_current_implicit_management_binding_locked()
+        return (
+            self._get_management_command_handler().get_current_implicit_management_binding_locked()
+        )
 
     def _get_current_implicit_management_address_locked(self) -> str | None:
         """Return implicit management concrete address via collaborator.
 
         Caller must hold ``_state_lock``.
         """
-        return self._get_management_command_handler().get_current_implicit_management_address_locked()
+        return (
+            self._get_management_command_handler().get_current_implicit_management_address_locked()
+        )
 
     def _revalidate_implicit_management_target(
         self,

@@ -1,9 +1,9 @@
 """Lifecycle compatibility shim service for BLE."""
 
-from inspect import signature
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast, NoReturn
+from inspect import signature
+from typing import TYPE_CHECKING, NoReturn, cast
 
 from bleak import BleakClient as BleakRootClient
 
@@ -51,6 +51,7 @@ class _DisconnectCallbackBundle:
     close_previous_client_async: Callable[["BLEClient | None"], None]
     clear_events: Callable[..., None]
 
+
 class BLELifecycleService:
     # COMPAT_STABLE_SHIM: compatibility lifecycle shim surface retained for historical entrypoints.
     """Service helpers for BLEInterface lifecycle responsibilities."""
@@ -90,6 +91,7 @@ class BLELifecycleService:
         Falls back to direct instantiation when collaborator caching is
         unavailable on partial test doubles.
         """
+
         def _supports_start_overrides(candidate: object) -> bool:
             start_receive_thread = getattr(candidate, "start_receive_thread", None)
             if not callable(start_receive_thread) or _is_unconfigured_mock_callable(
@@ -103,8 +105,7 @@ class BLELifecycleService:
             if "create_thread" in params and "start_thread" in params:
                 return True
             return any(
-                parameter.kind is parameter.VAR_KEYWORD
-                for parameter in params.values()
+                parameter.kind is parameter.VAR_KEYWORD for parameter in params.values()
             )
 
         get_lifecycle_controller = getattr(iface, "_get_lifecycle_controller", None)
@@ -116,18 +117,15 @@ class BLELifecycleService:
                 lifecycle_controller = get_lifecycle_controller()
             except Exception:  # noqa: BLE001 - compatibility probes stay best effort
                 lifecycle_controller = None
-            if (
-                lifecycle_controller is not None
-                and not _is_unconfigured_mock_member(lifecycle_controller)
+            if lifecycle_controller is not None and not _is_unconfigured_mock_member(
+                lifecycle_controller
             ):
                 for attr_name in (
                     "_receive",
                     "receive_lifecycle_coordinator",
                     "_receive_lifecycle_coordinator",
                 ):
-                    receive_coordinator = getattr(
-                        lifecycle_controller, attr_name, None
-                    )
+                    receive_coordinator = getattr(lifecycle_controller, attr_name, None)
                     if (
                         receive_coordinator is not None
                         and not _is_unconfigured_mock_member(receive_coordinator)
@@ -136,19 +134,16 @@ class BLELifecycleService:
                         )
                         and _supports_start_overrides(receive_coordinator)
                     ):
-                        return cast(
-                            BLEReceiveLifecycleCoordinator, receive_coordinator
-                        )
-                if (
-                    BLELifecycleService._is_receive_lifecycle_coordinator_like(
-                        lifecycle_controller
-                    )
-                    and _supports_start_overrides(lifecycle_controller)
-                ):
+                        return cast(BLEReceiveLifecycleCoordinator, receive_coordinator)
+                if BLELifecycleService._is_receive_lifecycle_coordinator_like(
+                    lifecycle_controller
+                ) and _supports_start_overrides(lifecycle_controller):
                     return cast(BLEReceiveLifecycleCoordinator, lifecycle_controller)
 
         get_or_create = getattr(iface, "_get_or_create_collaborator", None)
-        if callable(get_or_create) and not _is_unconfigured_mock_callable(get_or_create):
+        if callable(get_or_create) and not _is_unconfigured_mock_callable(
+            get_or_create
+        ):
             try:
                 signature(get_or_create).bind(
                     "_ble_receive_lifecycle_coordinator",
@@ -1086,9 +1081,7 @@ class BLELifecycleService:
         )
 
         return any(
-            key is not None
-            and connected_elsewhere_fn(key, iface)
-            for key in keys
+            key is not None and connected_elsewhere_fn(key, iface) for key in keys
         )
 
     @staticmethod

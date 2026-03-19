@@ -920,7 +920,9 @@ def test_receive_controller_has_ever_connected_session_fallback(
 
 def test_receive_controller_is_connection_closing_fallback_branches() -> None:
     """Receive controller should cover state-manager and legacy closing fallbacks."""
-    receive_service_mod = importlib.import_module("meshtastic.interfaces.ble.receive_service")
+    receive_service_mod = importlib.import_module(
+        "meshtastic.interfaces.ble.receive_service"
+    )
     fallback_iface = SimpleNamespace(
         _state_lock=threading.RLock(),
         _state_manager=None,
@@ -928,7 +930,9 @@ def test_receive_controller_is_connection_closing_fallback_branches() -> None:
         _is_connection_closing=MagicMock(),
         _get_lifecycle_controller=lambda: None,
     )
-    fallback_controller = receive_service_mod.BLEReceiveRecoveryController(fallback_iface)
+    fallback_controller = receive_service_mod.BLEReceiveRecoveryController(
+        fallback_iface
+    )
     assert fallback_controller._is_connection_closing() is False
 
     fallback_iface._is_connection_closing = lambda: True
@@ -1005,7 +1009,9 @@ def test_receive_controller_disconnect_and_override_resolution(
         fallback_controller = receive_service_mod.BLEReceiveRecoveryController(
             fallback_iface
         )
-        assert fallback_controller._resolve_iface_receive_hook_override("_unknown") is None
+        assert (
+            fallback_controller._resolve_iface_receive_hook_override("_unknown") is None
+        )
     finally:
         iface._get_lifecycle_controller = original_get_lifecycle_controller
         _reset_state_manager(iface)
@@ -1046,9 +1052,11 @@ def test_receive_controller_transient_error_override_capture(
             controller,
             "_resolve_iface_receive_hook_override",
             lambda method_name: (
-                lambda error: override_errors.append(error)
-                if method_name == "_handle_transient_read_error"
-                else None
+                lambda error: (
+                    override_errors.append(error)
+                    if method_name == "_handle_transient_read_error"
+                    else None
+                )
             ),
             raising=True,
         )
@@ -1240,7 +1248,9 @@ def test_receive_service_branch_targets_payload_paths(
 
         iface._read_from_radio_with_retries = lambda *_args, **_kwargs: b"payload"
         iface._handle_from_radio = lambda _payload: (_ for _ in ()).throw(
-            importlib.import_module("meshtastic.interfaces.ble.errors").DecodeError("bad")
+            importlib.import_module("meshtastic.interfaces.ble.errors").DecodeError(
+                "bad"
+            )
         )
         assert BLEReceiveRecoveryService._read_and_handle_payload(
             iface,
@@ -1373,7 +1383,9 @@ def test_receive_service_branch_targets_retry_and_warning_paths(
         )
         iface._retry_policy_get_delay = lambda _policy, _attempt: 0.01
         iface._empty_read_policy = object()
-        assert BLEReceiveRecoveryService._read_from_radio_with_retries(iface, read_client)
+        assert BLEReceiveRecoveryService._read_from_radio_with_retries(
+            iface, read_client
+        )
         assert delays
 
         monkeypatch.setattr(
@@ -2098,8 +2110,8 @@ def test_receive_service_remaining_recovery_and_empty_read_branches(
         iface._retry_policy_get_delay = lambda _policy, _attempt: 0.01
         iface._empty_read_policy = object()
         empty_read_warning_calls: list[str] = []
-        iface._log_empty_read_warning = (
-            lambda: empty_read_warning_calls.append("warned")
+        iface._log_empty_read_warning = lambda: empty_read_warning_calls.append(
+            "warned"
         )
         assert (
             BLEReceiveRecoveryService._read_from_radio_with_retries(iface, client)

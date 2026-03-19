@@ -2,11 +2,11 @@
 
 import pytest
 
+from meshtastic.interfaces.ble.constants import FROMNUM_UUID
 from meshtastic.interfaces.ble.notifications import (
     NotificationManager,
     SubscriptionTokenExhaustedError,
 )
-from meshtastic.interfaces.ble.constants import FROMNUM_UUID
 
 
 @pytest.mark.unit

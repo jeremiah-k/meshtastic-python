@@ -5,15 +5,15 @@ from typing import TYPE_CHECKING
 
 from bleak import BleakClient as BleakRootClient
 
-from meshtastic.interfaces.ble.lifecycle_disconnect_runtime import (
-    BLEDisconnectLifecycleCoordinator,
-)
 from meshtastic.interfaces.ble.lifecycle_compat_service import (
     _ORIGINAL_FINALIZE_CONNECTION_GATES,
     _ORIGINAL_GET_CONNECTED_CLIENT_STATUS,
     _ORIGINAL_GET_CONNECTED_CLIENT_STATUS_LOCKED,
     _ORIGINAL_IS_OWNED_CONNECTED_CLIENT,
     _ORIGINAL_VERIFY_OWNERSHIP_SNAPSHOT,
+)
+from meshtastic.interfaces.ble.lifecycle_disconnect_runtime import (
+    BLEDisconnectLifecycleCoordinator,
 )
 from meshtastic.interfaces.ble.lifecycle_ownership_runtime import (
     BLEConnectionOwnershipLifecycleCoordinator,
@@ -112,13 +112,11 @@ class BLELifecycleController:
                     device_key: str | None,
                     alias_key: str | None,
                 ) -> _OwnershipSnapshot:
-                    return (
-                        lifecycle_service_mod.BLELifecycleService._verify_ownership_snapshot(  # noqa: E501
-                            self._iface,
-                            client,
-                            device_key,
-                            alias_key,
-                        )
+                    return lifecycle_service_mod.BLELifecycleService._verify_ownership_snapshot(  # noqa: E501
+                        self._iface,
+                        client,
+                        device_key,
+                        alias_key,
                     )
 
                 verify_ownership_snapshot = _compat_verify_snapshot
@@ -159,22 +157,26 @@ class BLELifecycleController:
         restore_last_connection_request: str | None = None,
     ) -> None:
         """Discard stale connect result for the bound interface."""
-        from meshtastic.interfaces.ble import (
-            lifecycle_service as lifecycle_service_mod,
-        )
+        from meshtastic.interfaces.ble import lifecycle_service as lifecycle_service_mod
 
         iface = self._iface
         is_closing = getattr(iface, "_state_manager_is_closing", None)
         if not callable(is_closing) or _is_unconfigured_mock_callable(is_closing):
+
             def is_closing() -> bool:
-                return lifecycle_service_mod.BLELifecycleService._state_manager_is_closing(
-                    iface
+                return (
+                    lifecycle_service_mod.BLELifecycleService._state_manager_is_closing(
+                        iface
+                    )
                 )
 
-        reset_to_disconnected = getattr(iface, "_state_manager_reset_to_disconnected", None)
+        reset_to_disconnected = getattr(
+            iface, "_state_manager_reset_to_disconnected", None
+        )
         if not callable(reset_to_disconnected) or _is_unconfigured_mock_callable(
             reset_to_disconnected
         ):
+
             def reset_to_disconnected() -> bool:
                 return lifecycle_service_mod.BLELifecycleService._state_manager_reset_to_disconnected(  # noqa: E501
                     iface
@@ -182,6 +184,7 @@ class BLELifecycleController:
 
         current_state = getattr(iface, "_state_manager_current_state", None)
         if not callable(current_state) or _is_unconfigured_mock_callable(current_state):
+
             def current_state() -> ConnectionState:
                 return lifecycle_service_mod.BLELifecycleService._state_manager_current_state(  # noqa: E501
                     iface
@@ -191,6 +194,7 @@ class BLELifecycleController:
         if not callable(transition_to_state) or _is_unconfigured_mock_callable(
             transition_to_state
         ):
+
             def transition_to_state(state: ConnectionState) -> bool:
                 return lifecycle_service_mod.BLELifecycleService._state_manager_transition_to(  # noqa: E501
                     iface,
@@ -199,7 +203,10 @@ class BLELifecycleController:
 
         safe_cleanup = getattr(iface, "_error_handler_safe_cleanup", None)
         if not callable(safe_cleanup) or _is_unconfigured_mock_callable(safe_cleanup):
-            def safe_cleanup(cleanup: Callable[[], object], operation_name: str) -> None:
+
+            def safe_cleanup(
+                cleanup: Callable[[], object], operation_name: str
+            ) -> None:
                 lifecycle_service_mod.BLELifecycleService._error_handler_safe_cleanup(  # noqa: E501
                     iface,
                     cleanup,
@@ -246,7 +253,8 @@ class BLELifecycleController:
             or service_get_status_locked
             is not _ORIGINAL_GET_CONNECTED_CLIENT_STATUS_LOCKED
             or service_verify_snapshot is not _ORIGINAL_VERIFY_OWNERSHIP_SNAPSHOT
-            or service_finalize_connection_gates is not _ORIGINAL_FINALIZE_CONNECTION_GATES
+            or service_finalize_connection_gates
+            is not _ORIGINAL_FINALIZE_CONNECTION_GATES
             or service_is_owned_connected_client
             is not _ORIGINAL_IS_OWNED_CONNECTED_CLIENT
         )

@@ -339,7 +339,9 @@ class BLEShutdownLifecycleCoordinator:
         client_address = iface._extract_client_address(client)
         notification_manager = iface._notification_manager
 
-        def _resolve_notification_cleanup(method_name: str) -> Callable[..., object] | None:
+        def _resolve_notification_cleanup(
+            method_name: str,
+        ) -> Callable[..., object] | None:
             method = getattr(notification_manager, method_name, None)
             if callable(method) and not _is_unconfigured_mock_callable(method):
                 return cast(Callable[..., object], method)
@@ -363,9 +365,7 @@ class BLEShutdownLifecycleCoordinator:
                         "notification unsubscribe_all",
                     )
                 else:
-                    logger.debug(
-                        "Notification manager is missing _unsubscribe_all"
-                    )
+                    logger.debug("Notification manager is missing _unsubscribe_all")
                 run_safe_cleanup(
                     lambda: iface._disconnect_and_close_client(client),
                     "BLE client disconnect/close",

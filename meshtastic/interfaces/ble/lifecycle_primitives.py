@@ -403,7 +403,9 @@ class _LifecycleThreadAccess:
                     event_names,
                     exc_info=True,
                 )
-        legacy_wake_waiting_threads = getattr(coordinator, "_wake_waiting_threads", None)
+        legacy_wake_waiting_threads = getattr(
+            coordinator, "_wake_waiting_threads", None
+        )
         if callable(legacy_wake_waiting_threads) and not _is_unconfigured_mock_callable(
             legacy_wake_waiting_threads
         ):

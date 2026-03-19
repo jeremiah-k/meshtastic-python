@@ -156,7 +156,9 @@ class BLEReceiveRecoveryController:
                 try:
                     result = raw_is_closing()
                     state_is_closing = result if isinstance(result, bool) else False
-                except Exception:  # noqa: BLE001 - closing probe must remain best effort
+                except (
+                    Exception
+                ):  # noqa: BLE001 - closing probe must remain best effort
                     state_is_closing = False
             elif not _is_unconfigured_mock_member(raw_is_closing) and isinstance(
                 raw_is_closing, bool
@@ -472,9 +474,7 @@ class BLEReceiveRecoveryController:
     ) -> tuple[bool, bool]:
         """Wait for read trigger and compute fallback poll mode."""
         wait_for_runtime_event = wait_for_event or (
-            lambda target_coordinator,
-            event_name,
-            timeout: self._coordinator_wait_for_event(
+            lambda target_coordinator, event_name, timeout: self._coordinator_wait_for_event(
                 target_coordinator,
                 event_name,
                 timeout=timeout,
@@ -560,9 +560,7 @@ class BLEReceiveRecoveryController:
         """Process current client state and decide whether to break loop."""
         iface = self._iface
         wait_for_runtime_event = wait_for_event or (
-            lambda target_coordinator,
-            event_name,
-            timeout: self._coordinator_wait_for_event(
+            lambda target_coordinator, event_name, timeout: self._coordinator_wait_for_event(
                 target_coordinator,
                 event_name,
                 timeout=timeout,

@@ -69,7 +69,9 @@ class BLECompatibilityEventPublisher:
         )
 
     # COMPAT_STABLE_SHIM: retained bound alias for compatibility callers.
-    def publish_connection_status_legacy(self, connected: bool) -> None:  # noqa: FBT001 - compatibility positional bool
+    def publish_connection_status_legacy(
+        self, connected: bool
+    ) -> None:  # noqa: FBT001 - compatibility positional bool
         """Publish status through legacy positional API retained for compatibility.
 
         This alias preserves historical call sites that invoke
