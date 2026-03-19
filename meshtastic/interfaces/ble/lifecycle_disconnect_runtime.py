@@ -107,7 +107,9 @@ class BLEDisconnectLifecycleCoordinator:
                 )
                 if not previous_address or previous_address == "unknown":
                     previous_address = (
-                        address if address != "unknown" else iface.address
+                        address
+                        if address != "unknown"
+                        else (iface.address or "unknown")
                     )
                 device_key = _addr_key(previous_address) if previous_address else None
                 return (
