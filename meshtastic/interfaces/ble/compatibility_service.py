@@ -635,6 +635,19 @@ class BLECompatibilityEventService:
                 resolved_publishing_thread = getattr(
                     mesh_iface_module, "publishingThread", None
                 )
+        if not BLECompatibilityEventPublisher._is_live_publishing_thread(
+            resolved_publishing_thread
+        ):
+            from meshtastic import mesh_interface as mesh_iface_module
+
+            fallback_thread = getattr(mesh_iface_module, "publishingThread", None)
+            resolved_publishing_thread = (
+                fallback_thread
+                if BLECompatibilityEventPublisher._is_live_publishing_thread(
+                    fallback_thread
+                )
+                else None
+            )
         BLECompatibilityEventService.publish_connection_status(
             iface,
             connected,

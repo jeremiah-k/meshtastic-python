@@ -1,6 +1,5 @@
 """Connection ownership lifecycle coordinator runtime ownership for BLE."""
 
-import inspect
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -13,6 +12,7 @@ from meshtastic.interfaces.ble.lifecycle_primitives import (
 )
 from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import (
+    _is_unconfigured_mock_callable,
     _is_unconfigured_mock_member,
     sanitize_address,
 )
@@ -86,18 +86,66 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             close/shutdown state.
         """
         iface = self._iface
-        get_is_closing = is_closing_getter or self._state_access.is_closing
-        get_state_connected = state_connected_getter or self._state_access.is_connected
-        get_client_connected = (
-            client_connected_getter or self._state_access.client_is_connected
-        )
-        is_closing = get_is_closing() or iface._closed
+        state_manager = getattr(iface, "_state_manager", None)
+        if is_closing_getter is not None:
+            is_closing_result = is_closing_getter()
+            is_closing = (
+                is_closing_result if isinstance(is_closing_result, bool) else False
+            )
+        else:
+            is_closing = self._probe_bool_member(state_manager, "is_closing", "_is_closing")
+        is_closing = is_closing or iface._closed
         if iface._closed or iface.client is not client:
             return False, is_closing
-        state_connected = get_state_connected()
+        if state_connected_getter is not None:
+            state_connected_result = state_connected_getter()
+            state_connected = (
+                state_connected_result
+                if isinstance(state_connected_result, bool)
+                else False
+            )
+        else:
+            state_connected = self._probe_bool_member(
+                state_manager,
+                "is_connected",
+                "_is_connected",
+            )
         if not state_connected:
             return False, is_closing
-        return get_client_connected(client), is_closing
+        if client_connected_getter is not None:
+            client_connected_result = client_connected_getter(client)
+            client_connected = (
+                client_connected_result
+                if isinstance(client_connected_result, bool)
+                else False
+            )
+        else:
+            client_connected = self._probe_bool_member(
+                client,
+                "isConnected",
+                "is_connected",
+                "_is_connected",
+            )
+        return client_connected, is_closing
+
+    @staticmethod
+    def _probe_bool_member(owner: object | None, *member_names: str) -> bool:
+        """Return first bool probe result from callable/bool members."""
+        if owner is None:
+            return False
+        for member_name in member_names:
+            member = getattr(owner, member_name, None)
+            if callable(member) and not _is_unconfigured_mock_callable(member):
+                try:
+                    result = member()
+                except Exception:  # noqa: BLE001 - probe remains best effort
+                    continue
+                if isinstance(result, bool):
+                    return result
+                continue
+            if isinstance(member, bool) and not _is_unconfigured_mock_member(member):
+                return member
+        return False
 
     def _get_connected_client_status(
         self,
@@ -423,7 +471,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             elif (
                 iface.client is None
                 and bool(getattr(iface, "_client_publish_pending", False))
-                and (inflight_client is None or inflight_client is client)
+                and inflight_client is client
             ):
                 if inflight_client is client:
                     iface._connected_publish_inflight_client = None
@@ -701,16 +749,22 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 )
                 raise_invalidated(stale_snapshot)
             connected_notifier = iface._connected
-            supports_expected_session_epoch = False
             try:
-                parameters = inspect.signature(connected_notifier).parameters
-            except (TypeError, ValueError):
-                supports_expected_session_epoch = False
-            else:
-                supports_expected_session_epoch = "expected_session_epoch" in parameters
-            if supports_expected_session_epoch:
                 connected_notifier(expected_session_epoch=published_session_epoch)
-            else:
+            except (TypeError, ValueError):
+                with iface._state_lock:
+                    fallback_allowed = (
+                        iface.client is connected_client
+                        and getattr(iface, "_connection_session_epoch", 0)
+                        == published_session_epoch
+                    )
+                if not fallback_allowed:
+                    stale_snapshot = snapshot_provider(
+                        connected_client,
+                        connected_device_key,
+                        connection_alias_key,
+                    )
+                    raise_invalidated(stale_snapshot)
                 connected_notifier()
             with iface._state_lock:
                 publish_completed = (

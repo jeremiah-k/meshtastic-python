@@ -655,7 +655,7 @@ class BLENotificationDispatcher:
             self._started_notify_characteristics.discard(FROMNUM_UUID)
             self.fromnum_notify_enabled = False
             self.malformed_notification_count = 0
-            self._registered_notification_session_epoch = current_session_epoch
+            self._registered_notification_session_epoch = None
 
         def _registration_still_current() -> bool:
             return (

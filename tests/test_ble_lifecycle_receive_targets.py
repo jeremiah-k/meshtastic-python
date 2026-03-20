@@ -2570,6 +2570,8 @@ def test_lifecycle_remaining_invalidation_paths(
             iface._client_publish_pending = True
             iface._client_replacement_pending = False
             iface._last_connection_request = "pending"
+            pending_client = DummyClient()
+            iface._connected_publish_inflight_client = pending_client
         with monkeypatch.context() as m:
             m.setattr(
                 BLELifecycleService,
@@ -2578,7 +2580,7 @@ def test_lifecycle_remaining_invalidation_paths(
             )
             BLELifecycleService._discard_invalidated_connected_client(
                 iface,
-                DummyClient(),
+                pending_client,
                 restore_address="CC:DD",
                 restore_last_connection_request="CC:DD",
             )

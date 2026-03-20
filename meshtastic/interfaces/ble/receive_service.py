@@ -285,12 +285,14 @@ class BLEReceiveRecoveryController:
         if callable(wait_for_event) and not _is_unconfigured_mock_callable(
             wait_for_event
         ):
-            return bool(wait_for_event(event_name, timeout=timeout))
+            result = wait_for_event(event_name, timeout=timeout)
+            return result if isinstance(result, bool) else False
         legacy_wait_for_event = getattr(coordinator, "_wait_for_event", None)
         if callable(legacy_wait_for_event) and not _is_unconfigured_mock_callable(
             legacy_wait_for_event
         ):
-            return bool(legacy_wait_for_event(event_name, timeout=timeout))
+            result = legacy_wait_for_event(event_name, timeout=timeout)
+            return result if isinstance(result, bool) else False
         if timeout is None:
             _sleep(COORDINATOR_WAIT_FALLBACK_SLEEP_SEC)
         elif timeout > 0:
@@ -307,14 +309,16 @@ class BLEReceiveRecoveryController:
         if callable(check_and_clear_event) and not _is_unconfigured_mock_callable(
             check_and_clear_event
         ):
-            return bool(check_and_clear_event(event_name))
+            result = check_and_clear_event(event_name)
+            return result if isinstance(result, bool) else False
         legacy_check_and_clear_event = getattr(
             coordinator, "_check_and_clear_event", None
         )
         if callable(
             legacy_check_and_clear_event
         ) and not _is_unconfigured_mock_callable(legacy_check_and_clear_event):
-            return bool(legacy_check_and_clear_event(event_name))
+            result = legacy_check_and_clear_event(event_name)
+            return result if isinstance(result, bool) else False
         return False
 
     @staticmethod

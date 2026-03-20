@@ -1365,6 +1365,7 @@ def test_ble_interface_management_allows_bound_name_when_target_stays_resolved(
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
         _pin_trust_environment(monkeypatch, run=_run)
+        _clear_management_handler(iface)
         iface.trust(timeout=7.0)
         assert run_calls
     else:
@@ -3375,6 +3376,7 @@ def test_discard_invalidated_connected_client_clears_pending_when_already_detach
     with iface._state_lock:
         cast(Any, iface).client = None
         iface._client_publish_pending = True
+        iface._connected_publish_inflight_client = cast(BLEClient, discarded_client)
         iface._disconnect_notified = False
         iface._state_manager._reset_to_disconnected()
         assert iface._state_manager._transition_to(ConnectionState.CONNECTING) is True
@@ -3428,6 +3430,7 @@ def test_discard_invalidated_connected_client_emits_disconnect_for_retired_sessi
         cast(Any, iface).client = None
         iface._client_publish_pending = True
         iface._client_replacement_pending = True
+        iface._connected_publish_inflight_client = cast(BLEClient, discarded_client)
         iface._disconnect_notified = False
         iface._state_manager._reset_to_disconnected()
         assert iface._state_manager._transition_to(ConnectionState.CONNECTING) is True
@@ -5615,9 +5618,7 @@ def test_report_notification_handler_error_covers_hook_and_fallback_paths(
     assert "hook-error" in debug_calls
 
 
-def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure() -> (
-    None
-):
+def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure() -> None:
     """Positional safe_execute failures should not trigger a second handler invocation."""
 
     calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
@@ -5651,9 +5652,7 @@ def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure
     assert len(calls) == 2
 
 
-def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signature_error() -> (
-    None
-):
+def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signature_error() -> None:
     """Positional signature mismatch should continue to callable-only compatibility probe."""
 
     calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
@@ -5726,9 +5725,7 @@ def test_invoke_safe_execute_compat_reports_handler_failure_after_execution() ->
     assert isinstance(reported_errors[0], RuntimeError)
 
 
-def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_paths() -> (
-    None
-):
+def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_paths() -> None:
     """safe_execute compatibility helper should cover success/fallback branches."""
 
     def _run_scenario(
@@ -6193,9 +6190,7 @@ def test_discovery_manager_accepts_discover_underscore_only_factory() -> None:
     assert devices == [filtered_device]
 
 
-def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> (
-    None
-):
+def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> None:
     """Verify discovery prefers configured ``_discover`` over unconfigured ``discover``.
 
     Returns

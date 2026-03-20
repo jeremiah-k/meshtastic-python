@@ -50,6 +50,7 @@ _HEX_MAC_COLON_RE: re.Pattern[str] = re.compile(
     r"^[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}$"
 )
 _HEX_MAC_NO_SEPARATOR_RE: re.Pattern[str] = re.compile(r"^[0-9A-Fa-f]{12}$")
+HEX_DIGITS: str = "0123456789abcdefABCDEF"
 
 T = TypeVar("T")
 
@@ -149,13 +150,13 @@ def _is_blank_or_malformed_address_like(address: str | None) -> bool:
     ):
         return True
     if ":" not in stripped_address and all(
-        char in "0123456789abcdefABCDEF" for char in stripped_address
+        char in HEX_DIGITS for char in stripped_address
     ):
         return _is_no_colon_hex_malformed(stripped_address)
     # Treat colon-containing identifiers as malformed only when they look
     # like hex/MAC text but fail strict MAC validation.
     return all(
-        char == ":" or char in "0123456789abcdefABCDEF" for char in stripped_address
+        char == ":" or char in HEX_DIGITS for char in stripped_address
     )
 
 
@@ -180,7 +181,7 @@ def _is_no_colon_hex_malformed(stripped_address: str) -> bool:
     """
     if ":" in stripped_address:
         return False
-    if not all(char in "0123456789abcdefABCDEF" for char in stripped_address):
+    if not all(char in HEX_DIGITS for char in stripped_address):
         return False
     if len(stripped_address) != 12:
         return False

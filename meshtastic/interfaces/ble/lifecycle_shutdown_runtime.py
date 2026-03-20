@@ -149,6 +149,8 @@ class BLEShutdownLifecycleCoordinator:
             reset_to_disconnected or self._state_access.reset_to_disconnected
         )
         management_wait_timed_out = False
+        should_transition_to_disconnecting = False
+        disconnect_alias_key: str | None = None
         management_wait_started = time.monotonic()
         with iface._management_lock:
             with iface._state_lock:
@@ -163,27 +165,32 @@ class BLEShutdownLifecycleCoordinator:
                     logger.debug(
                         "BLEInterface.close called while another shutdown is in progress; continuing with cleanup"
                     )
-                if get_current_state() not in (
+                current_state = get_current_state()
+                disconnect_alias_key = iface._connection_alias_key
+                should_transition_to_disconnecting = current_state not in (
                     ConnectionState.DISCONNECTED,
                     ConnectionState.DISCONNECTING,
-                ) and not do_transition_to(ConnectionState.DISCONNECTING):
-                    current_state = get_current_state()
+                )
+            if should_transition_to_disconnecting and not do_transition_to(
+                ConnectionState.DISCONNECTING
+            ):
+                current_state = get_current_state()
+                logger.error(
+                    "Failed state transition to %s during shutdown (alias=%s current=%s); forcing reset.",
+                    ConnectionState.DISCONNECTING.value,
+                    disconnect_alias_key,
+                    getattr(current_state, "value", current_state),
+                )
+                if not do_reset_to_disconnected() and not do_transition_to(
+                    ConnectionState.DISCONNECTED
+                ):
+                    fallback_state = get_current_state()
                     logger.error(
-                        "Failed state transition to %s during shutdown (alias=%s current=%s); forcing reset.",
-                        ConnectionState.DISCONNECTING.value,
-                        iface._connection_alias_key,
-                        getattr(current_state, "value", current_state),
+                        "Failed forced transition to %s during shutdown fallback (alias=%s current=%s).",
+                        ConnectionState.DISCONNECTED.value,
+                        disconnect_alias_key,
+                        getattr(fallback_state, "value", fallback_state),
                     )
-                    if not do_reset_to_disconnected() and not do_transition_to(
-                        ConnectionState.DISCONNECTED
-                    ):
-                        fallback_state = get_current_state()
-                        logger.error(
-                            "Failed forced transition to %s during shutdown fallback (alias=%s current=%s).",
-                            ConnectionState.DISCONNECTED.value,
-                            iface._connection_alias_key,
-                            getattr(fallback_state, "value", fallback_state),
-                        )
             while iface._management_inflight > 0:
                 elapsed = time.monotonic() - management_wait_started
                 if elapsed >= management_shutdown_wait_timeout:
@@ -343,7 +350,7 @@ class BLEShutdownLifecycleCoordinator:
             thread_ident = post_join_ident
             thread_is_alive = post_join_is_alive
         with iface._state_lock:
-            probe_confirms_stopped = thread_ident is not None and not thread_is_alive
+            probe_confirms_stopped = not thread_is_alive
             if not probe_confirms_stopped:
                 probe_confirms_stopped = _explicitly_not_alive(receive_thread)
             if iface._receiveThread is receive_thread and (
@@ -545,28 +552,29 @@ class BLEShutdownLifecycleCoordinator:
         do_reset_to_disconnected = (
             reset_to_disconnected or self._state_access.reset_to_disconnected
         )
+        alias_key: str | None = None
         with iface._state_lock:
-            # Record final state as DISCONNECTED for observers; instance remains closed.
-            if not do_transition_to(ConnectionState.DISCONNECTED):
-                current_state = get_current_state()
-                logger.error(
-                    "Failed state transition to %s during close finalization (alias=%s current=%s); forcing reset.",
-                    ConnectionState.DISCONNECTED.value,
-                    iface._connection_alias_key,
-                    getattr(current_state, "value", current_state),
-                )
-                if not do_reset_to_disconnected() and not do_transition_to(
-                    ConnectionState.DISCONNECTED
-                ):
-                    fallback_state = get_current_state()
-                    logger.error(
-                        "Failed forced transition to %s during close finalization (alias=%s current=%s).",
-                        ConnectionState.DISCONNECTED.value,
-                        iface._connection_alias_key,
-                        getattr(fallback_state, "value", fallback_state),
-                    )
             alias_key = iface._connection_alias_key
             iface._connection_alias_key = None
+        # Record final state as DISCONNECTED for observers; instance remains closed.
+        if not do_transition_to(ConnectionState.DISCONNECTED):
+            current_state = get_current_state()
+            logger.error(
+                "Failed state transition to %s during close finalization (alias=%s current=%s); forcing reset.",
+                ConnectionState.DISCONNECTED.value,
+                alias_key,
+                getattr(current_state, "value", current_state),
+            )
+            if not do_reset_to_disconnected() and not do_transition_to(
+                ConnectionState.DISCONNECTED
+            ):
+                fallback_state = get_current_state()
+                logger.error(
+                    "Failed forced transition to %s during close finalization (alias=%s current=%s).",
+                    ConnectionState.DISCONNECTED.value,
+                    alias_key,
+                    getattr(fallback_state, "value", fallback_state),
+                )
         close_key = _addr_key(iface.address)
         iface._mark_address_keys_disconnected(close_key, alias_key)
 
