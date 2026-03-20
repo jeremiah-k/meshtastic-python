@@ -858,7 +858,8 @@ class BLEInterface(MeshInterface):
             awaitable,
             timeout,
             label,
-            timeout_error_factory=lambda timeout_label, timeout_seconds: BLEInterface.BLEError(
+            timeout_error_factory=lambda timeout_label,
+            timeout_seconds: BLEInterface.BLEError(
                 ERROR_TIMEOUT.format(timeout_label, timeout_seconds)
             ),
         )
@@ -1132,18 +1133,14 @@ class BLEInterface(MeshInterface):
 
         Caller must hold ``_state_lock``.
         """
-        return (
-            self._get_management_command_handler().get_current_implicit_management_binding_locked()
-        )
+        return self._get_management_command_handler().get_current_implicit_management_binding_locked()
 
     def _get_current_implicit_management_address_locked(self) -> str | None:
         """Return implicit management concrete address via collaborator.
 
         Caller must hold ``_state_lock``.
         """
-        return (
-            self._get_management_command_handler().get_current_implicit_management_address_locked()
-        )
+        return self._get_management_command_handler().get_current_implicit_management_address_locked()
 
     def _revalidate_implicit_management_target(
         self,
@@ -2162,7 +2159,7 @@ class BLEInterface(MeshInterface):
         original_replacement_pending: bool
         original_disconnect_notified: bool
         original_connection_session_epoch: int
-        notification_dispatcher: object | None = None
+        notification_dispatcher: BLENotificationDispatcher | None = None
         notification_session_snapshot: dict[str, object] | None = None
 
         def _copy_started_notify_snapshot(value: object | None) -> object | None:
@@ -2170,11 +2167,11 @@ class BLEInterface(MeshInterface):
             if value is None:
                 return None
             copy_method = getattr(value, "copy", None)
-            if callable(copy_method) and not _is_unconfigured_mock_callable(copy_method):
-                with contextlib.suppress(
-                    Exception
-                ):  # noqa: BLE001 - rollback snapshot remains best effort
-                    return copy_method()
+            if callable(copy_method) and not _is_unconfigured_mock_callable(
+                copy_method
+            ):
+                with contextlib.suppress(Exception):  # noqa: BLE001 - rollback snapshot remains best effort
+                    return cast("object | None", copy_method())
             return value
 
         try:
@@ -2197,8 +2194,9 @@ class BLEInterface(MeshInterface):
                 )
             except Exception:  # noqa: BLE001 - rollback snapshot is best effort
                 started_notify_characteristics = None
-            started_notify_characteristics = _copy_started_notify_snapshot(
-                started_notify_characteristics
+            started_notify_characteristics = cast(
+                "set[str] | None",
+                _copy_started_notify_snapshot(started_notify_characteristics),
             )
             try:
                 fromnum_notify_enabled = resolved_dispatcher.fromnum_notify_enabled
@@ -2229,34 +2227,34 @@ class BLEInterface(MeshInterface):
                 or _is_unconfigured_mock_member(notification_dispatcher)
             ):
                 return
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
-                notification_dispatcher._registered_notification_session_epoch = (
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
+                setattr(
+                    notification_dispatcher,
+                    "_registered_notification_session_epoch",
                     notification_session_snapshot[
                         "_registered_notification_session_epoch"
-                    ]
+                    ],
                 )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 started_notify_snapshot = _copy_started_notify_snapshot(
                     notification_session_snapshot["_started_notify_characteristics"]
                 )
-                notification_dispatcher._started_notify_characteristics = (
-                    started_notify_snapshot
+                setattr(
+                    notification_dispatcher,
+                    "_started_notify_characteristics",
+                    started_notify_snapshot,
                 )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
-                notification_dispatcher.fromnum_notify_enabled = (
-                    notification_session_snapshot["fromnum_notify_enabled"]
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
+                setattr(
+                    notification_dispatcher,
+                    "fromnum_notify_enabled",
+                    notification_session_snapshot["fromnum_notify_enabled"],
                 )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
-                notification_dispatcher.malformed_notification_count = (
-                    notification_session_snapshot["malformed_notification_count"]
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
+                setattr(
+                    notification_dispatcher,
+                    "malformed_notification_count",
+                    notification_session_snapshot["malformed_notification_count"],
                 )
 
         with self._state_lock:

@@ -155,7 +155,7 @@ class BLEReceiveRecoveryController:
             state_is_closing = self._normalize_bool_probe(raw_is_closing)
         else:
             raw_is_closing = getattr(state_manager, "is_closing", None)
-            state_is_closing: bool | None = None
+            state_is_closing = None
             if callable(raw_is_closing) and not _is_unconfigured_mock_callable(
                 raw_is_closing
             ):
@@ -163,9 +163,7 @@ class BLEReceiveRecoveryController:
                     result = raw_is_closing()
                     if isinstance(result, bool):
                         state_is_closing = result
-                except (
-                    Exception
-                ):  # noqa: BLE001 - closing probe must remain best effort
+                except Exception:  # noqa: BLE001 - closing probe must remain best effort
                     state_is_closing = None
             elif not _is_unconfigured_mock_member(raw_is_closing) and isinstance(
                 raw_is_closing, bool
@@ -537,7 +535,9 @@ class BLEReceiveRecoveryController:
     ) -> tuple[bool, bool]:
         """Wait for read trigger and compute fallback poll mode."""
         wait_for_runtime_event = wait_for_event or (
-            lambda target_coordinator, event_name, timeout: self._coordinator_wait_for_event(
+            lambda target_coordinator,
+            event_name,
+            timeout: self._coordinator_wait_for_event(
                 target_coordinator,
                 event_name,
                 timeout=timeout,
@@ -578,9 +578,7 @@ class BLEReceiveRecoveryController:
             ):
                 try:
                     connecting_result = state_is_connecting()
-                except (
-                    Exception
-                ):  # noqa: BLE001 - snapshot probe must remain best effort
+                except Exception:  # noqa: BLE001 - snapshot probe must remain best effort
                     logger.debug(
                         "Error probing state manager is_connecting()",
                         exc_info=True,
@@ -605,9 +603,7 @@ class BLEReceiveRecoveryController:
                 ) and not _is_unconfigured_mock_callable(legacy_is_connecting):
                     try:
                         connecting_result = legacy_is_connecting()
-                    except (
-                        Exception
-                    ):  # noqa: BLE001 - snapshot probe must remain best effort
+                    except Exception:  # noqa: BLE001 - snapshot probe must remain best effort
                         logger.debug(
                             "Error probing state manager _is_connecting()",
                             exc_info=True,
@@ -645,7 +641,9 @@ class BLEReceiveRecoveryController:
         """Process current client state and decide whether to break loop."""
         iface = self._iface
         wait_for_runtime_event = wait_for_event or (
-            lambda target_coordinator, event_name, timeout: self._coordinator_wait_for_event(
+            lambda target_coordinator,
+            event_name,
+            timeout: self._coordinator_wait_for_event(
                 target_coordinator,
                 event_name,
                 timeout=timeout,

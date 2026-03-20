@@ -437,13 +437,17 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 )
                 if not publish_pending:
                     iface._client_publish_pending = True
-                    iface._connected_publish_inflight_client = connected_client
+                    setattr(
+                        iface, "_connected_publish_inflight_client", connected_client
+                    )
                     publish_claimed = True
                     should_publish_connected = True
                 elif iface.client is connected_client and inflight_client is None:
                     # The connect flow may have already claimed publish-pending
                     # for this exact client before reaching verification.
-                    iface._connected_publish_inflight_client = connected_client
+                    setattr(
+                        iface, "_connected_publish_inflight_client", connected_client
+                    )
                     publish_claimed = True
                     should_publish_connected = True
                 elif (
@@ -494,7 +498,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     getattr(iface, "_connected_publish_inflight_client", None)
                     is connected_client
                 ):
-                    iface._connected_publish_inflight_client = None
+                    setattr(iface, "_connected_publish_inflight_client", None)
         post_check_snapshot = snapshot_provider(
             connected_client,
             connected_device_key,
@@ -537,9 +541,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             publish_allowed = False
             with iface._state_lock:
                 published_session_epoch = getattr(iface, "_connection_session_epoch", 0)
-                publish_allowed = (
-                    iface.client is connected_client
-                )
+                publish_allowed = iface.client is connected_client
                 if publish_allowed:
                     iface._ever_connected = True
                     iface._prior_publish_was_reconnect = prior_ever_connected
@@ -572,7 +574,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     getattr(iface, "_connected_publish_inflight_client", None)
                     is connected_client
                 ):
-                    iface._connected_publish_inflight_client = None
+                    setattr(iface, "_connected_publish_inflight_client", None)
                 if iface.client is connected_client:
                     iface._client_publish_pending = False
                     if publish_completed:

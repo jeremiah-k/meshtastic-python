@@ -2,7 +2,7 @@
 
 import threading
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from bleak import BleakClient as BleakRootClient
 
@@ -245,16 +245,26 @@ class BLEDisconnectLifecycleCoordinator:
 
             address = "unknown"
             if target_client is not None:
-                address = (
+                address = cast(
+                    "str",
                     iface._extract_client_address(target_client)
-                    or getattr(target_client, "address", repr(target_client))
+                    or getattr(target_client, "address", repr(target_client)),
+                )
+            elif bleak_client is not None:
+                address = cast(
+                    "str", getattr(bleak_client, "address", repr(bleak_client))
+                )
+            elif previous_client is not None:
+                address = cast(
+                    "str",
+                    iface._extract_client_address(previous_client)
+                    or getattr(previous_client, "address", repr(previous_client)),
                 )
             elif bleak_client is not None:
                 address = getattr(bleak_client, "address", repr(bleak_client))
             elif previous_client is not None:
-                address = (
-                    iface._extract_client_address(previous_client)
-                    or getattr(previous_client, "address", repr(previous_client))
+                address = iface._extract_client_address(previous_client) or getattr(
+                    previous_client, "address", repr(previous_client)
                 )
 
             disconnect_keys, should_schedule_reconnect = self._compute_disconnect_keys(
