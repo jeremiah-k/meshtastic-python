@@ -157,7 +157,11 @@ class _PublicationIntent:
 
 @dataclass
 class _LazyMessageDict:
-    """Lazily materializes protobuf JSON dict form on first access."""
+    """Lazily materializes protobuf JSON dict form on first access.
+
+    _LazyMessageDict is not thread-safe: get() lazily writes backing field _value
+    without synchronization. Callers must synchronize externally for concurrent use.
+    """
 
     message: protobuf_message.Message
     _value: dict[str, Any] | None = field(default=None, init=False, repr=False)
@@ -1507,13 +1511,12 @@ class MeshInterface:  # pylint: disable=R0902
                 for col_name in showFields:
                     if "." in col_name:
                         raw_value = _get_nested_value(node, col_name)
+                    # The "since" column is synthesized, it's not retrieved from the device. Get the
+                    # lastHeard value here, and then we'll format it properly below.
+                    elif col_name == "since":
+                        raw_value = node.get("lastHeard")
                     else:
-                        # The "since" column is synthesized, it's not retrieved from the device. Get the
-                        # lastHeard value here, and then we'll format it properly below.
-                        if col_name == "since":
-                            raw_value = node.get("lastHeard")
-                        else:
-                            raw_value = node.get(col_name)
+                        raw_value = node.get(col_name)
 
                     formatted_value: str | None = ""
 
@@ -3605,37 +3608,41 @@ class MeshInterface:  # pylint: disable=R0902
     def _select_from_radio_branch(self, context: _FromRadioContext) -> str | None:
         """Select the active FromRadio branch using the historical precedence order."""
         from_radio = context.message
-        branch: str | None = None
-        if from_radio.HasField("my_info"):
-            branch = "my_info"
-        elif from_radio.HasField("metadata"):
-            branch = "metadata"
-        elif from_radio.HasField("node_info"):
-            branch = "node_info"
-        elif (
-            from_radio.config_complete_id != 0
-            and from_radio.config_complete_id == context.config_id
-        ):
-            branch = "config_complete_id"
-        elif from_radio.HasField("channel"):
-            branch = "channel"
-        elif from_radio.HasField("packet"):
-            branch = "packet"
-        elif from_radio.HasField("log_record"):
-            branch = "log_record"
-        elif from_radio.HasField("queueStatus"):
-            branch = "queueStatus"
-        elif from_radio.HasField("clientNotification"):
-            branch = "clientNotification"
-        elif from_radio.HasField("mqttClientProxyMessage"):
-            branch = "mqttClientProxyMessage"
-        elif from_radio.HasField("xmodemPacket"):
-            branch = "xmodemPacket"
-        elif from_radio.HasField("rebooted") and from_radio.rebooted:
-            branch = "rebooted"
-        elif from_radio.HasField("config") or from_radio.HasField("moduleConfig"):
-            branch = "config_or_moduleConfig"
-        return branch
+        branches: list[
+            tuple[
+                Callable[[mesh_pb2.FromRadio, _FromRadioContext], bool],
+                str,
+            ]
+        ] = [
+            (lambda fr, _ctx: fr.HasField("my_info"), "my_info"),
+            (lambda fr, _ctx: fr.HasField("metadata"), "metadata"),
+            (lambda fr, _ctx: fr.HasField("node_info"), "node_info"),
+            (
+                lambda fr, ctx: fr.config_complete_id != 0
+                and fr.config_complete_id == ctx.config_id,
+                "config_complete_id",
+            ),
+            (lambda fr, _ctx: fr.HasField("channel"), "channel"),
+            (lambda fr, _ctx: fr.HasField("packet"), "packet"),
+            (lambda fr, _ctx: fr.HasField("log_record"), "log_record"),
+            (lambda fr, _ctx: fr.HasField("queueStatus"), "queueStatus"),
+            (lambda fr, _ctx: fr.HasField("clientNotification"), "clientNotification"),
+            (
+                lambda fr, _ctx: fr.HasField("mqttClientProxyMessage"),
+                "mqttClientProxyMessage",
+            ),
+            (lambda fr, _ctx: fr.HasField("xmodemPacket"), "xmodemPacket"),
+            (lambda fr, _ctx: fr.HasField("rebooted") and fr.rebooted, "rebooted"),
+            (
+                lambda fr, _ctx: fr.HasField("config")
+                or fr.HasField("moduleConfig"),
+                "config_or_moduleConfig",
+            ),
+        ]
+        for predicate, branch_name in branches:
+            if predicate(from_radio, context):
+                return branch_name
+        return None
 
     def _from_radio_dispatch_map(
         self,
@@ -3973,7 +3980,11 @@ class MeshInterface:  # pylint: disable=R0902
         *,
         emit_publication: bool = True,
     ) -> list[_PublicationIntent]:
-        """Process incoming MeshPacket with explicit normalize/classify/mutate/publish phases."""
+        """Process incoming MeshPacket with explicit normalize/classify/mutate/publish phases.
+
+        The `hack` flag bypasses the normal rejection of packets with from==0; this
+        compatibility path exists for tests and legacy call paths.
+        """
         packet_dict = self._normalize_packet_from_radio(meshPacket, hack=hack)
         if packet_dict is None:
             return []

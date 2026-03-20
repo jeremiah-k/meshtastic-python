@@ -1679,6 +1679,561 @@ class _NodeAckNakRuntime:
         self._node.iface._acknowledgment.receivedAck = True
 
 
+class _NodeSettingsMessageBuilder:
+    """Owns settings request/write AdminMessage construction and field mapping."""
+
+    def __init__(self, node: "Node") -> None:
+        self._node = node
+
+    def build_request_message(
+        self, config_type: int | FieldDescriptor
+    ) -> admin_pb2.AdminMessage:
+        """Build request-config message from int or protobuf field descriptor."""
+        message = admin_pb2.AdminMessage()
+        if isinstance(config_type, int):
+            message.get_config_request = config_type  # type: ignore[assignment] # pyright: ignore[reportAttributeAccessIssue]
+            return message
+
+        if config_type.containing_type.name == "LocalConfig":
+            message.get_config_request = admin_pb2.AdminMessage.ConfigType.Value(
+                f"{config_type.name.upper()}_CONFIG"
+            )
+            return message
+
+        message.get_module_config_request = (
+            config_type.index  # pyright: ignore[reportAttributeAccessIssue]
+        )
+        return message
+
+    def _write_config_dispatch(self) -> dict[str, tuple[str, Any]]:
+        """Return config-name mapping to (setter oneof, source config message)."""
+        node = self._node
+        return {
+            "device": ("set_config", node.localConfig.device),
+            "position": ("set_config", node.localConfig.position),
+            "power": ("set_config", node.localConfig.power),
+            "network": ("set_config", node.localConfig.network),
+            "display": ("set_config", node.localConfig.display),
+            "lora": ("set_config", node.localConfig.lora),
+            "bluetooth": ("set_config", node.localConfig.bluetooth),
+            "security": ("set_config", node.localConfig.security),
+            "mqtt": ("set_module_config", node.moduleConfig.mqtt),
+            "serial": ("set_module_config", node.moduleConfig.serial),
+            "external_notification": (
+                "set_module_config",
+                node.moduleConfig.external_notification,
+            ),
+            "store_forward": ("set_module_config", node.moduleConfig.store_forward),
+            "range_test": ("set_module_config", node.moduleConfig.range_test),
+            "telemetry": ("set_module_config", node.moduleConfig.telemetry),
+            "canned_message": ("set_module_config", node.moduleConfig.canned_message),
+            "audio": ("set_module_config", node.moduleConfig.audio),
+            "remote_hardware": (
+                "set_module_config",
+                node.moduleConfig.remote_hardware,
+            ),
+            "neighbor_info": ("set_module_config", node.moduleConfig.neighbor_info),
+            "detection_sensor": (
+                "set_module_config",
+                node.moduleConfig.detection_sensor,
+            ),
+            "ambient_lighting": (
+                "set_module_config",
+                node.moduleConfig.ambient_lighting,
+            ),
+            "paxcounter": ("set_module_config", node.moduleConfig.paxcounter),
+            "traffic_management": (
+                "set_module_config",
+                node.moduleConfig.traffic_management,
+            ),
+        }
+
+    def build_write_message(self, config_name: str) -> admin_pb2.AdminMessage:
+        """Build one set_config/set_module_config message for a config name."""
+        config_entry = self._write_config_dispatch().get(config_name)
+        if config_entry is None:
+            self._node._raise_interface_error(  # noqa: SLF001
+                f"Error: No valid config with name {config_name}"
+            )
+
+        message = admin_pb2.AdminMessage()
+        setter_name, source_config = config_entry
+        config_setter = getattr(message, setter_name)
+        getattr(config_setter, config_name).CopyFrom(source_config)
+        return message
+
+
+class _NodeSettingsRuntime:
+    """Owns settings request/write orchestration and callback policy."""
+
+    def __init__(
+        self,
+        node: "Node",
+        *,
+        message_builder: _NodeSettingsMessageBuilder,
+    ) -> None:
+        self._node = node
+        self._message_builder = message_builder
+
+    def request_config(
+        self,
+        config_type: int | FieldDescriptor,
+        *,
+        admin_index: int | None = None,
+    ) -> None:
+        """Send one settings request with preserved local/remote wait semantics."""
+        if self._node == self._node.iface.localNode:
+            on_response: Callable[[dict[str, Any]], Any] | None = None
+        else:
+            on_response = self._node.onResponseRequestSettings
+            logger.info(
+                "Requesting current config from remote node (this can take a while)."
+            )
+
+        message = self._message_builder.build_request_message(config_type)
+        self._node._send_admin(
+            message,
+            wantResponse=True,
+            onResponse=on_response,
+            adminIndex=admin_index,
+        )
+        if on_response is not None:
+            self._node.iface.waitForAckNak()
+
+    def _validate_write_configs_loaded(self) -> None:
+        """Preserve historical loaded-state precondition for writeConfig."""
+        if (
+            len(self._node.localConfig.ListFields()) == 0
+            and len(self._node.moduleConfig.ListFields()) == 0
+        ):
+            self._node._raise_interface_error(  # noqa: SLF001
+                "Error: No localConfig has been read. "
+                "Request config from the device before writing."
+            )
+
+    def write_config(self, config_name: str) -> None:
+        """Send one settings write with preserved callback selection."""
+        message = self._message_builder.build_write_message(config_name)
+        self._validate_write_configs_loaded()
+        logger.debug("Wrote: %s", config_name)
+        on_response = None if self._node == self._node.iface.localNode else self._node.onAckNak
+        self._node._send_admin(message, onResponse=on_response)
+
+
+class _NodeSettingsResponseRuntime:
+    """Owns onResponseRequestSettings routing, decode, mutation, and output behavior."""
+
+    def __init__(self, node: "Node") -> None:
+        self._node = node
+
+    def _resolve_local_config_target(
+        self, admin_message: dict[str, Any]
+    ) -> tuple[str, str, Any] | None:
+        """Resolve getConfigResponse payload target, if present and valid."""
+        response = admin_message.get("getConfigResponse")
+        if response is None:
+            return None
+        if not response:
+            logger.warning("Received empty config response from node.")
+            return None
+        response_field = next(iter(response.keys()))
+        field_name = camel_to_snake(response_field)
+        config_type = self._node.localConfig.DESCRIPTOR.fields_by_name.get(field_name)
+        if config_type is None:
+            logger.warning(
+                "Ignoring unknown LocalConfig field in getConfigResponse: %s",
+                field_name,
+            )
+            return None
+        return "get_config_response", field_name, getattr(
+            self._node.localConfig, config_type.name
+        )
+
+    def _resolve_module_config_target(
+        self, admin_message: dict[str, Any]
+    ) -> tuple[str, str, Any] | None:
+        """Resolve getModuleConfigResponse payload target, if present and valid."""
+        response = admin_message.get("getModuleConfigResponse")
+        if response is None:
+            return None
+        if not response:
+            logger.warning("Received empty module config response from node.")
+            return None
+        response_field = next(iter(response.keys()))
+        field_name = camel_to_snake(response_field)
+        config_type = self._node.moduleConfig.DESCRIPTOR.fields_by_name.get(field_name)
+        if config_type is None:
+            logger.warning(
+                "Ignoring unknown ModuleConfig field in getModuleConfigResponse: %s",
+                field_name,
+            )
+            return None
+        return "get_module_config_response", field_name, getattr(
+            self._node.moduleConfig, config_type.name
+        )
+
+    def _resolve_config_target(
+        self,
+        admin_message: dict[str, Any],
+    ) -> tuple[str, str, Any] | None:
+        """Resolve response type/field to destination config submessage."""
+        local_target = self._resolve_local_config_target(admin_message)
+        if local_target is not None:
+            return local_target
+
+        module_target = self._resolve_module_config_target(admin_message)
+        if module_target is not None:
+            return module_target
+
+        logger.warning(
+            "Did not receive a valid response. Make sure to have a shared channel named 'admin'."
+        )
+        return None
+
+    def handle_settings_response(self, packet: dict[str, Any]) -> None:
+        """Process one settings response packet with preserved ACK/NAK semantics."""
+        logger.debug("onResponseRequestSetting() p:%s", packet)
+        decoded = packet["decoded"]
+        if "routing" in decoded:
+            if decoded["routing"]["errorReason"] != "NONE":
+                logger.error(
+                    "Error on response: %s",
+                    decoded["routing"]["errorReason"],
+                )
+                self._node.iface._acknowledgment.receivedNak = True
+            return
+
+        self._node.iface._acknowledgment.receivedAck = True
+        admin_message = decoded["admin"]
+        target = self._resolve_config_target(admin_message)
+        if target is None:
+            return
+
+        oneof, field_name, config_values = target
+        raw_config = getattr(getattr(admin_message["raw"], oneof), field_name)
+        config_values.CopyFrom(raw_config)
+        logger.info("%s:\n%s", field_name, config_values)
+
+
+class _NodeAdminCommandRuntime:
+    """Owns generic admin-command session/callback/send policy for command family methods."""
+
+    def __init__(self, node: "Node") -> None:
+        self._node = node
+
+    def _select_remote_ack_callback(self) -> Callable[[dict[str, Any]], Any] | None:
+        """Return callback policy used by remote admin command sends."""
+        if self._node == self._node.iface.localNode:
+            return None
+        return self._node.onAckNak
+
+    def _send_command(
+        self,
+        message: admin_pb2.AdminMessage,
+        *,
+        ensure_session_key: bool,
+        use_remote_ack_callback: bool,
+    ) -> mesh_pb2.MeshPacket | None:
+        """Apply shared session/callback/send policy for admin commands."""
+        if ensure_session_key:
+            self._node.ensureSessionKey()
+        on_response = (
+            self._select_remote_ack_callback() if use_remote_ack_callback else None
+        )
+        return self._node._send_admin(message, onResponse=on_response)
+
+    def send_owner_message(
+        self, message: admin_pb2.AdminMessage
+    ) -> mesh_pb2.MeshPacket | None:
+        """Send set_owner message with historical session and remote-ACK behavior."""
+        return self._send_command(
+            message,
+            ensure_session_key=True,
+            use_remote_ack_callback=True,
+        )
+
+    def exit_simulator(self) -> mesh_pb2.MeshPacket | None:
+        """Send exit-simulator admin command."""
+        message = admin_pb2.AdminMessage()
+        message.exit_simulator = True
+        logger.debug("in exitSimulator()")
+        return self._send_command(
+            message,
+            ensure_session_key=True,
+            use_remote_ack_callback=False,
+        )
+
+    def reboot(self, secs: int) -> mesh_pb2.MeshPacket | None:
+        """Send reboot command with delayed reboot seconds."""
+        message = admin_pb2.AdminMessage()
+        message.reboot_seconds = secs
+        logger.info("Telling node to reboot in %s seconds", secs)
+        return self._send_command(
+            message,
+            ensure_session_key=True,
+            use_remote_ack_callback=True,
+        )
+
+    def begin_settings_transaction(self) -> mesh_pb2.MeshPacket | None:
+        """Send begin-edit-settings command."""
+        message = admin_pb2.AdminMessage()
+        message.begin_edit_settings = True
+        logger.info("Telling node to open a transaction to edit settings")
+        return self._send_command(
+            message,
+            ensure_session_key=True,
+            use_remote_ack_callback=True,
+        )
+
+    def commit_settings_transaction(self) -> mesh_pb2.MeshPacket | None:
+        """Send commit-edit-settings command."""
+        message = admin_pb2.AdminMessage()
+        message.commit_edit_settings = True
+        logger.info("Telling node to commit open transaction for editing settings")
+        return self._send_command(
+            message,
+            ensure_session_key=True,
+            use_remote_ack_callback=True,
+        )
+
+    def reboot_ota(self, secs: int) -> mesh_pb2.MeshPacket | None:
+        """Send reboot-to-OTA command."""
+        message = admin_pb2.AdminMessage()
+        message.reboot_ota_seconds = secs
+        logger.info("Telling node to reboot to OTA in %s seconds", secs)
+        return self._send_command(
+            message,
+            ensure_session_key=True,
+            use_remote_ack_callback=True,
+        )
+
+    def start_ota(
+        self,
+        mode: admin_pb2.OTAMode.ValueType | None = None,
+        ota_file_hash: bytes | None = None,
+        *,
+        ota_mode: admin_pb2.OTAMode.ValueType | None = None,
+        ota_hash: bytes | None = None,
+        extra_kwargs: dict[str, Any],
+    ) -> mesh_pb2.MeshPacket | None:
+        """Validate OTA args and send ota_request command."""
+        if self._node != self._node.iface.localNode:
+            self._node._raise_interface_error("startOTA only possible on local node")  # noqa: SLF001
+
+        # COMPAT_STABLE_SHIM: support legacy keyword aliases used by older callers:
+        # `ota_mode` -> `mode`, and `ota_hash`/`hash` -> `ota_file_hash`.
+        legacy_hash = extra_kwargs.pop("hash", None)
+        if extra_kwargs:
+            unexpected = ", ".join(sorted(extra_kwargs))
+            raise TypeError(
+                f"startOTA() got unexpected keyword argument(s): {unexpected}"
+            )
+
+        if mode is not None and ota_mode is not None and mode != ota_mode:
+            raise ValueError("Conflicting OTA mode arguments provided")
+        resolved_mode = mode if mode is not None else ota_mode
+        if resolved_mode is None:
+            raise TypeError("startOTA() missing required argument: 'mode'")
+
+        hash_values = {
+            value
+            for value in (ota_file_hash, ota_hash, legacy_hash)
+            if value is not None
+        }
+        if not hash_values:
+            raise TypeError("startOTA() missing required argument: 'ota_file_hash'")
+        if len(hash_values) > 1:
+            raise ValueError("Conflicting OTA hash arguments provided")
+        resolved_hash = hash_values.pop()
+        if not isinstance(resolved_hash, bytes):
+            raise TypeError("ota_file_hash must be bytes")
+
+        message = admin_pb2.AdminMessage()
+        message.ota_request.reboot_ota_mode = resolved_mode
+        message.ota_request.ota_hash = resolved_hash
+        return self._send_command(
+            message,
+            ensure_session_key=True,
+            use_remote_ack_callback=False,
+        )
+
+    def enter_dfu_mode(self) -> mesh_pb2.MeshPacket | None:
+        """Send enter-DFU-mode command."""
+        message = admin_pb2.AdminMessage()
+        message.enter_dfu_mode_request = True
+        logger.info("Telling node to enable DFU mode")
+        return self._send_command(
+            message,
+            ensure_session_key=True,
+            use_remote_ack_callback=True,
+        )
+
+    def shutdown(self, secs: int) -> mesh_pb2.MeshPacket | None:
+        """Send shutdown command with delayed shutdown seconds."""
+        message = admin_pb2.AdminMessage()
+        message.shutdown_seconds = secs
+        logger.info("Telling node to shutdown in %s seconds", secs)
+        return self._send_command(
+            message,
+            ensure_session_key=True,
+            use_remote_ack_callback=True,
+        )
+
+    def factory_reset(self, *, full: bool) -> mesh_pb2.MeshPacket | None:
+        """Send factory-reset command, preserving full/config split behavior."""
+        message = admin_pb2.AdminMessage()
+        if full:
+            message.factory_reset_device = FACTORY_RESET_REQUEST_VALUE
+            logger.info("Telling node to factory reset (full device reset)")
+        else:
+            message.factory_reset_config = FACTORY_RESET_REQUEST_VALUE
+            logger.info("Telling node to factory reset (config reset)")
+        return self._send_command(
+            message,
+            ensure_session_key=True,
+            use_remote_ack_callback=True,
+        )
+
+    def _send_node_id_command(
+        self,
+        *,
+        node_id: int | str,
+        set_field: Callable[[admin_pb2.AdminMessage, int], None],
+    ) -> mesh_pb2.MeshPacket | None:
+        """Send one node-id command after toNodeNum conversion."""
+        node_num = toNodeNum(node_id)
+        message = admin_pb2.AdminMessage()
+        set_field(message, node_num)
+        return self._send_command(
+            message,
+            ensure_session_key=True,
+            use_remote_ack_callback=True,
+        )
+
+    def remove_node(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
+        """Send remove-by-nodenum command."""
+        return self._send_node_id_command(
+            node_id=node_id,
+            set_field=lambda message, node_num: setattr(
+                message, "remove_by_nodenum", node_num
+            ),
+        )
+
+    def set_favorite(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
+        """Send set-favorite command."""
+        return self._send_node_id_command(
+            node_id=node_id,
+            set_field=lambda message, node_num: setattr(
+                message, "set_favorite_node", node_num
+            ),
+        )
+
+    def remove_favorite(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
+        """Send remove-favorite command."""
+        return self._send_node_id_command(
+            node_id=node_id,
+            set_field=lambda message, node_num: setattr(
+                message, "remove_favorite_node", node_num
+            ),
+        )
+
+    def set_ignored(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
+        """Send set-ignored command."""
+        return self._send_node_id_command(
+            node_id=node_id,
+            set_field=lambda message, node_num: setattr(
+                message, "set_ignored_node", node_num
+            ),
+        )
+
+    def remove_ignored(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
+        """Send remove-ignored command."""
+        return self._send_node_id_command(
+            node_id=node_id,
+            set_field=lambda message, node_num: setattr(
+                message, "remove_ignored_node", node_num
+            ),
+        )
+
+    def reset_node_db(self) -> mesh_pb2.MeshPacket | None:
+        """Send NodeDB reset command."""
+        message = admin_pb2.AdminMessage()
+        message.nodedb_reset = True
+        logger.info("Telling node to reset the NodeDB")
+        return self._send_command(
+            message,
+            ensure_session_key=True,
+            use_remote_ack_callback=True,
+        )
+
+
+class _NodeOwnerProfileRuntime:
+    """Owns setOwner validation/truncation/message-build and send orchestration."""
+
+    def __init__(
+        self,
+        node: "Node",
+        *,
+        admin_command_runtime: _NodeAdminCommandRuntime,
+    ) -> None:
+        self._node = node
+        self._admin_command_runtime = admin_command_runtime
+
+    def set_owner(
+        self,
+        *,
+        long_name: str | None = None,
+        short_name: str | None = None,
+        is_licensed: bool = False,
+        is_unmessagable: bool | None = None,
+    ) -> mesh_pb2.MeshPacket | None:
+        """Apply setOwner validation/truncation and send policy."""
+        logger.debug("in setOwner nodeNum:%s", self._node.nodeNum)
+        message = admin_pb2.AdminMessage()
+
+        if long_name is not None:
+            long_name = long_name.strip()
+            # Validate that long_name is not empty or whitespace-only
+            if not long_name:
+                self._node._raise_interface_error(EMPTY_LONG_NAME_MSG)  # noqa: SLF001
+            if len(long_name) > MAX_LONG_NAME_LEN:
+                long_name = long_name[:MAX_LONG_NAME_LEN]
+                logger.warning(
+                    "Long name is longer than %s characters, truncating to '%s'",
+                    MAX_LONG_NAME_LEN,
+                    long_name,
+                )
+            message.set_owner.long_name = long_name
+            message.set_owner.is_licensed = is_licensed
+
+        if short_name is not None:
+            short_name = short_name.strip()
+            # Validate that short_name is not empty or whitespace-only
+            if not short_name:
+                self._node._raise_interface_error(EMPTY_SHORT_NAME_MSG)  # noqa: SLF001
+            if len(short_name) > MAX_SHORT_NAME_LEN:
+                short_name = short_name[:MAX_SHORT_NAME_LEN]
+                logger.warning(
+                    "Short name is longer than %s characters, truncating to '%s'",
+                    MAX_SHORT_NAME_LEN,
+                    short_name,
+                )
+            message.set_owner.short_name = short_name
+
+        if is_unmessagable is not None:
+            message.set_owner.is_unmessagable = is_unmessagable
+
+        # Note: These debug lines are used in unit tests
+        logger.debug("p.set_owner.long_name:%s:", message.set_owner.long_name)
+        logger.debug("p.set_owner.short_name:%s:", message.set_owner.short_name)
+        logger.debug("p.set_owner.is_licensed:%s:", message.set_owner.is_licensed)
+        logger.debug(
+            "p.set_owner.is_unmessagable:%s:",
+            message.set_owner.is_unmessagable,
+        )
+        return self._admin_command_runtime.send_owner_message(message)
+
+
 class Node:  # pylint: disable=too-many-instance-attributes
     """A model of a (local or remote) node in the mesh.
 
@@ -1734,6 +2289,17 @@ class Node:  # pylint: disable=too-many-instance-attributes
             channel_write_runtime=self._channel_write_runtime,
         )
         self._ack_nak_runtime = _NodeAckNakRuntime(self)
+        self._settings_message_builder = _NodeSettingsMessageBuilder(self)
+        self._settings_runtime = _NodeSettingsRuntime(
+            self,
+            message_builder=self._settings_message_builder,
+        )
+        self._settings_response_runtime = _NodeSettingsResponseRuntime(self)
+        self._admin_command_runtime = _NodeAdminCommandRuntime(self)
+        self._owner_profile_runtime = _NodeOwnerProfileRuntime(
+            self,
+            admin_command_runtime=self._admin_command_runtime,
+        )
         self._content_cache_store = _NodeContentCacheStore(self)
         self._content_response_runtime = _NodeContentResponseRuntime(
             self,
@@ -2026,61 +2592,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             contain either `getConfigResponse` or `getModuleConfigResponse` and accompanying
             `raw` bytes for the returned field.
         """
-        logger.debug("onResponseRequestSetting() p:%s", p)
-        config_values = None
-        if "routing" in p["decoded"]:
-            if p["decoded"]["routing"]["errorReason"] != "NONE":
-                logger.error(
-                    "Error on response: %s",
-                    p["decoded"]["routing"]["errorReason"],
-                )
-                self.iface._acknowledgment.receivedNak = True
-        else:
-            self.iface._acknowledgment.receivedAck = True
-            adminMessage = p["decoded"]["admin"]
-            if "getConfigResponse" in adminMessage:
-                oneof = "get_config_response"
-                resp = adminMessage["getConfigResponse"]
-                if not resp:
-                    logger.warning("Received empty config response from node.")
-                    return
-                resp_field = next(iter(resp.keys()))
-                field_name = camel_to_snake(resp_field)
-                config_type = self.localConfig.DESCRIPTOR.fields_by_name.get(field_name)
-                if config_type is None:
-                    logger.warning(
-                        "Ignoring unknown LocalConfig field in getConfigResponse: %s",
-                        field_name,
-                    )
-                    return
-                config_values = getattr(self.localConfig, config_type.name)
-            elif "getModuleConfigResponse" in adminMessage:
-                oneof = "get_module_config_response"
-                resp = adminMessage["getModuleConfigResponse"]
-                if not resp:
-                    logger.warning("Received empty module config response from node.")
-                    return
-                resp_field = next(iter(resp.keys()))
-                field_name = camel_to_snake(resp_field)
-                config_type = self.moduleConfig.DESCRIPTOR.fields_by_name.get(
-                    field_name
-                )
-                if config_type is None:
-                    logger.warning(
-                        "Ignoring unknown ModuleConfig field in getModuleConfigResponse: %s",
-                        field_name,
-                    )
-                    return
-                config_values = getattr(self.moduleConfig, config_type.name)
-            else:
-                logger.warning(
-                    "Did not receive a valid response. Make sure to have a shared channel named 'admin'."
-                )
-                return
-            if config_values is not None:
-                raw_config = getattr(getattr(adminMessage["raw"], oneof), field_name)
-                config_values.CopyFrom(raw_config)
-                logger.info("%s:\n%s", field_name, config_values)
+        self._settings_response_runtime.handle_settings_response(p)
 
     def requestConfig(
         self, configType: int | FieldDescriptor, adminIndex: int | None = None
@@ -2104,33 +2616,10 @@ class Node:  # pylint: disable=too-many-instance-attributes
             configured admin channel is used. Pass 0 to force channel 0.
             (Default value = None)
         """
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onResponseRequestSettings
-            logger.info(
-                "Requesting current config from remote node (this can take a while)."
-            )
-        p = admin_pb2.AdminMessage()
-        if isinstance(configType, int):
-            p.get_config_request = configType  # type: ignore[assignment] # pyright: ignore[reportAttributeAccessIssue]
-
-        else:
-            msg_index = configType.index
-            if configType.containing_type.name == "LocalConfig":
-                p.get_config_request = admin_pb2.AdminMessage.ConfigType.Value(
-                    f"{configType.name.upper()}_CONFIG"
-                )
-            else:
-                p.get_module_config_request = (
-                    msg_index  # pyright: ignore[reportAttributeAccessIssue]
-                )
-
-        self._send_admin(
-            p, wantResponse=True, onResponse=onResponse, adminIndex=adminIndex
+        self._settings_runtime.request_config(
+            configType,
+            admin_index=adminIndex,
         )
-        if onResponse:
-            self.iface.waitForAckNak()
 
     def turnOffEncryptionOnPrimaryChannel(self) -> None:
         """Disable encryption on the primary channel and write the updated channel to the device.
@@ -2204,67 +2693,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             If `config_name` is not one of the supported names, or if
             localConfig/moduleConfig has not been loaded.
         """
-        p = admin_pb2.AdminMessage()
-
-        config_dispatch: dict[str, tuple[str, Any]] = {
-            "device": ("set_config", self.localConfig.device),
-            "position": ("set_config", self.localConfig.position),
-            "power": ("set_config", self.localConfig.power),
-            "network": ("set_config", self.localConfig.network),
-            "display": ("set_config", self.localConfig.display),
-            "lora": ("set_config", self.localConfig.lora),
-            "bluetooth": ("set_config", self.localConfig.bluetooth),
-            "security": ("set_config", self.localConfig.security),
-            "mqtt": ("set_module_config", self.moduleConfig.mqtt),
-            "serial": ("set_module_config", self.moduleConfig.serial),
-            "external_notification": (
-                "set_module_config",
-                self.moduleConfig.external_notification,
-            ),
-            "store_forward": ("set_module_config", self.moduleConfig.store_forward),
-            "range_test": ("set_module_config", self.moduleConfig.range_test),
-            "telemetry": ("set_module_config", self.moduleConfig.telemetry),
-            "canned_message": ("set_module_config", self.moduleConfig.canned_message),
-            "audio": ("set_module_config", self.moduleConfig.audio),
-            "remote_hardware": (
-                "set_module_config",
-                self.moduleConfig.remote_hardware,
-            ),
-            "neighbor_info": ("set_module_config", self.moduleConfig.neighbor_info),
-            "detection_sensor": (
-                "set_module_config",
-                self.moduleConfig.detection_sensor,
-            ),
-            "ambient_lighting": (
-                "set_module_config",
-                self.moduleConfig.ambient_lighting,
-            ),
-            "paxcounter": ("set_module_config", self.moduleConfig.paxcounter),
-            "traffic_management": (
-                "set_module_config",
-                self.moduleConfig.traffic_management,
-            ),
-        }
-        config_entry = config_dispatch.get(config_name)
-        if config_entry is None:
-            self._raise_interface_error(
-                f"Error: No valid config with name {config_name}"
-            )
-        if (
-            len(self.localConfig.ListFields()) == 0
-            and len(self.moduleConfig.ListFields()) == 0
-        ):
-            self._raise_interface_error(
-                "Error: No localConfig has been read. "
-                "Request config from the device before writing."
-            )
-        setter_name, source_config = config_entry
-        config_setter = getattr(p, setter_name)
-        getattr(config_setter, config_name).CopyFrom(source_config)
-
-        logger.debug("Wrote: %s", config_name)
-        onResponse = None if self == self.iface.localNode else self.onAckNak
-        self._send_admin(p, onResponse=onResponse)
+        self._settings_runtime.write_config(config_name)
 
     def _write_channel_snapshot(
         self,
@@ -2506,51 +2935,12 @@ class Node:  # pylint: disable=too-many-instance-attributes
         MeshInterfaceError
             If `long_name` or `short_name` is provided but empty or whitespace-only after trimming.
         """
-        logger.debug("in setOwner nodeNum:%s", self.nodeNum)
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-
-        if long_name is not None:
-            long_name = long_name.strip()
-            # Validate that long_name is not empty or whitespace-only
-            if not long_name:
-                self._raise_interface_error(EMPTY_LONG_NAME_MSG)
-            if len(long_name) > MAX_LONG_NAME_LEN:
-                long_name = long_name[:MAX_LONG_NAME_LEN]
-                logger.warning(
-                    "Long name is longer than %s characters, truncating to '%s'",
-                    MAX_LONG_NAME_LEN,
-                    long_name,
-                )
-            p.set_owner.long_name = long_name
-            p.set_owner.is_licensed = is_licensed
-        if short_name is not None:
-            short_name = short_name.strip()
-            # Validate that short_name is not empty or whitespace-only
-            if not short_name:
-                self._raise_interface_error(EMPTY_SHORT_NAME_MSG)
-            if len(short_name) > MAX_SHORT_NAME_LEN:
-                short_name = short_name[:MAX_SHORT_NAME_LEN]
-                logger.warning(
-                    "Short name is longer than %s characters, truncating to '%s'",
-                    MAX_SHORT_NAME_LEN,
-                    short_name,
-                )
-            p.set_owner.short_name = short_name
-        if is_unmessagable is not None:
-            p.set_owner.is_unmessagable = is_unmessagable
-
-        # Note: These debug lines are used in unit tests
-        logger.debug("p.set_owner.long_name:%s:", p.set_owner.long_name)
-        logger.debug("p.set_owner.short_name:%s:", p.set_owner.short_name)
-        logger.debug("p.set_owner.is_licensed:%s:", p.set_owner.is_licensed)
-        logger.debug("p.set_owner.is_unmessagable:%s:", p.set_owner.is_unmessagable)
-        # If sending to a remote node, wait for ACK/NAK
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._owner_profile_runtime.set_owner(
+            long_name=long_name,
+            short_name=short_name,
+            is_licensed=is_licensed,
+            is_unmessagable=is_unmessagable,
+        )
 
     def getURL(self, includeAll: bool = True) -> str:
         """Build a sharable meshtastic URL encoding the node's primary channel and LoRa configuration.
@@ -2863,12 +3253,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             A MeshPacket for the sent admin request, or `None` if the admin message was not sent.
         """
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.exit_simulator = True
-        logger.debug("in exitSimulator()")
-
-        return self._send_admin(p)
+        return self._admin_command_runtime.exit_simulator()
 
     def reboot(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
         """Request the node to reboot after a delay.
@@ -2883,17 +3268,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The AdminMessage packet sent to the node, or `None` if no packet was sent.
         """
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.reboot_seconds = secs
-        logger.info("Telling node to reboot in %s seconds", secs)
-
-        # If sending to a remote node, wait for ACK/NAK
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.reboot(secs)
 
     def beginSettingsTransaction(self) -> mesh_pb2.MeshPacket | None:
         """Request the node to open a settings edit transaction.
@@ -2907,17 +3282,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The sent admin packet if available, or `None` otherwise.
         """
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.begin_edit_settings = True
-        logger.info("Telling node to open a transaction to edit settings")
-
-        # If sending to a remote node, wait for ACK/NAK
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.begin_settings_transaction()
 
     def commitSettingsTransaction(self) -> mesh_pb2.MeshPacket | None:
         """Commit the node's open settings edit transaction.
@@ -2929,17 +3294,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The sent Admin `MeshPacket` when available, or `None`.
         """
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.commit_edit_settings = True
-        logger.info("Telling node to commit open transaction for editing settings")
-
-        # If sending to a remote node, wait for ACK/NAK
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.commit_settings_transaction()
 
     def rebootOTA(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
         """Request the node to perform an OTA reboot after a given delay.
@@ -2954,17 +3309,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The sent Admin message packet, or `None` if no packet was produced.
         """
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.reboot_ota_seconds = secs
-        logger.info("Telling node to reboot to OTA in %s seconds", secs)
-
-        # If sending to a remote node, wait for ACK/NAK
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.reboot_ota(secs)
 
     def startOTA(
         self,
@@ -2998,42 +3343,13 @@ class Node:  # pylint: disable=too-many-instance-attributes
         MeshInterfaceError
             If called for a non-local node.
         """
-        if self != self.iface.localNode:
-            self._raise_interface_error("startOTA only possible on local node")
-
-        # COMPAT_STABLE_SHIM: support legacy keyword aliases used by older callers:
-        # `ota_mode` -> `mode`, and `ota_hash`/`hash` -> `ota_file_hash`.
-        legacy_hash = kwargs.pop("hash", None)
-        if kwargs:
-            unexpected = ", ".join(sorted(kwargs))
-            raise TypeError(
-                f"startOTA() got unexpected keyword argument(s): {unexpected}"
-            )
-
-        if mode is not None and ota_mode is not None and mode != ota_mode:
-            raise ValueError("Conflicting OTA mode arguments provided")
-        resolved_mode = mode if mode is not None else ota_mode
-        if resolved_mode is None:
-            raise TypeError("startOTA() missing required argument: 'mode'")
-
-        hash_values = {
-            value
-            for value in (ota_file_hash, ota_hash, legacy_hash)
-            if value is not None
-        }
-        if not hash_values:
-            raise TypeError("startOTA() missing required argument: 'ota_file_hash'")
-        if len(hash_values) > 1:
-            raise ValueError("Conflicting OTA hash arguments provided")
-        resolved_hash = hash_values.pop()
-        if not isinstance(resolved_hash, bytes):
-            raise TypeError("ota_file_hash must be bytes")
-
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.ota_request.reboot_ota_mode = resolved_mode
-        p.ota_request.ota_hash = resolved_hash
-        return self._send_admin(p)
+        return self._admin_command_runtime.start_ota(
+            mode=mode,
+            ota_file_hash=ota_file_hash,
+            ota_mode=ota_mode,
+            ota_hash=ota_hash,
+            extra_kwargs=kwargs,
+        )
 
     def enterDFUMode(self) -> mesh_pb2.MeshPacket | None:
         """Request the node to enter DFU (NRF52) mode.
@@ -3046,17 +3362,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The sent Admin message packet, or `None` if no packet was sent.
         """
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.enter_dfu_mode_request = True
-        logger.info("Telling node to enable DFU mode")
-
-        # If sending to a remote node, wait for ACK/NAK
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.enter_dfu_mode()
 
     def shutdown(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
         """Request the node to shut down after a given number of seconds.
@@ -3071,17 +3377,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The AdminMessage packet that was sent, or `None` if no packet was sent.
         """
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.shutdown_seconds = secs
-        logger.info("Telling node to shutdown in %s seconds", secs)
-
-        # If sending to a remote node, wait for ACK/NAK
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.shutdown(secs)
 
     def getMetadata(self) -> None:
         """Request the node's device metadata and wait for an acknowledgement.
@@ -3124,21 +3420,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The sent admin packet if sending succeeded, or None otherwise.
         """
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        if full:
-            p.factory_reset_device = FACTORY_RESET_REQUEST_VALUE
-            logger.info("Telling node to factory reset (full device reset)")
-        else:
-            p.factory_reset_config = FACTORY_RESET_REQUEST_VALUE
-            logger.info("Telling node to factory reset (config reset)")
-
-        # If sending to a remote node, wait for ACK/NAK
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.factory_reset(full=full)
 
     def removeNode(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Request removal of the mesh node identified by nodeId.
@@ -3157,17 +3439,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The admin packet returned by the send operation if available, `None` otherwise.
         """
-        self.ensureSessionKey()
-        nodeId = toNodeNum(nodeId)
-
-        p = admin_pb2.AdminMessage()
-        p.remove_by_nodenum = nodeId
-
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.remove_node(nodeId)
 
     def setFavorite(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Mark a node as a favorite in the target device's NodeDB.
@@ -3182,17 +3454,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The response packet if one was received, `None` otherwise.
         """
-        self.ensureSessionKey()
-        nodeId = toNodeNum(nodeId)
-
-        p = admin_pb2.AdminMessage()
-        p.set_favorite_node = nodeId
-
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.set_favorite(nodeId)
 
     def removeFavorite(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Unmark a node as a favorite in the device's NodeDB.
@@ -3207,17 +3469,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The Admin packet sent to the device, or `None` if no packet was sent.
         """
-        self.ensureSessionKey()
-        nodeId = toNodeNum(nodeId)
-
-        p = admin_pb2.AdminMessage()
-        p.remove_favorite_node = nodeId
-
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.remove_favorite(nodeId)
 
     def setIgnored(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Mark a node in the device NodeDB as ignored.
@@ -3232,17 +3484,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The AdminMessage/packet sent to request the change, or `None` if no packet was sent.
         """
-        self.ensureSessionKey()
-        nodeId = toNodeNum(nodeId)
-
-        p = admin_pb2.AdminMessage()
-        p.set_ignored_node = nodeId
-
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.set_ignored(nodeId)
 
     def removeIgnored(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Unmark a node as ignored in the device's NodeDB.
@@ -3257,17 +3499,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             `mesh_pb2.MeshPacket` if an AdminMessage was sent, `None` otherwise.
         """
-        self.ensureSessionKey()
-        nodeId = toNodeNum(nodeId)
-
-        p = admin_pb2.AdminMessage()
-        p.remove_ignored_node = nodeId
-
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.remove_ignored(nodeId)
 
     def resetNodeDb(self) -> mesh_pb2.MeshPacket | None:
         """Request that the node clear its stored NodeDB (node database).
@@ -3280,17 +3512,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The AdminMessage packet sent, or `None` if no packet was sent.
         """
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.nodedb_reset = True
-        logger.info("Telling node to reset the NodeDB")
-
-        # If sending to a remote node, wait for ACK/NAK
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.reset_node_db()
 
     def setFixedPosition(
         self, lat: int | float, lon: int | float, alt: int

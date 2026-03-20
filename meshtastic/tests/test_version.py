@@ -19,7 +19,7 @@ class ResponseLike(Protocol):
     """Small response protocol used by version-check tests."""
 
     def json(self) -> dict[str, dict[str, str]]:
-        """Return a mapping containing the PyPI version payload."""  # noqa: D418
+        """Return a mapping containing the PyPI version payload."""
         ...  # pylint: disable=unnecessary-ellipsis
 
 

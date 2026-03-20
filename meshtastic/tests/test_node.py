@@ -3063,7 +3063,6 @@ def test_emit_cached_metadata_reads_metadata_under_node_db_lock(
         "firmware_version: mutated-after-unlock" in line for line, _ in emitted
     )
     assert iface.metadata is original_metadata
-    assert iface.metadata
     assert iface.metadata.firmware_version == "mutated-after-unlock"
 
 
