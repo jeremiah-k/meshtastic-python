@@ -129,7 +129,9 @@ class BLEManagementCommandsService:
             ):
                 try:
                     resolved = get_handler()
-                except Exception:  # noqa: BLE001 - compatibility resolution is best effort
+                except (
+                    Exception
+                ):  # noqa: BLE001 - compatibility resolution is best effort
                     logger.debug(
                         "Error calling _get_management_command_handler; falling back to direct handler field.",
                         exc_info=True,

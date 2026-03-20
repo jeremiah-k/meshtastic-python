@@ -387,7 +387,8 @@ class BLEDisconnectLifecycleCoordinator:
                 active_client = iface.client
                 active_session_epoch = getattr(iface, "_connection_session_epoch", 0)
                 still_stale = active_session_epoch != plan.session_epoch or (
-                    active_client is not None and active_client is not plan.client_at_start
+                    active_client is not None
+                    and active_client is not plan.client_at_start
                 )
                 if still_stale:
                     close_stale_client = (
