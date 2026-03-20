@@ -49,15 +49,45 @@ _DEFAULT_RECURSIVE_IFACE_RECEIVE_HOOK_QUALNAMES = {
 
 
 class BLEReceiveRecoveryController:
-    """Instance-bound collaborator for BLE receive-loop and recovery paths."""
+    """Instance-bound collaborator for BLE receive-loop and recovery paths.
+
+    Parameters
+    ----------
+    iface : BLEInterface
+        Interface instance whose receive-loop/recovery behavior is coordinated.
+
+    Attributes
+    ----------
+    _iface : BLEInterface
+        Bound interface used for receive-loop state and hook dispatch.
+    _dispatching_iface_receive_hooks : threading.local
+        Per-thread recursion guard storage for interface receive-hook overrides.
+    """
 
     def __init__(self, iface: "BLEInterface") -> None:
-        """Bind receive/recovery helpers to a specific interface instance."""
+        """Bind receive/recovery helpers to a specific interface instance.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface instance whose receive/recovery lifecycle is managed.
+
+        Returns
+        -------
+        None
+            Initializes bound controller state.
+        """
         self._iface = iface
         self._dispatching_iface_receive_hooks = threading.local()
 
     def _dispatching_hooks(self) -> set[str]:
-        """Return the per-thread reentrancy guard set."""
+        """Return the per-thread receive-hook reentrancy guard set.
+
+        Returns
+        -------
+        set[str]
+            Mutable per-thread set of currently-dispatching hook names.
+        """
         hooks = getattr(self._dispatching_iface_receive_hooks, "value", None)
         if hooks is None:
             hooks = set()
@@ -68,7 +98,19 @@ class BLEReceiveRecoveryController:
     def _as_usable_callable(
         candidate: object | None,
     ) -> Callable[..., object] | None:
-        """Return callable hook when usable (not an unconfigured mock)."""
+        """Return a callable hook when candidate is usable.
+
+        Parameters
+        ----------
+        candidate : object | None
+            Candidate hook object.
+
+        Returns
+        -------
+        Callable[..., object] | None
+            Callable candidate when it is not an unconfigured mock; otherwise
+            ``None``.
+        """
         if callable(candidate) and not _is_unconfigured_mock_callable(candidate):
             return cast(Callable[..., object], candidate)
         return None
@@ -80,7 +122,24 @@ class BLEReceiveRecoveryController:
         private_name: str,
         public_name: str,
     ) -> Callable[..., object] | None:
-        """Resolve private/public hook names to the first usable callable."""
+        """Resolve private/public hook names to the first usable callable.
+
+        Parameters
+        ----------
+        owner : object
+            Object that may expose private/public hook variants.
+        private_name : str
+            Private hook attribute name to probe first.
+        public_name : str
+            Public hook attribute name used as fallback when private hook is
+            unavailable.
+
+        Returns
+        -------
+        Callable[..., object] | None
+            First usable callable hook, preferring private then public; else
+            ``None``.
+        """
         private_hook = self._as_usable_callable(getattr(owner, private_name, None))
         if private_hook is not None:
             return private_hook
@@ -528,8 +587,21 @@ class BLEReceiveRecoveryController:
 
     def _should_poll_without_notify(self) -> bool:
         """Return whether fallback polling is allowed without notify callbacks."""
-        with self._iface._state_lock:
-            return not self._iface._fromnum_notify_enabled
+        iface = self._iface
+        with iface._state_lock:
+            notify_enabled: object = getattr(iface, "_fromnum_notify_enabled", False)
+            is_unconfigured_member = getattr(iface, "_is_unconfigured_mock_member", None)
+            if callable(is_unconfigured_member) and not _is_unconfigured_mock_callable(
+                is_unconfigured_member
+            ):
+                try:
+                    if bool(is_unconfigured_member("_fromnum_notify_enabled")):
+                        notify_enabled = False
+                except Exception:  # noqa: BLE001 - probe remains best effort
+                    notify_enabled = False
+            if _is_unconfigured_mock_member(notify_enabled):
+                notify_enabled = False
+            return not bool(notify_enabled)
 
     def _wait_for_read_trigger(
         self,

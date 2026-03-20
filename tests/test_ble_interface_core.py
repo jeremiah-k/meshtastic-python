@@ -2170,6 +2170,7 @@ def test_ble_interface_close_forwards_management_wait_poll_seconds(
     from meshtastic.interfaces.ble import interface as interface_mod
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    original_lifecycle_close = iface._lifecycle_controller._close
     close_calls: list[dict[str, object]] = []
 
     def _capture_close(
@@ -2183,11 +2184,15 @@ def test_ble_interface_close_forwards_management_wait_poll_seconds(
                 "management_wait_poll_seconds": management_wait_poll_seconds,
             }
         )
+        original_lifecycle_close(
+            management_shutdown_wait_timeout=management_shutdown_wait_timeout,
+            management_wait_poll_seconds=management_wait_poll_seconds,
+        )
 
     monkeypatch.setattr(
-        iface,
-        "_lifecycle_controller",
-        SimpleNamespace(close=_capture_close),
+        iface._lifecycle_controller,
+        "_close",
+        _capture_close,
         raising=True,
     )
 
@@ -5692,8 +5697,10 @@ def test_invoke_safe_execute_compat_reports_handler_failure_after_execution() ->
     )
     reported_errors: list[BaseException] = []
     fallback_runs: list[str] = []
+    execution_order: list[str] = []
 
     def _handler() -> None:
+        execution_order.append("handler")
         raise RuntimeError("handler boom")
 
     def _safe_execute(
@@ -5701,14 +5708,19 @@ def test_invoke_safe_execute_compat_reports_handler_failure_after_execution() ->
     ) -> None:
         func()
 
+    def _report_handler_error(exc: BaseException) -> None:
+        execution_order.append("report")
+        reported_errors.append(exc)
+
     dispatcher.invoke_safe_execute_compat(
         _safe_execute,
         _handler,
         error_msg="notification error",
         fallback=lambda: fallback_runs.append("fallback"),
-        report_handler_error=lambda exc: reported_errors.append(exc),
+        report_handler_error=_report_handler_error,
     )
 
+    assert execution_order == ["handler", "report"]
     assert fallback_runs == []
     assert len(reported_errors) == 1
     assert isinstance(reported_errors[0], RuntimeError)
@@ -5955,7 +5967,10 @@ def test_publish_connection_status_skips_when_enqueue_raises(
         raising=True,
     )
 
-    iface = SimpleNamespace()
+    iface = SimpleNamespace(
+        _closed=False,
+        _state_manager=SimpleNamespace(is_closing=False),
+    )
     publishing_thread = SimpleNamespace()
 
     monkeypatch.setattr(
@@ -5978,11 +5993,11 @@ def test_publish_connection_status_skips_when_enqueue_raises(
     assert "Error queuing connection status publish" in caplog.text
 
 
-def test_publish_connection_status_runs_inline_when_publishing_thread_missing(
+def test_publish_connection_status_skips_when_publishing_thread_missing_while_active(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Status publish should run inline when publishing thread is missing and interface is active."""
+    """Status publish should skip when publishing thread is missing."""
     from meshtastic import mesh_interface as mesh_iface_module
     from meshtastic.interfaces.ble.compatibility_service import (
         BLECompatibilityEventService,
@@ -6011,7 +6026,7 @@ def test_publish_connection_status_runs_inline_when_publishing_thread_missing(
             publishing_thread=None,
         )
 
-    assert sent == [("meshtastic.connection.status", iface, True)]
+    assert sent == []
     assert "publishing thread is unavailable" in caplog.text
 
 

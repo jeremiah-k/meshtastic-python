@@ -92,15 +92,12 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             client_connected_getter or self._state_access.client_is_connected
         )
         is_closing = get_is_closing() or iface._closed
+        if iface._closed or iface.client is not client:
+            return False, is_closing
         state_connected = get_state_connected()
-        client_connected = get_client_connected(client)
-        is_owned = (
-            not iface._closed
-            and iface.client is client
-            and state_connected
-            and client_connected
-        )
-        return is_owned, is_closing
+        if not state_connected:
+            return False, is_closing
+        return get_client_connected(client), is_closing
 
     def _get_connected_client_status(
         self,
@@ -207,9 +204,11 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         """
         iface = self._iface
         coordinator = getattr(iface, "thread_coordinator", None)
-        if iface._prior_publish_was_reconnect and coordinator is not None:
+        with iface._state_lock:
+            should_emit_reconnected = bool(iface._prior_publish_was_reconnect)
+            iface._prior_publish_was_reconnect = False
+        if should_emit_reconnected and coordinator is not None:
             self._thread_access.set_event(RECONNECTED_EVENT)
-        iface._prior_publish_was_reconnect = False
         normalized_device_address = sanitize_address(
             iface._extract_client_address(connected_client)
         )
@@ -739,7 +738,12 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     connected_client
                 )
                 disconnect_notified = iface._disconnect_notified
-        if not still_owned_after and disconnect_notified and not is_closing_after:
+        if (
+            publish_completed
+            and not still_owned_after
+            and disconnect_notified
+            and not is_closing_after
+        ):
             logger.debug(
                 "Connected publication raced with disconnect; emitting compensating disconnect event."
             )

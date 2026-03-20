@@ -285,6 +285,16 @@ class BLEShutdownLifecycleCoordinator:
         if receive_thread is None:
             return
         thread_ident, thread_is_alive = _thread_start_probe(receive_thread)
+
+        def _explicitly_not_alive(thread_like: object) -> bool:
+            is_alive_probe = getattr(thread_like, "is_alive", None)
+            if not callable(is_alive_probe):
+                return False
+            try:
+                return is_alive_probe() is False
+            except Exception:  # noqa: BLE001 - probe remains best effort
+                return False
+
         start_failure_confirmed = False
         if thread_ident is None and not thread_is_alive:
             started_event = getattr(receive_thread, "_started", None)
@@ -296,9 +306,7 @@ class BLEShutdownLifecycleCoordinator:
                     start_failure_confirmed = False
             elif isinstance(receive_thread, threading.Thread):
                 start_failure_confirmed = True
-            elif callable(getattr(receive_thread, "is_alive", None)):
-                # ThreadLike placeholders that explicitly report not alive are
-                # treated as definitive start failures for shutdown cleanup.
+            elif _explicitly_not_alive(receive_thread):
                 start_failure_confirmed = True
             if start_failure_confirmed:
                 with iface._state_lock:
@@ -335,7 +343,9 @@ class BLEShutdownLifecycleCoordinator:
             thread_ident = post_join_ident
             thread_is_alive = post_join_is_alive
         with iface._state_lock:
-            probe_confirms_stopped = not thread_is_alive
+            probe_confirms_stopped = thread_ident is not None and not thread_is_alive
+            if not probe_confirms_stopped:
+                probe_confirms_stopped = _explicitly_not_alive(receive_thread)
             if iface._receiveThread is receive_thread and (
                 start_failure_confirmed or probe_confirms_stopped
             ):

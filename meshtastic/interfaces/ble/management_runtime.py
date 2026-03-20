@@ -148,17 +148,43 @@ def _is_blank_or_malformed_address_like(address: str | None) -> bool:
         and _HEX_MAC_NO_SEPARATOR_RE.fullmatch(stripped_address) is not None
     ):
         return True
-    if ":" not in stripped_address:
-        if all(char in "0123456789abcdefABCDEF" for char in stripped_address):
-            if len(stripped_address) != 12:
-                return False
-            return _HEX_MAC_NO_SEPARATOR_RE.fullmatch(stripped_address) is None
-        return False
+    if ":" not in stripped_address and all(
+        char in "0123456789abcdefABCDEF" for char in stripped_address
+    ):
+        return _is_no_colon_hex_malformed(stripped_address)
     # Treat colon-containing identifiers as malformed only when they look
     # like hex/MAC text but fail strict MAC validation.
     return all(
         char == ":" or char in "0123456789abcdefABCDEF" for char in stripped_address
     )
+
+
+def _is_no_colon_hex_malformed(stripped_address: str) -> bool:
+    """Return whether no-colon, hex-only text should be treated as malformed.
+
+    Parameters
+    ----------
+    stripped_address : str
+        Non-empty, whitespace-trimmed address-like text.
+
+    Returns
+    -------
+    bool
+        ``True`` when the value is a 12-character hex-only identifier that
+        fails strict no-separator MAC validation; otherwise ``False``.
+
+    Notes
+    -----
+    Shorter/longer no-colon hex identifiers are treated as non-address text for
+    compatibility and are therefore not considered malformed by this probe.
+    """
+    if ":" in stripped_address:
+        return False
+    if not all(char in "0123456789abcdefABCDEF" for char in stripped_address):
+        return False
+    if len(stripped_address) != 12:
+        return False
+    return _HEX_MAC_NO_SEPARATOR_RE.fullmatch(stripped_address) is None
 
 
 def _same_management_binding(left: str | None, right: str | None) -> bool:

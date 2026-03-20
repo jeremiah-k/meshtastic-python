@@ -634,10 +634,28 @@ class BLENotificationDispatcher:
         self._current_from_num_handler = from_num_handler
         current_session_epoch = int(getattr(iface, "_connection_session_epoch", 0))
 
-        def _rollback_registration_state() -> None:
+        def _rollback_registration_state(
+            *, stop_client: BLEClient | None = None
+        ) -> None:
+            if stop_client is not None:
+                started_characteristics = tuple(self._started_notify_characteristics)
+                for characteristic in started_characteristics:
+                    with contextlib.suppress(
+                        Exception
+                    ):  # noqa: BLE001 - rollback cleanup must remain best effort
+                        stop_client.stop_notify(
+                            characteristic,
+                            timeout=NOTIFICATION_START_TIMEOUT,
+                        )
             self._started_notify_characteristics.clear()
             self.fromnum_notify_enabled = False
             self.malformed_notification_count = 0
+
+        def _rollback_fromnum_registration_state() -> None:
+            self._started_notify_characteristics.discard(FROMNUM_UUID)
+            self.fromnum_notify_enabled = False
+            self.malformed_notification_count = 0
+            self._registered_notification_session_epoch = current_session_epoch
 
         def _registration_still_current() -> bool:
             return (
@@ -659,10 +677,10 @@ class BLENotificationDispatcher:
                         characteristic,
                         exc_info=True,
                     )
-            _rollback_registration_state()
+            _rollback_registration_state(stop_client=client)
 
         if self._registered_notification_session_epoch != current_session_epoch:
-            _rollback_registration_state()
+            _rollback_registration_state(stop_client=client)
 
         def _safe_call(
             handler: Callable[[Any, Any], None],
@@ -903,7 +921,7 @@ class BLENotificationDispatcher:
             if current_ingress_handler is not ingress_handler:
                 self._notification_manager._subscribe(FROMNUM_UUID, ingress_handler)
             if not _registration_still_current():
-                _rollback_registration_state()
+                _rollback_registration_state(stop_client=client)
                 return
             self.fromnum_notify_enabled = True
             self._registered_notification_session_epoch = current_session_epoch
@@ -924,7 +942,7 @@ class BLENotificationDispatcher:
                         FROMNUM_UUID,
                         err,
                     )
-                    _rollback_registration_state()
+                    _rollback_fromnum_registration_state()
                     return
                 logger.debug(
                     "FROMNUM notify already acquired for %s; retrying after best-effort stop_notify (attempt %d/%d)",
@@ -945,7 +963,7 @@ class BLENotificationDispatcher:
                     FROMNUM_UUID,
                     max_attempts,
                 )
-                _rollback_registration_state()
+                _rollback_fromnum_registration_state()
                 return
             except optional_errors as err:
                 logger.warning(
@@ -953,7 +971,7 @@ class BLENotificationDispatcher:
                     FROMNUM_UUID,
                     err,
                 )
-                _rollback_registration_state()
+                _rollback_fromnum_registration_state()
                 return
             else:
                 current_ingress_handler = self._notification_manager._get_callback(

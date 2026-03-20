@@ -355,6 +355,30 @@ class BLEDisconnectLifecycleCoordinator:
             )
             _close_inline()
 
+    def _compute_stale_disconnect_keys(
+        self,
+        *,
+        disconnect_keys: list[str],
+        active_client: "BLEClient | None",
+        client_at_start: "BLEClient | None",
+    ) -> tuple[list[str], bool]:
+        """Return stale disconnect keys and whether active client differs."""
+        iface = self._iface
+        active_client_differs = active_client is not client_at_start
+        if active_client is not None:
+            active_address = iface._extract_client_address(active_client)
+            active_keys = set(
+                iface._sorted_address_keys(
+                    _addr_key(active_address) if active_address else None,
+                    iface._connection_alias_key,
+                )
+            )
+            return (
+                [key for key in disconnect_keys if key not in active_keys],
+                active_client_differs,
+            )
+        return list(disconnect_keys), active_client_differs
+
     def _execute_disconnect_side_effects(
         self,
         *,
@@ -391,23 +415,16 @@ class BLEDisconnectLifecycleCoordinator:
                     and active_client is not plan.client_at_start
                 )
                 if still_stale:
-                    close_stale_client = (
-                        active_client is not plan.client_at_start
-                        and plan.previous_client is not active_client
-                    )
-                    if active_client is not None:
-                        active_address = iface._extract_client_address(active_client)
-                        active_keys = set(
-                            iface._sorted_address_keys(
-                                _addr_key(active_address) if active_address else None,
-                                iface._connection_alias_key,
-                            )
+                    stale_disconnect_keys, active_client_differs = (
+                        self._compute_stale_disconnect_keys(
+                            disconnect_keys=disconnect_keys,
+                            active_client=active_client,
+                            client_at_start=plan.client_at_start,
                         )
-                        stale_disconnect_keys = [
-                            key for key in disconnect_keys if key not in active_keys
-                        ]
-                    else:
-                        stale_disconnect_keys = list(disconnect_keys)
+                    )
+                    close_stale_client = (
+                        active_client_differs and plan.previous_client is not active_client
+                    )
             if still_stale:
                 if stale_disconnect_keys:
                     iface._mark_address_keys_disconnected(*stale_disconnect_keys)
@@ -444,21 +461,13 @@ class BLEDisconnectLifecycleCoordinator:
                     )
                 )
                 if still_stale_after_close:
-                    if active_client is not None:
-                        active_address = iface._extract_client_address(active_client)
-                        active_keys = set(
-                            iface._sorted_address_keys(
-                                _addr_key(active_address) if active_address else None,
-                                iface._connection_alias_key,
-                            )
+                    rechecked_stale_disconnect_keys_after_close, _ = (
+                        self._compute_stale_disconnect_keys(
+                            disconnect_keys=disconnect_keys,
+                            active_client=active_client,
+                            client_at_start=plan.client_at_start,
                         )
-                        rechecked_stale_disconnect_keys_after_close = [
-                            key for key in disconnect_keys if key not in active_keys
-                        ]
-                    else:
-                        rechecked_stale_disconnect_keys_after_close = list(
-                            disconnect_keys
-                        )
+                    )
             if still_stale_after_close:
                 if rechecked_stale_disconnect_keys_after_close:
                     iface._mark_address_keys_disconnected(

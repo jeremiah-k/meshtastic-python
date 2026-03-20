@@ -11,6 +11,7 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
+    _is_unconfigured_mock_member,
 )
 from meshtastic.interfaces.ble.utils import (
     _resolve_safe_execute as _resolve_safe_execute_hook,
@@ -27,7 +28,10 @@ class BLECompatibilityEventPublisher:
     """Instance-bound collaborator for compatibility event publication."""
 
     def __init__(
-        self, iface: "BLEInterface", *, publishing_thread_provider: Callable[[], object]
+        self,
+        iface: "BLEInterface",
+        *,
+        publishing_thread_provider: Callable[[], object | None],
     ) -> None:
         """Bind publisher helpers to a specific interface instance.
 
@@ -36,7 +40,7 @@ class BLECompatibilityEventPublisher:
         iface : BLEInterface
             Interface instance whose compatibility event publication is delegated
             through this collaborator.
-        publishing_thread_provider : Callable[[], object]
+        publishing_thread_provider : Callable[[], object | None]
             Callable returning the current publishing-thread facade.
 
         Returns
@@ -47,6 +51,27 @@ class BLECompatibilityEventPublisher:
         self._iface = iface
         self._publishing_thread_provider = publishing_thread_provider
         self._last_publishing_thread: object | None = None
+
+    @staticmethod
+    def _is_live_publishing_thread(publishing_thread: object | None) -> bool:
+        """Return whether a publishing-thread facade appears alive/usable."""
+        if publishing_thread is None or _is_unconfigured_mock_member(publishing_thread):
+            return False
+        thread = getattr(publishing_thread, "thread", None)
+        if thread is None or _is_unconfigured_mock_member(thread):
+            return True
+        is_alive = getattr(thread, "is_alive", None)
+        if not callable(is_alive) or _is_unconfigured_mock_callable(is_alive):
+            return True
+        try:
+            alive_result = is_alive()
+        except Exception:  # noqa: BLE001 - liveness probe must stay best effort
+            logger.debug(
+                "Error probing publishing thread liveness.",
+                exc_info=True,
+            )
+            return False
+        return alive_result if isinstance(alive_result, bool) else False
 
     def _resolve_publishing_thread(
         self, *, use_cached_fallback: bool = True
@@ -66,9 +91,11 @@ class BLECompatibilityEventPublisher:
         """
         try:
             publishing_thread = self._publishing_thread_provider()
-            if publishing_thread is not None:
+            if self._is_live_publishing_thread(publishing_thread):
                 self._last_publishing_thread = publishing_thread
                 return publishing_thread
+            if publishing_thread is not None:
+                self._last_publishing_thread = None
         except Exception:  # noqa: BLE001 - teardown path must stay best effort
             logger.debug(
                 "Error resolving publishing thread for compatibility publisher.",
@@ -76,14 +103,16 @@ class BLECompatibilityEventPublisher:
             )
         if not use_cached_fallback:
             return None
-        if self._last_publishing_thread is not None:
+        if self._is_live_publishing_thread(self._last_publishing_thread):
             return self._last_publishing_thread
+        self._last_publishing_thread = None
         from meshtastic import mesh_interface as mesh_iface_module
 
         fallback_thread = getattr(mesh_iface_module, "publishingThread", None)
-        if fallback_thread is not None:
+        if self._is_live_publishing_thread(fallback_thread):
             self._last_publishing_thread = fallback_thread
-        return fallback_thread
+            return fallback_thread
+        return None
 
     def wait_for_disconnect_notifications(self, timeout: float | None = None) -> None:
         """Wait for queued disconnect notifications to flush.
@@ -501,7 +530,7 @@ class BLECompatibilityEventService:
                     exc_info=True,
                 )
 
-        if publishing_thread is None:
+        def _is_iface_closing() -> bool:
             is_closing = bool(getattr(iface, "_closed", False))
             state_manager = getattr(iface, "_state_manager", None)
             raw_is_closing = getattr(state_manager, "is_closing", None)
@@ -516,27 +545,23 @@ class BLECompatibilityEventService:
                     is_closing = is_closing or state_probe
             elif isinstance(raw_is_closing, bool):
                 is_closing = is_closing or raw_is_closing
-            if not is_closing:
-                legacy_is_closing = getattr(state_manager, "_is_closing", None)
-                if callable(legacy_is_closing) and not _is_unconfigured_mock_callable(
-                    legacy_is_closing
-                ):
-                    try:
-                        legacy_probe = legacy_is_closing()
-                    except (
-                        Exception
-                    ):  # noqa: BLE001 - shutdown probe remains best effort
-                        legacy_probe = None
-                    if isinstance(legacy_probe, bool):
-                        is_closing = is_closing or legacy_probe
-                elif isinstance(legacy_is_closing, bool):
-                    is_closing = is_closing or legacy_is_closing
-            if not is_closing:
-                logger.debug(
-                    "Publishing connection status inline: publishing thread is unavailable."
-                )
-                _publish_status()
-                return
+            if is_closing:
+                return True
+            legacy_is_closing = getattr(state_manager, "_is_closing", None)
+            if callable(legacy_is_closing) and not _is_unconfigured_mock_callable(
+                legacy_is_closing
+            ):
+                try:
+                    legacy_probe = legacy_is_closing()
+                except Exception:  # noqa: BLE001 - shutdown probe remains best effort
+                    legacy_probe = None
+                if isinstance(legacy_probe, bool):
+                    is_closing = is_closing or legacy_probe
+            elif isinstance(legacy_is_closing, bool):
+                is_closing = is_closing or legacy_is_closing
+            return is_closing
+
+        if publishing_thread is None:
             logger.debug(
                 "Skipping connection status publish: publishing thread is unavailable."
             )
@@ -558,6 +583,10 @@ class BLECompatibilityEventService:
                 "Error queuing connection status publish via publishingThread.queueWork",
                 exc_info=True,
             )
+            if _is_iface_closing():
+                logger.debug(
+                    "Skipping connection status publish during shutdown after enqueue failure."
+                )
             return
 
     # COMPAT_STABLE_SHIM: retained for existing callers during service migration.
