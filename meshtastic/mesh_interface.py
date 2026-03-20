@@ -3429,7 +3429,8 @@ class MeshInterface:  # pylint: disable=R0902
             )  # empty until we start getting channels pushed from the device (during config)
             config_id = self.configId
             if config_id is None or not self.noNodes:
-                config_id = random.randint(0, PACKET_ID_MASK)
+                # Keep config_complete_id zero reserved as an unset sentinel.
+                config_id = random.randint(1, PACKET_ID_MASK)
                 if config_id == NODELESS_WANT_CONFIG_ID:
                     config_id = config_id + 1
                 self.configId = config_id
@@ -3700,12 +3701,11 @@ class MeshInterface:  # pylint: disable=R0902
 
             # no longer necessary since we're mutating directly in nodesByNum via _get_or_create_by_num
             # self.nodesByNum[node["num"]] = node
-            if "user" in node:  # Some nodes might not have user/ids assigned yet
-                if "id" in node["user"]:
-                    # Keep nodes and nodesByNum mutation under the same lock
-                    # so readers never observe partially-updated node mappings.
-                    if self.nodes is not None:
-                        self.nodes[node["user"]["id"]] = node
+            # Some nodes might not have user/ids assigned yet.
+            # Keep nodes and nodesByNum mutation under the same lock so readers
+            # never observe partially-updated node mappings.
+            if "user" in node and "id" in node["user"] and self.nodes is not None:
+                self.nodes[node["user"]["id"]] = node
 
         return [
             self._publication_intent("meshtastic.node.updated", node=node),
@@ -3809,7 +3809,7 @@ class MeshInterface:  # pylint: disable=R0902
     def _apply_local_config_from_radio(self, config: config_pb2.Config) -> bool:
         """Apply one localConfig field from inbound config payload."""
         for field_name in LOCAL_CONFIG_FROM_RADIO_FIELDS:
-            if config.HasField(field_name):  # type: ignore[arg-type]
+            if config.HasField(field_name):  # type: ignore[arg-type]  # field_name is from known-valid LOCAL_CONFIG_FROM_RADIO_FIELDS
                 getattr(self.localNode.localConfig, field_name).CopyFrom(
                     getattr(config, field_name)
                 )
@@ -3821,7 +3821,7 @@ class MeshInterface:  # pylint: disable=R0902
     ) -> bool:
         """Apply one moduleConfig field from inbound moduleConfig payload."""
         for field_name in MODULE_CONFIG_FROM_RADIO_FIELDS:
-            if module_config.HasField(field_name):  # type: ignore[arg-type]
+            if module_config.HasField(field_name):  # type: ignore[arg-type]  # field_name is from known-valid MODULE_CONFIG_FROM_RADIO_FIELDS
                 getattr(self.localNode.moduleConfig, field_name).CopyFrom(
                     getattr(module_config, field_name)
                 )

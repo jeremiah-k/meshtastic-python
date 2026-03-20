@@ -1414,6 +1414,271 @@ class _NodeChannelResponseRuntime:
         self._node._request_channel(index + 1)  # noqa: SLF001
 
 
+class _NodeAdminSessionRuntime:
+    """Owns admin-session readiness checks and session-key request behavior."""
+
+    def __init__(self, node: "Node") -> None:
+        self._node = node
+
+    def ensure_session_key(self, *, admin_index: int | None = None) -> None:
+        """Ensure session key is present, preserving historical noProto behavior."""
+        if self._node.noProto:
+            logger.warning(
+                "Not ensuring session key, because protocol use is disabled by noProto"
+            )
+            return
+        if (
+            self._node.iface._get_or_create_by_num(self._node.nodeNum).get(
+                "adminSessionPassKey"
+            )
+            is None
+        ):
+            self._node.requestConfig(
+                admin_pb2.AdminMessage.SESSIONKEY_CONFIG,
+                adminIndex=admin_index,
+            )
+
+
+class _NodeAdminTransportRuntime:
+    """Owns admin transport mechanics for ADMIN_APP sends."""
+
+    def __init__(self, node: "Node") -> None:
+        self._node = node
+
+    def _resolve_admin_index(self, admin_index: int | None) -> int:
+        """Resolve None to auto-detected admin channel index; preserve explicit zero."""
+        if admin_index is None:
+            return self._node.iface.localNode._get_admin_channel_index()
+        return admin_index
+
+    def send_admin(
+        self,
+        message: admin_pb2.AdminMessage,
+        *,
+        want_response: bool = False,
+        on_response: Callable[[dict[str, Any]], Any] | None = None,
+        admin_index: int | None = None,
+    ) -> mesh_pb2.MeshPacket | None:
+        """Send an AdminMessage via iface.sendData with preserved transport semantics."""
+        if self._node.noProto:
+            logger.warning(
+                "Not sending packet because protocol use is disabled by noProto"
+            )
+            return None
+
+        resolved_admin_index = self._resolve_admin_index(admin_index)
+        logger.debug("adminIndex:%s", resolved_admin_index)
+
+        node_info = self._node.iface._get_or_create_by_num(self._node.nodeNum)
+        passkey = node_info.get("adminSessionPassKey")
+        if isinstance(passkey, bytes):
+            message.session_passkey = passkey
+
+        return self._node.iface.sendData(
+            message,
+            self._node.nodeNum,
+            portNum=portnums_pb2.PortNum.ADMIN_APP,
+            wantAck=True,
+            wantResponse=want_response,
+            onResponse=on_response,
+            channelIndex=resolved_admin_index,
+            pkiEncrypted=True,
+        )
+
+
+class _NodeChannelWriteRuntime:
+    """Owns channel-snapshot writes and writeChannel orchestration."""
+
+    def __init__(
+        self,
+        node: "Node",
+        *,
+        admin_session_runtime: _NodeAdminSessionRuntime,
+        admin_transport_runtime: _NodeAdminTransportRuntime,
+    ) -> None:
+        self._node = node
+        self._admin_session_runtime = admin_session_runtime
+        self._admin_transport_runtime = admin_transport_runtime
+
+    def write_channel_snapshot(
+        self,
+        channel_to_write: channel_pb2.Channel,
+        *,
+        admin_index: int | None = None,
+    ) -> None:
+        """Send a pre-built channel snapshot to the device."""
+        # Keep compatibility for callers/tests that patch Node facade methods.
+        # Runtime ownership remains here, but transport/session side effects still
+        # flow through the historical Node entry points.
+        self._node.ensureSessionKey(adminIndex=admin_index)
+        request_message = admin_pb2.AdminMessage()
+        request_message.set_channel.CopyFrom(channel_to_write)
+        self._node._send_admin(
+            request_message,
+            adminIndex=admin_index,
+        )
+        logger.debug("Wrote channel %s", channel_to_write.index)
+
+    def write_channel(self, channel_index: int, *, admin_index: int | None = None) -> None:
+        """Validate and write one channel by index using snapshot semantics."""
+        with self._node._channels_lock:  # noqa: SLF001
+            channels = self._node.channels
+            if channels is None:
+                self._node._raise_interface_error("Error: No channels have been read")  # noqa: SLF001
+            if channel_index < 0 or channel_index >= len(channels):
+                self._node._raise_interface_error(  # noqa: SLF001
+                    f"Channel index {channel_index} out of range (0-{len(channels) - 1})"
+                )
+            channel_snapshot = channel_pb2.Channel()
+            channel_snapshot.CopyFrom(channels[channel_index])
+        self.write_channel_snapshot(
+            channel_snapshot,
+            admin_index=admin_index,
+        )
+
+
+@dataclass(frozen=True)
+class _DeleteChannelRewritePlan:
+    """Delete-channel rewrite execution plan."""
+
+    pre_delete_admin_index: int
+    post_delete_admin_index: int
+    switch_after_admin_slot_rewrite: bool
+    channels_to_rewrite: list[channel_pb2.Channel]
+
+
+class _NodeDeleteChannelRuntime:
+    """Owns delete-channel validation, planning, and ordered rewrite execution."""
+
+    def __init__(self, node: "Node", *, channel_write_runtime: _NodeChannelWriteRuntime):
+        self._node = node
+        self._channel_write_runtime = channel_write_runtime
+
+    @staticmethod
+    def _named_admin_index_from_channels(
+        channel_list: list[channel_pb2.Channel],
+    ) -> int:
+        for channel in channel_list:
+            if (
+                channel.role != channel_pb2.Channel.Role.DISABLED
+                and channel.settings
+                and _is_named_admin_channel_name(channel.settings.name)
+            ):
+                return channel.index
+        return 0
+
+    def _build_rewrite_plan(self, channel_index: int) -> _DeleteChannelRewritePlan:
+        """Build lock-scoped delete/rewrite plan with pre/post admin indexes."""
+        with self._node._channels_lock:  # noqa: SLF001
+            channels = self._node.channels
+            if channels is None:
+                self._node._raise_interface_error("Error: No channels have been read")  # noqa: SLF001
+            if channel_index < 0 or channel_index >= len(channels):
+                self._node._raise_interface_error(  # noqa: SLF001
+                    f"Channel index {channel_index} out of range (0-{len(channels) - 1})"
+                )
+
+            channel_to_delete = channels[channel_index]
+            if channel_to_delete.role not in (
+                channel_pb2.Channel.Role.SECONDARY,
+                channel_pb2.Channel.Role.DISABLED,
+            ):
+                self._node._raise_interface_error(  # noqa: SLF001
+                    "Only SECONDARY or DISABLED channels can be deleted"
+                )
+
+            is_local_node = self._node.iface.localNode == self._node
+            if is_local_node:
+                pre_delete_admin_index = self._named_admin_index_from_channels(channels)
+            else:
+                pre_delete_admin_index = self._node.iface.localNode.getAdminChannelIndex()
+
+            # If we move the "admin" channel, the index used for admin writes
+            # will need to be recomputed as writes progress.
+            channels.pop(channel_index)
+            self._node._fixup_channels_locked()  # noqa: SLF001
+
+            channels_to_rewrite: list[channel_pb2.Channel] = []
+            for rewrite_index in range(channel_index, MAX_CHANNELS):
+                channel_snapshot = channel_pb2.Channel()
+                channel_snapshot.CopyFrom(channels[rewrite_index])
+                channels_to_rewrite.append(channel_snapshot)
+
+            if is_local_node:
+                post_delete_admin_index = self._named_admin_index_from_channels(channels)
+            else:
+                post_delete_admin_index = self._node.iface.localNode.getAdminChannelIndex()
+
+        return _DeleteChannelRewritePlan(
+            pre_delete_admin_index=pre_delete_admin_index,
+            post_delete_admin_index=post_delete_admin_index,
+            switch_after_admin_slot_rewrite=(pre_delete_admin_index >= channel_index),
+            channels_to_rewrite=channels_to_rewrite,
+        )
+
+    def _execute_rewrite_plan(self, plan: _DeleteChannelRewritePlan) -> None:
+        """Execute channel rewrites while preserving historical admin-index switch timing."""
+        admin_index_for_write = plan.pre_delete_admin_index
+        for channel_snapshot in plan.channels_to_rewrite:
+            self._channel_write_runtime.write_channel_snapshot(
+                channel_snapshot,
+                admin_index=admin_index_for_write,
+            )
+            if (
+                plan.switch_after_admin_slot_rewrite
+                and channel_snapshot.index == plan.pre_delete_admin_index
+            ):
+                admin_index_for_write = plan.post_delete_admin_index
+
+    def delete_channel(self, channel_index: int) -> None:
+        """Delete one channel and execute ordered rewrite plan."""
+        rewrite_plan = self._build_rewrite_plan(channel_index)
+        self._execute_rewrite_plan(rewrite_plan)
+
+
+class _NodeAckNakRuntime:
+    """Owns ACK/NAK payload classification and acknowledgment flag mutation."""
+
+    def __init__(self, node: "Node") -> None:
+        self._node = node
+
+    def handle_ack_nak(self, packet: dict[str, Any]) -> None:
+        """Classify ACK/NAK payload and update interface acknowledgment state."""
+        decoded = packet.get("decoded", {})
+        routing = decoded.get("routing")
+        if not isinstance(routing, dict):
+            logger.warning(
+                "Received ACK/NAK response without routing details: %s", packet
+            )
+            return
+
+        error_reason = routing.get("errorReason", "NONE")
+        if error_reason != "NONE":
+            logger.warning("Received a NAK, error reason: %s", error_reason)
+            self._node.iface._acknowledgment.receivedNak = True
+            return
+
+        from_value = packet.get("from")
+        if from_value is None:
+            logger.warning("Received ACK/NAK response without sender: %s", packet)
+            return
+        try:
+            from_num = int(from_value)
+        except (TypeError, ValueError):
+            logger.warning("Received ACK/NAK response with invalid sender: %s", packet)
+            return
+
+        if from_num == self._node.iface.localNode.nodeNum:
+            logger.info(
+                "Received an implicit ACK. Packet will likely arrive, but cannot be guaranteed."
+            )
+            self._node.iface._acknowledgment.receivedImplAck = True
+            return
+
+        logger.info("Received an ACK.")
+        self._node.iface._acknowledgment.receivedAck = True
+
+
 class Node:  # pylint: disable=too-many-instance-attributes
     """A model of a (local or remote) node in the mesh.
 
@@ -1457,6 +1722,18 @@ class Node:  # pylint: disable=too-many-instance-attributes
         self._canned_message_lock = threading.Lock()
         self._metadata_stdout_event_lock = threading.Lock()
         self._metadata_stdout_event: threading.Event | None = None
+        self._admin_session_runtime = _NodeAdminSessionRuntime(self)
+        self._admin_transport_runtime = _NodeAdminTransportRuntime(self)
+        self._channel_write_runtime = _NodeChannelWriteRuntime(
+            self,
+            admin_session_runtime=self._admin_session_runtime,
+            admin_transport_runtime=self._admin_transport_runtime,
+        )
+        self._delete_channel_runtime = _NodeDeleteChannelRuntime(
+            self,
+            channel_write_runtime=self._channel_write_runtime,
+        )
+        self._ack_nak_runtime = _NodeAckNakRuntime(self)
         self._content_cache_store = _NodeContentCacheStore(self)
         self._content_response_runtime = _NodeContentResponseRuntime(
             self,
@@ -2005,11 +2282,10 @@ class Node:  # pylint: disable=too-many-instance-attributes
             configured admin channel is used. Pass 0 to force channel 0.
             (Default value = None)
         """
-        self.ensureSessionKey(adminIndex=adminIndex)
-        p = admin_pb2.AdminMessage()
-        p.set_channel.CopyFrom(channel_to_write)
-        self._send_admin(p, adminIndex=adminIndex)
-        logger.debug("Wrote channel %s", channel_to_write.index)
+        self._channel_write_runtime.write_channel_snapshot(
+            channel_to_write,
+            admin_index=adminIndex,
+        )
 
     def writeChannel(self, channelIndex: int, adminIndex: int | None = None) -> None:
         """Write the channel at the given index to the device.
@@ -2029,17 +2305,10 @@ class Node:  # pylint: disable=too-many-instance-attributes
         MeshInterfaceError
             If channels have not been loaded (no channels to write).
         """
-        with self._channels_lock:
-            channels = self.channels
-            if channels is None:
-                self._raise_interface_error("Error: No channels have been read")
-            if channelIndex < 0 or channelIndex >= len(channels):
-                self._raise_interface_error(
-                    f"Channel index {channelIndex} out of range (0-{len(channels) - 1})"
-                )
-            channel_to_write = channel_pb2.Channel()
-            channel_to_write.CopyFrom(channels[channelIndex])
-        self._write_channel_snapshot(channel_to_write, adminIndex=adminIndex)
+        self._channel_write_runtime.write_channel(
+            channelIndex,
+            admin_index=adminIndex,
+        )
 
     # COMPAT_STABLE_SHIM: historical channel lookup helpers return live Channel
     # objects for mutate-then-write workflows (get*() -> edit -> writeChannel()).
@@ -2103,69 +2372,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         MeshInterfaceError
             If the channel at channelIndex is not Role.SECONDARY or Role.DISABLED.
         """
-        with self._channels_lock:
-            channels = self.channels
-            if channels is None:
-                self._raise_interface_error("Error: No channels have been read")
-            if channelIndex < 0 or channelIndex >= len(channels):
-                self._raise_interface_error(
-                    f"Channel index {channelIndex} out of range (0-{len(channels) - 1})"
-                )
-            ch = channels[channelIndex]
-            if ch.role not in (
-                channel_pb2.Channel.Role.SECONDARY,
-                channel_pb2.Channel.Role.DISABLED,
-            ):
-                self._raise_interface_error(
-                    "Only SECONDARY or DISABLED channels can be deleted"
-                )
-            is_local_node = self.iface.localNode == self
-
-            def _named_admin_index_from_channels(
-                channel_list: list[channel_pb2.Channel],
-            ) -> int:
-                for channel in channel_list:
-                    if (
-                        channel.role != channel_pb2.Channel.Role.DISABLED
-                        and channel.settings
-                        and _is_named_admin_channel_name(channel.settings.name)
-                    ):
-                        return channel.index
-                return 0
-
-            if is_local_node:
-                pre_delete_admin_index = _named_admin_index_from_channels(channels)
-            else:
-                pre_delete_admin_index = self.iface.localNode.getAdminChannelIndex()
-
-            # If we move the "admin" channel, the index used for admin writes
-            # will need to be recomputed as writes progress.
-            channels.pop(channelIndex)
-            self._fixup_channels_locked()
-            channels_to_rewrite: list[tuple[int, channel_pb2.Channel]] = []
-            for index in range(channelIndex, MAX_CHANNELS):
-                channel_snapshot = channel_pb2.Channel()
-                channel_snapshot.CopyFrom(channels[index])
-                channels_to_rewrite.append((index, channel_snapshot))
-
-            if is_local_node:
-                post_delete_admin_index = _named_admin_index_from_channels(channels)
-            else:
-                post_delete_admin_index = self.iface.localNode.getAdminChannelIndex()
-
-        admin_index_for_write = pre_delete_admin_index
-        switch_after_admin_slot_rewrite = pre_delete_admin_index >= channelIndex
-
-        for _index, channel_snapshot in channels_to_rewrite:
-            self._write_channel_snapshot(
-                channel_snapshot,
-                adminIndex=admin_index_for_write,
-            )
-            if (
-                switch_after_admin_slot_rewrite
-                and channel_snapshot.index == pre_delete_admin_index
-            ):
-                admin_index_for_write = post_delete_admin_index
+        self._delete_channel_runtime.delete_channel(channelIndex)
 
     def getChannelByName(self, name: str) -> channel_pb2.Channel | None:
         """Find a channel whose settings.name exactly matches the provided name.
@@ -3287,36 +3494,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             - p["decoded"]["routing"]["errorReason"]: routing error reason string.
             - p["from"]: numeric origin node identifier (string or int convertible).
         """
-        decoded = p.get("decoded", {})
-        routing = decoded.get("routing")
-        if not isinstance(routing, dict):
-            logger.warning("Received ACK/NAK response without routing details: %s", p)
-            return
-        error_reason = routing.get("errorReason", "NONE")
-        if error_reason != "NONE":
-            logger.warning(
-                "Received a NAK, error reason: %s",
-                error_reason,
-            )
-            self.iface._acknowledgment.receivedNak = True
-        else:
-            from_value = p.get("from")
-            if from_value is None:
-                logger.warning("Received ACK/NAK response without sender: %s", p)
-                return
-            try:
-                from_num = int(from_value)
-            except (TypeError, ValueError):
-                logger.warning("Received ACK/NAK response with invalid sender: %s", p)
-                return
-            if from_num == self.iface.localNode.nodeNum:
-                logger.info(
-                    "Received an implicit ACK. Packet will likely arrive, but cannot be guaranteed."
-                )
-                self.iface._acknowledgment.receivedImplAck = True
-            else:
-                logger.info("Received an ACK.")
-                self.iface._acknowledgment.receivedAck = True
+        self._ack_nak_runtime.handle_ack_nak(p)
 
     def _request_channel(self, channelNum: int) -> mesh_pb2.MeshPacket | None:
         """Request settings for a single channel from this node.
@@ -3378,30 +3556,11 @@ class Node:  # pylint: disable=too-many-instance-attributes
             The MeshPacket returned by the send operation,
             or `None` if sending was skipped because protocol use is disabled.
         """
-
-        if self.noProto:
-            logger.warning(
-                "Not sending packet because protocol use is disabled by noProto"
-            )
-            return None
-        if (
-            adminIndex is None
-        ):  # None means auto-detect; channel 0 remains an explicit valid index.
-            adminIndex = self.iface.localNode._get_admin_channel_index()
-        logger.debug("adminIndex:%s", adminIndex)
-        node_info = self.iface._get_or_create_by_num(self.nodeNum)
-        passkey = node_info.get("adminSessionPassKey")
-        if isinstance(passkey, bytes):
-            p.session_passkey = passkey
-        return self.iface.sendData(
+        return self._admin_transport_runtime.send_admin(
             p,
-            self.nodeNum,
-            portNum=portnums_pb2.PortNum.ADMIN_APP,
-            wantAck=True,
-            wantResponse=wantResponse,
-            onResponse=onResponse,
-            channelIndex=adminIndex,
-            pkiEncrypted=True,
+            want_response=wantResponse,
+            on_response=onResponse,
+            admin_index=adminIndex,
         )
 
     def ensureSessionKey(self, adminIndex: int | None = None) -> None:
@@ -3417,21 +3576,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             the node's configured admin channel is used. Pass 0 to force
             channel 0. (Default value = None)
         """
-        if self.noProto:
-            logger.warning(
-                "Not ensuring session key, because protocol use is disabled by noProto"
-            )
-        else:
-            if (
-                self.iface._get_or_create_by_num(self.nodeNum).get(
-                    "adminSessionPassKey"
-                )
-                is None
-            ):
-                self.requestConfig(
-                    admin_pb2.AdminMessage.SESSIONKEY_CONFIG,
-                    adminIndex=adminIndex,
-                )
+        self._admin_session_runtime.ensure_session_key(admin_index=adminIndex)
 
     def _get_channels_with_hash(self) -> list[dict[str, Any]]:
         """Return a list of channel descriptors containing index, role, name, and an optional hash.
