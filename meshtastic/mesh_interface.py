@@ -167,6 +167,594 @@ class _PacketRuntimeContext:
     skip_response_callback_for_decode_failure: bool = False
 
 
+class _RequestWaitRuntime:
+    """Owns request/wait bookkeeping, scoped wait semantics, and response correlation."""
+
+    def __init__(
+        self,
+        *,
+        lock: threading.RLock,
+        get_response_handlers: Callable[[], dict[int, ResponseHandler]],
+        get_wait_errors: Callable[[], dict[tuple[str, int], str]],
+        get_wait_acks: Callable[[], set[tuple[str, int]]],
+        get_active_wait_request_ids: Callable[[], dict[str, set[int]]],
+        get_retired_wait_request_ids: Callable[[], dict[str, dict[int, float]]],
+        get_acknowledgment: Callable[[], Acknowledgment],
+        get_timeout: Callable[[], Timeout],
+        retired_wait_ttl_seconds: float,
+    ) -> None:
+        self._lock = lock
+        self._get_response_handlers = get_response_handlers
+        self._get_wait_errors = get_wait_errors
+        self._get_wait_acks = get_wait_acks
+        self._get_active_wait_request_ids = get_active_wait_request_ids
+        self._get_retired_wait_request_ids = get_retired_wait_request_ids
+        self._get_acknowledgment = get_acknowledgment
+        self._get_timeout = get_timeout
+        self._retired_wait_ttl_seconds = retired_wait_ttl_seconds
+
+    def add_response_handler(
+        self,
+        request_id: int,
+        callback: Callable[[dict[str, Any]], Any],
+        *,
+        ack_permitted: bool,
+    ) -> None:
+        """Register a response callback for a request id."""
+        with self._lock:
+            self._get_response_handlers()[request_id] = ResponseHandler(
+                callback=callback,
+                ackPermitted=ack_permitted,
+            )
+
+    def drop_response_handler(self, request_id: int) -> None:
+        """Remove a response callback registration if present."""
+        with self._lock:
+            self._get_response_handlers().pop(request_id, None)
+
+    def clear_wait_error(
+        self,
+        acknowledgment_attr: str,
+        request_id: int | None = None,
+        *,
+        clear_scoped: bool = True,
+    ) -> None:
+        """Clear scoped/unscoped wait state."""
+        with self._lock:
+            wait_errors = self._get_wait_errors()
+            wait_acks = self._get_wait_acks()
+            active_wait_request_ids = self._get_active_wait_request_ids()
+            if request_id is None:
+                if clear_scoped:
+                    for key in list(wait_errors):
+                        if key[0] == acknowledgment_attr:
+                            wait_errors.pop(key, None)
+                    for key in list(wait_acks):
+                        if key[0] == acknowledgment_attr:
+                            wait_acks.discard(key)
+                    active_wait_request_ids.pop(acknowledgment_attr, None)
+                else:
+                    wait_errors.pop((acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID), None)
+                    wait_acks.discard(
+                        (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID),
+                    )
+                self.prune_retired_wait_request_ids_locked(acknowledgment_attr)
+            else:
+                active_ids = active_wait_request_ids.setdefault(acknowledgment_attr, set())
+                wait_errors.pop((acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID), None)
+                wait_acks.discard((acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID))
+                active_ids.add(request_id)
+                retired_ids = self.prune_retired_wait_request_ids_locked(
+                    acknowledgment_attr
+                )
+                retired_ids.pop(request_id, None)
+                wait_errors.pop((acknowledgment_attr, request_id), None)
+                wait_acks.discard((acknowledgment_attr, request_id))
+        if request_id is None:
+            setattr(self._get_acknowledgment(), acknowledgment_attr, False)
+
+    def prune_retired_wait_request_ids_locked(
+        self,
+        acknowledgment_attr: str,
+    ) -> dict[int, float]:
+        """Prune expired retired ids. Caller must hold the response-handler lock."""
+        retired_wait_request_ids = self._get_retired_wait_request_ids()
+        retired_ids = retired_wait_request_ids.get(acknowledgment_attr)
+        if not retired_ids:
+            return {}
+        now = time.monotonic()
+        for retired_id, retired_at in list(retired_ids.items()):
+            if now - retired_at > self._retired_wait_ttl_seconds:
+                retired_ids.pop(retired_id, None)
+        if not retired_ids:
+            retired_wait_request_ids.pop(acknowledgment_attr, None)
+            return {}
+        return retired_ids
+
+    def set_wait_error(
+        self,
+        acknowledgment_attr: str,
+        message: str,
+        *,
+        request_id: int | None = None,
+    ) -> None:
+        """Record wait errors using scoped/unscoped compatibility rules."""
+        set_legacy_ack_flag = False
+        with self._lock:
+            active_wait_request_ids = self._get_active_wait_request_ids()
+            wait_errors = self._get_wait_errors()
+            active_request_ids_for_attr = active_wait_request_ids.get(acknowledgment_attr)
+            has_request_scope = active_request_ids_for_attr is not None
+            active_request_ids = active_request_ids_for_attr or set()
+            if request_id is not None:
+                if request_id in active_request_ids:
+                    resolved_request_id = request_id
+                elif has_request_scope:
+                    logger.debug(
+                        "Ignoring stale wait error for %s request_id=%s (active=%s)",
+                        acknowledgment_attr,
+                        request_id,
+                        sorted(active_request_ids),
+                    )
+                    return
+                else:
+                    retired_request_ids = self.prune_retired_wait_request_ids_locked(
+                        acknowledgment_attr
+                    )
+                    if request_id in retired_request_ids:
+                        logger.debug(
+                            "Ignoring retired scoped wait error for %s request_id=%s",
+                            acknowledgment_attr,
+                            request_id,
+                        )
+                        return
+                    resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
+                wait_errors[(acknowledgment_attr, resolved_request_id)] = message
+            elif has_request_scope:
+                logger.debug(
+                    "Ignoring stale unscoped wait error for %s while scoped waits are active: %s",
+                    acknowledgment_attr,
+                    sorted(active_request_ids),
+                )
+                return
+            else:
+                resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
+                wait_errors[(acknowledgment_attr, resolved_request_id)] = message
+                set_legacy_ack_flag = True
+            if request_id is not None and not has_request_scope:
+                set_legacy_ack_flag = True
+        if set_legacy_ack_flag:
+            setattr(self._get_acknowledgment(), acknowledgment_attr, True)
+
+    def mark_wait_acknowledged(
+        self,
+        acknowledgment_attr: str,
+        *,
+        request_id: int | None = None,
+    ) -> None:
+        """Mark wait acknowledgments using scoped/unscoped compatibility rules."""
+        set_legacy_ack_flag = False
+        with self._lock:
+            active_wait_request_ids = self._get_active_wait_request_ids()
+            wait_acks = self._get_wait_acks()
+            active_request_ids_for_attr = active_wait_request_ids.get(acknowledgment_attr)
+            has_request_scope = active_request_ids_for_attr is not None
+            active_request_ids = active_request_ids_for_attr or set()
+            if request_id is not None:
+                if request_id in active_request_ids:
+                    resolved_request_id = request_id
+                elif has_request_scope:
+                    logger.debug(
+                        "Ignoring stale acknowledgement for %s request_id=%s (active=%s)",
+                        acknowledgment_attr,
+                        request_id,
+                        sorted(active_request_ids),
+                    )
+                    return
+                else:
+                    retired_request_ids = self.prune_retired_wait_request_ids_locked(
+                        acknowledgment_attr
+                    )
+                    if request_id in retired_request_ids:
+                        logger.debug(
+                            "Ignoring retired scoped acknowledgement for %s request_id=%s",
+                            acknowledgment_attr,
+                            request_id,
+                        )
+                        return
+                    resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
+                wait_acks.add((acknowledgment_attr, resolved_request_id))
+            elif has_request_scope:
+                logger.debug(
+                    "Ignoring stale unscoped acknowledgement for %s while scoped waits are active: %s",
+                    acknowledgment_attr,
+                    sorted(active_request_ids),
+                )
+                return
+            else:
+                set_legacy_ack_flag = True
+            if request_id is not None and not has_request_scope:
+                set_legacy_ack_flag = True
+        if set_legacy_ack_flag:
+            setattr(self._get_acknowledgment(), acknowledgment_attr, True)
+
+    def raise_wait_error_if_present(
+        self,
+        acknowledgment_attr: str,
+        *,
+        request_id: int | None,
+        error_factory: Callable[[str], Exception],
+    ) -> None:
+        """Raise and consume the pending wait error for a wait scope."""
+        with self._lock:
+            wait_errors = self._get_wait_errors()
+            active_wait_request_ids = self._get_active_wait_request_ids()
+            resolved_request_id = (
+                request_id
+                if request_id is not None
+                else UNSCOPED_WAIT_REQUEST_ID
+            )
+            error_message = wait_errors.pop((acknowledgment_attr, resolved_request_id), None)
+            if (
+                error_message is None
+                and request_id is not None
+                and acknowledgment_attr not in active_wait_request_ids
+            ):
+                error_message = wait_errors.pop(
+                    (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID),
+                    None,
+                )
+        if error_message is not None:
+            raise error_factory(error_message)
+
+    def retire_wait_request(
+        self,
+        acknowledgment_attr: str,
+        *,
+        request_id: int | None,
+    ) -> None:
+        """Retire response handlers and scoped wait state after completion/timeout."""
+        with self._lock:
+            response_handlers = self._get_response_handlers()
+            wait_errors = self._get_wait_errors()
+            wait_acks = self._get_wait_acks()
+            active_wait_request_ids = self._get_active_wait_request_ids()
+            retired_wait_request_ids = self._get_retired_wait_request_ids()
+
+            active_request_ids = active_wait_request_ids.get(acknowledgment_attr, set())
+            if request_id is not None:
+                if request_id in active_request_ids:
+                    active_request_ids.discard(request_id)
+                    retired_request_ids = retired_wait_request_ids.setdefault(
+                        acknowledgment_attr, {}
+                    )
+                    retired_request_ids[request_id] = time.monotonic()
+                    if not active_request_ids:
+                        active_wait_request_ids.pop(acknowledgment_attr, None)
+                        wait_errors.pop((acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID), None)
+                        wait_acks.discard((acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID))
+                    else:
+                        active_wait_request_ids[acknowledgment_attr] = active_request_ids
+                response_handlers.pop(request_id, None)
+                wait_errors.pop((acknowledgment_attr, request_id), None)
+                wait_acks.discard((acknowledgment_attr, request_id))
+            else:
+                if acknowledgment_attr not in active_wait_request_ids:
+                    for active_request_id in active_request_ids:
+                        response_handlers.pop(active_request_id, None)
+                        wait_errors.pop((acknowledgment_attr, active_request_id), None)
+                        wait_acks.discard((acknowledgment_attr, active_request_id))
+                    active_wait_request_ids.pop(acknowledgment_attr, None)
+                self.prune_retired_wait_request_ids_locked(acknowledgment_attr)
+                wait_errors.pop((acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID), None)
+                wait_acks.discard((acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID))
+        if request_id is None:
+            setattr(self._get_acknowledgment(), acknowledgment_attr, False)
+
+    def wait_for_request_ack(
+        self,
+        acknowledgment_attr: str,
+        request_id: int,
+        *,
+        timeout_seconds: float,
+    ) -> bool:
+        """Poll request-scoped wait state until ACK/error or timeout."""
+        deadline = time.monotonic() + timeout_seconds
+        timeout = self._get_timeout()
+        sleep_interval = max(0.01, float(getattr(timeout, "sleepInterval", 0.1)))
+        while time.monotonic() < deadline:
+            with self._lock:
+                wait_errors = self._get_wait_errors()
+                wait_acks = self._get_wait_acks()
+                key = (acknowledgment_attr, request_id)
+                if key in wait_errors:
+                    return True
+                if key in wait_acks:
+                    wait_acks.discard(key)
+                    return True
+            time.sleep(sleep_interval)
+        return False
+
+    def record_routing_wait_error(
+        self,
+        *,
+        acknowledgment_attr: str,
+        routing_error_reason: str | None,
+        request_id: int | None = None,
+    ) -> None:
+        """Map routing errors into shared wait-error state."""
+        if routing_error_reason is None or routing_error_reason == "NONE":
+            return
+        if routing_error_reason == "NO_RESPONSE":
+            message = NO_RESPONSE_FIRMWARE_ERROR
+        else:
+            message = f"Routing error on response: {routing_error_reason}"
+        self.set_wait_error(
+            acknowledgment_attr,
+            message,
+            request_id=request_id,
+        )
+
+    def correlate_inbound_response(
+        self,
+        *,
+        packet_dict: dict[str, Any],
+        skip_response_callback_for_decode_failure: bool,
+        extract_request_id: Callable[[dict[str, Any]], int | None],
+    ) -> None:
+        """Correlate inbound response packets with callbacks and wait-state updates."""
+        request_id = extract_request_id(packet_dict)
+        if request_id is None:
+            return
+        logger.debug("Got a response for requestId %s", request_id)
+
+        decoded = packet_dict.get("decoded")
+        routing = decoded.get("routing") if isinstance(decoded, dict) else None
+        is_ack = routing is not None and (
+            "errorReason" not in routing or routing["errorReason"] == "NONE"
+        )
+        response_handler, dropped_due_to_decode_failure = (
+            self._select_response_handler_for_packet(
+                request_id=request_id,
+                is_ack=is_ack,
+                skip_response_callback_for_decode_failure=(
+                    skip_response_callback_for_decode_failure
+                ),
+            )
+        )
+        if dropped_due_to_decode_failure:
+            self._apply_admin_decode_failure_wait_state(
+                request_id=request_id,
+                packet_dict=packet_dict,
+            )
+        self._invoke_response_callback(
+            request_id=request_id,
+            response_handler=response_handler,
+            packet_dict=packet_dict,
+        )
+
+    def _select_response_handler_for_packet(
+        self,
+        *,
+        request_id: int,
+        is_ack: bool,
+        skip_response_callback_for_decode_failure: bool,
+    ) -> tuple[ResponseHandler | None, bool]:
+        """Select/pop a response handler from shared state for one packet."""
+        response_handler: ResponseHandler | None = None
+        dropped_due_to_decode_failure = False
+        with self._lock:
+            response_handlers = self._get_response_handlers()
+            candidate = response_handlers.get(request_id, None)
+            if candidate is not None:
+                callback_name = getattr(candidate.callback, "__name__", "")
+                if (
+                    skip_response_callback_for_decode_failure
+                    and callback_name != "onAckNak"
+                ):
+                    response_handlers.pop(request_id, None)
+                    dropped_due_to_decode_failure = True
+                elif (not is_ack) or callback_name == "onAckNak" or candidate.ackPermitted:
+                    response_handler = response_handlers.pop(request_id, None)
+        return response_handler, dropped_due_to_decode_failure
+
+    def _apply_admin_decode_failure_wait_state(
+        self,
+        *,
+        request_id: int,
+        packet_dict: dict[str, Any],
+    ) -> None:
+        """Convert admin decode failures into wait-error state and legacy NAK flag."""
+        logger.warning(
+            "Dropping response callback for requestId %s due to admin decode failure.",
+            request_id,
+        )
+        admin_decoded_payload = packet_dict.get("decoded", {}).get("admin", {})
+        if isinstance(admin_decoded_payload, dict):
+            admin_decode_error = admin_decoded_payload.get(
+                DECODE_ERROR_KEY,
+                f"{DECODE_FAILED_PREFIX}unknown error",
+            )
+        else:
+            admin_decode_error = f"{DECODE_FAILED_PREFIX}unknown error"
+        self.set_wait_error(
+            WAIT_ATTR_NAK,
+            f"Failed to decode admin payload: {admin_decode_error}",
+            request_id=request_id,
+        )
+        self._get_acknowledgment().receivedNak = True
+
+    @staticmethod
+    def _invoke_response_callback(
+        *,
+        request_id: int,
+        response_handler: ResponseHandler | None,
+        packet_dict: dict[str, Any],
+    ) -> None:
+        """Invoke one response callback with error isolation."""
+        if response_handler is None:
+            return
+        logger.debug("Calling response handler for requestId %s", request_id)
+        try:
+            response_handler.callback(packet_dict)
+        except Exception:
+            logger.exception(
+                "Error in response handler for requestId %s",
+                request_id,
+            )
+
+
+class _QueueSendRuntime:
+    """Owns queue state mutation, resend orchestration, and queue-status correlation."""
+
+    def __init__(
+        self,
+        *,
+        lock: threading.RLock,
+        get_queue: Callable[
+            [], collections.OrderedDict[int, mesh_pb2.ToRadio | bool]
+        ],
+        get_queue_status: Callable[[], mesh_pb2.QueueStatus | None],
+        set_queue_status: Callable[[mesh_pb2.QueueStatus], None],
+        queue_wait_delay_seconds: float,
+    ) -> None:
+        self._lock = lock
+        self._get_queue = get_queue
+        self._get_queue_status = get_queue_status
+        self._set_queue_status = set_queue_status
+        self._queue_wait_delay_seconds = queue_wait_delay_seconds
+
+    def has_free_space(self) -> bool:
+        """Return whether queue status indicates free TX slots."""
+        with self._lock:
+            queue_status = self._get_queue_status()
+            if queue_status is None:
+                return True
+            return queue_status.free > 0
+
+    def claim(self) -> None:
+        """Claim one queue slot when queue status is available."""
+        with self._lock:
+            queue_status = self._get_queue_status()
+            if queue_status is None:
+                return
+            queue_status.free -= 1
+
+    def pop_for_send(self) -> tuple[int, mesh_pb2.ToRadio | bool] | None:
+        """Pop the next sendable queue entry while honoring queue free-space state."""
+        with self._lock:
+            queue = self._get_queue()
+            if not queue:
+                return None
+            queue_status = self._get_queue_status()
+            if queue_status is not None and queue_status.free <= 0:
+                return None
+            to_resend = queue.popitem(last=False)
+            if queue_status is not None:
+                queue_status.free -= 1
+            return to_resend
+
+    def send_to_radio(
+        self,
+        to_radio: mesh_pb2.ToRadio,
+        *,
+        send_impl: Callable[[mesh_pb2.ToRadio], None],
+        pop_for_send: Callable[[], tuple[int, mesh_pb2.ToRadio | bool] | None],
+        sleep_fn: Callable[[float], None],
+    ) -> None:
+        """Run outbound send/resend loop using queue ownership semantics."""
+        if not to_radio.HasField("packet"):
+            # not a meshpacket -- send immediately, give queue a chance,
+            # this makes heartbeat trigger queue
+            send_impl(to_radio)
+        else:
+            # meshpacket -- queue
+            with self._lock:
+                self._get_queue()[to_radio.packet.id] = to_radio
+
+        resent_queue: collections.OrderedDict[int, mesh_pb2.ToRadio | bool] = (
+            collections.OrderedDict()
+        )
+        while True:
+            to_resend = pop_for_send()
+            if to_resend is None:
+                with self._lock:
+                    queue_has_items = bool(self._get_queue())
+                if not queue_has_items:
+                    break
+                logger.debug("Waiting for free space in TX Queue")
+                sleep_fn(self._queue_wait_delay_seconds)
+                continue
+
+            packet_id, packet = to_resend
+            resent_queue[packet_id] = packet
+            if not isinstance(packet, mesh_pb2.ToRadio):
+                continue
+            if packet != to_radio:
+                logger.debug("Resending packet ID %08x %s", packet_id, packet)
+            send_impl(packet)
+
+        self.reconcile_resent_queue(resent_queue=resent_queue)
+
+    def reconcile_resent_queue(
+        self,
+        *,
+        resent_queue: collections.OrderedDict[int, mesh_pb2.ToRadio | bool],
+    ) -> None:
+        """Reconcile resent packets against ACK-under-us and requeue semantics."""
+        for packet_id, packet in resent_queue.items():
+            with self._lock:
+                # Returns False if packetId is absent (default) or if a
+                # False marker was stored for an earlier unexpected ACK.
+                # Both cases indicate "already ACKed" for resend purposes.
+                acked = self._get_queue().pop(packet_id, False) is False
+            if acked:  # Packet got acked under us
+                logger.debug("packet %08x got acked under us", packet_id)
+                continue
+            if packet:
+                with self._lock:
+                    self._get_queue()[packet_id] = packet
+
+    def record_queue_status(self, queue_status: mesh_pb2.QueueStatus) -> None:
+        """Persist latest queue status update."""
+        with self._lock:
+            self._set_queue_status(queue_status)
+        logger.debug(
+            "TX QUEUE free %s of %s, res = %s, id = %08x ",
+            queue_status.free,
+            queue_status.maxlen,
+            queue_status.res,
+            queue_status.mesh_packet_id,
+        )
+
+    def correlate_queue_status_reply(self, queue_status: mesh_pb2.QueueStatus) -> None:
+        """Correlate queue status mesh_packet_id replies to pending entries."""
+        debug_enabled = logger.isEnabledFor(logging.DEBUG)
+        with self._lock:
+            queue = self._get_queue()
+            queue_snapshot = tuple(queue.keys()) if debug_enabled else ()
+            just_queued = queue.pop(queue_status.mesh_packet_id, None)
+        if debug_enabled:
+            logger.debug(
+                "queue: %s",
+                " ".join(f"{key:08x}" for key in queue_snapshot),
+            )
+        if just_queued is None and queue_status.mesh_packet_id != 0:
+            with self._lock:
+                self._get_queue()[queue_status.mesh_packet_id] = False
+            logger.debug(
+                "Reply for unexpected packet ID %08x",
+                queue_status.mesh_packet_id,
+            )
+
+    def handle_queue_status_from_radio(self, queue_status: mesh_pb2.QueueStatus) -> None:
+        """Apply queue status updates and queue reply correlation."""
+        self.record_queue_status(queue_status)
+        if queue_status.res:
+            return
+        self.correlate_queue_status_reply(queue_status)
+
+
 class _SerializablePayload(Protocol):
     """Protocol for payloads that can serialize to bytes."""
 
@@ -421,6 +1009,26 @@ class MeshInterface:  # pylint: disable=R0902
             collections.OrderedDict()
         )
         self._localChannels: list[channel_pb2.Channel] = []
+        self._request_wait_runtime = _RequestWaitRuntime(
+            lock=self._response_handlers_lock,
+            get_response_handlers=lambda: self.responseHandlers,
+            get_wait_errors=lambda: self._response_wait_errors,
+            get_wait_acks=lambda: self._response_wait_acks,
+            get_active_wait_request_ids=lambda: self._active_wait_request_ids,
+            get_retired_wait_request_ids=lambda: self._retired_wait_request_ids,
+            get_acknowledgment=lambda: self._acknowledgment,
+            get_timeout=lambda: self._timeout,
+            retired_wait_ttl_seconds=RETIRED_WAIT_REQUEST_ID_TTL_SECONDS,
+        )
+        self._queue_send_runtime = _QueueSendRuntime(
+            lock=self._queue_lock,
+            get_queue=lambda: self.queue,
+            get_queue_status=lambda: self.queueStatus,
+            set_queue_status=lambda queue_status: setattr(
+                self, "queueStatus", queue_status
+            ),
+            queue_wait_delay_seconds=QUEUE_WAIT_DELAY_SECONDS,
+        )
 
         # We could have just not passed in debugOut to MeshInterface, and instead told consumers to subscribe to
         # the meshtastic.log.line publish instead.  Alas though changing that now would be a breaking API change
@@ -1321,8 +1929,7 @@ class MeshInterface:  # pylint: disable=R0902
                     request_id=meshPacket.id,
                 )
             elif onResponse is not None:
-                with self._response_handlers_lock:
-                    self.responseHandlers.pop(meshPacket.id, None)
+                self._request_wait_runtime.drop_response_handler(meshPacket.id)
             raise
 
     def sendPosition(
@@ -1432,45 +2039,11 @@ class MeshInterface:  # pylint: disable=R0902
         clear_scoped: bool = True,
     ) -> None:
         """Clear wait error state for an attribute and optional request id."""
-        with self._response_handlers_lock:
-            if request_id is None:
-                if clear_scoped:
-                    for key in list(self._response_wait_errors):
-                        if key[0] == acknowledgment_attr:
-                            self._response_wait_errors.pop(key, None)
-                    for key in list(self._response_wait_acks):
-                        if key[0] == acknowledgment_attr:
-                            self._response_wait_acks.discard(key)
-                    self._active_wait_request_ids.pop(acknowledgment_attr, None)
-                else:
-                    self._response_wait_errors.pop(
-                        (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID),
-                        None,
-                    )
-                    self._response_wait_acks.discard(
-                        (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID)
-                    )
-                self._prune_retired_wait_request_ids_locked(acknowledgment_attr)
-            else:
-                active_ids = self._active_wait_request_ids.setdefault(
-                    acknowledgment_attr, set()
-                )
-                self._response_wait_errors.pop(
-                    (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID),
-                    None,
-                )
-                self._response_wait_acks.discard(
-                    (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID)
-                )
-                active_ids.add(request_id)
-                retired_ids = self._prune_retired_wait_request_ids_locked(
-                    acknowledgment_attr
-                )
-                retired_ids.pop(request_id, None)
-                self._response_wait_errors.pop((acknowledgment_attr, request_id), None)
-                self._response_wait_acks.discard((acknowledgment_attr, request_id))
-        if request_id is None:
-            setattr(self._acknowledgment, acknowledgment_attr, False)
+        self._request_wait_runtime.clear_wait_error(
+            acknowledgment_attr,
+            request_id=request_id,
+            clear_scoped=clear_scoped,
+        )
 
     def _prune_retired_wait_request_ids_locked(
         self, acknowledgment_attr: str
@@ -1481,17 +2054,9 @@ class MeshInterface:  # pylint: disable=R0902
         -----
         Must be called while holding `_response_handlers_lock`.
         """
-        retired_ids = self._retired_wait_request_ids.get(acknowledgment_attr)
-        if not retired_ids:
-            return {}
-        now = time.monotonic()
-        for retired_id, retired_at in list(retired_ids.items()):
-            if now - retired_at > RETIRED_WAIT_REQUEST_ID_TTL_SECONDS:
-                retired_ids.pop(retired_id, None)
-        if not retired_ids:
-            self._retired_wait_request_ids.pop(acknowledgment_attr, None)
-            return {}
-        return retired_ids
+        return self._request_wait_runtime.prune_retired_wait_request_ids_locked(
+            acknowledgment_attr
+        )
 
     def _set_wait_error(
         self,
@@ -1501,184 +2066,39 @@ class MeshInterface:  # pylint: disable=R0902
         request_id: int | None = None,
     ) -> None:
         """Record a wait error and wake the matching waiter."""
-        set_legacy_ack_flag = False
-        with self._response_handlers_lock:
-            active_request_ids_for_attr = self._active_wait_request_ids.get(
-                acknowledgment_attr
-            )
-            has_request_scope = active_request_ids_for_attr is not None
-            active_request_ids = active_request_ids_for_attr or set()
-            if request_id is not None:
-                if request_id in active_request_ids:
-                    resolved_request_id = request_id
-                elif has_request_scope:
-                    logger.debug(
-                        "Ignoring stale wait error for %s request_id=%s (active=%s)",
-                        acknowledgment_attr,
-                        request_id,
-                        sorted(active_request_ids),
-                    )
-                    return
-                else:
-                    retired_request_ids = self._prune_retired_wait_request_ids_locked(
-                        acknowledgment_attr
-                    )
-                    if request_id in retired_request_ids:
-                        logger.debug(
-                            "Ignoring retired scoped wait error for %s request_id=%s",
-                            acknowledgment_attr,
-                            request_id,
-                        )
-                        return
-                    resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
-                self._response_wait_errors[
-                    (acknowledgment_attr, resolved_request_id)
-                ] = message
-            elif has_request_scope:
-                logger.debug(
-                    "Ignoring stale unscoped wait error for %s while scoped waits are active: %s",
-                    acknowledgment_attr,
-                    sorted(active_request_ids),
-                )
-                return
-            else:
-                resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
-                self._response_wait_errors[
-                    (acknowledgment_attr, resolved_request_id)
-                ] = message
-                set_legacy_ack_flag = True
-            if request_id is not None and not has_request_scope:
-                set_legacy_ack_flag = True
-        if set_legacy_ack_flag:
-            setattr(self._acknowledgment, acknowledgment_attr, True)
+        self._request_wait_runtime.set_wait_error(
+            acknowledgment_attr,
+            message,
+            request_id=request_id,
+        )
 
     def _mark_wait_acknowledged(
         self, acknowledgment_attr: str, *, request_id: int | None = None
     ) -> None:
         """Set acknowledgment flag for the matching request scope."""
-        set_legacy_ack_flag = False
-        with self._response_handlers_lock:
-            active_request_ids_for_attr = self._active_wait_request_ids.get(
-                acknowledgment_attr
-            )
-            has_request_scope = active_request_ids_for_attr is not None
-            active_request_ids = active_request_ids_for_attr or set()
-            if request_id is not None:
-                if request_id in active_request_ids:
-                    resolved_request_id = request_id
-                elif has_request_scope:
-                    logger.debug(
-                        "Ignoring stale acknowledgement for %s request_id=%s (active=%s)",
-                        acknowledgment_attr,
-                        request_id,
-                        sorted(active_request_ids),
-                    )
-                    return
-                else:
-                    retired_request_ids = self._prune_retired_wait_request_ids_locked(
-                        acknowledgment_attr
-                    )
-                    if request_id in retired_request_ids:
-                        logger.debug(
-                            "Ignoring retired scoped acknowledgement for %s request_id=%s",
-                            acknowledgment_attr,
-                            request_id,
-                        )
-                        return
-                    resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
-                self._response_wait_acks.add((acknowledgment_attr, resolved_request_id))
-            elif has_request_scope:
-                logger.debug(
-                    "Ignoring stale unscoped acknowledgement for %s while scoped waits are active: %s",
-                    acknowledgment_attr,
-                    sorted(active_request_ids),
-                )
-                return
-            else:
-                set_legacy_ack_flag = True
-            if request_id is not None and not has_request_scope:
-                set_legacy_ack_flag = True
-        if set_legacy_ack_flag:
-            setattr(self._acknowledgment, acknowledgment_attr, True)
+        self._request_wait_runtime.mark_wait_acknowledged(
+            acknowledgment_attr,
+            request_id=request_id,
+        )
 
     def _raise_wait_error_if_present(
         self, acknowledgment_attr: str, request_id: int | None = None
     ) -> None:
         """Raise and clear any pending wait error for the given wait scope."""
-        with self._response_handlers_lock:
-            if request_id is not None:
-                resolved_request_id = request_id
-            else:
-                resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
-            error_message = self._response_wait_errors.pop(
-                (acknowledgment_attr, resolved_request_id),
-                None,
-            )
-            if (
-                error_message is None
-                and request_id is not None
-                and acknowledgment_attr not in self._active_wait_request_ids
-            ):
-                error_message = self._response_wait_errors.pop(
-                    (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID),
-                    None,
-                )
-        if error_message is not None:
-            raise self.MeshInterfaceError(error_message)
+        self._request_wait_runtime.raise_wait_error_if_present(
+            acknowledgment_attr,
+            request_id=request_id,
+            error_factory=self.MeshInterfaceError,
+        )
 
     def _retire_wait_request(
         self, acknowledgment_attr: str, request_id: int | None = None
     ) -> None:
         """Retire response handler and wait bookkeeping for a completed wait."""
-        with self._response_handlers_lock:
-            active_request_ids = self._active_wait_request_ids.get(
-                acknowledgment_attr, set()
-            )
-            if request_id is not None:
-                if request_id in active_request_ids:
-                    active_request_ids.discard(request_id)
-                    retired_request_ids = self._retired_wait_request_ids.setdefault(
-                        acknowledgment_attr, {}
-                    )
-                    retired_request_ids[request_id] = time.monotonic()
-                    if not active_request_ids:
-                        self._active_wait_request_ids.pop(acknowledgment_attr, None)
-                        self._response_wait_errors.pop(
-                            (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID),
-                            None,
-                        )
-                        self._response_wait_acks.discard(
-                            (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID)
-                        )
-                    else:
-                        self._active_wait_request_ids[acknowledgment_attr] = (
-                            active_request_ids
-                        )
-                self.responseHandlers.pop(request_id, None)
-                self._response_wait_errors.pop((acknowledgment_attr, request_id), None)
-                self._response_wait_acks.discard((acknowledgment_attr, request_id))
-            else:
-                if acknowledgment_attr not in self._active_wait_request_ids:
-                    for active_request_id in active_request_ids:
-                        self.responseHandlers.pop(active_request_id, None)
-                        self._response_wait_errors.pop(
-                            (acknowledgment_attr, active_request_id),
-                            None,
-                        )
-                        self._response_wait_acks.discard(
-                            (acknowledgment_attr, active_request_id)
-                        )
-                    self._active_wait_request_ids.pop(acknowledgment_attr, None)
-                self._prune_retired_wait_request_ids_locked(acknowledgment_attr)
-                self._response_wait_errors.pop(
-                    (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID),
-                    None,
-                )
-                self._response_wait_acks.discard(
-                    (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID)
-                )
-        if request_id is None:
-            setattr(self._acknowledgment, acknowledgment_attr, False)
+        self._request_wait_runtime.retire_wait_request(
+            acknowledgment_attr,
+            request_id=request_id,
+        )
 
     def _wait_for_request_ack(
         self,
@@ -1704,18 +2124,11 @@ class MeshInterface:  # pylint: disable=R0902
             `True` when the scoped acknowledgment was observed before timeout,
             otherwise `False`.
         """
-        deadline = time.monotonic() + timeout_seconds
-        sleep_interval = max(0.01, float(getattr(self._timeout, "sleepInterval", 0.1)))
-        while time.monotonic() < deadline:
-            with self._response_handlers_lock:
-                key = (acknowledgment_attr, request_id)
-                if key in self._response_wait_errors:
-                    return True
-                if key in self._response_wait_acks:
-                    self._response_wait_acks.discard(key)
-                    return True
-            time.sleep(sleep_interval)
-        return False
+        return self._request_wait_runtime.wait_for_request_ack(
+            acknowledgment_attr,
+            request_id,
+            timeout_seconds=timeout_seconds,
+        )
 
     def _record_routing_wait_error(
         self,
@@ -1725,15 +2138,9 @@ class MeshInterface:  # pylint: disable=R0902
         request_id: int | None = None,
     ) -> None:
         """Record non-success routing responses into shared wait state."""
-        if routing_error_reason is None or routing_error_reason == "NONE":
-            return
-        if routing_error_reason == "NO_RESPONSE":
-            message = NO_RESPONSE_FIRMWARE_ERROR
-        else:
-            message = f"Routing error on response: {routing_error_reason}"
-        self._set_wait_error(
-            acknowledgment_attr,
-            message,
+        self._request_wait_runtime.record_routing_wait_error(
+            acknowledgment_attr=acknowledgment_attr,
+            routing_error_reason=routing_error_reason,
             request_id=request_id,
         )
 
@@ -2391,10 +2798,11 @@ class MeshInterface:  # pylint: disable=R0902
             If True, allow acknowledgement/negative-acknowledgement packets
             to invoke the callback; if False, only full responses will invoke it. (Default value = False)
         """
-        with self._response_handlers_lock:
-            self.responseHandlers[requestId] = ResponseHandler(
-                callback=callback, ackPermitted=ackPermitted
-            )
+        self._request_wait_runtime.add_response_handler(
+            requestId,
+            callback,
+            ack_permitted=ackPermitted,
+        )
 
     def _send_packet(
         self,
@@ -3002,20 +3410,14 @@ class MeshInterface:  # pylint: disable=R0902
         bool
             `True` if at least one free slot is available or the queue status is unknown, `False` otherwise.
         """
-        with self._queue_lock:
-            if self.queueStatus is None:
-                return True
-            return self.queueStatus.free > 0
+        return self._queue_send_runtime.has_free_space()
 
     def _queue_claim(self) -> None:
         """Decrement the cached transmit-queue free-slot counter when a packet is claimed.
 
         Does nothing if queue status information is not available.
         """
-        with self._queue_lock:
-            if self.queueStatus is None:
-                return
-            self.queueStatus.free -= 1
+        self._queue_send_runtime.claim()
 
     def _queue_pop_for_send(self) -> tuple[int, mesh_pb2.ToRadio | bool] | None:
         """Atomically pop the next queued packet if TX queue state permits sending.
@@ -3026,15 +3428,7 @@ class MeshInterface:  # pylint: disable=R0902
             The popped queue entry `(packet_id, payload)` when available and sendable,
             otherwise `None`.
         """
-        with self._queue_lock:
-            if not self.queue:
-                return None
-            if self.queueStatus is not None and self.queueStatus.free <= 0:
-                return None
-            to_resend = self.queue.popitem(last=False)
-            if self.queueStatus is not None:
-                self.queueStatus.free -= 1
-            return to_resend
+        return self._queue_send_runtime.pop_for_send()
 
     def _send_to_radio(self, toRadio: mesh_pb2.ToRadio) -> None:
         """Queue and transmit a ToRadio protobuf to the radio device.
@@ -3056,51 +3450,12 @@ class MeshInterface:  # pylint: disable=R0902
             )
             return
 
-        if not toRadio.HasField("packet"):
-            # not a meshpacket -- send immediately, give queue a chance,
-            # this makes heartbeat trigger queue
-            self._send_to_radio_impl(toRadio)
-        else:
-            # meshpacket -- queue
-            with self._queue_lock:
-                self.queue[toRadio.packet.id] = toRadio
-
-        resentQueue = collections.OrderedDict()
-
-        while True:
-            toResend = self._queue_pop_for_send()
-            if toResend is None:
-                with self._queue_lock:
-                    queue_has_items = bool(self.queue)
-                if not queue_has_items:
-                    break
-                logger.debug("Waiting for free space in TX Queue")
-                time.sleep(QUEUE_WAIT_DELAY_SECONDS)
-                continue
-
-            packetId, packet = toResend
-            # logger.warn(f"packet: {packetId:08x} {packet}")
-            resentQueue[packetId] = packet
-            if not isinstance(packet, mesh_pb2.ToRadio):
-                continue
-            if packet != toRadio:
-                logger.debug("Resending packet ID %08x %s", packetId, packet)
-            self._send_to_radio_impl(packet)
-
-        # logger.warn("resentQueue: " + " ".join(f'{k:08x}' for k in resentQueue))
-        for packetId, packet in resentQueue.items():
-            with self._queue_lock:
-                # Returns False if packetId is absent (default) or if a
-                # False marker was stored for an earlier unexpected ACK.
-                # Both cases indicate "already ACKed" for resend purposes.
-                acked = self.queue.pop(packetId, False) is False
-            if acked:  # Packet got acked under us
-                logger.debug("packet %08x got acked under us", packetId)
-                continue
-            if packet:
-                with self._queue_lock:
-                    self.queue[packetId] = packet
-        # logger.warn("queue + resentQueue: " + " ".join(f'{k:08x}' for k in self.queue))
+        self._queue_send_runtime.send_to_radio(
+            toRadio,
+            send_impl=self._send_to_radio_impl,
+            pop_for_send=self._queue_pop_for_send,
+            sleep_fn=time.sleep,
+        )
 
     def _send_to_radio_impl(self, toRadio: mesh_pb2.ToRadio) -> None:
         """Transport hook that delivers a ToRadio protobuf to the radio device.
@@ -3147,42 +3502,15 @@ class MeshInterface:  # pylint: disable=R0902
             An object (protobuf-like) with attributes `free`, `maxlen`,
             `res`, and `mesh_packet_id` describing the radio's transmit-queue state.
         """
-        self._record_queue_status(queueStatus)
-        if queueStatus.res:
-            return
-        self._correlate_queue_status_reply(queueStatus)
+        self._queue_send_runtime.handle_queue_status_from_radio(queueStatus)
 
     def _record_queue_status(self, queueStatus: mesh_pb2.QueueStatus) -> None:
         """Persist latest radio TX queue status under queue ownership."""
-        with self._queue_lock:
-            self.queueStatus = queueStatus
-        logger.debug(
-            "TX QUEUE free %s of %s, res = %s, id = %08x ",
-            queueStatus.free,
-            queueStatus.maxlen,
-            queueStatus.res,
-            queueStatus.mesh_packet_id,
-        )
+        self._queue_send_runtime.record_queue_status(queueStatus)
 
     def _correlate_queue_status_reply(self, queueStatus: mesh_pb2.QueueStatus) -> None:
         """Correlate queue reply IDs with local pending queue entries."""
-        debug_enabled = logger.isEnabledFor(logging.DEBUG)
-        with self._queue_lock:
-            queue_snapshot = tuple(self.queue.keys()) if debug_enabled else ()
-            just_queued = self.queue.pop(queueStatus.mesh_packet_id, None)
-        if debug_enabled:
-            logger.debug(
-                "queue: %s",
-                " ".join(f"{key:08x}" for key in queue_snapshot),
-            )
-
-        if just_queued is None and queueStatus.mesh_packet_id != 0:
-            with self._queue_lock:
-                self.queue[queueStatus.mesh_packet_id] = False
-            logger.debug(
-                "Reply for unexpected packet ID %08x",
-                queueStatus.mesh_packet_id,
-            )
+        self._queue_send_runtime.correlate_queue_status_reply(queueStatus)
         # logger.warn("queue: " + " ".join(f'{k:08x}' for k in self.queue))
 
     def _handle_from_radio(self, fromRadioBytes: bytes) -> None:
@@ -3758,67 +4086,10 @@ class MeshInterface:  # pylint: disable=R0902
         """Correlate requestId responses with registered response handlers."""
         if packet_context.decoded is None:
             return
-
-        # Is this message in response to a request, if so, look for a handler
-        requestId = self._extract_request_id_from_packet(packet_context.packet_dict)
-        if requestId is None:
-            return
-        logger.debug("Got a response for requestId %s", requestId)
-
-        # We ignore ACK packets unless the callback is named `onAckNak`
-        # or the handler is set as ackPermitted, but send NAKs and
-        # other, data-containing responses to the handlers
-        routing = packet_context.decoded.get("routing")
-        is_ack = routing is not None and (
-            "errorReason" not in routing or routing["errorReason"] == "NONE"
+        self._request_wait_runtime.correlate_inbound_response(
+            packet_dict=packet_context.packet_dict,
+            skip_response_callback_for_decode_failure=(
+                packet_context.skip_response_callback_for_decode_failure
+            ),
+            extract_request_id=self._extract_request_id_from_packet,
         )
-        response_handler: ResponseHandler | None = None
-        dropped_due_to_decode_failure = False
-        # Keep lookup/eligibility/pop atomic under the response-handler lock
-        # so a competing thread cannot remove the handler between checks.
-        with self._response_handlers_lock:
-            candidate = self.responseHandlers.get(requestId, None)
-            if candidate is not None:
-                callback_name = getattr(candidate.callback, "__name__", "")
-                if (
-                    packet_context.skip_response_callback_for_decode_failure
-                    and callback_name != "onAckNak"
-                ):
-                    self.responseHandlers.pop(requestId, None)
-                    dropped_due_to_decode_failure = True
-                elif (
-                    (not is_ack)
-                    or callback_name == "onAckNak"
-                    or candidate.ackPermitted
-                ):
-                    response_handler = self.responseHandlers.pop(requestId, None)
-        if dropped_due_to_decode_failure:
-            logger.warning(
-                "Dropping response callback for requestId %s due to admin decode failure.",
-                requestId,
-            )
-            admin_decoded_payload = (
-                packet_context.packet_dict.get("decoded", {}).get("admin", {})
-            )
-            if isinstance(admin_decoded_payload, dict):
-                admin_decode_error = admin_decoded_payload.get(
-                    DECODE_ERROR_KEY,
-                    f"{DECODE_FAILED_PREFIX}unknown error",
-                )
-            else:
-                admin_decode_error = f"{DECODE_FAILED_PREFIX}unknown error"
-            self._set_wait_error(
-                WAIT_ATTR_NAK,
-                f"Failed to decode admin payload: {admin_decode_error}",
-                request_id=requestId,
-            )
-            self._acknowledgment.receivedNak = True
-        if response_handler is not None:
-            logger.debug("Calling response handler for requestId %s", requestId)
-            try:
-                response_handler.callback(packet_context.packet_dict)
-            except Exception:
-                logger.exception(
-                    "Error in response handler for requestId %s",
-                    requestId,
-                )
