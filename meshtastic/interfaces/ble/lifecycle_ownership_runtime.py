@@ -694,9 +694,6 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     and getattr(iface, "_connection_session_epoch", 0)
                     == published_session_epoch
                 )
-                if publish_allowed:
-                    iface._ever_connected = True
-                    iface._prior_publish_was_reconnect = prior_ever_connected
             if not publish_allowed:
                 stale_snapshot = snapshot_provider(
                     connected_client,
@@ -722,6 +719,9 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     and getattr(iface, "_connection_session_epoch", 0)
                     == published_session_epoch
                 )
+                if publish_completed:
+                    iface._ever_connected = True
+                    iface._prior_publish_was_reconnect = prior_ever_connected
             if publish_completed:
                 self._emit_verified_connection_side_effects(connected_client)
         finally:

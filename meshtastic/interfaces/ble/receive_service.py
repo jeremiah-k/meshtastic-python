@@ -478,6 +478,8 @@ class BLEReceiveRecoveryController:
         if callable(instance_override) and not _is_unconfigured_mock_callable(
             instance_override
         ):
+            if self._is_default_iface_receive_hook(method_name, instance_override):
+                return None
             return _wrap_override(cast(Callable[..., object], instance_override))
         class_or_subclass_override = getattr(iface, method_name, None)
         if callable(class_or_subclass_override) and not _is_unconfigured_mock_callable(

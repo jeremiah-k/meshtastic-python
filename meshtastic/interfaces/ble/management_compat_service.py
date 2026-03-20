@@ -119,9 +119,7 @@ class BLEManagementCommandsService:
             get_handler: object | None = None
             try:
                 get_handler = getattr(iface, "_get_management_command_handler", None)
-            except (
-                AttributeError
-            ):  # noqa: BLE001 - compatibility resolution is best effort
+            except Exception:  # noqa: BLE001 - compatibility resolution is best effort
                 logger.debug(
                     "Error resolving _get_management_command_handler; falling back to direct handler field.",
                     exc_info=True,
@@ -131,10 +129,7 @@ class BLEManagementCommandsService:
             ):
                 try:
                     resolved = get_handler()
-                except (
-                    AttributeError,
-                    TypeError,
-                ):  # noqa: BLE001 - compatibility resolution is best effort
+                except Exception:  # noqa: BLE001 - compatibility resolution is best effort
                     logger.debug(
                         "Error calling _get_management_command_handler; falling back to direct handler field.",
                         exc_info=True,

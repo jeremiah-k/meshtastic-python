@@ -512,6 +512,7 @@ class _LifecycleThreadAccess:
                 )
         set_event = getattr(coordinator, "set_event", None)
         if callable(set_event) and not _is_unconfigured_mock_callable(set_event):
+            failed_events: list[str] = []
             for event_name in event_names:
                 try:
                     set_event(event_name)
@@ -521,11 +522,15 @@ class _LifecycleThreadAccess:
                         event_name,
                         exc_info=True,
                     )
-            return
+                    failed_events.append(event_name)
+            if not failed_events:
+                return
+            event_names = tuple(failed_events)
         legacy_set_event = getattr(coordinator, "_set_event", None)
         if callable(legacy_set_event) and not _is_unconfigured_mock_callable(
             legacy_set_event
         ):
+            failed_events = []
             for event_name in event_names:
                 try:
                     legacy_set_event(event_name)
@@ -535,7 +540,9 @@ class _LifecycleThreadAccess:
                         event_name,
                         exc_info=True,
                     )
-            return
+                    failed_events.append(event_name)
+            if not failed_events:
+                return
         logger.debug(
             "Thread coordinator is missing wake_waiting_threads/_wake_waiting_threads/set_event/_set_event"
         )

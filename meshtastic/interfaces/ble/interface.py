@@ -128,10 +128,15 @@ T = TypeVar("T")
 class _NotificationSessionSnapshot(TypedDict):
     """Rollback snapshot for notification dispatcher session state."""
 
-    _registered_notification_session_epoch: int
+    _registered_notification_session_epoch: int | None
     _started_notify_characteristics: set[str] | None
     fromnum_notify_enabled: bool
     malformed_notification_count: int
+    _current_legacy_log_handler: object | None
+    _current_log_handler: object | None
+    _current_from_num_handler: object | None
+    _notification_manager_active_subscriptions: dict[int, tuple[str, object]] | None
+    _notification_manager_characteristic_to_callback: dict[str, object] | None
 
 
 MALFORMED_NOTIFICATION_THRESHOLD: int = _ble_constants.MALFORMED_NOTIFICATION_THRESHOLD
@@ -2250,6 +2255,71 @@ class BLEInterface(MeshInterface):
                 )
             except Exception:  # noqa: BLE001 - rollback snapshot is best effort
                 malformed_notification_count = 0
+            try:
+                current_legacy_log_handler = (
+                    resolved_dispatcher._current_legacy_log_handler
+                )
+            except Exception:  # noqa: BLE001 - rollback snapshot is best effort
+                current_legacy_log_handler = None
+            try:
+                current_log_handler = resolved_dispatcher._current_log_handler
+            except Exception:  # noqa: BLE001 - rollback snapshot is best effort
+                current_log_handler = None
+            try:
+                current_from_num_handler = resolved_dispatcher._current_from_num_handler
+            except Exception:  # noqa: BLE001 - rollback snapshot is best effort
+                current_from_num_handler = None
+            notification_manager_active_subscriptions: (
+                dict[int, tuple[str, object]] | None
+            ) = None
+            notification_manager_characteristic_to_callback: (
+                dict[str, object] | None
+            ) = None
+            try:
+                notification_manager = resolved_dispatcher._notification_manager
+                manager_lock = getattr(notification_manager, "_lock", None)
+                if manager_lock is None:
+                    active_subscriptions = getattr(
+                        notification_manager,
+                        "_active_subscriptions",
+                        None,
+                    )
+                    characteristic_to_callback = getattr(
+                        notification_manager,
+                        "_characteristic_to_callback",
+                        None,
+                    )
+                    if isinstance(active_subscriptions, dict):
+                        notification_manager_active_subscriptions = dict(
+                            active_subscriptions
+                        )
+                    if isinstance(characteristic_to_callback, dict):
+                        notification_manager_characteristic_to_callback = dict(
+                            characteristic_to_callback
+                        )
+                else:
+                    with manager_lock:
+                        active_subscriptions = getattr(
+                            notification_manager,
+                            "_active_subscriptions",
+                            None,
+                        )
+                        characteristic_to_callback = getattr(
+                            notification_manager,
+                            "_characteristic_to_callback",
+                            None,
+                        )
+                        if isinstance(active_subscriptions, dict):
+                            notification_manager_active_subscriptions = dict(
+                                active_subscriptions
+                            )
+                        if isinstance(characteristic_to_callback, dict):
+                            notification_manager_characteristic_to_callback = dict(
+                                characteristic_to_callback
+                            )
+            except Exception:  # noqa: BLE001 - rollback snapshot is best effort
+                notification_manager_active_subscriptions = None
+                notification_manager_characteristic_to_callback = None
             notification_session_snapshot = {
                 "_registered_notification_session_epoch": registered_epoch,
                 "_started_notify_characteristics": started_notify_characteristics,
@@ -2259,6 +2329,11 @@ class BLEInterface(MeshInterface):
                     if isinstance(malformed_notification_count, int)
                     else 0
                 ),
+                "_current_legacy_log_handler": current_legacy_log_handler,
+                "_current_log_handler": current_log_handler,
+                "_current_from_num_handler": current_from_num_handler,
+                "_notification_manager_active_subscriptions": notification_manager_active_subscriptions,
+                "_notification_manager_characteristic_to_callback": notification_manager_characteristic_to_callback,
             }
 
         def _restore_notification_session_after_rollback() -> None:
@@ -2299,6 +2374,54 @@ class BLEInterface(MeshInterface):
                 notification_dispatcher.malformed_notification_count = (
                     notification_session_snapshot["malformed_notification_count"]
                 )
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - rollback cleanup is best effort
+                notification_dispatcher._current_legacy_log_handler = (
+                    notification_session_snapshot["_current_legacy_log_handler"]
+                )
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - rollback cleanup is best effort
+                notification_dispatcher._current_log_handler = notification_session_snapshot[
+                    "_current_log_handler"
+                ]
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - rollback cleanup is best effort
+                notification_dispatcher._current_from_num_handler = (
+                    notification_session_snapshot["_current_from_num_handler"]
+                )
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - rollback cleanup is best effort
+                notification_manager = notification_dispatcher._notification_manager
+                manager_lock = getattr(notification_manager, "_lock", None)
+                active_subscriptions_snapshot = notification_session_snapshot[
+                    "_notification_manager_active_subscriptions"
+                ]
+                characteristic_to_callback_snapshot = notification_session_snapshot[
+                    "_notification_manager_characteristic_to_callback"
+                ]
+                if manager_lock is None:
+                    if isinstance(active_subscriptions_snapshot, dict):
+                        notification_manager._active_subscriptions = dict(
+                            active_subscriptions_snapshot
+                        )
+                    if isinstance(characteristic_to_callback_snapshot, dict):
+                        notification_manager._characteristic_to_callback = dict(
+                            characteristic_to_callback_snapshot
+                        )
+                else:
+                    with manager_lock:
+                        if isinstance(active_subscriptions_snapshot, dict):
+                            notification_manager._active_subscriptions = dict(
+                                active_subscriptions_snapshot
+                            )
+                        if isinstance(characteristic_to_callback_snapshot, dict):
+                            notification_manager._characteristic_to_callback = dict(
+                                characteristic_to_callback_snapshot
+                            )
 
         with self._state_lock:
             original_client = self.client
@@ -3096,7 +3219,9 @@ class BLEInterface(MeshInterface):
                         current_session_epoch,
                     )
                     return
-        super()._connected()
+                super()._connected()
+        else:
+            super()._connected()
         if expected_session_epoch is not None:
             with self._state_lock:
                 current_session_epoch = getattr(self, "_connection_session_epoch", 0)

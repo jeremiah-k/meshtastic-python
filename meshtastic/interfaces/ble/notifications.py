@@ -646,6 +646,21 @@ class BLENotificationDispatcher:
                 and getattr(iface, "client", None) is client
             )
 
+        def _rollback_stale_registration(*characteristics: str) -> None:
+            for characteristic in characteristics:
+                try:
+                    client.stop_notify(
+                        characteristic,
+                        timeout=NOTIFICATION_START_TIMEOUT,
+                    )
+                except Exception:  # noqa: BLE001 - stale rollback must stay best effort
+                    logger.debug(
+                        "Error stopping stale notification subscription for %s",
+                        characteristic,
+                        exc_info=True,
+                    )
+            _rollback_registration_state()
+
         if self._registered_notification_session_epoch != current_session_epoch:
             _rollback_registration_state()
 
@@ -838,7 +853,7 @@ class BLENotificationDispatcher:
                 else:
                     self._started_notify_characteristics.add(LEGACY_LOGRADIO_UUID)
                     if not _registration_still_current():
-                        _rollback_registration_state()
+                        _rollback_stale_registration(LEGACY_LOGRADIO_UUID)
                         return
 
         try:
@@ -874,7 +889,7 @@ class BLENotificationDispatcher:
                 else:
                     self._started_notify_characteristics.add(LOGRADIO_UUID)
                     if not _registration_still_current():
-                        _rollback_registration_state()
+                        _rollback_stale_registration(LOGRADIO_UUID)
                         return
 
         ingress_handler = _get_or_create_cached_handler(
@@ -947,7 +962,7 @@ class BLENotificationDispatcher:
                 if current_ingress_handler is not ingress_handler:
                     self._notification_manager._subscribe(FROMNUM_UUID, ingress_handler)
                 if not _registration_still_current():
-                    _rollback_registration_state()
+                    _rollback_stale_registration(FROMNUM_UUID)
                     return
                 self._started_notify_characteristics.add(FROMNUM_UUID)
                 self.fromnum_notify_enabled = True

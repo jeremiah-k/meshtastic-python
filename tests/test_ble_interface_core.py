@@ -2169,7 +2169,7 @@ def test_ble_interface_close_forwards_management_wait_poll_seconds(
     """close() should forward management shutdown timing kwargs to lifecycle close."""
     from meshtastic.interfaces.ble import interface as interface_mod
 
-    iface = object.__new__(BLEInterface)
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     close_calls: list[dict[str, object]] = []
 
     def _capture_close(
@@ -2184,7 +2184,12 @@ def test_ble_interface_close_forwards_management_wait_poll_seconds(
             }
         )
 
-    iface._lifecycle_controller = SimpleNamespace(close=_capture_close)
+    monkeypatch.setattr(
+        iface,
+        "_lifecycle_controller",
+        SimpleNamespace(close=_capture_close),
+        raising=True,
+    )
 
     monkeypatch.setattr(
         interface_mod,
@@ -2199,7 +2204,7 @@ def test_ble_interface_close_forwards_management_wait_poll_seconds(
         raising=True,
     )
 
-    BLEInterface.close(iface)
+    iface.close()
 
     assert close_calls == [
         {
@@ -4757,7 +4762,10 @@ def test_receive_recovery_backoff_reaches_configured_cap_for_non_power_of_two(
     """
     import meshtastic.interfaces.ble.receive_service as receive_service_mod
 
-    iface = SimpleNamespace()
+    iface = SimpleNamespace(
+        _closed=False,
+        _state_manager=SimpleNamespace(is_closing=False),
+    )
     iface._is_connection_closing = False
     iface._state_lock = threading.RLock()
     iface.client = None
@@ -5896,7 +5904,10 @@ def test_publish_connection_status_skips_when_queuework_unconfigured(
         raising=True,
     )
 
-    iface = SimpleNamespace()
+    iface = SimpleNamespace(
+        _closed=False,
+        _state_manager=SimpleNamespace(is_closing=False),
+    )
     publishing_thread = SimpleNamespace()
 
     with caplog.at_level(logging.DEBUG):
@@ -5967,7 +5978,7 @@ def test_publish_connection_status_skips_when_enqueue_raises(
     assert "Error queuing connection status publish" in caplog.text
 
 
-def test_publish_connection_status_skips_when_publishing_thread_missing(
+def test_publish_connection_status_runs_inline_when_publishing_thread_missing(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:

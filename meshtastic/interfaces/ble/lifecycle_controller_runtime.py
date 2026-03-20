@@ -229,16 +229,13 @@ class BLELifecycleController:
             client,
             restore_address=restore_address,
             restore_last_connection_request=restore_last_connection_request,
-            is_closing_getter=lambda: is_closing(),
-            reset_to_disconnected=lambda: reset_to_disconnected(),
-            current_state_getter=lambda: current_state(),
+            is_closing_getter=is_closing,
+            reset_to_disconnected=reset_to_disconnected,
+            current_state_getter=current_state,
             transition_to_disconnected=lambda: transition_to_state(
                 ConnectionState.DISCONNECTED
             ),
-            safe_cleanup=lambda cleanup, operation_name: safe_cleanup(
-                cleanup,
-                operation_name,
-            ),
+            safe_cleanup=safe_cleanup,
         )
 
     def _uses_compat_connection_status_overrides(self) -> bool:

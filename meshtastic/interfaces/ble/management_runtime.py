@@ -189,6 +189,12 @@ def _coerce_concrete_ble_address(address: str | None) -> str | None:
     return _normalized_mac_to_colon_address(normalized)
 
 
+def _synthetic_gate_address_for_client(client: BLEClient) -> str:
+    """Return a deterministic pseudo-address used for fallback gate serialization."""
+    token = f"{id(client) & 0xFFFFFFFFFFFF:012x}"
+    return ":".join(token[index : index + 2] for index in range(0, len(token), 2))
+
+
 class BLEManagementCommandHandler:
     """Instance-bound management command collaborator for BLEInterface."""
 
@@ -397,6 +403,7 @@ class BLEManagementCommandHandler:
                 except (
                     Exception
                 ):  # noqa: BLE001 - connectivity probe must remain best effort
+                    callable_probe_seen = True
                     logger.debug(
                         "Error probing BLE client connectivity via %s",
                         attr_name,
@@ -561,14 +568,15 @@ class BLEManagementCommandHandler:
                     self.get_management_client_if_available_locked,
                     address,
                 )
-                if refreshed_existing_client is None:
-                    raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
-                target_candidate = iface._extract_client_address(
-                    refreshed_existing_client
-                )
-                if target_candidate is None:
-                    # Cannot safely gate an unknown-address client; force
-                    # reacquisition by resolved concrete target.
+                if refreshed_existing_client is not None:
+                    target_candidate = iface._extract_client_address(
+                        refreshed_existing_client
+                    )
+                    if target_candidate is None:
+                        # Cannot safely gate an unknown-address client; force
+                        # reacquisition by resolved concrete target.
+                        use_refreshed_existing_client = False
+                else:
                     use_refreshed_existing_client = False
             if target_candidate is None:
                 target_candidate = self._call_iface_override(
@@ -777,7 +785,17 @@ class BLEManagementCommandHandler:
                             refreshed_existing_client
                         )
                     if client_still_connected:
-                        return command(refreshed_existing_client)
+                        gate_target = start_context.expected_implicit_binding
+                        if gate_target is None or _addr_key(gate_target) is None:
+                            gate_target = iface._extract_client_address(
+                                refreshed_existing_client
+                            )
+                        if gate_target is None or _addr_key(gate_target) is None:
+                            gate_target = _synthetic_gate_address_for_client(
+                                refreshed_existing_client
+                            )
+                        with iface._management_target_gate(gate_target):
+                            return command(refreshed_existing_client)
                     raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
                 raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_REQUIRED)
 

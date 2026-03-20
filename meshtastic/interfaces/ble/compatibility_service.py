@@ -69,13 +69,21 @@ class BLECompatibilityEventPublisher:
             if publishing_thread is not None:
                 self._last_publishing_thread = publishing_thread
                 return publishing_thread
-            return self._last_publishing_thread if use_cached_fallback else None
         except Exception:  # noqa: BLE001 - teardown path must stay best effort
             logger.debug(
                 "Error resolving publishing thread for compatibility publisher.",
                 exc_info=True,
             )
-            return self._last_publishing_thread if use_cached_fallback else None
+        if not use_cached_fallback:
+            return None
+        if self._last_publishing_thread is not None:
+            return self._last_publishing_thread
+        from meshtastic import mesh_interface as mesh_iface_module
+
+        fallback_thread = getattr(mesh_iface_module, "publishingThread", None)
+        if fallback_thread is not None:
+            self._last_publishing_thread = fallback_thread
+        return fallback_thread
 
     def wait_for_disconnect_notifications(self, timeout: float | None = None) -> None:
         """Wait for queued disconnect notifications to flush.
