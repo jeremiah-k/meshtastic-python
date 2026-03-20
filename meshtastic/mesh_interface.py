@@ -14,6 +14,7 @@ import sys
 import threading
 import time
 import traceback
+from dataclasses import dataclass
 from datetime import datetime
 from types import TracebackType
 from typing import IO, Any, Callable, Literal, Protocol, TypeAlias, cast
@@ -111,6 +112,59 @@ RETIRED_WAIT_REQUEST_ID_TTL_SECONDS: float = 60.0
 RESPONSE_WAIT_REQID_ERROR: str = (
     "Internal error: response wait requires a positive packet id."
 )
+LOCAL_CONFIG_FROM_RADIO_FIELDS: tuple[str, ...] = (
+    "device",
+    "position",
+    "power",
+    "network",
+    "display",
+    "lora",
+    "bluetooth",
+    "security",
+)
+MODULE_CONFIG_FROM_RADIO_FIELDS: tuple[str, ...] = (
+    "mqtt",
+    "serial",
+    "external_notification",
+    "store_forward",
+    "range_test",
+    "telemetry",
+    "canned_message",
+    "audio",
+    "remote_hardware",
+    "neighbor_info",
+    "detection_sensor",
+    "ambient_lighting",
+    "paxcounter",
+    "traffic_management",
+)
+
+
+@dataclass(frozen=True)
+class _PublicationIntent:
+    """Represents one pubsub emission requested by inbound runtime handlers."""
+
+    topic: str
+    payload: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class _FromRadioContext:
+    """Normalized FromRadio context passed from parse/normalize to dispatch handlers."""
+
+    message: mesh_pb2.FromRadio
+    message_dict: dict[str, Any]
+    config_id: int | None
+
+
+@dataclass
+class _PacketRuntimeContext:
+    """Mutable packet runtime state across packet handling phases."""
+
+    packet_dict: dict[str, Any]
+    topic: str = "meshtastic.receive"
+    decoded: dict[str, Any] | None = None
+    skip_response_callback_for_decode_failure: bool = False
 
 
 class _SerializablePayload(Protocol):
@@ -3093,6 +3147,13 @@ class MeshInterface:  # pylint: disable=R0902
             An object (protobuf-like) with attributes `free`, `maxlen`,
             `res`, and `mesh_packet_id` describing the radio's transmit-queue state.
         """
+        self._record_queue_status(queueStatus)
+        if queueStatus.res:
+            return
+        self._correlate_queue_status_reply(queueStatus)
+
+    def _record_queue_status(self, queueStatus: mesh_pb2.QueueStatus) -> None:
+        """Persist latest radio TX queue status under queue ownership."""
         with self._queue_lock:
             self.queueStatus = queueStatus
         logger.debug(
@@ -3103,20 +3164,19 @@ class MeshInterface:  # pylint: disable=R0902
             queueStatus.mesh_packet_id,
         )
 
-        if queueStatus.res:
-            return
-
+    def _correlate_queue_status_reply(self, queueStatus: mesh_pb2.QueueStatus) -> None:
+        """Correlate queue reply IDs with local pending queue entries."""
         debug_enabled = logger.isEnabledFor(logging.DEBUG)
         with self._queue_lock:
             queue_snapshot = tuple(self.queue.keys()) if debug_enabled else ()
-            justQueued = self.queue.pop(queueStatus.mesh_packet_id, None)
+            just_queued = self.queue.pop(queueStatus.mesh_packet_id, None)
         if debug_enabled:
             logger.debug(
                 "queue: %s",
                 " ".join(f"{key:08x}" for key in queue_snapshot),
             )
 
-        if justQueued is None and queueStatus.mesh_packet_id != 0:
+        if just_queued is None and queueStatus.mesh_packet_id != 0:
             with self._queue_lock:
                 self.queue[queueStatus.mesh_packet_id] = False
             logger.debug(
@@ -3126,210 +3186,287 @@ class MeshInterface:  # pylint: disable=R0902
         # logger.warn("queue: " + " ".join(f'{k:08x}' for k in self.queue))
 
     def _handle_from_radio(self, fromRadioBytes: bytes) -> None:
-        """Handle a raw FromRadio protobuf payload: update interface state and publish corresponding events.
+        """Handle a raw FromRadio payload using parse -> normalize -> dispatch -> publish phases."""
+        from_radio = self._parse_from_radio_bytes(fromRadioBytes)
+        context = self._normalize_from_radio_message(from_radio)
+        publication_intents = self._dispatch_from_radio_message(context)
+        self._emit_publication_intents(publication_intents)
 
-        Processes the provided protobuf bytes to update myInfo, metadata, node records, local configuration/moduleConfig,
-        and queue status; dispatches received channel, packet, log, client notification, MQTT proxy, and XMODEM events;
-        and on reboot marks the interface disconnected and restarts configuration download.
-
-        Parameters
-        ----------
-        fromRadioBytes : bytes
-            Raw protobuf bytes representing a mesh_pb2.FromRadio message.
-
-        Raises
-        ------
-        Exception
-            If parsing the protobuf fails (parse errors are logged and re-raised).
-        """
-        fromRadio = mesh_pb2.FromRadio()
+    def _parse_from_radio_bytes(self, from_radio_bytes: bytes) -> mesh_pb2.FromRadio:
+        """Parse raw FromRadio bytes into protobuf form."""
+        from_radio = mesh_pb2.FromRadio()
         logger.debug(
             "in mesh_interface.py _handle_from_radio() fromRadioBytes: %r",
-            fromRadioBytes,
+            from_radio_bytes,
         )
         try:
-            fromRadio.ParseFromString(fromRadioBytes)
+            from_radio.ParseFromString(from_radio_bytes)
         except Exception:
-            logger.exception("Error while parsing FromRadio bytes:%s", fromRadioBytes)
+            logger.exception("Error while parsing FromRadio bytes:%s", from_radio_bytes)
             raise
-        asDict = google.protobuf.json_format.MessageToDict(fromRadio)
-        logger.debug("Received from radio: %s", fromRadio)
+        return from_radio
+
+    def _normalize_from_radio_message(
+        self, from_radio: mesh_pb2.FromRadio
+    ) -> _FromRadioContext:
+        """Normalize parsed FromRadio data for dispatch and mutation handlers."""
+        message_dict = google.protobuf.json_format.MessageToDict(from_radio)
+        logger.debug("Received from radio: %s", from_radio)
         with self._node_db_lock:
             config_id = self.configId
-        if fromRadio.HasField("my_info"):
-            with self._node_db_lock:
-                my_info = mesh_pb2.MyNodeInfo()
-                my_info.CopyFrom(fromRadio.my_info)
-                self.myInfo = my_info
-                self.localNode.nodeNum = my_info.my_node_num
-            logger.debug("Received myinfo: %s", stripnl(fromRadio.my_info))
+        return _FromRadioContext(
+            message=from_radio,
+            message_dict=message_dict,
+            config_id=config_id,
+        )
 
-        elif fromRadio.HasField("metadata"):
-            with self._node_db_lock:
-                metadata = mesh_pb2.DeviceMetadata()
-                metadata.CopyFrom(fromRadio.metadata)
-                self.metadata = metadata
-            logger.debug("Received device metadata: %s", stripnl(fromRadio.metadata))
-
-        elif fromRadio.HasField("node_info"):
-            logger.debug("Received nodeinfo: %s", asDict["nodeInfo"])
-
-            with self._node_db_lock:
-                node = self._get_or_create_by_num(asDict["nodeInfo"]["num"])
-                node.update(asDict["nodeInfo"])
-                try:
-                    newpos = self._fixup_position(node["position"])
-                    node["position"] = newpos
-                except KeyError:
-                    logger.debug("Node has no position key")
-
-                # no longer necessary since we're mutating directly in nodesByNum via _get_or_create_by_num
-                # self.nodesByNum[node["num"]] = node
-                if "user" in node:  # Some nodes might not have user/ids assigned yet
-                    if "id" in node["user"]:
-                        # Keep nodes and nodesByNum mutation under the same lock
-                        # so readers never observe partially-updated node mappings.
-                        if self.nodes is not None:
-                            self.nodes[node["user"]["id"]] = node
-            publishingThread.queueWork(
-                lambda: pub.sendMessage(
-                    "meshtastic.node.updated", node=node, interface=self
-                )
-            )
-        elif fromRadio.config_complete_id == config_id:
-            # we ignore the config_complete_id, it is unneeded for our
-            # stream API fromRadio.config_complete_id
-            logger.debug("Config complete ID %s", config_id)
-            self._handle_config_complete()
-        elif fromRadio.HasField("channel"):
-            self._handle_channel(fromRadio.channel)
-        elif fromRadio.HasField("packet"):
-            self._handle_packet_from_radio(fromRadio.packet)
-        elif fromRadio.HasField("log_record"):
-            self._handle_log_record(fromRadio.log_record)
-        elif fromRadio.HasField("queueStatus"):
-            self._handle_queue_status_from_radio(fromRadio.queueStatus)
-        elif fromRadio.HasField("clientNotification"):
-            publishingThread.queueWork(
-                lambda: pub.sendMessage(
-                    "meshtastic.clientNotification",
-                    notification=fromRadio.clientNotification,
-                    interface=self,
-                )
-            )
-
-        elif fromRadio.HasField("mqttClientProxyMessage"):
-            publishingThread.queueWork(
-                lambda: pub.sendMessage(
-                    "meshtastic.mqttclientproxymessage",
-                    proxymessage=fromRadio.mqttClientProxyMessage,
-                    interface=self,
-                )
-            )
-
-        elif fromRadio.HasField("xmodemPacket"):
-            publishingThread.queueWork(
-                lambda: pub.sendMessage(
-                    "meshtastic.xmodempacket",
-                    packet=fromRadio.xmodemPacket,
-                    interface=self,
-                )
-            )
-
-        elif fromRadio.HasField("rebooted") and fromRadio.rebooted:
-            # Tell clients the device went away.  Careful not to call the overridden
-            # subclass version that closes the serial port
-            MeshInterface._disconnected(self)
-
-            self._start_config()  # redownload the node db etc...
-
-        elif fromRadio.HasField("config") or fromRadio.HasField("moduleConfig"):
-            with self._node_db_lock:
-                if fromRadio.config.HasField("device"):
-                    self.localNode.localConfig.device.CopyFrom(fromRadio.config.device)
-                elif fromRadio.config.HasField("position"):
-                    self.localNode.localConfig.position.CopyFrom(
-                        fromRadio.config.position
-                    )
-                elif fromRadio.config.HasField("power"):
-                    self.localNode.localConfig.power.CopyFrom(fromRadio.config.power)
-                elif fromRadio.config.HasField("network"):
-                    self.localNode.localConfig.network.CopyFrom(
-                        fromRadio.config.network
-                    )
-                elif fromRadio.config.HasField("display"):
-                    self.localNode.localConfig.display.CopyFrom(
-                        fromRadio.config.display
-                    )
-                elif fromRadio.config.HasField("lora"):
-                    self.localNode.localConfig.lora.CopyFrom(fromRadio.config.lora)
-                elif fromRadio.config.HasField("bluetooth"):
-                    self.localNode.localConfig.bluetooth.CopyFrom(
-                        fromRadio.config.bluetooth
-                    )
-                elif fromRadio.config.HasField("security"):
-                    self.localNode.localConfig.security.CopyFrom(
-                        fromRadio.config.security
-                    )
-                elif fromRadio.moduleConfig.HasField("mqtt"):
-                    self.localNode.moduleConfig.mqtt.CopyFrom(
-                        fromRadio.moduleConfig.mqtt
-                    )
-                elif fromRadio.moduleConfig.HasField("serial"):
-                    self.localNode.moduleConfig.serial.CopyFrom(
-                        fromRadio.moduleConfig.serial
-                    )
-                elif fromRadio.moduleConfig.HasField("external_notification"):
-                    self.localNode.moduleConfig.external_notification.CopyFrom(
-                        fromRadio.moduleConfig.external_notification
-                    )
-                elif fromRadio.moduleConfig.HasField("store_forward"):
-                    self.localNode.moduleConfig.store_forward.CopyFrom(
-                        fromRadio.moduleConfig.store_forward
-                    )
-                elif fromRadio.moduleConfig.HasField("range_test"):
-                    self.localNode.moduleConfig.range_test.CopyFrom(
-                        fromRadio.moduleConfig.range_test
-                    )
-                elif fromRadio.moduleConfig.HasField("telemetry"):
-                    self.localNode.moduleConfig.telemetry.CopyFrom(
-                        fromRadio.moduleConfig.telemetry
-                    )
-                elif fromRadio.moduleConfig.HasField("canned_message"):
-                    self.localNode.moduleConfig.canned_message.CopyFrom(
-                        fromRadio.moduleConfig.canned_message
-                    )
-                elif fromRadio.moduleConfig.HasField("audio"):
-                    self.localNode.moduleConfig.audio.CopyFrom(
-                        fromRadio.moduleConfig.audio
-                    )
-                elif fromRadio.moduleConfig.HasField("remote_hardware"):
-                    self.localNode.moduleConfig.remote_hardware.CopyFrom(
-                        fromRadio.moduleConfig.remote_hardware
-                    )
-                elif fromRadio.moduleConfig.HasField("neighbor_info"):
-                    self.localNode.moduleConfig.neighbor_info.CopyFrom(
-                        fromRadio.moduleConfig.neighbor_info
-                    )
-                elif fromRadio.moduleConfig.HasField("detection_sensor"):
-                    self.localNode.moduleConfig.detection_sensor.CopyFrom(
-                        fromRadio.moduleConfig.detection_sensor
-                    )
-                elif fromRadio.moduleConfig.HasField("ambient_lighting"):
-                    self.localNode.moduleConfig.ambient_lighting.CopyFrom(
-                        fromRadio.moduleConfig.ambient_lighting
-                    )
-                elif fromRadio.moduleConfig.HasField("paxcounter"):
-                    self.localNode.moduleConfig.paxcounter.CopyFrom(
-                        fromRadio.moduleConfig.paxcounter
-                    )
-                elif fromRadio.moduleConfig.HasField("traffic_management"):
-                    self.localNode.moduleConfig.traffic_management.CopyFrom(
-                        fromRadio.moduleConfig.traffic_management
-                    )
-
-        else:
+    def _dispatch_from_radio_message(
+        self, context: _FromRadioContext
+    ) -> list[_PublicationIntent]:
+        """Dispatch normalized FromRadio payloads to dedicated branch handlers."""
+        branch = self._select_from_radio_branch(context)
+        if branch is None:
             logger.debug("Unexpected FromRadio payload")
+            return []
+        handler = self._from_radio_dispatch_map()[branch]
+        return handler(context)
+
+    def _select_from_radio_branch(self, context: _FromRadioContext) -> str | None:
+        """Select the active FromRadio branch using the historical precedence order."""
+        from_radio = context.message
+        if from_radio.HasField("my_info"):
+            return "my_info"
+        if from_radio.HasField("metadata"):
+            return "metadata"
+        if from_radio.HasField("node_info"):
+            return "node_info"
+        if from_radio.config_complete_id == context.config_id:
+            return "config_complete_id"
+        if from_radio.HasField("channel"):
+            return "channel"
+        if from_radio.HasField("packet"):
+            return "packet"
+        if from_radio.HasField("log_record"):
+            return "log_record"
+        if from_radio.HasField("queueStatus"):
+            return "queueStatus"
+        if from_radio.HasField("clientNotification"):
+            return "clientNotification"
+        if from_radio.HasField("mqttClientProxyMessage"):
+            return "mqttClientProxyMessage"
+        if from_radio.HasField("xmodemPacket"):
+            return "xmodemPacket"
+        if from_radio.HasField("rebooted") and from_radio.rebooted:
+            return "rebooted"
+        if from_radio.HasField("config") or from_radio.HasField("moduleConfig"):
+            return "config_or_moduleConfig"
+        return None
+
+    def _from_radio_dispatch_map(
+        self,
+    ) -> dict[str, Callable[[_FromRadioContext], list[_PublicationIntent]]]:
+        """Return branch handlers for FromRadio dispatch."""
+        return {
+            "my_info": self._handle_from_radio_my_info,
+            "metadata": self._handle_from_radio_metadata,
+            "node_info": self._handle_from_radio_node_info,
+            "config_complete_id": self._handle_from_radio_config_complete_id,
+            "channel": self._handle_from_radio_channel,
+            "packet": self._handle_from_radio_packet,
+            "log_record": self._handle_from_radio_log_record,
+            "queueStatus": self._handle_from_radio_queue_status,
+            "clientNotification": self._handle_from_radio_client_notification,
+            "mqttClientProxyMessage": self._handle_from_radio_mqtt_client_proxy_message,
+            "xmodemPacket": self._handle_from_radio_xmodem_packet,
+            "rebooted": self._handle_from_radio_rebooted,
+            "config_or_moduleConfig": self._handle_from_radio_config_update,
+        }
+
+    def _handle_from_radio_my_info(
+        self, context: _FromRadioContext
+    ) -> list[_PublicationIntent]:
+        """Apply my_info updates to interface state."""
+        from_radio = context.message
+        with self._node_db_lock:
+            my_info = mesh_pb2.MyNodeInfo()
+            my_info.CopyFrom(from_radio.my_info)
+            self.myInfo = my_info
+            self.localNode.nodeNum = my_info.my_node_num
+        logger.debug("Received myinfo: %s", stripnl(from_radio.my_info))
+        return []
+
+    def _handle_from_radio_metadata(
+        self, context: _FromRadioContext
+    ) -> list[_PublicationIntent]:
+        """Apply metadata updates to interface state."""
+        from_radio = context.message
+        with self._node_db_lock:
+            metadata = mesh_pb2.DeviceMetadata()
+            metadata.CopyFrom(from_radio.metadata)
+            self.metadata = metadata
+        logger.debug("Received device metadata: %s", stripnl(from_radio.metadata))
+        return []
+
+    def _handle_from_radio_node_info(
+        self, context: _FromRadioContext
+    ) -> list[_PublicationIntent]:
+        """Apply node_info updates and emit node-updated publication intents."""
+        node_info = context.message_dict["nodeInfo"]
+        logger.debug("Received nodeinfo: %s", node_info)
+
+        node = self._get_or_create_by_num(node_info["num"])
+        with self._node_db_lock:
+            node.update(node_info)
+            try:
+                node["position"] = self._fixup_position(node["position"])
+            except KeyError:
+                logger.debug("Node has no position key")
+
+            # no longer necessary since we're mutating directly in nodesByNum via _get_or_create_by_num
+            # self.nodesByNum[node["num"]] = node
+            if "user" in node:  # Some nodes might not have user/ids assigned yet
+                if "id" in node["user"]:
+                    # Keep nodes and nodesByNum mutation under the same lock
+                    # so readers never observe partially-updated node mappings.
+                    if self.nodes is not None:
+                        self.nodes[node["user"]["id"]] = node
+
+        return [
+            self._publication_intent("meshtastic.node.updated", node=node),
+        ]
+
+    def _handle_from_radio_config_complete_id(
+        self, context: _FromRadioContext
+    ) -> list[_PublicationIntent]:
+        """Handle config-complete correlation and startup completion."""
+        logger.debug("Config complete ID %s", context.config_id)
+        self._handle_config_complete()
+        return []
+
+    def _handle_from_radio_channel(
+        self, context: _FromRadioContext
+    ) -> list[_PublicationIntent]:
+        """Handle incoming channel updates."""
+        self._handle_channel(context.message.channel)
+        return []
+
+    def _handle_from_radio_packet(
+        self, context: _FromRadioContext
+    ) -> list[_PublicationIntent]:
+        """Handle incoming mesh packets and return publication intents."""
+        return self._handle_packet_from_radio(
+            context.message.packet,
+            emit_publication=False,
+        )
+
+    def _handle_from_radio_log_record(
+        self, context: _FromRadioContext
+    ) -> list[_PublicationIntent]:
+        """Handle incoming log records."""
+        self._handle_log_record(context.message.log_record)
+        return []
+
+    def _handle_from_radio_queue_status(
+        self, context: _FromRadioContext
+    ) -> list[_PublicationIntent]:
+        """Handle inbound queue status updates/correlation."""
+        self._handle_queue_status_from_radio(context.message.queueStatus)
+        return []
+
+    def _handle_from_radio_client_notification(
+        self, context: _FromRadioContext
+    ) -> list[_PublicationIntent]:
+        """Build publication intent for client notifications."""
+        return [
+            self._publication_intent(
+                "meshtastic.clientNotification",
+                notification=context.message.clientNotification,
+            ),
+        ]
+
+    def _handle_from_radio_mqtt_client_proxy_message(
+        self, context: _FromRadioContext
+    ) -> list[_PublicationIntent]:
+        """Build publication intent for MQTT client proxy messages."""
+        return [
+            self._publication_intent(
+                "meshtastic.mqttclientproxymessage",
+                proxymessage=context.message.mqttClientProxyMessage,
+            ),
+        ]
+
+    def _handle_from_radio_xmodem_packet(
+        self, context: _FromRadioContext
+    ) -> list[_PublicationIntent]:
+        """Build publication intent for inbound XMODEM payloads."""
+        return [
+            self._publication_intent(
+                "meshtastic.xmodempacket",
+                packet=context.message.xmodemPacket,
+            ),
+        ]
+
+    def _handle_from_radio_rebooted(
+        self, _context: _FromRadioContext
+    ) -> list[_PublicationIntent]:
+        """Handle reboot notifications by disconnecting and restarting config flow."""
+        # Tell clients the device went away.  Careful not to call the overridden
+        # subclass version that closes the serial port
+        MeshInterface._disconnected(self)
+        self._start_config()  # redownload the node db etc...
+        return []
+
+    def _handle_from_radio_config_update(
+        self, context: _FromRadioContext
+    ) -> list[_PublicationIntent]:
+        """Apply localConfig/moduleConfig updates from inbound FromRadio payloads."""
+        self._apply_config_from_radio(context.message)
+        return []
+
+    def _apply_config_from_radio(self, from_radio: mesh_pb2.FromRadio) -> None:
+        """Copy the active config/moduleConfig submessage into local cached config."""
+        with self._node_db_lock:
+            if self._apply_local_config_from_radio(from_radio.config):
+                return
+            self._apply_module_config_from_radio(from_radio.moduleConfig)
+
+    def _apply_local_config_from_radio(self, config: Any) -> bool:
+        """Apply one localConfig field from inbound config payload."""
+        for field_name in LOCAL_CONFIG_FROM_RADIO_FIELDS:
+            if config.HasField(field_name):
+                getattr(self.localNode.localConfig, field_name).CopyFrom(
+                    getattr(config, field_name)
+                )
+                return True
+        return False
+
+    def _apply_module_config_from_radio(self, module_config: Any) -> bool:
+        """Apply one moduleConfig field from inbound moduleConfig payload."""
+        for field_name in MODULE_CONFIG_FROM_RADIO_FIELDS:
+            if module_config.HasField(field_name):
+                getattr(self.localNode.moduleConfig, field_name).CopyFrom(
+                    getattr(module_config, field_name)
+                )
+                return True
+        return False
+
+    def _publication_intent(self, topic: str, **payload: Any) -> _PublicationIntent:
+        """Create a publication intent for deferred emission."""
+        return _PublicationIntent(topic=topic, payload=dict(payload))
+
+    def _emit_publication_intents(self, intents: list[_PublicationIntent]) -> None:
+        """Emit queued publication intents in a dedicated publication phase."""
+        for intent in intents:
+            self._queue_publication(intent.topic, **intent.payload)
+
+    def _queue_publication(self, topic: str, **payload: Any) -> None:
+        """Queue a pubsub emission for the publishing thread."""
+        payload_snapshot = dict(payload)
+        publishingThread.queueWork(
+            lambda topic=topic, payload=payload_snapshot: pub.sendMessage(
+                topic, interface=self, **payload
+            )
+        )
 
     def _fixup_position(self, position: dict[str, Any]) -> dict[str, Any]:
         """Convert integer micro-degree coordinates in a position dict to floating-point degrees.
@@ -3452,198 +3589,236 @@ class MeshInterface:  # pylint: disable=R0902
             self._localChannels.append(channel)
 
     def _handle_packet_from_radio(
-        self, meshPacket: mesh_pb2.MeshPacket, hack: bool = False
-    ) -> None:
-        """Process an incoming MeshPacket from the radio and publish an appropriate meshtastic.receive event.
+        self,
+        meshPacket: mesh_pb2.MeshPacket,
+        hack: bool = False,
+        *,
+        emit_publication: bool = True,
+    ) -> list[_PublicationIntent]:
+        """Process incoming MeshPacket with explicit normalize/classify/mutate/publish phases."""
+        packet_dict = self._normalize_packet_from_radio(meshPacket, hack=hack)
+        if packet_dict is None:
+            return []
 
-        Converts the protobuf MeshPacket to a dictionary, attaches the original
-        protobuf as "raw", ensures "from" and "to" keys exist (defaulting to 0
-        if missing), and populates "fromId"/"toId" using
-        node-number-to-ID mapping. If the packet contains a decoded payload,
-        preserves the raw payload bytes, exposes or sets a port number, and,
-        when a known protocol handler exists, decodes the protocol payload into
-        decoded.<handler.name> and attaches the protocol protobuf as
-        decoded.<handler.name>["raw"]. If a protocol handler defines an
-        onReceive callback it will be invoked with the packet dict. If the
-        decoded payload contains a requestId, any registered response handler
-        will be invoked (respecting ACK filtering and handler
-        ackPermitted/onAckNak rules). Finally, publishes the packet on a topic
-        like "meshtastic.receive", "meshtastic.receive.data.<portnum>", or
-        "meshtastic.receive.<protocol>" via the pub/sub system.
+        packet_context = _PacketRuntimeContext(packet_dict=packet_dict)
+        self._enrich_packet_identity(packet_context.packet_dict)
+        self._classify_packet_runtime(packet_context, meshPacket)
+        self._apply_packet_runtime_mutations(packet_context, meshPacket)
+        self._correlate_packet_response_handler(packet_context)
 
-        Parameters
-        ----------
-        meshPacket : mesh_pb2.MeshPacket
-            protobuf MeshPacket instance received from the radio.
-        hack : bool
-            When True, skip the usual check that requires a "from" field so unit
-            tests can construct packets lacking that field. (Default value = False)
+        publication_intents = [
+            self._publication_intent(
+                packet_context.topic,
+                packet=packet_context.packet_dict,
+            )
+        ]
+        logger.debug(
+            "Publishing %s: packet=%s",
+            packet_context.topic,
+            stripnl(packet_context.packet_dict),
+        )
+        if emit_publication:
+            self._emit_publication_intents(publication_intents)
+        return publication_intents
 
-        Returns
-        -------
-        None
-            This method does not return a value.
-        """
-        asDict = google.protobuf.json_format.MessageToDict(meshPacket)
+    def _normalize_packet_from_radio(
+        self,
+        meshPacket: mesh_pb2.MeshPacket,
+        *,
+        hack: bool,
+    ) -> dict[str, Any] | None:
+        """Convert protobuf packet into runtime dict and enforce legacy defaults."""
+        packet_dict = google.protobuf.json_format.MessageToDict(meshPacket)
 
         # We normally decompose the payload into a dictionary so that the client
         # doesn't need to understand protobufs.  But advanced clients might
         # want the raw protobuf, so we provide it in "raw"
-        asDict["raw"] = meshPacket
+        packet_dict["raw"] = meshPacket
 
         # from might be missing if the nodenum was zero.
-        if not hack and "from" not in asDict:
-            asDict["from"] = 0
+        if not hack and "from" not in packet_dict:
+            packet_dict["from"] = 0
             logger.error(
                 "Device returned a packet we sent, ignoring: %s",
-                stripnl(asDict),
+                stripnl(packet_dict),
             )
-            return
-        if "to" not in asDict:
-            asDict["to"] = 0
+            return None
+        if "to" not in packet_dict:
+            packet_dict["to"] = 0
+        return packet_dict
 
-        # /add fromId and toId fields based on the node ID
+    def _enrich_packet_identity(self, packet_dict: dict[str, Any]) -> None:
+        """Populate fromId/toId fields from known node-number mappings."""
         try:
-            asDict["fromId"] = self._node_num_to_id(asDict["from"], False)
+            packet_dict["fromId"] = self._node_num_to_id(packet_dict["from"], False)
         except Exception as ex:
             logger.warning("Not populating fromId: %s", ex, exc_info=True)
         try:
-            asDict["toId"] = self._node_num_to_id(asDict["to"])
+            packet_dict["toId"] = self._node_num_to_id(packet_dict["to"])
         except Exception as ex:
             logger.warning("Not populating toId: %s", ex, exc_info=True)
 
+    def _classify_packet_runtime(
+        self,
+        packet_context: _PacketRuntimeContext,
+        mesh_packet: mesh_pb2.MeshPacket,
+    ) -> None:
+        """Classify packet topic and decoded payload view."""
         # We could provide our objects as DotMaps - which work with . notation or as dictionaries
         # asObj = DotMap(asDict)
-        topic = "meshtastic.receive"  # Generic unknown packet type
+        packet_context.topic = "meshtastic.receive"  # Generic unknown packet type
 
-        decoded = None
+        if "decoded" not in packet_context.packet_dict:
+            return
+
+        decoded = cast(dict[str, Any], packet_context.packet_dict["decoded"])
+        packet_context.decoded = decoded
+        # The default MessageToDict converts byte arrays into base64 strings.
+        # We don't want that - it messes up data payload.  So slam in the correct
+        # byte array.
+        decoded["payload"] = mesh_packet.decoded.payload
+
         portnum = portnums_pb2.PortNum.Name(portnums_pb2.PortNum.UNKNOWN_APP)
-        if "decoded" in asDict:
-            decoded = asDict["decoded"]
-            # The default MessageToDict converts byte arrays into base64 strings.
-            # We don't want that - it messes up data payload.  So slam in the correct
-            # byte array.
-            decoded["payload"] = meshPacket.decoded.payload
+        # UNKNOWN_APP is the default protobuf portnum value, and therefore if not
+        # set it will not be populated at all to make API usage easier, set
+        # it to prevent confusion
+        if "portnum" not in decoded:
+            decoded["portnum"] = portnum
+            logger.warning("portnum was not in decoded. Setting to:%s", portnum)
+        else:
+            portnum = decoded["portnum"]
+        packet_context.topic = f"meshtastic.receive.data.{portnum}"
 
-            # UNKNOWN_APP is the default protobuf portnum value, and therefore if not
-            # set it will not be populated at all to make API usage easier, set
-            # it to prevent confusion
-            if "portnum" not in decoded:
-                decoded["portnum"] = portnum
-                logger.warning("portnum was not in decoded. Setting to:%s", portnum)
-            else:
-                portnum = decoded["portnum"]
+    def _apply_packet_runtime_mutations(
+        self,
+        packet_context: _PacketRuntimeContext,
+        mesh_packet: mesh_pb2.MeshPacket,
+    ) -> None:
+        """Decode known payloads and run protocol-specific onReceive handlers."""
+        if packet_context.decoded is None:
+            return
 
-            topic = f"meshtastic.receive.data.{portnum}"
+        # decode position protobufs and update nodedb, provide decoded version
+        # as "position" in the published msg move the following into a 'decoders'
+        # API that clients could register?
+        port_num_int = mesh_packet.decoded.portnum  # we want portnum as an int
+        handler = protocols.get(port_num_int)
+        if handler is None:
+            return
 
-            # decode position protobufs and update nodedb, provide decoded version
-            # as "position" in the published msg move the following into a 'decoders'
-            # API that clients could register?
-            portNumInt = meshPacket.decoded.portnum  # we want portnum as an int
-            handler = protocols.get(portNumInt)
-            # The decoded protobuf as a dictionary (if we understand this message)
-            p = None
-            skip_response_callback_for_decode_failure = False
-            if handler is not None:
-                topic = f"meshtastic.receive.{handler.name}"
+        packet_context.topic = f"meshtastic.receive.{handler.name}"
+        self._decode_packet_payload_with_handler(packet_context, mesh_packet, handler)
 
-                # Convert to protobuf if possible
-                if handler.protobufFactory is not None:
-                    pb = handler.protobufFactory()
-                    try:
-                        pb.ParseFromString(meshPacket.decoded.payload)
-                        p = google.protobuf.json_format.MessageToDict(pb)
-                        asDict["decoded"][handler.name] = p
-                        # Also provide the protobuf raw
-                        asDict["decoded"][handler.name]["raw"] = pb
-                    except (protobuf_message.DecodeError, TypeError, ValueError) as exc:
-                        decode_error = f"{DECODE_FAILED_PREFIX}{exc}"
-                        logger.warning(
-                            "Failed to decode %s payload for packet id=%s from=%s to=%s: %s",
-                            handler.name,
-                            getattr(meshPacket, "id", 0),
-                            asDict.get("from"),
-                            asDict.get("to"),
-                            exc,
-                        )
-                        asDict["decoded"][handler.name] = {
-                            DECODE_ERROR_KEY: decode_error
-                        }
-                        if handler.name == "routing":
-                            asDict["decoded"][handler.name][
-                                "errorReason"
-                            ] = decode_error
-                        if handler.name == "admin":
-                            # Admin callbacks frequently expect decoded.admin.raw.
-                            # Avoid dispatching malformed payloads through that path.
-                            skip_response_callback_for_decode_failure = True
+        # Call specialized onReceive if necessary
+        if handler.onReceive is not None:
+            handler.onReceive(self, packet_context.packet_dict)
 
-                # Call specialized onReceive if necessary
-                if handler.onReceive is not None:
-                    handler.onReceive(self, asDict)
+    def _decode_packet_payload_with_handler(
+        self,
+        packet_context: _PacketRuntimeContext,
+        mesh_packet: mesh_pb2.MeshPacket,
+        handler: Any,
+    ) -> None:
+        """Decode decoded.payload using a protocol handler protobuf factory when available."""
+        if handler.protobufFactory is None:
+            return
 
-            # Is this message in response to a request, if so, look for a handler
-            requestId = self._extract_request_id_from_packet(asDict)
-            if requestId is not None:
-                logger.debug("Got a response for requestId %s", requestId)
-                # We ignore ACK packets unless the callback is named `onAckNak`
-                # or the handler is set as ackPermitted, but send NAKs and
-                # other, data-containing responses to the handlers
-                routing = decoded.get("routing")
-                isAck = routing is not None and (
-                    "errorReason" not in routing or routing["errorReason"] == "NONE"
-                )
-                response_handler: ResponseHandler | None = None
-                dropped_due_to_decode_failure = False
-                # Keep lookup/eligibility/pop atomic under the response-handler lock
-                # so a competing thread cannot remove the handler between checks.
-                with self._response_handlers_lock:
-                    candidate = self.responseHandlers.get(requestId, None)
-                    if candidate is not None:
-                        callback_name = getattr(candidate.callback, "__name__", "")
-                        if (
-                            skip_response_callback_for_decode_failure
-                            and callback_name != "onAckNak"
-                        ):
-                            self.responseHandlers.pop(requestId, None)
-                            dropped_due_to_decode_failure = True
-                        elif (
-                            (not isAck)
-                            or callback_name == "onAckNak"
-                            or candidate.ackPermitted
-                        ):
-                            response_handler = self.responseHandlers.pop(
-                                requestId, None
-                            )
-                if dropped_due_to_decode_failure:
-                    logger.warning(
-                        "Dropping response callback for requestId %s due to admin decode failure.",
-                        requestId,
-                    )
-                    admin_decoded_payload = asDict.get("decoded", {}).get("admin", {})
-                    if isinstance(admin_decoded_payload, dict):
-                        admin_decode_error = admin_decoded_payload.get(
-                            DECODE_ERROR_KEY, f"{DECODE_FAILED_PREFIX}unknown error"
-                        )
-                    else:
-                        admin_decode_error = f"{DECODE_FAILED_PREFIX}unknown error"
-                    self._set_wait_error(
-                        WAIT_ATTR_NAK,
-                        f"Failed to decode admin payload: {admin_decode_error}",
-                        request_id=requestId,
-                    )
-                    self._acknowledgment.receivedNak = True
-                if response_handler is not None:
-                    logger.debug("Calling response handler for requestId %s", requestId)
-                    try:
-                        response_handler.callback(asDict)
-                    except Exception:
-                        logger.exception(
-                            "Error in response handler for requestId %s",
-                            requestId,
-                        )
+        pb = handler.protobufFactory()
+        try:
+            pb.ParseFromString(mesh_packet.decoded.payload)
+            decoded_payload = google.protobuf.json_format.MessageToDict(pb)
+            packet_context.packet_dict["decoded"][handler.name] = decoded_payload
+            # Also provide the protobuf raw
+            packet_context.packet_dict["decoded"][handler.name]["raw"] = pb
+        except (protobuf_message.DecodeError, TypeError, ValueError) as exc:
+            decode_error = f"{DECODE_FAILED_PREFIX}{exc}"
+            logger.warning(
+                "Failed to decode %s payload for packet id=%s from=%s to=%s: %s",
+                handler.name,
+                getattr(mesh_packet, "id", 0),
+                packet_context.packet_dict.get("from"),
+                packet_context.packet_dict.get("to"),
+                exc,
+            )
+            packet_context.packet_dict["decoded"][handler.name] = {
+                DECODE_ERROR_KEY: decode_error
+            }
+            if handler.name == "routing":
+                packet_context.packet_dict["decoded"][handler.name][
+                    "errorReason"
+                ] = decode_error
+            if handler.name == "admin":
+                # Admin callbacks frequently expect decoded.admin.raw.
+                # Avoid dispatching malformed payloads through that path.
+                packet_context.skip_response_callback_for_decode_failure = True
 
-        logger.debug("Publishing %s: packet=%s", topic, stripnl(asDict))
-        publishingThread.queueWork(
-            lambda: pub.sendMessage(topic, packet=asDict, interface=self)
+    def _correlate_packet_response_handler(
+        self, packet_context: _PacketRuntimeContext
+    ) -> None:
+        """Correlate requestId responses with registered response handlers."""
+        if packet_context.decoded is None:
+            return
+
+        # Is this message in response to a request, if so, look for a handler
+        requestId = self._extract_request_id_from_packet(packet_context.packet_dict)
+        if requestId is None:
+            return
+        logger.debug("Got a response for requestId %s", requestId)
+
+        # We ignore ACK packets unless the callback is named `onAckNak`
+        # or the handler is set as ackPermitted, but send NAKs and
+        # other, data-containing responses to the handlers
+        routing = packet_context.decoded.get("routing")
+        is_ack = routing is not None and (
+            "errorReason" not in routing or routing["errorReason"] == "NONE"
         )
+        response_handler: ResponseHandler | None = None
+        dropped_due_to_decode_failure = False
+        # Keep lookup/eligibility/pop atomic under the response-handler lock
+        # so a competing thread cannot remove the handler between checks.
+        with self._response_handlers_lock:
+            candidate = self.responseHandlers.get(requestId, None)
+            if candidate is not None:
+                callback_name = getattr(candidate.callback, "__name__", "")
+                if (
+                    packet_context.skip_response_callback_for_decode_failure
+                    and callback_name != "onAckNak"
+                ):
+                    self.responseHandlers.pop(requestId, None)
+                    dropped_due_to_decode_failure = True
+                elif (
+                    (not is_ack)
+                    or callback_name == "onAckNak"
+                    or candidate.ackPermitted
+                ):
+                    response_handler = self.responseHandlers.pop(requestId, None)
+        if dropped_due_to_decode_failure:
+            logger.warning(
+                "Dropping response callback for requestId %s due to admin decode failure.",
+                requestId,
+            )
+            admin_decoded_payload = (
+                packet_context.packet_dict.get("decoded", {}).get("admin", {})
+            )
+            if isinstance(admin_decoded_payload, dict):
+                admin_decode_error = admin_decoded_payload.get(
+                    DECODE_ERROR_KEY,
+                    f"{DECODE_FAILED_PREFIX}unknown error",
+                )
+            else:
+                admin_decode_error = f"{DECODE_FAILED_PREFIX}unknown error"
+            self._set_wait_error(
+                WAIT_ATTR_NAK,
+                f"Failed to decode admin payload: {admin_decode_error}",
+                request_id=requestId,
+            )
+            self._acknowledgment.receivedNak = True
+        if response_handler is not None:
+            logger.debug("Calling response handler for requestId %s", requestId)
+            try:
+                response_handler.callback(packet_context.packet_dict)
+            except Exception:
+                logger.exception(
+                    "Error in response handler for requestId %s",
+                    requestId,
+                )
