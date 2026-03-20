@@ -812,7 +812,8 @@ class BLEInterface(MeshInterface):
             awaitable,
             timeout,
             label,
-            timeout_error_factory=lambda timeout_label, timeout_seconds: BLEInterface.BLEError(
+            timeout_error_factory=lambda timeout_label,
+            timeout_seconds: BLEInterface.BLEError(
                 ERROR_TIMEOUT.format(timeout_label, timeout_seconds)
             ),
         )
@@ -1005,7 +1006,9 @@ class BLEInterface(MeshInterface):
         lock_is_owned = getattr(state_lock, "_is_owned", None)
         if isinstance(lock_is_owned, Mock):
             return handler.get_management_client_if_available(address)
-        if callable(lock_is_owned) and not _is_unconfigured_mock_callable(lock_is_owned):
+        if callable(lock_is_owned) and not _is_unconfigured_mock_callable(
+            lock_is_owned
+        ):
             owns_lock = False
             try:
                 owns_lock = bool(lock_is_owned())
@@ -1046,7 +1049,9 @@ class BLEInterface(MeshInterface):
                 target_address,
                 prefer_current_client=prefer_current_client,
             )
-        if callable(lock_is_owned) and not _is_unconfigured_mock_callable(lock_is_owned):
+        if callable(lock_is_owned) and not _is_unconfigured_mock_callable(
+            lock_is_owned
+        ):
             owns_lock = False
             try:
                 owns_lock = bool(lock_is_owned())
@@ -1082,18 +1087,14 @@ class BLEInterface(MeshInterface):
 
         Caller must hold ``_state_lock``.
         """
-        return (
-            self._get_management_command_handler().get_current_implicit_management_binding_locked()
-        )
+        return self._get_management_command_handler().get_current_implicit_management_binding_locked()
 
     def _get_current_implicit_management_address_locked(self) -> str | None:
         """Return implicit management concrete address via collaborator.
 
         Caller must hold ``_state_lock``.
         """
-        return (
-            self._get_management_command_handler().get_current_implicit_management_address_locked()
-        )
+        return self._get_management_command_handler().get_current_implicit_management_address_locked()
 
     def _revalidate_implicit_management_target(
         self,
@@ -2121,9 +2122,10 @@ class BLEInterface(MeshInterface):
                 "_started_notify_characteristics",
                 None,
             )
-            if hasattr(started_notify_characteristics, "clear"):
-                with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
-                    started_notify_characteristics.clear()
+            if started_notify_characteristics is not None:
+                if hasattr(started_notify_characteristics, "clear"):
+                    with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
+                        started_notify_characteristics.clear()
             with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher.fromnum_notify_enabled = False
             with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
@@ -2297,7 +2299,8 @@ class BLEInterface(MeshInterface):
                             self._connection_alias_key,
                         )
                     )
-                    if active_client is not None and active_client is not connected_client
+                    if active_client is not None
+                    and active_client is not connected_client
                     else set()
                 )
             if active_keys:
