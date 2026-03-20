@@ -306,178 +306,217 @@ def test_lifecycle_receive_shim_preserves_method_scoped_collaborators(
         iface.close()
 
 
-def test_lifecycle_disconnect_planning_and_side_effect_paths(
+def test_lifecycle_compute_disconnect_keys_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Disconnect target resolution and side effects should cover stale/skip branches."""
+    """Disconnect key computation should cover reconnect and fallback-key branches."""
     from meshtastic.interfaces.ble.gating import _addr_key
 
     iface = _make_iface(monkeypatch)
-    iface.address = "AA:AA:AA:AA:AA:AA"
-    iface._sorted_address_keys = lambda device_key, alias_key: [device_key, alias_key]
-
-    plan = BLELifecycleService._compute_disconnect_keys(
-        iface,
-        previous_client=None,
-        alias_key="alias",
-        should_reconnect=True,
-        address="11:22:33:44:55:66",
-    )
-    assert plan[0][0] == _addr_key("11:22:33:44:55:66")
-    assert plan[1] is True
-    unknown_previous = DummyClient()
-    unknown_previous.address = "unknown"
-    unknown_previous.bleak_client.address = "unknown"
-    fallback_plan = BLELifecycleService._compute_disconnect_keys(
-        iface,
-        previous_client=unknown_previous,
-        alias_key="alias",
-        should_reconnect=False,
-        address="22:33:44:55:66:77",
-    )
-    assert fallback_plan[0][0] == _addr_key("22:33:44:55:66:77")
-
-    with iface._state_lock:
-        iface.client = DummyClient()
-        iface._disconnect_notified = True
-        iface._state_manager._transition_to(ConnectionState.CONNECTING)
-    assert BLELifecycleService._resolve_disconnect_target(
-        iface, "src", None, None
-    ).early_return
-
-    owned_connecting_client = DummyClient()
-    with iface._state_lock:
-        iface.client = owned_connecting_client
-        iface._disconnect_notified = False
-        iface._client_publish_pending = False
-        iface._client_replacement_pending = True
-        iface._state_manager._reset_to_disconnected()
-        iface._state_manager._transition_to(ConnectionState.CONNECTING)
-    owned_connecting_plan = BLELifecycleService._resolve_disconnect_target(
-        iface,
-        "src",
-        owned_connecting_client,
-        None,
-    )
-    assert owned_connecting_plan.early_return is None
-
-    with iface._state_lock:
-        iface._state_manager._reset_to_disconnected()
-        iface._disconnect_notified = True
-    assert BLELifecycleService._resolve_disconnect_target(
-        iface, "src", None, None
-    ).early_return
-
-    previous = DummyClient()
-    previous.address = "AA:BB:CC:DD:EE:FF"
-    with iface._state_lock:
-        iface.client = previous
-        iface._disconnect_notified = False
-        iface.auto_reconnect = False
-
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_state_manager_transition_to",
-        staticmethod(lambda *_args, **_kwargs: False),
-    )
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_state_manager_reset_to_disconnected",
-        staticmethod(lambda *_args, **_kwargs: False),
-    )
-    detailed_plan = BLELifecycleService._resolve_disconnect_target(
-        iface, "src", None, None
-    )
-    assert detailed_plan.early_return is None
-
-    iface.client = DummyClient()
-    iface.client.address = "11:22:33:44:55:66"
-    iface._sorted_address_keys = lambda *_args: ["current"]
-    disconnected_keys: list[str] = []
-    iface._mark_address_keys_disconnected = lambda *keys: disconnected_keys.extend(
-        [key for key in keys if key is not None]
-    )
-    closed_previous: list[str] = []
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_close_previous_client_async",
-        staticmethod(
-            lambda _iface, _previous_client: closed_previous.append("closed-previous")
-        ),
-    )
-    stale_plan = _DisconnectPlan(
-        early_return=None,
-        previous_client=DummyClient(),
-        client_at_start=DummyClient(),
-        address="addr",
-        disconnect_keys=("stale-key",),
-        should_reconnect=False,
-        should_schedule_reconnect=False,
-        was_publish_pending=False,
-        was_replacement_pending=False,
-    )
-    assert BLELifecycleService._execute_disconnect_side_effects(
-        iface, plan=stale_plan, source="stale"
-    )
-    assert disconnected_keys == ["stale-key"]
-    assert closed_previous == ["closed-previous"]
-
-    iface.client = None
-    iface._connection_session_epoch = 3
-    disconnected_keys.clear()
-    closed_previous.clear()
-    stale_epoch_plan = _DisconnectPlan(
-        early_return=None,
-        previous_client=DummyClient(),
-        client_at_start=DummyClient(),
-        session_epoch=2,
-        address="addr",
-        disconnect_keys=("stale-epoch-key",),
-        should_reconnect=False,
-        should_schedule_reconnect=False,
-        was_publish_pending=False,
-        was_replacement_pending=False,
-    )
-    assert BLELifecycleService._execute_disconnect_side_effects(
-        iface, plan=stale_epoch_plan, source="stale-epoch"
-    )
-    assert disconnected_keys == ["stale-epoch-key"]
-    assert closed_previous == ["closed-previous"]
-    iface._connection_session_epoch = 0
-
-    iface._disconnected = MagicMock()
-    provisional_plan = _DisconnectPlan(
-        early_return=None,
-        previous_client=None,
-        client_at_start=None,
-        address="addr",
-        disconnect_keys=(),
-        should_reconnect=False,
-        should_schedule_reconnect=False,
-        was_publish_pending=True,
-        was_replacement_pending=False,
-    )
-    iface.client = None
-    assert (
-        BLELifecycleService._execute_disconnect_side_effects(
-            iface,
-            plan=provisional_plan,
-            source="provisional",
-        )
-        is False
-    )
-    iface._disconnected.assert_not_called()
-
-    iface._disconnect_lock.acquire()
-    with iface._state_lock:
-        iface.auto_reconnect = True
-        iface._closed = False
     try:
-        assert BLELifecycleService._handle_disconnect(iface, "busy") is True
-    finally:
-        iface._disconnect_lock.release()
+        iface.address = "AA:AA:AA:AA:AA:AA"
+        iface._sorted_address_keys = (
+            lambda device_key, alias_key: [device_key, alias_key]
+        )
 
-    iface.close()
+        reconnect_plan = BLELifecycleService._compute_disconnect_keys(
+            iface,
+            previous_client=None,
+            alias_key="alias",
+            should_reconnect=True,
+            address="11:22:33:44:55:66",
+        )
+        assert reconnect_plan[0][0] == _addr_key("11:22:33:44:55:66")
+        assert reconnect_plan[1] is True
+
+        unknown_previous = DummyClient()
+        unknown_previous.address = "unknown"
+        unknown_previous.bleak_client.address = "unknown"
+        fallback_plan = BLELifecycleService._compute_disconnect_keys(
+            iface,
+            previous_client=unknown_previous,
+            alias_key="alias",
+            should_reconnect=False,
+            address="22:33:44:55:66:77",
+        )
+        assert fallback_plan[0][0] == _addr_key("22:33:44:55:66:77")
+    finally:
+        iface.close()
+
+
+def test_lifecycle_resolve_disconnect_target_gates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Disconnect target planning should enforce early-return/state gates."""
+    iface = _make_iface(monkeypatch)
+    try:
+        with iface._state_lock:
+            iface.client = DummyClient()
+            iface._disconnect_notified = True
+            iface._state_manager._transition_to(ConnectionState.CONNECTING)
+        assert BLELifecycleService._resolve_disconnect_target(
+            iface, "src", None, None
+        ).early_return
+
+        owned_connecting_client = DummyClient()
+        with iface._state_lock:
+            iface.client = owned_connecting_client
+            iface._disconnect_notified = False
+            iface._client_publish_pending = False
+            iface._client_replacement_pending = True
+            iface._state_manager._reset_to_disconnected()
+            iface._state_manager._transition_to(ConnectionState.CONNECTING)
+        owned_connecting_plan = BLELifecycleService._resolve_disconnect_target(
+            iface,
+            "src",
+            owned_connecting_client,
+            None,
+        )
+        assert owned_connecting_plan.early_return is None
+
+        with iface._state_lock:
+            iface._state_manager._reset_to_disconnected()
+            iface._disconnect_notified = True
+        assert BLELifecycleService._resolve_disconnect_target(
+            iface, "src", None, None
+        ).early_return
+
+        previous = DummyClient()
+        previous.address = "AA:BB:CC:DD:EE:FF"
+        with iface._state_lock:
+            iface.client = previous
+            iface._disconnect_notified = False
+            iface.auto_reconnect = False
+
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_state_manager_transition_to",
+            staticmethod(lambda *_args, **_kwargs: False),
+        )
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_state_manager_reset_to_disconnected",
+            staticmethod(lambda *_args, **_kwargs: False),
+        )
+        detailed_plan = BLELifecycleService._resolve_disconnect_target(
+            iface, "src", None, None
+        )
+        assert detailed_plan.early_return is None
+    finally:
+        iface.close()
+
+
+def test_lifecycle_execute_disconnect_side_effects_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Disconnect side effects should honor stale/provisional plan behavior."""
+    iface = _make_iface(monkeypatch)
+    try:
+        iface.client = DummyClient()
+        iface.client.address = "11:22:33:44:55:66"
+        iface._sorted_address_keys = lambda *_args: ["current"]
+        disconnected_keys: list[str] = []
+        iface._mark_address_keys_disconnected = lambda *keys: disconnected_keys.extend(
+            [key for key in keys if key is not None]
+        )
+        closed_previous: list[str] = []
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_close_previous_client_async",
+            staticmethod(
+                lambda _iface, _previous_client: closed_previous.append(
+                    "closed-previous"
+                )
+            ),
+        )
+        stale_plan = _DisconnectPlan(
+            early_return=None,
+            previous_client=DummyClient(),
+            client_at_start=DummyClient(),
+            address="addr",
+            disconnect_keys=("stale-key",),
+            should_reconnect=False,
+            should_schedule_reconnect=False,
+            was_publish_pending=False,
+            was_replacement_pending=False,
+        )
+        assert BLELifecycleService._execute_disconnect_side_effects(
+            iface, plan=stale_plan, source="stale"
+        )
+        assert disconnected_keys == ["stale-key"]
+        assert closed_previous == ["closed-previous"]
+
+        iface.client = None
+        iface._connection_session_epoch = 3
+        disconnected_keys.clear()
+        closed_previous.clear()
+        stale_epoch_plan = _DisconnectPlan(
+            early_return=None,
+            previous_client=DummyClient(),
+            client_at_start=DummyClient(),
+            session_epoch=2,
+            address="addr",
+            disconnect_keys=("stale-epoch-key",),
+            should_reconnect=False,
+            should_schedule_reconnect=False,
+            was_publish_pending=False,
+            was_replacement_pending=False,
+        )
+        assert BLELifecycleService._execute_disconnect_side_effects(
+            iface, plan=stale_epoch_plan, source="stale-epoch"
+        )
+        assert disconnected_keys == ["stale-epoch-key"]
+        assert closed_previous == ["closed-previous"]
+        iface._connection_session_epoch = 0
+
+        iface._disconnected = MagicMock()
+        provisional_plan = _DisconnectPlan(
+            early_return=None,
+            previous_client=None,
+            client_at_start=None,
+            address="addr",
+            disconnect_keys=(),
+            should_reconnect=False,
+            should_schedule_reconnect=False,
+            was_publish_pending=True,
+            was_replacement_pending=False,
+        )
+        iface.client = None
+        assert (
+            BLELifecycleService._execute_disconnect_side_effects(
+                iface,
+                plan=provisional_plan,
+                source="provisional",
+            )
+            is False
+        )
+        iface._disconnected.assert_not_called()
+    finally:
+        iface.close()
+
+
+def test_lifecycle_handle_disconnect_lock_busy_branch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Busy disconnect lock path should report whether reconnect should continue."""
+    iface = _make_iface(monkeypatch)
+    try:
+        iface._disconnect_lock.acquire()
+        with iface._state_lock:
+            iface.auto_reconnect = True
+            iface._want_receive = False
+            iface.client = None
+            iface._client_publish_pending = False
+            iface._client_replacement_pending = False
+            iface._closed = False
+        assert BLELifecycleService._handle_disconnect(iface, "busy") is True
+        with iface._state_lock:
+            iface.auto_reconnect = False
+        assert BLELifecycleService._handle_disconnect(iface, "busy") is False
+    finally:
+        if iface._disconnect_lock.locked():
+            iface._disconnect_lock.release()
+        iface.close()
 
 
 def test_lifecycle_state_manager_helper_paths(

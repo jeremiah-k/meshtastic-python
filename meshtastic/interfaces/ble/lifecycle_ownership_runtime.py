@@ -29,10 +29,28 @@ _LOG_INTERFACE_LOST_OWNERSHIP_DURING_CONNECT = (
 
 
 class BLEConnectionOwnershipLifecycleCoordinator:
-    """Own verified-connection publication and ownership/finalization behavior."""
+    """Own verified-connection publication and ownership/finalization behavior.
+
+    Parameters
+    ----------
+    iface : BLEInterface
+        Interface instance whose connected-session ownership lifecycle is
+        coordinated by this collaborator.
+    """
 
     def __init__(self, iface: "BLEInterface") -> None:
-        """Bind connection ownership coordination to a specific interface."""
+        """Bind connection ownership coordination to a specific interface.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface instance whose ownership lifecycle is managed.
+
+        Returns
+        -------
+        None
+            Initializes bound collaborator state.
+        """
         self._iface = iface
         self._state_access = _LifecycleStateAccess(iface)
         self._thread_access = _LifecycleThreadAccess(iface)
@@ -46,7 +64,26 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         state_connected_getter: Callable[[], bool] | None = None,
         client_connected_getter: Callable[["BLEClient"], bool] | None = None,
     ) -> tuple[bool, bool]:
-        """Return ownership and closing flags for `client` while holding lock."""
+        """Return ownership and closing flags for ``client`` while holding lock.
+
+        Parameters
+        ----------
+        client : BLEClient
+            Client candidate whose owned/connected status is being evaluated.
+        is_closing_getter : Callable[[], bool] | None
+            Optional closure-state probe override.
+        state_connected_getter : Callable[[], bool] | None
+            Optional state-manager connected probe override.
+        client_connected_getter : Callable[[BLEClient], bool] | None
+            Optional per-client connected probe override.
+
+        Returns
+        -------
+        tuple[bool, bool]
+            ``(is_owned, is_closing)`` where ``is_owned`` indicates active
+            ownership of ``client`` and ``is_closing`` reflects interface
+            close/shutdown state.
+        """
         iface = self._iface
         get_is_closing = is_closing_getter or self._state_access.is_closing
         get_state_connected = state_connected_getter or self._state_access.is_connected
@@ -311,13 +348,19 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 "BLE client close for invalidated connection result",
             )
         finally:
-            self._apply_post_cleanup_state_correction(
-                iface,
-                should_reset_state=should_reset_state,
-                do_reset_to_disconnected=do_reset_to_disconnected,
-                get_current_state=get_current_state,
-                do_transition_to_disconnected=do_transition_to_disconnected,
-            )
+            with iface._state_lock:
+                same_session = (
+                    getattr(iface, "_connection_session_epoch", 0)
+                    == disconnect_session_epoch
+                )
+            if same_session:
+                self._apply_post_cleanup_state_correction(
+                    iface,
+                    should_reset_state=should_reset_state,
+                    do_reset_to_disconnected=do_reset_to_disconnected,
+                    get_current_state=get_current_state,
+                    do_transition_to_disconnected=do_transition_to_disconnected,
+                )
         if should_publish_disconnect and not is_closing:
             with iface._state_lock:
                 publish_disconnect = (
@@ -491,10 +534,35 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 or post_commit_snapshot.lost_gate_ownership
             ):
                 raise_invalidated(post_commit_snapshot)
+            publish_allowed = False
             with iface._state_lock:
-                iface._ever_connected = True
-                iface._prior_publish_was_reconnect = prior_ever_connected
                 published_session_epoch = getattr(iface, "_connection_session_epoch", 0)
+                publish_allowed = (
+                    iface.client is connected_client
+                )
+                if publish_allowed:
+                    iface._ever_connected = True
+                    iface._prior_publish_was_reconnect = prior_ever_connected
+            if not publish_allowed:
+                stale_snapshot = snapshot_provider(
+                    connected_client,
+                    connected_device_key,
+                    connection_alias_key,
+                )
+                raise_invalidated(stale_snapshot)
+            with iface._state_lock:
+                publish_allowed = (
+                    iface.client is connected_client
+                    and getattr(iface, "_connection_session_epoch", 0)
+                    == published_session_epoch
+                )
+            if not publish_allowed:
+                stale_snapshot = snapshot_provider(
+                    connected_client,
+                    connected_device_key,
+                    connection_alias_key,
+                )
+                raise_invalidated(stale_snapshot)
             iface._connected()
             publish_completed = True
             self._emit_verified_connection_side_effects(connected_client)

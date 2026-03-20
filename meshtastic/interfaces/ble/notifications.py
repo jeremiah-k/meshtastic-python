@@ -435,6 +435,7 @@ class BLENotificationDispatcher:
         executed = False
         handler_failed = False
         handler_exception: BaseException | None = None
+        handler_failure_reported = False
 
         def _tracked_handler_thunk() -> None:
             nonlocal executed, handler_failed, handler_exception
@@ -449,12 +450,15 @@ class BLENotificationDispatcher:
                 raise
 
         def _report_handler_failure() -> None:
+            nonlocal handler_failure_reported
             if (
-                not handler_failed
+                handler_failure_reported
+                or not handler_failed
                 or handler_exception is None
                 or report_handler_error is None
             ):
                 return
+            handler_failure_reported = True
             try:
                 report_handler_error(handler_exception)
             except Exception:  # noqa: BLE001 - error reporting remains best effort

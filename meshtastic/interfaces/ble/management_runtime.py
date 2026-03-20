@@ -1,5 +1,6 @@
 """Management command helpers for BLE interface orchestration."""
 
+import contextlib
 import math
 import numbers
 import re
@@ -210,13 +211,24 @@ class BLEManagementCommandHandler:
         *args: object,
         **kwargs: object,
     ) -> T:
-        """Call instance-level iface override when present, else fallback."""
-        instance_dict = getattr(self._iface, "__dict__", {})
-        override = (
-            instance_dict.get(method_name) if isinstance(instance_dict, dict) else None
-        )
+        """Call iface override when present, else fallback.
+
+        Uses normal attribute lookup so subclass/class-level overrides are
+        honored, while still ignoring the default BLEInterface wrapper methods
+        unless an explicit instance override is installed.
+        """
+        override = getattr(self._iface, method_name, None)
         if callable(override) and not _is_unconfigured_mock_callable(override):
-            return cast(T, override(*args, **kwargs))
+            instance_dict = getattr(self._iface, "__dict__", {})
+            if isinstance(instance_dict, dict) and method_name in instance_dict:
+                return cast(T, override(*args, **kwargs))
+            with contextlib.suppress(Exception):  # noqa: BLE001 - lookup fallback
+                from meshtastic.interfaces.ble.interface import BLEInterface
+
+                base_method = getattr(BLEInterface, method_name, None)
+                class_method = getattr(type(self._iface), method_name, None)
+                if class_method is not None and class_method is not base_method:
+                    return cast(T, override(*args, **kwargs))
         return fallback(*args, **kwargs)
 
     def resolve_target_address_for_management(self, address: str | None) -> str:
@@ -351,6 +363,8 @@ class BLEManagementCommandHandler:
                     return connected_result
                 continue
             if isinstance(is_connected, bool):
+                if callable_probe_seen:
+                    continue
                 return is_connected
         if callable_probe_seen:
             return False

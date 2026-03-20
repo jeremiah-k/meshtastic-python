@@ -245,11 +245,17 @@ class BLEDisconnectLifecycleCoordinator:
 
             address = "unknown"
             if target_client is not None:
-                address = getattr(target_client, "address", repr(target_client))
+                address = (
+                    iface._extract_client_address(target_client)
+                    or getattr(target_client, "address", repr(target_client))
+                )
             elif bleak_client is not None:
                 address = getattr(bleak_client, "address", repr(bleak_client))
             elif previous_client is not None:
-                address = getattr(previous_client, "address", repr(previous_client))
+                address = (
+                    iface._extract_client_address(previous_client)
+                    or getattr(previous_client, "address", repr(previous_client))
+                )
 
             disconnect_keys, should_schedule_reconnect = self._compute_disconnect_keys(
                 previous_client=previous_client,
@@ -391,9 +397,6 @@ class BLEDisconnectLifecycleCoordinator:
         logger.debug("BLE client %s disconnected (source: %s).", plan.address, source)
         iface._last_disconnect_source = f"ble.{source}"
 
-        if disconnect_keys:
-            iface._mark_address_keys_disconnected(*disconnect_keys)
-
         close_previous(plan.previous_client)
         with iface._state_lock:
             active_client = iface.client
@@ -407,6 +410,8 @@ class BLEDisconnectLifecycleCoordinator:
                 source,
             )
             return True
+        if disconnect_keys:
+            iface._mark_address_keys_disconnected(*disconnect_keys)
         if not plan.was_publish_pending or plan.was_replacement_pending:
             iface._disconnected()
         else:

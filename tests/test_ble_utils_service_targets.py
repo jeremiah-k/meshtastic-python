@@ -371,6 +371,38 @@ def test_publish_connection_status_branches(monkeypatch: pytest.MonkeyPatch) -> 
     )
 
 
+def test_publish_connection_status_legacy_resolves_default_publishing_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Legacy status-publish shim should resolve default thread when kwarg is omitted."""
+    import meshtastic.mesh_interface as mesh_iface_module
+
+    sent: list[tuple[str, object, bool]] = []
+
+    def _send_message(topic: str, *, interface: object, connected: bool) -> None:
+        sent.append((topic, interface, connected))
+
+    monkeypatch.setattr(
+        mesh_iface_module,
+        "pub",
+        SimpleNamespace(sendMessage=_send_message),
+        raising=True,
+    )
+
+    publishing_thread = SimpleNamespace(
+        queue=SimpleNamespace(put_nowait=lambda callback: callback()),
+        thread=None,
+    )
+    iface = SimpleNamespace(_get_publishing_thread=lambda: publishing_thread)
+
+    BLECompatibilityEventService.publish_connection_status_legacy(
+        iface,
+        connected=True,
+    )
+
+    assert sent == [("meshtastic.connection.status", iface, True)]
+
+
 def test_coordination_inert_thread_start_is_noop() -> None:
     """Starting an inert coordinator thread should only warn and return."""
     coordinator = ThreadCoordinator()
@@ -530,10 +562,10 @@ def test_management_shim_handler_resolution_preserves_minimal_iface_double(
         iface.close()
 
 
-def test_management_handler_call_iface_override_uses_instance_overrides_only(
+def test_management_handler_call_iface_override_respects_instance_and_subclass_overrides(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """_call_iface_override should ignore class wrappers unless instance-overridden."""
+    """_call_iface_override should ignore base wrappers but honor real overrides."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     try:
         handler = BLEManagementCommandHandler(
@@ -567,6 +599,28 @@ def test_management_handler_call_iface_override_uses_instance_overrides_only(
                 "mesh-node",
             )
             == "override:mesh-node"
+        )
+        assert fallback_calls == ["fallback"]
+
+        class _OverrideInterface(type(iface)):
+            def _resolve_target_address_for_management(
+                self, address: str | None
+            ) -> str:
+                return f"subclass:{address}"
+
+        subclass_iface = object.__new__(_OverrideInterface)
+        subclass_handler = BLEManagementCommandHandler(
+            subclass_iface,
+            ble_client_factory=DummyClient,
+            connected_elsewhere=lambda *_args, **_kwargs: False,
+        )
+        assert (
+            subclass_handler._call_iface_override(
+                "_resolve_target_address_for_management",
+                _fallback,
+                "mesh-node",
+            )
+            == "subclass:mesh-node"
         )
         assert fallback_calls == ["fallback"]
     finally:

@@ -35,23 +35,54 @@ if TYPE_CHECKING:
 
 
 class BLEShutdownLifecycleCoordinator:
-    """Own interface shutdown orchestration and terminal cleanup behavior."""
+    """Own interface shutdown orchestration and terminal cleanup behavior.
+
+    Parameters
+    ----------
+    iface : BLEInterface
+        Interface instance whose shutdown flow and terminal cleanup are managed
+        by this collaborator.
+    """
 
     def __init__(self, iface: "BLEInterface") -> None:
-        """Bind shutdown ownership to a specific interface."""
+        """Bind shutdown ownership to a specific interface.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface instance providing state/thread/error collaborators.
+
+        Returns
+        -------
+        None
+            Initializes bound shutdown-collaborator state.
+        """
         self._iface = iface
         self._state_access = _LifecycleStateAccess(iface)
         self._thread_access = _LifecycleThreadAccess(iface)
         self._error_access = _LifecycleErrorAccess(iface)
 
     def is_connection_closing(self) -> bool:
-        """Return whether this interface is closing or already closed."""
+        """Return whether this interface is closing or already closed.
+
+        Returns
+        -------
+        bool
+            ``True`` when the interface is in closing/closed state; otherwise
+            ``False``.
+        """
         iface = self._iface
         with iface._state_lock:
             return self._state_access.is_closing() or iface._closed
 
     def _cleanup_thread_coordinator(self) -> None:
-        """Run thread-coordinator cleanup via public/legacy compatibility hooks."""
+        """Run thread-coordinator cleanup via public/legacy compatibility hooks.
+
+        Returns
+        -------
+        None
+            Cleanup is best effort and intentionally suppresses hook failures.
+        """
         iface = self._iface
         cleanup = getattr(iface.thread_coordinator, "cleanup", None)
         if callable(cleanup) and not _is_unconfigured_mock_callable(cleanup):

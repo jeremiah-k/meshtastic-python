@@ -2165,6 +2165,18 @@ class BLEInterface(MeshInterface):
         notification_dispatcher: object | None = None
         notification_session_snapshot: dict[str, object] | None = None
 
+        def _copy_started_notify_snapshot(value: object | None) -> object | None:
+            """Return best-effort shallow copy for started-notify collection."""
+            if value is None:
+                return None
+            copy_method = getattr(value, "copy", None)
+            if callable(copy_method) and not _is_unconfigured_mock_callable(copy_method):
+                with contextlib.suppress(
+                    Exception
+                ):  # noqa: BLE001 - rollback snapshot remains best effort
+                    return copy_method()
+            return value
+
         try:
             resolved_dispatcher = self._get_notification_dispatcher()
         except Exception:  # noqa: BLE001 - rollback snapshot is best effort
@@ -2185,6 +2197,9 @@ class BLEInterface(MeshInterface):
                 )
             except Exception:  # noqa: BLE001 - rollback snapshot is best effort
                 started_notify_characteristics = None
+            started_notify_characteristics = _copy_started_notify_snapshot(
+                started_notify_characteristics
+            )
             try:
                 fromnum_notify_enabled = resolved_dispatcher.fromnum_notify_enabled
             except Exception:  # noqa: BLE001 - rollback snapshot is best effort
@@ -2225,8 +2240,11 @@ class BLEInterface(MeshInterface):
             with contextlib.suppress(
                 Exception
             ):  # noqa: BLE001 - rollback cleanup is best effort
-                notification_dispatcher._started_notify_characteristics = (
+                started_notify_snapshot = _copy_started_notify_snapshot(
                     notification_session_snapshot["_started_notify_characteristics"]
+                )
+                notification_dispatcher._started_notify_characteristics = (
+                    started_notify_snapshot
                 )
             with contextlib.suppress(
                 Exception

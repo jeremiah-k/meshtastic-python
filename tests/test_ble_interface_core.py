@@ -3574,7 +3574,7 @@ def test_emit_verified_connection_side_effects_sets_reconnected_event(
 def test_thread_event_dispatcher_resolution_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Thread-event dispatcher resolution should cover class/instance/legacy/missing hooks."""
+    """Thread-event dispatcher resolution should cover underscored and missing hooks."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     original_close = iface.close
     original_thread_coordinator = iface.thread_coordinator
@@ -3582,7 +3582,7 @@ def test_thread_event_dispatcher_resolution_paths(
         class_calls: list[str] = []
 
         class _ClassCoordinator:
-            def set_event(self, event_name: str) -> None:
+            def _set_event(self, event_name: str) -> None:
                 class_calls.append(event_name)
 
         class_dispatch = BLEInterface._resolve_thread_event_dispatcher(
@@ -3597,7 +3597,7 @@ def test_thread_event_dispatcher_resolution_paths(
 
         instance_calls: list[str] = []
         instance_coordinator = SimpleNamespace(
-            set_event=lambda event_name: instance_calls.append(event_name)
+            _set_event=lambda event_name: instance_calls.append(event_name)
         )
         instance_dispatch = BLEInterface._resolve_thread_event_dispatcher(
             instance_coordinator
@@ -5172,7 +5172,15 @@ def _run_receive_pending_marker_scenario(
 ) -> None:
     """Run pending-marker restart scenario for service/facade receive starts."""
     from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
+        BLEReceiveLifecycleCoordinator,
         RECEIVE_START_PENDING_TIMEOUT_SECONDS,
+    )
+
+    monkeypatch.setattr(
+        BLEReceiveLifecycleCoordinator,
+        "_schedule_deferred_receive_restart",
+        lambda _self, **_kwargs: None,
+        raising=True,
     )
 
     thread_one = SimpleNamespace(

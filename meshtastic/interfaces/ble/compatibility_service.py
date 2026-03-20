@@ -534,14 +534,36 @@ class BLECompatibilityEventService:
             ``True`` for connected status and ``False`` for disconnected.
         publishing_thread : object | None
             Publishing-thread facade used to enqueue/send the legacy message.
+            When ``None``, this shim resolves the active publishing thread from
+            ``iface._get_publishing_thread()`` or module fallback before
+            delegating.
 
         Returns
         -------
         None
             This compatibility alias returns ``None``.
         """
+        resolved_publishing_thread = publishing_thread
+        if resolved_publishing_thread is None:
+            get_publishing_thread = getattr(iface, "_get_publishing_thread", None)
+            if callable(get_publishing_thread) and not _is_unconfigured_mock_callable(
+                get_publishing_thread
+            ):
+                try:
+                    resolved_publishing_thread = get_publishing_thread()
+                except Exception:  # noqa: BLE001 - compatibility shim is best effort
+                    logger.debug(
+                        "Error resolving publishing thread via iface._get_publishing_thread for legacy status publish.",
+                        exc_info=True,
+                    )
+            if resolved_publishing_thread is None:
+                from meshtastic import mesh_interface as mesh_iface_module
+
+                resolved_publishing_thread = getattr(
+                    mesh_iface_module, "publishingThread", None
+                )
         BLECompatibilityEventService.publish_connection_status(
             iface,
             connected,
-            publishing_thread=publishing_thread,
+            publishing_thread=resolved_publishing_thread,
         )
