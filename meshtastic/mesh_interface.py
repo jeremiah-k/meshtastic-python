@@ -1067,9 +1067,9 @@ class MeshInterface:  # pylint: disable=R0902
             ),
             queue_wait_delay_seconds=QUEUE_WAIT_DELAY_SECONDS,
         )
-        self._from_radio_dispatch_map_cache: dict[
-            str, Callable[[_FromRadioContext], list[_PublicationIntent]]
-        ] | None = None
+        self._from_radio_dispatch_map_cache: (
+            dict[str, Callable[[_FromRadioContext], list[_PublicationIntent]]] | None
+        ) = None
 
         # We could have just not passed in debugOut to MeshInterface, and instead told consumers to subscribe to
         # the meshtastic.log.line publish instead.  Alas though changing that now would be a breaking API change
@@ -1502,60 +1502,60 @@ class MeshInterface:  # pylint: disable=R0902
 
                 # This allows the user to specify fields that wouldn't otherwise be included.
                 fields = {}
-                for field in showFields:
-                    if "." in field:
-                        raw_value = _get_nested_value(node, field)
+                for col_name in showFields:
+                    if "." in col_name:
+                        raw_value = _get_nested_value(node, col_name)
                     else:
                         # The "since" column is synthesized, it's not retrieved from the device. Get the
                         # lastHeard value here, and then we'll format it properly below.
-                        if field == "since":
+                        if col_name == "since":
                             raw_value = node.get("lastHeard")
                         else:
-                            raw_value = node.get(field)
+                            raw_value = node.get(col_name)
 
                     formatted_value: str | None = ""
 
                     # Some of these need special formatting or processing.
-                    if field == "channel":
+                    if col_name == "channel":
                         if raw_value is None:
                             formatted_value = "0"
-                    elif field == "deviceMetrics.channelUtilization":
+                    elif col_name == "deviceMetrics.channelUtilization":
                         formatted_value = _format_float(raw_value, 2, "%")
-                    elif field == "deviceMetrics.airUtilTx":
+                    elif col_name == "deviceMetrics.airUtilTx":
                         formatted_value = _format_float(raw_value, 2, "%")
-                    elif field == "deviceMetrics.batteryLevel":
+                    elif col_name == "deviceMetrics.batteryLevel":
                         if raw_value in (0, 101):
                             formatted_value = "Powered"
                         else:
                             formatted_value = _format_float(raw_value, 0, "%")
-                    elif field == "isFavorite":
+                    elif col_name == "isFavorite":
                         formatted_value = "*" if raw_value else ""
-                    elif field == "lastHeard":
+                    elif col_name == "lastHeard":
                         formatted_value = _get_lh(raw_value)
-                    elif field == "position.latitude":
+                    elif col_name == "position.latitude":
                         formatted_value = _format_float(raw_value, 4, "°")
-                    elif field == "position.longitude":
+                    elif col_name == "position.longitude":
                         formatted_value = _format_float(raw_value, 4, "°")
-                    elif field == "position.altitude":
+                    elif col_name == "position.altitude":
                         formatted_value = _format_float(raw_value, 0, "m")
-                    elif field == "since":
+                    elif col_name == "since":
                         formatted_value = _get_time_ago(raw_value) or "N/A"
-                    elif field == "snr":
+                    elif col_name == "snr":
                         formatted_value = _format_float(raw_value, 0, " dB")
-                    elif field == "user.shortName":
+                    elif col_name == "user.shortName":
                         formatted_value = (
                             raw_value
                             if raw_value is not None
                             else f"Meshtastic {presumptive_id[-4:]}"
                         )
-                    elif field == "user.id":
+                    elif col_name == "user.id":
                         formatted_value = (
                             raw_value if raw_value is not None else presumptive_id
                         )
                     else:
                         formatted_value = raw_value  # No special formatting
 
-                    fields[field] = formatted_value
+                    fields[col_name] = formatted_value
 
                 # Filter out any field in the data set that was not specified.
                 filtered_data = {
@@ -3804,7 +3804,7 @@ class MeshInterface:  # pylint: disable=R0902
     def _apply_local_config_from_radio(self, config: config_pb2.Config) -> bool:
         """Apply one localConfig field from inbound config payload."""
         for field_name in LOCAL_CONFIG_FROM_RADIO_FIELDS:
-            if config.HasField(field_name):
+            if config.HasField(field_name):  # type: ignore[arg-type]
                 getattr(self.localNode.localConfig, field_name).CopyFrom(
                     getattr(config, field_name)
                 )
@@ -3816,7 +3816,7 @@ class MeshInterface:  # pylint: disable=R0902
     ) -> bool:
         """Apply one moduleConfig field from inbound moduleConfig payload."""
         for field_name in MODULE_CONFIG_FROM_RADIO_FIELDS:
-            if module_config.HasField(field_name):
+            if module_config.HasField(field_name):  # type: ignore[arg-type]
                 getattr(self.localNode.moduleConfig, field_name).CopyFrom(
                     getattr(module_config, field_name)
                 )

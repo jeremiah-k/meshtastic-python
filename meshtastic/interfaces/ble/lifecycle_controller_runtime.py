@@ -1,7 +1,7 @@
 """Top-level lifecycle controller runtime ownership for BLE."""
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from bleak import BleakClient as BleakRootClient
 
@@ -172,8 +172,10 @@ class BLELifecycleController:
         from meshtastic.interfaces.ble import lifecycle_service as lifecycle_service_mod
 
         iface = self._iface
-        is_closing = getattr(iface, "_state_manager_is_closing", None)
-        if not callable(is_closing) or _is_unconfigured_mock_callable(is_closing):
+        _is_closing_raw = getattr(iface, "_state_manager_is_closing", None)
+        if not callable(_is_closing_raw) or _is_unconfigured_mock_callable(
+            _is_closing_raw
+        ):
 
             def is_closing() -> bool:
                 return (
@@ -182,29 +184,36 @@ class BLELifecycleController:
                     )
                 )
 
-        reset_to_disconnected = getattr(
-            iface, "_state_manager_reset_to_disconnected", None
-        )
-        if not callable(reset_to_disconnected) or _is_unconfigured_mock_callable(
-            reset_to_disconnected
-        ):
+        else:
+            is_closing = cast(Callable[[], bool], _is_closing_raw)
+
+        _reset_raw = getattr(iface, "_state_manager_reset_to_disconnected", None)
+        if not callable(_reset_raw) or _is_unconfigured_mock_callable(_reset_raw):
 
             def reset_to_disconnected() -> bool:
                 return lifecycle_service_mod.BLELifecycleService._state_manager_reset_to_disconnected(  # noqa: E501
                     iface
                 )
 
-        current_state = getattr(iface, "_state_manager_current_state", None)
-        if not callable(current_state) or _is_unconfigured_mock_callable(current_state):
+        else:
+            reset_to_disconnected = cast(Callable[[], bool], _reset_raw)
+
+        _current_state_raw = getattr(iface, "_state_manager_current_state", None)
+        if not callable(_current_state_raw) or _is_unconfigured_mock_callable(
+            _current_state_raw
+        ):
 
             def current_state() -> ConnectionState:
                 return lifecycle_service_mod.BLELifecycleService._state_manager_current_state(  # noqa: E501
                     iface
                 )
 
-        transition_to_state = getattr(iface, "_state_manager_transition_to", None)
-        if not callable(transition_to_state) or _is_unconfigured_mock_callable(
-            transition_to_state
+        else:
+            current_state = cast(Callable[[], ConnectionState], _current_state_raw)
+
+        _transition_raw = getattr(iface, "_state_manager_transition_to", None)
+        if not callable(_transition_raw) or _is_unconfigured_mock_callable(
+            _transition_raw
         ):
 
             def transition_to_state(state: ConnectionState) -> bool:
@@ -213,8 +222,15 @@ class BLELifecycleController:
                     state,
                 )
 
-        safe_cleanup = getattr(iface, "_error_handler_safe_cleanup", None)
-        if not callable(safe_cleanup) or _is_unconfigured_mock_callable(safe_cleanup):
+        else:
+            transition_to_state = cast(
+                Callable[[ConnectionState], bool], _transition_raw
+            )  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
+
+        _safe_cleanup_raw = getattr(iface, "_error_handler_safe_cleanup", None)
+        if not callable(_safe_cleanup_raw) or _is_unconfigured_mock_callable(
+            _safe_cleanup_raw
+        ):
 
             def safe_cleanup(
                 cleanup: Callable[[], object], operation_name: str
@@ -224,6 +240,11 @@ class BLELifecycleController:
                     cleanup,
                     operation_name,
                 )
+
+        else:
+            safe_cleanup = cast(
+                Callable[[Callable[[], object], str], None], _safe_cleanup_raw
+            )  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
 
         self._connection_ownership._discard_invalidated_connected_client(
             client,
@@ -245,9 +266,7 @@ class BLELifecycleController:
         service_get_status = (
             lifecycle_service_mod.BLELifecycleService._get_connected_client_status
         )
-        service_get_status_locked = (
-            lifecycle_service_mod.BLELifecycleService._get_connected_client_status_locked
-        )
+        service_get_status_locked = lifecycle_service_mod.BLELifecycleService._get_connected_client_status_locked
         service_verify_snapshot = (
             lifecycle_service_mod.BLELifecycleService._verify_ownership_snapshot
         )

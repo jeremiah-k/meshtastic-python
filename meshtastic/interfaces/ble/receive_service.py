@@ -235,9 +235,7 @@ class BLEReceiveRecoveryController:
                     result = raw_is_closing()
                     if isinstance(result, bool):
                         state_is_closing = result
-                except (
-                    Exception
-                ):  # noqa: BLE001 - closing probe must remain best effort
+                except Exception:  # noqa: BLE001 - closing probe must remain best effort
                     state_is_closing = None
             elif not _is_unconfigured_mock_member(raw_is_closing) and isinstance(
                 raw_is_closing, bool
@@ -594,7 +592,9 @@ class BLEReceiveRecoveryController:
         iface = self._iface
         with iface._state_lock:
             notify_enabled: object = getattr(iface, "_fromnum_notify_enabled", False)
-            is_unconfigured_member = getattr(iface, "_is_unconfigured_mock_member", None)
+            is_unconfigured_member = getattr(
+                iface, "_is_unconfigured_mock_member", None
+            )
             if callable(is_unconfigured_member) and not _is_unconfigured_mock_callable(
                 is_unconfigured_member
             ):
@@ -619,11 +619,12 @@ class BLEReceiveRecoveryController:
         clear_event: Callable[["ThreadCoordinator", str], None] | None = None,
     ) -> tuple[bool, bool]:
         """Wait for read trigger and compute fallback poll mode."""
+        wait_for_runtime_event: Callable[["ThreadCoordinator", str, float | None], bool]
         if wait_for_event is not None:
             wait_for_runtime_event = wait_for_event
         else:
 
-            def wait_for_runtime_event(
+            def _wait_for_runtime_event(
                 target_coordinator: "ThreadCoordinator",
                 event_name: str,
                 timeout: float | None,
@@ -633,6 +634,8 @@ class BLEReceiveRecoveryController:
                     event_name,
                     timeout=timeout,
                 )
+
+            wait_for_runtime_event = _wait_for_runtime_event
 
         check_and_clear_runtime_event = check_and_clear_event or (
             self._coordinator_check_and_clear_event
@@ -669,9 +672,7 @@ class BLEReceiveRecoveryController:
             ):
                 try:
                     connecting_result = state_is_connecting()
-                except (
-                    Exception
-                ):  # noqa: BLE001 - snapshot probe must remain best effort
+                except Exception:  # noqa: BLE001 - snapshot probe must remain best effort
                     logger.debug(
                         "Error probing state manager is_connecting()",
                         exc_info=True,
@@ -696,9 +697,7 @@ class BLEReceiveRecoveryController:
                 ) and not _is_unconfigured_mock_callable(legacy_is_connecting):
                     try:
                         connecting_result = legacy_is_connecting()
-                    except (
-                        Exception
-                    ):  # noqa: BLE001 - snapshot probe must remain best effort
+                    except Exception:  # noqa: BLE001 - snapshot probe must remain best effort
                         logger.debug(
                             "Error probing state manager _is_connecting()",
                             exc_info=True,
@@ -735,11 +734,12 @@ class BLEReceiveRecoveryController:
     ) -> bool:
         """Process current client state and decide whether to break loop."""
         iface = self._iface
+        wait_for_runtime_event: Callable[["ThreadCoordinator", str, float | None], bool]
         if wait_for_event is not None:
             wait_for_runtime_event = wait_for_event
         else:
 
-            def wait_for_runtime_event(
+            def _wait_for_runtime_event(
                 target_coordinator: "ThreadCoordinator",
                 event_name: str,
                 timeout: float | None,
@@ -749,6 +749,8 @@ class BLEReceiveRecoveryController:
                     event_name,
                     timeout=timeout,
                 )
+
+            wait_for_runtime_event = _wait_for_runtime_event
 
         if client is None and is_closing:
             logger.debug("BLE client is None, shutting down")

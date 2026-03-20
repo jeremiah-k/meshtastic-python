@@ -1095,7 +1095,9 @@ class _NodeContentResponseRuntime:
 
     def handle_canned_message_response(self, packet: dict[str, Any]) -> None:
         """Parse canned-message response packet and store payload fragment when valid."""
-        logger.debug("onResponseRequestCannedMessagePluginMessageMessages() p:%s", packet)
+        logger.debug(
+            "onResponseRequestCannedMessagePluginMessageMessages() p:%s", packet
+        )
         decoded = packet["decoded"]
         if self._has_routing_error(decoded):
             return
@@ -1120,7 +1122,9 @@ class _NodeAdminContentRuntime:
         self._cache_store = cache_store
         self._response_runtime = response_runtime
 
-    def _module_available_or_warn(self, excluded_bit: int, warning_message: str) -> bool:
+    def _module_available_or_warn(
+        self, excluded_bit: int, warning_message: str
+    ) -> bool:
         """Evaluate module availability and emit the legacy warning when unavailable."""
         if not self._node.module_available(excluded_bit):
             logger.warning("%s", warning_message)
@@ -1181,7 +1185,9 @@ class _NodeAdminContentRuntime:
             return cached_ringtone
         self._cache_store.clear_ringtone_fragment()
         return self._send_content_read_request(
-            build_request=lambda message: setattr(message, "get_ringtone_request", True),
+            build_request=lambda message: setattr(
+                message, "get_ringtone_request", True
+            ),
             handle_response=self._response_runtime.handle_ringtone_response,
             skipped_send_debug_message=(
                 "Skipping ringtone wait because protocol send was not started"
@@ -1298,7 +1304,9 @@ class _NodeMetadataResponseRuntime:
 
     def _emit_metadata_lines(self, metadata: mesh_pb2.DeviceMetadata) -> None:
         """Emit metadata lines with historical formatting and enum fallback behavior."""
-        self._node._emit_metadata_line(f"\nfirmware_version: {metadata.firmware_version}")
+        self._node._emit_metadata_line(
+            f"\nfirmware_version: {metadata.firmware_version}"
+        )
         self._node._emit_metadata_line(
             f"device_state_version: {metadata.device_state_version}"
         )
@@ -1396,7 +1404,7 @@ class _NodeChannelResponseRuntime:
         self._node._request_channel(index + 1)  # noqa: SLF001
 
 
-class Node:
+class Node:  # pylint: disable=too-many-instance-attributes
     """A model of a (local or remote) node in the mesh.
 
     Includes methods for localConfig, moduleConfig and channels
