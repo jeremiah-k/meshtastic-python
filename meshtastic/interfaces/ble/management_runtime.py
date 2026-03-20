@@ -4,6 +4,7 @@ import math
 import numbers
 import re
 import subprocess as subprocess_stdlib
+import threading
 from collections.abc import Callable
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -212,6 +213,15 @@ class BLEManagementCommandHandler:
         self._iface = iface
         self._ble_client_factory = ble_client_factory
         self._connected_elsewhere = connected_elsewhere
+        self._iface_override_dispatch_guard = threading.local()
+
+    def _active_iface_override_dispatches(self) -> set[str]:
+        """Return per-thread set of in-flight iface override dispatch names."""
+        active = getattr(self._iface_override_dispatch_guard, "value", None)
+        if active is None:
+            active = set()
+            self._iface_override_dispatch_guard.value = active
+        return cast(set[str], active)
 
     def _call_iface_override(
         self,
@@ -224,20 +234,34 @@ class BLEManagementCommandHandler:
 
         Uses normal attribute lookup so subclass/class-level overrides are
         honored, while still ignoring the default BLEInterface wrapper methods
-        unless an explicit instance override is installed.
+        unless an explicit instance override is installed. A per-thread
+        reentrancy guard prevents override paths that call ``super()`` from
+        recursively re-entering this dispatcher.
         """
+        active_dispatches = self._active_iface_override_dispatches()
+        if method_name in active_dispatches:
+            return fallback(*args, **kwargs)
+
         override = getattr(self._iface, method_name, None)
         if callable(override) and not _is_unconfigured_mock_callable(override):
+
+            def _invoke_override() -> T:
+                active_dispatches.add(method_name)
+                try:
+                    return cast(T, override(*args, **kwargs))
+                finally:
+                    active_dispatches.discard(method_name)
+
             instance_dict = getattr(self._iface, "__dict__", {})
             if isinstance(instance_dict, dict) and method_name in instance_dict:
-                return cast(T, override(*args, **kwargs))
+                return _invoke_override()
             try:
                 from meshtastic.interfaces.ble.interface import BLEInterface
 
                 base_method = getattr(BLEInterface, method_name, None)
                 class_method = getattr(type(self._iface), method_name, None)
                 if class_method is not None and class_method is not base_method:
-                    return cast(T, override(*args, **kwargs))
+                    return _invoke_override()
             except Exception:  # noqa: BLE001 - lookup fallback
                 logger.debug(
                     "Override lookup fallback suppressed exception for %s",
@@ -368,7 +392,6 @@ class BLEManagementCommandHandler:
             if callable(is_connected) and not _is_unconfigured_mock_callable(
                 is_connected
             ):
-                callable_probe_seen = True
                 try:
                     connected_result = is_connected()
                 except (
@@ -380,6 +403,7 @@ class BLEManagementCommandHandler:
                         exc_info=True,
                     )
                     continue
+                callable_probe_seen = True
                 if isinstance(connected_result, bool):
                     return connected_result
                 continue
@@ -459,14 +483,18 @@ class BLEManagementCommandHandler:
         """Begin management operation and capture startup context."""
         iface = self._iface
         expected_implicit_binding: str | None = None
-        with iface._connect_lock, iface._management_lock, iface._state_lock:
-            iface._validate_management_preconditions()
-            if address is None:
-                expected_implicit_binding = (
-                    self.get_current_implicit_management_binding_locked()
-                )
-            self.begin_management_operation_locked()
-            try:
+        target_address: str | None = None
+        use_existing_client_without_resolved_address = False
+        operation_started = False
+        try:
+            with iface._connect_lock, iface._management_lock, iface._state_lock:
+                iface._validate_management_preconditions()
+                if address is None:
+                    expected_implicit_binding = (
+                        self.get_current_implicit_management_binding_locked()
+                    )
+                self.begin_management_operation_locked()
+                operation_started = True
                 existing_client = self._call_iface_override(
                     "_get_management_client_if_available",
                     self.get_management_client_if_available_locked,
@@ -476,9 +504,10 @@ class BLEManagementCommandHandler:
                 use_existing_client_without_resolved_address = (
                     existing_client is not None and target_address is None
                 )
-            except BaseException:
+        except BaseException:
+            if operation_started:
                 self.finish_management_operation()
-                raise
+            raise
         return _ManagementStartContext(
             expected_implicit_binding=expected_implicit_binding,
             target_address=target_address,

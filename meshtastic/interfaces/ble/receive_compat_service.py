@@ -175,19 +175,18 @@ class BLEReceiveRecoveryService:
             ):  # noqa: BLE001 - best-effort cache attach
                 iface._receive_recovery_controller = controller
             return controller
-        with contextlib.suppress(Exception):  # noqa: BLE001 - best-effort cache attach
-            with state_lock:
-                cached = getattr(iface, "_receive_recovery_controller", None)
-                cached_controller = (
-                    BLEReceiveRecoveryService._resolve_controller_candidate(
-                        cached,
-                        required_method,
-                        iface=iface,
-                    )
-                )
-                if cached_controller is not None:
-                    return cached_controller
-                iface._receive_recovery_controller = controller
+        with contextlib.suppress(
+            Exception
+        ), state_lock:  # noqa: BLE001 - best-effort cache attach
+            cached = getattr(iface, "_receive_recovery_controller", None)
+            cached_controller = BLEReceiveRecoveryService._resolve_controller_candidate(
+                cached,
+                required_method,
+                iface=iface,
+            )
+            if cached_controller is not None:
+                return cached_controller
+            iface._receive_recovery_controller = controller
         return controller
 
     @staticmethod

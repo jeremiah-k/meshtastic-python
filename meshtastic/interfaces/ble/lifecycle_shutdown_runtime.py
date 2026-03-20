@@ -118,7 +118,29 @@ class BLEShutdownLifecycleCoordinator:
         transition_to_state: Callable[[ConnectionState], bool] | None = None,
         reset_to_disconnected: Callable[[], bool] | None = None,
     ) -> bool | None:
-        """Mark interface closed and wait for in-flight management operations."""
+        """Mark interface closed and wait for in-flight management operations.
+
+        Parameters
+        ----------
+        management_shutdown_wait_timeout : float
+            Maximum seconds to wait for management inflight count to reach zero.
+        management_wait_poll_seconds : float
+            Poll interval used while waiting on management idle condition.
+        current_state_getter : Callable[[], ConnectionState] | None, optional
+            Optional state probe used for transition validation.
+        is_closing_getter : Callable[[], bool] | None, optional
+            Optional closing-state probe used during shutdown entry.
+        transition_to_state : Callable[[ConnectionState], bool] | None, optional
+            Optional transition helper override.
+        reset_to_disconnected : Callable[[], bool] | None, optional
+            Optional reset helper override.
+
+        Returns
+        -------
+        bool | None
+            ``None`` when already closed; otherwise ``True`` when management wait
+            timed out, ``False`` when inflight management reached idle.
+        """
         iface = self._iface
         get_current_state = current_state_getter or self._state_access.current_state
         get_is_closing = is_closing_getter or self._state_access.is_closing
@@ -183,7 +205,18 @@ class BLEShutdownLifecycleCoordinator:
         *,
         safe_cleanup: Callable[[Callable[[], object], str], None] | None = None,
     ) -> None:
-        """Close discovery resources and clear receive-loop intent."""
+        """Close discovery resources and clear receive-loop intent.
+
+        Parameters
+        ----------
+        safe_cleanup : Callable[[Callable[[], object], str], None] | None, optional
+            Optional safe-cleanup wrapper used for discovery close.
+
+        Returns
+        -------
+        None
+            Always returns ``None``.
+        """
         iface = self._iface
         run_safe_cleanup = safe_cleanup or self._error_access.safe_cleanup
         discovery_manager = iface._discovery_manager
@@ -198,7 +231,20 @@ class BLEShutdownLifecycleCoordinator:
         wake_waiting_threads: Callable[..., None] | None = None,
         join_thread: Callable[..., None] | None = None,
     ) -> None:  # noqa: PLR0912,PLR0915
-        """Wake and join receive thread, then clear cached thread reference."""
+        """Wake and join receive thread, then clear cached thread reference.
+
+        Parameters
+        ----------
+        wake_waiting_threads : Callable[..., None] | None, optional
+            Optional wake helper used to release receive-loop waiters.
+        join_thread : Callable[..., None] | None, optional
+            Optional thread-join helper used for compatibility/test injection.
+
+        Returns
+        -------
+        None
+            Always returns ``None``.
+        """
         iface = self._iface
         wake_waiters = wake_waiting_threads or self._thread_access.wake_waiting_threads
         if join_thread is None:
@@ -302,7 +348,18 @@ class BLEShutdownLifecycleCoordinator:
         *,
         safe_execute: Callable[[Callable[[], object]], object | None] | None = None,
     ) -> None:
-        """Run `MeshInterface.close` through guarded error-handler execution."""
+        """Run ``MeshInterface.close`` through guarded error-handler execution.
+
+        Parameters
+        ----------
+        safe_execute : Callable[[Callable[[], object]], object | None] | None, optional
+            Optional safe-execute wrapper used for close invocation.
+
+        Returns
+        -------
+        None
+            Always returns ``None``.
+        """
         iface = self._iface
         run_safe_execute = safe_execute or (
             lambda func: self._error_access.safe_execute(
@@ -320,7 +377,13 @@ class BLEShutdownLifecycleCoordinator:
             iface._exit_handler = None
 
     def _detach_client_for_shutdown(self) -> tuple["BLEClient | None", bool]:
-        """Detach active client reference and return detached client plus publish state."""
+        """Detach active client reference and return detached client plus publish state.
+
+        Returns
+        -------
+        tuple[BLEClient | None, bool]
+            Detached client plus the publish-pending flag captured at detach.
+        """
         iface = self._iface
         with iface._state_lock:
             client = iface.client
@@ -367,7 +430,24 @@ class BLEShutdownLifecycleCoordinator:
         safe_cleanup: Callable[[Callable[[], object], str], None] | None = None,
         consume_disconnect_notification_state: Callable[[], bool] | None = None,
     ) -> None:
-        """Shutdown active client resources and notification publication state."""
+        """Shutdown active client resources and notification publication state.
+
+        Parameters
+        ----------
+        management_wait_timed_out : bool
+            Whether shutdown already timed out waiting for management idle.
+        detach_client_for_shutdown : Callable[[], tuple[BLEClient | None, bool]] | None, optional
+            Optional detach helper override.
+        safe_cleanup : Callable[[Callable[[], object], str], None] | None, optional
+            Optional safe-cleanup wrapper override.
+        consume_disconnect_notification_state : Callable[[], bool] | None, optional
+            Optional publish-state consumer override.
+
+        Returns
+        -------
+        None
+            Always returns ``None``.
+        """
         iface = self._iface
         detach_client = detach_client_for_shutdown or self._detach_client_for_shutdown
         run_safe_cleanup = safe_cleanup or self._error_access.safe_cleanup
@@ -433,7 +513,22 @@ class BLEShutdownLifecycleCoordinator:
         transition_to_state: Callable[[ConnectionState], bool] | None = None,
         reset_to_disconnected: Callable[[], bool] | None = None,
     ) -> None:
-        """Persist terminal disconnected state and clear address registry claims."""
+        """Persist terminal disconnected state and clear address registry claims.
+
+        Parameters
+        ----------
+        current_state_getter : Callable[[], ConnectionState] | None, optional
+            Optional state probe override.
+        transition_to_state : Callable[[ConnectionState], bool] | None, optional
+            Optional transition helper override.
+        reset_to_disconnected : Callable[[], bool] | None, optional
+            Optional reset helper override.
+
+        Returns
+        -------
+        None
+            Always returns ``None``.
+        """
         iface = self._iface
         get_current_state = current_state_getter or self._state_access.current_state
         do_transition_to = transition_to_state or self._state_access.transition_to

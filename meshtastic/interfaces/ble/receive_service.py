@@ -73,6 +73,19 @@ class BLEReceiveRecoveryController:
             return cast(Callable[..., object], candidate)
         return None
 
+    def _resolve_private_public_callable(
+        self,
+        owner: object,
+        *,
+        private_name: str,
+        public_name: str,
+    ) -> Callable[..., object] | None:
+        """Resolve private/public hook names to the first usable callable."""
+        private_hook = self._as_usable_callable(getattr(owner, private_name, None))
+        if private_hook is not None:
+            return private_hook
+        return self._as_usable_callable(getattr(owner, public_name, None))
+
     @classmethod
     def _is_unusable_mock_value(cls, value: object | None) -> bool:
         """Return whether value is absent or an unconfigured mock placeholder."""
@@ -100,13 +113,10 @@ class BLEReceiveRecoveryController:
         """Return mock-safe ever-connected state for receive-loop behavior."""
         lifecycle_controller = self._get_lifecycle_controller()
         if lifecycle_controller is not None:
-            has_ever_connected_session = getattr(
+            has_ever_connected_session_fn = self._resolve_private_public_callable(
                 lifecycle_controller,
-                "_has_ever_connected_session",
-                getattr(lifecycle_controller, "has_ever_connected_session", None),
-            )
-            has_ever_connected_session_fn = self._as_usable_callable(
-                has_ever_connected_session
+                private_name="_has_ever_connected_session",
+                public_name="has_ever_connected_session",
             )
             if has_ever_connected_session_fn is not None:
                 try:
@@ -186,12 +196,11 @@ class BLEReceiveRecoveryController:
         """Return whether receive-loop behavior should treat the interface as closing."""
         lifecycle_controller = self._get_lifecycle_controller()
         if lifecycle_controller is not None:
-            is_connection_closing = getattr(
+            is_connection_closing_fn = self._resolve_private_public_callable(
                 lifecycle_controller,
-                "_is_connection_closing",
-                getattr(lifecycle_controller, "is_connection_closing", None),
+                private_name="_is_connection_closing",
+                public_name="is_connection_closing",
             )
-            is_connection_closing_fn = self._as_usable_callable(is_connection_closing)
             if is_connection_closing_fn is not None:
                 try:
                     result = is_connection_closing_fn()
@@ -291,13 +300,10 @@ class BLEReceiveRecoveryController:
             return result if isinstance(result, bool) else False
         lifecycle_controller = self._get_lifecycle_controller()
         if lifecycle_controller is not None:
-            should_run_receive_loop = getattr(
+            should_run_receive_loop_fn = self._resolve_private_public_callable(
                 lifecycle_controller,
-                "_should_run_receive_loop",
-                getattr(lifecycle_controller, "should_run_receive_loop", None),
-            )
-            should_run_receive_loop_fn = self._as_usable_callable(
-                should_run_receive_loop
+                private_name="_should_run_receive_loop",
+                public_name="should_run_receive_loop",
             )
             if should_run_receive_loop_fn is not None:
                 try:
@@ -321,12 +327,11 @@ class BLEReceiveRecoveryController:
             return
         lifecycle_controller = self._get_lifecycle_controller()
         if lifecycle_controller is not None:
-            set_receive_wanted = getattr(
+            set_receive_wanted_fn = self._resolve_private_public_callable(
                 lifecycle_controller,
-                "_set_receive_wanted",
-                getattr(lifecycle_controller, "set_receive_wanted", None),
+                private_name="_set_receive_wanted",
+                public_name="set_receive_wanted",
             )
-            set_receive_wanted_fn = self._as_usable_callable(set_receive_wanted)
             if set_receive_wanted_fn is not None:
                 set_receive_wanted_fn(want_receive=want_receive)
 
@@ -355,12 +360,11 @@ class BLEReceiveRecoveryController:
             return result if isinstance(result, bool) else False
         lifecycle_controller = self._get_lifecycle_controller()
         if lifecycle_controller is not None:
-            handle_disconnect = getattr(
+            handle_disconnect_fn = self._resolve_private_public_callable(
                 lifecycle_controller,
-                "_handle_disconnect",
-                getattr(lifecycle_controller, "handle_disconnect", None),
+                private_name="_handle_disconnect",
+                public_name="handle_disconnect",
             )
-            handle_disconnect_fn = self._as_usable_callable(handle_disconnect)
             if handle_disconnect_fn is None:
                 return False
             try:
@@ -387,12 +391,11 @@ class BLEReceiveRecoveryController:
             return
         lifecycle_controller = self._get_lifecycle_controller()
         if lifecycle_controller is not None:
-            start_receive_thread = getattr(
+            start_receive_thread_fn = self._resolve_private_public_callable(
                 lifecycle_controller,
-                "_start_receive_thread",
-                getattr(lifecycle_controller, "start_receive_thread", None),
+                private_name="_start_receive_thread",
+                public_name="start_receive_thread",
             )
-            start_receive_thread_fn = self._as_usable_callable(start_receive_thread)
             if start_receive_thread_fn is None:
                 return
             start_receive_thread_fn(
@@ -409,12 +412,11 @@ class BLEReceiveRecoveryController:
             return
         lifecycle_controller = self._get_lifecycle_controller()
         if lifecycle_controller is not None:
-            close = getattr(
+            close_fn = self._resolve_private_public_callable(
                 lifecycle_controller,
-                "_close",
-                getattr(lifecycle_controller, "close", None),
+                private_name="_close",
+                public_name="close",
             )
-            close_fn = self._as_usable_callable(close)
             if close_fn is not None:
                 from meshtastic.interfaces.ble import interface as interface_mod
 
@@ -553,6 +555,7 @@ class BLEReceiveRecoveryController:
                     event_name,
                     timeout=timeout,
                 )
+
         check_and_clear_runtime_event = check_and_clear_event or (
             self._coordinator_check_and_clear_event
         )
@@ -668,6 +671,7 @@ class BLEReceiveRecoveryController:
                     event_name,
                     timeout=timeout,
                 )
+
         if client is None and is_closing:
             logger.debug("BLE client is None, shutting down")
             self._set_receive_wanted(want_receive=False)

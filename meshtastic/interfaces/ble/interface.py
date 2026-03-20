@@ -457,11 +457,19 @@ class BLEInterface(MeshInterface):
             True to request the receive loop to run, False to stop it.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        set_receive_wanted = getattr(
-            lifecycle_controller,
-            "_set_receive_wanted",
-            getattr(lifecycle_controller, "set_receive_wanted", None),
-        )
+        set_receive_wanted = getattr(lifecycle_controller, "_set_receive_wanted", None)
+        if callable(set_receive_wanted) and _is_unconfigured_mock_callable(
+            set_receive_wanted
+        ):
+            set_receive_wanted = None
+        if set_receive_wanted is None:
+            set_receive_wanted = getattr(
+                lifecycle_controller, "set_receive_wanted", None
+            )
+            if callable(set_receive_wanted) and _is_unconfigured_mock_callable(
+                set_receive_wanted
+            ):
+                set_receive_wanted = None
         if callable(set_receive_wanted):
             set_receive_wanted(want_receive=want_receive)
 
@@ -475,10 +483,20 @@ class BLEInterface(MeshInterface):
         """
         lifecycle_controller = self._get_lifecycle_controller()
         should_run_receive_loop = getattr(
-            lifecycle_controller,
-            "_should_run_receive_loop",
-            getattr(lifecycle_controller, "should_run_receive_loop", None),
+            lifecycle_controller, "_should_run_receive_loop", None
         )
+        if callable(should_run_receive_loop) and _is_unconfigured_mock_callable(
+            should_run_receive_loop
+        ):
+            should_run_receive_loop = None
+        if should_run_receive_loop is None:
+            should_run_receive_loop = getattr(
+                lifecycle_controller, "should_run_receive_loop", None
+            )
+            if callable(should_run_receive_loop) and _is_unconfigured_mock_callable(
+                should_run_receive_loop
+            ):
+                should_run_receive_loop = None
         if callable(should_run_receive_loop):
             result = should_run_receive_loop()
             return result if isinstance(result, bool) else False
@@ -498,10 +516,20 @@ class BLEInterface(MeshInterface):
         """
         lifecycle_controller = self._get_lifecycle_controller()
         start_receive_thread = getattr(
-            lifecycle_controller,
-            "_start_receive_thread",
-            getattr(lifecycle_controller, "start_receive_thread", None),
+            lifecycle_controller, "_start_receive_thread", None
         )
+        if callable(start_receive_thread) and _is_unconfigured_mock_callable(
+            start_receive_thread
+        ):
+            start_receive_thread = None
+        if start_receive_thread is None:
+            start_receive_thread = getattr(
+                lifecycle_controller, "start_receive_thread", None
+            )
+            if callable(start_receive_thread) and _is_unconfigured_mock_callable(
+                start_receive_thread
+            ):
+                start_receive_thread = None
         if callable(start_receive_thread):
             start_receive_thread(
                 name=name,
@@ -2306,6 +2334,7 @@ class BLEInterface(MeshInterface):
             )
         except Exception:
             with self._state_lock:
+                self._disconnect_notified = original_disconnect_notified
                 self._client_publish_pending = original_publish_pending
                 self._client_replacement_pending = original_replacement_pending
                 self._connection_session_epoch = original_connection_session_epoch
@@ -2320,6 +2349,7 @@ class BLEInterface(MeshInterface):
         with self._state_lock:
             if self._closed or self._state_manager_is_closing():
                 abort_connect = True
+                self._disconnect_notified = original_disconnect_notified
                 self._client_publish_pending = False
                 self._client_replacement_pending = False
                 self._connection_session_epoch = original_connection_session_epoch
@@ -3067,4 +3097,14 @@ class BLEInterface(MeshInterface):
                     )
                     return
         super()._connected()
+        if expected_session_epoch is not None:
+            with self._state_lock:
+                current_session_epoch = getattr(self, "_connection_session_epoch", 0)
+                if current_session_epoch != expected_session_epoch:
+                    logger.debug(
+                        "Skipping stale connection-status publish (expected epoch=%s current epoch=%s).",
+                        expected_session_epoch,
+                        current_session_epoch,
+                    )
+                    return
         self._publish_connection_status(connected=True)

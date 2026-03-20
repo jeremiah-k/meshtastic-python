@@ -611,7 +611,13 @@ class BLENotificationDispatcher:
             )
             return
         finally:
-            self._trigger_read_event()
+            try:
+                self._trigger_read_event()
+            except Exception:  # noqa: BLE001 - wakeup path remains best effort
+                logger.debug(
+                    "Error waking receive loop from FROMNUM notification.",
+                    exc_info=True,
+                )
 
     def register_notifications(
         self,
@@ -627,11 +633,21 @@ class BLENotificationDispatcher:
         self._current_log_handler = log_handler
         self._current_from_num_handler = from_num_handler
         current_session_epoch = int(getattr(iface, "_connection_session_epoch", 0))
-        if self._registered_notification_session_epoch != current_session_epoch:
-            self._registered_notification_session_epoch = current_session_epoch
+
+        def _rollback_registration_state() -> None:
             self._started_notify_characteristics.clear()
             self.fromnum_notify_enabled = False
             self.malformed_notification_count = 0
+
+        def _registration_still_current() -> bool:
+            return (
+                int(getattr(iface, "_connection_session_epoch", 0))
+                == current_session_epoch
+                and getattr(iface, "client", None) is client
+            )
+
+        if self._registered_notification_session_epoch != current_session_epoch:
+            _rollback_registration_state()
 
         def _safe_call(
             handler: Callable[[Any, Any], None],
@@ -821,6 +837,9 @@ class BLENotificationDispatcher:
                     )
                 else:
                     self._started_notify_characteristics.add(LEGACY_LOGRADIO_UUID)
+                    if not _registration_still_current():
+                        _rollback_registration_state()
+                        return
 
         try:
             has_logradio = client.has_characteristic(LOGRADIO_UUID)
@@ -854,6 +873,9 @@ class BLENotificationDispatcher:
                     )
                 else:
                     self._started_notify_characteristics.add(LOGRADIO_UUID)
+                    if not _registration_still_current():
+                        _rollback_registration_state()
+                        return
 
         ingress_handler = _get_or_create_cached_handler(
             cache_attr="_safe_from_num_handler",
@@ -865,7 +887,11 @@ class BLENotificationDispatcher:
             )
             if current_ingress_handler is not ingress_handler:
                 self._notification_manager._subscribe(FROMNUM_UUID, ingress_handler)
+            if not _registration_still_current():
+                _rollback_registration_state()
+                return
             self.fromnum_notify_enabled = True
+            self._registered_notification_session_epoch = current_session_epoch
             return
         self.fromnum_notify_enabled = False
         max_attempts = BLEConfig.SERVICE_CHARACTERISTIC_RETRY_COUNT + 1
@@ -883,6 +909,7 @@ class BLENotificationDispatcher:
                         FROMNUM_UUID,
                         err,
                     )
+                    _rollback_registration_state()
                     return
                 logger.debug(
                     "FROMNUM notify already acquired for %s; retrying after best-effort stop_notify (attempt %d/%d)",
@@ -903,6 +930,7 @@ class BLENotificationDispatcher:
                     FROMNUM_UUID,
                     max_attempts,
                 )
+                _rollback_registration_state()
                 return
             except optional_errors as err:
                 logger.warning(
@@ -910,6 +938,7 @@ class BLENotificationDispatcher:
                     FROMNUM_UUID,
                     err,
                 )
+                _rollback_registration_state()
                 return
             else:
                 current_ingress_handler = self._notification_manager._get_callback(
@@ -917,8 +946,12 @@ class BLENotificationDispatcher:
                 )
                 if current_ingress_handler is not ingress_handler:
                     self._notification_manager._subscribe(FROMNUM_UUID, ingress_handler)
+                if not _registration_still_current():
+                    _rollback_registration_state()
+                    return
                 self._started_notify_characteristics.add(FROMNUM_UUID)
                 self.fromnum_notify_enabled = True
+                self._registered_notification_session_epoch = current_session_epoch
                 return
 
     def log_radio_handler(self, _: Any, b: bytes | bytearray) -> str | None:

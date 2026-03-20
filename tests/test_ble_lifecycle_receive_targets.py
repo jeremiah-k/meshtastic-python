@@ -782,7 +782,7 @@ def test_lifecycle_controller_keeps_injected_status_getter_when_snapshot_missing
         )
         assert len(captured_calls) == 1
         verify_snapshot, status_locked = captured_calls[0]
-        assert callable(verify_snapshot)
+        assert verify_snapshot is None
         assert status_locked is status_getter
     finally:
         iface.close()

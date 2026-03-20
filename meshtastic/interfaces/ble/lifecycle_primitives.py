@@ -305,7 +305,12 @@ class _LifecycleThreadAccess:
         kwargs: dict[str, object] | None = None,
     ) -> ThreadLike:
         """Create thread via public-first coordinator compatibility dispatch."""
-        create_thread = getattr(self._iface.thread_coordinator, "create_thread", None)
+        coordinator = getattr(self._iface, "thread_coordinator", None)
+        if coordinator is None or _is_unconfigured_mock_member(coordinator):
+            raise AttributeError(
+                THREAD_COORDINATOR_MISSING_FMT % ("create_thread", "_create_thread")
+            )
+        create_thread = getattr(coordinator, "create_thread", None)
         if callable(create_thread) and not _is_unconfigured_mock_callable(
             create_thread
         ):
@@ -319,9 +324,7 @@ class _LifecycleThreadAccess:
                     kwargs=kwargs,
                 ),
             )
-        legacy_create_thread = getattr(
-            self._iface.thread_coordinator, "_create_thread", None
-        )
+        legacy_create_thread = getattr(coordinator, "_create_thread", None)
         if callable(legacy_create_thread) and not _is_unconfigured_mock_callable(
             legacy_create_thread
         ):
@@ -341,13 +344,16 @@ class _LifecycleThreadAccess:
 
     def start_thread(self, thread: object) -> None:
         """Start thread via public-first coordinator compatibility dispatch."""
-        start_thread = getattr(self._iface.thread_coordinator, "start_thread", None)
+        coordinator = getattr(self._iface, "thread_coordinator", None)
+        if coordinator is None or _is_unconfigured_mock_member(coordinator):
+            raise AttributeError(
+                THREAD_COORDINATOR_MISSING_FMT % ("start_thread", "_start_thread")
+            )
+        start_thread = getattr(coordinator, "start_thread", None)
         if callable(start_thread) and not _is_unconfigured_mock_callable(start_thread):
             start_thread(thread)
             return
-        legacy_start_thread = getattr(
-            self._iface.thread_coordinator, "_start_thread", None
-        )
+        legacy_start_thread = getattr(coordinator, "_start_thread", None)
         if callable(legacy_start_thread) and not _is_unconfigured_mock_callable(
             legacy_start_thread
         ):
@@ -416,7 +422,8 @@ class _LifecycleThreadAccess:
                     event_name,
                     exc_info=True,
                 )
-            return
+            else:
+                return
         legacy_set_event = getattr(coordinator, "_set_event", None)
         if callable(legacy_set_event) and not _is_unconfigured_mock_callable(
             legacy_set_event
@@ -429,7 +436,8 @@ class _LifecycleThreadAccess:
                     event_name,
                     exc_info=True,
                 )
-            return
+            else:
+                return
         logger.debug("Thread coordinator is missing set_event/_set_event")
 
     def clear_events(self, *event_names: str) -> None:
@@ -448,7 +456,8 @@ class _LifecycleThreadAccess:
                     event_names,
                     exc_info=True,
                 )
-            return
+            else:
+                return
         legacy_clear_events = getattr(coordinator, "_clear_events", None)
         if callable(legacy_clear_events) and not _is_unconfigured_mock_callable(
             legacy_clear_events
@@ -461,7 +470,8 @@ class _LifecycleThreadAccess:
                     event_names,
                     exc_info=True,
                 )
-            return
+            else:
+                return
         logger.debug("Thread coordinator is missing clear_events/_clear_events")
 
     def wake_waiting_threads(self, *event_names: str) -> None:

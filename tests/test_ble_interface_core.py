@@ -5897,8 +5897,7 @@ def test_publish_connection_status_skips_when_queuework_unconfigured(
     )
 
     iface = SimpleNamespace()
-    publishing_thread = MagicMock()
-    queue_work = publishing_thread.queueWork
+    publishing_thread = SimpleNamespace()
 
     with caplog.at_level(logging.DEBUG):
         BLECompatibilityEventService.publish_connection_status(
@@ -5909,7 +5908,6 @@ def test_publish_connection_status_skips_when_queuework_unconfigured(
 
     assert sent == []
     assert "publish queue is unavailable" in caplog.text
-    queue_work.assert_not_called()
 
 
 def test_publish_connection_status_skips_when_enqueue_raises(

@@ -183,8 +183,10 @@ class BLEReceiveLifecycleCoordinator:
         is_started = getattr(started_event, "is_set", None)
         if callable(is_started):
             try:
-                if not bool(is_started()):
+                if bool(is_started()):
                     return False
+                thread_ident, _ = _thread_start_probe(thread)
+                return thread_ident is not None
             except Exception:  # noqa: BLE001 - probe remains best effort
                 return False
         return False
@@ -293,6 +295,8 @@ class BLEReceiveLifecycleCoordinator:
                             "Replacing stale pending receive-thread start reference for %s: worker is no longer alive.",
                             getattr(existing, "name", repr(existing)),
                         )
+                        iface._receiveThread = None
+                        existing = None
                         iface._receive_start_pending = False
                         iface._receive_start_pending_since = None
                     else:
@@ -320,7 +324,16 @@ class BLEReceiveLifecycleCoordinator:
                         iface._receive_start_pending = False
                         iface._receive_start_pending_since = None
                 else:
-                    if not self._is_thread_start_failure_confirmed(existing):
+                    if existing_ident is not None:
+                        logger.debug(
+                            "Replacing dead receive thread reference for %s before restart.",
+                            getattr(existing, "name", repr(existing)),
+                        )
+                        iface._receiveThread = None
+                        existing = None
+                        iface._receive_start_pending = False
+                        iface._receive_start_pending_since = None
+                    elif not self._is_thread_start_failure_confirmed(existing):
                         pending_since = getattr(
                             iface, "_receive_start_pending_since", None
                         )

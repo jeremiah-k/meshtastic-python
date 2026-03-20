@@ -110,7 +110,24 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         state_connected_getter: Callable[[], bool] | None = None,
         client_connected_getter: Callable[["BLEClient"], bool] | None = None,
     ) -> tuple[bool, bool]:
-        """Return ownership and closing flags with internal state locking."""
+        """Return ownership and closing flags with internal state locking.
+
+        Parameters
+        ----------
+        client : BLEClient
+            Candidate connected client to evaluate.
+        is_closing_getter : Callable[[], bool] | None, optional
+            Optional closing-state probe used while lock is held.
+        state_connected_getter : Callable[[], bool] | None, optional
+            Optional connection-state probe used while lock is held.
+        client_connected_getter : Callable[[BLEClient], bool] | None, optional
+            Optional client-connected probe used while lock is held.
+
+        Returns
+        -------
+        tuple[bool, bool]
+            ``(is_owned, is_closing)`` for ``client``.
+        """
         with self._iface._state_lock:
             return self._get_connected_client_status_locked(
                 client,
@@ -129,7 +146,24 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             Callable[["BLEClient"], tuple[bool, bool]] | None
         ) = None,
     ) -> _OwnershipSnapshot:
-        """Capture connect-result ownership snapshot for this interface."""
+        """Capture ownership and shutdown/gate status for a connect result.
+
+        Parameters
+        ----------
+        connected_client : BLEClient
+            Candidate connected client under verification.
+        connected_device_key : str | None
+            Concrete device key used for gate ownership checks.
+        connection_alias_key : str | None
+            Alias gate key used during connect orchestration.
+        get_connected_client_status_locked : Callable[[BLEClient], tuple[bool, bool]] | None, optional
+            Optional lock-held ownership/closing probe.
+
+        Returns
+        -------
+        _OwnershipSnapshot
+            Snapshot used to decide whether connected publication is still safe.
+        """
         iface = self._iface
         get_connected_status_locked = (
             get_connected_client_status_locked
@@ -159,7 +193,18 @@ class BLEConnectionOwnershipLifecycleCoordinator:
     def _emit_verified_connection_side_effects(
         self, connected_client: "BLEClient"
     ) -> None:
-        """Emit reconnect wake signal and success logging after verified publish."""
+        """Emit reconnect wake signal and success logging after verified publish.
+
+        Parameters
+        ----------
+        connected_client : BLEClient
+            Client whose verified publication succeeded.
+
+        Returns
+        -------
+        None
+            Always returns ``None``.
+        """
         iface = self._iface
         coordinator = getattr(iface, "thread_coordinator", None)
         if iface._prior_publish_was_reconnect and coordinator is not None:
@@ -264,7 +309,26 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         get_current_state: Callable[[], ConnectionState],
         do_transition_to_disconnected: Callable[[], bool],
     ) -> None:
-        """Ensure state converges to disconnected after invalidation cleanup."""
+        """Ensure state converges to disconnected after invalidation cleanup.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface whose state manager is being corrected.
+        should_reset_state : bool
+            Whether state correction should be attempted.
+        do_reset_to_disconnected : Callable[[], bool]
+            Reset helper that attempts a direct disconnected reset.
+        get_current_state : Callable[[], ConnectionState]
+            Current-state probe used for diagnostics.
+        do_transition_to_disconnected : Callable[[], bool]
+            Transition helper used when reset fails.
+
+        Returns
+        -------
+        None
+            Always returns ``None``.
+        """
         if not should_reset_state:
             return
         if not do_reset_to_disconnected():
@@ -296,7 +360,32 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         transition_to_disconnected: Callable[[], bool] | None = None,
         safe_cleanup: Callable[[Callable[[], object], str], None] | None = None,
     ) -> None:
-        """Clean up a client invalidated before connect publication completes."""
+        """Clean up a client invalidated before connect publication completes.
+
+        Parameters
+        ----------
+        client : BLEClient
+            Invalidated client to close and discard.
+        restore_address : str | None, optional
+            Address restored when invalidation occurs before shutdown.
+        restore_last_connection_request : str | None, optional
+            Last-request marker restored on invalidation.
+        is_closing_getter : Callable[[], bool] | None, optional
+            Optional closing-state probe.
+        reset_to_disconnected : Callable[[], bool] | None, optional
+            Optional state reset helper.
+        current_state_getter : Callable[[], ConnectionState] | None, optional
+            Optional state probe used by reset/transition fallback.
+        transition_to_disconnected : Callable[[], bool] | None, optional
+            Optional transition helper.
+        safe_cleanup : Callable[[Callable[[], object], str], None] | None, optional
+            Optional safe-cleanup wrapper for client close.
+
+        Returns
+        -------
+        None
+            Always returns ``None``.
+        """
         iface = self._iface
         get_is_closing = is_closing_getter or self._state_access.is_closing
         do_reset_to_disconnected = reset_to_disconnected or (
@@ -318,7 +407,10 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         disconnect_session_epoch = 0
         with iface._state_lock:
             disconnect_session_epoch = getattr(iface, "_connection_session_epoch", 0)
+            inflight_client = getattr(iface, "_connected_publish_inflight_client", None)
             if iface.client is client:
+                if inflight_client is client:
+                    iface._connected_publish_inflight_client = None
                 (
                     should_reset_state,
                     should_publish_disconnect,
@@ -329,9 +421,13 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     restored_address=restored_address,
                     restore_last_connection_request=restore_last_connection_request,
                 )
-            elif iface.client is None and bool(
-                getattr(iface, "_client_publish_pending", False)
+            elif (
+                iface.client is None
+                and bool(getattr(iface, "_client_publish_pending", False))
+                and (inflight_client is None or inflight_client is client)
             ):
+                if inflight_client is client:
+                    iface._connected_publish_inflight_client = None
                 (
                     should_reset_state,
                     should_publish_disconnect,
@@ -386,7 +482,30 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             Callable[["BLEClient"], tuple[bool, bool]] | None
         ) = None,
     ) -> None:
-        """Publish connected state only when ownership is still valid."""
+        """Publish connected state only when ownership is still valid.
+
+        Parameters
+        ----------
+        connected_client : BLEClient
+            Candidate connected client under verification.
+        connected_device_key : str | None
+            Concrete device key used by gate ownership checks.
+        connection_alias_key : str | None
+            Alias gate key associated with the connect attempt.
+        restore_address : str | None
+            Address restored if connect publication is invalidated.
+        restore_last_connection_request : str | None
+            Last-request marker restored if publication is invalidated.
+        verify_ownership_snapshot : Callable[[BLEClient, str | None, str | None], _OwnershipSnapshot] | None, optional
+            Optional snapshot provider override.
+        get_connected_client_status_locked : Callable[[BLEClient], tuple[bool, bool]] | None, optional
+            Optional lock-held ownership probe override.
+
+        Returns
+        -------
+        None
+            Always returns ``None``.
+        """
         iface = self._iface
 
         def _raise_invalidated(snapshot: _OwnershipSnapshot) -> None:
@@ -516,7 +635,30 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         prior_ever_connected: bool,
         raise_invalidated: Callable[[_OwnershipSnapshot], None],
     ) -> None:
-        """Run the committed connected-publication sequence."""
+        """Run the committed connected-publication sequence.
+
+        Parameters
+        ----------
+        connected_client : BLEClient
+            Client whose verified publication is being committed.
+        connected_device_key : str | None
+            Concrete device key associated with ``connected_client``.
+        connection_alias_key : str | None
+            Alias gate key associated with ``connected_client``.
+        snapshot_provider : Callable[[BLEClient, str | None, str | None], _OwnershipSnapshot]
+            Provider used for ownership snapshot verification.
+        get_connected_status_locked : Callable[[BLEClient], tuple[bool, bool]]
+            Lock-held ownership/closing status probe.
+        prior_ever_connected : bool
+            Prior session publication marker used for reconnect side effects.
+        raise_invalidated : Callable[[_OwnershipSnapshot], None]
+            Callback that raises when ownership snapshots invalidate publication.
+
+        Returns
+        -------
+        None
+            Always returns ``None``.
+        """
         iface = self._iface
         still_owned_after = True
         is_closing_after = False
@@ -574,8 +716,14 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 connected_notifier(expected_session_epoch=published_session_epoch)
             else:
                 connected_notifier()
-            publish_completed = True
-            self._emit_verified_connection_side_effects(connected_client)
+            with iface._state_lock:
+                publish_completed = (
+                    iface.client is connected_client
+                    and getattr(iface, "_connection_session_epoch", 0)
+                    == published_session_epoch
+                )
+            if publish_completed:
+                self._emit_verified_connection_side_effects(connected_client)
         finally:
             with iface._state_lock:
                 if (
@@ -616,7 +764,26 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             Callable[["BLEClient"], tuple[bool, bool]] | None
         ) = None,
     ) -> None:
-        """Finalize address-gate ownership after successful connection."""
+        """Finalize address-gate ownership after successful connection.
+
+        Parameters
+        ----------
+        connected_client : BLEClient
+            Client that completed verified connected publication.
+        connected_device_key : str | None
+            Concrete device key bound to ``connected_client``.
+        connection_alias_key : str | None
+            Alias gate key associated with ``connected_client``.
+        get_connected_client_status : Callable[[BLEClient], tuple[bool, bool]] | None, optional
+            Optional unlocked ownership probe override.
+        get_connected_client_status_locked : Callable[[BLEClient], tuple[bool, bool]] | None, optional
+            Optional lock-held ownership probe override.
+
+        Returns
+        -------
+        None
+            Always returns ``None``.
+        """
         iface = self._iface
         get_status = get_connected_client_status or self._get_connected_client_status
         get_status_locked = (
@@ -680,6 +847,17 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             )
 
     def _is_owned_connected_client(self, client: "BLEClient") -> bool:
-        """Return whether interface still owns the provided connected client."""
+        """Return whether interface still owns the provided connected client.
+
+        Parameters
+        ----------
+        client : BLEClient
+            Client instance to evaluate.
+
+        Returns
+        -------
+        bool
+            ``True`` when this interface still owns ``client``.
+        """
         is_owned, _ = self._get_connected_client_status(client)
         return is_owned

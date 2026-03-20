@@ -37,7 +37,19 @@ class BLELifecycleController:
     """Instance-bound collaborator for BLE lifecycle responsibilities."""
 
     def __init__(self, iface: "BLEInterface") -> None:
-        """Bind lifecycle orchestration helpers to a specific interface."""
+        """Bind lifecycle orchestration helpers to a specific interface.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface instance whose lifecycle collaborators are owned by this
+            controller.
+
+        Returns
+        -------
+        None
+            Initializes bound controller collaborators.
+        """
         self._iface = iface
         self._receive = BLEReceiveLifecycleCoordinator(iface)
         self._disconnect = BLEDisconnectLifecycleCoordinator(iface)
@@ -102,7 +114,10 @@ class BLELifecycleController:
                 lifecycle_service as lifecycle_service_mod,
             )
 
-            if verify_ownership_snapshot is None:
+            if (
+                verify_ownership_snapshot is None
+                and get_connected_client_status_locked is None
+            ):
 
                 def _compat_verify_snapshot(
                     client: "BLEClient",

@@ -117,7 +117,7 @@ class BLEDisconnectLifecycleCoordinator:
                     should_schedule_reconnect,
                 )
             resolved_fallback = address if address != "unknown" else iface.address
-            fallback_key = _addr_key(resolved_fallback)
+            fallback_key = _addr_key(resolved_fallback) if resolved_fallback else None
             return (
                 iface._sorted_address_keys(fallback_key, alias_key),
                 should_schedule_reconnect,
@@ -130,7 +130,9 @@ class BLEDisconnectLifecycleCoordinator:
         )
         if not address_for_registry or address_for_registry == "unknown":
             address_for_registry = address if address != "unknown" else iface.address
-        addr_disconnect_key = _addr_key(address_for_registry)
+        addr_disconnect_key = (
+            _addr_key(address_for_registry) if address_for_registry else None
+        )
         return (
             iface._sorted_address_keys(addr_disconnect_key, alias_key),
             should_schedule_reconnect,
@@ -370,12 +372,14 @@ class BLEDisconnectLifecycleCoordinator:
         disconnect_keys = list(plan.disconnect_keys)
         skip_side_effects = False
         stale_disconnect_keys: list[str] = []
+        close_stale_client = True
         with iface._state_lock:
             active_client = iface.client
             active_session_epoch = getattr(iface, "_connection_session_epoch", 0)
             if active_session_epoch != plan.session_epoch or (
                 active_client is not None and active_client is not plan.client_at_start
             ):
+                close_stale_client = active_client is not plan.client_at_start
                 if active_client is not None:
                     active_address = iface._extract_client_address(active_client)
                     active_keys = set(
@@ -394,7 +398,8 @@ class BLEDisconnectLifecycleCoordinator:
         if skip_side_effects:
             if stale_disconnect_keys:
                 iface._mark_address_keys_disconnected(*stale_disconnect_keys)
-            close_previous(plan.previous_client)
+            if close_stale_client:
+                close_previous(plan.previous_client)
             logger.debug(
                 "Skipping stale disconnect side-effects from %s: newer client already active.",
                 source,
@@ -405,13 +410,32 @@ class BLEDisconnectLifecycleCoordinator:
         iface._last_disconnect_source = f"ble.{source}"
 
         close_previous(plan.previous_client)
+        stale_disconnect_keys_after_close: list[str] = []
         with iface._state_lock:
             active_client = iface.client
             active_session_epoch = getattr(iface, "_connection_session_epoch", 0)
             stale_after_close = active_session_epoch != plan.session_epoch or (
                 active_client is not None and active_client is not plan.client_at_start
             )
+            if stale_after_close:
+                if active_client is not None:
+                    active_address = iface._extract_client_address(active_client)
+                    active_keys = set(
+                        iface._sorted_address_keys(
+                            _addr_key(active_address) if active_address else None,
+                            iface._connection_alias_key,
+                        )
+                    )
+                    stale_disconnect_keys_after_close = [
+                        key for key in disconnect_keys if key not in active_keys
+                    ]
+                else:
+                    stale_disconnect_keys_after_close = list(disconnect_keys)
         if stale_after_close:
+            if stale_disconnect_keys_after_close:
+                iface._mark_address_keys_disconnected(
+                    *stale_disconnect_keys_after_close
+                )
             logger.debug(
                 "Skipping stale disconnect publication/reconnect from %s after close_previous().",
                 source,
