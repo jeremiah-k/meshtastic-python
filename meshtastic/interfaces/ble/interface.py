@@ -36,7 +36,7 @@ import threading
 import time
 from collections.abc import Awaitable, Callable
 from threading import Event
-from typing import IO, Any, NoReturn, TypeVar, cast
+from typing import IO, Any, NoReturn, TypedDict, TypeVar, cast
 from unittest.mock import Mock
 
 from bleak import BleakClient as BleakRootClient
@@ -123,6 +123,17 @@ from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import mesh_pb2
 
 T = TypeVar("T")
+
+
+class _NotificationSessionSnapshot(TypedDict):
+    """Rollback snapshot for notification dispatcher session state."""
+
+    _registered_notification_session_epoch: int
+    _started_notify_characteristics: set[str] | None
+    fromnum_notify_enabled: bool
+    malformed_notification_count: int
+
+
 MALFORMED_NOTIFICATION_THRESHOLD: int = _ble_constants.MALFORMED_NOTIFICATION_THRESHOLD
 _MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS: float = 30.0
 _MANAGEMENT_CONNECT_WAIT_POLL_SECONDS: float = 0.5
@@ -279,7 +290,8 @@ class BLEInterface(MeshInterface):
             raise self.BLEError(ERROR_PAIR_ON_CONNECT_BOOL)
         self.pair_on_connect = pair_on_connect
         self._disconnect_notified = False  # Prevents duplicate disconnect events
-        self._client_publish_pending = False  # Hide provisional clients.
+        self._client_publish_pending: bool = False  # Hide provisional clients.
+        self._connected_publish_inflight_client: BLEClient | None = None
         self._client_replacement_pending = False
         self._last_disconnect_source: str = (
             ""  # Set by _handle_disconnect on each disconnect
@@ -858,9 +870,10 @@ class BLEInterface(MeshInterface):
             awaitable,
             timeout,
             label,
-            timeout_error_factory=lambda timeout_label,
-            timeout_seconds: BLEInterface.BLEError(
-                ERROR_TIMEOUT.format(timeout_label, timeout_seconds)
+            timeout_error_factory=(
+                lambda timeout_label, timeout_seconds: BLEInterface.BLEError(
+                    ERROR_TIMEOUT.format(timeout_label, timeout_seconds)
+                )
             ),
         )
 
@@ -1071,9 +1084,8 @@ class BLEInterface(MeshInterface):
         self, address: str | None
     ) -> BLEClient | None:
         """Return available management client while caller already holds ``_state_lock``."""
-        return self._get_management_command_handler().get_management_client_if_available_locked(
-            address
-        )
+        handler = self._get_management_command_handler()
+        return handler.get_management_client_if_available_locked(address)
 
     def _get_management_client_for_target(
         self,
@@ -1123,7 +1135,8 @@ class BLEInterface(MeshInterface):
         prefer_current_client: bool,
     ) -> BLEClient | None:
         """Return reusable target-matching client while ``_state_lock`` is held."""
-        return self._get_management_command_handler().get_management_client_for_target_locked(
+        handler = self._get_management_command_handler()
+        return handler.get_management_client_for_target_locked(
             target_address,
             prefer_current_client=prefer_current_client,
         )
@@ -1133,14 +1146,16 @@ class BLEInterface(MeshInterface):
 
         Caller must hold ``_state_lock``.
         """
-        return self._get_management_command_handler().get_current_implicit_management_binding_locked()
+        handler = self._get_management_command_handler()
+        return handler.get_current_implicit_management_binding_locked()
 
     def _get_current_implicit_management_address_locked(self) -> str | None:
         """Return implicit management concrete address via collaborator.
 
         Caller must hold ``_state_lock``.
         """
-        return self._get_management_command_handler().get_current_implicit_management_address_locked()
+        handler = self._get_management_command_handler()
+        return handler.get_current_implicit_management_address_locked()
 
     def _revalidate_implicit_management_target(
         self,
@@ -2160,19 +2175,15 @@ class BLEInterface(MeshInterface):
         original_disconnect_notified: bool
         original_connection_session_epoch: int
         notification_dispatcher: BLENotificationDispatcher | None = None
-        notification_session_snapshot: dict[str, object] | None = None
+        notification_session_snapshot: _NotificationSessionSnapshot | None = None
 
-        def _copy_started_notify_snapshot(value: object | None) -> object | None:
+        def _copy_started_notify_snapshot(
+            value: set[str] | None,
+        ) -> set[str] | None:
             """Return best-effort shallow copy for started-notify collection."""
             if value is None:
                 return None
-            copy_method = getattr(value, "copy", None)
-            if callable(copy_method) and not _is_unconfigured_mock_callable(
-                copy_method
-            ):
-                with contextlib.suppress(Exception):  # noqa: BLE001 - rollback snapshot remains best effort
-                    return cast("object | None", copy_method())
-            return value
+            return set(value)
 
         try:
             resolved_dispatcher = self._get_notification_dispatcher()
@@ -2188,15 +2199,18 @@ class BLEInterface(MeshInterface):
                 )
             except Exception:  # noqa: BLE001 - rollback snapshot is best effort
                 registered_epoch = getattr(self, "_connection_session_epoch", 0)
+            if not isinstance(registered_epoch, int):
+                registered_epoch = int(getattr(self, "_connection_session_epoch", 0))
             try:
                 started_notify_characteristics = (
                     resolved_dispatcher._started_notify_characteristics
                 )
             except Exception:  # noqa: BLE001 - rollback snapshot is best effort
                 started_notify_characteristics = None
-            started_notify_characteristics = cast(
-                "set[str] | None",
-                _copy_started_notify_snapshot(started_notify_characteristics),
+            if not isinstance(started_notify_characteristics, set):
+                started_notify_characteristics = None
+            started_notify_characteristics = _copy_started_notify_snapshot(
+                started_notify_characteristics
             )
             try:
                 fromnum_notify_enabled = resolved_dispatcher.fromnum_notify_enabled
@@ -2227,34 +2241,35 @@ class BLEInterface(MeshInterface):
                 or _is_unconfigured_mock_member(notification_dispatcher)
             ):
                 return
-            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
-                setattr(
-                    notification_dispatcher,
-                    "_registered_notification_session_epoch",
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - rollback cleanup is best effort
+                notification_dispatcher._registered_notification_session_epoch = (
                     notification_session_snapshot[
                         "_registered_notification_session_epoch"
-                    ],
+                    ]
                 )
-            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - rollback cleanup is best effort
                 started_notify_snapshot = _copy_started_notify_snapshot(
                     notification_session_snapshot["_started_notify_characteristics"]
                 )
-                setattr(
-                    notification_dispatcher,
-                    "_started_notify_characteristics",
-                    started_notify_snapshot,
+                if started_notify_snapshot is not None:
+                    notification_dispatcher._started_notify_characteristics = (
+                        started_notify_snapshot
+                    )
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - rollback cleanup is best effort
+                notification_dispatcher.fromnum_notify_enabled = (
+                    notification_session_snapshot["fromnum_notify_enabled"]
                 )
-            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
-                setattr(
-                    notification_dispatcher,
-                    "fromnum_notify_enabled",
-                    notification_session_snapshot["fromnum_notify_enabled"],
-                )
-            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
-                setattr(
-                    notification_dispatcher,
-                    "malformed_notification_count",
-                    notification_session_snapshot["malformed_notification_count"],
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - rollback cleanup is best effort
+                notification_dispatcher.malformed_notification_count = (
+                    notification_session_snapshot["malformed_notification_count"]
                 )
 
         with self._state_lock:
@@ -3032,7 +3047,24 @@ class BLEInterface(MeshInterface):
         super()._disconnected()
         self._publish_connection_status(connected=False)
 
-    def _connected(self) -> None:
-        """Mark the interface as connected and publish the legacy connection status event for backwards compatibility."""
+    def _connected(self, *, expected_session_epoch: int | None = None) -> None:
+        """Mark connected and publish compatibility status for the active session.
+
+        Parameters
+        ----------
+        expected_session_epoch : int | None
+            Optional session epoch guard. When provided, stale calls are ignored
+            if the current connection session no longer matches.
+        """
+        if expected_session_epoch is not None:
+            with self._state_lock:
+                current_session_epoch = getattr(self, "_connection_session_epoch", 0)
+                if current_session_epoch != expected_session_epoch:
+                    logger.debug(
+                        "Skipping stale _connected() call (expected epoch=%s current epoch=%s).",
+                        expected_session_epoch,
+                        current_session_epoch,
+                    )
+                    return
         super()._connected()
         self._publish_connection_status(connected=True)

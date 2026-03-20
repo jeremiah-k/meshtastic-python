@@ -1457,7 +1457,7 @@ def test_ble_interface_resolve_management_address_prefers_connected_client_addre
     client.bleak_client = SimpleNamespace(address="AA:BB:CC:DD:EE:FF")
     iface = _build_interface(monkeypatch, client, start_receive_thread=False)
 
-    assert iface._resolve_target_address_for_management(None) == "AA:BB:CC:DD:EE:FF"
+    assert iface._resolve_target_address_for_management(None) == "aa:bb:cc:dd:ee:ff"
     iface.close()
 
 
@@ -3596,26 +3596,17 @@ def test_thread_event_dispatcher_resolution_paths(
         assert class_calls == ["class-evt", "class-evt-2"]
 
         instance_calls: list[str] = []
-        instance_coordinator = SimpleNamespace(
-            _set_event=lambda event_name: instance_calls.append(event_name)
-        )
+
+        def _instance_set_event(event_name: str) -> None:
+            instance_calls.append(event_name)
+
+        instance_coordinator = SimpleNamespace(_set_event=_instance_set_event)
         instance_dispatch = BLEInterface._resolve_thread_event_dispatcher(
             instance_coordinator
         )
         assert callable(instance_dispatch)
         cast(Callable[[str], None], instance_dispatch)("instance-evt")
         assert instance_calls == ["instance-evt"]
-
-        legacy_calls: list[str] = []
-        legacy_coordinator = SimpleNamespace(
-            _set_event=lambda event_name: legacy_calls.append(event_name)
-        )
-        legacy_dispatch = BLEInterface._resolve_thread_event_dispatcher(
-            legacy_coordinator
-        )
-        assert callable(legacy_dispatch)
-        cast(Callable[[str], None], legacy_dispatch)("legacy-evt")
-        assert legacy_calls == ["legacy-evt"]
 
         missing_coordinator = SimpleNamespace()
         assert (
@@ -5172,14 +5163,21 @@ def _run_receive_pending_marker_scenario(
 ) -> None:
     """Run pending-marker restart scenario for service/facade receive starts."""
     from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
-        BLEReceiveLifecycleCoordinator,
         RECEIVE_START_PENDING_TIMEOUT_SECONDS,
+        BLEReceiveLifecycleCoordinator,
     )
+
+    deferred_schedule_calls: list[dict[str, object]] = []
+
+    def _spy_schedule_deferred_receive_restart(
+        _self: BLEReceiveLifecycleCoordinator, **kwargs: object
+    ) -> None:
+        deferred_schedule_calls.append(dict(kwargs))
 
     monkeypatch.setattr(
         BLEReceiveLifecycleCoordinator,
         "_schedule_deferred_receive_restart",
-        lambda _self, **_kwargs: None,
+        _spy_schedule_deferred_receive_restart,
         raising=True,
     )
 
@@ -5256,6 +5254,7 @@ def _run_receive_pending_marker_scenario(
     assert start_calls == [thread_one, thread_two]
     assert iface._receiveThread is thread_two
     assert iface._receive_start_pending is False
+    assert len(deferred_schedule_calls) == 1
 
 
 def _run_receive_current_thread_deferral_scenario(
@@ -5267,6 +5266,24 @@ def _run_receive_current_thread_deferral_scenario(
     t0: float,
 ) -> None:
     """Run current-thread deferral scenario for service/facade receive starts."""
+    from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
+        BLEReceiveLifecycleCoordinator,
+    )
+
+    deferred_schedule_calls: list[dict[str, object]] = []
+
+    def _spy_schedule_deferred_receive_restart(
+        _self: BLEReceiveLifecycleCoordinator, **kwargs: object
+    ) -> None:
+        deferred_schedule_calls.append(dict(kwargs))
+
+    monkeypatch.setattr(
+        BLEReceiveLifecycleCoordinator,
+        "_schedule_deferred_receive_restart",
+        _spy_schedule_deferred_receive_restart,
+        raising=True,
+    )
+
     with iface._state_lock:
         iface._want_receive = True
         iface._receiveThread = threading.current_thread()
@@ -5296,6 +5313,7 @@ def _run_receive_current_thread_deferral_scenario(
     assert iface._receiveThread is threading.current_thread()
     assert iface._receive_start_pending is True
     assert iface._receive_start_pending_since == t0
+    assert len(deferred_schedule_calls) == 1
 
 
 def test_start_receive_thread_retains_cached_thread_when_start_noops(
@@ -5456,6 +5474,12 @@ def test_start_receive_thread_ident_only_probe_keeps_pending_state(
             with iface._state_lock:
                 iface._want_receive = True
                 iface._receive_recovery_attempts = 4
+            t0 = 500.0
+            _patch_receive_start_monotonic(
+                monkeypatch,
+                values=[t0],
+                fallback_step=0.001,
+            )
             thread_like = SimpleNamespace(
                 name="BLEReceiveIdentOnly",
                 ident=101,
@@ -5471,6 +5495,7 @@ def test_start_receive_thread_ident_only_probe_keeps_pending_state(
 
             assert iface._receiveThread is thread_like
             assert iface._receive_start_pending is True
+            assert iface._receive_start_pending_since == t0
             assert iface._receive_recovery_attempts == 4
             assert start_calls == [thread_like]
     finally:
@@ -5837,15 +5862,18 @@ def test_wait_for_disconnect_notifications_skips_unconfigured_queuework(
     queue_work.assert_not_called()
 
 
-def test_publish_connection_status_runs_directly_when_queuework_unconfigured(
+def test_publish_connection_status_skips_when_queuework_unconfigured(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Verify status publish runs inline when queueWork is unconfigured.
+    """Verify status publish skips when queueWork/queue are unavailable.
 
     Parameters
     ----------
     monkeypatch : pytest.MonkeyPatch
         Fixture used to patch publish transport.
+    caplog : pytest.LogCaptureFixture
+        Fixture used to assert debug log path.
 
     Returns
     -------
@@ -5872,25 +5900,30 @@ def test_publish_connection_status_runs_directly_when_queuework_unconfigured(
     publishing_thread = MagicMock()
     queue_work = publishing_thread.queueWork
 
-    BLECompatibilityEventService.publish_connection_status(
-        iface,
-        connected=True,
-        publishing_thread=publishing_thread,
-    )
+    with caplog.at_level(logging.DEBUG):
+        BLECompatibilityEventService.publish_connection_status(
+            iface,
+            connected=True,
+            publishing_thread=publishing_thread,
+        )
 
-    assert sent == [("meshtastic.connection.status", iface, True)]
+    assert sent == []
+    assert "publish queue is unavailable" in caplog.text
     queue_work.assert_not_called()
 
 
-def test_publish_connection_status_falls_back_inline_when_non_blocking_enqueue_unavailable(
+def test_publish_connection_status_skips_when_enqueue_raises(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Verify status publish falls back inline when non-blocking enqueue is unavailable.
+    """Verify status publish skips inline execution when enqueue probe raises.
 
     Parameters
     ----------
     monkeypatch : pytest.MonkeyPatch
         Fixture used to patch queueWork failure behavior.
+    caplog : pytest.LogCaptureFixture
+        Fixture used to assert debug logging on enqueue failure.
 
     Returns
     -------
@@ -5916,20 +5949,31 @@ def test_publish_connection_status_falls_back_inline_when_non_blocking_enqueue_u
     iface = SimpleNamespace()
     publishing_thread = SimpleNamespace()
 
-    BLECompatibilityEventService.publish_connection_status(
-        iface,
-        connected=False,
-        publishing_thread=publishing_thread,
+    monkeypatch.setattr(
+        BLECompatibilityEventService,
+        "_enqueue_publish_callback",
+        staticmethod(
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                RuntimeError("enqueue failure")
+            )
+        ),
     )
+    with caplog.at_level(logging.DEBUG):
+        BLECompatibilityEventService.publish_connection_status(
+            iface,
+            connected=False,
+            publishing_thread=publishing_thread,
+        )
 
-    assert sent == [("meshtastic.connection.status", iface, False)]
+    assert sent == []
+    assert "Error queuing connection status publish" in caplog.text
 
 
 def test_publish_connection_status_skips_when_publishing_thread_missing(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Status publish should skip inline fallback when publishing thread is unavailable."""
+    """Status publish should run inline when publishing thread is missing and interface is active."""
     from meshtastic import mesh_interface as mesh_iface_module
     from meshtastic.interfaces.ble.compatibility_service import (
         BLECompatibilityEventService,
@@ -5947,12 +5991,51 @@ def test_publish_connection_status_skips_when_publishing_thread_missing(
         raising=True,
     )
 
-    iface = SimpleNamespace()
+    iface = SimpleNamespace(
+        _closed=False, _state_manager=SimpleNamespace(is_closing=False)
+    )
 
     with caplog.at_level(logging.DEBUG):
         BLECompatibilityEventService.publish_connection_status(
             iface,
             connected=True,
+            publishing_thread=None,
+        )
+
+    assert sent == [("meshtastic.connection.status", iface, True)]
+    assert "publishing thread is unavailable" in caplog.text
+
+
+def test_publish_connection_status_skips_when_publishing_thread_missing_during_shutdown(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Status publish should skip when publishing thread is missing during shutdown."""
+    from meshtastic import mesh_interface as mesh_iface_module
+    from meshtastic.interfaces.ble.compatibility_service import (
+        BLECompatibilityEventService,
+    )
+
+    sent: list[tuple[str, object, bool]] = []
+
+    def _send_message(topic: str, *, interface: object, connected: bool) -> None:
+        sent.append((topic, interface, connected))
+
+    monkeypatch.setattr(
+        mesh_iface_module,
+        "pub",
+        SimpleNamespace(sendMessage=_send_message),
+        raising=True,
+    )
+
+    iface = SimpleNamespace(
+        _closed=True, _state_manager=SimpleNamespace(is_closing=True)
+    )
+
+    with caplog.at_level(logging.DEBUG):
+        BLECompatibilityEventService.publish_connection_status(
+            iface,
+            connected=False,
             publishing_thread=None,
         )
 

@@ -2,7 +2,7 @@
 
 import threading
 from collections.abc import Callable
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from bleak import BleakClient as BleakRootClient
 
@@ -243,28 +243,25 @@ class BLEDisconnectLifecycleCoordinator:
                     )
             should_reconnect = iface.auto_reconnect
 
-            address = "unknown"
+            def _normalize_disconnect_address(value: object | None) -> str:
+                if isinstance(value, str) and value:
+                    return value
+                return iface.address or "unknown"
+
+            address = iface.address or "unknown"
             if target_client is not None:
-                address = cast(
-                    "str",
+                address = _normalize_disconnect_address(
                     iface._extract_client_address(target_client)
-                    or getattr(target_client, "address", repr(target_client)),
+                    or getattr(target_client, "address", None)
                 )
             elif bleak_client is not None:
-                address = cast(
-                    "str", getattr(bleak_client, "address", repr(bleak_client))
+                address = _normalize_disconnect_address(
+                    getattr(bleak_client, "address", None)
                 )
             elif previous_client is not None:
-                address = cast(
-                    "str",
+                address = _normalize_disconnect_address(
                     iface._extract_client_address(previous_client)
-                    or getattr(previous_client, "address", repr(previous_client)),
-                )
-            elif bleak_client is not None:
-                address = getattr(bleak_client, "address", repr(bleak_client))
-            elif previous_client is not None:
-                address = iface._extract_client_address(previous_client) or getattr(
-                    previous_client, "address", repr(previous_client)
+                    or getattr(previous_client, "address", None)
                 )
 
             disconnect_keys, should_schedule_reconnect = self._compute_disconnect_keys(

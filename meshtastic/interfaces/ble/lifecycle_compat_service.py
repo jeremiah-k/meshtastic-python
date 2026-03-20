@@ -121,10 +121,7 @@ class BLELifecycleService:
         if callable(get_lifecycle_controller) and not _is_unconfigured_mock_callable(
             get_lifecycle_controller
         ):
-            try:
-                lifecycle_controller = get_lifecycle_controller()
-            except (AttributeError, NotImplementedError):
-                lifecycle_controller = None
+            lifecycle_controller = get_lifecycle_controller()
             if lifecycle_controller is not None and not _is_unconfigured_mock_member(
                 lifecycle_controller
             ):
@@ -156,13 +153,10 @@ class BLELifecycleService:
                 # Partial test doubles may provide incompatible helper signatures.
                 pass
             else:
-                try:
-                    coordinator = get_or_create(
-                        "_ble_receive_lifecycle_coordinator",
-                        lambda: BLEReceiveLifecycleCoordinator(iface),
-                    )
-                except (AttributeError, NotImplementedError, TypeError):
-                    coordinator = None
+                coordinator = get_or_create(
+                    "_ble_receive_lifecycle_coordinator",
+                    lambda: BLEReceiveLifecycleCoordinator(iface),
+                )
                 if (
                     coordinator is not None
                     and not _is_unconfigured_mock_member(coordinator)

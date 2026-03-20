@@ -1,6 +1,5 @@
 """Management command helpers for BLE interface orchestration."""
 
-import contextlib
 import math
 import numbers
 import re
@@ -179,6 +178,16 @@ def _normalized_mac_to_colon_address(normalized_address: str) -> str:
     ).lower()
 
 
+def _coerce_concrete_ble_address(address: str | None) -> str | None:
+    """Return a concrete colon-delimited BLE address when normalization succeeds."""
+    if address is None:
+        return None
+    normalized = sanitize_address(address)
+    if normalized is None:
+        return address
+    return _normalized_mac_to_colon_address(normalized)
+
+
 class BLEManagementCommandHandler:
     """Instance-bound management command collaborator for BLEInterface."""
 
@@ -222,13 +231,19 @@ class BLEManagementCommandHandler:
             instance_dict = getattr(self._iface, "__dict__", {})
             if isinstance(instance_dict, dict) and method_name in instance_dict:
                 return cast(T, override(*args, **kwargs))
-            with contextlib.suppress(Exception):  # noqa: BLE001 - lookup fallback
+            try:
                 from meshtastic.interfaces.ble.interface import BLEInterface
 
                 base_method = getattr(BLEInterface, method_name, None)
                 class_method = getattr(type(self._iface), method_name, None)
                 if class_method is not None and class_method is not base_method:
                     return cast(T, override(*args, **kwargs))
+            except Exception:  # noqa: BLE001 - lookup fallback
+                logger.debug(
+                    "Override lookup fallback suppressed exception for %s",
+                    method_name,
+                    exc_info=True,
+                )
         return fallback(*args, **kwargs)
 
     def resolve_target_address_for_management(self, address: str | None) -> str:
@@ -249,7 +264,9 @@ class BLEManagementCommandHandler:
             if self._is_client_connected(current_client):
                 current_address = iface._extract_client_address(current_client)
                 if current_address:
-                    return current_address
+                    return (
+                        _coerce_concrete_ble_address(current_address) or current_address
+                    )
             if requested_identifier is None:
                 raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_REQUIRED)
         if requested_identifier is None:
@@ -259,10 +276,14 @@ class BLEManagementCommandHandler:
             existing_client = iface._get_existing_client_if_valid(normalized_request)
             existing_client_address = iface._extract_client_address(existing_client)
             if existing_client_address:
-                return existing_client_address
+                return (
+                    _coerce_concrete_ble_address(existing_client_address)
+                    or existing_client_address
+                )
             if _looks_like_ble_address(normalized_request):
                 return _normalized_mac_to_colon_address(normalized_request)
-        return iface.findDevice(requested_identifier).address
+        discovered_address = iface.findDevice(requested_identifier).address
+        return _coerce_concrete_ble_address(discovered_address) or discovered_address
 
     @staticmethod
     def management_target_gate(target_address: str) -> ExitStack:

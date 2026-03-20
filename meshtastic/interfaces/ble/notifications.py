@@ -391,12 +391,16 @@ class BLENotificationDispatcher:
             ):
                 safe_execute_callable = cast(Callable[..., Any], safe_execute_hook)
 
-                def _report_via_safe_execute(message: str) -> None:
+                def _report_via_safe_execute(
+                    message: str,
+                    *,
+                    _safe_execute_callable: Callable[..., Any] = safe_execute_callable,
+                ) -> None:
                     def _raise_handler_error() -> None:
                         raise RuntimeError(message)
 
                     BLENotificationDispatcher.invoke_safe_execute_compat(
-                        safe_execute_callable,
+                        _safe_execute_callable,
                         _raise_handler_error,
                         error_msg=message,
                         fallback=lambda: logger.debug(message),

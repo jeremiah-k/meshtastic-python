@@ -132,9 +132,7 @@ class BLECompatibilityEventPublisher:
         BLECompatibilityEventService.publish_connection_status(
             self._iface,
             connected=connected,
-            publishing_thread=self._resolve_publishing_thread(
-                use_cached_fallback=False
-            ),
+            publishing_thread=self._resolve_publishing_thread(),
         )
 
     # COMPAT_STABLE_SHIM: retained bound alias for compatibility callers.
@@ -496,6 +494,41 @@ class BLECompatibilityEventService:
                 )
 
         if publishing_thread is None:
+            is_closing = bool(getattr(iface, "_closed", False))
+            state_manager = getattr(iface, "_state_manager", None)
+            raw_is_closing = getattr(state_manager, "is_closing", None)
+            if callable(raw_is_closing) and not _is_unconfigured_mock_callable(
+                raw_is_closing
+            ):
+                try:
+                    state_probe = raw_is_closing()
+                except Exception:  # noqa: BLE001 - shutdown probe remains best effort
+                    state_probe = None
+                if isinstance(state_probe, bool):
+                    is_closing = is_closing or state_probe
+            elif isinstance(raw_is_closing, bool):
+                is_closing = is_closing or raw_is_closing
+            if not is_closing:
+                legacy_is_closing = getattr(state_manager, "_is_closing", None)
+                if callable(legacy_is_closing) and not _is_unconfigured_mock_callable(
+                    legacy_is_closing
+                ):
+                    try:
+                        legacy_probe = legacy_is_closing()
+                    except (
+                        Exception
+                    ):  # noqa: BLE001 - shutdown probe remains best effort
+                        legacy_probe = None
+                    if isinstance(legacy_probe, bool):
+                        is_closing = is_closing or legacy_probe
+                elif isinstance(legacy_is_closing, bool):
+                    is_closing = is_closing or legacy_is_closing
+            if not is_closing:
+                logger.debug(
+                    "Publishing connection status inline: publishing thread is unavailable."
+                )
+                _publish_status()
+                return
             logger.debug(
                 "Skipping connection status publish: publishing thread is unavailable."
             )
@@ -508,13 +541,16 @@ class BLECompatibilityEventService:
                 prefer_non_blocking=True,
             )
             if not queued:
-                _publish_status()
+                logger.debug(
+                    "Skipping connection status publish: publish queue is unavailable."
+                )
+                return
         except Exception:  # noqa: BLE001 - best-effort queueing path
             logger.debug(
                 "Error queuing connection status publish via publishingThread.queueWork",
                 exc_info=True,
             )
-            _publish_status()
+            return
 
     # COMPAT_STABLE_SHIM: retained for existing callers during service migration.
     @staticmethod

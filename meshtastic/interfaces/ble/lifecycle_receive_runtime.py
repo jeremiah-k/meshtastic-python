@@ -183,10 +183,11 @@ class BLEReceiveLifecycleCoordinator:
         is_started = getattr(started_event, "is_set", None)
         if callable(is_started):
             try:
-                return not bool(is_started())
+                if not bool(is_started()):
+                    return False
             except Exception:  # noqa: BLE001 - probe remains best effort
                 return False
-        return isinstance(thread, threading.Thread)
+        return False
 
     @staticmethod
     def _is_current_receive_thread(thread: ThreadLike | None) -> bool:
@@ -284,12 +285,9 @@ class BLEReceiveLifecycleCoordinator:
                     )
                     return None, None
                 if existing_start_pending:
-                    if (
-                        not existing_is_alive
-                        and (
-                            existing_ident is not None
-                            or self._is_thread_start_failure_confirmed(existing)
-                        )
+                    if not existing_is_alive and (
+                        existing_ident is not None
+                        or self._is_thread_start_failure_confirmed(existing)
                     ):
                         logger.debug(
                             "Replacing stale pending receive-thread start reference for %s: worker is no longer alive.",
@@ -398,9 +396,14 @@ class BLEReceiveLifecycleCoordinator:
         thread: ThreadLike,
         *,
         start_runtime_thread: Callable[[ThreadLike], None],
-    ) -> None:
+    ) -> bool:
         """Start staged receive thread and clear stale reference on failure."""
         iface = self._iface
+        with iface._state_lock:
+            if iface._receiveThread is not thread:
+                return False
+            if iface._closed or not iface._want_receive:
+                return False
         try:
             start_runtime_thread(thread)
         except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
@@ -419,6 +422,7 @@ class BLEReceiveLifecycleCoordinator:
                     iface._receive_start_pending = False
                     iface._receive_start_pending_since = None
             raise
+        return True
 
     def _probe_receive_thread_start(
         self,
@@ -517,10 +521,12 @@ class BLEReceiveLifecycleCoordinator:
         )
         if thread is None:
             return
-        self._create_and_start_receive_thread(
+        started = self._create_and_start_receive_thread(
             thread,
             start_runtime_thread=start_runtime_thread,
         )
+        if not started:
+            return
         if not self._probe_receive_thread_start(
             thread,
             name=name,

@@ -315,9 +315,10 @@ def test_lifecycle_compute_disconnect_keys_paths(
     iface = _make_iface(monkeypatch)
     try:
         iface.address = "AA:AA:AA:AA:AA:AA"
-        iface._sorted_address_keys = (
-            lambda device_key, alias_key: [device_key, alias_key]
-        )
+        iface._sorted_address_keys = lambda device_key, alias_key: [
+            device_key,
+            alias_key,
+        ]
 
         reconnect_plan = BLELifecycleService._compute_disconnect_keys(
             iface,
@@ -781,7 +782,7 @@ def test_lifecycle_controller_keeps_injected_status_getter_when_snapshot_missing
         )
         assert len(captured_calls) == 1
         verify_snapshot, status_locked = captured_calls[0]
-        assert verify_snapshot is None
+        assert callable(verify_snapshot)
         assert status_locked is status_getter
     finally:
         iface.close()
