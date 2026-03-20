@@ -457,6 +457,10 @@ class _SetUrlCacheManager:
             channels = self._node.channels
             if channels is None:
                 self._node._raise_interface_error("Config or channels not loaded")  # noqa: SLF001
+            if staged_channel.index < 0 or staged_channel.index >= len(channels):
+                self._node._raise_interface_error(  # noqa: SLF001
+                    f"Channel index {staged_channel.index} out of range during cache update"
+                )
             channels[staged_channel.index].CopyFrom(staged_channel)
 
     def invalidate_channel_cache(self, warning_message: str) -> None:
@@ -624,6 +628,7 @@ class _SetUrlExecutionEngine:
             state.written_channel_indices.append(
                 plan.deferred_previous_admin_slot_channel.index
             )
+            state.rollback_admin_index_for_write = updated_admin_index_for_write
             self._node._write_channel_snapshot(  # noqa: SLF001
                 plan.deferred_previous_admin_slot_channel,
                 adminIndex=updated_admin_index_for_write,
@@ -978,6 +983,419 @@ class _SetUrlTransactionCoordinator:
             raise
 
 
+class _NodeContentCacheStore:
+    """Owns ringtone/canned-message cache state, fragment storage, and invalidation."""
+
+    def __init__(self, node: "Node") -> None:
+        self._node = node
+
+    def get_cached_ringtone(self) -> str | None:
+        """Return cached full ringtone value when already present."""
+        with self._node._ringtone_lock:  # noqa: SLF001
+            if self._node.ringtone:
+                logger.debug("ringtone:%s", self._node.ringtone)
+                return self._node.ringtone
+            return None
+
+    def clear_ringtone_fragment(self) -> None:
+        """Clear stale ringtone fragment state before issuing a read request."""
+        with self._node._ringtone_lock:  # noqa: SLF001
+            self._node.ringtonePart = None
+
+    def store_ringtone_fragment(self, ringtone_fragment: str) -> None:
+        """Store ringtone fragment from the latest response packet."""
+        with self._node._ringtone_lock:  # noqa: SLF001
+            self._node.ringtonePart = ringtone_fragment
+        logger.debug("self.ringtonePart:%s", ringtone_fragment)
+
+    def resolve_ringtone_after_read(self) -> str | None:
+        """Resolve ringtone result after a read wait by preferring full cache, then fragment."""
+        with self._node._ringtone_lock:  # noqa: SLF001
+            if self._node.ringtone:
+                logger.debug("ringtone:%s", self._node.ringtone)
+                return self._node.ringtone
+            if self._node.ringtonePart:
+                self._node.ringtone = self._node.ringtonePart
+                logger.debug("ringtone:%s", self._node.ringtone)
+                return self._node.ringtone
+            return None
+
+    def invalidate_ringtone_cache(self) -> None:
+        """Invalidate ringtone full/fragment cache after writes."""
+        with self._node._ringtone_lock:  # noqa: SLF001
+            self._node.ringtone = None
+            self._node.ringtonePart = None
+
+    def get_cached_canned_message(self) -> str | None:
+        """Return cached full canned-message value when already present."""
+        with self._node._canned_message_lock:  # noqa: SLF001
+            if self._node.cannedPluginMessage:
+                logger.debug("canned_plugin_message:%s", self._node.cannedPluginMessage)
+                return self._node.cannedPluginMessage
+            return None
+
+    def clear_canned_message_fragment(self) -> None:
+        """Clear stale canned-message fragment state before issuing a read request."""
+        with self._node._canned_message_lock:  # noqa: SLF001
+            self._node.cannedPluginMessageMessages = None
+
+    def store_canned_message_fragment(self, canned_messages: str) -> None:
+        """Store canned-message fragment payload from response packets."""
+        with self._node._canned_message_lock:  # noqa: SLF001
+            self._node.cannedPluginMessageMessages = canned_messages
+        logger.debug("self.cannedPluginMessageMessages:%s", canned_messages)
+
+    def resolve_canned_message_after_read(self) -> str | None:
+        """Resolve canned-message result after a read wait."""
+        with self._node._canned_message_lock:  # noqa: SLF001
+            if self._node.cannedPluginMessage:
+                logger.debug("canned_plugin_message:%s", self._node.cannedPluginMessage)
+                return self._node.cannedPluginMessage
+            logger.debug(
+                "self.cannedPluginMessageMessages:%s",
+                self._node.cannedPluginMessageMessages,
+            )
+            if self._node.cannedPluginMessageMessages:
+                self._node.cannedPluginMessage = self._node.cannedPluginMessageMessages
+                logger.debug("canned_plugin_message:%s", self._node.cannedPluginMessage)
+                return self._node.cannedPluginMessage
+            return None
+
+    def invalidate_canned_message_cache(self) -> None:
+        """Invalidate canned-message full/fragment cache after writes."""
+        with self._node._canned_message_lock:  # noqa: SLF001
+            self._node.cannedPluginMessage = None
+            self._node.cannedPluginMessageMessages = None
+
+
+class _NodeContentResponseRuntime:
+    """Owns ringtone/canned-message response parsing and fragment cache updates."""
+
+    def __init__(self, node: "Node", *, cache_store: _NodeContentCacheStore) -> None:
+        self._node = node
+        self._cache_store = cache_store
+
+    @staticmethod
+    def _has_routing_error(decoded: dict[str, Any]) -> bool:
+        """Return True when decoded routing payload contains a non-NONE error reason."""
+        if "routing" in decoded and decoded["routing"]["errorReason"] != "NONE":
+            logger.error("Error on response: %s", decoded["routing"]["errorReason"])
+            return True
+        return False
+
+    def handle_ringtone_response(self, packet: dict[str, Any]) -> None:
+        """Parse ringtone response packet and store ringtone fragment when valid."""
+        logger.debug("onResponseRequestRingtone() p:%s", packet)
+        decoded = packet["decoded"]
+        if self._has_routing_error(decoded):
+            return
+        if "admin" in decoded and "raw" in decoded["admin"]:
+            ringtone_part = decoded["admin"]["raw"].get_ringtone_response
+            self._cache_store.store_ringtone_fragment(ringtone_part)
+
+    def handle_canned_message_response(self, packet: dict[str, Any]) -> None:
+        """Parse canned-message response packet and store payload fragment when valid."""
+        logger.debug("onResponseRequestCannedMessagePluginMessageMessages() p:%s", packet)
+        decoded = packet["decoded"]
+        if self._has_routing_error(decoded):
+            return
+        if "admin" in decoded and "raw" in decoded["admin"]:
+            canned_messages = decoded["admin"][
+                "raw"
+            ].get_canned_message_module_messages_response
+            self._cache_store.store_canned_message_fragment(canned_messages)
+
+
+class _NodeAdminContentRuntime:
+    """Owns admin request/wait orchestration for ringtone and canned-message reads/writes."""
+
+    def __init__(
+        self,
+        node: "Node",
+        *,
+        cache_store: _NodeContentCacheStore,
+        response_runtime: _NodeContentResponseRuntime,
+    ) -> None:
+        self._node = node
+        self._cache_store = cache_store
+        self._response_runtime = response_runtime
+
+    def _module_available_or_warn(self, excluded_bit: int, warning_message: str) -> bool:
+        """Evaluate module availability and emit the legacy warning when unavailable."""
+        if not self._node.module_available(excluded_bit):
+            logger.warning("%s", warning_message)
+            return False
+        return True
+
+    def _send_content_read_request(
+        self,
+        *,
+        build_request: Callable[[admin_pb2.AdminMessage], None],
+        handle_response: Callable[[dict[str, Any]], None],
+        skipped_send_debug_message: str,
+        timeout_warning_message: str,
+        resolve_result: Callable[[], str | None],
+    ) -> str | None:
+        """Send content read request, wait for callback, and resolve cached result."""
+        response_event = threading.Event()
+
+        def _on_response(packet: dict[str, Any]) -> None:
+            try:
+                handle_response(packet)
+            finally:
+                response_event.set()
+
+        request_message = admin_pb2.AdminMessage()
+        build_request(request_message)
+        request = self._node._send_admin(
+            request_message,
+            wantResponse=True,
+            onResponse=_on_response,
+        )
+        if request is None:
+            logger.debug("%s", skipped_send_debug_message)
+            return None
+        if not response_event.wait(timeout=self._node._timeout.expireTimeout):
+            logger.warning("%s", timeout_warning_message)
+            return None
+        return resolve_result()
+
+    def _select_write_response_handler(
+        self,
+    ) -> Callable[[dict[str, Any]], Any] | None:
+        """Return legacy ACK callback selection for local-vs-remote writes."""
+        if self._node == self._node.iface.localNode:
+            return None
+        return self._node.onAckNak
+
+    def read_ringtone(self) -> str | None:
+        """Read ringtone using cached-short-circuit + request/wait orchestration."""
+        logger.debug("in get_ringtone()")
+        if not self._module_available_or_warn(
+            mesh_pb2.EXTNOTIF_CONFIG,
+            "External Notification module not present (excluded by firmware)",
+        ):
+            return None
+        cached_ringtone = self._cache_store.get_cached_ringtone()
+        if cached_ringtone is not None:
+            return cached_ringtone
+        self._cache_store.clear_ringtone_fragment()
+        return self._send_content_read_request(
+            build_request=lambda message: setattr(message, "get_ringtone_request", True),
+            handle_response=self._response_runtime.handle_ringtone_response,
+            skipped_send_debug_message=(
+                "Skipping ringtone wait because protocol send was not started"
+            ),
+            timeout_warning_message="Timed out waiting for ringtone response",
+            resolve_result=self._cache_store.resolve_ringtone_after_read,
+        )
+
+    def write_ringtone(self, ringtone: str) -> mesh_pb2.MeshPacket | None:
+        """Write ringtone payload and invalidate local ringtone cache."""
+        if not self._module_available_or_warn(
+            mesh_pb2.EXTNOTIF_CONFIG,
+            "External Notification module not present (excluded by firmware)",
+        ):
+            return None
+        if len(ringtone) > MAX_RINGTONE_LENGTH:
+            self._node._raise_interface_error(  # noqa: SLF001
+                f"The ringtone must be {MAX_RINGTONE_LENGTH} characters or fewer."
+            )
+        self._node.ensureSessionKey()
+        request_message = admin_pb2.AdminMessage()
+        request_message.set_ringtone_message = ringtone
+        logger.debug("Setting ringtone '%s'", ringtone)
+        send_result = self._node._send_admin(
+            request_message,
+            onResponse=self._select_write_response_handler(),
+        )
+        self._cache_store.invalidate_ringtone_cache()
+        return send_result
+
+    def read_canned_message(self) -> str | None:
+        """Read canned-message payload using cached-short-circuit + request/wait orchestration."""
+        logger.debug("in get_canned_message()")
+        if not self._module_available_or_warn(
+            mesh_pb2.CANNEDMSG_CONFIG,
+            "Canned Message module not present (excluded by firmware)",
+        ):
+            return None
+        cached_canned_message = self._cache_store.get_cached_canned_message()
+        if cached_canned_message is not None:
+            return cached_canned_message
+        self._cache_store.clear_canned_message_fragment()
+        return self._send_content_read_request(
+            build_request=lambda message: setattr(
+                message,
+                "get_canned_message_module_messages_request",
+                True,
+            ),
+            handle_response=self._response_runtime.handle_canned_message_response,
+            skipped_send_debug_message=(
+                "Skipping canned-message wait because protocol send was not started"
+            ),
+            timeout_warning_message="Timed out waiting for canned message response",
+            resolve_result=self._cache_store.resolve_canned_message_after_read,
+        )
+
+    def write_canned_message(self, message: str) -> mesh_pb2.MeshPacket | None:
+        """Write canned-message payload and invalidate local canned-message cache."""
+        if not self._module_available_or_warn(
+            mesh_pb2.CANNEDMSG_CONFIG,
+            "Canned Message module not present (excluded by firmware)",
+        ):
+            return None
+        if len(message) > MAX_CANNED_MESSAGE_LENGTH:
+            self._node._raise_interface_error(  # noqa: SLF001
+                f"The canned message must be {MAX_CANNED_MESSAGE_LENGTH} characters or fewer."
+            )
+        self._node.ensureSessionKey()
+        request_message = admin_pb2.AdminMessage()
+        request_message.set_canned_message_module_messages = message
+        logger.debug("Setting canned message '%s'", message)
+        send_result = self._node._send_admin(
+            request_message,
+            onResponse=self._select_write_response_handler(),
+        )
+        self._cache_store.invalidate_canned_message_cache()
+        return send_result
+
+
+class _NodeMetadataResponseRuntime:
+    """Owns metadata response routing/error handling, state mutation, and signaling."""
+
+    def __init__(self, node: "Node") -> None:
+        self._node = node
+
+    def _handle_routing_portnum(self, decoded: dict[str, Any]) -> bool:
+        """Handle ROUTING_APP metadata responses and indicate whether processing is complete."""
+        if decoded["portnum"] != portnums_pb2.PortNum.Name(
+            portnums_pb2.PortNum.ROUTING_APP
+        ):
+            return False
+        if decoded["routing"]["errorReason"] != "NONE":
+            logger.warning(
+                "Metadata request failed, error reason: %s",
+                decoded["routing"]["errorReason"],
+            )
+            self._node.iface._acknowledgment.receivedNak = True
+            self._node._timeout.expireTime = time.time()  # Do not wait any longer
+            self._node._signal_metadata_stdout_event()
+            return True  # Don't try to parse this routing message
+        logger.debug(
+            "Metadata request routed successfully; waiting for ADMIN_APP payload."
+        )
+        return True
+
+    def _handle_generic_routing_error(self, decoded: dict[str, Any]) -> bool:
+        """Handle non-routing-port metadata errors and indicate completion."""
+        if "routing" in decoded and decoded["routing"]["errorReason"] != "NONE":
+            logger.error("Error on response: %s", decoded["routing"]["errorReason"])
+            self._node.iface._acknowledgment.receivedNak = True
+            self._node._signal_metadata_stdout_event()
+            return True
+        return False
+
+    def _emit_metadata_lines(self, metadata: mesh_pb2.DeviceMetadata) -> None:
+        """Emit metadata lines with historical formatting and enum fallback behavior."""
+        self._node._emit_metadata_line(f"\nfirmware_version: {metadata.firmware_version}")
+        self._node._emit_metadata_line(
+            f"device_state_version: {metadata.device_state_version}"
+        )
+        if metadata.role in config_pb2.Config.DeviceConfig.Role.values():
+            self._node._emit_metadata_line(
+                f"role: {config_pb2.Config.DeviceConfig.Role.Name(metadata.role)}"
+            )
+        else:
+            self._node._emit_metadata_line(f"role: {metadata.role}")
+        self._node._emit_metadata_line(
+            f"position_flags: {self._node.position_flags_list(metadata.position_flags)}"
+        )
+        if metadata.hw_model in mesh_pb2.HardwareModel.values():
+            self._node._emit_metadata_line(
+                f"hw_model: {mesh_pb2.HardwareModel.Name(metadata.hw_model)}"
+            )
+        else:
+            self._node._emit_metadata_line(f"hw_model: {metadata.hw_model}")
+        self._node._emit_metadata_line(f"hasPKC: {metadata.hasPKC}")
+        if metadata.excluded_modules > 0:
+            self._node._emit_metadata_line(
+                f"excluded_modules: {self._node.excluded_modules_list(metadata.excluded_modules)}"
+            )
+
+    def handle_metadata_response(self, packet: dict[str, Any]) -> None:
+        """Process metadata response packet and preserve historical ACK/timeout semantics."""
+        logger.debug("onRequestGetMetadata() p:%s", packet)
+        decoded = packet["decoded"]
+        if self._handle_routing_portnum(decoded):
+            return
+        if self._handle_generic_routing_error(decoded):
+            return
+
+        self._node.iface._acknowledgment.receivedAck = True
+        metadata_response = decoded["admin"]["raw"].get_device_metadata_response
+        metadata_snapshot = mesh_pb2.DeviceMetadata()
+        metadata_snapshot.CopyFrom(metadata_response)
+        self._node._set_metadata_snapshot(metadata_snapshot)
+        self._node._timeout.reset()  # We made forward progress
+        logger.debug("Received metadata %s", stripnl(metadata_response))
+        self._emit_metadata_lines(metadata_response)
+        self._node._signal_metadata_stdout_event()
+
+
+class _NodeChannelResponseRuntime:
+    """Owns channel-response routing/error handling, sequencing, and final installation."""
+
+    def __init__(self, node: "Node") -> None:
+        self._node = node
+
+    def _handle_routing_response(self, decoded: dict[str, Any]) -> bool:
+        """Handle ROUTING_APP channel responses and indicate whether processing is complete."""
+        if decoded["portnum"] != portnums_pb2.PortNum.Name(
+            portnums_pb2.PortNum.ROUTING_APP
+        ):
+            return False
+        if decoded["routing"]["errorReason"] != "NONE":
+            logger.warning(
+                "Channel request failed, error reason: %s",
+                decoded["routing"]["errorReason"],
+            )
+            self._node._timeout.expireTime = time.time()  # Do not wait any longer
+            return True  # Don't try to parse this routing message
+
+        last_tried = 0
+        with self._node._channels_lock:  # noqa: SLF001
+            if self._node.partialChannels:
+                last_tried = self._node.partialChannels[-1].index
+        logger.debug("Retrying previous channel request.")
+        self._node._request_channel(last_tried)  # noqa: SLF001
+        return True
+
+    def handle_channel_response(self, packet: dict[str, Any]) -> None:
+        """Process channel response packet and maintain partial/final channel sequencing."""
+        logger.debug("onResponseRequestChannel() p:%s", packet)
+        decoded = packet["decoded"]
+        if self._handle_routing_response(decoded):
+            return
+
+        response_channel = decoded["admin"]["raw"].get_channel_response
+        channel_response = channel_pb2.Channel()
+        channel_response.CopyFrom(response_channel)
+        with self._node._channels_lock:  # noqa: SLF001
+            self._node.partialChannels.append(channel_response)
+        self._node._timeout.reset()  # We made forward progress
+        logger.debug("Received channel %s", stripnl(channel_response))
+        index = channel_response.index
+
+        if index >= MAX_CHANNELS - 1:
+            logger.debug("Finished downloading channels")
+            with self._node._channels_lock:  # noqa: SLF001
+                self._node.channels = list(self._node.partialChannels)
+                self._node._fixup_channels_locked()  # noqa: SLF001
+            return
+        self._node._request_channel(index + 1)  # noqa: SLF001
+
+
 class Node:
     """A model of a (local or remote) node in the mesh.
 
@@ -1021,6 +1439,18 @@ class Node:
         self._canned_message_lock = threading.Lock()
         self._metadata_stdout_event_lock = threading.Lock()
         self._metadata_stdout_event: threading.Event | None = None
+        self._content_cache_store = _NodeContentCacheStore(self)
+        self._content_response_runtime = _NodeContentResponseRuntime(
+            self,
+            cache_store=self._content_cache_store,
+        )
+        self._content_request_runtime = _NodeAdminContentRuntime(
+            self,
+            cache_store=self._content_cache_store,
+            response_runtime=self._content_response_runtime,
+        )
+        self._metadata_response_runtime = _NodeMetadataResponseRuntime(self)
+        self._channel_response_runtime = _NodeChannelResponseRuntime(self)
 
     def __repr__(self) -> str:
         """Return a developer-oriented string identifying the Node.
@@ -1980,20 +2410,7 @@ class Node:
             a "decoded" dict with optional "routing" (containing "errorReason") and
             "admin" -> "raw" -> get_ringtone_response payload.
         """
-        logger.debug("onResponseRequestRingtone() p:%s", p)
-        errorFound = False
-        if "routing" in p["decoded"]:
-            if p["decoded"]["routing"]["errorReason"] != "NONE":
-                errorFound = True
-                logger.error(
-                    "Error on response: %s", p["decoded"]["routing"]["errorReason"]
-                )
-        if errorFound is False:
-            if "admin" in p["decoded"] and "raw" in p["decoded"]["admin"]:
-                ringtone_part = p["decoded"]["admin"]["raw"].get_ringtone_response
-                with self._ringtone_lock:
-                    self.ringtonePart = ringtone_part
-                logger.debug("self.ringtonePart:%s", ringtone_part)
+        self._content_response_runtime.handle_ringtone_response(p)
 
     def _get_ringtone(self) -> str | None:
         """Retrieve the node's ringtone as a single concatenated string.
@@ -2010,63 +2427,7 @@ class Node:
             module is not present, the ringtone is unavailable, or the request
             timed out.
         """
-        logger.debug("in get_ringtone()")
-        if not self.module_available(mesh_pb2.EXTNOTIF_CONFIG):
-            logger.warning(
-                "External Notification module not present (excluded by firmware)"
-            )
-            return None
-
-        with self._ringtone_lock:
-            if self.ringtone:
-                logger.debug("ringtone:%s", self.ringtone)
-                return self.ringtone
-            # Clear stale partial state before issuing a new request.
-            self.ringtonePart = None
-
-        response_event = threading.Event()
-
-        def _on_ringtone_response(packet: dict[str, Any]) -> None:
-            """Forward a ringtone response packet to the instance handler and signal completion.
-
-            Calls self.onResponseRequestRingtone(packet) to process the response and
-            ensures the threading Event response_event is set whether the handler
-            succeeds or raises an exception, allowing any waiters to continue.
-
-            Parameters
-            ----------
-            packet : dict[str, Any]
-                Admin response packet containing ringtone data and routing information.
-            """
-            try:
-                self.onResponseRequestRingtone(packet)
-            finally:
-                response_event.set()
-
-        p1 = admin_pb2.AdminMessage()
-        p1.get_ringtone_request = True
-        request = self._send_admin(
-            p1, wantResponse=True, onResponse=_on_ringtone_response
-        )
-        if request is None:
-            logger.debug("Skipping ringtone wait because protocol send was not started")
-            return None
-        if not response_event.wait(timeout=self._timeout.expireTimeout):
-            logger.warning("Timed out waiting for ringtone response")
-            return None
-
-        with self._ringtone_lock:
-            # Another caller may have already populated the cache while we waited.
-            if self.ringtone:
-                logger.debug("ringtone:%s", self.ringtone)
-                result = self.ringtone
-            elif self.ringtonePart:
-                self.ringtone = self.ringtonePart
-                logger.debug("ringtone:%s", self.ringtone)
-                result = self.ringtone
-            else:
-                result = None
-        return result
+        return self._content_request_runtime.read_ringtone()
 
     def _set_ringtone(self, ringtone: str) -> mesh_pb2.MeshPacket | None:
         """Set the node's ringtone.
@@ -2091,32 +2452,7 @@ class Node:
         MeshInterfaceError
             If `ringtone` length exceeds 230 characters.
         """
-        if not self.module_available(mesh_pb2.EXTNOTIF_CONFIG):
-            logger.warning(
-                "External Notification module not present (excluded by firmware)"
-            )
-            return None
-
-        if len(ringtone) > MAX_RINGTONE_LENGTH:
-            self._raise_interface_error(
-                f"The ringtone must be {MAX_RINGTONE_LENGTH} characters or fewer."
-            )
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.set_ringtone_message = ringtone
-
-        logger.debug("Setting ringtone '%s'", ringtone)
-        # If sending to a remote node, wait for ACK/NAK
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        send_result = self._send_admin(p, onResponse=onResponse)
-        with self._ringtone_lock:
-            # Invalidate cache after send so future reads refresh.
-            self.ringtone = None
-            self.ringtonePart = None
-        return send_result
+        return self._content_request_runtime.write_ringtone(ringtone)
 
     def onResponseRequestCannedMessagePluginMessageMessages(
         self, p: dict[str, Any]
@@ -2133,25 +2469,7 @@ class Node:
             Decoded packet dictionary containing response fields, expected to include
             keys like `"decoded"`, `"decoded"]["routing"]`, and `"decoded"]["admin"]["raw"]`.
         """
-        logger.debug("onResponseRequestCannedMessagePluginMessageMessages() p:%s", p)
-        errorFound = False
-        if "routing" in p["decoded"]:
-            if p["decoded"]["routing"]["errorReason"] != "NONE":
-                errorFound = True
-                logger.error(
-                    "Error on response: %s", p["decoded"]["routing"]["errorReason"]
-                )
-        if errorFound is False:
-            if "admin" in p["decoded"] and "raw" in p["decoded"]["admin"]:
-                canned_messages = p["decoded"]["admin"][
-                    "raw"
-                ].get_canned_message_module_messages_response
-                with self._canned_message_lock:
-                    self.cannedPluginMessageMessages = canned_messages
-                logger.debug(
-                    "self.cannedPluginMessageMessages:%s",
-                    canned_messages,
-                )
+        self._content_response_runtime.handle_canned_message_response(p)
 
     def _get_canned_message(self) -> str | None:
         """Retrieve the device's canned message, requesting parts from the node if not already cached.
@@ -2165,70 +2483,7 @@ class Node:
         str | None
             str or None: The assembled canned message if available, or None if the module is unavailable or no response was received.
         """
-        logger.debug("in get_canned_message()")
-        if not self.module_available(mesh_pb2.CANNEDMSG_CONFIG):
-            logger.warning("Canned Message module not present (excluded by firmware)")
-            return None
-        with self._canned_message_lock:
-            if self.cannedPluginMessage:
-                logger.debug("canned_plugin_message:%s", self.cannedPluginMessage)
-                return self.cannedPluginMessage
-            # Clear stale partial state before issuing a new request.
-            self.cannedPluginMessageMessages = None
-
-        response_event = threading.Event()
-
-        def _on_canned_message_response(packet: dict[str, Any]) -> None:
-            """Handle an incoming canned-message admin response and notify the waiting event.
-
-            Forwards the received admin response packet to
-            self.onResponseRequestCannedMessagePluginMessageMessages, then sets the
-            response_event to signal completion. The event is set regardless of handler
-            success to ensure waiters are released.
-
-            Parameters
-            ----------
-            packet : dict[str, Any]
-                The received admin response payload for the canned-message plugin.
-            """
-            try:
-                self.onResponseRequestCannedMessagePluginMessageMessages(packet)
-            finally:
-                response_event.set()
-
-        p1 = admin_pb2.AdminMessage()
-        p1.get_canned_message_module_messages_request = True
-        request = self._send_admin(
-            p1,
-            wantResponse=True,
-            onResponse=_on_canned_message_response,
-        )
-        if request is None:
-            logger.debug(
-                "Skipping canned-message wait because protocol send was not started"
-            )
-            return None
-        if not response_event.wait(timeout=self._timeout.expireTimeout):
-            logger.warning("Timed out waiting for canned message response")
-            return None
-
-        with self._canned_message_lock:
-            # Another caller may have already populated the cache while we waited.
-            if self.cannedPluginMessage:
-                logger.debug("canned_plugin_message:%s", self.cannedPluginMessage)
-                result = self.cannedPluginMessage
-            else:
-                logger.debug(
-                    "self.cannedPluginMessageMessages:%s",
-                    self.cannedPluginMessageMessages,
-                )
-                if self.cannedPluginMessageMessages:
-                    self.cannedPluginMessage = self.cannedPluginMessageMessages
-                    logger.debug("canned_plugin_message:%s", self.cannedPluginMessage)
-                    result = self.cannedPluginMessage
-                else:
-                    result = None
-        return result
+        return self._content_request_runtime.read_canned_message()
 
     def _set_canned_message(self, message: str) -> mesh_pb2.MeshPacket | None:
         """Set the device's canned message.
@@ -2253,30 +2508,7 @@ class Node:
         MeshInterfaceError
             If `message` length is greater than 200 characters.
         """
-        if not self.module_available(mesh_pb2.CANNEDMSG_CONFIG):
-            logger.warning("Canned Message module not present (excluded by firmware)")
-            return None
-
-        if len(message) > MAX_CANNED_MESSAGE_LENGTH:
-            self._raise_interface_error(
-                f"The canned message must be {MAX_CANNED_MESSAGE_LENGTH} characters or fewer."
-            )
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.set_canned_message_module_messages = message
-
-        logger.debug("Setting canned message '%s'", message)
-        # If sending to a remote node, wait for ACK/NAK
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        send_result = self._send_admin(p, onResponse=onResponse)
-        with self._canned_message_lock:
-            # Invalidate cache after send so future reads refresh.
-            self.cannedPluginMessage = None
-            self.cannedPluginMessageMessages = None
-        return send_result
+        return self._content_request_runtime.write_canned_message(message)
 
     # COMPAT_STABLE_SHIM: alias for getRingtone
     def get_ringtone(self) -> str | None:
@@ -2998,63 +3230,7 @@ class Node:
             Decoded packet containing at minimum a 'decoded' key with routing and
             admin/raw get_device_metadata_response fields.
         """
-        logger.debug("onRequestGetMetadata() p:%s", p)
-
-        decoded = p["decoded"]
-
-        if decoded["portnum"] == portnums_pb2.PortNum.Name(
-            portnums_pb2.PortNum.ROUTING_APP
-        ):
-            if decoded["routing"]["errorReason"] != "NONE":
-                logger.warning(
-                    "Metadata request failed, error reason: %s",
-                    decoded["routing"]["errorReason"],
-                )
-                self.iface._acknowledgment.receivedNak = True
-                self._timeout.expireTime = time.time()  # Do not wait any longer
-                self._signal_metadata_stdout_event()
-                return  # Don't try to parse this routing message
-            logger.debug(
-                "Metadata request routed successfully; waiting for ADMIN_APP payload."
-            )
-            return
-
-        if "routing" in decoded and decoded["routing"]["errorReason"] != "NONE":
-            logger.error("Error on response: %s", decoded["routing"]["errorReason"])
-            self.iface._acknowledgment.receivedNak = True
-            self._signal_metadata_stdout_event()
-            return
-
-        self.iface._acknowledgment.receivedAck = True
-        c = decoded["admin"]["raw"].get_device_metadata_response
-        metadata_snapshot = mesh_pb2.DeviceMetadata()
-        metadata_snapshot.CopyFrom(c)
-        self._set_metadata_snapshot(metadata_snapshot)
-        self._timeout.reset()  # We made forward progress
-        logger.debug("Received metadata %s", stripnl(c))
-        self._emit_metadata_line(f"\nfirmware_version: {c.firmware_version}")
-        self._emit_metadata_line(f"device_state_version: {c.device_state_version}")
-        if c.role in config_pb2.Config.DeviceConfig.Role.values():
-            self._emit_metadata_line(
-                f"role: {config_pb2.Config.DeviceConfig.Role.Name(c.role)}"
-            )
-        else:
-            self._emit_metadata_line(f"role: {c.role}")
-        self._emit_metadata_line(
-            f"position_flags: {self.position_flags_list(c.position_flags)}"
-        )
-        if c.hw_model in mesh_pb2.HardwareModel.values():
-            self._emit_metadata_line(
-                f"hw_model: {mesh_pb2.HardwareModel.Name(c.hw_model)}"
-            )
-        else:
-            self._emit_metadata_line(f"hw_model: {c.hw_model}")
-        self._emit_metadata_line(f"hasPKC: {c.hasPKC}")
-        if c.excluded_modules > 0:
-            self._emit_metadata_line(
-                f"excluded_modules: {self.excluded_modules_list(c.excluded_modules)}"
-            )
-        self._signal_metadata_stdout_event()
+        self._metadata_response_runtime.handle_metadata_response(p)
 
     def onResponseRequestChannel(self, p: dict[str, Any]) -> None:
         """Process a response packet for a previously requested channel and update the Node's channel state.
@@ -3072,42 +3248,7 @@ class Node:
             - a routing message with 'routing.errorReason', or
             - an admin message with 'admin.raw.get_channel_response' (a Channel protobuf-like object with an `index` field).
         """
-        logger.debug("onResponseRequestChannel() p:%s", p)
-
-        if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
-            portnums_pb2.PortNum.ROUTING_APP
-        ):
-            if p["decoded"]["routing"]["errorReason"] != "NONE":
-                logger.warning(
-                    "Channel request failed, error reason: %s",
-                    p["decoded"]["routing"]["errorReason"],
-                )
-                self._timeout.expireTime = time.time()  # Do not wait any longer
-                return  # Don't try to parse this routing message
-            lastTried = 0
-            with self._channels_lock:
-                if self.partialChannels:
-                    lastTried = self.partialChannels[-1].index
-            logger.debug("Retrying previous channel request.")
-            self._request_channel(lastTried)
-            return
-
-        c = p["decoded"]["admin"]["raw"].get_channel_response
-        channel_response = channel_pb2.Channel()
-        channel_response.CopyFrom(c)
-        with self._channels_lock:
-            self.partialChannels.append(channel_response)
-        self._timeout.reset()  # We made forward progress
-        logger.debug("Received channel %s", stripnl(channel_response))
-        index = channel_response.index
-
-        if index >= MAX_CHANNELS - 1:
-            logger.debug("Finished downloading channels")
-            with self._channels_lock:
-                self.channels = list(self.partialChannels)
-                self._fixup_channels_locked()
-        else:
-            self._request_channel(index + 1)
+        self._channel_response_runtime.handle_channel_response(p)
 
     def onAckNak(self, p: dict[str, Any]) -> None:
         """Handle an incoming ACK/NAK admin response and update interface acknowledgment state.

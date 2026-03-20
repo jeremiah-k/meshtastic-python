@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from types import TracebackType
 from typing import IO, Any, Callable, Literal, Protocol, TypeAlias, cast
@@ -41,7 +41,14 @@ from meshtastic import (
     protocols,
     publishingThread,
 )
-from meshtastic.protobuf import channel_pb2, mesh_pb2, portnums_pb2, telemetry_pb2
+from meshtastic.protobuf import (
+    channel_pb2,
+    config_pb2,
+    mesh_pb2,
+    module_config_pb2,
+    portnums_pb2,
+    telemetry_pb2,
+)
 from meshtastic.util import (
     Acknowledgment,
     Timeout,
@@ -146,12 +153,26 @@ class _PublicationIntent:
     payload: dict[str, Any]
 
 
+@dataclass
+class _LazyMessageDict:
+    """Lazily materializes protobuf JSON dict form on first access."""
+
+    message: protobuf_message.Message
+    _value: dict[str, Any] | None = field(default=None, init=False, repr=False)
+
+    def get(self) -> dict[str, Any]:
+        """Return cached MessageToDict payload, computing it only once."""
+        if self._value is None:
+            self._value = google.protobuf.json_format.MessageToDict(self.message)
+        return self._value
+
+
 @dataclass(frozen=True)
 class _FromRadioContext:
     """Normalized FromRadio context passed from parse/normalize to dispatch handlers."""
 
     message: mesh_pb2.FromRadio
-    message_dict: dict[str, Any]
+    message_dict: _LazyMessageDict
     config_id: int | None
 
 
@@ -1046,6 +1067,9 @@ class MeshInterface:  # pylint: disable=R0902
             ),
             queue_wait_delay_seconds=QUEUE_WAIT_DELAY_SECONDS,
         )
+        self._from_radio_dispatch_map_cache: dict[
+            str, Callable[[_FromRadioContext], list[_PublicationIntent]]
+        ] | None = None
 
         # We could have just not passed in debugOut to MeshInterface, and instead told consumers to subscribe to
         # the meshtastic.log.line publish instead.  Alas though changing that now would be a breaking API change
@@ -3552,13 +3576,12 @@ class MeshInterface:  # pylint: disable=R0902
         self, from_radio: mesh_pb2.FromRadio
     ) -> _FromRadioContext:
         """Normalize parsed FromRadio data for dispatch and mutation handlers."""
-        message_dict = google.protobuf.json_format.MessageToDict(from_radio)
         logger.debug("Received from radio: %s", from_radio)
         with self._node_db_lock:
             config_id = self.configId
         return _FromRadioContext(
             message=from_radio,
-            message_dict=message_dict,
+            message_dict=_LazyMessageDict(from_radio),
             config_id=config_id,
         )
 
@@ -3583,7 +3606,10 @@ class MeshInterface:  # pylint: disable=R0902
             branch = "metadata"
         elif from_radio.HasField("node_info"):
             branch = "node_info"
-        elif from_radio.config_complete_id == context.config_id:
+        elif (
+            from_radio.config_complete_id != 0
+            and from_radio.config_complete_id == context.config_id
+        ):
             branch = "config_complete_id"
         elif from_radio.HasField("channel"):
             branch = "channel"
@@ -3609,21 +3635,23 @@ class MeshInterface:  # pylint: disable=R0902
         self,
     ) -> dict[str, Callable[[_FromRadioContext], list[_PublicationIntent]]]:
         """Return branch handlers for FromRadio dispatch."""
-        return {
-            "my_info": self._handle_from_radio_my_info,
-            "metadata": self._handle_from_radio_metadata,
-            "node_info": self._handle_from_radio_node_info,
-            "config_complete_id": self._handle_from_radio_config_complete_id,
-            "channel": self._handle_from_radio_channel,
-            "packet": self._handle_from_radio_packet,
-            "log_record": self._handle_from_radio_log_record,
-            "queueStatus": self._handle_from_radio_queue_status,
-            "clientNotification": self._handle_from_radio_client_notification,
-            "mqttClientProxyMessage": self._handle_from_radio_mqtt_client_proxy_message,
-            "xmodemPacket": self._handle_from_radio_xmodem_packet,
-            "rebooted": self._handle_from_radio_rebooted,
-            "config_or_moduleConfig": self._handle_from_radio_config_update,
-        }
+        if self._from_radio_dispatch_map_cache is None:
+            self._from_radio_dispatch_map_cache = {
+                "my_info": self._handle_from_radio_my_info,
+                "metadata": self._handle_from_radio_metadata,
+                "node_info": self._handle_from_radio_node_info,
+                "config_complete_id": self._handle_from_radio_config_complete_id,
+                "channel": self._handle_from_radio_channel,
+                "packet": self._handle_from_radio_packet,
+                "log_record": self._handle_from_radio_log_record,
+                "queueStatus": self._handle_from_radio_queue_status,
+                "clientNotification": self._handle_from_radio_client_notification,
+                "mqttClientProxyMessage": self._handle_from_radio_mqtt_client_proxy_message,
+                "xmodemPacket": self._handle_from_radio_xmodem_packet,
+                "rebooted": self._handle_from_radio_rebooted,
+                "config_or_moduleConfig": self._handle_from_radio_config_update,
+            }
+        return self._from_radio_dispatch_map_cache
 
     def _handle_from_radio_my_info(
         self, context: _FromRadioContext
@@ -3654,7 +3682,7 @@ class MeshInterface:  # pylint: disable=R0902
         self, context: _FromRadioContext
     ) -> list[_PublicationIntent]:
         """Apply node_info updates and emit node-updated publication intents."""
-        node_info = context.message_dict["nodeInfo"]
+        node_info = context.message_dict.get()["nodeInfo"]
         logger.debug("Received nodeinfo: %s", node_info)
 
         node = self._get_or_create_by_num(node_info["num"])
@@ -3773,7 +3801,7 @@ class MeshInterface:  # pylint: disable=R0902
                 return
             self._apply_module_config_from_radio(from_radio.moduleConfig)
 
-    def _apply_local_config_from_radio(self, config: Any) -> bool:
+    def _apply_local_config_from_radio(self, config: config_pb2.Config) -> bool:
         """Apply one localConfig field from inbound config payload."""
         for field_name in LOCAL_CONFIG_FROM_RADIO_FIELDS:
             if config.HasField(field_name):
@@ -3783,7 +3811,9 @@ class MeshInterface:  # pylint: disable=R0902
                 return True
         return False
 
-    def _apply_module_config_from_radio(self, module_config: Any) -> bool:
+    def _apply_module_config_from_radio(
+        self, module_config: module_config_pb2.ModuleConfig
+    ) -> bool:
         """Apply one moduleConfig field from inbound moduleConfig payload."""
         for field_name in MODULE_CONFIG_FROM_RADIO_FIELDS:
             if module_config.HasField(field_name):
@@ -3971,21 +4001,21 @@ class MeshInterface:  # pylint: disable=R0902
         hack: bool,
     ) -> dict[str, Any] | None:
         """Convert protobuf packet into runtime dict and enforce legacy defaults."""
-        packet_dict = google.protobuf.json_format.MessageToDict(meshPacket)
+        if not hack and getattr(meshPacket, "from") == 0:
+            packet_dict = {"raw": meshPacket, "from": 0}
+            logger.error(
+                "Device returned a packet we sent, ignoring: %s",
+                stripnl(packet_dict),
+            )
+            return None
+
+        packet_dict = _LazyMessageDict(meshPacket).get()
 
         # We normally decompose the payload into a dictionary so that the client
         # doesn't need to understand protobufs.  But advanced clients might
         # want the raw protobuf, so we provide it in "raw"
         packet_dict["raw"] = meshPacket
 
-        # from might be missing if the nodenum was zero.
-        if not hack and "from" not in packet_dict:
-            packet_dict["from"] = 0
-            logger.error(
-                "Device returned a packet we sent, ignoring: %s",
-                stripnl(packet_dict),
-            )
-            return None
         if "to" not in packet_dict:
             packet_dict["to"] = 0
         return packet_dict
