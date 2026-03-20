@@ -1,7 +1,7 @@
 """Compatibility/event publication helpers for BLE interface orchestration."""
 
 from queue import Empty, Full
-from threading import Event
+from threading import Event, Thread
 from typing import TYPE_CHECKING, Any, Callable, cast
 
 from meshtastic.interfaces.ble.constants import (
@@ -11,6 +11,7 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
+    _is_unconfigured_mock_member,
 )
 from meshtastic.interfaces.ble.utils import (
     _resolve_safe_execute as _resolve_safe_execute_hook,
@@ -21,6 +22,179 @@ from meshtastic.interfaces.ble.utils import (
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
+
+
+class BLECompatibilityEventPublisher:
+    """Instance-bound collaborator for compatibility event publication."""
+
+    def __init__(
+        self,
+        iface: "BLEInterface",
+        *,
+        publishing_thread_provider: Callable[[], object | None],
+    ) -> None:
+        """Bind publisher helpers to a specific interface instance.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface instance whose compatibility event publication is delegated
+            through this collaborator.
+        publishing_thread_provider : Callable[[], object | None]
+            Callable returning the current publishing-thread facade.
+
+        Returns
+        -------
+        None
+            Initializes bound collaborator state.
+        """
+        self._iface = iface
+        self._publishing_thread_provider = publishing_thread_provider
+        self._last_publishing_thread: object | None = None
+
+    @staticmethod
+    def _is_live_publishing_thread(publishing_thread: object | None) -> bool:
+        """Return whether a publishing-thread facade appears alive/usable."""
+        if publishing_thread is None or _is_unconfigured_mock_member(publishing_thread):
+            return False
+        thread = getattr(publishing_thread, "thread", None)
+        if thread is None or _is_unconfigured_mock_member(thread):
+            return True
+        is_alive = getattr(thread, "is_alive", None)
+        if not callable(is_alive) or _is_unconfigured_mock_callable(is_alive):
+            return True
+        try:
+            alive_result = is_alive()
+        except Exception:  # noqa: BLE001 - liveness probe must stay best effort
+            logger.debug(
+                "Error probing publishing thread liveness.",
+                exc_info=True,
+            )
+            return False
+        return alive_result if isinstance(alive_result, bool) else False
+
+    def _resolve_publishing_thread(
+        self, *, use_cached_fallback: bool = True
+    ) -> object | None:
+        """Resolve publishing-thread facade with cached fallback on provider failure.
+
+        Returns
+        -------
+        object | None
+            Current publishing-thread facade when available; otherwise the last
+            known-good facade or ``None`` when none has been resolved.
+
+        Notes
+        -----
+        Provider failures are suppressed and logged because disconnect/shutdown
+        paths must remain best effort.
+        """
+        try:
+            publishing_thread = self._publishing_thread_provider()
+            if self._is_live_publishing_thread(publishing_thread):
+                self._last_publishing_thread = publishing_thread
+                return publishing_thread
+            if publishing_thread is not None:
+                self._last_publishing_thread = None
+        except Exception:  # noqa: BLE001 - teardown path must stay best effort
+            logger.debug(
+                "Error resolving publishing thread for compatibility publisher.",
+                exc_info=True,
+            )
+        if not use_cached_fallback:
+            return None
+        if self._is_live_publishing_thread(self._last_publishing_thread):
+            return self._last_publishing_thread
+        self._last_publishing_thread = None
+        from meshtastic import mesh_interface as mesh_iface_module
+
+        fallback_thread = getattr(mesh_iface_module, "publishingThread", None)
+        if self._is_live_publishing_thread(fallback_thread):
+            self._last_publishing_thread = fallback_thread
+            return fallback_thread
+        return None
+
+    def wait_for_disconnect_notifications(self, timeout: float | None = None) -> None:
+        """Wait for queued disconnect notifications to flush.
+
+        Parameters
+        ----------
+        timeout : float | None
+            Maximum seconds to wait for flush completion; ``None`` uses the
+            service default.
+
+        Returns
+        -------
+        None
+            Completion is best effort.
+        """
+        BLECompatibilityEventService.wait_for_disconnect_notifications(
+            self._iface,
+            timeout,
+            publishing_thread=self._resolve_publishing_thread(),
+        )
+
+    def drain_publish_queue(self, flush_event: Event) -> None:
+        """Drain queued publish callbacks for the bound interface.
+
+        Parameters
+        ----------
+        flush_event : Event
+            Event used to stop direct-drain iteration.
+
+        Returns
+        -------
+        None
+            Drain execution is best effort.
+        """
+        BLECompatibilityEventService.drain_publish_queue(
+            self._iface,
+            flush_event,
+            publishing_thread=self._resolve_publishing_thread(),
+        )
+
+    def publish_connection_status(self, *, connected: bool) -> None:
+        """Publish connection status through compatibility event transport.
+
+        Parameters
+        ----------
+        connected : bool
+            ``True`` for connected status, ``False`` for disconnected status.
+
+        Returns
+        -------
+        None
+            Publication remains best effort.
+        """
+        BLECompatibilityEventService.publish_connection_status(
+            self._iface,
+            connected=connected,
+            publishing_thread=self._resolve_publishing_thread(),
+        )
+
+    # COMPAT_STABLE_SHIM: retained bound alias for compatibility callers.
+    def publish_connection_status_legacy(
+        self, connected: bool
+    ) -> None:  # noqa: FBT001 - compatibility positional bool
+        """Publish status through legacy positional API retained for compatibility.
+
+        This alias preserves historical call sites that invoke
+        ``publish_connection_status_legacy(connected)`` directly on the bound
+        compatibility publisher while runtime behavior remains delegated to the
+        canonical ``publish_connection_status`` implementation.
+
+        Parameters
+        ----------
+        connected : bool
+            Connection status flag (``True`` for connected, ``False`` for
+            disconnected).
+
+        Returns
+        -------
+        None
+            Always returns ``None``.
+        """
+        self.publish_connection_status(connected=connected)
 
 
 class BLECompatibilityEventService:
@@ -167,7 +341,7 @@ class BLECompatibilityEventService:
         iface: "BLEInterface",
         timeout: float | None = None,
         *,
-        publishing_thread: object,
+        publishing_thread: object | None,
     ) -> None:
         """Wait for queued disconnect notifications to flush.
 
@@ -178,7 +352,7 @@ class BLECompatibilityEventService:
         timeout : float | None
             Maximum seconds to wait for flush completion. ``None`` uses the
             default disconnect timeout.
-        publishing_thread : object
+        publishing_thread : object | None
             Publishing-thread façade used to queue and drain callbacks.
 
         Returns
@@ -189,6 +363,8 @@ class BLECompatibilityEventService:
         """
         if timeout is None:
             timeout = DISCONNECT_TIMEOUT_SECONDS
+        if publishing_thread is None:
+            return
         flush_event = Event()
 
         def _queue_flush_notification() -> bool:
@@ -234,7 +410,10 @@ class BLECompatibilityEventService:
 
     @staticmethod
     def drain_publish_queue(
-        iface: "BLEInterface", flush_event: Event, *, publishing_thread: object
+        iface: "BLEInterface",
+        flush_event: Event,
+        *,
+        publishing_thread: object | None,
     ) -> None:
         """Drain pending publish callbacks on the current thread.
 
@@ -244,7 +423,7 @@ class BLECompatibilityEventService:
             Interface providing safe execution helpers.
         flush_event : Event
             Event set by queued flush callbacks to indicate completion.
-        publishing_thread : object
+        publishing_thread : object | None
             Publishing-thread façade exposing queue-drain internals.
 
         Returns
@@ -252,6 +431,8 @@ class BLECompatibilityEventService:
         None
             Drains callbacks best-effort and suppresses callback failures.
         """
+        if publishing_thread is None:
+            return
         thread = getattr(publishing_thread, "thread", None)
         thread_drain = getattr(thread, "_drain_publish_queue", None)
         if callable(thread_drain) and not _is_unconfigured_mock_callable(thread_drain):
@@ -309,7 +490,10 @@ class BLECompatibilityEventService:
 
     @staticmethod
     def publish_connection_status(
-        iface: "BLEInterface", connected: bool, *, publishing_thread: object
+        iface: "BLEInterface",
+        connected: bool,
+        *,
+        publishing_thread: object | None = None,
     ) -> None:
         """Publish legacy connection-status event for compatibility.
 
@@ -319,7 +503,7 @@ class BLECompatibilityEventService:
             Interface associated with the status event payload.
         connected : bool
             Connection status flag to publish.
-        publishing_thread : object
+        publishing_thread : object | None
             Publishing-thread façade used for deferred publish scheduling.
 
         Returns
@@ -346,6 +530,79 @@ class BLECompatibilityEventService:
                     exc_info=True,
                 )
 
+        def _is_iface_closing() -> bool:
+            is_closing = bool(getattr(iface, "_closed", False))
+            state_manager = getattr(iface, "_state_manager", None)
+            raw_is_closing = getattr(state_manager, "is_closing", None)
+            if callable(raw_is_closing) and not _is_unconfigured_mock_callable(
+                raw_is_closing
+            ):
+                try:
+                    state_probe = raw_is_closing()
+                except Exception:  # noqa: BLE001 - shutdown probe remains best effort
+                    state_probe = None
+                if isinstance(state_probe, bool):
+                    is_closing = is_closing or state_probe
+            elif isinstance(raw_is_closing, bool):
+                is_closing = is_closing or raw_is_closing
+            if is_closing:
+                return True
+            legacy_is_closing = getattr(state_manager, "_is_closing", None)
+            if callable(legacy_is_closing) and not _is_unconfigured_mock_callable(
+                legacy_is_closing
+            ):
+                try:
+                    legacy_probe = legacy_is_closing()
+                except Exception:  # noqa: BLE001 - shutdown probe remains best effort
+                    legacy_probe = None
+                if isinstance(legacy_probe, bool):
+                    is_closing = is_closing or legacy_probe
+            elif isinstance(legacy_is_closing, bool):
+                is_closing = is_closing or legacy_is_closing
+            return is_closing
+
+        def _publish_status_async(reason: str) -> bool:
+            if _is_iface_closing():
+                logger.debug(
+                    "Skipping connection status publish during shutdown: %s.",
+                    reason,
+                )
+                return False
+
+            def _async_publish() -> None:
+                try:
+                    _publish_status()
+                except Exception:  # noqa: BLE001 - async fallback must remain best effort
+                    logger.debug(
+                        "Error in async fallback connection status publish.",
+                        exc_info=True,
+                    )
+
+            try:
+                Thread(
+                    target=_async_publish,
+                    name="ble-compat-status-publish",
+                    daemon=True,
+                ).start()
+            except Exception:  # noqa: BLE001 - async fallback must remain best effort
+                logger.debug(
+                    "Error starting async fallback connection status publish.",
+                    exc_info=True,
+                )
+                return False
+            logger.debug(
+                "Queued async fallback connection status publish: %s.",
+                reason,
+            )
+            return True
+
+        if publishing_thread is None:
+            logger.debug(
+                "Publishing thread is unavailable; using async fallback publish."
+            )
+            _publish_status_async("publishing thread unavailable")
+            return
+
         try:
             queued = BLECompatibilityEventService._enqueue_publish_callback(
                 publishing_thread,
@@ -353,18 +610,26 @@ class BLECompatibilityEventService:
                 prefer_non_blocking=True,
             )
             if not queued:
-                _publish_status()
+                logger.debug(
+                    "Publish queue is unavailable; using async fallback publish."
+                )
+                _publish_status_async("publish queue unavailable")
+                return
         except Exception:  # noqa: BLE001 - best-effort queueing path
             logger.debug(
                 "Error queuing connection status publish via publishingThread.queueWork",
                 exc_info=True,
             )
-            _publish_status()
+            _publish_status_async("enqueue failure")
+            return
 
     # COMPAT_STABLE_SHIM: retained for existing callers during service migration.
     @staticmethod
     def publish_connection_status_legacy(
-        iface: "BLEInterface", connected: bool, *, publishing_thread: object
+        iface: "BLEInterface",
+        connected: bool,
+        *,
+        publishing_thread: object | None = None,
     ) -> None:
         """Backward-compatible alias for ``publish_connection_status``.
 
@@ -374,16 +639,51 @@ class BLECompatibilityEventService:
             Interface whose connection status is being published.
         connected : bool
             ``True`` for connected status and ``False`` for disconnected.
-        publishing_thread : object
+        publishing_thread : object | None
             Publishing-thread facade used to enqueue/send the legacy message.
+            When ``None``, this shim resolves the active publishing thread from
+            ``iface._get_publishing_thread()`` or module fallback before
+            delegating.
 
         Returns
         -------
         None
             This compatibility alias returns ``None``.
         """
+        resolved_publishing_thread = publishing_thread
+        if resolved_publishing_thread is None:
+            get_publishing_thread = getattr(iface, "_get_publishing_thread", None)
+            if callable(get_publishing_thread) and not _is_unconfigured_mock_callable(
+                get_publishing_thread
+            ):
+                try:
+                    resolved_publishing_thread = get_publishing_thread()
+                except Exception:  # noqa: BLE001 - compatibility shim is best effort
+                    logger.debug(
+                        "Error resolving publishing thread via iface._get_publishing_thread for legacy status publish.",
+                        exc_info=True,
+                    )
+            if resolved_publishing_thread is None:
+                from meshtastic import mesh_interface as mesh_iface_module
+
+                resolved_publishing_thread = getattr(
+                    mesh_iface_module, "publishingThread", None
+                )
+        if not BLECompatibilityEventPublisher._is_live_publishing_thread(
+            resolved_publishing_thread
+        ):
+            from meshtastic import mesh_interface as mesh_iface_module
+
+            fallback_thread = getattr(mesh_iface_module, "publishingThread", None)
+            resolved_publishing_thread = (
+                fallback_thread
+                if BLECompatibilityEventPublisher._is_live_publishing_thread(
+                    fallback_thread
+                )
+                else None
+            )
         BLECompatibilityEventService.publish_connection_status(
             iface,
             connected,
-            publishing_thread=publishing_thread,
+            publishing_thread=resolved_publishing_thread,
         )

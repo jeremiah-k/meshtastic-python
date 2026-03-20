@@ -135,6 +135,18 @@ class BLEStateManager:
             return self._state
 
     @property
+    # COMPAT_STABLE_SHIM: public-first alias for `_current_state`.
+    def current_state(self) -> ConnectionState:
+        """Public-first state snapshot accessor.
+
+        Returns
+        -------
+        ConnectionState
+            Current connection state.
+        """
+        return self._current_state
+
+    @property
     def _is_connected(self) -> bool:
         """Whether the BLE interface is currently in the CONNECTED state.
 
@@ -150,6 +162,18 @@ class BLEStateManager:
         return self._current_state == ConnectionState.CONNECTED
 
     @property
+    # COMPAT_STABLE_SHIM: public-first alias for `_is_connected`.
+    def is_connected(self) -> bool:
+        """Public-first connected-state snapshot accessor.
+
+        Returns
+        -------
+        bool
+            ``True`` when the current state is ``ConnectionState.CONNECTED``.
+        """
+        return self._is_connected
+
+    @property
     def _is_closing(self) -> bool:
         """Internal property: Indicates whether the BLE interface is in the DISCONNECTING state.
 
@@ -163,6 +187,18 @@ class BLEStateManager:
             True if the current connection state is DISCONNECTING, False otherwise.
         """
         return self._current_state == ConnectionState.DISCONNECTING
+
+    @property
+    # COMPAT_STABLE_SHIM: public-first alias for `_is_closing`.
+    def is_closing(self) -> bool:
+        """Public-first closing-state snapshot accessor.
+
+        Returns
+        -------
+        bool
+            ``True`` when the current state is ``ConnectionState.DISCONNECTING``.
+        """
+        return self._is_closing
 
     @property
     def _can_connect(self) -> bool:
@@ -181,6 +217,18 @@ class BLEStateManager:
             ConnectionState.DISCONNECTED,
             ConnectionState.ERROR,
         )
+
+    @property
+    # COMPAT_STABLE_SHIM: public-first alias for `_can_connect`.
+    def can_connect(self) -> bool:
+        """Public-first connect-capability snapshot accessor.
+
+        Returns
+        -------
+        bool
+            ``True`` when the current state allows initiating a connection.
+        """
+        return self._can_connect
 
     @property
     def _is_connecting(self) -> bool:
@@ -231,6 +279,18 @@ class BLEStateManager:
             ConnectionState.CONNECTED,
         )
 
+    @property
+    # COMPAT_STABLE_SHIM: public-first alias for `_is_active`.
+    def is_active(self) -> bool:
+        """Public-first active-state snapshot accessor.
+
+        Returns
+        -------
+        bool
+            ``True`` when the connection state is active or currently in-flight.
+        """
+        return self._is_active
+
     def _transition_to_unlocked(self, new_state: ConnectionState) -> bool:
         """Transition helper that assumes `_state_lock` is already held."""
         if new_state == self._state:
@@ -266,6 +326,22 @@ class BLEStateManager:
         """
         with self._state_lock:
             return self._transition_to_unlocked(new_state)
+
+    # COMPAT_STABLE_SHIM: public-first alias for `_transition_to`.
+    def transition_to(self, new_state: ConnectionState) -> bool:
+        """Public-first wrapper for state transitions.
+
+        Parameters
+        ----------
+        new_state : ConnectionState
+            Target state to transition to.
+
+        Returns
+        -------
+        bool
+            ``True`` when the transition succeeds (or is a valid no-op).
+        """
+        return self._transition_to(new_state)
 
     def _is_valid_transition(
         self, from_state: ConnectionState, to_state: ConnectionState
@@ -329,3 +405,14 @@ class BLEStateManager:
             # Prefer validated transition semantics; this is a no-op when already
             # disconnected and remains resilient to future transition-map edits.
             return self._transition_to_unlocked(ConnectionState.DISCONNECTED)
+
+    # COMPAT_STABLE_SHIM: public-first alias for `_reset_to_disconnected`.
+    def reset_to_disconnected(self) -> bool:
+        """Public-first wrapper that forces DISCONNECTED state.
+
+        Returns
+        -------
+        bool
+            ``True`` when DISCONNECTED is reached (including no-op).
+        """
+        return self._reset_to_disconnected()

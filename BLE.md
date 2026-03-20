@@ -7,38 +7,80 @@ recommended patterns for code that embeds `meshtastic-python`.
 
 ## Architecture overview
 
-| Component                                | Responsibility                                                                                |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `BLEInterface`                           | User-facing entry point; extends `MeshInterface` with BLE lifecycle management                |
-| `BLEClient`                              | Synchronous wrapper around Bleak; delegates async calls to the singleton runner               |
-| `BLECoroutineRunner`                     | Process-wide singleton with one background thread and one asyncio event loop                  |
-| `BLEStateManager`                        | Centralized state machine (`DISCONNECTED → CONNECTING → CONNECTED → DISCONNECTING`)           |
-| `BLEErrorHandler`                        | Unified exception-handling helpers used across the BLE subsystem                              |
-| `NotificationManager`                    | Tracks active GATT notification subscriptions so they can be resubscribed after reconnects    |
-| `DiscoveryManager`                       | Scan-based BLE device discovery with address normalization                                    |
-| `ConnectionValidator`                    | Enforces connection preconditions before any lock is acquired                                 |
-| `ClientManager`                          | Owns `BLEClient` lifecycle and safe-close operations                                          |
-| `ConnectionOrchestrator`                 | Coordinates a full connection attempt: validate → discover → connect → register notifications |
-| `ReconnectScheduler` / `ReconnectWorker` | Policy-driven background reconnect loop                                                       |
-| `BLELifecycleService`                    | Lifecycle/threading adapters used by `BLEInterface` for receive thread and reconnect triggers |
-| `BLEReceiveRecoveryService`              | Receive-loop, transient read retry, and receive-thread recovery runtime logic                 |
-| `BLEManagementCommandsService`           | Pair/unpair/trust command execution and temporary-client management                           |
-| `BLECompatibilityEventService`           | Legacy event publication and publish-queue drain/flush behavior                               |
+| Component                                    | Responsibility                                                                                                                                     |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BLEInterface`                               | User-facing entry point; extends `MeshInterface` with BLE lifecycle management                                                                     |
+| `BLEClient`                                  | Synchronous wrapper around Bleak; delegates async calls to the singleton runner                                                                    |
+| `BLECoroutineRunner`                         | Process-wide singleton with one background thread and one asyncio event loop                                                                       |
+| `BLEStateManager`                            | Centralized state machine (states: `DISCONNECTED`, `CONNECTING`, `CONNECTED`, `DISCONNECTING`, `RECONNECTING`, `ERROR`)                            |
+| `BLEErrorHandler`                            | Unified exception-handling helpers used across the BLE subsystem                                                                                   |
+| `NotificationManager`                        | Tracks active GATT notification subscriptions so they can be resubscribed after reconnects                                                         |
+| `BLENotificationDispatcher`                  | Owns notification safety wrappers, FROMNUM parsing (decode little-endian 4-byte notify counters), malformed-counter logic, and notify registration |
+| `DiscoveryManager`                           | Scan-based BLE device discovery with address normalization                                                                                         |
+| `ConnectionValidator`                        | Enforces connection preconditions before any lock is acquired                                                                                      |
+| `ClientManager`                              | Owns `BLEClient` lifecycle and safe-close operations                                                                                               |
+| `ConnectionOrchestrator`                     | Coordinates a full connection attempt: validate → discover → connect → register notifications                                                      |
+| `ReconnectScheduler` / `ReconnectWorker`     | Policy-driven background reconnect loop                                                                                                            |
+| `BLEManagementCommandHandler`                | Instance-bound management collaborator for pair/unpair/trust and temporary-client handling                                                         |
+| `BLELifecycleController`                     | Instance-bound lifecycle facade; delegates lifecycle domains to dedicated coordinators                                                             |
+| `BLEReceiveLifecycleCoordinator`             | Owns receive intent and receive-thread lifecycle start policy                                                                                      |
+| `BLEDisconnectLifecycleCoordinator`          | Owns disconnect target resolution, side effects, and auto-reconnect scheduling                                                                     |
+| `BLEConnectionOwnershipLifecycleCoordinator` | Owns verified-connect publication, stale-client cleanup, and gate finalization                                                                     |
+| `BLEShutdownLifecycleCoordinator`            | Owns close/shutdown sequencing and terminal cleanup orchestration                                                                                  |
+| `BLEReceiveRecoveryController`               | Instance-bound receive collaborator for read-loop execution, retry, and recovery                                                                   |
+| `BLECompatibilityEventPublisher`             | Instance-bound publisher for legacy status events and publish-queue drain/flush                                                                    |
+| `*...Service` classes                        | Compatibility shim surfaces and shared helper logic behind collaborator-owned runtime flows                                                        |
 
 ### Boundary contract (current)
 
-- BLE orchestration paths should prefer collaborator entrypoints over direct
-  cross-module private calls when wrappers exist.
+- BLEInterface delegates lifecycle/receive/management/compatibility runtime
+  paths through bound collaborator instances.
+- Lifecycle runtime ownership is partitioned under `BLELifecycleController`
+  into receive, disconnect, connection-ownership, and shutdown coordinators.
 - Underscore-prefixed methods are canonical for internal orchestration
-  collaborators (`state`, `coordination`, lifecycle services).
+  collaborators (`state`, `coordination`, and compatibility shims);
+  runtime ownership is in controllers/coordinators/dispatchers.
+- `BLEInterface` uses collaborator APIs for state/notification interactions
+  (for example `NotificationManager._get_callback()/_subscribe()` and
+  `BLEStateManager` accessors such as `current_state`, `is_connected`,
+  `is_closing`, `can_connect`, `transition_to()`, `reset_to_disconnected()`) instead
+  of direct collaborator-private member reach-through.
+- Notification execution/registration paths are owned by
+  `BLENotificationDispatcher`; `BLEInterface` wrappers call dispatcher APIs
+  (`register_notifications`, `from_num_handler`,
+  `report_notification_handler_error`, `invoke_safe_execute_compat`) rather
+  than touching dispatcher internals directly.
+- Management command orchestration routes through
+  `BLEManagementCommandHandler`; interface-level management helpers are facade
+  shims that delegate to the collaborator.
+- Receive-loop and recovery runtime orchestration routes through
+  `BLEReceiveRecoveryController`; interface-level receive helpers are facade
+  shims that delegate to the collaborator.
+- `BLEReceiveRecoveryService._*` receive runtime entrypoints are compatibility
+  shims that delegate to `BLEReceiveRecoveryController` owners
+  (`_read_and_handle_payload`, `_handle_payload_read`, `_run_receive_cycle`,
+  `_receive_from_radio_impl`, `_recover_receive_thread`,
+  `_read_from_radio_with_retries`, `_handle_transient_read_error`,
+  `_log_empty_read_warning`).
+- `BLEManagementCommandHandler` owns management timeout validation,
+  trust-command execution, and trust lifecycle orchestration in addition to
+  pair/unpair and command execution ownership.
+- `BLEManagementCommandsService._*` entrypoints are compatibility shims that
+  delegate to `BLEManagementCommandHandler` for runtime behavior.
 - `BLEInterface` remains the compatibility boundary: patch-sensitive
   collaborators (for example `publishingThread`, `BLEClient`,
   `_is_currently_connected_elsewhere`, `sys/shutil/subprocess`) are delegated
   from the interface so existing tests/integrations that monkeypatch
   `meshtastic.interfaces.ble.interface.*` continue to work.
-- Some service helpers still read interface-private state directly where
-  dedicated wrappers are not yet extracted; that boundary cleanup is in
-  progress and should not be treated as stable external API.
+- Service classes remain implementation details; runtime orchestration should
+  enter through collaborator/controller interfaces rather than static helpers.
+- `BLELifecycleService._*` methods are retained as compatibility/test shim
+  entrypoints and delegate to coordinator-owned implementations.
+- `BLEReceiveRecoveryService._*` and `BLEManagementCommandsService._*` remain
+  available for compatibility-targeted direct service/test entrypoints;
+  collaborator owners remain authoritative for runtime behavior in
+  `BLEInterface` call paths (`BLEReceiveRecoveryController` and
+  `BLEManagementCommandHandler`).
 
 ### Key design choices
 
@@ -132,7 +174,9 @@ still available for legacy/internal call sites.
 ### `NotificationManager`
 
 Tracks GATT notification subscriptions so they can be resubscribed cleanly
-after a reconnect.
+after a reconnect. This manager is consumed by
+`BLENotificationDispatcher`, which owns notification callback safety and
+FROMNUM handler orchestration.
 
 ```python
 from meshtastic.interfaces.ble.notifications import NotificationManager
@@ -148,17 +192,48 @@ cb = mgr._get_callback(uuid)
 # Stop all notifications through a BLEClient (e.g. during shutdown).
 mgr._unsubscribe_all(client, timeout=5.0)
 
-# Re-register all subscriptions on a new client (e.g. after reconnect).
+# Re-register tracked non-FROMNUM subscriptions on a new client
+# (e.g. after reconnect). FROMNUM_UUID is intentionally skipped here;
+# BLENotificationDispatcher owns FROMNUM startup/retry orchestration.
 mgr._resubscribe_all(client, timeout=5.0)
 
 # Clear internal subscription state (called after full disconnect + cleanup).
 mgr._cleanup_all()
 ```
 
-Compatibility note: `NotificationManager` currently exposes underscore methods
-as its canonical API surface (`_subscribe`, `_get_callback`,
-`_unsubscribe_all`, `_resubscribe_all`, `_cleanup_all`); non-underscore
-wrappers are not currently provided.
+Compatibility note: `NotificationManager` is an internal collaborator. Its
+underscore helpers are the canonical call surface used by dispatcher/lifecycle
+runtime code. `_resubscribe_all()` intentionally does **not** re-register
+`FROMNUM_UUID`; FROMNUM registration and fallback behavior are owned by
+`BLENotificationDispatcher`.
+
+### `BLENotificationDispatcher`
+
+Owns notification safety execution and ingress registration policy used by
+`BLEInterface`.
+
+```python
+from meshtastic.interfaces.ble.notifications import BLENotificationDispatcher
+
+dispatcher = BLENotificationDispatcher(
+    notification_manager=notification_manager,
+    error_handler_provider=lambda: iface.error_handler,
+    trigger_read_event=lambda: iface._set_thread_event("read_trigger"),
+)
+
+# Register handlers for LOGRADIO/legacy/FROMNUM with safe_execute compatibility probing.
+dispatcher.register_notifications(
+    iface,
+    client,
+    legacy_log_handler=iface._legacy_log_radio_handler,
+    log_handler=iface._log_radio_handler,
+    from_num_handler=iface._from_num_handler,
+)
+
+# Delegate malformed FROMNUM accounting and handler error reporting.
+dispatcher.handle_malformed_fromnum("Malformed FROMNUM notify")
+dispatcher.report_notification_handler_error("Error in FROMNUM notification handler")
+```
 
 ### `RetryPolicy` / `ReconnectPolicy`
 
@@ -402,13 +477,13 @@ with BLEInterface(address="DD:DD:13:27:74:29") as iface:
 
 ## Common pitfalls
 
-| Pitfall                                       | Fix                                                                                                                               |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Multiple `BLEInterface` instances per address | Reuse one instance; multiple instances collide on the address gate.                                                               |
-| Layered reconnect loops                       | Use either the library's `auto_reconnect=True` **or** your own loop, never both.                                                  |
-| Aggressive retry cadence                      | Include exponential backoff; long `scan + connect` calls during rapid retries exhaust BlueZ.                                      |
-| Forgetting to resubscribe notifications       | Use the same instance so `NotificationManager` can call `_resubscribe_all()` automatically after reconnects.                      |
-| Not closing the interface                     | Always call `close()` or use the context-manager pattern; unclosed BLE handles on Linux prevent future connections (BlueZ quirk). |
+| Pitfall                                       | Fix                                                                                                                                                        |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Multiple `BLEInterface` instances per address | Reuse one instance; multiple instances collide on the address gate.                                                                                        |
+| Layered reconnect loops                       | Use either the library's `auto_reconnect=True` **or** your own loop, never both.                                                                           |
+| Aggressive retry cadence                      | Include exponential backoff; long `scan + connect` calls during rapid retries exhaust BlueZ.                                                               |
+| Forgetting to resubscribe notifications       | Use the same instance so `NotificationManager` can call `_resubscribe_all()` automatically after reconnects (non-`FROMNUM_UUID`; dispatcher owns FROMNUM). |
+| Not closing the interface                     | Always call `close()` or use the context-manager pattern; unclosed BLE handles on Linux prevent future connections (BlueZ quirk).                          |
 
 ---
 

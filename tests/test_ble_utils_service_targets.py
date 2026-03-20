@@ -14,13 +14,19 @@ import pytest
 
 import meshtastic.interfaces.ble.compatibility_service as compatibility_mod
 import meshtastic.interfaces.ble.utils as ble_utils
-from meshtastic.interfaces.ble.compatibility_service import BLECompatibilityEventService
+from meshtastic.interfaces.ble.compatibility_service import (
+    BLECompatibilityEventPublisher,
+    BLECompatibilityEventService,
+)
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator, _InertThread
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
-from meshtastic.interfaces.ble.management_service import (
-    BLEManagementCommandsService,
+from meshtastic.interfaces.ble.management_runtime import (
     _create_management_client,
     _is_blank_or_malformed_address_like,
+)
+from meshtastic.interfaces.ble.management_service import (
+    BLEManagementCommandHandler,
+    BLEManagementCommandsService,
 )
 from meshtastic.interfaces.ble.reconnection import (
     ReconnectPolicyMissingMethodError,
@@ -365,6 +371,38 @@ def test_publish_connection_status_branches(monkeypatch: pytest.MonkeyPatch) -> 
     )
 
 
+def test_publish_connection_status_legacy_resolves_default_publishing_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Legacy status-publish shim should resolve default thread when kwarg is omitted."""
+    import meshtastic.mesh_interface as mesh_iface_module
+
+    sent: list[tuple[str, object, bool]] = []
+
+    def _send_message(topic: str, *, interface: object, connected: bool) -> None:
+        sent.append((topic, interface, connected))
+
+    monkeypatch.setattr(
+        mesh_iface_module,
+        "pub",
+        SimpleNamespace(sendMessage=_send_message),
+        raising=True,
+    )
+
+    publishing_thread = SimpleNamespace(
+        queue=SimpleNamespace(put_nowait=lambda callback: callback()),
+        thread=None,
+    )
+    iface = SimpleNamespace(_get_publishing_thread=lambda: publishing_thread)
+
+    BLECompatibilityEventService.publish_connection_status_legacy(
+        iface,
+        connected=True,
+    )
+
+    assert sent == [("meshtastic.connection.status", iface, True)]
+
+
 def test_coordination_inert_thread_start_is_noop() -> None:
     """Starting an inert coordinator thread should only warn and return."""
     coordinator = ThreadCoordinator()
@@ -451,7 +489,10 @@ def test_management_helpers_cover_factory_and_target_edge_paths(
 
     assert _is_blank_or_malformed_address_like("AA:BB:CC:DD:EE:FF") is False
     assert _is_blank_or_malformed_address_like("aabbccddeeff") is False
+    assert _is_blank_or_malformed_address_like("Kitchen:Node") is False
     assert _is_blank_or_malformed_address_like("AA:BB:CC") is True
+    assert _is_blank_or_malformed_address_like("AABBCCDDEEF") is False
+    assert _is_blank_or_malformed_address_like("AABBCCDDEEFF00") is False
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     try:
@@ -463,7 +504,8 @@ def test_management_helpers_cover_factory_and_target_edge_paths(
 
         with pytest.raises(RuntimeError, match="target resolution failure"):
             BLEManagementCommandsService._start_management_phase(iface, None)
-        iface._finish_management_operation.assert_called_once()
+        with iface._management_lock:
+            assert iface._management_inflight == 0
     finally:
         iface.close()
 
@@ -491,6 +533,173 @@ def test_management_helpers_cover_factory_and_target_edge_paths(
         fresh_iface.close()
 
 
+def test_management_shim_handler_resolution_preserves_minimal_iface_double(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Shim handler resolution should preserve minimal iface-owned handler doubles."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    try:
+        minimal_handler = SimpleNamespace(
+            execute_management_command=lambda *_args, **_kwargs: "ok"
+        )
+        iface._get_management_command_handler = lambda: minimal_handler
+        resolved = BLEManagementCommandsService._handler_for_shim(iface)
+        assert resolved is minimal_handler
+        assert BLEManagementCommandsService._has_required_handler_entrypoint(
+            minimal_handler
+        )
+
+        iface._get_management_command_handler = MagicMock(
+            side_effect=lambda: MagicMock()
+        )
+        fallback_handler = BLEManagementCommandsService._handler_for_shim(iface)
+        assert isinstance(fallback_handler, BLEManagementCommandHandler)
+        assert (
+            BLEManagementCommandsService._has_required_handler_entrypoint(object())
+            is False
+        )
+    finally:
+        iface.close()
+
+
+def test_management_handler_call_iface_override_respects_instance_and_subclass_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_call_iface_override should ignore base wrappers but honor real overrides."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    try:
+        handler = BLEManagementCommandHandler(
+            iface,
+            ble_client_factory=DummyClient,
+            connected_elsewhere=lambda *_args, **_kwargs: False,
+        )
+        fallback_calls: list[str] = []
+
+        def _fallback(address: str | None) -> str:
+            fallback_calls.append("fallback")
+            return f"fallback:{address}"
+
+        assert (
+            handler._call_iface_override(
+                "_resolve_target_address_for_management",
+                _fallback,
+                "mesh-node",
+            )
+            == "fallback:mesh-node"
+        )
+        assert fallback_calls == ["fallback"]
+
+        iface._resolve_target_address_for_management = (
+            lambda address: f"override:{address}"
+        )
+        assert (
+            handler._call_iface_override(
+                "_resolve_target_address_for_management",
+                _fallback,
+                "mesh-node",
+            )
+            == "override:mesh-node"
+        )
+        assert fallback_calls == ["fallback"]
+
+        class _OverrideInterface(type(iface)):
+            def _resolve_target_address_for_management(
+                self, address: str | None
+            ) -> str:
+                return f"subclass:{address}"
+
+        subclass_iface = object.__new__(_OverrideInterface)
+        subclass_handler = BLEManagementCommandHandler(
+            subclass_iface,
+            ble_client_factory=DummyClient,
+            connected_elsewhere=lambda *_args, **_kwargs: False,
+        )
+        assert (
+            subclass_handler._call_iface_override(
+                "_resolve_target_address_for_management",
+                _fallback,
+                "mesh-node",
+            )
+            == "subclass:mesh-node"
+        )
+        assert fallback_calls == ["fallback"]
+    finally:
+        iface.close()
+
+
+def test_management_shim_default_connected_elsewhere_and_handler_like(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Management shim should cover strict handler-like positives and default ownership probe."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    original_get_management_handler = iface._get_management_command_handler
+    original_direct_handler = getattr(iface, "_management_command_handler", None)
+    try:
+        required_methods = (
+            "resolve_target_address_for_management",
+            "management_target_gate",
+            "get_management_client_if_available",
+            "get_management_client_for_target",
+            "get_current_implicit_management_binding_locked",
+            "get_current_implicit_management_address_locked",
+            "revalidate_implicit_management_target",
+            "start_management_phase",
+            "resolve_management_target",
+            "acquire_client_for_target",
+            "execute_with_client",
+            "execute_management_command",
+            "begin_management_operation_locked",
+            "finish_management_operation",
+            "validate_management_await_timeout",
+            "validate_trust_timeout",
+            "validate_connect_timeout_override",
+            "pair",
+            "unpair",
+            "run_bluetoothctl_trust_command",
+            "trust",
+        )
+        handler_like_candidate = SimpleNamespace(
+            **{
+                method_name: (lambda *_args, **_kwargs: None)
+                for method_name in required_methods
+            }
+        )
+        assert BLEManagementCommandsService._is_handler_like(handler_like_candidate)
+
+        connected_elsewhere_calls: list[tuple[str | None, object | None]] = []
+        late_bound_calls: list[tuple[str | None, object | None]] = []
+        monkeypatch.setattr(
+            "meshtastic.interfaces.ble.management_compat_service._is_currently_connected_elsewhere",
+            lambda key, owner=None: (
+                connected_elsewhere_calls.append((key, owner)),
+                True,
+            )[1],
+        )
+        monkeypatch.setattr(
+            iface,
+            "_connected_elsewhere_late_bound",
+            lambda key, owner=None: (
+                late_bound_calls.append((key, owner)),
+                True,
+            )[1],
+            raising=True,
+        )
+        iface._get_management_command_handler = lambda: None
+        resolved_direct_handler = BLEManagementCommandsService._handler_for_shim(iface)
+        assert resolved_direct_handler is original_direct_handler
+
+        iface._management_command_handler = None
+        resolved_handler = BLEManagementCommandsService._handler_for_shim(iface)
+        assert isinstance(resolved_handler, BLEManagementCommandHandler)
+        assert resolved_handler._connected_elsewhere("device-key", iface) is True
+        assert late_bound_calls == [("device-key", iface)]
+        assert connected_elsewhere_calls == []
+    finally:
+        iface._get_management_command_handler = original_get_management_handler
+        iface._management_command_handler = original_direct_handler
+        iface.close()
+
+
 def test_resolve_management_target_existing_client_explicit_address_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -504,25 +713,30 @@ def test_resolve_management_target_existing_client_explicit_address_paths(
         )
         iface._validate_management_preconditions = lambda: None
         iface._get_management_client_if_available = lambda _address: None
-
-        with pytest.raises(iface.BLEError, match="changed"):
-            BLEManagementCommandsService._resolve_management_target(
-                iface, "target-id", start_context
-            )
-
-        refreshed_client = DummyClient()
-        refreshed_client.address = None
-        refreshed_client.bleak_client = SimpleNamespace(address=None)
         resolved_addresses: list[str | None] = []
-
-        iface._get_management_client_if_available = lambda _address: refreshed_client
-        iface._extract_client_address = lambda _client: None
 
         def _resolve_target_address(address: str | None) -> str:
             resolved_addresses.append(address)
             return "AA:BB:CC:DD:EE:FF"
 
         iface._resolve_target_address_for_management = _resolve_target_address
+
+        target_missing_client, active_client_missing_client = (
+            BLEManagementCommandsService._resolve_management_target(
+                iface, "target-id", start_context
+            )
+        )
+        assert target_missing_client == "AA:BB:CC:DD:EE:FF"
+        assert active_client_missing_client is None
+        assert resolved_addresses == ["target-id"]
+
+        refreshed_client = DummyClient()
+        refreshed_client.address = None
+        refreshed_client.bleak_client = SimpleNamespace(address=None)
+        resolved_addresses.clear()
+
+        iface._get_management_client_if_available = lambda _address: refreshed_client
+        iface._extract_client_address = lambda _client: None
 
         target, active_client = BLEManagementCommandsService._resolve_management_target(
             iface,
@@ -572,22 +786,20 @@ def test_management_execute_management_command_existing_client_and_trust_edges(
             use_existing_client_without_resolved_address=False,
         )
         monkeypatch.setattr(
-            BLEManagementCommandsService,
+            BLEManagementCommandHandler,
             "_start_management_phase",
-            staticmethod(lambda _iface, _address: start_context),
+            lambda _self, _address: start_context,
         )
         refreshed_client = DummyClient()
         monkeypatch.setattr(
-            BLEManagementCommandsService,
+            BLEManagementCommandHandler,
             "_resolve_management_target",
-            staticmethod(lambda _iface, _address, _ctx: (None, refreshed_client)),
+            lambda _self, _address, _ctx: (None, refreshed_client),
         )
         monkeypatch.setattr(
-            BLEManagementCommandsService,
+            BLEManagementCommandHandler,
             "_acquire_client_for_target",
-            staticmethod(
-                lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError())
-            ),
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError()),
         )
 
         assert (
@@ -630,14 +842,14 @@ def test_management_execute_management_command_existing_client_and_trust_edges(
             )
 
         monkeypatch.setattr(
-            BLEManagementCommandsService,
+            BLEManagementCommandHandler,
             "_start_management_phase",
-            staticmethod(lambda _iface, _address: start_context),
+            lambda _self, _address: start_context,
         )
         monkeypatch.setattr(
-            BLEManagementCommandsService,
+            BLEManagementCommandHandler,
             "_resolve_management_target",
-            staticmethod(lambda _iface, _address, _ctx: (None, None)),
+            lambda _self, _address, _ctx: (None, None),
         )
 
         with pytest.raises(bluetooth_iface.BLEError, match="require"):
@@ -754,6 +966,153 @@ def test_compatibility_resolve_safe_execute_wrapper() -> None:
     resolved = BLECompatibilityEventService._resolve_safe_execute(iface)
     assert callable(resolved)
     assert resolved(lambda: "ok") == "ok"
+
+
+def test_compatibility_publisher_swallows_provider_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bound compatibility publisher should treat provider failures as best effort."""
+    from meshtastic import mesh_interface as mesh_iface_module
+
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    try:
+        publisher = BLECompatibilityEventPublisher(
+            iface,
+            publishing_thread_provider=lambda: (_ for _ in ()).throw(
+                RuntimeError("provider boom")
+            ),
+        )
+        wait_threads: list[object | None] = []
+        drain_threads: list[object | None] = []
+        publish_threads: list[object | None] = []
+        publish_legacy_threads: list[object | None] = []
+        monkeypatch.setattr(
+            BLECompatibilityEventService,
+            "wait_for_disconnect_notifications",
+            staticmethod(
+                lambda _iface, _timeout=None, publishing_thread=None: wait_threads.append(
+                    publishing_thread
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            BLECompatibilityEventService,
+            "drain_publish_queue",
+            staticmethod(
+                lambda _iface, _flush_event, publishing_thread=None: drain_threads.append(
+                    publishing_thread
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            BLECompatibilityEventService,
+            "publish_connection_status",
+            staticmethod(
+                lambda _iface, *, connected, publishing_thread=None: publish_threads.append(  # noqa: ARG005
+                    publishing_thread
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            BLECompatibilityEventService,
+            "publish_connection_status_legacy",
+            staticmethod(
+                lambda _iface, _connected, publishing_thread=None: publish_legacy_threads.append(  # noqa: ARG005
+                    publishing_thread
+                )
+            ),
+        )
+
+        publisher.wait_for_disconnect_notifications(timeout=0.1)
+        publisher.drain_publish_queue(Event())
+        publisher.publish_connection_status(connected=True)
+        publisher.publish_connection_status_legacy(True)
+
+        expected_thread = mesh_iface_module.publishingThread
+        assert wait_threads == [expected_thread]
+        assert drain_threads == [expected_thread]
+        assert publish_threads == [expected_thread, expected_thread]
+        assert publish_legacy_threads == []
+    finally:
+        iface.close()
+
+
+def test_compatibility_publisher_reuses_last_good_thread_on_provider_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bound publisher should reuse last successful thread when provider later raises."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    try:
+        publishing_thread = object()
+        provider_calls = 0
+
+        def _provider() -> object:
+            nonlocal provider_calls
+            provider_calls += 1
+            if provider_calls == 1:
+                return publishing_thread
+            raise RuntimeError("provider boom")
+
+        publisher = BLECompatibilityEventPublisher(
+            iface,
+            publishing_thread_provider=_provider,
+        )
+        wait_threads: list[object | None] = []
+        monkeypatch.setattr(
+            BLECompatibilityEventService,
+            "wait_for_disconnect_notifications",
+            staticmethod(
+                lambda _iface, _timeout=None, publishing_thread=None: wait_threads.append(
+                    publishing_thread
+                )
+            ),
+        )
+
+        assert publisher._resolve_publishing_thread() is publishing_thread
+        publisher.wait_for_disconnect_notifications(timeout=0.1)
+        assert wait_threads == [publishing_thread]
+        assert provider_calls == 2
+    finally:
+        iface.close()
+
+
+def test_compatibility_publisher_reuses_last_good_thread_on_provider_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bound publisher should reuse last successful thread when provider later returns None."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    try:
+        publishing_thread = object()
+        provider_calls = 0
+
+        def _provider() -> object | None:
+            nonlocal provider_calls
+            provider_calls += 1
+            if provider_calls == 1:
+                return publishing_thread
+            return None
+
+        publisher = BLECompatibilityEventPublisher(
+            iface,
+            publishing_thread_provider=_provider,
+        )
+        wait_threads: list[object | None] = []
+        monkeypatch.setattr(
+            BLECompatibilityEventService,
+            "wait_for_disconnect_notifications",
+            staticmethod(
+                lambda _iface, _timeout=None, publishing_thread=None: wait_threads.append(
+                    publishing_thread
+                )
+            ),
+        )
+
+        assert publisher._resolve_publishing_thread() is publishing_thread
+        publisher.wait_for_disconnect_notifications(timeout=0.1)
+        assert wait_threads == [publishing_thread]
+        assert provider_calls == 2
+    finally:
+        iface.close()
 
 
 def test_compatibility_enqueue_returns_false_when_no_enqueue_path() -> None:
