@@ -713,25 +713,30 @@ def test_resolve_management_target_existing_client_explicit_address_paths(
         )
         iface._validate_management_preconditions = lambda: None
         iface._get_management_client_if_available = lambda _address: None
-
-        with pytest.raises(iface.BLEError, match="changed"):
-            BLEManagementCommandsService._resolve_management_target(
-                iface, "target-id", start_context
-            )
-
-        refreshed_client = DummyClient()
-        refreshed_client.address = None
-        refreshed_client.bleak_client = SimpleNamespace(address=None)
         resolved_addresses: list[str | None] = []
-
-        iface._get_management_client_if_available = lambda _address: refreshed_client
-        iface._extract_client_address = lambda _client: None
 
         def _resolve_target_address(address: str | None) -> str:
             resolved_addresses.append(address)
             return "AA:BB:CC:DD:EE:FF"
 
         iface._resolve_target_address_for_management = _resolve_target_address
+
+        target_missing_client, active_client_missing_client = (
+            BLEManagementCommandsService._resolve_management_target(
+                iface, "target-id", start_context
+            )
+        )
+        assert target_missing_client == "AA:BB:CC:DD:EE:FF"
+        assert active_client_missing_client is None
+        assert resolved_addresses == ["target-id"]
+
+        refreshed_client = DummyClient()
+        refreshed_client.address = None
+        refreshed_client.bleak_client = SimpleNamespace(address=None)
+        resolved_addresses.clear()
+
+        iface._get_management_client_if_available = lambda _address: refreshed_client
+        iface._extract_client_address = lambda _client: None
 
         target, active_client = BLEManagementCommandsService._resolve_management_target(
             iface,
@@ -967,6 +972,8 @@ def test_compatibility_publisher_swallows_provider_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Bound compatibility publisher should treat provider failures as best effort."""
+    from meshtastic import mesh_interface as mesh_iface_module
+
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     try:
         publisher = BLECompatibilityEventPublisher(
@@ -1021,9 +1028,10 @@ def test_compatibility_publisher_swallows_provider_failures(
         publisher.publish_connection_status(connected=True)
         publisher.publish_connection_status_legacy(True)
 
-        assert wait_threads == [None]
-        assert drain_threads == [None]
-        assert publish_threads == [None, None]
+        expected_thread = mesh_iface_module.publishingThread
+        assert wait_threads == [expected_thread]
+        assert drain_threads == [expected_thread]
+        assert publish_threads == [expected_thread, expected_thread]
         assert publish_legacy_threads == []
     finally:
         iface.close()
