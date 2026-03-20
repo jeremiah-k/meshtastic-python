@@ -13,10 +13,10 @@ from meshtastic.interfaces.ble.management_runtime import (
 )
 
 __all__ = [
+    "BLEManagementCommandHandler",
+    "BLEManagementCommandsService",
     "BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS",
     "TRUST_COMMAND_OUTPUT_MAX_CHARS",
     "TRUST_HEX_BLOB_RE",
     "TRUST_TOKEN_RE",
-    "BLEManagementCommandHandler",
-    "BLEManagementCommandsService",
 ]

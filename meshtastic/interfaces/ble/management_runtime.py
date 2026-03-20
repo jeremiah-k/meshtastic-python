@@ -122,6 +122,13 @@ def _is_blank_or_malformed_address_like(address: str | None) -> bool:
         ``True`` when ``address`` is blank or appears address-like but is
         malformed; otherwise ``False``.
     """
+    # Validation tree summary:
+    # - ``None`` -> False; blank/whitespace -> True.
+    # - Colon-separated MAC text is validated via ``_HEX_MAC_COLON_RE``.
+    # - Other forms are normalized by ``sanitize_address`` then checked against
+    #   ``_HEX_MAC_NO_SEPARATOR_RE``.
+    # - No-colon hex-only input must be 12 chars and match
+    #   ``_HEX_MAC_NO_SEPARATOR_RE`` to be treated as valid.
     if address is None:
         return False
     stripped_address = address.strip()
@@ -160,6 +167,15 @@ def _same_management_binding(left: str | None, right: str | None) -> bool:
     if normalized_left is None and normalized_right is None:
         return (left or "").strip() == (right or "").strip()
     return normalized_left == normalized_right
+
+
+def _normalized_mac_to_colon_address(normalized_address: str) -> str:
+    """Convert a normalized 12-hex BLE address into colon-delimited form."""
+    if len(normalized_address) != 12:
+        return normalized_address
+    return ":".join(
+        normalized_address[index : index + 2] for index in range(0, 12, 2)
+    ).lower()
 
 
 class BLEManagementCommandHandler:
@@ -235,7 +251,7 @@ class BLEManagementCommandHandler:
             if existing_client_address:
                 return existing_client_address
             if _looks_like_ble_address(normalized_request):
-                return normalized_request
+                return _normalized_mac_to_colon_address(normalized_request)
         return iface.findDevice(requested_identifier).address
 
     @staticmethod

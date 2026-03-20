@@ -177,16 +177,30 @@ class _LifecycleStateAccess:
         if callable(public_transition) and not _is_unconfigured_mock_callable(
             public_transition
         ):
-            result = public_transition(new_state)
-            if isinstance(result, bool):
-                return result
+            try:
+                result = public_transition(new_state)
+            except Exception:  # noqa: BLE001 - compatibility probe must fall through
+                logger.debug(
+                    "Error calling state manager transition_to()",
+                    exc_info=True,
+                )
+            else:
+                if isinstance(result, bool):
+                    return result
         legacy_transition = getattr(self._iface._state_manager, "_transition_to", None)
         if callable(legacy_transition) and not _is_unconfigured_mock_callable(
             legacy_transition
         ):
-            result = legacy_transition(new_state)
-            if isinstance(result, bool):
-                return result
+            try:
+                result = legacy_transition(new_state)
+            except Exception:  # noqa: BLE001 - compatibility probe must fall through
+                logger.debug(
+                    "Error calling state manager _transition_to()",
+                    exc_info=True,
+                )
+            else:
+                if isinstance(result, bool):
+                    return result
         raise AttributeError(STATE_MANAGER_MISSING_TRANSITION_MSG)
 
     def reset_to_disconnected(self) -> bool:
@@ -195,16 +209,30 @@ class _LifecycleStateAccess:
             self._iface._state_manager, "reset_to_disconnected", None
         )
         if callable(public_reset) and not _is_unconfigured_mock_callable(public_reset):
-            result = public_reset()
-            if isinstance(result, bool):
-                return result
+            try:
+                result = public_reset()
+            except Exception:  # noqa: BLE001 - compatibility probe must fall through
+                logger.debug(
+                    "Error calling state manager reset_to_disconnected()",
+                    exc_info=True,
+                )
+            else:
+                if isinstance(result, bool):
+                    return result
         legacy_reset = getattr(
             self._iface._state_manager, "_reset_to_disconnected", None
         )
         if callable(legacy_reset) and not _is_unconfigured_mock_callable(legacy_reset):
-            result = legacy_reset()
-            if isinstance(result, bool):
-                return result
+            try:
+                result = legacy_reset()
+            except Exception:  # noqa: BLE001 - compatibility probe must fall through
+                logger.debug(
+                    "Error calling state manager _reset_to_disconnected()",
+                    exc_info=True,
+                )
+            else:
+                if isinstance(result, bool):
+                    return result
         raise AttributeError(STATE_MANAGER_MISSING_RESET_MSG)
 
     def is_closing(self) -> bool:

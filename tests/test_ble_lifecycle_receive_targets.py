@@ -731,7 +731,7 @@ def test_lifecycle_controller_keeps_injected_status_getter_when_snapshot_missing
         def status_getter(_client: object) -> tuple[bool, bool]:
             return True, False
 
-        controller.verify_and_publish_connected(
+        controller._verify_and_publish_connected(
             DummyClient(),
             "dev",
             "alias",
@@ -741,7 +741,7 @@ def test_lifecycle_controller_keeps_injected_status_getter_when_snapshot_missing
         )
         assert len(captured_calls) == 1
         verify_snapshot, status_locked = captured_calls[0]
-        assert callable(verify_snapshot)
+        assert verify_snapshot is None
         assert status_locked is status_getter
     finally:
         iface.close()
@@ -1074,6 +1074,63 @@ def test_receive_controller_propagates_read_loop_disconnect_override_failures(
         with pytest.raises(RuntimeError, match="read-loop boom"):
             controller.handle_read_loop_disconnect("reason", DummyClient())
     finally:
+        original_close()
+
+
+def test_receive_controller_propagates_should_run_override_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """should_run override failures should be logged and re-raised."""
+    iface = _make_iface(monkeypatch)
+    original_close = iface.close
+    try:
+        controller = iface._get_receive_recovery_controller()
+
+        def _raising_override(*_args: object, **_kwargs: object) -> bool:
+            raise RuntimeError("should-run boom")
+
+        monkeypatch.setattr(
+            controller,
+            "_resolve_iface_receive_hook_override",
+            lambda method_name: (
+                _raising_override
+                if method_name == "_should_run_receive_loop"
+                else None
+            ),
+            raising=True,
+        )
+
+        with pytest.raises(RuntimeError, match="should-run boom"):
+            controller._should_run_receive_loop()
+    finally:
+        original_close()
+
+
+def test_receive_controller_propagates_lifecycle_should_run_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Lifecycle should_run failures should be logged and re-raised."""
+    iface = _make_iface(monkeypatch)
+    original_close = iface.close
+    original_get_lifecycle_controller = iface._get_lifecycle_controller
+    try:
+        controller = iface._get_receive_recovery_controller()
+        monkeypatch.setattr(
+            controller,
+            "_resolve_iface_receive_hook_override",
+            lambda _name: None,
+            raising=True,
+        )
+        iface._get_lifecycle_controller = lambda: SimpleNamespace(
+            _should_run_receive_loop=lambda: (_ for _ in ()).throw(
+                RuntimeError("lifecycle should-run boom")
+            )
+        )
+
+        with pytest.raises(RuntimeError, match="lifecycle should-run boom"):
+            controller._should_run_receive_loop()
+    finally:
+        iface._get_lifecycle_controller = original_get_lifecycle_controller
         original_close()
 
 

@@ -227,10 +227,17 @@ class NotificationManager:
                         e,
                     )
             else:
+                stale_epoch = False
                 with self._lock:
-                    if epoch != self._resubscribe_epoch:
-                        return
-                    failures.pop(characteristic, None)
+                    stale_epoch = epoch != self._resubscribe_epoch
+                    if not stale_epoch:
+                        failures.pop(characteristic, None)
+                if stale_epoch:
+                    with contextlib.suppress(
+                        Exception
+                    ):  # noqa: BLE001 - stale resubscribe rollback is best effort
+                        client.stop_notify(characteristic, timeout=timeout)
+                    return
 
     def __len__(self) -> int:
         """Report the number of active BLE notification subscriptions being tracked.

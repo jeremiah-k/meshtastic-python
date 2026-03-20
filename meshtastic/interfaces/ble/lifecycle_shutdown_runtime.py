@@ -166,7 +166,7 @@ class BLEShutdownLifecycleCoordinator:
         *,
         wake_waiting_threads: Callable[..., None] | None = None,
         join_thread: Callable[..., None] | None = None,
-    ) -> None:
+    ) -> None:  # noqa: PLR0912,PLR0915
         """Wake and join receive thread, then clear cached thread reference."""
         iface = self._iface
         wake_waiters = wake_waiting_threads or self._thread_access.wake_waiting_threads

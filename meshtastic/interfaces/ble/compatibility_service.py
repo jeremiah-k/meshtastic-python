@@ -48,7 +48,9 @@ class BLECompatibilityEventPublisher:
         self._publishing_thread_provider = publishing_thread_provider
         self._last_publishing_thread: object | None = None
 
-    def _resolve_publishing_thread(self) -> object | None:
+    def _resolve_publishing_thread(
+        self, *, use_cached_fallback: bool = True
+    ) -> object | None:
         """Resolve publishing-thread facade with cached fallback on provider failure.
 
         Returns
@@ -67,13 +69,13 @@ class BLECompatibilityEventPublisher:
             if publishing_thread is not None:
                 self._last_publishing_thread = publishing_thread
                 return publishing_thread
-            return self._last_publishing_thread
+            return self._last_publishing_thread if use_cached_fallback else None
         except Exception:  # noqa: BLE001 - teardown path must stay best effort
             logger.debug(
                 "Error resolving publishing thread for compatibility publisher.",
                 exc_info=True,
             )
-            return self._last_publishing_thread
+            return self._last_publishing_thread if use_cached_fallback else None
 
     def wait_for_disconnect_notifications(self, timeout: float | None = None) -> None:
         """Wait for queued disconnect notifications to flush.
@@ -130,7 +132,9 @@ class BLECompatibilityEventPublisher:
         BLECompatibilityEventService.publish_connection_status(
             self._iface,
             connected=connected,
-            publishing_thread=self._resolve_publishing_thread(),
+            publishing_thread=self._resolve_publishing_thread(
+                use_cached_fallback=False
+            ),
         )
 
     # COMPAT_STABLE_SHIM: retained bound alias for compatibility callers.
@@ -155,11 +159,7 @@ class BLECompatibilityEventPublisher:
         None
             Always returns ``None``.
         """
-        BLECompatibilityEventService.publish_connection_status_legacy(
-            self._iface,
-            connected,
-            publishing_thread=self._resolve_publishing_thread(),
-        )
+        self.publish_connection_status(connected=connected)
 
 
 class BLECompatibilityEventService:
@@ -458,7 +458,7 @@ class BLECompatibilityEventService:
         iface: "BLEInterface",
         connected: bool,
         *,
-        publishing_thread: object | None,
+        publishing_thread: object | None = None,
     ) -> None:
         """Publish legacy connection-status event for compatibility.
 
@@ -522,7 +522,7 @@ class BLECompatibilityEventService:
         iface: "BLEInterface",
         connected: bool,
         *,
-        publishing_thread: object | None,
+        publishing_thread: object | None = None,
     ) -> None:
         """Backward-compatible alias for ``publish_connection_status``.
 

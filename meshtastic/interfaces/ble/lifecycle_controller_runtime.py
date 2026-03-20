@@ -44,22 +44,22 @@ class BLELifecycleController:
         self._connection_ownership = BLEConnectionOwnershipLifecycleCoordinator(iface)
         self._shutdown = BLEShutdownLifecycleCoordinator(iface)
 
-    def set_receive_wanted(self, *, want_receive: bool) -> None:
+    def _set_receive_wanted(self, *, want_receive: bool) -> None:
         """Request or clear the receive loop on the bound interface."""
         self._receive.set_receive_wanted(want_receive=want_receive)
 
-    def should_run_receive_loop(self) -> bool:
+    def _should_run_receive_loop(self) -> bool:
         """Return whether receive loop should continue for the bound interface."""
         return self._receive.should_run_receive_loop()
 
-    def start_receive_thread(self, *, name: str, reset_recovery: bool = True) -> None:
+    def _start_receive_thread(self, *, name: str, reset_recovery: bool = True) -> None:
         """Start receive thread for the bound interface."""
         self._receive.start_receive_thread(
             name=name,
             reset_recovery=reset_recovery,
         )
 
-    def handle_disconnect(
+    def _handle_disconnect(
         self,
         source: str,
         *,
@@ -73,15 +73,15 @@ class BLELifecycleController:
             bleak_client=bleak_client,
         )
 
-    def on_ble_disconnect(self, client: BleakRootClient) -> None:
+    def _on_ble_disconnect(self, client: BleakRootClient) -> None:
         """Handle Bleak disconnect callback for the bound interface."""
         self._disconnect.on_ble_disconnect(client)
 
-    def schedule_auto_reconnect(self) -> None:
+    def _schedule_auto_reconnect(self) -> None:
         """Schedule reconnect worker for the bound interface."""
         self._disconnect.schedule_auto_reconnect()
 
-    def verify_and_publish_connected(
+    def _verify_and_publish_connected(
         self,
         connected_client: "BLEClient",
         connected_device_key: str | None,
@@ -102,7 +102,10 @@ class BLELifecycleController:
                 lifecycle_service as lifecycle_service_mod,
             )
 
-            if verify_ownership_snapshot is None:
+            if (
+                verify_ownership_snapshot is None
+                and get_connected_client_status_locked is None
+            ):
 
                 def _compat_verify_snapshot(
                     client: "BLEClient",
@@ -138,7 +141,7 @@ class BLELifecycleController:
             get_connected_client_status_locked=get_connected_client_status_locked,
         )
 
-    def emit_verified_connection_side_effects(
+    def _emit_verified_connection_side_effects(
         self, connected_client: "BLEClient"
     ) -> None:
         """Emit verified-connection side effects for the bound interface."""
@@ -146,7 +149,7 @@ class BLELifecycleController:
             connected_client
         )
 
-    def discard_invalidated_connected_client(
+    def _discard_invalidated_connected_client(
         self,
         client: "BLEClient",
         *,
@@ -256,7 +259,7 @@ class BLELifecycleController:
             is not _ORIGINAL_IS_OWNED_CONNECTED_CLIENT
         )
 
-    def finalize_connection_gates(
+    def _finalize_connection_gates(
         self,
         connected_client: "BLEClient",
         connected_device_key: str | None,
@@ -281,7 +284,7 @@ class BLELifecycleController:
             connection_alias_key,
         )
 
-    def is_owned_connected_client(self, client: "BLEClient") -> bool:
+    def _is_owned_connected_client(self, client: "BLEClient") -> bool:
         """Return whether the bound interface still owns the provided client."""
         if self._uses_compat_connection_status_overrides():
             from meshtastic.interfaces.ble import (
@@ -293,15 +296,15 @@ class BLELifecycleController:
             )
         return self._connection_ownership._is_owned_connected_client(client)
 
-    def has_ever_connected_session(self) -> bool:
+    def _has_ever_connected_session(self) -> bool:
         """Return whether this interface has published at least one connection."""
         return self._connection_ownership._has_ever_connected_session()
 
-    def is_connection_closing(self) -> bool:
+    def _is_connection_closing(self) -> bool:
         """Return whether shutdown is in progress for the bound interface."""
         return self._shutdown.is_connection_closing()
 
-    def close(
+    def _close(
         self,
         *,
         management_shutdown_wait_timeout: float,
@@ -313,6 +316,6 @@ class BLELifecycleController:
             management_wait_poll_seconds=management_wait_poll_seconds,
         )
 
-    def disconnect_and_close_client(self, client: "BLEClient") -> None:
+    def _disconnect_and_close_client(self, client: "BLEClient") -> None:
         """Disconnect and close the provided client for the bound interface."""
         self._disconnect.disconnect_and_close_client(client)

@@ -504,7 +504,7 @@ def test_management_helpers_cover_factory_and_target_edge_paths(
 def test_management_shim_handler_resolution_preserves_minimal_iface_double(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Shim handler resolution should require full handlers for generic resolver paths."""
+    """Shim handler resolution should preserve minimal iface-owned handler doubles."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     try:
         minimal_handler = SimpleNamespace(
@@ -512,7 +512,7 @@ def test_management_shim_handler_resolution_preserves_minimal_iface_double(
         )
         iface._get_management_command_handler = lambda: minimal_handler
         resolved = BLEManagementCommandsService._handler_for_shim(iface)
-        assert isinstance(resolved, BLEManagementCommandHandler)
+        assert resolved is minimal_handler
         assert BLEManagementCommandsService._has_required_handler_entrypoint(
             minimal_handler
         )
@@ -969,8 +969,8 @@ def test_compatibility_publisher_swallows_provider_failures(
 
         assert wait_threads == [None]
         assert drain_threads == [None]
-        assert publish_threads == [None]
-        assert publish_legacy_threads == [None]
+        assert publish_threads == [None, None]
+        assert publish_legacy_threads == []
     finally:
         iface.close()
 

@@ -1517,7 +1517,7 @@ def test_ble_interface_resolve_management_address_accepts_explicit_ble_address(
 
     assert (
         iface._resolve_target_address_for_management("AA-BB-CC-DD-EE-FF")
-        == "aabbccddeeff"
+        == "aa:bb:cc:dd:ee:ff"
     )
     assert discovery_called is False
     iface.close()
@@ -3407,6 +3407,7 @@ def test_discard_invalidated_connected_client_emits_disconnect_for_retired_sessi
         iface.isConnected.set()
 
     iface._discard_invalidated_connected_client(cast(BLEClient, discarded_client))
+    assert published_topics.count("meshtastic.connection.lost") == 1
 
     assert closed_clients == [cast(BLEClient, discarded_client)]
     with iface._state_lock:
@@ -7233,12 +7234,17 @@ def test_register_notifications_falls_back_on_non_notify_acquired_dbus_error(
     class MockClientFatalFromNumNotify(DummyClient):
         """Mock client that always raises a non-recoverable DBus notify error."""
 
+        def __init__(self) -> None:
+            super().__init__()
+            self.fromnum_start_attempts = 0
+
         def has_characteristic(self, uuid: str) -> bool:
             return uuid == FROMNUM_UUID
 
         def start_notify(self, *args: object, **kwargs: object) -> None:
             _ = kwargs
             if args and args[0] == FROMNUM_UUID:
+                self.fromnum_start_attempts += 1
                 raise BleakDBusError(
                     "org.bluez.Error.Failed",
                     ["AlreadyConnected"],
@@ -7249,6 +7255,7 @@ def test_register_notifications_falls_back_on_non_notify_acquired_dbus_error(
 
     iface._register_notifications(cast(BLEClient, client))
 
+    assert client.fromnum_start_attempts == 1
     assert client.stop_notify_calls == []
     with iface._state_lock:
         assert iface._fromnum_notify_enabled is False

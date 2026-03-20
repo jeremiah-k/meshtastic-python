@@ -32,6 +32,8 @@ class BLEReceiveLifecycleCoordinator:
         existing_thread: ThreadLike,
         name: str,
         reset_recovery: bool,
+        clear_pending_if_alive: bool = False,
+        enforce_pending_timeout: bool = False,
     ) -> None:
         """Schedule a best-effort receive restart after current-thread deferral.
 
@@ -47,6 +49,7 @@ class BLEReceiveLifecycleCoordinator:
             self._deferred_restart_inflight = True
 
         def _deferred_restart() -> None:
+            retry_requested = False
             try:
                 wait_deadline = time.monotonic() + RECEIVE_START_PENDING_TIMEOUT_SECONDS
                 while True:
@@ -54,9 +57,28 @@ class BLEReceiveLifecycleCoordinator:
                         if iface._closed or not iface._want_receive:
                             return
                         current = iface._receiveThread
+                    if (
+                        enforce_pending_timeout
+                        and time.monotonic() < wait_deadline
+                    ):
+                        time.sleep(0.01)
+                        continue
                     if current is not existing_thread:
+                        if enforce_pending_timeout:
+                            return
                         break
                     _, current_is_alive = _thread_start_probe(existing_thread)
+                    if clear_pending_if_alive:
+                        if current_is_alive:
+                            with iface._state_lock:
+                                if iface._receiveThread is existing_thread:
+                                    iface._receive_start_pending = False
+                                    iface._receive_start_pending_since = None
+                            return
+                        if time.monotonic() >= wait_deadline:
+                            break
+                        time.sleep(0.01)
+                        continue
                     if not current_is_alive:
                         break
                     if time.monotonic() >= wait_deadline:
@@ -72,15 +94,25 @@ class BLEReceiveLifecycleCoordinator:
                         continue
                     time.sleep(0.01)
                 self.start_receive_thread(name=name, reset_recovery=reset_recovery)
-            except Exception:  # noqa: BLE001 - deferred restart remains best effort
-                logger.debug(
+            except Exception:  # noqa: BLE001 - deferred restart must re-arm failures
+                logger.error(
                     "Deferred receive restart (%s) failed.",
                     name,
                     exc_info=True,
                 )
+                retry_requested = True
             finally:
                 with self._deferred_restart_lock:
                     self._deferred_restart_inflight = False
+            if retry_requested:
+                time.sleep(0.05)
+                self._schedule_deferred_receive_restart(
+                    existing_thread=existing_thread,
+                    name=name,
+                    reset_recovery=reset_recovery,
+                    clear_pending_if_alive=clear_pending_if_alive,
+                    enforce_pending_timeout=enforce_pending_timeout,
+                )
 
         try:
             deferred_restart_thread = threading.Thread(
@@ -244,6 +276,12 @@ class BLEReceiveLifecycleCoordinator:
                         if not isinstance(pending_since, (float, int)):
                             iface._receive_start_pending_since = time.monotonic()
                         iface._receive_start_pending = True
+                        self._schedule_deferred_receive_restart(
+                            existing_thread=existing,
+                            name=name,
+                            reset_recovery=reset_recovery,
+                            enforce_pending_timeout=True,
+                        )
                         logger.debug(
                             "Skipping receive thread start (%s): %s liveness probe inconclusive.",
                             name,
