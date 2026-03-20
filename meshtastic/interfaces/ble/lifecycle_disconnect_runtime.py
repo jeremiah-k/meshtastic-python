@@ -423,7 +423,8 @@ class BLEDisconnectLifecycleCoordinator:
                         )
                     )
                     close_stale_client = (
-                        active_client_differs and plan.previous_client is not active_client
+                        active_client_differs
+                        and plan.previous_client is not active_client
                     )
             if still_stale:
                 if stale_disconnect_keys:

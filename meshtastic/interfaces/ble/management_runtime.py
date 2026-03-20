@@ -155,9 +155,7 @@ def _is_blank_or_malformed_address_like(address: str | None) -> bool:
         return _is_no_colon_hex_malformed(stripped_address)
     # Treat colon-containing identifiers as malformed only when they look
     # like hex/MAC text but fail strict MAC validation.
-    return all(
-        char == ":" or char in HEX_DIGITS for char in stripped_address
-    )
+    return all(char == ":" or char in HEX_DIGITS for char in stripped_address)
 
 
 def _is_no_colon_hex_malformed(stripped_address: str) -> bool:

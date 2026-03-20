@@ -2414,13 +2414,17 @@ class BLEInterface(MeshInterface):
                 or _is_unconfigured_mock_member(notification_dispatcher)
             ):
                 return
-            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher._registered_notification_session_epoch = (
                     notification_session_snapshot[
                         "_registered_notification_session_epoch"
                     ]
                 )
-            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - rollback cleanup is best effort
                 started_notify_snapshot = _copy_started_notify_snapshot(
                     notification_session_snapshot["_started_notify_characteristics"]
                 )
@@ -2428,27 +2432,39 @@ class BLEInterface(MeshInterface):
                     notification_dispatcher._started_notify_characteristics = (
                         started_notify_snapshot
                     )
-            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher.fromnum_notify_enabled = (
                     notification_session_snapshot["fromnum_notify_enabled"]
                 )
-            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher.malformed_notification_count = (
                     notification_session_snapshot["malformed_notification_count"]
                 )
-            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher._current_legacy_log_handler = (
                     notification_session_snapshot["_current_legacy_log_handler"]
                 )
-            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher._current_log_handler = (
                     notification_session_snapshot["_current_log_handler"]
                 )
-            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher._current_from_num_handler = (
                     notification_session_snapshot["_current_from_num_handler"]
                 )
-            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_manager = notification_dispatcher._notification_manager
                 manager_lock = getattr(notification_manager, "_lock", None)
                 active_subscriptions_snapshot = notification_session_snapshot[

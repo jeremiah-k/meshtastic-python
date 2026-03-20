@@ -239,7 +239,9 @@ class _SetUrlAddOnlyPlanner:
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if channels is None:
-                self._node._raise_interface_error("Config or channels not loaded")  # noqa: SLF001
+                self._node._raise_interface_error(
+                    "Config or channels not loaded"
+                )  # noqa: SLF001
             existing_names_normalized = {
                 channel.settings.name.lower()
                 for channel in channels
@@ -328,7 +330,9 @@ class _SetUrlReplacePlanner:
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if channels is None:
-                self._node._raise_interface_error("Config or channels not loaded")  # noqa: SLF001
+                self._node._raise_interface_error(
+                    "Config or channels not loaded"
+                )  # noqa: SLF001
             max_channels = len(channels)
             replace_original_channels_snapshot: list[channel_pb2.Channel] = []
             replace_original_channels_by_index: dict[int, channel_pb2.Channel] = {}
@@ -456,7 +460,9 @@ class _SetUrlCacheManager:
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if channels is None:
-                self._node._raise_interface_error("Config or channels not loaded")  # noqa: SLF001
+                self._node._raise_interface_error(
+                    "Config or channels not loaded"
+                )  # noqa: SLF001
             if staged_channel.index < 0 or staged_channel.index >= len(channels):
                 self._node._raise_interface_error(  # noqa: SLF001
                     f"Channel index {staged_channel.index} out of range during cache update"
@@ -700,7 +706,9 @@ class _SetUrlRollbackEngine:
                     rollback_succeeded = True
                     break
                 # Best-effort rollback path; keep attempting remaining steps.
-                except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                except (
+                    Exception
+                ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                     last_rollback_error = rollback_error
             if not rollback_succeeded:
                 rollback_failed = True
@@ -812,7 +820,9 @@ class _SetUrlRollbackEngine:
                     )
                     rollback_succeeded = True
                     break
-                except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                except (
+                    Exception
+                ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                     replace_last_rollback_error = rollback_error
             if not rollback_succeeded:
                 rollback_failed = True
@@ -1835,7 +1845,9 @@ class Node:  # pylint: disable=too-many-instance-attributes
                     f"{configType.name.upper()}_CONFIG"
                 )
             else:
-                p.get_module_config_request = msg_index  # pyright: ignore[reportAttributeAccessIssue]
+                p.get_module_config_request = (
+                    msg_index  # pyright: ignore[reportAttributeAccessIssue]
+                )
 
         self._send_admin(
             p, wantResponse=True, onResponse=onResponse, adminIndex=adminIndex

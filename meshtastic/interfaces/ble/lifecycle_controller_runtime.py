@@ -266,7 +266,9 @@ class BLELifecycleController:
         service_get_status = (
             lifecycle_service_mod.BLELifecycleService._get_connected_client_status
         )
-        service_get_status_locked = lifecycle_service_mod.BLELifecycleService._get_connected_client_status_locked
+        service_get_status_locked = (
+            lifecycle_service_mod.BLELifecycleService._get_connected_client_status_locked
+        )
         service_verify_snapshot = (
             lifecycle_service_mod.BLELifecycleService._verify_ownership_snapshot
         )

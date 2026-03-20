@@ -235,7 +235,9 @@ class BLEReceiveRecoveryController:
                     result = raw_is_closing()
                     if isinstance(result, bool):
                         state_is_closing = result
-                except Exception:  # noqa: BLE001 - closing probe must remain best effort
+                except (
+                    Exception
+                ):  # noqa: BLE001 - closing probe must remain best effort
                     state_is_closing = None
             elif not _is_unconfigured_mock_member(raw_is_closing) and isinstance(
                 raw_is_closing, bool
@@ -672,7 +674,9 @@ class BLEReceiveRecoveryController:
             ):
                 try:
                     connecting_result = state_is_connecting()
-                except Exception:  # noqa: BLE001 - snapshot probe must remain best effort
+                except (
+                    Exception
+                ):  # noqa: BLE001 - snapshot probe must remain best effort
                     logger.debug(
                         "Error probing state manager is_connecting()",
                         exc_info=True,
@@ -697,7 +701,9 @@ class BLEReceiveRecoveryController:
                 ) and not _is_unconfigured_mock_callable(legacy_is_connecting):
                     try:
                         connecting_result = legacy_is_connecting()
-                    except Exception:  # noqa: BLE001 - snapshot probe must remain best effort
+                    except (
+                        Exception
+                    ):  # noqa: BLE001 - snapshot probe must remain best effort
                         logger.debug(
                             "Error probing state manager _is_connecting()",
                             exc_info=True,
