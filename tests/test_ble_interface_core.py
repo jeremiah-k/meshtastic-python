@@ -1068,6 +1068,7 @@ def test_ble_interface_management_revalidates_implicit_target_after_gate_handoff
             assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
         yield
 
+    _clear_management_handler(iface)
     monkeypatch.setattr(iface, "_management_target_gate", _swap_target_gate)
 
     if method_name == "pair":
@@ -1111,6 +1112,7 @@ def test_ble_interface_management_aborts_when_implicit_target_disappears_at_gate
             iface._state_manager._reset_to_disconnected()
         yield
 
+    _clear_management_handler(iface)
     monkeypatch.setattr(iface, "_management_target_gate", _clear_target_gate)
 
     if method_name == "pair":
@@ -1322,6 +1324,7 @@ def test_ble_interface_trust_revalidates_implicit_target_after_gate_handoff(
         raise AssertionError("subprocess.run should not be reached")
 
     _pin_trust_environment(monkeypatch, run=_unexpected_run)
+    _clear_management_handler(iface)
     monkeypatch.setattr(iface, "_management_target_gate", _swap_target_gate)
 
     with pytest.raises(BLEInterface.BLEError, match=ERROR_MANAGEMENT_TARGET_CHANGED):
@@ -2148,7 +2151,9 @@ def test_ble_interface_close_bounds_wait_on_spurious_management_wakeups(
     assert any("Timed out waiting" in record.message for record in caplog.records)
 
 
-def test_ble_interface_close_forwards_management_wait_poll_seconds() -> None:
+def test_ble_interface_close_forwards_management_wait_poll_seconds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """close() should forward management shutdown timing kwargs to lifecycle close."""
     from meshtastic.interfaces.ble import interface as interface_mod
 
@@ -2169,12 +2174,25 @@ def test_ble_interface_close_forwards_management_wait_poll_seconds() -> None:
 
     iface._lifecycle_controller = SimpleNamespace(close=_capture_close)
 
+    monkeypatch.setattr(
+        interface_mod,
+        "_MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS",
+        1.23,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        interface_mod,
+        "_MANAGEMENT_CONNECT_WAIT_POLL_SECONDS",
+        0.045,
+        raising=True,
+    )
+
     BLEInterface.close(iface)
 
     assert close_calls == [
         {
-            "management_shutdown_wait_timeout": interface_mod._MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS,
-            "management_wait_poll_seconds": interface_mod._MANAGEMENT_CONNECT_WAIT_POLL_SECONDS,
+            "management_shutdown_wait_timeout": 1.23,
+            "management_wait_poll_seconds": 0.045,
         }
     ]
 
@@ -5148,7 +5166,7 @@ def _run_receive_pending_marker_scenario(
         ident=42,
         is_alive=lambda: True,
     )
-    _, start_calls = _patch_receive_start_threads(
+    create_calls, start_calls = _patch_receive_start_threads(
         monkeypatch,
         iface=iface,
         created_threads=[thread_one, thread_two],
@@ -5169,21 +5187,45 @@ def _run_receive_pending_marker_scenario(
     )
 
     start_receive(f"{prefix}One")
+    assert [call["name"] for call in create_calls] == [f"{prefix}One"]
+    assert all(
+        getattr(call["target"], "__name__", None) == "_receive_from_radio_impl"
+        for call in create_calls
+    )
+    assert all(call["daemon"] is True for call in create_calls)
     assert start_calls == [thread_one]
     assert iface._receiveThread is thread_one
     assert iface._receive_start_pending is True
 
     start_receive(f"{prefix}Skip")
+    assert [call["name"] for call in create_calls] == [f"{prefix}One"]
+    assert all(
+        getattr(call["target"], "__name__", None) == "_receive_from_radio_impl"
+        for call in create_calls
+    )
+    assert all(call["daemon"] is True for call in create_calls)
     assert start_calls == [thread_one]
     assert iface._receiveThread is thread_one
     assert iface._receive_start_pending is True
 
     start_receive(f"{prefix}StillWithinTimeout")
+    assert [call["name"] for call in create_calls] == [f"{prefix}One"]
+    assert all(
+        getattr(call["target"], "__name__", None) == "_receive_from_radio_impl"
+        for call in create_calls
+    )
+    assert all(call["daemon"] is True for call in create_calls)
     assert start_calls == [thread_one]
     assert iface._receiveThread is thread_one
     assert iface._receive_start_pending is True
 
     start_receive(f"{prefix}Two")
+    assert [call["name"] for call in create_calls] == [f"{prefix}One", f"{prefix}Two"]
+    assert all(
+        getattr(call["target"], "__name__", None) == "_receive_from_radio_impl"
+        for call in create_calls
+    )
+    assert all(call["daemon"] is True for call in create_calls)
     assert start_calls == [thread_one, thread_two]
     assert iface._receiveThread is thread_two
     assert iface._receive_start_pending is False
@@ -5854,6 +5896,41 @@ def test_publish_connection_status_falls_back_inline_when_non_blocking_enqueue_u
     )
 
     assert sent == [("meshtastic.connection.status", iface, False)]
+
+
+def test_publish_connection_status_skips_when_publishing_thread_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Status publish should skip inline fallback when publishing thread is unavailable."""
+    from meshtastic import mesh_interface as mesh_iface_module
+    from meshtastic.interfaces.ble.compatibility_service import (
+        BLECompatibilityEventService,
+    )
+
+    sent: list[tuple[str, object, bool]] = []
+
+    def _send_message(topic: str, *, interface: object, connected: bool) -> None:
+        sent.append((topic, interface, connected))
+
+    monkeypatch.setattr(
+        mesh_iface_module,
+        "pub",
+        SimpleNamespace(sendMessage=_send_message),
+        raising=True,
+    )
+
+    iface = SimpleNamespace()
+
+    with caplog.at_level(logging.DEBUG):
+        BLECompatibilityEventService.publish_connection_status(
+            iface,
+            connected=True,
+            publishing_thread=None,
+        )
+
+    assert sent == []
+    assert "publishing thread is unavailable" in caplog.text
 
 
 def test_get_publishing_thread_prefers_instance_override() -> None:

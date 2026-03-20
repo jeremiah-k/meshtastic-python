@@ -2103,6 +2103,32 @@ class BLEInterface(MeshInterface):
         original_replacement_pending: bool
         original_disconnect_notified: bool
         original_connection_session_epoch: int
+
+        def _restore_notification_session_after_rollback() -> None:
+            """Best-effort rollback for notification session bookkeeping."""
+            try:
+                notification_dispatcher = self._get_notification_dispatcher()
+            except Exception:  # noqa: BLE001 - rollback cleanup is best effort
+                return
+            if _is_unconfigured_mock_member(notification_dispatcher):
+                return
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
+                notification_dispatcher._registered_notification_session_epoch = (
+                    original_connection_session_epoch
+                )
+            started_notify_characteristics = getattr(
+                notification_dispatcher,
+                "_started_notify_characteristics",
+                None,
+            )
+            if hasattr(started_notify_characteristics, "clear"):
+                with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
+                    started_notify_characteristics.clear()
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
+                notification_dispatcher.fromnum_notify_enabled = False
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
+                notification_dispatcher.malformed_notification_count = 0
+
         with self._state_lock:
             original_client = self.client
             original_address = self.address
@@ -2127,6 +2153,7 @@ class BLEInterface(MeshInterface):
                 self.client is not None and not original_publish_pending
             )
             self._client_publish_pending = True
+            self._connection_session_epoch = original_connection_session_epoch + 1
 
         try:
             client = self._establish_connection(
@@ -2138,6 +2165,8 @@ class BLEInterface(MeshInterface):
             with self._state_lock:
                 self._client_publish_pending = original_publish_pending
                 self._client_replacement_pending = original_replacement_pending
+                self._connection_session_epoch = original_connection_session_epoch
+            _restore_notification_session_after_rollback()
             raise
 
         device_address = getattr(
@@ -2150,13 +2179,11 @@ class BLEInterface(MeshInterface):
                 abort_connect = True
                 self._client_publish_pending = False
                 self._client_replacement_pending = False
+                self._connection_session_epoch = original_connection_session_epoch
             else:
                 previous_client = self.client
                 self.address = device_address
                 self.client = client
-                self._connection_session_epoch = (
-                    getattr(self, "_connection_session_epoch", 0) + 1
-                )
                 self._disconnect_notified = False
                 self._client_publish_pending = True
                 normalized_device_address = sanitize_address(device_address or "")
@@ -2178,6 +2205,7 @@ class BLEInterface(MeshInterface):
                     "Error closing discarded late BLE connection result",
                     exc_info=True,
                 )
+            _restore_notification_session_after_rollback()
             raise self.BLEError(ERROR_INTERFACE_CLOSING)
 
         if previous_client and previous_client is not client:
@@ -2195,6 +2223,7 @@ class BLEInterface(MeshInterface):
                         self._connection_session_epoch = (
                             original_connection_session_epoch
                         )
+                _restore_notification_session_after_rollback()
                 if client is not original_client:
                     try:
                         self._client_manager_safe_close_client(client)

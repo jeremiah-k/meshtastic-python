@@ -166,11 +166,24 @@ class BLEDisconnectLifecycleCoordinator:
             was_replacement_pending = iface._client_replacement_pending
 
             if current_state == ConnectionState.CONNECTING:
-                logger.debug(
-                    "Ignoring disconnect from %s while a connection is in progress.",
-                    source,
+                disconnect_from_owned_client = (
+                    current_client is not None
+                    and (
+                        target_client is current_client
+                        or (
+                            target_client is None
+                            and bleak_client is not None
+                            and getattr(current_client, "bleak_client", None)
+                            is bleak_client
+                        )
+                    )
                 )
-                return _DisconnectPlan(early_return=True)
+                if not disconnect_from_owned_client:
+                    logger.debug(
+                        "Ignoring disconnect from %s while a connection is in progress.",
+                        source,
+                    )
+                    return _DisconnectPlan(early_return=True)
             if is_closing:
                 logger.debug("Ignoring disconnect from %s during shutdown.", source)
                 return _DisconnectPlan(early_return=False)

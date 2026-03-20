@@ -29,13 +29,39 @@ class BLECompatibilityEventPublisher:
     def __init__(
         self, iface: "BLEInterface", *, publishing_thread_provider: Callable[[], object]
     ) -> None:
-        """Bind publisher helpers to a specific interface instance."""
+        """Bind publisher helpers to a specific interface instance.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface instance whose compatibility event publication is delegated
+            through this collaborator.
+        publishing_thread_provider : Callable[[], object]
+            Callable returning the current publishing-thread facade.
+
+        Returns
+        -------
+        None
+            Initializes bound collaborator state.
+        """
         self._iface = iface
         self._publishing_thread_provider = publishing_thread_provider
         self._last_publishing_thread: object | None = None
 
     def _resolve_publishing_thread(self) -> object | None:
-        """Return publishing thread when available, else ``None`` on provider failure."""
+        """Resolve publishing-thread facade with cached fallback on provider failure.
+
+        Returns
+        -------
+        object | None
+            Current publishing-thread facade when available; otherwise the last
+            known-good facade or ``None`` when none has been resolved.
+
+        Notes
+        -----
+        Provider failures are suppressed and logged because disconnect/shutdown
+        paths must remain best effort.
+        """
         try:
             publishing_thread = self._publishing_thread_provider()
             if publishing_thread is not None:
@@ -50,7 +76,19 @@ class BLECompatibilityEventPublisher:
             return self._last_publishing_thread
 
     def wait_for_disconnect_notifications(self, timeout: float | None = None) -> None:
-        """Wait for disconnect-notification queue flush on the bound interface."""
+        """Wait for queued disconnect notifications to flush.
+
+        Parameters
+        ----------
+        timeout : float | None
+            Maximum seconds to wait for flush completion; ``None`` uses the
+            service default.
+
+        Returns
+        -------
+        None
+            Completion is best effort.
+        """
         BLECompatibilityEventService.wait_for_disconnect_notifications(
             self._iface,
             timeout,
@@ -58,7 +96,18 @@ class BLECompatibilityEventPublisher:
         )
 
     def drain_publish_queue(self, flush_event: Event) -> None:
-        """Drain queued publish callbacks for the bound interface."""
+        """Drain queued publish callbacks for the bound interface.
+
+        Parameters
+        ----------
+        flush_event : Event
+            Event used to stop direct-drain iteration.
+
+        Returns
+        -------
+        None
+            Drain execution is best effort.
+        """
         BLECompatibilityEventService.drain_publish_queue(
             self._iface,
             flush_event,
@@ -66,7 +115,18 @@ class BLECompatibilityEventPublisher:
         )
 
     def publish_connection_status(self, *, connected: bool) -> None:
-        """Publish connection status via the bound interface publishing thread."""
+        """Publish connection status through compatibility event transport.
+
+        Parameters
+        ----------
+        connected : bool
+            ``True`` for connected status, ``False`` for disconnected status.
+
+        Returns
+        -------
+        None
+            Publication remains best effort.
+        """
         BLECompatibilityEventService.publish_connection_status(
             self._iface,
             connected=connected,
@@ -436,7 +496,9 @@ class BLECompatibilityEventService:
                 )
 
         if publishing_thread is None:
-            _publish_status()
+            logger.debug(
+                "Skipping connection status publish: publishing thread is unavailable."
+            )
             return
 
         try:

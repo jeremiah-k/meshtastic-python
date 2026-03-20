@@ -262,6 +262,50 @@ def test_lifecycle_start_receive_and_schedule_auto_reconnect_branches(
     iface.close()
 
 
+def test_lifecycle_receive_shim_preserves_method_scoped_collaborators(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Receive shim should reuse collaborators that only expose the requested method."""
+    iface = _make_iface(monkeypatch)
+    original_get_lifecycle_controller = iface._get_lifecycle_controller
+    try:
+        wanted_calls: list[bool] = []
+        should_run_calls: list[str] = []
+        start_calls: list[tuple[str, bool]] = []
+
+        set_only = SimpleNamespace(
+            set_receive_wanted=lambda *, want_receive: wanted_calls.append(want_receive)
+        )
+        should_only = SimpleNamespace(
+            should_run_receive_loop=lambda: (should_run_calls.append("run"), True)[1]
+        )
+        start_only = SimpleNamespace(
+            start_receive_thread=lambda *, name, reset_recovery: start_calls.append(
+                (name, reset_recovery)
+            )
+        )
+
+        iface._get_lifecycle_controller = lambda: set_only
+        BLELifecycleService._set_receive_wanted(iface, want_receive=True)
+
+        iface._get_lifecycle_controller = lambda: should_only
+        assert BLELifecycleService._should_run_receive_loop(iface) is True
+
+        iface._get_lifecycle_controller = lambda: start_only
+        BLELifecycleService._start_receive_thread(
+            iface,
+            name="ScopedStart",
+            reset_recovery=False,
+        )
+
+        assert wanted_calls == [True]
+        assert should_run_calls == ["run"]
+        assert start_calls == [("ScopedStart", False)]
+    finally:
+        iface._get_lifecycle_controller = original_get_lifecycle_controller
+        iface.close()
+
+
 def test_lifecycle_disconnect_planning_and_side_effect_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -300,6 +344,22 @@ def test_lifecycle_disconnect_planning_and_side_effect_paths(
     assert BLELifecycleService._resolve_disconnect_target(
         iface, "src", None, None
     ).early_return
+
+    owned_connecting_client = DummyClient()
+    with iface._state_lock:
+        iface.client = owned_connecting_client
+        iface._disconnect_notified = False
+        iface._client_publish_pending = False
+        iface._client_replacement_pending = True
+        iface._state_manager._reset_to_disconnected()
+        iface._state_manager._transition_to(ConnectionState.CONNECTING)
+    owned_connecting_plan = BLELifecycleService._resolve_disconnect_target(
+        iface,
+        "src",
+        owned_connecting_client,
+        None,
+    )
+    assert owned_connecting_plan.early_return is None
 
     with iface._state_lock:
         iface._state_manager._reset_to_disconnected()
@@ -679,7 +739,10 @@ def test_lifecycle_controller_keeps_injected_status_getter_when_snapshot_missing
             restore_last_connection_request=None,
             get_connected_client_status_locked=status_getter,
         )
-        assert captured_calls == [(None, status_getter)]
+        assert len(captured_calls) == 1
+        verify_snapshot, status_locked = captured_calls[0]
+        assert callable(verify_snapshot)
+        assert status_locked is status_getter
     finally:
         iface.close()
 
@@ -745,8 +808,13 @@ def test_lifecycle_shutdown_and_finalize_close_paths(
             iface._disconnect_notified = False
         assert BLELifecycleService._consume_disconnect_notification_state(iface) is True
 
+        unsubscribe_calls: list[str] = []
+        cleanup_calls: list[str] = []
         iface._notification_manager = SimpleNamespace(
-            unsubscribe_all=lambda *_args, **_kwargs: None
+            unsubscribe_all=lambda *_args, **_kwargs: unsubscribe_calls.append(
+                "unsubscribe"
+            ),
+            cleanup_all=lambda: cleanup_calls.append("cleanup"),
         )
         monkeypatch.setattr(
             BLELifecycleService,
@@ -763,6 +831,8 @@ def test_lifecycle_shutdown_and_finalize_close_paths(
         iface._wait_for_disconnect_notifications = lambda: None
         iface._disconnected = lambda: None
         BLELifecycleService._shutdown_client(iface, management_wait_timed_out=False)
+        assert unsubscribe_calls == ["unsubscribe"]
+        assert cleanup_calls == ["cleanup"]
 
         with iface._state_lock:
             iface._connection_alias_key = "alias"
@@ -948,6 +1018,62 @@ def test_receive_controller_close_without_usable_hook_skips_iface_close(
         assert close_calls == []
     finally:
         iface._get_lifecycle_controller = original_get_lifecycle_controller
+        original_close()
+
+
+def test_receive_controller_propagates_disconnect_hook_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Disconnect hook failures should be logged and re-raised."""
+    iface = _make_iface(monkeypatch)
+    original_close = iface.close
+    try:
+        controller = iface._get_receive_recovery_controller()
+
+        def _raising_override(*_args: object, **_kwargs: object) -> bool:
+            raise RuntimeError("disconnect boom")
+
+        monkeypatch.setattr(
+            controller,
+            "_resolve_iface_receive_hook_override",
+            lambda method_name: (
+                _raising_override if method_name == "_handle_disconnect" else None
+            ),
+            raising=True,
+        )
+
+        with pytest.raises(RuntimeError, match="disconnect boom"):
+            controller._handle_disconnect("reason", client=None)
+    finally:
+        original_close()
+
+
+def test_receive_controller_propagates_read_loop_disconnect_override_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Read-loop disconnect override failures should be logged and re-raised."""
+    iface = _make_iface(monkeypatch)
+    original_close = iface.close
+    try:
+        controller = iface._get_receive_recovery_controller()
+
+        def _raising_override(*_args: object, **_kwargs: object) -> bool:
+            raise RuntimeError("read-loop boom")
+
+        monkeypatch.setattr(
+            controller,
+            "_resolve_iface_receive_hook_override",
+            lambda method_name: (
+                _raising_override
+                if method_name == "_handle_read_loop_disconnect"
+                else None
+            ),
+            raising=True,
+        )
+
+        with pytest.raises(RuntimeError, match="read-loop boom"):
+            controller.handle_read_loop_disconnect("reason", DummyClient())
+    finally:
         original_close()
 
 

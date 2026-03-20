@@ -61,10 +61,15 @@ class BLEReceiveLifecycleCoordinator:
                         break
                     if time.monotonic() >= wait_deadline:
                         logger.debug(
-                            "Deferred receive restart (%s) timed out waiting for current thread unwind; retrying start probe.",
+                            "Deferred receive restart (%s) still waiting for current thread unwind.",
                             name,
                         )
-                        break
+                        wait_deadline = (
+                            time.monotonic()
+                            + RECEIVE_START_PENDING_TIMEOUT_SECONDS
+                        )
+                        time.sleep(0.01)
+                        continue
                     time.sleep(0.01)
                 self.start_receive_thread(name=name, reset_recovery=reset_recovery)
             except Exception:  # noqa: BLE001 - deferred restart remains best effort

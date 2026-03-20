@@ -468,12 +468,12 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 or post_commit_snapshot.lost_gate_ownership
             ):
                 raise_invalidated(post_commit_snapshot)
-            iface._connected()
-            publish_completed = True
             with iface._state_lock:
                 iface._ever_connected = True
                 iface._prior_publish_was_reconnect = prior_ever_connected
                 published_session_epoch = getattr(iface, "_connection_session_epoch", 0)
+            iface._connected()
+            publish_completed = True
             self._emit_verified_connection_side_effects(connected_client)
         finally:
             with iface._state_lock:

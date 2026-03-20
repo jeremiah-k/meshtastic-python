@@ -139,9 +139,12 @@ class BLEManagementCommandsService:
                         and not _is_unconfigured_mock_member(resolved)
                         and (
                             BLEManagementCommandsService._is_handler_like(resolved)
-                            or BLEManagementCommandsService._has_required_handler_entrypoint(
-                                resolved,
-                                expected_method,
+                            or (
+                                expected_method is not None
+                                and BLEManagementCommandsService._has_required_handler_entrypoint(
+                                    resolved,
+                                    expected_method,
+                                )
                             )
                         )
                     ):
@@ -152,9 +155,12 @@ class BLEManagementCommandsService:
                 and not _is_unconfigured_mock_member(direct_handler)
                 and (
                     BLEManagementCommandsService._is_handler_like(direct_handler)
-                    or BLEManagementCommandsService._has_required_handler_entrypoint(
-                        direct_handler,
-                        expected_method,
+                    or (
+                        expected_method is not None
+                        and BLEManagementCommandsService._has_required_handler_entrypoint(
+                            direct_handler,
+                            expected_method,
+                        )
                     )
                 )
             ):

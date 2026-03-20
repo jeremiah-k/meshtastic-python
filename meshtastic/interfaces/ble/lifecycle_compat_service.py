@@ -71,8 +71,19 @@ class BLELifecycleService:
         return True
 
     @staticmethod
+    def _has_receive_lifecycle_entrypoint(
+        candidate: object,
+        expected_method: str,
+    ) -> bool:
+        """Return whether candidate exposes a specific receive-lifecycle method."""
+        method = getattr(candidate, expected_method, None)
+        return callable(method) and not _is_unconfigured_mock_callable(method)
+
+    @staticmethod
     def _receive_lifecycle_coordinator(
         iface: "BLEInterface",
+        *,
+        expected_method: str | None = None,
     ) -> BLEReceiveLifecycleCoordinator:
         """Return cached receive-lifecycle coordinator when collaborator cache exists.
 
@@ -80,6 +91,9 @@ class BLELifecycleService:
         ----------
         iface : BLEInterface
             Interface providing optional collaborator-cache helpers.
+        expected_method : str | None
+            Optional receive-lifecycle entrypoint required by the caller.
+            When provided, collaborators exposing only this method are accepted.
 
         Returns
         -------
@@ -91,6 +105,17 @@ class BLELifecycleService:
         Falls back to direct instantiation when collaborator caching is
         unavailable on partial test doubles.
         """
+
+        def _matches_receive_candidate(candidate: object) -> bool:
+            if BLELifecycleService._is_receive_lifecycle_coordinator_like(candidate):
+                return True
+            return (
+                expected_method is not None
+                and BLELifecycleService._has_receive_lifecycle_entrypoint(
+                    candidate,
+                    expected_method,
+                )
+            )
 
         get_lifecycle_controller = getattr(iface, "_get_lifecycle_controller", None)
         if callable(get_lifecycle_controller) and not _is_unconfigured_mock_callable(
@@ -109,14 +134,10 @@ class BLELifecycleService:
                     if (
                         receive_coordinator is not None
                         and not _is_unconfigured_mock_member(receive_coordinator)
-                        and BLELifecycleService._is_receive_lifecycle_coordinator_like(
-                            receive_coordinator
-                        )
+                        and _matches_receive_candidate(receive_coordinator)
                     ):
                         return cast(BLEReceiveLifecycleCoordinator, receive_coordinator)
-                if BLELifecycleService._is_receive_lifecycle_coordinator_like(
-                    lifecycle_controller
-                ):
+                if _matches_receive_candidate(lifecycle_controller):
                     return cast(BLEReceiveLifecycleCoordinator, lifecycle_controller)
 
         get_or_create = getattr(iface, "_get_or_create_collaborator", None)
@@ -139,9 +160,7 @@ class BLELifecycleService:
                 if (
                     coordinator is not None
                     and not _is_unconfigured_mock_member(coordinator)
-                    and BLELifecycleService._is_receive_lifecycle_coordinator_like(
-                        coordinator
-                    )
+                    and _matches_receive_candidate(coordinator)
                 ):
                     return cast(BLEReceiveLifecycleCoordinator, coordinator)
         return BLEReceiveLifecycleCoordinator(iface)
@@ -241,7 +260,10 @@ class BLELifecycleService:
         None
             Always returns ``None``.
         """
-        BLELifecycleService._receive_lifecycle_coordinator(iface).set_receive_wanted(
+        BLELifecycleService._receive_lifecycle_coordinator(
+            iface,
+            expected_method="set_receive_wanted",
+        ).set_receive_wanted(
             want_receive=want_receive
         )
 
@@ -260,7 +282,8 @@ class BLELifecycleService:
             ``True`` when receive is requested and shutdown has not started.
         """
         return BLELifecycleService._receive_lifecycle_coordinator(
-            iface
+            iface,
+            expected_method="should_run_receive_loop",
         ).should_run_receive_loop()
 
     @staticmethod
@@ -432,7 +455,10 @@ class BLELifecycleService:
         Exception
             Propagates thread-start failures after clearing stale thread state.
         """
-        coordinator = BLELifecycleService._receive_lifecycle_coordinator(iface)
+        coordinator = BLELifecycleService._receive_lifecycle_coordinator(
+            iface,
+            expected_method="start_receive_thread",
+        )
         start_receive_thread = coordinator.start_receive_thread
         supports_injected_hooks = False
         try:
@@ -1072,13 +1098,11 @@ class BLELifecycleService:
             connected_elsewhere
         ):
             connected_elsewhere = _is_currently_connected_elsewhere
-        connected_elsewhere_fn = cast(
-            Callable[[str | None, object | None], bool],
-            connected_elsewhere,
-        )
+        connected_elsewhere_fn = cast(Callable[..., bool], connected_elsewhere)
 
         return any(
-            key is not None and connected_elsewhere_fn(key, iface) for key in keys
+            key is not None and connected_elsewhere_fn(key, owner=iface)
+            for key in keys
         )
 
     @staticmethod

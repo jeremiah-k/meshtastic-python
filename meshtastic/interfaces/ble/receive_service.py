@@ -312,22 +312,36 @@ class BLEReceiveRecoveryController:
             "_handle_disconnect"
         )
         if callable(override_handle_disconnect):
-            return self._call_bool_hook(
-                override_handle_disconnect,
-                disconnect_reason,
-                client=client,
-            )
+            try:
+                result = override_handle_disconnect(
+                    disconnect_reason,
+                    client=client,
+                )
+            except Exception:  # noqa: BLE001 - disconnect hook must surface failures
+                logger.warning(
+                    "Disconnect handler override raised",
+                    exc_info=True,
+                )
+                raise
+            return result if isinstance(result, bool) else False
         lifecycle_controller = self._get_lifecycle_controller()
         if lifecycle_controller is not None:
             handle_disconnect = getattr(lifecycle_controller, "handle_disconnect", None)
             handle_disconnect_fn = self._as_usable_callable(handle_disconnect)
             if handle_disconnect_fn is None:
                 return False
-            return self._call_bool_hook(
-                handle_disconnect_fn,
-                disconnect_reason,
-                client=client,
-            )
+            try:
+                result = handle_disconnect_fn(
+                    disconnect_reason,
+                    client=client,
+                )
+            except Exception:  # noqa: BLE001 - disconnect hook must surface failures
+                logger.warning(
+                    "Lifecycle disconnect handler raised",
+                    exc_info=True,
+                )
+                raise
+            return result if isinstance(result, bool) else False
         return False
 
     def _start_receive_thread(self, *, name: str, reset_recovery: bool) -> None:
@@ -447,11 +461,18 @@ class BLEReceiveRecoveryController:
             self._resolve_iface_receive_hook_override("_handle_read_loop_disconnect")
         )
         if callable(override_handle_read_loop_disconnect):
-            return self._call_bool_hook(
-                override_handle_read_loop_disconnect,
-                error_message,
-                previous_client,
-            )
+            try:
+                result = override_handle_read_loop_disconnect(
+                    error_message,
+                    previous_client,
+                )
+            except Exception:  # noqa: BLE001 - disconnect hook must surface failures
+                logger.warning(
+                    "Read-loop disconnect override raised",
+                    exc_info=True,
+                )
+                raise
+            return result if isinstance(result, bool) else False
         logger.debug("Device disconnected: %s", error_message)
         should_continue = self._handle_disconnect(
             f"read_loop: {error_message}",

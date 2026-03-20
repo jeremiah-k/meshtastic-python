@@ -20,11 +20,13 @@ from meshtastic.interfaces.ble.compatibility_service import (
 )
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator, _InertThread
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
+from meshtastic.interfaces.ble.management_runtime import (
+    _create_management_client,
+    _is_blank_or_malformed_address_like,
+)
 from meshtastic.interfaces.ble.management_service import (
     BLEManagementCommandHandler,
     BLEManagementCommandsService,
-    _create_management_client,
-    _is_blank_or_malformed_address_like,
 )
 from meshtastic.interfaces.ble.reconnection import (
     ReconnectPolicyMissingMethodError,
@@ -502,7 +504,7 @@ def test_management_helpers_cover_factory_and_target_edge_paths(
 def test_management_shim_handler_resolution_preserves_minimal_iface_double(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Shim handler resolution should keep usable iface doubles and reject unconfigured mocks."""
+    """Shim handler resolution should require full handlers for generic resolver paths."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     try:
         minimal_handler = SimpleNamespace(
@@ -510,7 +512,7 @@ def test_management_shim_handler_resolution_preserves_minimal_iface_double(
         )
         iface._get_management_command_handler = lambda: minimal_handler
         resolved = BLEManagementCommandsService._handler_for_shim(iface)
-        assert resolved is minimal_handler
+        assert isinstance(resolved, BLEManagementCommandHandler)
         assert BLEManagementCommandsService._has_required_handler_entrypoint(
             minimal_handler
         )
@@ -524,6 +526,49 @@ def test_management_shim_handler_resolution_preserves_minimal_iface_double(
             BLEManagementCommandsService._has_required_handler_entrypoint(object())
             is False
         )
+    finally:
+        iface.close()
+
+
+def test_management_handler_call_iface_override_uses_instance_overrides_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_call_iface_override should ignore class wrappers unless instance-overridden."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    try:
+        handler = BLEManagementCommandHandler(
+            iface,
+            ble_client_factory=DummyClient,
+            connected_elsewhere=lambda *_args, **_kwargs: False,
+        )
+        fallback_calls: list[str] = []
+
+        def _fallback(address: str | None) -> str:
+            fallback_calls.append("fallback")
+            return f"fallback:{address}"
+
+        assert (
+            handler._call_iface_override(
+                "_resolve_target_address_for_management",
+                _fallback,
+                "mesh-node",
+            )
+            == "fallback:mesh-node"
+        )
+        assert fallback_calls == ["fallback"]
+
+        iface._resolve_target_address_for_management = (
+            lambda address: f"override:{address}"
+        )
+        assert (
+            handler._call_iface_override(
+                "_resolve_target_address_for_management",
+                _fallback,
+                "mesh-node",
+            )
+            == "override:mesh-node"
+        )
+        assert fallback_calls == ["fallback"]
     finally:
         iface.close()
 

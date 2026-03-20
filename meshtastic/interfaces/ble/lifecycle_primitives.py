@@ -345,7 +345,8 @@ class _LifecycleThreadAccess:
                         thread,
                         exc_info=True,
                     )
-                return
+                else:
+                    return
             legacy_join_thread = getattr(coordinator, "_join_thread", None)
             if callable(legacy_join_thread) and not _is_unconfigured_mock_callable(
                 legacy_join_thread
@@ -358,7 +359,8 @@ class _LifecycleThreadAccess:
                         thread,
                         exc_info=True,
                     )
-                return
+                else:
+                    return
         thread_join = getattr(thread, "join", None)
         if callable(thread_join) and not _is_unconfigured_mock_callable(thread_join):
             try:

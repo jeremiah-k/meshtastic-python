@@ -195,7 +195,12 @@ class BLEManagementCommandHandler:
         **kwargs: object,
     ) -> T:
         """Call instance-level iface override when present, else fallback."""
-        override = getattr(self._iface, method_name, None)
+        instance_dict = getattr(self._iface, "__dict__", {})
+        override = (
+            instance_dict.get(method_name)
+            if isinstance(instance_dict, dict)
+            else None
+        )
         if callable(override) and not _is_unconfigured_mock_callable(override):
             return cast(T, override(*args, **kwargs))
         return fallback(*args, **kwargs)
@@ -311,14 +316,14 @@ class BLEManagementCommandHandler:
         if client is None:
             return False
         callable_probe_seen = False
-        for attr_name in ("isConnected", "is_connected"):
+        for attr_name in ("isConnected", "is_connected", "_is_connected"):
             is_connected = getattr(client, attr_name, None)
             if callable(is_connected) and not _is_unconfigured_mock_callable(
                 is_connected
             ):
                 callable_probe_seen = True
                 try:
-                    return bool(is_connected())
+                    connected_result = is_connected()
                 except (
                     Exception
                 ):  # noqa: BLE001 - connectivity probe must remain best effort
@@ -327,27 +332,14 @@ class BLEManagementCommandHandler:
                         attr_name,
                         exc_info=True,
                     )
-                    return False
+                    continue
+                if isinstance(connected_result, bool):
+                    return connected_result
+                continue
             if isinstance(is_connected, bool):
                 return is_connected
         if callable_probe_seen:
             return False
-        legacy_is_connected = getattr(client, "_is_connected", None)
-        if callable(legacy_is_connected) and not _is_unconfigured_mock_callable(
-            legacy_is_connected
-        ):
-            try:
-                return bool(legacy_is_connected())
-            except (
-                Exception
-            ):  # noqa: BLE001 - connectivity probe must remain best effort
-                logger.debug(
-                    "Error probing BLE client connectivity via _is_connected",
-                    exc_info=True,
-                )
-                return False
-        if isinstance(legacy_is_connected, bool):
-            return legacy_is_connected
         return False
 
     def get_current_implicit_management_binding_locked(self) -> str | None:
@@ -796,6 +788,10 @@ class BLEManagementCommandHandler:
         kwargs: dict[str, object],
     ) -> None:
         """Pair with BLE device using active or temporary client."""
+        if "await_timeout" in kwargs:
+            raise self._iface.BLEError(
+                "pair kwargs must not include 'await_timeout'; pass await_timeout via the explicit pair() argument."
+            )
         validated_timeout = self.validate_management_await_timeout(await_timeout)
         self.execute_management_command(
             address,
@@ -967,7 +963,7 @@ class BLEManagementCommandHandler:
                 self.run_bluetoothctl_trust_command(
                     bluetoothctl_path,
                     canonical_address,
-                    timeout=validated_timeout,
+                    validated_timeout,
                     subprocess_module=subprocess_module,
                     trust_hex_blob_re=trust_hex_blob_re,
                     trust_token_re=trust_token_re,

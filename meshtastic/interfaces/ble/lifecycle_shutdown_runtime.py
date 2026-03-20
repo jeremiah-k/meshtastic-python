@@ -352,9 +352,15 @@ class BLEShutdownLifecycleCoordinator:
         def _resolve_notification_cleanup(
             method_name: str,
         ) -> Callable[..., object] | None:
-            method = getattr(notification_manager, method_name, None)
-            if callable(method) and not _is_unconfigured_mock_callable(method):
-                return cast(Callable[..., object], method)
+            candidate_names = [method_name]
+            if method_name == "_unsubscribe_all":
+                candidate_names.append("unsubscribe_all")
+            elif method_name == "_cleanup_all":
+                candidate_names.append("cleanup_all")
+            for candidate_name in candidate_names:
+                method = getattr(notification_manager, candidate_name, None)
+                if callable(method) and not _is_unconfigured_mock_callable(method):
+                    return cast(Callable[..., object], method)
             return None
 
         if client is not None:
