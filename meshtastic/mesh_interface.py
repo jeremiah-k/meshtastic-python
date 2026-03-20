@@ -128,6 +128,8 @@ LOCAL_CONFIG_FROM_RADIO_FIELDS: tuple[str, ...] = (
     "lora",
     "bluetooth",
     "security",
+    "sessionkey",
+    "device_ui",
 )
 MODULE_CONFIG_FROM_RADIO_FIELDS: tuple[str, ...] = (
     "mqtt",
@@ -143,6 +145,7 @@ MODULE_CONFIG_FROM_RADIO_FIELDS: tuple[str, ...] = (
     "detection_sensor",
     "ambient_lighting",
     "paxcounter",
+    "statusmessage",
     "traffic_management",
 )
 
@@ -716,26 +719,27 @@ class _QueueSendRuntime:
         resent_queue: collections.OrderedDict[int, mesh_pb2.ToRadio | bool] = (
             collections.OrderedDict()
         )
-        while True:
-            to_resend = pop_for_send()
-            if to_resend is None:
-                with self._lock:
-                    queue_has_items = bool(self._get_queue())
-                if not queue_has_items:
-                    break
-                logger.debug("Waiting for free space in TX Queue")
-                sleep_fn(self._queue_wait_delay_seconds)
-                continue
+        try:
+            while True:
+                to_resend = pop_for_send()
+                if to_resend is None:
+                    with self._lock:
+                        queue_has_items = bool(self._get_queue())
+                    if not queue_has_items:
+                        break
+                    logger.debug("Waiting for free space in TX Queue")
+                    sleep_fn(self._queue_wait_delay_seconds)
+                    continue
 
-            packet_id, packet = to_resend
-            resent_queue[packet_id] = packet
-            if not isinstance(packet, mesh_pb2.ToRadio):
-                continue
-            if packet != to_radio:
-                logger.debug("Resending packet ID %08x %s", packet_id, packet)
-            send_impl(packet)
-
-        self.reconcile_resent_queue(resent_queue=resent_queue)
+                packet_id, packet = to_resend
+                resent_queue[packet_id] = packet
+                if not isinstance(packet, mesh_pb2.ToRadio):
+                    continue
+                if packet != to_radio:
+                    logger.debug("Resending packet ID %08x %s", packet_id, packet)
+                send_impl(packet)
+        finally:
+            self.reconcile_resent_queue(resent_queue=resent_queue)
 
     def reconcile_resent_queue(
         self,
@@ -743,12 +747,11 @@ class _QueueSendRuntime:
         resent_queue: collections.OrderedDict[int, mesh_pb2.ToRadio | bool],
     ) -> None:
         """Reconcile resent packets against ACK-under-us and requeue semantics."""
+        missing = object()
         for packet_id, packet in resent_queue.items():
             with self._lock:
-                # Returns False if packetId is absent (default) or if a
-                # False marker was stored for an earlier unexpected ACK.
-                # Both cases indicate "already ACKed" for resend purposes.
-                acked = self._get_queue().pop(packet_id, False) is False
+                queued_value = self._get_queue().pop(packet_id, missing)
+                acked = queued_value is False
             if acked:  # Packet got acked under us
                 logger.debug("packet %08x got acked under us", packet_id)
                 continue
@@ -3713,9 +3716,10 @@ class MeshInterface:  # pylint: disable=R0902
             # never observe partially-updated node mappings.
             if "user" in node and "id" in node["user"] and self.nodes is not None:
                 self.nodes[node["user"]["id"]] = node
+            published_node = copy.deepcopy(node)
 
         return [
-            self._publication_intent("meshtastic.node.updated", node=node),
+            self._publication_intent("meshtastic.node.updated", node=published_node),
         ]
 
     def _handle_from_radio_config_complete_id(
@@ -3809,31 +3813,32 @@ class MeshInterface:  # pylint: disable=R0902
     def _apply_config_from_radio(self, from_radio: mesh_pb2.FromRadio) -> None:
         """Copy the active config/moduleConfig submessage into local cached config."""
         with self._node_db_lock:
-            if self._apply_local_config_from_radio(from_radio.config):
-                return
+            self._apply_local_config_from_radio(from_radio.config)
             self._apply_module_config_from_radio(from_radio.moduleConfig)
 
     def _apply_local_config_from_radio(self, config: config_pb2.Config) -> bool:
-        """Apply one localConfig field from inbound config payload."""
+        """Apply all present localConfig fields from inbound config payload."""
+        applied = False
         for field_name in LOCAL_CONFIG_FROM_RADIO_FIELDS:
             if config.HasField(field_name):  # type: ignore[arg-type]  # field_name is from known-valid LOCAL_CONFIG_FROM_RADIO_FIELDS
                 getattr(self.localNode.localConfig, field_name).CopyFrom(
                     getattr(config, field_name)
                 )
-                return True
-        return False
+                applied = True
+        return applied
 
     def _apply_module_config_from_radio(
         self, module_config: module_config_pb2.ModuleConfig
     ) -> bool:
-        """Apply one moduleConfig field from inbound moduleConfig payload."""
+        """Apply all present moduleConfig fields from inbound moduleConfig payload."""
+        applied = False
         for field_name in MODULE_CONFIG_FROM_RADIO_FIELDS:
             if module_config.HasField(field_name):  # type: ignore[arg-type]  # field_name is from known-valid MODULE_CONFIG_FROM_RADIO_FIELDS
                 getattr(self.localNode.moduleConfig, field_name).CopyFrom(
                     getattr(module_config, field_name)
                 )
-                return True
-        return False
+                applied = True
+        return applied
 
     def _publication_intent(self, topic: str, **payload: Any) -> _PublicationIntent:
         """Create a publication intent for deferred emission."""

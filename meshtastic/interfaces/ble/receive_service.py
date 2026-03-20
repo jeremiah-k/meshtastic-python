@@ -615,8 +615,22 @@ class BLEReceiveRecoveryController:
             Callable[["ThreadCoordinator", str, float | None], bool] | None
         ),
     ) -> Callable[["ThreadCoordinator", str, float | None], bool]:
-        """Resolve injected wait-for-event callable or fallback to coordinator wrapper."""
-        if wait_for_event is not None:
+        """Resolve injected wait function or use coordinator fallback.
+
+        Parameters
+        ----------
+        wait_for_event : Callable[[ThreadCoordinator, str, float | None], bool] | None
+            Optional runtime-injected wait function override.
+
+        Returns
+        -------
+        Callable[[ThreadCoordinator, str, float | None], bool]
+            The injected wait function when provided and configured; otherwise
+            a wrapper that delegates to ``_coordinator_wait_for_event``.
+        """
+        if callable(wait_for_event) and not _is_unconfigured_mock_callable(
+            wait_for_event
+        ):
             return wait_for_event
 
         def _wait_for_runtime_event(
@@ -624,6 +638,7 @@ class BLEReceiveRecoveryController:
             event_name: str,
             timeout: float | None,
         ) -> bool:
+            """Delegate runtime wait checks to the coordinator helper."""
             return self._coordinator_wait_for_event(
                 target_coordinator,
                 event_name,

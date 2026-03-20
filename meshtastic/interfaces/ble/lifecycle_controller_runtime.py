@@ -243,7 +243,7 @@ class BLELifecycleController:
 
         else:
             safe_cleanup = cast(
-                Callable[[Callable[[], object], str], bool], _safe_cleanup_raw
+                Callable[[Callable[[], object], str], None], _safe_cleanup_raw
             )  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
 
         self._connection_ownership._discard_invalidated_connected_client(
