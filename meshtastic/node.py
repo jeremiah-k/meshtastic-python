@@ -341,7 +341,9 @@ class _SetUrlReplacePlanner:
                 )
 
         replace_original_lora_config: config_pb2.Config.LoRaConfig | None = None
-        if self._parsed_input.has_lora_update and self._node.localConfig.HasField("lora"):
+        if self._parsed_input.has_lora_update and self._node.localConfig.HasField(
+            "lora"
+        ):
             replace_original_lora_config = config_pb2.Config.LoRaConfig()
             replace_original_lora_config.CopyFrom(self._node.localConfig.lora)
 
@@ -519,7 +521,8 @@ class _SetUrlExecutionEngine:
         for staged_channel, channel_name in plan.channels_to_write:
             if (
                 plan.deferred_add_only_admin_channel is not None
-                and staged_channel.index == plan.deferred_add_only_admin_channel[0].index
+                and staged_channel.index
+                == plan.deferred_add_only_admin_channel[0].index
             ):
                 continue
             logger.info("Adding new channel '%s' to device", channel_name)
@@ -692,9 +695,7 @@ class _SetUrlRollbackEngine:
                     rollback_succeeded = True
                     break
                 # Best-effort rollback path; keep attempting remaining steps.
-                except (
-                    Exception
-                ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                     last_rollback_error = rollback_error
             if not rollback_succeeded:
                 rollback_failed = True
@@ -791,7 +792,9 @@ class _SetUrlRollbackEngine:
                 replace_channel_rollback_order.append(index)
 
         for index in replace_channel_rollback_order:
-            replace_rollback_channel = plan.replace_original_channels_by_index.get(index)
+            replace_rollback_channel = plan.replace_original_channels_by_index.get(
+                index
+            )
             if replace_rollback_channel is None:
                 continue
             rollback_succeeded = False
@@ -804,9 +807,7 @@ class _SetUrlRollbackEngine:
                     )
                     rollback_succeeded = True
                     break
-                except (
-                    Exception
-                ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                     replace_last_rollback_error = rollback_error
             if not rollback_succeeded:
                 rollback_failed = True
@@ -827,7 +828,9 @@ class _SetUrlRollbackEngine:
         if state.lora_write_started:
             if plan.replace_original_lora_config is not None:
                 rollback_lora = admin_pb2.AdminMessage()
-                rollback_lora.set_config.lora.CopyFrom(plan.replace_original_lora_config)
+                rollback_lora.set_config.lora.CopyFrom(
+                    plan.replace_original_lora_config
+                )
                 rollback_lora_succeeded = False
                 replace_last_rollback_lora_error: Exception | None = None
                 for rollback_admin_index in rollback_admin_indexes:
@@ -916,7 +919,9 @@ class _SetUrlTransactionCoordinator:
         )
         original_lora_config = planner.capture_original_lora_snapshot()
         # Bootstrap admin session using the snapshotted path before staging.
-        self._node.ensureSessionKey(adminIndex=self._admin_context.admin_index_for_write)
+        self._node.ensureSessionKey(
+            adminIndex=self._admin_context.admin_index_for_write
+        )
         plan = planner.build_plan(original_lora_config=original_lora_config)
         for ignored_name in plan.ignored_channel_names:
             logger.info(
@@ -1314,8 +1319,8 @@ class Node:
                 if not resp:
                     logger.warning("Received empty config response from node.")
                     return
-                field = next(iter(resp.keys()))
-                field_name = camel_to_snake(field)
+                resp_field = next(iter(resp.keys()))
+                field_name = camel_to_snake(resp_field)
                 config_type = self.localConfig.DESCRIPTOR.fields_by_name.get(field_name)
                 if config_type is None:
                     logger.warning(
@@ -1330,8 +1335,8 @@ class Node:
                 if not resp:
                     logger.warning("Received empty module config response from node.")
                     return
-                field = next(iter(resp.keys()))
-                field_name = camel_to_snake(field)
+                resp_field = next(iter(resp.keys()))
+                field_name = camel_to_snake(resp_field)
                 config_type = self.moduleConfig.DESCRIPTOR.fields_by_name.get(
                     field_name
                 )
@@ -1348,11 +1353,9 @@ class Node:
                 )
                 return
             if config_values is not None:
-                raw_config = getattr(
-                    getattr(adminMessage["raw"], oneof), camel_to_snake(field)
-                )
+                raw_config = getattr(getattr(adminMessage["raw"], oneof), field_name)
                 config_values.CopyFrom(raw_config)
-                logger.info("%s:\n%s", camel_to_snake(field), config_values)
+                logger.info("%s:\n%s", field_name, config_values)
 
     def requestConfig(
         self, configType: int | FieldDescriptor, adminIndex: int | None = None
@@ -1394,9 +1397,7 @@ class Node:
                     f"{configType.name.upper()}_CONFIG"
                 )
             else:
-                p.get_module_config_request = (
-                    msg_index  # pyright: ignore[reportAttributeAccessIssue]
-                )
+                p.get_module_config_request = msg_index  # pyright: ignore[reportAttributeAccessIssue]
 
         self._send_admin(
             p, wantResponse=True, onResponse=onResponse, adminIndex=adminIndex

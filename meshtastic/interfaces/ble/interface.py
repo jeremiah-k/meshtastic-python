@@ -2268,17 +2268,14 @@ class BLEInterface(MeshInterface):
             except Exception:  # noqa: BLE001 - rollback snapshot is best effort
                 raw_current_legacy_log_handler = None
             if callable(raw_current_legacy_log_handler):
-                current_legacy_log_handler = cast(
-                    _NotificationCallback,
-                    raw_current_legacy_log_handler,
-                )
+                current_legacy_log_handler = raw_current_legacy_log_handler
             current_log_handler: _NotificationCallback | None = None
             try:
                 raw_current_log_handler = resolved_dispatcher._current_log_handler
             except Exception:  # noqa: BLE001 - rollback snapshot is best effort
                 raw_current_log_handler = None
             if callable(raw_current_log_handler):
-                current_log_handler = cast(_NotificationCallback, raw_current_log_handler)
+                current_log_handler = raw_current_log_handler
             current_from_num_handler: _NotificationCallback | None = None
             try:
                 raw_current_from_num_handler = (
@@ -2287,10 +2284,7 @@ class BLEInterface(MeshInterface):
             except Exception:  # noqa: BLE001 - rollback snapshot is best effort
                 raw_current_from_num_handler = None
             if callable(raw_current_from_num_handler):
-                current_from_num_handler = cast(
-                    _NotificationCallback,
-                    raw_current_from_num_handler,
-                )
+                current_from_num_handler = raw_current_from_num_handler
             notification_manager_active_subscriptions: (
                 dict[int, tuple[str, _NotificationCallback]] | None
             ) = None
@@ -2334,9 +2328,10 @@ class BLEInterface(MeshInterface):
                         characteristic_to_callback_snapshot: dict[
                             str, _NotificationCallback
                         ] = {}
-                        for characteristic, callback in (
-                            characteristic_to_callback.items()
-                        ):
+                        for (
+                            characteristic,
+                            callback,
+                        ) in characteristic_to_callback.items():
                             if isinstance(characteristic, str) and callable(callback):
                                 characteristic_to_callback_snapshot[characteristic] = (
                                     cast(_NotificationCallback, callback)
@@ -2379,10 +2374,13 @@ class BLEInterface(MeshInterface):
                             characteristic_to_callback_snapshot_locked: dict[
                                 str, _NotificationCallback
                             ] = {}
-                            for characteristic, callback in (
-                                characteristic_to_callback.items()
-                            ):
-                                if isinstance(characteristic, str) and callable(callback):
+                            for (
+                                characteristic,
+                                callback,
+                            ) in characteristic_to_callback.items():
+                                if isinstance(characteristic, str) and callable(
+                                    callback
+                                ):
                                     characteristic_to_callback_snapshot_locked[
                                         characteristic
                                     ] = cast(_NotificationCallback, callback)
@@ -2416,17 +2414,13 @@ class BLEInterface(MeshInterface):
                 or _is_unconfigured_mock_member(notification_dispatcher)
             ):
                 return
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher._registered_notification_session_epoch = (
                     notification_session_snapshot[
                         "_registered_notification_session_epoch"
                     ]
                 )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 started_notify_snapshot = _copy_started_notify_snapshot(
                     notification_session_snapshot["_started_notify_characteristics"]
                 )
@@ -2434,39 +2428,27 @@ class BLEInterface(MeshInterface):
                     notification_dispatcher._started_notify_characteristics = (
                         started_notify_snapshot
                     )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher.fromnum_notify_enabled = (
                     notification_session_snapshot["fromnum_notify_enabled"]
                 )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher.malformed_notification_count = (
                     notification_session_snapshot["malformed_notification_count"]
                 )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher._current_legacy_log_handler = (
                     notification_session_snapshot["_current_legacy_log_handler"]
                 )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher._current_log_handler = (
                     notification_session_snapshot["_current_log_handler"]
                 )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher._current_from_num_handler = (
                     notification_session_snapshot["_current_from_num_handler"]
                 )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_manager = notification_dispatcher._notification_manager
                 manager_lock = getattr(notification_manager, "_lock", None)
                 active_subscriptions_snapshot = notification_session_snapshot[

@@ -90,9 +90,7 @@ NODE_NOT_FOUND_DB_UNAVAILABLE_ERROR_TEMPLATE = (
 )
 HEX_NODE_ID_TAIL_CHARS = frozenset("0123456789abcdefABCDEF")
 DECODE_FAILED_PREFIX = "decode-failed: "
-NO_RESPONSE_FIRMWARE_ERROR: str = (
-    "No response from node. At least firmware 2.1.22 is required on the destination node."
-)
+NO_RESPONSE_FIRMWARE_ERROR: str = "No response from node. At least firmware 2.1.22 is required on the destination node."
 JSONValue: TypeAlias = (
     None | bool | int | float | str | list["JSONValue"] | dict[str, "JSONValue"]
 )
@@ -234,13 +232,17 @@ class _RequestWaitRuntime:
                             wait_acks.discard(key)
                     active_wait_request_ids.pop(acknowledgment_attr, None)
                 else:
-                    wait_errors.pop((acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID), None)
+                    wait_errors.pop(
+                        (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID), None
+                    )
                     wait_acks.discard(
                         (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID),
                     )
                 self.prune_retired_wait_request_ids_locked(acknowledgment_attr)
             else:
-                active_ids = active_wait_request_ids.setdefault(acknowledgment_attr, set())
+                active_ids = active_wait_request_ids.setdefault(
+                    acknowledgment_attr, set()
+                )
                 wait_errors.pop((acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID), None)
                 wait_acks.discard((acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID))
                 active_ids.add(request_id)
@@ -283,7 +285,9 @@ class _RequestWaitRuntime:
         with self._lock:
             active_wait_request_ids = self._get_active_wait_request_ids()
             wait_errors = self._get_wait_errors()
-            active_request_ids_for_attr = active_wait_request_ids.get(acknowledgment_attr)
+            active_request_ids_for_attr = active_wait_request_ids.get(
+                acknowledgment_attr
+            )
             has_request_scope = active_request_ids_for_attr is not None
             active_request_ids = active_request_ids_for_attr or set()
             if request_id is not None:
@@ -337,7 +341,9 @@ class _RequestWaitRuntime:
         with self._lock:
             active_wait_request_ids = self._get_active_wait_request_ids()
             wait_acks = self._get_wait_acks()
-            active_request_ids_for_attr = active_wait_request_ids.get(acknowledgment_attr)
+            active_request_ids_for_attr = active_wait_request_ids.get(
+                acknowledgment_attr
+            )
             has_request_scope = active_request_ids_for_attr is not None
             active_request_ids = active_request_ids_for_attr or set()
             if request_id is not None:
@@ -390,11 +396,11 @@ class _RequestWaitRuntime:
             wait_errors = self._get_wait_errors()
             active_wait_request_ids = self._get_active_wait_request_ids()
             resolved_request_id = (
-                request_id
-                if request_id is not None
-                else UNSCOPED_WAIT_REQUEST_ID
+                request_id if request_id is not None else UNSCOPED_WAIT_REQUEST_ID
             )
-            error_message = wait_errors.pop((acknowledgment_attr, resolved_request_id), None)
+            error_message = wait_errors.pop(
+                (acknowledgment_attr, resolved_request_id), None
+            )
             if (
                 error_message is None
                 and request_id is not None
@@ -431,10 +437,16 @@ class _RequestWaitRuntime:
                     retired_request_ids[request_id] = time.monotonic()
                     if not active_request_ids:
                         active_wait_request_ids.pop(acknowledgment_attr, None)
-                        wait_errors.pop((acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID), None)
-                        wait_acks.discard((acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID))
+                        wait_errors.pop(
+                            (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID), None
+                        )
+                        wait_acks.discard(
+                            (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID)
+                        )
                     else:
-                        active_wait_request_ids[acknowledgment_attr] = active_request_ids
+                        active_wait_request_ids[acknowledgment_attr] = (
+                            active_request_ids
+                        )
                 response_handlers.pop(request_id, None)
                 wait_errors.pop((acknowledgment_attr, request_id), None)
                 wait_acks.discard((acknowledgment_attr, request_id))
@@ -554,7 +566,11 @@ class _RequestWaitRuntime:
                 ):
                     response_handlers.pop(request_id, None)
                     dropped_due_to_decode_failure = True
-                elif (not is_ack) or callback_name == "onAckNak" or candidate.ackPermitted:
+                elif (
+                    (not is_ack)
+                    or callback_name == "onAckNak"
+                    or candidate.ackPermitted
+                ):
                     response_handler = response_handlers.pop(request_id, None)
         return response_handler, dropped_due_to_decode_failure
 
@@ -611,9 +627,7 @@ class _QueueSendRuntime:
         self,
         *,
         lock: threading.RLock,
-        get_queue: Callable[
-            [], collections.OrderedDict[int, mesh_pb2.ToRadio | bool]
-        ],
+        get_queue: Callable[[], collections.OrderedDict[int, mesh_pb2.ToRadio | bool]],
         get_queue_status: Callable[[], mesh_pb2.QueueStatus | None],
         set_queue_status: Callable[[mesh_pb2.QueueStatus], None],
         queue_wait_delay_seconds: float,
@@ -747,7 +761,9 @@ class _QueueSendRuntime:
                 queue_status.mesh_packet_id,
             )
 
-    def handle_queue_status_from_radio(self, queue_status: mesh_pb2.QueueStatus) -> None:
+    def handle_queue_status_from_radio(
+        self, queue_status: mesh_pb2.QueueStatus
+    ) -> None:
         """Apply queue status updates and queue reply correlation."""
         self.record_queue_status(queue_status)
         if queue_status.res:
@@ -760,6 +776,7 @@ class _SerializablePayload(Protocol):
 
     def SerializeToString(self) -> bytes:
         """Return serialized payload bytes."""
+        ...  # pylint: disable=unnecessary-ellipsis
 
 
 PayloadData: TypeAlias = bytes | bytearray | memoryview | _SerializablePayload
@@ -974,9 +991,9 @@ class MeshInterface:  # pylint: disable=R0902
         # _handle_packet_from_radio (receive thread). Use this lock to serialize
         # responseHandlers access across those call sites.
         self._response_handlers_lock = threading.RLock()
-        self.responseHandlers: dict[int, ResponseHandler] = (
-            {}
-        )  # A map from request ID to the handler
+        self.responseHandlers: dict[
+            int, ResponseHandler
+        ] = {}  # A map from request ID to the handler
         self._response_wait_errors: dict[tuple[str, int], str] = {}
         self._response_wait_acks: set[tuple[str, int]] = set()
         self._active_wait_request_ids: dict[str, set[int]] = {}
@@ -1868,7 +1885,7 @@ class MeshInterface:  # pylint: disable=R0902
         payload: bytes | bytearray | memoryview
         if callable(serializer):
             logger.debug("Serializing protobuf as data: %s", stripnl(data))
-            payload = serializer()
+            payload = cast(bytes, serializer())
         else:
             payload = cast(bytes | bytearray | memoryview, data)
         if isinstance(payload, memoryview):
@@ -3262,8 +3279,7 @@ class MeshInterface:  # pylint: disable=R0902
                 next_packet_id & PACKET_ID_COUNTER_MASK
             )  # Keep only low 10-bit counter (clear upper 22 bits)
             random_part = (
-                random.randint(0, PACKET_ID_RANDOM_MAX)
-                << PACKET_ID_RANDOM_SHIFT_BITS  # noqa: S311
+                random.randint(0, PACKET_ID_RANDOM_MAX) << PACKET_ID_RANDOM_SHIFT_BITS  # noqa: S311
             ) & PACKET_ID_MASK  # generate number with 10 zeros at end
             self.currentPacketId = next_packet_id | random_part  # combine
             return self.currentPacketId
@@ -3381,9 +3397,7 @@ class MeshInterface:  # pylint: disable=R0902
             self.myInfo = None
             self.nodes = {}  # nodes keyed by ID
             self.nodesByNum = {}  # nodes keyed by nodenum
-            self._localChannels = (
-                []
-            )  # empty until we start getting channels pushed from the device (during config)
+            self._localChannels = []  # empty until we start getting channels pushed from the device (during config)
             config_id = self.configId
             if config_id is None or not self.noNodes:
                 config_id = random.randint(0, PACKET_ID_MASK)
@@ -3562,33 +3576,34 @@ class MeshInterface:  # pylint: disable=R0902
     def _select_from_radio_branch(self, context: _FromRadioContext) -> str | None:
         """Select the active FromRadio branch using the historical precedence order."""
         from_radio = context.message
+        branch: str | None = None
         if from_radio.HasField("my_info"):
-            return "my_info"
-        if from_radio.HasField("metadata"):
-            return "metadata"
-        if from_radio.HasField("node_info"):
-            return "node_info"
-        if from_radio.config_complete_id == context.config_id:
-            return "config_complete_id"
-        if from_radio.HasField("channel"):
-            return "channel"
-        if from_radio.HasField("packet"):
-            return "packet"
-        if from_radio.HasField("log_record"):
-            return "log_record"
-        if from_radio.HasField("queueStatus"):
-            return "queueStatus"
-        if from_radio.HasField("clientNotification"):
-            return "clientNotification"
-        if from_radio.HasField("mqttClientProxyMessage"):
-            return "mqttClientProxyMessage"
-        if from_radio.HasField("xmodemPacket"):
-            return "xmodemPacket"
-        if from_radio.HasField("rebooted") and from_radio.rebooted:
-            return "rebooted"
-        if from_radio.HasField("config") or from_radio.HasField("moduleConfig"):
-            return "config_or_moduleConfig"
-        return None
+            branch = "my_info"
+        elif from_radio.HasField("metadata"):
+            branch = "metadata"
+        elif from_radio.HasField("node_info"):
+            branch = "node_info"
+        elif from_radio.config_complete_id == context.config_id:
+            branch = "config_complete_id"
+        elif from_radio.HasField("channel"):
+            branch = "channel"
+        elif from_radio.HasField("packet"):
+            branch = "packet"
+        elif from_radio.HasField("log_record"):
+            branch = "log_record"
+        elif from_radio.HasField("queueStatus"):
+            branch = "queueStatus"
+        elif from_radio.HasField("clientNotification"):
+            branch = "clientNotification"
+        elif from_radio.HasField("mqttClientProxyMessage"):
+            branch = "mqttClientProxyMessage"
+        elif from_radio.HasField("xmodemPacket"):
+            branch = "xmodemPacket"
+        elif from_radio.HasField("rebooted") and from_radio.rebooted:
+            branch = "rebooted"
+        elif from_radio.HasField("config") or from_radio.HasField("moduleConfig"):
+            branch = "config_or_moduleConfig"
+        return branch
 
     def _from_radio_dispatch_map(
         self,
@@ -3790,11 +3805,11 @@ class MeshInterface:  # pylint: disable=R0902
     def _queue_publication(self, topic: str, **payload: Any) -> None:
         """Queue a pubsub emission for the publishing thread."""
         payload_snapshot = dict(payload)
-        publishingThread.queueWork(
-            lambda topic=topic, payload=payload_snapshot: pub.sendMessage(
-                topic, interface=self, **payload
-            )
-        )
+
+        def publish_work() -> None:
+            pub.sendMessage(topic, interface=self, **payload_snapshot)
+
+        publishingThread.queueWork(publish_work)
 
     def _fixup_position(self, position: dict[str, Any]) -> dict[str, Any]:
         """Convert integer micro-degree coordinates in a position dict to floating-point degrees.
@@ -4072,9 +4087,9 @@ class MeshInterface:  # pylint: disable=R0902
                 DECODE_ERROR_KEY: decode_error
             }
             if handler.name == "routing":
-                packet_context.packet_dict["decoded"][handler.name][
-                    "errorReason"
-                ] = decode_error
+                packet_context.packet_dict["decoded"][handler.name]["errorReason"] = (
+                    decode_error
+                )
             if handler.name == "admin":
                 # Admin callbacks frequently expect decoded.admin.raw.
                 # Avoid dispatching malformed payloads through that path.
