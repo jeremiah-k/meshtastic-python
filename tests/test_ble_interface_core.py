@@ -881,7 +881,9 @@ def test_ble_interface_close_waits_for_temporary_pair_operation(
     def _run_pair() -> None:
         try:
             iface.pair("mesh-node", confirm=True, await_timeout=7.0)
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             pair_errors.append(exc)
 
     close_done = threading.Event()
@@ -889,7 +891,9 @@ def test_ble_interface_close_waits_for_temporary_pair_operation(
     def _run_close() -> None:
         try:
             iface.close()
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             close_errors.append(exc)
         finally:
             close_done.set()
@@ -1856,14 +1860,18 @@ def test_ble_interface_trust_does_not_hold_interface_locks_during_subprocess(
     def _run_trust() -> None:
         try:
             iface.trust(trust_target, timeout=7.0)
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             trust_errors.append(exc)
 
     def _close_iface() -> None:
         try:
             close_started.set()
             iface.close()
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             close_errors.append(exc)
         finally:
             close_done.set()
@@ -1920,13 +1928,17 @@ def test_ble_interface_close_waits_for_explicit_trust_without_active_client(
     def _run_trust() -> None:
         try:
             iface.trust("AA:BB:CC:DD:EE:FF", timeout=7.0)
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             trust_errors.append(exc)
 
     def _run_close() -> None:
         try:
             iface.close()
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             close_errors.append(exc)
         finally:
             close_done.set()
@@ -2234,7 +2246,9 @@ def test_ble_interface_implicit_trust_releases_connect_lock_before_subprocess(
     def _run_trust() -> None:
         try:
             iface.trust(timeout=7.0)
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             trust_errors.append(exc)
 
     trust_thread = threading.Thread(target=_run_trust, daemon=True)
@@ -2270,7 +2284,9 @@ def test_ble_interface_close_serializes_with_management_lock(
         try:
             close_started.set()
             iface.close()
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             close_errors.append(exc)
         finally:
             close_done.set()
@@ -2299,7 +2315,9 @@ def test_ble_interface_close_does_not_wait_for_connect_lock(
     def _close_iface() -> None:
         try:
             iface.close()
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             close_errors.append(exc)
         finally:
             close_done.set()
@@ -3796,9 +3814,9 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(
         connect_thread.join(timeout=12.0)
         disconnect_thread.join(timeout=12.0)
 
-        assert establish_called.is_set(), (
-            "connect() did not run connection establishment"
-        )
+        assert (
+            establish_called.is_set()
+        ), "connect() did not run connection establishment"
         assert not connect_thread.is_alive(), "connect() thread appears deadlocked"
         assert not disconnect_thread.is_alive(), "disconnect thread appears deadlocked"
 
@@ -6778,9 +6796,9 @@ def test_close_clears_ble_threads(monkeypatch: pytest.MonkeyPatch) -> None:
 
         time.sleep(poll_interval)
 
-    assert not lingering, (
-        f"Found lingering BLE threads after {max_wait_time}s: {lingering}"
-    )
+    assert (
+        not lingering
+    ), f"Found lingering BLE threads after {max_wait_time}s: {lingering}"
 
 
 @pytest.mark.parametrize("exc_type", [RuntimeError, OSError])
@@ -6838,9 +6856,9 @@ def test_receive_thread_specific_exceptions(
     iface._receive_from_radio_impl()
 
     assert "Fatal error in BLE receive thread" in caplog.text
-    assert close_called.is_set(), (
-        f"Expected close() to be called for {exc_type.__name__}"
-    )
+    assert (
+        close_called.is_set()
+    ), f"Expected close() to be called for {exc_type.__name__}"
 
     # Clean up
     iface._want_receive = False
@@ -6974,12 +6992,12 @@ def test_log_notification_registration(
     registered_uuids = [call[0] for call in client.start_notify_calls]
 
     # Should have registered both log notifications and the critical FROMNUM notification
-    assert LEGACY_LOGRADIO_UUID in registered_uuids, (
-        "Legacy log notification should be registered"
-    )
-    assert LOGRADIO_UUID in registered_uuids, (
-        "Current log notification should be registered"
-    )
+    assert (
+        LEGACY_LOGRADIO_UUID in registered_uuids
+    ), "Legacy log notification should be registered"
+    assert (
+        LOGRADIO_UUID in registered_uuids
+    ), "Current log notification should be registered"
     assert FROMNUM_UUID in registered_uuids, "FROMNUM notification should be registered"
 
     # Verify handlers are correctly associated
@@ -6993,15 +7011,15 @@ def test_log_notification_registration(
         call for call in client.start_notify_calls if call[0] == FROMNUM_UUID
     )
 
-    assert callable(legacy_call[1]), (
-        "Legacy log notification should register a callable handler"
-    )
-    assert callable(current_call[1]), (
-        "Current log notification should register a callable handler"
-    )
-    assert callable(fromnum_call[1]), (
-        "FROMNUM notification should register a callable handler"
-    )
+    assert callable(
+        legacy_call[1]
+    ), "Legacy log notification should register a callable handler"
+    assert callable(
+        current_call[1]
+    ), "Current log notification should register a callable handler"
+    assert callable(
+        fromnum_call[1]
+    ), "FROMNUM notification should register a callable handler"
 
     iface.close()
 

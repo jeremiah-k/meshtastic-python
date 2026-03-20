@@ -852,7 +852,9 @@ class BLENotificationDispatcher:
             factory=lambda: _safe_from_num_handler,
         )
         if FROMNUM_UUID in self._started_notify_characteristics:
-            current_ingress_handler = self._notification_manager._get_callback(FROMNUM_UUID)
+            current_ingress_handler = self._notification_manager._get_callback(
+                FROMNUM_UUID
+            )
             if current_ingress_handler is not ingress_handler:
                 self._notification_manager._subscribe(FROMNUM_UUID, ingress_handler)
             self.fromnum_notify_enabled = True

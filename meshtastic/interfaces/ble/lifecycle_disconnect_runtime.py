@@ -166,16 +166,13 @@ class BLEDisconnectLifecycleCoordinator:
             was_replacement_pending = iface._client_replacement_pending
 
             if current_state == ConnectionState.CONNECTING:
-                disconnect_from_owned_client = (
-                    current_client is not None
-                    and (
-                        target_client is current_client
-                        or (
-                            target_client is None
-                            and bleak_client is not None
-                            and getattr(current_client, "bleak_client", None)
-                            is bleak_client
-                        )
+                disconnect_from_owned_client = current_client is not None and (
+                    target_client is current_client
+                    or (
+                        target_client is None
+                        and bleak_client is not None
+                        and getattr(current_client, "bleak_client", None)
+                        is bleak_client
                     )
                 )
                 if not disconnect_from_owned_client:

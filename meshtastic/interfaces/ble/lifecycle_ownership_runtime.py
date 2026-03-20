@@ -403,7 +403,10 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     iface._connected_publish_inflight_client = connected_client
                     publish_claimed = True
                     should_publish_connected = True
-                elif iface.client is connected_client and inflight_client is connected_client:
+                elif (
+                    iface.client is connected_client
+                    and inflight_client is connected_client
+                ):
                     duplicate_publish_request = True
         if duplicate_publish_request:
             logger.debug(

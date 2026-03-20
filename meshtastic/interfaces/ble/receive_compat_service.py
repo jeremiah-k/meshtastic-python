@@ -104,7 +104,9 @@ class BLEReceiveRecoveryService:
             )
         )
         if should_invoke_factory:
-            with contextlib.suppress(Exception):  # noqa: BLE001 - factory probe is best effort
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - factory probe is best effort
                 if inspect.isclass(resolved):
                     resolved_factory = cast(Callable[..., Any], resolved)
                     if iface is not None:
@@ -146,7 +148,9 @@ class BLEReceiveRecoveryService:
         if callable(get_controller) and not _is_unconfigured_mock_callable(
             get_controller
         ):
-            with contextlib.suppress(Exception):  # noqa: BLE001 - shim resolution stays best effort
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - shim resolution stays best effort
                 resolved = get_controller()
                 resolved_controller = (
                     BLEReceiveRecoveryService._resolve_controller_candidate(

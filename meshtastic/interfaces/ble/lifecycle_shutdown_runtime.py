@@ -259,9 +259,8 @@ class BLEShutdownLifecycleCoordinator:
             thread_is_alive = post_join_is_alive
         with iface._state_lock:
             probe_confirms_stopped = thread_ident is not None and not thread_is_alive
-            if (
-                iface._receiveThread is receive_thread
-                and (start_failure_confirmed or probe_confirms_stopped)
+            if iface._receiveThread is receive_thread and (
+                start_failure_confirmed or probe_confirms_stopped
             ):
                 iface._receiveThread = None
                 iface._receive_start_pending = False

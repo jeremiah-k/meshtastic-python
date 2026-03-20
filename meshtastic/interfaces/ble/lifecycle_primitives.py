@@ -364,7 +364,9 @@ class _LifecycleThreadAccess:
             logger.debug("Thread coordinator is missing join_thread/_join_thread")
         else:
             join_thread = getattr(coordinator, "join_thread", None)
-            if callable(join_thread) and not _is_unconfigured_mock_callable(join_thread):
+            if callable(join_thread) and not _is_unconfigured_mock_callable(
+                join_thread
+            ):
                 try:
                     join_thread(thread, timeout=timeout)
                 except Exception:  # noqa: BLE001 - non-critical join stays best effort

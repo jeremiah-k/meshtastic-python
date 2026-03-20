@@ -213,9 +213,7 @@ class BLEManagementCommandHandler:
         """Call instance-level iface override when present, else fallback."""
         instance_dict = getattr(self._iface, "__dict__", {})
         override = (
-            instance_dict.get(method_name)
-            if isinstance(instance_dict, dict)
-            else None
+            instance_dict.get(method_name) if isinstance(instance_dict, dict) else None
         )
         if callable(override) and not _is_unconfigured_mock_callable(override):
             return cast(T, override(*args, **kwargs))

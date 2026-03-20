@@ -858,8 +858,7 @@ class BLEInterface(MeshInterface):
             awaitable,
             timeout,
             label,
-            timeout_error_factory=lambda timeout_label,
-            timeout_seconds: BLEInterface.BLEError(
+            timeout_error_factory=lambda timeout_label, timeout_seconds: BLEInterface.BLEError(
                 ERROR_TIMEOUT.format(timeout_label, timeout_seconds)
             ),
         )
@@ -1133,14 +1132,18 @@ class BLEInterface(MeshInterface):
 
         Caller must hold ``_state_lock``.
         """
-        return self._get_management_command_handler().get_current_implicit_management_binding_locked()
+        return (
+            self._get_management_command_handler().get_current_implicit_management_binding_locked()
+        )
 
     def _get_current_implicit_management_address_locked(self) -> str | None:
         """Return implicit management concrete address via collaborator.
 
         Caller must hold ``_state_lock``.
         """
-        return self._get_management_command_handler().get_current_implicit_management_address_locked()
+        return (
+            self._get_management_command_handler().get_current_implicit_management_address_locked()
+        )
 
     def _revalidate_implicit_management_target(
         self,
@@ -2166,36 +2169,29 @@ class BLEInterface(MeshInterface):
             resolved_dispatcher = self._get_notification_dispatcher()
         except Exception:  # noqa: BLE001 - rollback snapshot is best effort
             resolved_dispatcher = None
-        if (
-            resolved_dispatcher is not None
-            and not _is_unconfigured_mock_member(resolved_dispatcher)
+        if resolved_dispatcher is not None and not _is_unconfigured_mock_member(
+            resolved_dispatcher
         ):
             notification_dispatcher = resolved_dispatcher
             try:
-                registered_epoch = getattr(
-                    resolved_dispatcher,
-                    "_registered_notification_session_epoch",
+                registered_epoch = (
+                    resolved_dispatcher._registered_notification_session_epoch
                 )
             except Exception:  # noqa: BLE001 - rollback snapshot is best effort
                 registered_epoch = getattr(self, "_connection_session_epoch", 0)
             try:
-                started_notify_characteristics = getattr(
-                    resolved_dispatcher,
-                    "_started_notify_characteristics",
+                started_notify_characteristics = (
+                    resolved_dispatcher._started_notify_characteristics
                 )
             except Exception:  # noqa: BLE001 - rollback snapshot is best effort
                 started_notify_characteristics = None
             try:
-                fromnum_notify_enabled = getattr(
-                    resolved_dispatcher,
-                    "fromnum_notify_enabled",
-                )
+                fromnum_notify_enabled = resolved_dispatcher.fromnum_notify_enabled
             except Exception:  # noqa: BLE001 - rollback snapshot is best effort
                 fromnum_notify_enabled = False
             try:
-                malformed_notification_count = getattr(
-                    resolved_dispatcher,
-                    "malformed_notification_count",
+                malformed_notification_count = (
+                    resolved_dispatcher.malformed_notification_count
                 )
             except Exception:  # noqa: BLE001 - rollback snapshot is best effort
                 malformed_notification_count = 0
@@ -2218,21 +2214,29 @@ class BLEInterface(MeshInterface):
                 or _is_unconfigured_mock_member(notification_dispatcher)
             ):
                 return
-            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher._registered_notification_session_epoch = (
                     notification_session_snapshot[
                         "_registered_notification_session_epoch"
                     ]
                 )
-            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher._started_notify_characteristics = (
                     notification_session_snapshot["_started_notify_characteristics"]
                 )
-            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher.fromnum_notify_enabled = (
                     notification_session_snapshot["fromnum_notify_enabled"]
                 )
-            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(
+                Exception
+            ):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher.malformed_notification_count = (
                     notification_session_snapshot["malformed_notification_count"]
                 )
@@ -2924,7 +2928,9 @@ class BLEInterface(MeshInterface):
     def close(self) -> None:
         """Shut down the BLE interface and release associated resources."""
         lifecycle_controller = self._get_lifecycle_controller()
-        close = getattr(lifecycle_controller, "_close", getattr(lifecycle_controller, "close", None))
+        close = getattr(
+            lifecycle_controller, "_close", getattr(lifecycle_controller, "close", None)
+        )
         if callable(close):
             close(
                 management_shutdown_wait_timeout=_MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS,

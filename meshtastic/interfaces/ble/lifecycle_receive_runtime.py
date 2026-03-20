@@ -57,10 +57,7 @@ class BLEReceiveLifecycleCoordinator:
                         if iface._closed or not iface._want_receive:
                             return
                         current = iface._receiveThread
-                    if (
-                        enforce_pending_timeout
-                        and time.monotonic() < wait_deadline
-                    ):
+                    if enforce_pending_timeout and time.monotonic() < wait_deadline:
                         time.sleep(0.01)
                         continue
                     if current is not existing_thread:
@@ -87,8 +84,7 @@ class BLEReceiveLifecycleCoordinator:
                             name,
                         )
                         wait_deadline = (
-                            time.monotonic()
-                            + RECEIVE_START_PENDING_TIMEOUT_SECONDS
+                            time.monotonic() + RECEIVE_START_PENDING_TIMEOUT_SECONDS
                         )
                         time.sleep(0.01)
                         continue
@@ -324,7 +320,10 @@ class BLEReceiveLifecycleCoordinator:
                     name,
                 )
                 return None, None
-            if expected_existing is not None and _thread_start_probe(expected_existing)[1]:
+            if (
+                expected_existing is not None
+                and _thread_start_probe(expected_existing)[1]
+            ):
                 iface._receive_start_pending = False
                 iface._receive_start_pending_since = None
                 logger.debug(

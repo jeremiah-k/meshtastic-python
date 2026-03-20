@@ -728,6 +728,7 @@ def test_lifecycle_controller_keeps_injected_status_getter_when_snapshot_missing
             _capture_verify_and_publish_connected,
             raising=True,
         )
+
         def status_getter(_client: object) -> tuple[bool, bool]:
             return True, False
 
@@ -1093,9 +1094,7 @@ def test_receive_controller_propagates_should_run_override_failures(
             controller,
             "_resolve_iface_receive_hook_override",
             lambda method_name: (
-                _raising_override
-                if method_name == "_should_run_receive_loop"
-                else None
+                _raising_override if method_name == "_should_run_receive_loop" else None
             ),
             raising=True,
         )
@@ -1839,7 +1838,9 @@ def test_lifecycle_remaining_thread_and_disconnect_target_branches(
         fallback_join_calls: list[float | None] = []
         BLELifecycleService._thread_join_thread(
             iface,
-            SimpleNamespace(join=lambda timeout=None: fallback_join_calls.append(timeout)),
+            SimpleNamespace(
+                join=lambda timeout=None: fallback_join_calls.append(timeout)
+            ),
             timeout=0.1,
         )
         assert fallback_join_calls == [0.1]

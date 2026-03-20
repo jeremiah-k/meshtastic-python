@@ -263,9 +263,7 @@ class BLELifecycleService:
         BLELifecycleService._receive_lifecycle_coordinator(
             iface,
             expected_method="set_receive_wanted",
-        ).set_receive_wanted(
-            want_receive=want_receive
-        )
+        ).set_receive_wanted(want_receive=want_receive)
 
     @staticmethod
     def _should_run_receive_loop(iface: "BLEInterface") -> bool:
@@ -1101,8 +1099,7 @@ class BLELifecycleService:
         connected_elsewhere_fn = cast(Callable[..., bool], connected_elsewhere)
 
         return any(
-            key is not None and connected_elsewhere_fn(key, owner=iface)
-            for key in keys
+            key is not None and connected_elsewhere_fn(key, owner=iface) for key in keys
         )
 
     @staticmethod
