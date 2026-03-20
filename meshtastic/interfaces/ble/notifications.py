@@ -655,7 +655,6 @@ class BLENotificationDispatcher:
             self._started_notify_characteristics.discard(FROMNUM_UUID)
             self.fromnum_notify_enabled = False
             self.malformed_notification_count = 0
-            self._registered_notification_session_epoch = None
 
         def _registration_still_current() -> bool:
             return (
@@ -681,6 +680,7 @@ class BLENotificationDispatcher:
 
         if self._registered_notification_session_epoch != current_session_epoch:
             _rollback_registration_state(stop_client=client)
+            self._registered_notification_session_epoch = current_session_epoch
 
         def _safe_call(
             handler: Callable[[Any, Any], None],

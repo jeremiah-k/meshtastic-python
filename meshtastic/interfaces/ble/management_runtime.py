@@ -573,8 +573,6 @@ class BLEManagementCommandHandler:
                     self.get_management_client_if_available_locked,
                     address,
                 )
-                if refreshed_existing_client is None:
-                    raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
                 current_binding = self._call_iface_override(
                     "_get_current_implicit_management_binding_locked",
                     self.get_current_implicit_management_binding_locked,
@@ -584,9 +582,12 @@ class BLEManagementCommandHandler:
                     start_context.expected_implicit_binding,
                 ):
                     raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
-                target_candidate = iface._extract_client_address(
-                    refreshed_existing_client
-                )
+                if refreshed_existing_client is not None:
+                    target_candidate = iface._extract_client_address(
+                        refreshed_existing_client
+                    )
+                else:
+                    use_refreshed_existing_client = False
         else:
             with iface._connect_lock, iface._management_lock, iface._state_lock:
                 iface._validate_management_preconditions()

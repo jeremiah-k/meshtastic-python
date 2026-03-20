@@ -130,7 +130,20 @@ class BLEConnectionOwnershipLifecycleCoordinator:
 
     @staticmethod
     def _probe_bool_member(owner: object | None, *member_names: str) -> bool:
-        """Return first bool probe result from callable/bool members."""
+        """Return first bool probe result from callable/bool members.
+
+        Parameters
+        ----------
+        owner : object | None
+            Object that may provide callable/bool probe members.
+        *member_names : str
+            Member names to probe in priority order.
+
+        Returns
+        -------
+        bool
+            First authoritative bool probe result; otherwise ``False``.
+        """
         if owner is None:
             return False
         for member_name in member_names:
@@ -473,8 +486,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 and bool(getattr(iface, "_client_publish_pending", False))
                 and inflight_client is client
             ):
-                if inflight_client is client:
-                    iface._connected_publish_inflight_client = None
+                iface._connected_publish_inflight_client = None
                 (
                     should_reset_state,
                     should_publish_disconnect,
@@ -751,7 +763,13 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             connected_notifier = iface._connected
             try:
                 connected_notifier(expected_session_epoch=published_session_epoch)
-            except (TypeError, ValueError):
+            except TypeError as error:
+                error_message = str(error)
+                if (
+                    "unexpected keyword argument" not in error_message
+                    or "expected_session_epoch" not in error_message
+                ):
+                    raise
                 with iface._state_lock:
                     fallback_allowed = (
                         iface.client is connected_client

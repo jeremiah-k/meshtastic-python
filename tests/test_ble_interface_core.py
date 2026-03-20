@@ -1164,10 +1164,10 @@ def test_revalidate_implicit_management_target_rejects_binding_mismatch(
     iface.close()
 
 
-def test_execute_management_command_detects_disappearing_existing_client(
+def test_execute_management_command_falls_back_when_existing_client_disappears(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Management command path should abort if an addressless existing client disappears."""
+    """Management command path should resolve fallback target when existing client disappears."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     addressless_client = cast(
         BLEClient,
@@ -1191,8 +1191,13 @@ def test_execute_management_command_detects_disappearing_existing_client(
         "_get_management_client_if_available",
         _get_management_client,
     )
+    monkeypatch.setattr(
+        iface,
+        "_resolve_target_address_for_management",
+        lambda _address: None,
+    )
 
-    with pytest.raises(BLEInterface.BLEError, match=ERROR_MANAGEMENT_TARGET_CHANGED):
+    with pytest.raises(BLEInterface.BLEError, match=ERROR_MANAGEMENT_ADDRESS_REQUIRED):
         iface._execute_management_command(None, lambda _client: None)
 
     iface.close()
@@ -5144,6 +5149,10 @@ def _patch_receive_start_threads(
 
     def _create_thread(**kwargs: object) -> object:
         create_calls.append(dict(kwargs))
+        if not thread_queue:
+            raise ValueError(
+                "thread_queue is empty in _create_thread - test setup/behavior mismatch"
+            )
         return thread_queue.pop(0)
 
     monkeypatch.setattr(
@@ -5879,11 +5888,11 @@ def test_wait_for_disconnect_notifications_skips_unconfigured_queuework(
     queue_work.assert_not_called()
 
 
-def test_publish_connection_status_skips_when_queuework_unconfigured(
+def test_publish_connection_status_runs_async_fallback_when_queuework_unconfigured(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Verify status publish skips when queueWork/queue are unavailable.
+    """Verify status publish falls back asynchronously when queueWork/queue are unavailable.
 
     Parameters
     ----------
@@ -5897,6 +5906,9 @@ def test_publish_connection_status_skips_when_queuework_unconfigured(
     None
     """
     from meshtastic import mesh_interface as mesh_iface_module
+    from meshtastic.interfaces.ble import (
+        compatibility_service as compatibility_service_mod,
+    )
     from meshtastic.interfaces.ble.compatibility_service import (
         BLECompatibilityEventService,
     )
@@ -5913,6 +5925,28 @@ def test_publish_connection_status_skips_when_queuework_unconfigured(
         raising=True,
     )
 
+    class _ImmediateThread:
+        def __init__(
+            self,
+            *,
+            target: Callable[[], None],
+            name: str | None = None,
+            daemon: bool | None = None,
+        ) -> None:
+            self._target = target
+            self._name = name
+            self._daemon = daemon
+
+        def start(self) -> None:
+            self._target()
+
+    monkeypatch.setattr(
+        compatibility_service_mod,
+        "Thread",
+        _ImmediateThread,
+        raising=True,
+    )
+
     iface = SimpleNamespace(
         _closed=False,
         _state_manager=SimpleNamespace(is_closing=False),
@@ -5926,15 +5960,15 @@ def test_publish_connection_status_skips_when_queuework_unconfigured(
             publishing_thread=publishing_thread,
         )
 
-    assert sent == []
-    assert "publish queue is unavailable" in caplog.text
+    assert sent == [("meshtastic.connection.status", iface, True)]
+    assert "publish queue is unavailable" in caplog.text.lower()
 
 
-def test_publish_connection_status_skips_when_enqueue_raises(
+def test_publish_connection_status_runs_async_fallback_when_enqueue_raises(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Verify status publish skips inline execution when enqueue probe raises.
+    """Verify status publish falls back asynchronously when enqueue probe raises.
 
     Parameters
     ----------
@@ -5948,6 +5982,9 @@ def test_publish_connection_status_skips_when_enqueue_raises(
     None
     """
     from meshtastic import mesh_interface as mesh_iface_module
+    from meshtastic.interfaces.ble import (
+        compatibility_service as compatibility_service_mod,
+    )
     from meshtastic.interfaces.ble.compatibility_service import (
         BLECompatibilityEventService,
     )
@@ -5961,6 +5998,28 @@ def test_publish_connection_status_skips_when_enqueue_raises(
         mesh_iface_module,
         "pub",
         SimpleNamespace(sendMessage=_send_message),
+        raising=True,
+    )
+
+    class _ImmediateThread:
+        def __init__(
+            self,
+            *,
+            target: Callable[[], None],
+            name: str | None = None,
+            daemon: bool | None = None,
+        ) -> None:
+            self._target = target
+            self._name = name
+            self._daemon = daemon
+
+        def start(self) -> None:
+            self._target()
+
+    monkeypatch.setattr(
+        compatibility_service_mod,
+        "Thread",
+        _ImmediateThread,
         raising=True,
     )
 
@@ -5986,16 +6045,19 @@ def test_publish_connection_status_skips_when_enqueue_raises(
             publishing_thread=publishing_thread,
         )
 
-    assert sent == []
+    assert sent == [("meshtastic.connection.status", iface, False)]
     assert "Error queuing connection status publish" in caplog.text
 
 
-def test_publish_connection_status_skips_when_publishing_thread_missing_while_active(
+def test_publish_connection_status_runs_async_fallback_when_publishing_thread_missing_while_active(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Status publish should skip when publishing thread is missing."""
+    """Status publish should use async fallback when publishing thread is missing."""
     from meshtastic import mesh_interface as mesh_iface_module
+    from meshtastic.interfaces.ble import (
+        compatibility_service as compatibility_service_mod,
+    )
     from meshtastic.interfaces.ble.compatibility_service import (
         BLECompatibilityEventService,
     )
@@ -6012,6 +6074,28 @@ def test_publish_connection_status_skips_when_publishing_thread_missing_while_ac
         raising=True,
     )
 
+    class _ImmediateThread:
+        def __init__(
+            self,
+            *,
+            target: Callable[[], None],
+            name: str | None = None,
+            daemon: bool | None = None,
+        ) -> None:
+            self._target = target
+            self._name = name
+            self._daemon = daemon
+
+        def start(self) -> None:
+            self._target()
+
+    monkeypatch.setattr(
+        compatibility_service_mod,
+        "Thread",
+        _ImmediateThread,
+        raising=True,
+    )
+
     iface = SimpleNamespace(
         _closed=False, _state_manager=SimpleNamespace(is_closing=False)
     )
@@ -6023,8 +6107,8 @@ def test_publish_connection_status_skips_when_publishing_thread_missing_while_ac
             publishing_thread=None,
         )
 
-    assert sent == []
-    assert "publishing thread is unavailable" in caplog.text
+    assert sent == [("meshtastic.connection.status", iface, True)]
+    assert "publishing thread is unavailable" in caplog.text.lower()
 
 
 def test_publish_connection_status_skips_when_publishing_thread_missing_during_shutdown(
@@ -6061,7 +6145,7 @@ def test_publish_connection_status_skips_when_publishing_thread_missing_during_s
         )
 
     assert sent == []
-    assert "publishing thread is unavailable" in caplog.text
+    assert "publishing thread is unavailable" in caplog.text.lower()
 
 
 def test_get_publishing_thread_prefers_instance_override() -> None:

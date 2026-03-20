@@ -50,8 +50,8 @@ Additional approved BLE compatibility and promotions:
 | ------------------------------------------------------------------------------------------ | -------------------- | -------------- | ---------------------------------------------------------------------------------- |
 | `BLEClient.find_device`                                                                    | `COMPAT_STABLE_SHIM` | Silent         | Historical snake_case.                                                             |
 | `BLEClient.findDevice`                                                                     | `PRIMARY`            | Silent         | Approved promoted camelCase name.                                                  |
-| `BLEClient.read_gatt_char`                                                                 | `COMPAT_STABLE_SHIM` | Silent         | Historical snake_case BLE API; no promoted camelCase alias.                        |
-| `BLEClient.start_notify`                                                                   | `COMPAT_STABLE_SHIM` | Silent         | Historical snake_case BLE API; no promoted camelCase alias.                        |
+| `BLEClient.read_gatt_char`                                                                 | `PRIMARY`            | Silent         | Historical snake_case BLE API; no promoted camelCase alias.                        |
+| `BLEClient.start_notify`                                                                   | `PRIMARY`            | Silent         | Historical snake_case BLE API; no promoted camelCase alias.                        |
 | `BLEClient.is_connected`                                                                   | `COMPAT_STABLE_SHIM` | Silent         | Shim for `isConnected`.                                                            |
 | `BLEClient.isConnected`                                                                    | `PRIMARY`            | Silent         | Approved promoted camelCase name.                                                  |
 | `BLEClient.stop_notify`                                                                    | `COMPAT_STABLE_SHIM` | Silent         | Shim for `stopNotify`.                                                             |
@@ -191,12 +191,13 @@ compatibility/patching and are not recommended public surface.
 
 ### BLE and Related Exports
 
+`meshtastic.interfaces.ble.management_service` remains a facade/re-export path,
+so management mappings intentionally appear for both source modules.
+
 | Module                                                | Compatibility symbol                                                | Canonical symbol                                                                                  |
 | ----------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `meshtastic.interfaces.ble.client`                    | `BLEClient.find_device()`                                           | `BLEClient.findDevice()`                                                                          |
 | `meshtastic.interfaces.ble.client`                    | `BLEClient._discover()`                                             | `BLEClient.discover()`                                                                            |
-| `meshtastic.interfaces.ble.client`                    | `BLEClient.read_gatt_char()`                                        | `BLEClient.read_gatt_char()`                                                                      |
-| `meshtastic.interfaces.ble.client`                    | `BLEClient.start_notify()`                                          | `BLEClient.start_notify()`                                                                        |
 | `meshtastic.interfaces.ble.client`                    | `BLEClient.is_connected()`                                          | `BLEClient.isConnected()`                                                                         |
 | `meshtastic.interfaces.ble.client`                    | `BLEClient.stop_notify()`                                           | `BLEClient.stopNotify()`                                                                          |
 | `meshtastic.interfaces.ble.client`                    | `BLEClient.async_await()`                                           | `BLEClient._async_await()`                                                                        |

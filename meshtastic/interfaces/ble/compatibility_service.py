@@ -1,7 +1,7 @@
 """Compatibility/event publication helpers for BLE interface orchestration."""
 
 from queue import Empty, Full
-from threading import Event
+from threading import Event, Thread
 from typing import TYPE_CHECKING, Any, Callable, cast
 
 from meshtastic.interfaces.ble.constants import (
@@ -561,10 +561,46 @@ class BLECompatibilityEventService:
                 is_closing = is_closing or legacy_is_closing
             return is_closing
 
+        def _publish_status_async(reason: str) -> bool:
+            if _is_iface_closing():
+                logger.debug(
+                    "Skipping connection status publish during shutdown: %s.",
+                    reason,
+                )
+                return False
+
+            def _async_publish() -> None:
+                try:
+                    _publish_status()
+                except Exception:  # noqa: BLE001 - async fallback must remain best effort
+                    logger.debug(
+                        "Error in async fallback connection status publish.",
+                        exc_info=True,
+                    )
+
+            try:
+                Thread(
+                    target=_async_publish,
+                    name="ble-compat-status-publish",
+                    daemon=True,
+                ).start()
+            except Exception:  # noqa: BLE001 - async fallback must remain best effort
+                logger.debug(
+                    "Error starting async fallback connection status publish.",
+                    exc_info=True,
+                )
+                return False
+            logger.debug(
+                "Queued async fallback connection status publish: %s.",
+                reason,
+            )
+            return True
+
         if publishing_thread is None:
             logger.debug(
-                "Skipping connection status publish: publishing thread is unavailable."
+                "Publishing thread is unavailable; using async fallback publish."
             )
+            _publish_status_async("publishing thread unavailable")
             return
 
         try:
@@ -575,18 +611,16 @@ class BLECompatibilityEventService:
             )
             if not queued:
                 logger.debug(
-                    "Skipping connection status publish: publish queue is unavailable."
+                    "Publish queue is unavailable; using async fallback publish."
                 )
+                _publish_status_async("publish queue unavailable")
                 return
         except Exception:  # noqa: BLE001 - best-effort queueing path
             logger.debug(
                 "Error queuing connection status publish via publishingThread.queueWork",
                 exc_info=True,
             )
-            if _is_iface_closing():
-                logger.debug(
-                    "Skipping connection status publish during shutdown after enqueue failure."
-                )
+            _publish_status_async("enqueue failure")
             return
 
     # COMPAT_STABLE_SHIM: retained for existing callers during service migration.
