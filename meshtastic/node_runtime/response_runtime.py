@@ -60,7 +60,6 @@ class _NodeMetadataResponseRuntime:
                 error_reason,
             )
             self._node.iface._acknowledgment.receivedNak = True
-            self._node._timeout.expireTime = time.time()  # Do not wait any longer
             self._node._signal_metadata_stdout_event()
             return True  # Don't try to parse this routing message
         logger.debug(
@@ -84,7 +83,6 @@ class _NodeMetadataResponseRuntime:
         if error_reason != "NONE":
             logger.error("Error on response: %s", error_reason)
             self._node.iface._acknowledgment.receivedNak = True
-            self._node._timeout.expireTime = time.time()  # Do not wait any longer
             self._node._signal_metadata_stdout_event()
             return True
         return False

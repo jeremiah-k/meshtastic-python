@@ -107,10 +107,15 @@ class _NodeChannelExportRuntime:
                 hash_value = (
                     generate_channel_hash(name, psk) if has_name and has_psk else None
                 )
+                role_name = (
+                    channel_pb2.Channel.Role.Name(channel.role)
+                    if channel.role in channel_pb2.Channel.Role.values()
+                    else f"UNKNOWN({channel.role})"
+                )
                 result.append(
                     {
                         "index": channel.index,
-                        "role": channel_pb2.Channel.Role.Name(channel.role),
+                        "role": role_name,
                         "name": name if has_name else "",
                         "hash": hash_value,
                     }
@@ -128,9 +133,7 @@ class _NodeChannelExportRuntime:
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if not channels:
-                self._node._raise_interface_error(
-                    "Error: No channels have been read"
-                )  # noqa: SLF001
+                self._node._raise_interface_error("Error: No channels have been read")  # noqa: SLF001
             original_channels_ref = channels
             for channel in channels:
                 if channel.role == channel_pb2.Channel.Role.PRIMARY:
@@ -139,9 +142,7 @@ class _NodeChannelExportRuntime:
                     primary_snapshot.settings.psk = fromPSK("none")
                     break
             if primary_snapshot is None:
-                self._node._raise_interface_error(
-                    "Error: No primary channel found"
-                )  # noqa: SLF001
+                self._node._raise_interface_error("Error: No primary channel found")  # noqa: SLF001
         logger.info("Writing modified channels to device")
         self._node._write_channel_snapshot(primary_snapshot)  # noqa: SLF001
         with self._node._channels_lock:  # noqa: SLF001

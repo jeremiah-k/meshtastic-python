@@ -17,13 +17,13 @@ class _NodeChannelLookupRuntime:
     def __init__(self, node: "Node") -> None:
         self._node = node
 
-    def get_channel_by_index(self, channel_index: int) -> channel_pb2.Channel | None:
+    def _get_channel_by_index(self, channel_index: int) -> channel_pb2.Channel | None:
         """Return live channel by index when available, preserving compatibility.
 
         Notes
         -----
         Returned channels are live references and may be mutated by other threads
-        after the lock is released. Use ``get_channel_copy_by_index`` when a
+        after the lock is released. Use ``_get_channel_copy_by_index`` when a
         stable read-only snapshot is required.
         """
         with self._node._channels_lock:  # noqa: SLF001
@@ -32,7 +32,7 @@ class _NodeChannelLookupRuntime:
                 return channels[channel_index]
             return None
 
-    def get_channel_copy_by_index(
+    def _get_channel_copy_by_index(
         self, channel_index: int
     ) -> channel_pb2.Channel | None:
         """Return defensive channel copy by index for read-only callers."""
@@ -44,13 +44,13 @@ class _NodeChannelLookupRuntime:
                 return copied
             return None
 
-    def get_channel_by_name(self, name: str) -> channel_pb2.Channel | None:
+    def _get_channel_by_name(self, name: str) -> channel_pb2.Channel | None:
         """Return live channel whose settings.name exactly matches ``name``.
 
         Notes
         -----
         Returned channels are live references and may be mutated by other threads
-        after the lock is released. Use ``get_channel_copy_by_name`` when a
+        after the lock is released. Use ``_get_channel_copy_by_name`` when a
         stable read-only snapshot is required.
         """
         with self._node._channels_lock:  # noqa: SLF001
@@ -59,7 +59,7 @@ class _NodeChannelLookupRuntime:
                     return channel
             return None
 
-    def get_channel_copy_by_name(self, name: str) -> channel_pb2.Channel | None:
+    def _get_channel_copy_by_name(self, name: str) -> channel_pb2.Channel | None:
         """Return defensive channel copy found by exact settings.name match."""
         with self._node._channels_lock:  # noqa: SLF001
             for channel in self._node.channels or []:
@@ -69,13 +69,13 @@ class _NodeChannelLookupRuntime:
                     return copied
             return None
 
-    def get_disabled_channel(self) -> channel_pb2.Channel | None:
+    def _get_disabled_channel(self) -> channel_pb2.Channel | None:
         """Return first live disabled channel, if present.
 
         Notes
         -----
         Returned channels are live references and may be mutated by other threads
-        after the lock is released. Use ``get_disabled_channel_copy`` when a
+        after the lock is released. Use ``_get_disabled_channel_copy`` when a
         stable read-only snapshot is required.
         """
         with self._node._channels_lock:  # noqa: SLF001
@@ -87,7 +87,7 @@ class _NodeChannelLookupRuntime:
                     return channel
             return None
 
-    def get_disabled_channel_copy(self) -> channel_pb2.Channel | None:
+    def _get_disabled_channel_copy(self) -> channel_pb2.Channel | None:
         """Return defensive copy of first disabled channel, if present."""
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
@@ -100,7 +100,7 @@ class _NodeChannelLookupRuntime:
                     return copied
             return None
 
-    def get_named_admin_channel_index(self) -> int | None:
+    def _get_named_admin_channel_index(self) -> int | None:
         """Return index of explicitly named ``admin`` channel, if present."""
         with self._node._channels_lock:  # noqa: SLF001
             for channel in self._node.channels or []:
@@ -112,7 +112,7 @@ class _NodeChannelLookupRuntime:
                     return channel.index
             return None
 
-    def get_admin_channel_index(self) -> int:
+    def _get_admin_channel_index(self) -> int:
         """Return named admin index when present; otherwise channel index zero."""
-        named_admin_index = self.get_named_admin_channel_index()
+        named_admin_index = self._get_named_admin_channel_index()
         return 0 if named_admin_index is None else named_admin_index

@@ -142,7 +142,7 @@ class _NodeContentResponseRuntime:
         decoded = packet.get("decoded")
         if not isinstance(decoded, dict):
             logger.warning("Unexpected ringtone response without decoded payload")
-            return False
+            return True
         if "routing" in decoded:
             return self._has_routing_error(decoded)
         admin_message = decoded.get("admin")
@@ -175,7 +175,7 @@ class _NodeContentResponseRuntime:
         decoded = packet.get("decoded")
         if not isinstance(decoded, dict):
             logger.warning("Unexpected canned-message response without decoded payload")
-            return False
+            return True
         if "routing" in decoded:
             return self._has_routing_error(decoded)
         admin_message = decoded.get("admin")

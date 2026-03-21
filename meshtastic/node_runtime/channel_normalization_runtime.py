@@ -53,9 +53,6 @@ class _NodeChannelNormalizationRuntime:
         if channels is None:
             return
 
-        for index, channel in enumerate(channels):
-            channel.index = index
-
         index = len(channels)
         while index < MAX_CHANNELS:
             channel = channel_pb2.Channel()

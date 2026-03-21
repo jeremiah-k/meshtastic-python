@@ -79,13 +79,13 @@ def test_get_channel_by_index_valid(
     secondary = _make_channel(1, channel_pb2.Channel.Role.SECONDARY, name="secondary")
     mock_node.channels = [primary, secondary]
 
-    result = lookup.get_channel_by_index(0)
+    result = lookup._get_channel_by_index(0)
 
     assert result is not None
     assert result is primary
     assert result.index == 0
 
-    result = lookup.get_channel_by_index(1)
+    result = lookup._get_channel_by_index(1)
 
     assert result is not None
     assert result is secondary
@@ -100,9 +100,9 @@ def test_get_channel_by_index_out_of_range(
     primary = _make_channel(0, channel_pb2.Channel.Role.PRIMARY)
     mock_node.channels = [primary]
 
-    assert lookup.get_channel_by_index(-1) is None
-    assert lookup.get_channel_by_index(1) is None
-    assert lookup.get_channel_by_index(100) is None
+    assert lookup._get_channel_by_index(-1) is None
+    assert lookup._get_channel_by_index(1) is None
+    assert lookup._get_channel_by_index(100) is None
 
 
 @pytest.mark.unit
@@ -112,7 +112,7 @@ def test_get_channel_by_index_none_channels(
     """get_channel_by_index returns None when channels is None."""
     mock_node.channels = None
 
-    assert lookup.get_channel_by_index(0) is None
+    assert lookup._get_channel_by_index(0) is None
 
 
 @pytest.mark.unit
@@ -123,7 +123,7 @@ def test_get_channel_copy_by_index_returns_copy(
     primary = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, name="primary")
     mock_node.channels = [primary]
 
-    copy = lookup.get_channel_copy_by_index(0)
+    copy = lookup._get_channel_copy_by_index(0)
 
     assert copy is not None
     assert copy is not primary
@@ -139,7 +139,7 @@ def test_get_channel_copy_by_index_modification_isolated(
     primary = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, name="original")
     mock_node.channels = [primary]
 
-    copy = lookup.get_channel_copy_by_index(0)
+    copy = lookup._get_channel_copy_by_index(0)
     assert copy is not None
 
     copy.settings.name = "modified"
@@ -157,8 +157,8 @@ def test_get_channel_copy_by_index_out_of_range(
     primary = _make_channel(0, channel_pb2.Channel.Role.PRIMARY)
     mock_node.channels = [primary]
 
-    assert lookup.get_channel_copy_by_index(-1) is None
-    assert lookup.get_channel_copy_by_index(1) is None
+    assert lookup._get_channel_copy_by_index(-1) is None
+    assert lookup._get_channel_copy_by_index(1) is None
 
 
 @pytest.mark.unit
@@ -170,13 +170,13 @@ def test_get_channel_by_name_exists(
     secondary = _make_channel(1, channel_pb2.Channel.Role.SECONDARY, name="admin")
     mock_node.channels = [primary, secondary]
 
-    result = lookup.get_channel_by_name("main")
+    result = lookup._get_channel_by_name("main")
 
     assert result is not None
     assert result is primary
     assert result.settings.name == "main"
 
-    result = lookup.get_channel_by_name("admin")
+    result = lookup._get_channel_by_name("admin")
 
     assert result is not None
     assert result is secondary
@@ -190,8 +190,8 @@ def test_get_channel_by_name_not_found(
     primary = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, name="main")
     mock_node.channels = [primary]
 
-    assert lookup.get_channel_by_name("nonexistent") is None
-    assert lookup.get_channel_by_name("Admin") is None  # case-sensitive
+    assert lookup._get_channel_by_name("nonexistent") is None
+    assert lookup._get_channel_by_name("Admin") is None  # case-sensitive
 
 
 @pytest.mark.unit
@@ -201,7 +201,7 @@ def test_get_channel_by_name_none_channels(
     """get_channel_by_name returns None when channels is None."""
     mock_node.channels = None
 
-    assert lookup.get_channel_by_name("any") is None
+    assert lookup._get_channel_by_name("any") is None
 
 
 @pytest.mark.unit
@@ -213,7 +213,7 @@ def test_get_channel_by_name_empty_name(
     secondary = _make_channel(1, channel_pb2.Channel.Role.SECONDARY, name="named")
     mock_node.channels = [primary, secondary]
 
-    result = lookup.get_channel_by_name("")
+    result = lookup._get_channel_by_name("")
 
     assert result is not None
     assert result is primary
@@ -227,7 +227,7 @@ def test_get_channel_copy_by_name_returns_copy(
     primary = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, name="main")
     mock_node.channels = [primary]
 
-    copy = lookup.get_channel_copy_by_name("main")
+    copy = lookup._get_channel_copy_by_name("main")
 
     assert copy is not None
     assert copy is not primary
@@ -242,7 +242,7 @@ def test_get_channel_copy_by_name_not_found(
     primary = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, name="main")
     mock_node.channels = [primary]
 
-    assert lookup.get_channel_copy_by_name("nonexistent") is None
+    assert lookup._get_channel_copy_by_name("nonexistent") is None
 
 
 @pytest.mark.unit
@@ -256,7 +256,7 @@ def test_get_disabled_channel_exists(
     disabled2 = _make_channel(3, channel_pb2.Channel.Role.DISABLED)
     mock_node.channels = [primary, secondary, disabled1, disabled2]
 
-    result = lookup.get_disabled_channel()
+    result = lookup._get_disabled_channel()
 
     assert result is not None
     assert result is disabled1
@@ -272,7 +272,7 @@ def test_get_disabled_channel_none_exist(
     secondary = _make_channel(1, channel_pb2.Channel.Role.SECONDARY)
     mock_node.channels = [primary, secondary]
 
-    assert lookup.get_disabled_channel() is None
+    assert lookup._get_disabled_channel() is None
 
 
 @pytest.mark.unit
@@ -282,7 +282,7 @@ def test_get_disabled_channel_none_channels(
     """get_disabled_channel returns None when channels is None."""
     mock_node.channels = None
 
-    assert lookup.get_disabled_channel() is None
+    assert lookup._get_disabled_channel() is None
 
 
 @pytest.mark.unit
@@ -292,7 +292,7 @@ def test_get_disabled_channel_empty_list(
     """get_disabled_channel returns None when channels is empty."""
     mock_node.channels = []
 
-    assert lookup.get_disabled_channel() is None
+    assert lookup._get_disabled_channel() is None
 
 
 @pytest.mark.unit
@@ -303,7 +303,7 @@ def test_get_disabled_channel_copy_returns_copy(
     disabled = _make_channel(0, channel_pb2.Channel.Role.DISABLED)
     mock_node.channels = [disabled]
 
-    copy = lookup.get_disabled_channel_copy()
+    copy = lookup._get_disabled_channel_copy()
 
     assert copy is not None
     assert copy is not disabled
@@ -318,7 +318,7 @@ def test_get_disabled_channel_copy_modification_isolated(
     disabled = _make_channel(0, channel_pb2.Channel.Role.DISABLED)
     mock_node.channels = [disabled]
 
-    copy = lookup.get_disabled_channel_copy()
+    copy = lookup._get_disabled_channel_copy()
     assert copy is not None
 
     copy.role = channel_pb2.Channel.Role.PRIMARY
@@ -333,7 +333,7 @@ def test_get_disabled_channel_copy_none_channels(
     """get_disabled_channel_copy returns None when channels is None."""
     mock_node.channels = None
 
-    assert lookup.get_disabled_channel_copy() is None
+    assert lookup._get_disabled_channel_copy() is None
 
 
 @pytest.mark.unit
@@ -345,7 +345,7 @@ def test_get_disabled_channel_copy_none_exist(
     secondary = _make_channel(1, channel_pb2.Channel.Role.SECONDARY)
     mock_node.channels = [primary, secondary]
 
-    assert lookup.get_disabled_channel_copy() is None
+    assert lookup._get_disabled_channel_copy() is None
 
 
 @pytest.mark.unit
@@ -358,7 +358,7 @@ def test_get_named_admin_channel_index_found(
     disabled = _make_channel(2, channel_pb2.Channel.Role.DISABLED)
     mock_node.channels = [primary, admin, disabled]
 
-    result = lookup.get_named_admin_channel_index()
+    result = lookup._get_named_admin_channel_index()
 
     assert result == 1
 
@@ -372,7 +372,7 @@ def test_get_named_admin_channel_index_case_insensitive(
     admin = _make_channel(2, channel_pb2.Channel.Role.SECONDARY, name="ADMIN")
     mock_node.channels = [primary, admin]
 
-    result = lookup.get_named_admin_channel_index()
+    result = lookup._get_named_admin_channel_index()
 
     assert result == 2
 
@@ -386,7 +386,7 @@ def test_get_named_admin_channel_index_ignores_disabled(
     disabled_admin = _make_channel(1, channel_pb2.Channel.Role.DISABLED, name="admin")
     mock_node.channels = [primary, disabled_admin]
 
-    result = lookup.get_named_admin_channel_index()
+    result = lookup._get_named_admin_channel_index()
 
     assert result is None
 
@@ -400,7 +400,7 @@ def test_get_named_admin_channel_index_not_found(
     secondary = _make_channel(1, channel_pb2.Channel.Role.SECONDARY, name="other")
     mock_node.channels = [primary, secondary]
 
-    assert lookup.get_named_admin_channel_index() is None
+    assert lookup._get_named_admin_channel_index() is None
 
 
 @pytest.mark.unit
@@ -410,7 +410,7 @@ def test_get_named_admin_channel_index_none_channels(
     """get_named_admin_channel_index returns None when channels is None."""
     mock_node.channels = None
 
-    assert lookup.get_named_admin_channel_index() is None
+    assert lookup._get_named_admin_channel_index() is None
 
 
 @pytest.mark.unit
@@ -422,7 +422,7 @@ def test_get_admin_channel_index_returns_named_index(
     admin = _make_channel(3, channel_pb2.Channel.Role.SECONDARY, name="admin")
     mock_node.channels = [primary, admin]
 
-    result = lookup.get_admin_channel_index()
+    result = lookup._get_admin_channel_index()
 
     assert result == 3
 
@@ -436,7 +436,7 @@ def test_get_admin_channel_index_defaults_to_zero(
     secondary = _make_channel(1, channel_pb2.Channel.Role.SECONDARY, name="other")
     mock_node.channels = [primary, secondary]
 
-    result = lookup.get_admin_channel_index()
+    result = lookup._get_admin_channel_index()
 
     assert result == 0
 
@@ -448,6 +448,6 @@ def test_get_admin_channel_index_empty_channels(
     """get_admin_channel_index returns 0 when channels is empty."""
     mock_node.channels = []
 
-    result = lookup.get_admin_channel_index()
+    result = lookup._get_admin_channel_index()
 
     assert result == 0

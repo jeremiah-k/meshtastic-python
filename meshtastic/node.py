@@ -578,13 +578,13 @@ class Node:  # pylint: disable=too-many-instance-attributes
         existing callers that mutate a selected channel and then persist via
         `writeChannel()`.
         """
-        return self._channel_lookup_runtime.get_channel_by_index(channelIndex)
+        return self._channel_lookup_runtime._get_channel_by_index(channelIndex)
 
     def getChannelCopyByChannelIndex(
         self, channelIndex: int
     ) -> channel_pb2.Channel | None:
         """Retrieve a defensive copy of the channel at the given zero-based index."""
-        return self._channel_lookup_runtime.get_channel_copy_by_index(channelIndex)
+        return self._channel_lookup_runtime._get_channel_copy_by_index(channelIndex)
 
     def deleteChannel(self, channelIndex: int) -> None:
         """Delete the channel at the given zero-based index and rewrite subsequent channels to normalize device channel state.
@@ -628,11 +628,11 @@ class Node:  # pylint: disable=too-many-instance-attributes
         existing callers that mutate a selected channel and then persist via
         `writeChannel()`.
         """
-        return self._channel_lookup_runtime.get_channel_by_name(name)
+        return self._channel_lookup_runtime._get_channel_by_name(name)
 
     def getChannelCopyByName(self, name: str) -> channel_pb2.Channel | None:
         """Find a channel by name and return a defensive copy for read-only use."""
-        return self._channel_lookup_runtime.get_channel_copy_by_name(name)
+        return self._channel_lookup_runtime._get_channel_copy_by_name(name)
 
     def getDisabledChannel(self) -> channel_pb2.Channel | None:
         """Find the first channel whose role is DISABLED.
@@ -648,11 +648,11 @@ class Node:  # pylint: disable=too-many-instance-attributes
         existing callers that mutate a selected channel and then persist via
         `writeChannel()`.
         """
-        return self._channel_lookup_runtime.get_disabled_channel()
+        return self._channel_lookup_runtime._get_disabled_channel()
 
     def getDisabledChannelCopy(self) -> channel_pb2.Channel | None:
         """Find the first disabled channel and return a defensive copy for read-only use."""
-        return self._channel_lookup_runtime.get_disabled_channel_copy()
+        return self._channel_lookup_runtime._get_disabled_channel_copy()
 
     def getAdminChannelIndex(self) -> int:
         """Public accessor for the admin channel index on this node."""
@@ -660,7 +660,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
 
     def _get_named_admin_channel_index(self) -> int | None:
         """Return the index of a channel explicitly named ``admin``, if present."""
-        return self._channel_lookup_runtime.get_named_admin_channel_index()
+        return self._channel_lookup_runtime._get_named_admin_channel_index()
 
     def _get_admin_channel_index(self) -> int:
         """Get the index of the channel named "admin", or 0 if no such channel exists.
@@ -670,7 +670,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         int
             Index of the admin channel, or 0 if no channel with name "admin" is present.
         """
-        return self._channel_lookup_runtime.get_admin_channel_index()
+        return self._channel_lookup_runtime._get_admin_channel_index()
 
     def setOwner(
         self,

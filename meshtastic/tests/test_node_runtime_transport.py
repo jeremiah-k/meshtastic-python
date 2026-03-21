@@ -26,6 +26,14 @@ from meshtastic.node_runtime.transport_runtime import (
 from meshtastic.protobuf import admin_pb2, channel_pb2, mesh_pb2, portnums_pb2
 from meshtastic.util import Acknowledgment
 
+
+# Sentinel exception for testing error paths (avoid bare Exception in tests)
+class _SentinelError(Exception):
+    """Sentinel exception for testing _raise_interface_error behavior."""
+
+    pass
+
+
 # ============================================================================
 # Fixtures
 # ============================================================================

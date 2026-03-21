@@ -148,9 +148,7 @@ class _NodeChannelWriteRuntime:
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if channels is None:
-                self._node._raise_interface_error(
-                    "Error: No channels have been read"
-                )  # noqa: SLF001
+                self._node._raise_interface_error("Error: No channels have been read")  # noqa: SLF001
             if channel_index < 0 or channel_index >= len(channels):
                 self._node._raise_interface_error(  # noqa: SLF001
                     f"Channel index {channel_index} out of range (0-{len(channels) - 1})"
@@ -225,9 +223,7 @@ class _NodeDeleteChannelRuntime:
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if channels is None:
-                self._node._raise_interface_error(
-                    "Error: No channels have been read"
-                )  # noqa: SLF001
+                self._node._raise_interface_error("Error: No channels have been read")  # noqa: SLF001
             if channel_index < 0 or channel_index >= len(channels):
                 self._node._raise_interface_error(  # noqa: SLF001
                     f"Channel index {channel_index} out of range (0-{len(channels) - 1})"
@@ -247,7 +243,7 @@ class _NodeDeleteChannelRuntime:
                 pre_delete_admin_index = self._named_admin_index_from_channels(channels)
             else:
                 pre_delete_admin_index = (
-                    self._node.iface.localNode.getAdminChannelIndex()
+                    self._node.iface.localNode._get_admin_channel_index()
                 )
 
             staged_channels: list[channel_pb2.Channel] = []
@@ -270,7 +266,7 @@ class _NodeDeleteChannelRuntime:
                 )
             else:
                 post_delete_admin_index = (
-                    self._node.iface.localNode.getAdminChannelIndex()
+                    self._node.iface.localNode._get_admin_channel_index()
                 )
 
         return _DeleteChannelRewritePlan(
@@ -297,16 +293,19 @@ class _NodeDeleteChannelRuntime:
                 admin_index_for_write = plan.post_delete_admin_index
 
     def delete_channel(self, channel_index: int) -> None:
-        """Delete one channel and execute ordered rewrite plan."""
-        rewrite_plan = self._build_rewrite_plan(channel_index)
-        try:
-            self._execute_rewrite_plan(rewrite_plan)
-        except Exception:
-            with self._node._channels_lock:  # noqa: SLF001
+        """Delete one channel and execute ordered rewrite plan.
+
+        The entire delete operation is serialized under the channels lock to prevent
+        concurrent in-place mutations from racing with the delete/rewrite sequence.
+        """
+        with self._node._channels_lock:  # noqa: SLF001
+            rewrite_plan = self._build_rewrite_plan(channel_index)
+            try:
+                self._execute_rewrite_plan(rewrite_plan)
+            except Exception:
                 self._node.channels = None
                 self._node.partialChannels = []
-            raise
-        with self._node._channels_lock:  # noqa: SLF001
+                raise
             current_channels = self._node.channels
             if current_channels is None:
                 logger.warning(
@@ -429,6 +428,18 @@ class _NodePositionTimeCommandRuntime:
             Altitude in meters. ``None`` omits altitude from the sent message.
         """
         self._node.ensureSessionKey()
+
+        # Type validation: reject bool and non-numeric types
+        if lat is not None:
+            if isinstance(lat, bool) or not isinstance(lat, (int, float)):
+                self._node._raise_interface_error(  # noqa: SLF001
+                    f"Invalid latitude type: {type(lat).__name__}. Expected int or float."
+                )
+        if lon is not None:
+            if isinstance(lon, bool) or not isinstance(lon, (int, float)):
+                self._node._raise_interface_error(  # noqa: SLF001
+                    f"Invalid longitude type: {type(lon).__name__}. Expected int or float."
+                )
 
         position_message = mesh_pb2.Position()
         if lat not in (None, 0, 0.0):

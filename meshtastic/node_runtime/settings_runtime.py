@@ -320,7 +320,16 @@ class _NodeSettingsResponseRuntime:
             )
             self._node.iface._acknowledgment.receivedNak = True
             return
-        raw_config = getattr(getattr(raw_admin, oneof), field_name)
+        parent_config = getattr(raw_admin, oneof)
+        if not parent_config.HasField(field_name):
+            logger.warning(
+                "Received settings response without expected field '%s': %s",
+                field_name,
+                packet,
+            )
+            self._node.iface._acknowledgment.receivedNak = True
+            return
+        raw_config = getattr(parent_config, field_name)
         config_values.CopyFrom(raw_config)
         self._node.iface._acknowledgment.receivedAck = True
         logger.info("Received settings block: %s", field_name)
@@ -429,19 +438,20 @@ class _NodeAdminCommandRuntime:
         legacy_hash: bytes | None,
     ) -> bytes:
         """Resolve one OTA hash input while preserving legacy validation behavior."""
-        hash_values = {
-            value
-            for value in (ota_file_hash, ota_hash, legacy_hash)
-            if value is not None
-        }
-        if not hash_values:
+        # Build list of provided hash values first
+        provided_hashes: list[bytes] = []
+        for value in (ota_file_hash, ota_hash, legacy_hash):
+            if value is not None:
+                if not isinstance(value, bytes):
+                    raise TypeError("ota_file_hash must be bytes")
+                provided_hashes.append(value)
+        if not provided_hashes:
             raise TypeError("startOTA() missing required argument: 'ota_file_hash'")
+        # Deduplicate after validation
+        hash_values = set(provided_hashes)
         if len(hash_values) > 1:
             raise ValueError("Conflicting OTA hash arguments provided")
-        resolved_hash = hash_values.pop()
-        if not isinstance(resolved_hash, bytes):
-            raise TypeError("ota_file_hash must be bytes")
-        return resolved_hash
+        return hash_values.pop()
 
     def start_ota(
         self,
@@ -454,9 +464,7 @@ class _NodeAdminCommandRuntime:
     ) -> mesh_pb2.MeshPacket | None:
         """Validate OTA args and send ota_request command."""
         if self._node is not self._node.iface.localNode:
-            self._node._raise_interface_error(
-                "startOTA only possible on local node"
-            )  # noqa: SLF001
+            self._node._raise_interface_error("startOTA only possible on local node")  # noqa: SLF001
 
         # COMPAT_STABLE_SHIM: support legacy keyword aliases used by older callers:
         # `ota_mode` -> `mode`, and `ota_hash`/`hash` -> `ota_file_hash`.
@@ -514,14 +522,10 @@ class _NodeAdminCommandRuntime:
         """Send factory-reset command, preserving full/config split behavior."""
         message = admin_pb2.AdminMessage()
         if full:
-            message.factory_reset_device = (
-                self._node._get_factory_reset_request_value()
-            )  # noqa: SLF001
+            message.factory_reset_device = self._node._get_factory_reset_request_value()  # noqa: SLF001
             logger.info("Telling node to factory reset (full device reset)")
         else:
-            message.factory_reset_config = (
-                self._node._get_factory_reset_request_value()
-            )  # noqa: SLF001
+            message.factory_reset_config = self._node._get_factory_reset_request_value()  # noqa: SLF001
             logger.info("Telling node to factory reset (config reset)")
         return self._send_command(
             message,
