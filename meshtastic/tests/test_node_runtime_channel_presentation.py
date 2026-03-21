@@ -1,0 +1,170 @@
+"""Unit tests for _NodeChannelPresentationRuntime in channel_presentation_runtime.py."""
+
+import threading
+from unittest.mock import MagicMock
+
+import pytest
+
+from meshtastic.node_runtime.channel_export_runtime import _NodeChannelExportRuntime
+from meshtastic.node_runtime.channel_presentation_runtime import (
+    _NodeChannelPresentationRuntime,
+)
+from meshtastic.protobuf import channel_pb2, localonly_pb2
+
+
+@pytest.fixture
+def mock_node() -> MagicMock:
+    """Create a minimal mock Node with channels list and lock.
+
+    Returns
+    -------
+    MagicMock
+        A mock node with channels attribute and _channels_lock.
+    """
+    node = MagicMock(spec=["channels", "_channels_lock", "localConfig", "moduleConfig"])
+    node.channels = []
+    node._channels_lock = threading.RLock()  # noqa: SLF001
+    node.localConfig = None
+    node.moduleConfig = None
+    return node
+
+
+@pytest.fixture
+def presentation_runtime(mock_node: MagicMock) -> _NodeChannelPresentationRuntime:
+    """Create a _NodeChannelPresentationRuntime with mocked dependencies.
+
+    Parameters
+    ----------
+    mock_node : MagicMock
+        The mock node fixture.
+
+    Returns
+    -------
+    _NodeChannelPresentationRuntime
+        The presentation runtime instance with a mocked export_runtime.
+    """
+    export_runtime = MagicMock(spec=_NodeChannelExportRuntime)
+    export_runtime.get_url.return_value = "https://meshtastic.org/e/#test"
+    return _NodeChannelPresentationRuntime(mock_node, export_runtime=export_runtime)
+
+
+@pytest.mark.unit
+def test_show_channels_with_no_channels(
+    presentation_runtime: _NodeChannelPresentationRuntime,
+    mock_node: MagicMock,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test show_channels prints Channels header and URLs when no channels exist."""
+    mock_node.channels = []
+
+    presentation_runtime.show_channels()
+
+    out, _ = capsys.readouterr()
+    assert "Channels:" in out
+    assert "Primary channel URL: https://meshtastic.org/e/#test" in out
+    # When public_url == admin_url, complete URL line should NOT be printed
+    assert "Complete URL" not in out
+
+
+@pytest.mark.unit
+def test_show_channels_with_channels(
+    presentation_runtime: _NodeChannelPresentationRuntime,
+    mock_node: MagicMock,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test show_channels prints channel details for non-disabled channels."""
+    primary = channel_pb2.Channel(index=0, role=channel_pb2.Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    primary.settings.psk = b"\x01"
+
+    disabled = channel_pb2.Channel(index=1, role=channel_pb2.Channel.Role.DISABLED)
+    disabled.settings.name = "disabled"
+
+    mock_node.channels = [primary, disabled]
+
+    presentation_runtime.show_channels()
+
+    out, _ = capsys.readouterr()
+    assert "Channels:" in out
+    assert "Index 0: PRIMARY" in out
+    assert "Index 1:" not in out  # DISABLED channels are not printed
+    assert "Primary channel URL:" in out
+
+
+@pytest.mark.unit
+def test_show_channels_shows_complete_url_when_different_from_public(
+    mock_node: MagicMock,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test show_channels prints complete URL when admin_url differs from public_url.
+
+    This covers line 51: Print complete URL if different from public URL.
+    """
+    export_runtime = MagicMock(spec=_NodeChannelExportRuntime)
+    export_runtime.get_url.side_effect = [
+        "https://meshtastic.org/e/#public",  # include_all=False
+        "https://meshtastic.org/e/#complete",  # include_all=True
+    ]
+    presentation_runtime = _NodeChannelPresentationRuntime(
+        mock_node, export_runtime=export_runtime
+    )
+
+    # Add multiple secondary channels so admin_url != public_url
+    primary = channel_pb2.Channel(index=0, role=channel_pb2.Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    primary.settings.psk = b"\x01"
+
+    secondary = channel_pb2.Channel(index=1, role=channel_pb2.Channel.Role.SECONDARY)
+    secondary.settings.name = "secondary"
+    secondary.settings.psk = b"\x02"
+
+    mock_node.channels = [primary, secondary]
+
+    presentation_runtime.show_channels()
+
+    out, _ = capsys.readouterr()
+    assert "Primary channel URL: https://meshtastic.org/e/#public" in out
+    assert (
+        "Complete URL (includes all channels): https://meshtastic.org/e/#complete"
+        in out
+    )
+
+
+@pytest.mark.unit
+def test_show_info_with_no_config(
+    presentation_runtime: _NodeChannelPresentationRuntime,
+    mock_node: MagicMock,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test show_info prints empty preferences when no config is set."""
+    mock_node.localConfig = None
+    mock_node.moduleConfig = None
+    mock_node.channels = []
+
+    presentation_runtime.show_info()
+
+    out, _ = capsys.readouterr()
+    assert "Preferences: " in out
+    assert "Module preferences: " in out
+    assert "Channels:" in out
+    assert "Primary channel URL:" in out
+
+
+@pytest.mark.unit
+def test_show_info_with_local_config(
+    presentation_runtime: _NodeChannelPresentationRuntime,
+    mock_node: MagicMock,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test show_info prints preferences when localConfig is populated."""
+    mock_node.localConfig = localonly_pb2.LocalConfig()
+    mock_node.localConfig.lora.hop_limit = 3
+    mock_node.moduleConfig = localonly_pb2.LocalModuleConfig()
+    mock_node.channels = []
+
+    presentation_runtime.show_info()
+
+    out, _ = capsys.readouterr()
+    assert "Preferences:" in out
+    assert "Module preferences:" in out
+    assert "Channels:" in out
