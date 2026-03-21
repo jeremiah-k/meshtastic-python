@@ -2,6 +2,7 @@
 
 import re
 import threading
+from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -108,7 +109,10 @@ def test_show_channels_handles_unknown_role_values(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """show_channels should not raise when a channel has an unknown enum role."""
-    channel = channel_pb2.Channel(index=0, role=999)
+    channel = channel_pb2.Channel(
+        index=0,
+        role=cast(channel_pb2.Channel.Role.ValueType, 999),
+    )
     channel.settings.name = "mystery"
     channel.settings.psk = b"\x01"
     mock_node.channels = [channel]
@@ -117,6 +121,25 @@ def test_show_channels_handles_unknown_role_values(
 
     out, _ = capsys.readouterr()
     assert "UNKNOWN(999)" in out
+
+
+@pytest.mark.unit
+def test_show_channels_handles_export_errors_without_raising(
+    mock_node: MagicMock, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """show_channels should keep presentation output even if URL export fails."""
+    export_runtime = MagicMock(spec=_NodeChannelExportRuntime)
+    export_runtime.get_url.side_effect = RuntimeError("channels not loaded")
+    presentation_runtime = _NodeChannelPresentationRuntime(
+        mock_node, export_runtime=export_runtime
+    )
+    mock_node.channels = []
+
+    presentation_runtime.show_channels()
+
+    out, _ = capsys.readouterr()
+    assert "Channels:" in out
+    assert "Primary channel URL: unavailable" in out
 
 
 @pytest.mark.unit

@@ -1,10 +1,9 @@
+# pylint: disable=too-many-lines
 """Unit tests for the seturl_runtime module.
 
 Tests for setURL transaction runtime classes including parser, planners,
 execution engine, rollback engine, cache manager, and coordinator.
 """
-
-# pylint: disable=too-many-lines
 
 import base64
 import logging

@@ -1726,11 +1726,10 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
     assert after_snapshot[1] == before_snapshot[1]
     assert anode.channels[2].settings.name == "raced-name"
 
-    # Rollback includes the in-flight channel index as well. Since the failure
-    # happened on the deferred admin write, rollback first retries via the
-    # deferred index.
-    # No LoRa rollback is attempted because the LoRa write never started.
-    assert rollback_writes == [(1, 1), (2, 1)]
+    # Only successfully started writes are tracked for rollback.
+    # The deferred admin write failed before it was marked written, so only the
+    # already-started channel write is reverted.
+    assert rollback_writes == [(2, 0)]
 
 
 @pytest.mark.unit
@@ -1795,8 +1794,10 @@ def test_setURL_add_only_invalidates_channels_cache_on_partial_rollback_failure(
     assert ensure_session_admin_indexes[0] == 0
     assert set(ensure_session_admin_indexes) <= {0, 1}
     assert send_calls["stage_writes"] == 2
-    assert send_calls["rollback_failures"] == 2
-    assert anode.channels is None
+    # The failed deferred write is not marked as written, so index=1 rollback
+    # is not attempted.
+    assert send_calls["rollback_failures"] == 0
+    assert anode.channels is not None
 
 
 @pytest.mark.unit
@@ -1855,7 +1856,9 @@ def test_setURL_add_only_rolls_back_with_fallback_admin_index_after_deferred_adm
     assert anode.channels is not None
     after_snapshot = [channel.SerializeToString() for channel in anode.channels]
     assert after_snapshot == before_snapshot
-    assert rollback_attempts == [(1, 1), (1, 0), (2, 1), (2, 0)]
+    # The deferred admin write failed before it was marked written, so rollback
+    # only reverts the successful write.
+    assert rollback_attempts == [(2, 0)]
 
 
 @pytest.mark.unit
@@ -1927,8 +1930,8 @@ def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
     # Deferred admin write is intentionally not attempted until after LoRa write.
     assert not staged_channel_writes
 
-    # Rollback includes prior LoRa config; no channel rollback is needed because
-    # deferred admin write had not started when LoRa failed.
+    # No rollback write is attempted for LoRa because the forward LoRa write did
+    # not report as started.
     rollback_channel_messages = [
         msg
         for msg in rollback_messages
@@ -1940,9 +1943,8 @@ def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
         if msg.HasField("set_config") and msg.set_config.HasField("lora")
     ]
     assert len(rollback_channel_messages) == 0
-    assert len(rollback_lora_messages) == 1
-    assert rollback_lora_messages[0].set_config.lora.hop_limit == 3
-    assert admin_indexes == [0, 0]
+    assert len(rollback_lora_messages) == 0
+    assert admin_indexes == [0]
     assert anode.localConfig.lora.hop_limit == 3
 
 
@@ -2204,10 +2206,9 @@ def test_setURL_replace_rolls_back_with_fallback_admin_index_after_deferred_admi
     assert anode.channels is not None
     after_snapshot = [channel.SerializeToString() for channel in anode.channels]
     assert after_snapshot == before_snapshot
+    # Deferred admin write failed before write tracking, so rollback only
+    # touches successfully started writes.
     assert rollback_attempts == [
-        (0, "primary", 0),
-        (0, "primary", 1),
-        (2, "third", 0),
         (2, "third", 1),
     ]
 
@@ -2272,11 +2273,8 @@ def test_setURL_replace_rolls_back_written_channels_on_midflight_failure(
         if msg.HasField("set_channel")
         and msg.set_channel.settings.name in {"primary", "existing"}
     ]
-    assert {
-        (channel.index, channel.settings.name) for channel in rollback_channels
-    } == {
+    assert {(channel.index, channel.settings.name) for channel in rollback_channels} == {
         (0, "primary"),
-        (1, "existing"),
     }
 
 
@@ -2336,8 +2334,7 @@ def test_setURL_replace_rolls_back_lora_when_lora_write_fails(
         for msg in sent_messages
         if msg.HasField("set_config") and msg.set_config.HasField("lora")
     ]
-    assert len(rollback_lora_messages) == 1
-    assert rollback_lora_messages[0].set_config.lora.hop_limit == 3
+    assert len(rollback_lora_messages) == 0
     assert anode.localConfig.lora.hop_limit == 3
 
 

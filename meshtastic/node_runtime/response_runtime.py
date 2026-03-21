@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from meshtastic.node import Node
 
 logger = logging.getLogger(__name__)
+CHANNEL_ROUTING_RETRY_LIMIT = 1
 
 
 def _has_protobuf_field(obj: Any, field_name: str) -> bool:
@@ -180,15 +181,20 @@ class _NodeChannelResponseRuntime:
     def __init__(self, node: "Node") -> None:
         self._node = node
         self._pending_channel_request_index: int | None = None
+        self._pending_channel_retry_count = 0
         self._channel_request_failed = False
 
     def mark_channel_request_sent(self, channel_index: int) -> None:
         """Record the outstanding zero-based channel request index."""
+        if self._pending_channel_request_index != channel_index:
+            self._pending_channel_retry_count = 0
         self._pending_channel_request_index = channel_index
         self._channel_request_failed = False
 
     def mark_channel_request_send_failed(self, channel_index: int) -> None:
         """Record terminal failure when a channel request could not be sent."""
+        if self._pending_channel_request_index != channel_index:
+            self._pending_channel_retry_count = 0
         self._pending_channel_request_index = channel_index
         self._channel_request_failed = True
 
@@ -196,55 +202,71 @@ class _NodeChannelResponseRuntime:
         """Return whether the active channel download has terminally failed."""
         return self._channel_request_failed
 
+    def _retry_pending_channel_request(self, error_reason: str) -> None:
+        """Retry the in-flight request once for transient routing failures."""
+        request_index = self._pending_channel_request_index
+        if request_index is None:
+            logger.warning(
+                "Channel request failed, error reason: %s (no pending index to retry).",
+                error_reason,
+            )
+            self._channel_request_failed = True
+            return
+
+        if self._pending_channel_retry_count >= CHANNEL_ROUTING_RETRY_LIMIT:
+            logger.warning(
+                "Channel request failed, error reason: %s (retry limit reached for channel %s).",
+                error_reason,
+                request_index,
+            )
+            self._channel_request_failed = True
+            return
+
+        self._pending_channel_retry_count += 1
+        logger.warning(
+            "Channel request failed, error reason: %s (retrying channel %s, attempt %s/%s).",
+            error_reason,
+            request_index,
+            self._pending_channel_retry_count,
+            CHANNEL_ROUTING_RETRY_LIMIT,
+        )
+        retry_request = self._node._request_channel(request_index)  # noqa: SLF001
+        if retry_request is None:
+            logger.warning(
+                "Channel retry for index %s was not started.",
+                request_index,
+            )
+            self._channel_request_failed = True
+            return
+        self._node._timeout.reset()  # We retried the in-flight request
+
     def _handle_routing_response(self, decoded: dict[str, Any]) -> bool:
         """Handle ROUTING_APP channel responses and indicate whether processing is complete."""
         if decoded.get("portnum") != portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.ROUTING_APP
         ):
             return False
+
         routing = decoded.get("routing")
         if not isinstance(routing, dict):
             logger.warning(
                 "Received malformed channel response (missing routing): %s", decoded
             )
             self._channel_request_failed = True
-            return True
-        error_reason = routing.get("errorReason")
-        if not isinstance(error_reason, str):
-            logger.warning(
-                "Received malformed channel response (invalid routing.errorReason): %s",
-                decoded,
-            )
-            self._channel_request_failed = True
-            return True
-        if error_reason != "NONE":
-            request_index = self._pending_channel_request_index
-            if request_index is None:
+        else:
+            error_reason = routing.get("errorReason")
+            if not isinstance(error_reason, str):
                 logger.warning(
-                    "Channel request failed, error reason: %s (no pending index to retry).",
-                    error_reason,
+                    "Received malformed channel response (invalid routing.errorReason): %s",
+                    decoded,
                 )
                 self._channel_request_failed = True
-                return True
-            logger.warning(
-                "Channel request failed, error reason: %s (retrying channel %s).",
-                error_reason,
-                request_index,
-            )
-            retry_request = self._node._request_channel(request_index)  # noqa: SLF001
-            if retry_request is None:
-                logger.warning(
-                    "Channel retry for index %s was not started.",
-                    request_index,
+            elif error_reason != "NONE":
+                self._retry_pending_channel_request(error_reason)
+            else:
+                logger.debug(
+                    "Channel request routed successfully; waiting for ADMIN_APP payload."
                 )
-                self._channel_request_failed = True
-                return True
-            self._node._timeout.reset()  # We retried the in-flight request
-            return True  # Don't try to parse this routing message
-
-        logger.debug(
-            "Channel request routed successfully; waiting for ADMIN_APP payload."
-        )
         return True
 
     def handle_channel_response(self, packet: dict[str, Any]) -> None:
@@ -297,6 +319,7 @@ class _NodeChannelResponseRuntime:
             "<REDACTED>",
         )
         self._channel_request_failed = False
+        self._pending_channel_retry_count = 0
         index = channel_response.index
 
         if index >= MAX_CHANNELS - 1:
@@ -305,6 +328,7 @@ class _NodeChannelResponseRuntime:
                 self._node.channels = list(self._node.partialChannels)
                 self._node._fixup_channels_locked()  # noqa: SLF001
             self._pending_channel_request_index = None
+            self._pending_channel_retry_count = 0
             return
         next_request = self._node._request_channel(index + 1)  # noqa: SLF001
         if next_request is None:

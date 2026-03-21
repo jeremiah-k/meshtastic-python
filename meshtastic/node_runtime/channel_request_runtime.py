@@ -109,7 +109,9 @@ class _NodeChannelRequestRuntime:
                     probe,
                     attrs=("is_set",),
                 )
-                return bool(completed and self._node.channels is not None)
+                if not completed:
+                    return False
+                return not bool(has_channel_request_failed())
             return self._node._timeout.waitForSet(  # noqa: SLF001
                 self._node,
                 attrs=("channels",),

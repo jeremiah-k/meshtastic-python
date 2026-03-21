@@ -685,3 +685,25 @@ class TestNodeChannelResponseRuntime:
         assert result is True
         assert "retry for index 4 was not started" in caplog.text.lower()
         assert runtime.has_channel_request_failed() is True
+
+    @pytest.mark.unit
+    def test_handle_routing_response_retry_limit_marks_failure(
+        self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Persistent routing failures should stop retrying after the configured retry limit."""
+        runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        runtime.mark_channel_request_sent(2)
+        decoded: dict[str, Any] = {
+            "portnum": portnums_pb2.PortNum.Name(portnums_pb2.PortNum.ROUTING_APP),
+            "routing": {"errorReason": "NO_RESPONSE"},
+        }
+
+        with caplog.at_level(logging.WARNING):
+            first_result = runtime._handle_routing_response(decoded)
+            second_result = runtime._handle_routing_response(decoded)
+
+        assert first_result is True
+        assert second_result is True
+        assert mock_node_for_channel._request_channel.call_count == 1
+        assert "retry limit reached for channel 2" in caplog.text
+        assert runtime.has_channel_request_failed() is True
