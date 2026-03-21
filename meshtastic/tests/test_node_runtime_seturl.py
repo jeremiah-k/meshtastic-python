@@ -461,7 +461,7 @@ class TestSetUrlCacheManager:
 
         # Mock _raise_interface_error to raise an exception with the actual message
         def raise_error(msg: str) -> NoReturn:
-            raise Exception(msg)
+            raise ValueError(msg)
 
         mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
 
@@ -480,7 +480,7 @@ class TestSetUrlCacheManager:
 
         # Mock _raise_interface_error to raise an exception with the actual message
         def raise_error(msg: str) -> NoReturn:
-            raise Exception(msg)
+            raise ValueError(msg)
 
         mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
 
@@ -499,7 +499,7 @@ class TestSetUrlCacheManager:
 
         # Mock _raise_interface_error to raise an exception with the actual message
         def raise_error(msg: str) -> NoReturn:
-            raise Exception(msg)
+            raise ValueError(msg)
 
         mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
 
@@ -649,10 +649,10 @@ class TestSetUrlRollbackEngine:
         # First write attempt fails, second succeeds
         call_count = [0]
 
-        def write_side_effect(channel: channel_pb2.Channel, adminIndex: int) -> None:
+        def write_side_effect(_channel: channel_pb2.Channel, _adminIndex: int) -> None:
             call_count[0] += 1
             if call_count[0] == 1:
-                raise Exception("Write failed")
+                raise RuntimeError("Write failed")
 
         mock_local_node._write_channel_snapshot.side_effect = write_side_effect
 
@@ -705,14 +705,14 @@ class TestSetUrlRollbackEngine:
         # Channel write succeeds, LoRa write fails
         write_call_count = [0]
 
-        def write_side_effect(channel: channel_pb2.Channel, adminIndex: int) -> None:
+        def write_side_effect(_channel: channel_pb2.Channel, _adminIndex: int) -> None:
             write_call_count[0] += 1
             # First call is channel write, succeeds
 
         def send_admin_side_effect(
-            msg: admin_pb2.AdminMessage, adminIndex: int
+            _msg: admin_pb2.AdminMessage, _adminIndex: int
         ) -> None:
-            raise Exception("LoRa rollback failed")
+            raise RuntimeError("LoRa rollback failed")
 
         mock_local_node._write_channel_snapshot.side_effect = write_side_effect
         mock_local_node._send_admin.side_effect = send_admin_side_effect
@@ -1022,7 +1022,7 @@ class TestSetUrlExecutionEngine:
         self,
         execution_engine: _SetUrlExecutionEngine,
         mock_local_node: MagicMock,
-        cache_manager: _SetUrlCacheManager,
+        _cache_manager: _SetUrlCacheManager,
     ) -> None:
         """execute_replace_all writes staged channels."""
         mock_local_node.channels = [
@@ -1134,7 +1134,7 @@ class TestSetUrlTransactionCoordinator:
 
         # Mock _raise_interface_error to raise an exception with the actual message
         def raise_error(msg: str) -> NoReturn:
-            raise Exception(msg)
+            raise ValueError(msg)
 
         mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
 
@@ -1270,7 +1270,7 @@ class TestSetUrlAddOnlyPlanner:
 
         # Mock _raise_interface_error to raise an exception with the actual message
         def raise_error(msg: str) -> NoReturn:
-            raise Exception(msg)
+            raise ValueError(msg)
 
         mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
 
@@ -1349,7 +1349,7 @@ class TestSetUrlReplacePlanner:
 
         # Mock _raise_interface_error to raise an exception with the actual message
         def raise_error(msg: str) -> NoReturn:
-            raise Exception(msg)
+            raise ValueError(msg)
 
         mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
 
@@ -1423,7 +1423,7 @@ class TestSetUrlReplacePlanner:
 
         # Mock _raise_interface_error to raise an exception with the actual message
         def raise_error(msg: str) -> NoReturn:
-            raise Exception(msg)
+            raise ValueError(msg)
 
         mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
 
@@ -1465,7 +1465,7 @@ class TestSetUrlAddOnlyExecutionState:
         """Default state has empty written_indices and lora_write_started=False."""
         state = _SetUrlAddOnlyExecutionState()
 
-        assert state.written_indices == []
+        assert not state.written_indices
         assert state.lora_write_started is False
 
     @pytest.mark.unit
@@ -1486,9 +1486,9 @@ class TestSetUrlReplaceExecutionState:
         """Default state has empty tracking lists."""
         state = _SetUrlReplaceExecutionState()
 
-        assert state.written_channel_indices == []
+        assert not state.written_channel_indices
         assert state.lora_write_started is False
-        assert state.rollback_admin_indexes_for_write == []
+        assert not state.rollback_admin_indexes_for_write
 
     @pytest.mark.unit
     def test_state_with_initial_rollback_indexes(self) -> None:
