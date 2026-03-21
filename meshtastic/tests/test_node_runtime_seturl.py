@@ -293,9 +293,9 @@ class TestSetUrlParser:
 
         def raise_error(msg: str) -> NoReturn:
             captured_msg.append(msg)
-            raise Exception(msg)
+            raise ValueError(msg)
 
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             _SetUrlParser.parse(url, raise_interface_error=raise_error)
 
         assert len(captured_msg) == 1
@@ -310,9 +310,9 @@ class TestSetUrlParser:
 
         def raise_error(msg: str) -> NoReturn:
             captured_msg.append(msg)
-            raise Exception(msg)
+            raise ValueError(msg)
 
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             _SetUrlParser.parse(url, raise_interface_error=raise_error)
 
         assert len(captured_msg) == 1
@@ -327,9 +327,9 @@ class TestSetUrlParser:
 
         def raise_error(msg: str) -> NoReturn:
             captured_msg.append(msg)
-            raise Exception(msg)
+            raise ValueError(msg)
 
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             _SetUrlParser.parse(url, raise_interface_error=raise_error)
 
         assert len(captured_msg) == 1
@@ -348,9 +348,9 @@ class TestSetUrlParser:
 
         def raise_error(msg: str) -> NoReturn:
             captured_msg.append(msg)
-            raise Exception(msg)
+            raise ValueError(msg)
 
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             _SetUrlParser.parse(url, raise_interface_error=raise_error)
 
         # The empty ChannelSet is encoded as empty bytes, which results in

@@ -705,7 +705,7 @@ class TestNodeDeleteChannelRuntime:
 
         mock_local_node.channels = channels
 
-        def make_cache_none(*args: Any, **kwargs: Any) -> None:
+        def make_cache_none(*_args: Any, **_kwargs: Any) -> None:
             mock_local_node.channels = None
 
         with (
@@ -745,7 +745,7 @@ class TestNodeDeleteChannelRuntime:
 
         mock_local_node.channels = channels
 
-        def change_cache(*args: Any, **kwargs: Any) -> None:
+        def change_cache(*_args: Any, **_kwargs: Any) -> None:
             # Replace with a different list
             mock_local_node.channels = [channel_pb2.Channel()]
 
@@ -1109,7 +1109,7 @@ class TestNodePositionTimeCommandRuntime:
     def test_remove_fixed_position_logs_info(
         self,
         position_time_runtime: _NodePositionTimeCommandRuntime,
-        mock_local_node: MagicMock,
+        _mock_local_node: MagicMock,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """remove_fixed_position should log info message."""
@@ -1177,7 +1177,7 @@ class TestNodePositionTimeCommandRuntime:
     def test_set_time_logs_info(
         self,
         position_time_runtime: _NodePositionTimeCommandRuntime,
-        mock_local_node: MagicMock,
+        _mock_local_node: MagicMock,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """set_time should log info message with timestamp."""
