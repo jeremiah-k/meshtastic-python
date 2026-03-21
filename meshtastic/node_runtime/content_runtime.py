@@ -112,38 +112,77 @@ class _NodeContentResponseRuntime:
     @staticmethod
     def _has_routing_error(decoded: dict[str, Any]) -> bool:
         """Return True when decoded routing payload contains a non-NONE error reason."""
-        if "routing" in decoded and decoded["routing"]["errorReason"] != "NONE":
-            logger.error("Error on response: %s", decoded["routing"]["errorReason"])
+        routing = decoded.get("routing")
+        if not isinstance(routing, dict):
+            return False
+        error_reason = routing.get("errorReason")
+        if isinstance(error_reason, str) and error_reason != "NONE":
+            logger.error("Error on response: %s", error_reason)
             return True
         return False
 
     def handle_ringtone_response(self, packet: dict[str, Any]) -> bool:
         """Parse ringtone response packet and return True for terminal callbacks."""
         logger.debug("onResponseRequestRingtone() p:%s", packet)
-        decoded = packet["decoded"]
+        decoded = packet.get("decoded")
+        if not isinstance(decoded, dict):
+            logger.warning("Unexpected ringtone response without decoded payload: %s", packet)
+            return False
         if "routing" in decoded:
             return self._has_routing_error(decoded)
-        if "admin" in decoded and "raw" in decoded["admin"]:
-            ringtone_part = decoded["admin"]["raw"].get_ringtone_response
+        admin_message = decoded.get("admin")
+        if not isinstance(admin_message, dict):
+            logger.warning("Unexpected ringtone response without admin payload: %s", packet)
+            return False
+        raw_admin = admin_message.get("raw")
+        if raw_admin is None or not hasattr(raw_admin, "get_ringtone_response"):
+            logger.warning("Unexpected ringtone response without raw ringtone data: %s", packet)
+            return False
+        try:
+            ringtone_part = raw_admin.get_ringtone_response
             self._cache_store.store_ringtone_fragment(ringtone_part)
             return True
-        return False
+        except AttributeError:
+            logger.warning("Failed to parse ringtone response payload: %s", packet)
+            return False
 
     def handle_canned_message_response(self, packet: dict[str, Any]) -> bool:
         """Parse canned-message response packet and return True for terminal callbacks."""
         logger.debug(
             "onResponseRequestCannedMessagePluginMessageMessages() p:%s", packet
         )
-        decoded = packet["decoded"]
+        decoded = packet.get("decoded")
+        if not isinstance(decoded, dict):
+            logger.warning(
+                "Unexpected canned-message response without decoded payload: %s",
+                packet,
+            )
+            return False
         if "routing" in decoded:
             return self._has_routing_error(decoded)
-        if "admin" in decoded and "raw" in decoded["admin"]:
-            canned_messages = decoded["admin"][
-                "raw"
-            ].get_canned_message_module_messages_response
+        admin_message = decoded.get("admin")
+        if not isinstance(admin_message, dict):
+            logger.warning(
+                "Unexpected canned-message response without admin payload: %s",
+                packet,
+            )
+            return False
+        raw_admin = admin_message.get("raw")
+        if raw_admin is None or not hasattr(
+            raw_admin, "get_canned_message_module_messages_response"
+        ):
+            logger.warning(
+                "Unexpected canned-message response without raw message data: %s",
+                packet,
+            )
+            return False
+        try:
+            canned_messages = raw_admin.get_canned_message_module_messages_response
             self._cache_store.store_canned_message_fragment(canned_messages)
             return True
-        return False
+        except AttributeError:
+            logger.warning("Failed to parse canned-message response payload: %s", packet)
+            return False
 
 
 class _NodeAdminContentRuntime:
@@ -204,7 +243,7 @@ class _NodeAdminContentRuntime:
         self,
     ) -> Callable[[dict[str, Any]], Any] | None:
         """Return legacy ACK callback selection for local-vs-remote writes."""
-        if self._node == self._node.iface.localNode:
+        if self._node is self._node.iface.localNode:
             return None
         return self._node.onAckNak
 
@@ -251,7 +290,8 @@ class _NodeAdminContentRuntime:
             request_message,
             onResponse=self._select_write_response_handler(),
         )
-        self._cache_store.invalidate_ringtone_cache()
+        if send_result is not None:
+            self._cache_store.invalidate_ringtone_cache()
         return send_result
 
     def read_canned_message(self) -> str | None:
@@ -299,5 +339,6 @@ class _NodeAdminContentRuntime:
             request_message,
             onResponse=self._select_write_response_handler(),
         )
-        self._cache_store.invalidate_canned_message_cache()
+        if send_result is not None:
+            self._cache_store.invalidate_canned_message_cache()
         return send_result

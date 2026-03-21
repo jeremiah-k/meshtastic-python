@@ -128,18 +128,39 @@ class _NodeChannelResponseRuntime:
 
     def handle_channel_response(self, packet: dict[str, Any]) -> None:
         """Process channel response packet and maintain partial/final channel sequencing."""
-        logger.debug("onResponseRequestChannel() p:%s", packet)
-        decoded = packet["decoded"]
+        decoded = packet.get("decoded")
+        if not isinstance(decoded, dict):
+            logger.warning("Received malformed channel response without decoded payload")
+            return
+        logger.debug(
+            "onResponseRequestChannel() portnum=%s",
+            decoded.get("portnum"),
+        )
         if self._handle_routing_response(decoded):
             return
 
-        response_channel = decoded["admin"]["raw"].get_channel_response
+        admin_message = decoded.get("admin")
+        if not isinstance(admin_message, dict):
+            logger.warning("Received malformed channel response without admin payload")
+            return
+        raw_admin = admin_message.get("raw")
+        if raw_admin is None or not hasattr(raw_admin, "get_channel_response"):
+            logger.warning("Received malformed channel response without admin.raw payload")
+            return
+
+        response_channel = raw_admin.get_channel_response
         channel_response = channel_pb2.Channel()
         channel_response.CopyFrom(response_channel)
         with self._node._channels_lock:  # noqa: SLF001
             self._node.partialChannels.append(channel_response)
         self._node._timeout.reset()  # We made forward progress
-        logger.debug("Received channel %s", stripnl(channel_response))
+        logger.debug(
+            "Received channel index=%s role=%s name=%s settings=%s",
+            channel_response.index,
+            channel_pb2.Channel.Role.Name(channel_response.role),
+            channel_response.settings.name,
+            "<REDACTED>",
+        )
         index = channel_response.index
 
         if index >= MAX_CHANNELS - 1:

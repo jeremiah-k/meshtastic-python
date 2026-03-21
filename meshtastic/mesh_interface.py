@@ -5,6 +5,7 @@
 import base64
 import collections
 import copy
+import hashlib
 import json
 import logging
 import math
@@ -695,7 +696,7 @@ class _QueueSendRuntime:
             if queue_status is not None and queue_status.free <= 0:
                 return None
             to_resend = queue.popitem(last=False)
-            if queue_status is not None:
+            if queue_status is not None and isinstance(to_resend[1], mesh_pb2.ToRadio):
                 queue_status.free -= 1
             return to_resend
 
@@ -756,6 +757,7 @@ class _QueueSendRuntime:
         """Reconcile resent packets against ACK-under-us and requeue semantics."""
         missing = object()
         for packet_id, packet in resent_queue.items():
+            restore_queue_slot = False
             with self._lock:
                 queued_value: mesh_pb2.ToRadio | bool | object = self._get_queue().pop(
                     packet_id,
@@ -779,10 +781,18 @@ class _QueueSendRuntime:
                 packet_to_requeue = queued_value
             elif isinstance(packet, mesh_pb2.ToRadio):
                 packet_to_requeue = packet
+                restore_queue_slot = packet_id not in sent_packet_ids
             elif queued_value is not missing and isinstance(queued_value, bool):
                 packet_to_requeue = queued_value
             if packet_to_requeue is not None:
                 with self._lock:
+                    if restore_queue_slot:
+                        queue_status = self._get_queue_status()
+                        if queue_status is not None:
+                            queue_status.free = min(
+                                queue_status.maxlen,
+                                queue_status.free + 1,
+                            )
                     self._get_queue()[packet_id] = packet_to_requeue
 
     def record_queue_status(self, queue_status: mesh_pb2.QueueStatus) -> None:
@@ -3599,14 +3609,21 @@ class MeshInterface:  # pylint: disable=R0902
     def _parse_from_radio_bytes(self, from_radio_bytes: bytes) -> mesh_pb2.FromRadio:
         """Parse raw FromRadio bytes into protobuf form."""
         from_radio = mesh_pb2.FromRadio()
+        frame_length = len(from_radio_bytes)
+        frame_checksum = hashlib.sha256(from_radio_bytes).hexdigest()[:12]
         logger.debug(
-            "in mesh_interface.py _handle_from_radio() fromRadioBytes: %r",
-            from_radio_bytes,
+            "Received FromRadio frame len=%d sha256=%s",
+            frame_length,
+            frame_checksum,
         )
         try:
             from_radio.ParseFromString(from_radio_bytes)
         except Exception:
-            logger.exception("Error while parsing FromRadio bytes:%s", from_radio_bytes)
+            logger.exception(
+                "Error while parsing FromRadio frame len=%d sha256=%s",
+                frame_length,
+                frame_checksum,
+            )
             raise
         return from_radio
 
@@ -4044,10 +4061,6 @@ class MeshInterface:  # pylint: disable=R0902
         self._classify_packet_runtime(packet_context, meshPacket)
         self._apply_packet_runtime_mutations(packet_context, meshPacket)
         published_packet = copy.deepcopy(packet_context.packet_dict)
-        if hack and "from" not in published_packet and getattr(meshPacket, "from") == 0:
-            # Preserve historical/test-facing compatibility for hack=True
-            # publications while keeping callback/runtime behavior unchanged.
-            published_packet["from"] = 0
         self._invoke_packet_on_receive(packet_context)
         self._correlate_packet_response_handler(packet_context)
 
@@ -4087,6 +4100,8 @@ class MeshInterface:  # pylint: disable=R0902
         # doesn't need to understand protobufs.  But advanced clients might
         # want the raw protobuf, so we provide it in "raw"
         packet_dict["raw"] = meshPacket
+        if hack and "from" not in packet_dict and getattr(meshPacket, "from") == 0:
+            packet_dict["from"] = 0
 
         if "to" not in packet_dict:
             packet_dict["to"] = 0

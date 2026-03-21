@@ -3605,14 +3605,20 @@ def test_send_to_radio_requeues_packet_when_send_impl_raises(
         incoming = mesh_pb2.ToRadio()
         incoming.packet.id = 999
 
+        class _SendImplFailure(RuntimeError):
+            """Intentional send failure sentinel for requeue-path testing."""
+
+            def __init__(self) -> None:
+                super().__init__("send failed")
+
         def _failing_send(_msg: mesh_pb2.ToRadio) -> None:
-            raise RuntimeError("send failed")
+            raise _SendImplFailure()
 
         monkeypatch.setattr(iface, "_send_to_radio_impl", _failing_send)
         pops = iter([(123, packet), None])
         original_pop = iface._queue_pop_for_send
         monkeypatch.setattr(iface, "_queue_pop_for_send", lambda: next(pops))
-        with pytest.raises(RuntimeError, match="send failed"):
+        with pytest.raises(_SendImplFailure, match="send failed"):
             iface._send_to_radio(incoming)
         monkeypatch.setattr(iface, "_queue_pop_for_send", original_pop)
         assert 123 in iface.queue

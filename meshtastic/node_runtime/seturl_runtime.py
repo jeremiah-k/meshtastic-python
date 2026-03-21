@@ -3,8 +3,9 @@
 import base64
 import binascii
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable, NoReturn
+from typing import TYPE_CHECKING, NoReturn
 
 from google.protobuf.message import DecodeError
 
@@ -20,6 +21,8 @@ if TYPE_CHECKING:
     from meshtastic.node import Node
 
 logger = logging.getLogger(__name__)
+
+_ERR_CONFIG_OR_CHANNELS_NOT_LOADED = "Config or channels not loaded"
 
 
 @dataclass(frozen=True)
@@ -170,9 +173,9 @@ class _SetUrlAddOnlyPlanner:
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if channels is None:
-                self._node._raise_interface_error(
-                    "Config or channels not loaded"
-                )  # noqa: SLF001
+                self._node._raise_interface_error(  # noqa: SLF001
+                    _ERR_CONFIG_OR_CHANNELS_NOT_LOADED
+                )
             existing_names_normalized = {
                 channel.settings.name.lower()
                 for channel in channels
@@ -261,9 +264,9 @@ class _SetUrlReplacePlanner:
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if channels is None:
-                self._node._raise_interface_error(
-                    "Config or channels not loaded"
-                )  # noqa: SLF001
+                self._node._raise_interface_error(  # noqa: SLF001
+                    _ERR_CONFIG_OR_CHANNELS_NOT_LOADED
+                )
             max_channels = len(channels)
             replace_original_channels_snapshot: list[channel_pb2.Channel] = []
             replace_original_channels_by_index: dict[int, channel_pb2.Channel] = {}
@@ -276,9 +279,14 @@ class _SetUrlReplacePlanner:
                 )
 
         replace_original_lora_config: config_pb2.Config.LoRaConfig | None = None
-        if self._parsed_input.has_lora_update and self._node.localConfig.HasField(
-            "lora"
-        ):
+        if self._parsed_input.has_lora_update:
+            if (
+                not self._node.localConfig.HasField("lora")
+                and len(self._node.localConfig.ListFields()) > 0
+            ):
+                self._node._raise_interface_error(  # noqa: SLF001
+                    "LoRa config must be loaded before setURL() when the URL updates LoRa settings"
+                )
             replace_original_lora_config = config_pb2.Config.LoRaConfig()
             replace_original_lora_config.CopyFrom(self._node.localConfig.lora)
 
@@ -391,9 +399,9 @@ class _SetUrlCacheManager:
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if channels is None:
-                self._node._raise_interface_error(
-                    "Config or channels not loaded"
-                )  # noqa: SLF001
+                self._node._raise_interface_error(  # noqa: SLF001
+                    _ERR_CONFIG_OR_CHANNELS_NOT_LOADED
+                )
             if staged_channel.index < 0 or staged_channel.index >= len(channels):
                 self._node._raise_interface_error(  # noqa: SLF001
                     f"Channel index {staged_channel.index} out of range during cache update"
@@ -847,6 +855,10 @@ class _SetUrlTransactionCoordinator:
     def _resolve_admin_context(self) -> _SetUrlAdminContext:
         """Capture admin-channel write context before staging any transaction writes."""
         admin_write_node = self._node.iface.localNode
+        if admin_write_node is None:
+            self._node._raise_interface_error(  # noqa: SLF001
+                "Interface localNode not initialized"
+            )
         admin_index_for_write = (
             admin_write_node._get_admin_channel_index()
         )  # noqa: SLF001

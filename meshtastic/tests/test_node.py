@@ -330,7 +330,7 @@ def test_on_response_request_settings_copies_local_config_from_raw_response(
         anode.onResponseRequestSettings(payload)
 
     assert anode.localConfig.lora.hop_limit == 7
-    assert "lora:" in caplog.text
+    assert "Received settings block: lora" in caplog.text
 
 
 @pytest.mark.unit

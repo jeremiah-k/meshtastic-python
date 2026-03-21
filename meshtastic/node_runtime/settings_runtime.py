@@ -1,7 +1,8 @@
 """Settings request/response and admin command-family runtime owners."""
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from google.protobuf.descriptor import FieldDescriptor
 
@@ -96,9 +97,13 @@ class _NodeSettingsMessageBuilder:
             dispatch["device_ui"] = ("set_config", node.localConfig.device_ui)
         return dispatch
 
+    def get_write_config_entry(self, config_name: str) -> tuple[str, Any] | None:
+        """Return dispatch entry for one write-config section when available."""
+        return self._write_config_dispatch().get(config_name)
+
     def build_write_message(self, config_name: str) -> admin_pb2.AdminMessage:
         """Build one set_config/set_module_config message for a config name."""
-        config_entry = self._write_config_dispatch().get(config_name)
+        config_entry = self.get_write_config_entry(config_name)
         if config_entry is None:
             self._node._raise_interface_error(  # noqa: SLF001
                 f"Error: No valid config with name {config_name}"
@@ -112,7 +117,7 @@ class _NodeSettingsMessageBuilder:
 
     def validate_config_name(self, config_name: str) -> None:
         """Validate config-name dispatch key without constructing a message."""
-        if config_name not in self._write_config_dispatch():
+        if self.get_write_config_entry(config_name) is None:
             self._node._raise_interface_error(  # noqa: SLF001
                 f"Error: No valid config with name {config_name}"
             )
@@ -137,7 +142,7 @@ class _NodeSettingsRuntime:
         admin_index: int | None = None,
     ) -> None:
         """Send one settings request with preserved local/remote wait semantics."""
-        if self._node == self._node.iface.localNode:
+        if self._node is self._node.iface.localNode:
             on_response: Callable[[dict[str, Any]], Any] | None = None
         else:
             on_response = self._node.onResponseRequestSettings
@@ -155,25 +160,31 @@ class _NodeSettingsRuntime:
         if on_response is not None:
             self._node.iface.waitForAckNak()
 
-    def _validate_write_configs_loaded(self) -> None:
-        """Preserve historical loaded-state precondition for writeConfig."""
-        if (
-            len(self._node.localConfig.ListFields()) == 0
-            and len(self._node.moduleConfig.ListFields()) == 0
-        ):
+    def _validate_write_configs_loaded(self, config_name: str) -> None:
+        """Ensure the requested config section was loaded before writing."""
+        config_entry = self._message_builder.get_write_config_entry(config_name)
+        if config_entry is None:
             self._node._raise_interface_error(  # noqa: SLF001
-                "Error: No localConfig has been read. "
+                f"Error: No valid config with name {config_name}"
+            )
+
+        _, source_config = config_entry
+        if len(source_config.ListFields()) == 0:
+            self._node._raise_interface_error(  # noqa: SLF001
+                f"Error: {config_name} has not been read. "
                 "Request config from the device before writing."
             )
 
     def write_config(self, config_name: str) -> None:
         """Send one settings write with preserved callback selection."""
         self._message_builder.validate_config_name(config_name)
-        self._validate_write_configs_loaded()
+        self._validate_write_configs_loaded(config_name)
         message = self._message_builder.build_write_message(config_name)
         logger.debug("Wrote: %s", config_name)
         on_response = (
-            None if self._node == self._node.iface.localNode else self._node.onAckNak
+            None
+            if self._node is self._node.iface.localNode
+            else self._node.onAckNak
         )
         request = self._node._send_admin(message, onResponse=on_response)
         if on_response is not None and request is not None:
@@ -257,27 +268,45 @@ class _NodeSettingsResponseRuntime:
     def handle_settings_response(self, packet: dict[str, Any]) -> None:
         """Process one settings response packet with preserved ACK/NAK semantics."""
         logger.debug("onResponseRequestSetting() p:%s", packet)
-        decoded = packet["decoded"]
-        if "routing" in decoded:
-            if decoded["routing"]["errorReason"] != "NONE":
+        decoded = packet.get("decoded")
+        if not isinstance(decoded, dict):
+            logger.warning("Received malformed settings response (missing decoded): %s", packet)
+            return
+        routing = decoded.get("routing")
+        if isinstance(routing, dict):
+            error_reason = routing.get("errorReason")
+            if isinstance(error_reason, str) and error_reason != "NONE":
                 logger.error(
                     "Error on response: %s",
-                    decoded["routing"]["errorReason"],
+                    error_reason,
                 )
                 self._node.iface._acknowledgment.receivedNak = True
             return
 
-        admin_message = decoded["admin"]
+        admin_message = decoded.get("admin")
+        if not isinstance(admin_message, dict):
+            logger.warning(
+                "Received malformed settings response (missing admin): %s",
+                packet,
+            )
+            return
         target = self._resolve_config_target(admin_message)
         if target is None:
             self._node.iface._acknowledgment.receivedAck = True
             return
 
         oneof, field_name, config_values = target
-        raw_config = getattr(getattr(admin_message["raw"], oneof), field_name)
+        raw_admin = admin_message.get("raw")
+        if raw_admin is None:
+            logger.warning(
+                "Received malformed settings response (missing admin.raw): %s",
+                packet,
+            )
+            return
+        raw_config = getattr(getattr(raw_admin, oneof), field_name)
         config_values.CopyFrom(raw_config)
         self._node.iface._acknowledgment.receivedAck = True
-        logger.info("%s:\n%s", field_name, config_values)
+        logger.info("Received settings block: %s", field_name)
 
 
 class _NodeAdminCommandRuntime:
@@ -288,7 +317,7 @@ class _NodeAdminCommandRuntime:
 
     def _select_remote_ack_callback(self) -> Callable[[dict[str, Any]], Any] | None:
         """Return callback policy used by remote admin command sends."""
-        if self._node == self._node.iface.localNode:
+        if self._node is self._node.iface.localNode:
             return None
         return self._node.onAckNak
 
@@ -578,7 +607,6 @@ class _NodeOwnerProfileRuntime:
                     long_name,
                 )
             message.set_owner.long_name = long_name
-            message.set_owner.is_licensed = is_licensed
 
         if short_name is not None:
             short_name = short_name.strip()
@@ -594,6 +622,7 @@ class _NodeOwnerProfileRuntime:
                 )
             message.set_owner.short_name = short_name
 
+        message.set_owner.is_licensed = is_licensed
         if is_unmessagable is not None:
             message.set_owner.is_unmessagable = is_unmessagable
 

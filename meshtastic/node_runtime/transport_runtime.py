@@ -2,8 +2,9 @@
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from meshtastic.node_runtime.shared import (
     MAX_CHANNELS,
@@ -225,7 +226,7 @@ class _NodeDeleteChannelRuntime:
                     "Only SECONDARY or DISABLED channels can be deleted"
                 )
 
-            is_local_node = self._node.iface.localNode == self._node
+            is_local_node = self._node.iface.localNode is self._node
             if is_local_node:
                 pre_delete_admin_index = self._named_admin_index_from_channels(channels)
             else:
@@ -349,7 +350,7 @@ class _NodePositionTimeCommandRuntime:
 
     def _select_remote_ack_callback(self) -> Callable[[dict[str, Any]], Any] | None:
         """Return callback policy used by remote admin command sends."""
-        if self._node == self._node.iface.localNode:
+        if self._node is self._node.iface.localNode:
             return None
         return self._node.onAckNak
 
@@ -367,9 +368,13 @@ class _NodePositionTimeCommandRuntime:
         lat : int | float
             Latitude value. Floats are interpreted as degrees and scaled by
             1e7; ints are treated as pre-scaled ``latitude_i`` values.
+            ``0`` and ``0.0`` preserve historical unset semantics and omit
+            ``latitude_i`` from the sent message.
         lon : int | float
             Longitude value. Floats are interpreted as degrees and scaled by
             1e7; ints are treated as pre-scaled ``longitude_i`` values.
+            ``0`` and ``0.0`` preserve historical unset semantics and omit
+            ``longitude_i`` from the sent message.
         alt : int
             Altitude in meters. ``0`` preserves historical "unset altitude"
             behavior.

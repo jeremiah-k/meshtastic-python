@@ -19,11 +19,20 @@ class _NodeChannelExportRuntime:
     def __init__(self, node: "Node") -> None:
         self._node = node
 
+    def _snapshot_channels(self) -> list[channel_pb2.Channel]:
+        """Return detached channel snapshots captured under the channel lock."""
+        with self._node._channels_lock:  # noqa: SLF001
+            snapshot: list[channel_pb2.Channel] = []
+            for source_channel in self._node.channels or []:
+                copied_channel = channel_pb2.Channel()
+                copied_channel.CopyFrom(source_channel)
+                snapshot.append(copied_channel)
+            return snapshot
+
     def get_url(self, *, include_all: bool = True) -> str:
         """Build channel URL export with preserved includeAll and LoRa semantics."""
         channel_set = apponly_pb2.ChannelSet()
-        with self._node._channels_lock:  # noqa: SLF001
-            channels_snapshot = list(self._node.channels) if self._node.channels else []
+        channels_snapshot = self._snapshot_channels()
         if channels_snapshot:
             for channel in channels_snapshot:
                 if channel.role == channel_pb2.Channel.Role.PRIMARY or (
@@ -31,7 +40,7 @@ class _NodeChannelExportRuntime:
                 ):
                     channel_set.settings.append(channel.settings)
 
-        if len(self._node.localConfig.ListFields()) == 0:
+        if not self._node.localConfig.HasField("lora"):
             self._node.requestConfig(
                 self._node.localConfig.DESCRIPTOR.fields_by_name["lora"]
             )
@@ -44,8 +53,7 @@ class _NodeChannelExportRuntime:
     def get_channels_with_hash(self) -> list[dict[str, Any]]:
         """Return index/role/name/hash descriptors for current channel snapshot."""
         result: list[dict[str, Any]] = []
-        with self._node._channels_lock:  # noqa: SLF001
-            channels_snapshot = list(self._node.channels) if self._node.channels else []
+        channels_snapshot = self._snapshot_channels()
         if channels_snapshot:
             for channel in channels_snapshot:
                 settings = getattr(channel, "settings", None)
@@ -68,12 +76,21 @@ class _NodeChannelExportRuntime:
 
     def turn_off_encryption_on_primary_channel(self) -> None:
         """Disable primary-channel encryption and persist updated channel state."""
+        primary_index: int | None = None
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if not channels:
                 self._node._raise_interface_error(
                     "Error: No channels have been read"
                 )  # noqa: SLF001
-            channels[0].settings.psk = fromPSK("none")
+            for channel in channels:
+                if channel.role == channel_pb2.Channel.Role.PRIMARY:
+                    channel.settings.psk = fromPSK("none")
+                    primary_index = channel.index
+                    break
+            if primary_index is None:
+                self._node._raise_interface_error(
+                    "Error: No primary channel found"
+                )  # noqa: SLF001
         logger.info("Writing modified channels to device")
-        self._node.writeChannel(0)
+        self._node.writeChannel(primary_index)

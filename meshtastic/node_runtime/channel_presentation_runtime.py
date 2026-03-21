@@ -30,7 +30,11 @@ class _NodeChannelPresentationRuntime:
         """Print channels and URL exports preserving historical output behavior."""
         print("Channels:")
         with self._node._channels_lock:  # noqa: SLF001
-            channels_snapshot = list(self._node.channels) if self._node.channels else []
+            channels_snapshot: list[channel_pb2.Channel] = []
+            for source_channel in self._node.channels or []:
+                copied_channel = channel_pb2.Channel()
+                copied_channel.CopyFrom(source_channel)
+                channels_snapshot.append(copied_channel)
         if channels_snapshot:
             logger.debug("self.channels:%s", channels_snapshot)
             for channel in channels_snapshot:
