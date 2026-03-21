@@ -1126,13 +1126,13 @@ def test_showChannels_logs_snapshot_and_skips_disabled_entries(
     disabled = Channel(index=1, role=Channel.Role.DISABLED)
     disabled.settings.name = "disabled"
     anode.channels = [primary, disabled]
-    anode.getURL = MagicMock(side_effect=["primary-url", "complete-url"])  # type: ignore[method-assign]
+    anode.localConfig.lora.hop_limit = 3
 
     with caplog.at_level(logging.DEBUG):
         anode.showChannels()
 
     out, _ = capsys.readouterr()
-    assert "self.channels" in caplog.text
+    assert "channel snapshot captured" in caplog.text
     assert "Index 0: PRIMARY" in out
     assert "Index 1:" not in out
 
@@ -1363,6 +1363,14 @@ def test_getURL_requests_lora_when_local_config_empty(
     disabled = Channel(index=2, role=Channel.Role.DISABLED)
     anode.channels = [primary, secondary, disabled]
     anode.requestConfig = MagicMock()  # type: ignore[method-assign]
+
+    def _populate_lora_and_return_true(attribute: str = "channels") -> bool:
+        anode.localConfig.lora.hop_limit = 3
+        return True
+
+    anode.waitForConfig = MagicMock(  # type: ignore[method-assign]
+        side_effect=_populate_lora_and_return_true
+    )
 
     url = anode.getURL(includeAll=False)
 
