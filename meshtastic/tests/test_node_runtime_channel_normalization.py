@@ -105,14 +105,9 @@ class TestFixupChannels:
         self, mock_node, runtime
     ):
         """fixup_channels should acquire lock and call fixup_channels_locked."""
-        original_lock = mock_node._channels_lock
         mock_node._channels_lock = MagicMock()
-        mock_node._channels_lock.__enter__ = MagicMock(
-            return_value=original_lock.__enter__()
-        )
-        mock_node._channels_lock.__exit__ = MagicMock(
-            return_value=original_lock.__exit__
-        )
+        mock_node._channels_lock.__enter__ = MagicMock(return_value=None)
+        mock_node._channels_lock.__exit__ = MagicMock(return_value=False)
 
         runtime.fixup_channels()
 
@@ -203,14 +198,9 @@ class TestFillChannels:
         self, mock_node, runtime
     ):
         """fill_channels should acquire lock and call fill_channels_locked."""
-        original_lock = mock_node._channels_lock
         mock_node._channels_lock = MagicMock()
-        mock_node._channels_lock.__enter__ = MagicMock(
-            return_value=original_lock.__enter__()
-        )
-        mock_node._channels_lock.__exit__ = MagicMock(
-            return_value=original_lock.__exit__
-        )
+        mock_node._channels_lock.__enter__ = MagicMock(return_value=None)
+        mock_node._channels_lock.__exit__ = MagicMock(return_value=False)
 
         runtime.fill_channels()
 
@@ -221,7 +211,7 @@ class TestFillChannels:
 
 @pytest.mark.unit
 class TestIntegration:
-    """Integration tests for combined fixup and fill behavior."""
+    """Combined workflow tests for fixup and fill behavior."""
 
     def test_fixup_channels_full_workflow(self, mock_node, caplog):
         """Full workflow: truncate, reindex, and fill with DISABLED channels."""

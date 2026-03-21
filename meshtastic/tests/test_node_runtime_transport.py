@@ -136,7 +136,7 @@ def mock_remote_node(mock_iface: MagicMock) -> MagicMock:
             "_get_admin_channel_index",
         ]
     )
-    node.nodeNum = 9876543210  # Different from local node
+    node.nodeNum = 4000000000  # Different from local node, within 32-bit range
     node.iface = mock_iface
     node.noProto = False
     node.requestConfig = MagicMock()

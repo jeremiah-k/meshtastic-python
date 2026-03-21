@@ -192,9 +192,11 @@ def test_get_url_include_all_false(
     mock_node.channels = [primary, secondary]
     mock_node.localConfig.lora.hop_limit = 3
 
-    url = export_runtime.get_url(include_all=False)
+    url_primary_only = export_runtime.get_url(include_all=False)
+    url_all = export_runtime.get_url(include_all=True)
 
-    assert url.startswith("https://meshtastic.org/e/#")
+    assert url_primary_only.startswith("https://meshtastic.org/e/#")
+    assert len(url_primary_only) < len(url_all)
 
 
 @pytest.mark.unit
@@ -229,8 +231,19 @@ def test_get_url_requests_config_when_lora_missing(
     # After requestConfig, localConfig will have lora populated
     mock_node.localConfig = localonly_pb2.LocalConfig()
 
-    # Patch HasField to return False on first check, then we manually set lora
-    with patch.object(localonly_pb2.LocalConfig, "HasField", return_value=False):
+    call_count = {"lora": 0}
+
+    def _has_field_side_effect(field_name: str) -> bool:
+        if field_name == "lora":
+            call_count["lora"] += 1
+            return call_count["lora"] > 1
+        return True
+
+    with patch.object(
+        localonly_pb2.LocalConfig,
+        "HasField",
+        side_effect=_has_field_side_effect,
+    ):
         # The method will call requestConfig, then snapshot again
         # For the test to complete, we need to make the second snapshot work
         url = export_runtime.get_url()

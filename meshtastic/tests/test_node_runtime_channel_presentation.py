@@ -98,7 +98,7 @@ def test_show_channels_shows_complete_url_when_different_from_public(
 ) -> None:
     """Test show_channels prints complete URL when admin_url differs from public_url.
 
-    This covers line 51: Print complete URL if different from public URL.
+    This exercises the branch that prints complete URL when admin_url differs.
     """
     export_runtime = MagicMock(spec=_NodeChannelExportRuntime)
     export_runtime.get_url.side_effect = [

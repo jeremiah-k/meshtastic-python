@@ -240,10 +240,19 @@ class TestBLELifecycleControllerHookResolution:
         configured_hook.side_effect = None
         configured_hook.call_args_list = []
 
+        resolved_is_closing: list[bool] = []
+
+        def _discard_invalidated_connected_client(
+            *_args: Any,
+            **kwargs: Any,
+        ) -> None:
+            is_closing_getter = kwargs.get("is_closing_getter")
+            if callable(is_closing_getter):
+                resolved_is_closing.append(is_closing_getter())
+
         mock_iface = SimpleNamespace(_state_manager_is_closing=configured_hook)
-        mock_iface_any: Any = mock_iface
         mock_ownership = SimpleNamespace(
-            _discard_invalidated_connected_client=lambda *a, **kw: None
+            _discard_invalidated_connected_client=_discard_invalidated_connected_client
         )
 
         controller = BLELifecycleController(mock_iface)
@@ -257,8 +266,8 @@ class TestBLELifecycleControllerHookResolution:
             restore_last_connection_request=None,
         )
 
-        # Verify the configured hook was used (it should have been called during execution)
-        # Since we can't directly observe _resolve_hook, we verify through side effects
+        configured_hook.assert_called_once_with()
+        assert resolved_is_closing == [True]
 
     def test_resolve_hook_with_unconfigured_mock_returns_fallback(self) -> None:
         """_resolve_hook should return fallback when hook is an unconfigured mock."""
