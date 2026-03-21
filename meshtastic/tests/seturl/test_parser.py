@@ -1,0 +1,148 @@
+"""Tests for _SetUrlParser."""
+
+import base64
+from typing import NoReturn
+
+import pytest
+
+from meshtastic.node_runtime.seturl_runtime import (
+    _SetUrlParsedInput,
+    _SetUrlParser,
+)
+from meshtastic.protobuf import apponly_pb2
+from meshtastic.tests.seturl.conftest import (
+    _make_channel_set_with_lora,
+    _make_valid_channel_set_url,
+)
+
+
+class TestSetUrlParser:
+    """Tests for _SetUrlParser."""
+
+    @pytest.mark.unit
+    def test_parse_with_valid_url_returns_parsed_input(self) -> None:
+        """parse() with valid URL returns parsed config."""
+        url = _make_valid_channel_set_url("testchannel")
+
+        def raise_error(msg: str) -> NoReturn:
+            raise AssertionError(f"Should not raise: {msg}")
+
+        result = _SetUrlParser.parse(url, raise_interface_error=raise_error)
+
+        assert isinstance(result, _SetUrlParsedInput)
+        assert len(result.channel_set.settings) == 1
+        assert result.channel_set.settings[0].name == "testchannel"
+        assert result.has_lora_update is False
+
+    @pytest.mark.unit
+    def test_parse_with_lora_config_sets_flag(self) -> None:
+        """parse() with URL containing LoRa config sets has_lora_update."""
+        channel_set = _make_channel_set_with_lora("test")
+
+        encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode(
+            "utf-8"
+        )
+        url = f"https://meshtastic.org/d/#{encoded}"
+
+        def raise_error(msg: str) -> NoReturn:
+            raise AssertionError(f"Should not raise: {msg}")
+
+        result = _SetUrlParser.parse(url, raise_interface_error=raise_error)
+
+        assert result.has_lora_update is True
+        assert result.channel_set.lora_config.hop_limit == 3
+
+    @pytest.mark.unit
+    def test_parse_without_hash_raises_error(self) -> None:
+        """parse() with URL missing hash fragment raises error."""
+        url = "https://meshtastic.org/d/"
+
+        captured_msg: list[str] = []
+
+        def raise_error(msg: str) -> NoReturn:
+            captured_msg.append(msg)
+            raise ValueError(msg)
+
+        with pytest.raises(ValueError, match="Invalid URL"):
+            _SetUrlParser.parse(url, raise_interface_error=raise_error)
+
+        assert len(captured_msg) == 1
+        assert captured_msg[0] == "Invalid URL"
+
+    @pytest.mark.unit
+    def test_parse_with_empty_hash_raises_error(self) -> None:
+        """parse() with empty hash fragment raises error."""
+        url = "https://meshtastic.org/d/#"
+
+        captured_msg: list[str] = []
+
+        def raise_error(msg: str) -> NoReturn:
+            captured_msg.append(msg)
+            raise ValueError(msg)
+
+        with pytest.raises(ValueError, match="Invalid URL"):
+            _SetUrlParser.parse(url, raise_interface_error=raise_error)
+
+        assert len(captured_msg) == 1
+        assert "no channel data" in captured_msg[0]
+
+    @pytest.mark.unit
+    def test_parse_with_invalid_base64_raises_error(self) -> None:
+        """parse() with invalid base64 raises error."""
+        url = "https://meshtastic.org/d/#!!!invalid-base64!!!"
+
+        captured_msg: list[str] = []
+
+        def raise_error(msg: str) -> NoReturn:
+            captured_msg.append(msg)
+            raise ValueError(msg)
+
+        with pytest.raises(ValueError, match="Invalid URL"):
+            _SetUrlParser.parse(url, raise_interface_error=raise_error)
+
+        assert len(captured_msg) == 1
+        assert "Invalid URL" in captured_msg[0]
+
+    @pytest.mark.unit
+    def test_parse_with_no_settings_raises_error(self) -> None:
+        """parse() with empty ChannelSet raises error."""
+        channel_set = apponly_pb2.ChannelSet()
+        encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode(
+            "utf-8"
+        )
+        url = f"https://meshtastic.org/d/#{encoded}"
+
+        captured_msg: list[str] = []
+
+        def raise_error(msg: str) -> NoReturn:
+            captured_msg.append(msg)
+            raise ValueError(msg)
+
+        with pytest.raises(ValueError, match="Invalid URL"):
+            _SetUrlParser.parse(url, raise_interface_error=raise_error)
+
+        assert len(captured_msg) == 1
+        assert (
+            "no channel data" in captured_msg[0].lower()
+            or "no settings" in captured_msg[0].lower()
+        )
+
+    @pytest.mark.unit
+    def test_parse_adds_padding_to_base64(self) -> None:
+        """parse() correctly adds padding to unpadded base64."""
+        channel_set = apponly_pb2.ChannelSet()
+        settings = channel_set.settings.add()
+        settings.name = "test"
+        settings.psk = b"\x01"
+        encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode(
+            "utf-8"
+        )
+        encoded_unpadded = encoded.rstrip("=")
+        url = f"https://meshtastic.org/d/#{encoded_unpadded}"
+
+        def raise_error(msg: str) -> NoReturn:
+            raise AssertionError(f"Should not raise: {msg}")
+
+        result = _SetUrlParser.parse(url, raise_interface_error=raise_error)
+
+        assert result.channel_set.settings[0].name == "test"
