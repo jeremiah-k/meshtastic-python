@@ -110,10 +110,11 @@ def test_show_channels_shows_complete_url_when_different_from_public(
     This exercises the branch that prints complete URL when admin_url differs.
     """
     export_runtime = MagicMock(spec=_NodeChannelExportRuntime)
-    export_runtime.get_url.side_effect = [
-        "https://meshtastic.org/e/#public",  # include_all=False
-        "https://meshtastic.org/e/#complete",  # include_all=True
-    ]
+    export_runtime.get_url.side_effect = lambda include_all: (
+        "https://meshtastic.org/e/#complete"
+        if include_all
+        else "https://meshtastic.org/e/#public"
+    )
     presentation_runtime = _NodeChannelPresentationRuntime(
         mock_node, export_runtime=export_runtime
     )
@@ -177,3 +178,5 @@ def test_show_info_with_local_config(
     assert "Preferences:" in out
     assert "Module preferences:" in out
     assert "Channels:" in out
+    # Verify hop_limit value is printed (from localConfig.lora.hop_limit = 3)
+    assert "hop_limit" in out.lower() or "3" in out

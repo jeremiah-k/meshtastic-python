@@ -1,6 +1,7 @@
 """Channel/config request bootstrap runtime owner."""
 
 import logging
+import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
@@ -87,7 +88,7 @@ class _NodeChannelRequestRuntime:
             attrs=(attribute,),
         )
 
-    def request_channel(self, channel_num: int) -> mesh_pb2.MeshPacket | None:
+    def requestChannel(self, channel_num: int) -> mesh_pb2.MeshPacket | None:
         """Send one get-channel request preserving progress logging behavior."""
         message = admin_pb2.AdminMessage()
         message.get_channel_request = channel_num + 1
@@ -105,3 +106,12 @@ class _NodeChannelRequestRuntime:
             wantResponse=True,
             onResponse=self._node.onResponseRequestChannel,
         )
+
+    def request_channel(self, channel_num: int) -> mesh_pb2.MeshPacket | None:
+        """COMPAT_DEPRECATE: Use requestChannel instead."""
+        warnings.warn(
+            "request_channel is deprecated; use requestChannel instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.requestChannel(channel_num)

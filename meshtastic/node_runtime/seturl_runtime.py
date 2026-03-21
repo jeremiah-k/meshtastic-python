@@ -124,9 +124,7 @@ class _SetUrlParser:
         try:
             channel_set.ParseFromString(decoded_url)
         except (DecodeError, ValueError) as ex:
-            raise_interface_error(
-                f"Unable to parse channel settings from URL: {ex}"
-            )
+            raise_interface_error(f"Unable to parse channel settings from URL: {ex}")
 
         if len(channel_set.settings) == 0:
             raise_interface_error("There were no settings.")
@@ -397,7 +395,10 @@ class _SetUrlCacheManager:
                     "Channel cache unavailable after successful addOnly apply; reload channels to refresh local state."
                 )
                 return
-            if expected_channels_ref is not None and channels is not expected_channels_ref:
+            if (
+                expected_channels_ref is not None
+                and channels is not expected_channels_ref
+            ):
                 self._invalidate_channel_cache_locked(
                     "Channel cache changed during addOnly cache update; invalidating local channel cache."
                 )
@@ -424,7 +425,10 @@ class _SetUrlCacheManager:
                 self._node._raise_interface_error(  # noqa: SLF001
                     _ERR_CONFIG_OR_CHANNELS_NOT_LOADED
                 )
-            if expected_channels_ref is not None and channels is not expected_channels_ref:
+            if (
+                expected_channels_ref is not None
+                and channels is not expected_channels_ref
+            ):
                 self._invalidate_channel_cache_locked(
                     "Channel cache changed during replace-all cache update; invalidating local channel cache."
                 )
@@ -724,9 +728,7 @@ class _SetUrlRollbackEngine:
                     rollback_succeeded = True
                     break
                 # Best-effort rollback path; keep attempting remaining steps.
-                except (
-                    Exception
-                ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                     last_rollback_error = rollback_error
             if not rollback_succeeded:
                 rollback_failed = True
@@ -838,9 +840,7 @@ class _SetUrlRollbackEngine:
                     )
                     rollback_succeeded = True
                     break
-                except (
-                    Exception
-                ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                     replace_last_rollback_error = rollback_error
             if not rollback_succeeded:
                 rollback_failed = True
@@ -939,9 +939,7 @@ class _SetUrlTransactionCoordinator:
             self._node._raise_interface_error(  # noqa: SLF001
                 "Interface localNode not initialized"
             )
-        admin_index_for_write = (
-            admin_write_node._get_admin_channel_index()
-        )  # noqa: SLF001
+        admin_index_for_write = admin_write_node._get_admin_channel_index()  # noqa: SLF001
         named_admin_index_for_write = (
             admin_write_node._get_named_admin_channel_index()  # noqa: SLF001
         )
@@ -1005,9 +1003,7 @@ class _SetUrlTransactionCoordinator:
         )
         plan = planner.build_plan()
         execution_state = _SetUrlReplaceExecutionState(
-            rollback_admin_indexes_for_write=[
-                self._admin_context.admin_index_for_write
-            ]
+            rollback_admin_indexes_for_write=[self._admin_context.admin_index_for_write]
         )
         try:
             self._execution_engine.execute_replace_all(

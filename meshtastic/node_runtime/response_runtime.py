@@ -48,6 +48,7 @@ class _NodeMetadataResponseRuntime:
                 error_reason,
             )
             self._node.iface._acknowledgment.receivedNak = True
+            self._node._timeout.expireTime = time.time()  # Do not wait any longer
             self._node._signal_metadata_stdout_event()
             return True  # Don't try to parse this routing message
         logger.debug(
@@ -71,6 +72,7 @@ class _NodeMetadataResponseRuntime:
         if error_reason != "NONE":
             logger.error("Error on response: %s", error_reason)
             self._node.iface._acknowledgment.receivedNak = True
+            self._node._timeout.expireTime = time.time()  # Do not wait any longer
             self._node._signal_metadata_stdout_event()
             return True
         return False
@@ -180,7 +182,9 @@ class _NodeChannelResponseRuntime:
             return False
         routing = decoded.get("routing")
         if not isinstance(routing, dict):
-            logger.warning("Received malformed channel response (missing routing): %s", decoded)
+            logger.warning(
+                "Received malformed channel response (missing routing): %s", decoded
+            )
             return True
         error_reason = routing.get("errorReason")
         if not isinstance(error_reason, str):
@@ -213,7 +217,9 @@ class _NodeChannelResponseRuntime:
         """Process channel response packet and maintain partial/final channel sequencing."""
         decoded = packet.get("decoded")
         if not isinstance(decoded, dict):
-            logger.warning("Received malformed channel response without decoded payload")
+            logger.warning(
+                "Received malformed channel response without decoded payload"
+            )
             return
         logger.debug(
             "onResponseRequestChannel() portnum=%s",
@@ -235,7 +241,9 @@ class _NodeChannelResponseRuntime:
             except (TypeError, ValueError):
                 has_channel_response = False
         if raw_admin is None or not has_channel_response:
-            logger.warning("Received malformed channel response without admin.raw payload")
+            logger.warning(
+                "Received malformed channel response without admin.raw payload"
+            )
             return
 
         response_channel = raw_admin.get_channel_response

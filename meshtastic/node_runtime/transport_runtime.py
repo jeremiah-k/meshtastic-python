@@ -65,7 +65,15 @@ class _NodeAdminTransportRuntime:
         on_response: Callable[[dict[str, Any]], Any] | None = None,
         admin_index: int | None = None,
     ) -> mesh_pb2.MeshPacket | None:
-        """Send an AdminMessage via iface.sendData with preserved transport semantics."""
+        """Send an AdminMessage via iface.sendData with preserved transport semantics.
+
+        Returns
+        -------
+        MeshPacket | None
+            The sent packet, or None if the send was skipped (e.g., when noProto is enabled).
+            Callers must check for None to avoid applying local state changes when the
+            device was not actually updated.
+        """
         if self._node.noProto:
             logger.warning(
                 "Not sending packet because protocol use is disabled by noProto"
@@ -132,9 +140,7 @@ class _NodeChannelWriteRuntime:
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if channels is None:
-                self._node._raise_interface_error(
-                    "Error: No channels have been read"
-                )  # noqa: SLF001
+                self._node._raise_interface_error("Error: No channels have been read")  # noqa: SLF001
             if channel_index < 0 or channel_index >= len(channels):
                 self._node._raise_interface_error(  # noqa: SLF001
                     f"Channel index {channel_index} out of range (0-{len(channels) - 1})"
@@ -209,9 +215,7 @@ class _NodeDeleteChannelRuntime:
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if channels is None:
-                self._node._raise_interface_error(
-                    "Error: No channels have been read"
-                )  # noqa: SLF001
+                self._node._raise_interface_error("Error: No channels have been read")  # noqa: SLF001
             if channel_index < 0 or channel_index >= len(channels):
                 self._node._raise_interface_error(  # noqa: SLF001
                     f"Channel index {channel_index} out of range (0-{len(channels) - 1})"
@@ -322,7 +326,12 @@ class _NodeAckNakRuntime:
 
     def handle_ack_nak(self, packet: dict[str, Any]) -> None:
         """Classify ACK/NAK payload and update interface acknowledgment state."""
-        decoded = packet.get("decoded", {})
+        decoded = packet.get("decoded")
+        if not isinstance(decoded, dict):
+            logger.warning(
+                "Received ACK/NAK response without decoded payload: %s", packet
+            )
+            return
         routing = decoded.get("routing")
         if not isinstance(routing, dict):
             logger.warning(

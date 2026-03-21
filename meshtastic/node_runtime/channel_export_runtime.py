@@ -32,17 +32,22 @@ class _NodeChannelExportRuntime:
     def _snapshot_local_config(self) -> localonly_pb2.LocalConfig:
         """Return detached localConfig snapshot for consistent field checks/copies."""
         config_snapshot = localonly_pb2.LocalConfig()
-        config_snapshot.CopyFrom(self._node.localConfig)
+        node_db_lock = getattr(self._node, "_node_db_lock", None)
+        if node_db_lock is None:
+            config_snapshot.CopyFrom(self._node.localConfig)
+            return config_snapshot
+        with node_db_lock:
+            config_snapshot.CopyFrom(self._node.localConfig)
         return config_snapshot
 
-    def get_url(self, *, include_all: bool = True) -> str:
+    def getUrl(self, *, includeAll: bool = True) -> str:
         """Build channel URL export with preserved includeAll and LoRa semantics."""
         channel_set = apponly_pb2.ChannelSet()
         channels_snapshot = self._snapshot_channels()
         if channels_snapshot:
             for channel in channels_snapshot:
                 if channel.role == channel_pb2.Channel.Role.PRIMARY or (
-                    include_all and channel.role == channel_pb2.Channel.Role.SECONDARY
+                    includeAll and channel.role == channel_pb2.Channel.Role.SECONDARY
                 ):
                     channel_set.settings.append(channel.settings)
 
@@ -65,7 +70,11 @@ class _NodeChannelExportRuntime:
         encoded = encoded.rstrip("=")
         return f"https://meshtastic.org/e/#{encoded}"
 
-    def get_channels_with_hash(self) -> list[dict[str, Any]]:
+    def get_url(self, *, include_all: bool = True) -> str:
+        """COMPAT_STABLE_SHIM: Alias for getUrl."""
+        return self.getUrl(includeAll=include_all)
+
+    def getChannelsWithHash(self) -> list[dict[str, Any]]:
         """Return index/role/name/hash descriptors for current channel snapshot."""
         result: list[dict[str, Any]] = []
         channels_snapshot = self._snapshot_channels()
@@ -89,15 +98,17 @@ class _NodeChannelExportRuntime:
                 )
         return result
 
+    def get_channels_with_hash(self) -> list[dict[str, Any]]:
+        """COMPAT_STABLE_SHIM: Alias for getChannelsWithHash."""
+        return self.getChannelsWithHash()
+
     def turn_off_encryption_on_primary_channel(self) -> None:
         """Disable primary-channel encryption and persist updated channel state."""
         primary_snapshot: channel_pb2.Channel | None = None
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if not channels:
-                self._node._raise_interface_error(
-                    "Error: No channels have been read"
-                )  # noqa: SLF001
+                self._node._raise_interface_error("Error: No channels have been read")  # noqa: SLF001
             for channel in channels:
                 if channel.role == channel_pb2.Channel.Role.PRIMARY:
                     primary_snapshot = channel_pb2.Channel()
@@ -105,9 +116,7 @@ class _NodeChannelExportRuntime:
                     primary_snapshot.settings.psk = fromPSK("none")
                     break
             if primary_snapshot is None:
-                self._node._raise_interface_error(
-                    "Error: No primary channel found"
-                )  # noqa: SLF001
+                self._node._raise_interface_error("Error: No primary channel found")  # noqa: SLF001
         logger.info("Writing modified channels to device")
         self._node._write_channel_snapshot(primary_snapshot)  # noqa: SLF001
         with self._node._channels_lock:  # noqa: SLF001

@@ -200,9 +200,7 @@ def test_wait_for_config_with_non_channels_attribute(
     assert call_args is not None
     target = call_args[0][0]
     assert target.__class__.__name__ == "_LocalConfigFieldProbe"
-    mock_timeout.waitForSet.assert_called_once_with(
-        target, attrs=("is_set",)
-    )
+    mock_timeout.waitForSet.assert_called_once_with(target, attrs=("is_set",))
 
 
 @pytest.mark.unit

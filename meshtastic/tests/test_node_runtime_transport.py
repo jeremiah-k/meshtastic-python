@@ -10,7 +10,6 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from pytest import LogCaptureFixture
 
 from meshtastic.node_runtime.shared import MAX_CHANNELS
 from meshtastic.node_runtime.transport_runtime import (
@@ -161,7 +160,7 @@ class TestNodeAdminSessionRuntime:
 
     @pytest.mark.unit
     def test_ensure_session_key_when_noproto_logs_warning(
-        self, mock_local_node: MagicMock, caplog: LogCaptureFixture
+        self, mock_local_node: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """ensure_session_key should log warning and return early when noProto is True."""
         mock_local_node.noProto = True
@@ -230,7 +229,7 @@ class TestNodeAdminTransportRuntime:
 
     @pytest.mark.unit
     def test_send_admin_when_noproto_logs_warning(
-        self, mock_local_node: MagicMock, caplog: LogCaptureFixture
+        self, mock_local_node: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """send_admin should log warning and return None when noProto is True."""
         mock_local_node.noProto = True
@@ -467,7 +466,7 @@ class TestNodeDeleteChannelRuntime:
 
     @pytest.mark.unit
     def test_normalize_staged_channels_truncates_to_max_channels(
-        self, caplog: LogCaptureFixture
+        self, caplog: pytest.LogCaptureFixture
     ) -> None:
         """_normalize_staged_channels should truncate channels exceeding MAX_CHANNELS (line 191-196)."""
         # Create more channels than MAX_CHANNELS
@@ -688,7 +687,7 @@ class TestNodeDeleteChannelRuntime:
         self,
         delete_channel_runtime: _NodeDeleteChannelRuntime,
         mock_local_node: MagicMock,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """delete_channel should handle channel cache becoming unavailable (lines 290-295)."""
         # Set up channels
@@ -709,13 +708,15 @@ class TestNodeDeleteChannelRuntime:
         def make_cache_none(*args: Any, **kwargs: Any) -> None:
             mock_local_node.channels = None
 
-        with caplog.at_level(logging.WARNING):
-            with patch.object(
+        with (
+            caplog.at_level(logging.WARNING),
+            patch.object(
                 delete_channel_runtime._channel_write_runtime,
                 "write_channel_snapshot",
                 side_effect=make_cache_none,
-            ):
-                delete_channel_runtime.delete_channel(1)
+            ),
+        ):
+            delete_channel_runtime.delete_channel(1)
 
         assert "Channel cache became unavailable" in caplog.text
         assert mock_local_node.channels is None
@@ -726,7 +727,7 @@ class TestNodeDeleteChannelRuntime:
         self,
         delete_channel_runtime: _NodeDeleteChannelRuntime,
         mock_local_node: MagicMock,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """delete_channel should handle channel cache changing during delete (lines 297-302)."""
         # Set up channels
@@ -748,13 +749,15 @@ class TestNodeDeleteChannelRuntime:
             # Replace with a different list
             mock_local_node.channels = [channel_pb2.Channel()]
 
-        with caplog.at_level(logging.WARNING):
-            with patch.object(
+        with (
+            caplog.at_level(logging.WARNING),
+            patch.object(
                 delete_channel_runtime._channel_write_runtime,
                 "write_channel_snapshot",
                 side_effect=change_cache,
-            ):
-                delete_channel_runtime.delete_channel(1)
+            ),
+        ):
+            delete_channel_runtime.delete_channel(1)
 
         assert "Channel cache changed during delete rewrite" in caplog.text
         assert mock_local_node.channels is None
@@ -836,7 +839,7 @@ class TestNodeAckNakRuntime:
 
     @pytest.mark.unit
     def test_handle_ack_nak_from_local_node_sets_impl_ack(
-        self, mock_local_node: MagicMock, caplog: LogCaptureFixture
+        self, mock_local_node: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """handle_ack_nak from local node should set receivedImplAck."""
         runtime = _NodeAckNakRuntime(mock_local_node)
@@ -855,7 +858,7 @@ class TestNodeAckNakRuntime:
 
     @pytest.mark.unit
     def test_handle_ack_nak_missing_routing_logs_warning(
-        self, mock_local_node: MagicMock, caplog: LogCaptureFixture
+        self, mock_local_node: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """handle_ack_nak with missing routing should log warning."""
         runtime = _NodeAckNakRuntime(mock_local_node)
@@ -868,7 +871,7 @@ class TestNodeAckNakRuntime:
 
     @pytest.mark.unit
     def test_handle_ack_nak_missing_from_logs_warning(
-        self, mock_local_node: MagicMock, caplog: LogCaptureFixture
+        self, mock_local_node: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """handle_ack_nak with missing from should log warning."""
         runtime = _NodeAckNakRuntime(mock_local_node)
@@ -885,7 +888,7 @@ class TestNodeAckNakRuntime:
 
     @pytest.mark.unit
     def test_handle_ack_nak_invalid_from_logs_warning(
-        self, mock_local_node: MagicMock, caplog: LogCaptureFixture
+        self, mock_local_node: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """handle_ack_nak with invalid from should log warning."""
         runtime = _NodeAckNakRuntime(mock_local_node)
@@ -1107,7 +1110,7 @@ class TestNodePositionTimeCommandRuntime:
         self,
         position_time_runtime: _NodePositionTimeCommandRuntime,
         mock_local_node: MagicMock,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """remove_fixed_position should log info message."""
         with caplog.at_level(logging.INFO):
@@ -1175,7 +1178,7 @@ class TestNodePositionTimeCommandRuntime:
         self,
         position_time_runtime: _NodePositionTimeCommandRuntime,
         mock_local_node: MagicMock,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """set_time should log info message with timestamp."""
         with caplog.at_level(logging.INFO):

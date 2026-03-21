@@ -539,6 +539,9 @@ def test_setURL_ignores_channels_over_device_limit(
         Channel(index=i, role=Channel.Role.DISABLED) for i in range(CHANNEL_LIMIT)
     ]
     anode.localConfig.lora.hop_limit = 2
+    # Mock I/O operations to prevent actual device communication
+    anode._write_channel_snapshot = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock(return_value=MagicMock())  # type: ignore[method-assign]
 
     channel_set = apponly_pb2.ChannelSet()
     for i in range(CHANNEL_LIMIT + 1):

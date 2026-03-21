@@ -1428,7 +1428,7 @@ class TestSetUrlReplacePlanner:
         mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
 
         channel_set = apponly_pb2.ChannelSet()
-        for i in range(2):
+        for _i in range(2):
             settings = channel_set.settings.add()
             settings.name = "admin"  # Both named admin
             settings.psk = b"\x01"
