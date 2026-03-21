@@ -1,5 +1,7 @@
 """Common fixtures for BLE interface tests."""
 
+# pylint: disable=redefined-outer-name
+
 import logging
 import math
 import sys

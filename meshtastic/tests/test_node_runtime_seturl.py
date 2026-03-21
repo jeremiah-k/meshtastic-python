@@ -1,4 +1,4 @@
-# pylint: disable=too-many-lines
+# pylint: disable=too-many-lines,redefined-outer-name
 """Unit tests for the seturl_runtime module.
 
 Tests for setURL transaction runtime classes including parser, planners,

@@ -30,6 +30,7 @@ def _format_endpoint(host: str, port: int) -> str:
     return f"{host}:{port}"
 
 
+# pylint: disable=unnecessary-ellipsis
 class _SHA256Digest(Protocol):
     """Minimal digest protocol returned by hashlib.sha256()."""
 

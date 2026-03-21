@@ -1,5 +1,7 @@
 """Unit tests for _NodeChannelPresentationRuntime in channel_presentation_runtime.py."""
 
+# pylint: disable=redefined-outer-name
+
 import re
 import threading
 from typing import cast

@@ -3,6 +3,8 @@
 Tests for admin transport, channel write/delete, ACK/NAK, and position/time command runtimes.
 """
 
+# pylint: disable=redefined-outer-name
+
 import logging
 import threading
 import time as time_module

@@ -1,5 +1,7 @@
 """Unit tests for channel_normalization_runtime module."""
 
+# pylint: disable=redefined-outer-name
+
 import threading
 from unittest.mock import MagicMock
 

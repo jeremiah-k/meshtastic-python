@@ -1,5 +1,7 @@
 """Meshtastic unit tests for node_runtime/response_runtime.py."""
 
+# pylint: disable=redefined-outer-name
+
 import logging
 import time
 from typing import Any, cast

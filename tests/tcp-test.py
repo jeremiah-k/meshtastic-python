@@ -1,4 +1,5 @@
 # reported by @ScriptBlock
+# pylint: disable=redefined-outer-name
 
 import sys
 

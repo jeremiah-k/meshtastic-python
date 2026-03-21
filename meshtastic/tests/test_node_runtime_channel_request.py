@@ -1,5 +1,7 @@
 """Unit tests for channel_request_runtime module."""
 
+# pylint: disable=redefined-outer-name
+
 import logging
 import threading
 import warnings

@@ -1,5 +1,7 @@
 """Unit tests for the _NodeChannelExportRuntime class."""
 
+# pylint: disable=redefined-outer-name
+
 import base64
 import threading
 from unittest.mock import MagicMock, patch
@@ -250,6 +252,7 @@ def test_get_url_raises_when_primary_missing(
     """get_url should fail when no PRIMARY channel is present."""
     mock_node.channels = [_make_channel(1, channel_pb2.Channel.Role.SECONDARY)]
     mock_node.localConfig.lora.hop_limit = 3
+
     def raise_error(msg: str) -> None:
         raise MeshInterface.MeshInterfaceError(msg)
 

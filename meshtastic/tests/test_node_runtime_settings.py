@@ -1,5 +1,7 @@
 """Meshtastic unit tests for node_runtime/settings_runtime.py."""
 
+# pylint: disable=redefined-outer-name
+
 import logging
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -229,7 +231,9 @@ class TestNodeSettingsMessageBuilder:
         """build_write_message with invalid config raises interface error."""
         builder = _NodeSettingsMessageBuilder(mock_node_for_settings)
 
-        with pytest.raises(_TestInterfaceError, match="No valid config with name nonexistent"):
+        with pytest.raises(
+            _TestInterfaceError, match="No valid config with name nonexistent"
+        ):
             builder.build_write_message("nonexistent")
 
     @pytest.mark.unit
@@ -249,7 +253,9 @@ class TestNodeSettingsMessageBuilder:
         """validate_config_name with invalid name raises interface error."""
         builder = _NodeSettingsMessageBuilder(mock_node_for_settings)
 
-        with pytest.raises(_TestInterfaceError, match="No valid config with name invalid"):
+        with pytest.raises(
+            _TestInterfaceError, match="No valid config with name invalid"
+        ):
             builder.validate_config_name("invalid")
 
 
@@ -324,7 +330,9 @@ class TestNodeSettingsRuntime:
         builder = _NodeSettingsMessageBuilder(mock_local_node)
         runtime = _NodeSettingsRuntime(mock_local_node, message_builder=builder)
 
-        with pytest.raises(_TestInterfaceError, match="No valid config with name invalid"):
+        with pytest.raises(
+            _TestInterfaceError, match="No valid config with name invalid"
+        ):
             runtime._validate_write_configs_loaded("invalid")
 
     @pytest.mark.unit
@@ -903,7 +911,9 @@ class TestNodeAdminCommandRuntime:
         mock_iface.localNode = MagicMock()  # Different from mock_node_for_admin
         runtime = _NodeAdminCommandRuntime(mock_node_for_admin)
 
-        with pytest.raises(_TestInterfaceError, match="startOTA only possible on local node"):
+        with pytest.raises(
+            _TestInterfaceError, match="startOTA only possible on local node"
+        ):
             runtime.start_ota(
                 mode=admin_pb2.OTAMode.OTA_WIFI,
                 ota_file_hash=b"hash",

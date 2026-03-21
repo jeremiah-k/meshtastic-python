@@ -1,5 +1,7 @@
 """Unit tests for the _NodeChannelLookupRuntime class."""
 
+# pylint: disable=redefined-outer-name
+
 import threading
 from unittest.mock import MagicMock
 

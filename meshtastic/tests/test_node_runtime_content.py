@@ -1,5 +1,7 @@
 """Meshtastic unit tests for node_runtime/content_runtime.py."""
 
+# pylint: disable=redefined-outer-name
+
 import logging
 import threading
 from typing import Any
