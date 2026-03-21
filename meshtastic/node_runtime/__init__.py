@@ -11,7 +11,6 @@ from .content_runtime import (
     _NodeContentResponseRuntime,
 )
 from .response_runtime import _NodeChannelResponseRuntime, _NodeMetadataResponseRuntime
-from .seturl_runtime import _SetUrlParser, _SetUrlTransactionCoordinator
 from .settings_runtime import (
     _NodeAdminCommandRuntime,
     _NodeOwnerProfileRuntime,
@@ -19,6 +18,7 @@ from .settings_runtime import (
     _NodeSettingsResponseRuntime,
     _NodeSettingsRuntime,
 )
+from .seturl_runtime import _SetUrlParser, _SetUrlTransactionCoordinator
 from .shared import (
     EMPTY_LONG_NAME_MSG,
     EMPTY_SHORT_NAME_MSG,

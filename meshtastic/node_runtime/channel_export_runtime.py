@@ -32,7 +32,9 @@ class _NodeChannelExportRuntime:
                     channel_set.settings.append(channel.settings)
 
         if len(self._node.localConfig.ListFields()) == 0:
-            self._node.requestConfig(self._node.localConfig.DESCRIPTOR.fields_by_name["lora"])
+            self._node.requestConfig(
+                self._node.localConfig.DESCRIPTOR.fields_by_name["lora"]
+            )
         channel_set.lora_config.CopyFrom(self._node.localConfig.lora)
         serialized_channel_set = channel_set.SerializeToString()
         encoded = base64.urlsafe_b64encode(serialized_channel_set).decode("ascii")
@@ -69,7 +71,9 @@ class _NodeChannelExportRuntime:
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if not channels:
-                self._node._raise_interface_error("Error: No channels have been read")  # noqa: SLF001
+                self._node._raise_interface_error(
+                    "Error: No channels have been read"
+                )  # noqa: SLF001
             channels[0].settings.psk = fromPSK("none")
         logger.info("Writing modified channels to device")
         self._node.writeChannel(0)

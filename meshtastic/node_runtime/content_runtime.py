@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
 class _NodeContentCacheStore:
     """Owns ringtone/canned-message cache state, fragment storage, and invalidation."""
 

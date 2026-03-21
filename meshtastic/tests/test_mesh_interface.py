@@ -3575,6 +3575,53 @@ def test_send_to_radio_waits_resends_and_tracks_requeue(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_send_to_radio_successful_missing_entry_is_not_immediately_requeued(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A successfully-sent packet without immediate queue-status reply should not be requeued in the same cycle."""
+    with MeshInterface(noProto=True) as iface:
+        iface.noProto = False
+        packet = mesh_pb2.ToRadio()
+        packet.packet.id = 123
+        monkeypatch.setattr(iface, "_send_to_radio_impl", lambda _msg: None)
+        pops = iter([(123, packet), None])
+        original_pop = iface._queue_pop_for_send
+        monkeypatch.setattr(iface, "_queue_pop_for_send", lambda: next(pops))
+        iface._send_to_radio(mesh_pb2.ToRadio())
+        monkeypatch.setattr(iface, "_queue_pop_for_send", original_pop)
+        assert 123 not in iface.queue
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_send_to_radio_requeues_packet_when_send_impl_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A packet should be requeued when the send path raises before successful handoff."""
+    with MeshInterface(noProto=True) as iface:
+        iface.noProto = False
+        packet = mesh_pb2.ToRadio()
+        packet.packet.id = 123
+        incoming = mesh_pb2.ToRadio()
+        incoming.packet.id = 999
+
+        def _failing_send(_msg: mesh_pb2.ToRadio) -> None:
+            raise RuntimeError("send failed")
+
+        monkeypatch.setattr(iface, "_send_to_radio_impl", _failing_send)
+        pops = iter([(123, packet), None])
+        original_pop = iface._queue_pop_for_send
+        monkeypatch.setattr(iface, "_queue_pop_for_send", lambda: next(pops))
+        with pytest.raises(RuntimeError, match="send failed"):
+            iface._send_to_radio(incoming)
+        monkeypatch.setattr(iface, "_queue_pop_for_send", original_pop)
+        assert 123 in iface.queue
+        # Keep context-manager shutdown path from triggering the intentional send failure.
+        monkeypatch.setattr(iface, "_send_to_radio_impl", lambda _msg: None)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_handle_config_complete_and_queue_status_branches() -> None:
     """_handle_config_complete() and _handle_queue_status_from_radio() should execute all key branches."""
     with MeshInterface(noProto=True) as iface:

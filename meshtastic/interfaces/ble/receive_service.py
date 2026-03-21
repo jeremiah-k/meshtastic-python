@@ -611,9 +611,7 @@ class BLEReceiveRecoveryController:
 
     def _resolve_wait_for_runtime_event(
         self,
-        wait_for_event: (
-            Callable[["ThreadCoordinator", str, float | None], bool] | None
-        ),
+        wait_for_event: Callable[["ThreadCoordinator", str, float | None], bool] | None,
     ) -> Callable[["ThreadCoordinator", str, float | None], bool]:
         """Resolve injected wait function or use coordinator fallback.
 

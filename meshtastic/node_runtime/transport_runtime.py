@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from meshtastic.node_runtime.shared import (
     MAX_CHANNELS,
+)
+from meshtastic.node_runtime.shared import (
     is_named_admin_channel_name as _is_named_admin_channel_name,
 )
 from meshtastic.protobuf import admin_pb2, channel_pb2, mesh_pb2, portnums_pb2
@@ -122,12 +124,16 @@ class _NodeChannelWriteRuntime:
         )
         logger.debug("Wrote channel %s", channel_to_write.index)
 
-    def write_channel(self, channel_index: int, *, admin_index: int | None = None) -> None:
+    def write_channel(
+        self, channel_index: int, *, admin_index: int | None = None
+    ) -> None:
         """Validate and write one channel by index using snapshot semantics."""
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if channels is None:
-                self._node._raise_interface_error("Error: No channels have been read")  # noqa: SLF001
+                self._node._raise_interface_error(
+                    "Error: No channels have been read"
+                )  # noqa: SLF001
             if channel_index < 0 or channel_index >= len(channels):
                 self._node._raise_interface_error(  # noqa: SLF001
                     f"Channel index {channel_index} out of range (0-{len(channels) - 1})"
@@ -202,7 +208,9 @@ class _NodeDeleteChannelRuntime:
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if channels is None:
-                self._node._raise_interface_error("Error: No channels have been read")  # noqa: SLF001
+                self._node._raise_interface_error(
+                    "Error: No channels have been read"
+                )  # noqa: SLF001
             if channel_index < 0 or channel_index >= len(channels):
                 self._node._raise_interface_error(  # noqa: SLF001
                     f"Channel index {channel_index} out of range (0-{len(channels) - 1})"
@@ -221,7 +229,9 @@ class _NodeDeleteChannelRuntime:
             if is_local_node:
                 pre_delete_admin_index = self._named_admin_index_from_channels(channels)
             else:
-                pre_delete_admin_index = self._node.iface.localNode.getAdminChannelIndex()
+                pre_delete_admin_index = (
+                    self._node.iface.localNode.getAdminChannelIndex()
+                )
 
             staged_channels: list[channel_pb2.Channel] = []
             for existing_channel in channels:
@@ -242,7 +252,9 @@ class _NodeDeleteChannelRuntime:
                     staged_channels
                 )
             else:
-                post_delete_admin_index = self._node.iface.localNode.getAdminChannelIndex()
+                post_delete_admin_index = (
+                    self._node.iface.localNode.getAdminChannelIndex()
+                )
 
         return _DeleteChannelRewritePlan(
             original_channels_ref=channels,

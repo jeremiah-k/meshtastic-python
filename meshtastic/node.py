@@ -12,15 +12,19 @@ from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, TypeVar, ca
 
 from google.protobuf.descriptor import FieldDescriptor
 
+from meshtastic.node_runtime import EMPTY_LONG_NAME_MSG as _EMPTY_LONG_NAME_MSG
+from meshtastic.node_runtime import EMPTY_SHORT_NAME_MSG as _EMPTY_SHORT_NAME_MSG
 from meshtastic.node_runtime import (
-    EMPTY_LONG_NAME_MSG as _EMPTY_LONG_NAME_MSG,
-    EMPTY_SHORT_NAME_MSG as _EMPTY_SHORT_NAME_MSG,
     FACTORY_RESET_REQUEST_VALUE as _FACTORY_RESET_REQUEST_VALUE,
+)
+from meshtastic.node_runtime import (
     MAX_CANNED_MESSAGE_LENGTH as _MAX_CANNED_MESSAGE_LENGTH,
-    MAX_CHANNELS as _MAX_CHANNELS,
-    MAX_LONG_NAME_LEN as _MAX_LONG_NAME_LEN,
-    MAX_RINGTONE_LENGTH as _MAX_RINGTONE_LENGTH,
-    MAX_SHORT_NAME_LEN as _MAX_SHORT_NAME_LEN,
+)
+from meshtastic.node_runtime import MAX_CHANNELS as _MAX_CHANNELS
+from meshtastic.node_runtime import MAX_LONG_NAME_LEN as _MAX_LONG_NAME_LEN
+from meshtastic.node_runtime import MAX_RINGTONE_LENGTH as _MAX_RINGTONE_LENGTH
+from meshtastic.node_runtime import MAX_SHORT_NAME_LEN as _MAX_SHORT_NAME_LEN
+from meshtastic.node_runtime import (
     METADATA_STDOUT_COMPAT_WAIT_SECONDS,
     _NodeAckNakRuntime,
     _NodeAdminCommandRuntime,

@@ -10,6 +10,8 @@ from google.protobuf.message import DecodeError
 
 from meshtastic.node_runtime.shared import (
     is_named_admin_channel_name as _is_named_admin_channel_name,
+)
+from meshtastic.node_runtime.shared import (
     ordered_admin_indexes as _ordered_admin_indexes,
 )
 from meshtastic.protobuf import admin_pb2, apponly_pb2, channel_pb2, config_pb2
@@ -845,7 +847,9 @@ class _SetUrlTransactionCoordinator:
     def _resolve_admin_context(self) -> _SetUrlAdminContext:
         """Capture admin-channel write context before staging any transaction writes."""
         admin_write_node = self._node.iface.localNode
-        admin_index_for_write = admin_write_node._get_admin_channel_index()  # noqa: SLF001
+        admin_index_for_write = (
+            admin_write_node._get_admin_channel_index()
+        )  # noqa: SLF001
         named_admin_index_for_write = (
             admin_write_node._get_named_admin_channel_index()  # noqa: SLF001
         )

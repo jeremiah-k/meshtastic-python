@@ -720,6 +720,7 @@ class _QueueSendRuntime:
         resent_queue: collections.OrderedDict[int, mesh_pb2.ToRadio | bool] = (
             collections.OrderedDict()
         )
+        sent_packet_ids: set[int] = set()
         try:
             while True:
                 to_resend = pop_for_send()
@@ -739,26 +740,50 @@ class _QueueSendRuntime:
                 if packet != to_radio:
                     logger.debug("Resending packet ID %08x %s", packet_id, packet)
                 send_impl(packet)
+                sent_packet_ids.add(packet_id)
         finally:
-            self.reconcile_resent_queue(resent_queue=resent_queue)
+            self.reconcile_resent_queue(
+                resent_queue=resent_queue,
+                sent_packet_ids=sent_packet_ids,
+            )
 
     def reconcile_resent_queue(
         self,
         *,
         resent_queue: collections.OrderedDict[int, mesh_pb2.ToRadio | bool],
+        sent_packet_ids: set[int],
     ) -> None:
         """Reconcile resent packets against ACK-under-us and requeue semantics."""
         missing = object()
         for packet_id, packet in resent_queue.items():
             with self._lock:
-                queued_value = self._get_queue().pop(packet_id, missing)
+                queued_value: mesh_pb2.ToRadio | bool | object = self._get_queue().pop(
+                    packet_id,
+                    missing,
+                )
                 acked = queued_value is False
             if acked:  # Packet got acked under us
                 logger.debug("packet %08x got acked under us", packet_id)
                 continue
-            if packet:
+            if queued_value is missing and packet_id in sent_packet_ids:
+                # Packet send succeeded and there is no explicit queue-status ack
+                # marker yet. Keep it out of immediate resend rotation to avoid
+                # duplicate floods while queue-status correlation catches up.
+                logger.debug(
+                    "packet %08x sent and awaiting queue-status correlation",
+                    packet_id,
+                )
+                continue
+            packet_to_requeue: mesh_pb2.ToRadio | bool | None = None
+            if isinstance(queued_value, mesh_pb2.ToRadio):
+                packet_to_requeue = queued_value
+            elif isinstance(packet, mesh_pb2.ToRadio):
+                packet_to_requeue = packet
+            elif queued_value is not missing and isinstance(queued_value, bool):
+                packet_to_requeue = queued_value
+            if packet_to_requeue is not None:
                 with self._lock:
-                    self._get_queue()[packet_id] = packet
+                    self._get_queue()[packet_id] = packet_to_requeue
 
     def record_queue_status(self, queue_status: mesh_pb2.QueueStatus) -> None:
         """Persist latest queue status update."""
@@ -3638,8 +3663,7 @@ class MeshInterface:  # pylint: disable=R0902
             (lambda fr, _ctx: fr.HasField("xmodemPacket"), "xmodemPacket"),
             (lambda fr, _ctx: fr.HasField("rebooted") and fr.rebooted, "rebooted"),
             (
-                lambda fr, _ctx: fr.HasField("config")
-                or fr.HasField("moduleConfig"),
+                lambda fr, _ctx: fr.HasField("config") or fr.HasField("moduleConfig"),
                 "config_or_moduleConfig",
             ),
         ]

@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
 class _NodeMetadataResponseRuntime:
     """Owns metadata response routing/error handling, state mutation, and signaling."""
 
