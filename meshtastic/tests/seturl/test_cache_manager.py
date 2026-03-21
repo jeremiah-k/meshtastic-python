@@ -142,9 +142,13 @@ class TestSetUrlCacheManager:
     def test_apply_replace_channel_write_mismatched_expected_ref_raises(
         self, cache_manager: _SetUrlCacheManager, mock_local_node: MagicMock
     ) -> None:
-        """apply_replace_channel_write should fail deterministically on channel-cache ref mismatch."""
-        current_channels = [_make_channel(0, channel_pb2.Channel.Role.PRIMARY, "old")]
-        stale_channels_ref = [_make_channel(0, channel_pb2.Channel.Role.PRIMARY, "old")]
+        """apply_replace_channel_write should fail deterministically on channel-cache content mismatch."""
+        current_channels = [
+            _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "primary")
+        ]
+        stale_channels_ref = [
+            _make_channel(0, channel_pb2.Channel.Role.SECONDARY, "secondary")
+        ]
         mock_local_node.channels = current_channels
         staged_channel = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "new")
 

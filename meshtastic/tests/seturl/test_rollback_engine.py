@@ -37,7 +37,7 @@ class TestSetUrlRollbackEngine:
             ignored_channel_names=[],
             channels_to_write=[],
             deferred_add_only_admin_channel=None,
-            deferred_add_only_admin_index=None,
+            deferred_add_only_admin_index=2,
             original_channels_ref=[],
             original_channels_by_index={1: original_channel},
             original_lora_config=None,
@@ -50,11 +50,13 @@ class TestSetUrlRollbackEngine:
         admin_context = MagicMock()
         admin_context.admin_index_for_write = 0
 
-        call_count = [0]
+        failed_admin_indexes: list[int] = []
 
-        def write_side_effect(_channel: channel_pb2.Channel, _adminIndex: int) -> None:
-            call_count[0] += 1
-            if call_count[0] == 1:
+        def write_side_effect(
+            _channel: channel_pb2.Channel, *, adminIndex: int
+        ) -> None:
+            if adminIndex == 0:
+                failed_admin_indexes.append(adminIndex)
                 raise RuntimeError("Write failed")
 
         mock_local_node._write_channel_snapshot.side_effect = write_side_effect
@@ -66,7 +68,13 @@ class TestSetUrlRollbackEngine:
                 state=state,
             )
 
-        assert mock_local_node._write_channel_snapshot.call_count >= 1
+        assert failed_admin_indexes == [0]
+        call_args_list = mock_local_node._write_channel_snapshot.call_args_list
+        admin_indexes_called = [
+            call.kwargs.get("adminIndex") for call in call_args_list
+        ]
+        assert 0 in admin_indexes_called
+        assert 2 in admin_indexes_called
 
     @pytest.mark.unit
     def test_rollback_add_only_with_lora_failure_clears_cache_with_warning(

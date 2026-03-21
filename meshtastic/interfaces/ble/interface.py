@@ -951,8 +951,8 @@ class BLEInterface(MeshInterface):
                 logger.warning("Device scan failed: %s", e, exc_info=True)
                 return []
             except (
-                Exception  # noqa: BLE001
-            ) as e:  # pragma: no cover - defensive last resort
+                Exception
+            ) as e:  # noqa: BLE001 # pragma: no cover - defensive last resort
                 logger.warning(
                     "Unexpected error during device scan: %s", e, exc_info=True
                 )

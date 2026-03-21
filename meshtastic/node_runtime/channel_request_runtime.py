@@ -2,7 +2,7 @@
 
 import logging
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from meshtastic.protobuf import admin_pb2, channel_pb2, mesh_pb2
 
@@ -41,8 +41,9 @@ class _ChannelRequestCompletionProbe:
     @property
     def is_set(self) -> bool:
         """Return True once channels are loaded or the request has terminally failed."""
-        if self._node.channels is not None:
-            return True
+        with self._node._channels_lock:  # noqa: SLF001
+            if self._node.channels is not None:
+                return True
         has_channel_request_failed = getattr(
             self._channel_response_runtime,
             "has_channel_request_failed",
@@ -120,7 +121,10 @@ class _NodeChannelRequestRuntime:
         has_field = getattr(local_config, "HasField", None)
         if callable(has_field):
             return self._node._timeout.waitForSet(  # noqa: SLF001
-                _LocalConfigFieldProbe(has_field_fn=has_field, name=attribute),
+                _LocalConfigFieldProbe(
+                    has_field_fn=cast(Callable[[str], bool], has_field),
+                    name=attribute,
+                ),
                 attrs=("is_set",),
             )
 

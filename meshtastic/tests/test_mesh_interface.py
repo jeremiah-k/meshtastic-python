@@ -28,7 +28,14 @@ import meshtastic.mesh_interface as mesh_interface_module
 from .. import BROADCAST_ADDR, LOCAL_ADDR, NODELESS_WANT_CONFIG_ID, ResponseHandler
 from ..mesh_interface import MeshInterface, _timeago
 from ..node import Node
-from ..protobuf import channel_pb2, config_pb2, mesh_pb2, portnums_pb2, telemetry_pb2
+from ..protobuf import (
+    channel_pb2,
+    config_pb2,
+    localonly_pb2,
+    mesh_pb2,
+    portnums_pb2,
+    telemetry_pb2,
+)
 
 # TODO
 # from ..config import Config
@@ -411,8 +418,11 @@ def test_handlePacketFromRadio_hack_preserves_from_zero_in_publication_payload()
 ):
     """hack=True should preserve from==0 in emitted packet payload compatibility path."""
     with MeshInterface(noProto=True) as iface:
+        iface.nodesByNum = {}  # Initialize node database for packet processing
         mesh_packet = mesh_pb2.MeshPacket()
         setattr(mesh_packet, "from", 0)
+        mesh_packet.decoded.payload = b""
+        mesh_packet.decoded.portnum = portnums_pb2.PortNum.TEXT_MESSAGE_APP
         intents = iface._handle_packet_from_radio(
             mesh_packet,
             hack=True,
@@ -3858,12 +3868,19 @@ def test_handle_from_radio_config_update_skips_unsupported_local_cache_fields() 
 
         # Regression coverage for multinode CI: these fields may exist on
         # FromRadio.config but not on localNode.localConfig.
-        if mesh_pb2.FromRadio().config.DESCRIPTOR.fields_by_name.get("sessionkey"):
+        if (
+            localonly_pb2.LocalConfig().DESCRIPTOR.fields_by_name.get("sessionkey")
+            and "sessionkey"
+            not in iface.localNode.localConfig.DESCRIPTOR.fields_by_name
+        ):
             msg_sessionkey = mesh_pb2.FromRadio()
             msg_sessionkey.config.sessionkey.SetInParent()
             iface._handle_from_radio(msg_sessionkey.SerializeToString())
 
-        if mesh_pb2.FromRadio().config.DESCRIPTOR.fields_by_name.get("device_ui"):
+        if (
+            localonly_pb2.LocalConfig().DESCRIPTOR.fields_by_name.get("device_ui")
+            and "device_ui" not in iface.localNode.localConfig.DESCRIPTOR.fields_by_name
+        ):
             msg_device_ui = mesh_pb2.FromRadio()
             msg_device_ui.config.device_ui.SetInParent()
             iface._handle_from_radio(msg_device_ui.SerializeToString())

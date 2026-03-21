@@ -149,8 +149,8 @@ class _NodeContentResponseRuntime:
         if not isinstance(decoded, dict):
             logger.warning("Unexpected ringtone response without decoded payload")
             return (True, None)
-        if "routing" in decoded:
-            return (self._has_routing_error(decoded), None)
+        if "routing" in decoded and self._has_routing_error(decoded):
+            return (True, None)
         admin_message = decoded.get("admin")
         if not isinstance(admin_message, dict):
             logger.warning("Unexpected ringtone response without admin payload")
@@ -186,8 +186,8 @@ class _NodeContentResponseRuntime:
         if not isinstance(decoded, dict):
             logger.warning("Unexpected canned-message response without decoded payload")
             return (True, None)
-        if "routing" in decoded:
-            return (self._has_routing_error(decoded), None)
+        if "routing" in decoded and self._has_routing_error(decoded):
+            return (True, None)
         admin_message = decoded.get("admin")
         if not isinstance(admin_message, dict):
             logger.warning("Unexpected canned-message response without admin payload")
@@ -432,6 +432,7 @@ class _NodeAdminContentRuntime:
 
     def write_canned_message(self, message: str) -> mesh_pb2.MeshPacket | None:
         """Write canned-message payload and invalidate local canned-message cache."""
+        CANNED_MESSAGE_CHUNK_SIZE = 50
         with self._canned_message_operation_lock:
             if not self._module_available_or_warn(
                 mesh_pb2.CANNEDMSG_CONFIG,
@@ -443,13 +444,42 @@ class _NodeAdminContentRuntime:
                     f"The canned message must be {MAX_CANNED_MESSAGE_LENGTH} characters or fewer."
                 )
             self._node.ensureSessionKey()
-            request_message = admin_pb2.AdminMessage()
-            request_message.set_canned_message_module_messages = message
-            logger.debug("Setting canned message (%d chars)", len(message))
-            send_result = self._node._send_admin(
-                request_message,
-                onResponse=self._select_write_response_handler(),
+
+            if len(message) <= CANNED_MESSAGE_CHUNK_SIZE:
+                request_message = admin_pb2.AdminMessage()
+                request_message.set_canned_message_module_messages = message
+                logger.debug("Setting canned message (%d chars)", len(message))
+                send_result = self._node._send_admin(
+                    request_message,
+                    onResponse=self._select_write_response_handler(),
+                )
+                if send_result is not None:
+                    self._cache_store.invalidate_canned_message_cache()
+                return send_result
+
+            chunks = [
+                message[i : i + CANNED_MESSAGE_CHUNK_SIZE]
+                for i in range(0, len(message), CANNED_MESSAGE_CHUNK_SIZE)
+            ]
+            first_send_result: mesh_pb2.MeshPacket | None = None
+            response_handler = self._select_write_response_handler()
+            logger.debug(
+                "Setting canned message in %d chunks (%d chars total)",
+                len(chunks),
+                len(message),
             )
-            if send_result is not None:
-                self._cache_store.invalidate_canned_message_cache()
-            return send_result
+
+            for chunk_index, chunk in enumerate(chunks):
+                request_message = admin_pb2.AdminMessage()
+                request_message.set_canned_message_module_messages = chunk
+                send_result = self._node._send_admin(
+                    request_message,
+                    onResponse=response_handler,
+                )
+                if chunk_index == 0:
+                    first_send_result = send_result
+                if send_result is None:
+                    return first_send_result
+
+            self._cache_store.invalidate_canned_message_cache()
+            return first_send_result

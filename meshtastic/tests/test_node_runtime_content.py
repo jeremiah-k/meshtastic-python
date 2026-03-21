@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from ..mesh_interface import MeshInterface
 from ..node_runtime.content_runtime import (
     _NodeAdminContentRuntime,
     _NodeContentCacheStore,
@@ -52,7 +53,7 @@ def mock_node_for_admin(mock_node_for_cache: MagicMock) -> MagicMock:
     node._timeout.expireTimeout = 300
     node.ensureSessionKey = MagicMock()
     node._raise_interface_error = MagicMock(
-        side_effect=Exception("interface error raised")
+        side_effect=MeshInterface.MeshInterfaceError("interface error raised")
     )
     node.onAckNak = MagicMock()
     node.iface = MagicMock()
@@ -785,7 +786,9 @@ class TestNodeAdminContentRuntime:
         )
         long_ringtone = "x" * (MAX_RINGTONE_LENGTH + 1)
 
-        with pytest.raises(Exception, match="interface error raised"):
+        with pytest.raises(
+            MeshInterface.MeshInterfaceError, match="interface error raised"
+        ):
             runtime.write_ringtone(long_ringtone)
 
         mock_node_for_admin._raise_interface_error.assert_called_once()
@@ -938,7 +941,9 @@ class TestNodeAdminContentRuntime:
         )
         long_message = "x" * (MAX_CANNED_MESSAGE_LENGTH + 1)
 
-        with pytest.raises(Exception, match="interface error raised"):
+        with pytest.raises(
+            MeshInterface.MeshInterfaceError, match="interface error raised"
+        ):
             runtime.write_canned_message(long_message)
 
         mock_node_for_admin._raise_interface_error.assert_called_once()

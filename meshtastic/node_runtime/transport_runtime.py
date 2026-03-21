@@ -440,16 +440,18 @@ class _NodePositionTimeCommandRuntime:
         self._node.ensureSessionKey()
 
         # Type validation: reject bool and non-numeric types
-        if lat is not None:
-            if isinstance(lat, bool) or not isinstance(lat, (int, float)):
-                self._node._raise_interface_error(  # noqa: SLF001
-                    f"Invalid latitude type: {type(lat).__name__}. Expected int or float."
-                )
-        if lon is not None:
-            if isinstance(lon, bool) or not isinstance(lon, (int, float)):
-                self._node._raise_interface_error(  # noqa: SLF001
-                    f"Invalid longitude type: {type(lon).__name__}. Expected int or float."
-                )
+        if lat is not None and (
+            isinstance(lat, bool) or not isinstance(lat, (int, float))
+        ):
+            self._node._raise_interface_error(  # noqa: SLF001
+                f"Invalid latitude type: {type(lat).__name__}. Expected int or float."
+            )
+        if lon is not None and (
+            isinstance(lon, bool) or not isinstance(lon, (int, float))
+        ):
+            self._node._raise_interface_error(  # noqa: SLF001
+                f"Invalid longitude type: {type(lon).__name__}. Expected int or float."
+            )
 
         position_message = mesh_pb2.Position()
         if lat is not None:

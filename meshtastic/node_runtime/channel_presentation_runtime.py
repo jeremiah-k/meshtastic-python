@@ -69,11 +69,16 @@ class _NodeChannelPresentationRuntime:
                 )
         try:
             public_url = self._export_runtime.get_url(include_all=False)
-            admin_url = self._export_runtime.get_url(include_all=True)
         except Exception as exc:  # noqa: BLE001 - show_info should remain non-fatal
-            logger.warning("Unable to export channel URLs: %s", exc)
+            logger.warning("Unable to export primary channel URL: %s", exc)
             print("\nPrimary channel URL: unavailable")
             return
+
+        admin_url = public_url
+        try:
+            admin_url = self._export_runtime.get_url(include_all=True)
+        except Exception as exc:  # noqa: BLE001 - show_info should remain non-fatal
+            logger.warning("Unable to export complete channel URL: %s", exc)
 
         print(f"\nPrimary channel URL: {public_url}")
         if admin_url != public_url:

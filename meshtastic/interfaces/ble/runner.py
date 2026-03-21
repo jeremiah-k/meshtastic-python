@@ -354,8 +354,8 @@ class BLECoroutineRunner:
             loop.run_forever()
 
         except (
-            Exception  # noqa: BLE001 - runner loop must not crash caller threads
-        ) as e:
+            Exception
+        ) as e:  # noqa: BLE001 - runner loop must not crash caller threads
             logger.error("Error in BLECoroutineRunner loop: %s", e, exc_info=True)
         finally:
             # Clean shutdown: cancel all pending tasks
@@ -569,8 +569,8 @@ class BLECoroutineRunner:
         try:
             loop.default_exception_handler(context)
         except (
-            Exception  # noqa: BLE001 - loop default handler failures are non-fatal
-        ) as e:
+            Exception
+        ) as e:  # noqa: BLE001 - loop default handler failures are non-fatal
             logger.debug("Exception in default exception handler: %s", e)
 
     def _cancel_pending_futures(self) -> None:

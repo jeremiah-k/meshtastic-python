@@ -3,6 +3,7 @@
 # pylint: disable=redefined-outer-name
 
 import logging
+import threading
 import time
 from typing import Any, cast
 from unittest.mock import MagicMock
@@ -46,9 +47,7 @@ def mock_node_for_channel() -> MagicMock:
     node._timeout = MagicMock()
     node._timeout.expireTime = time.time() + 300
     node._timeout.reset = MagicMock()
-    node._channels_lock = MagicMock()
-    node._channels_lock.__enter__ = MagicMock(return_value=None)
-    node._channels_lock.__exit__ = MagicMock(return_value=None)
+    node._channels_lock = threading.Lock()
     node.partialChannels = []
     node.channels = None
     node._request_channel = MagicMock()
@@ -85,15 +84,14 @@ class TestNodeMetadataResponseRuntime:
                 "routing": {"errorReason": "NO_RESPONSE"},
             }
         }
-        original_expire_time = time.time() + 300
-        mock_node._timeout.expireTime = original_expire_time
 
+        before_call = time.time()
         with caplog.at_level(logging.WARNING):
             runtime.handle_metadata_response(packet)
 
         assert "Metadata request failed, error reason: NO_RESPONSE" in caplog.text
         assert mock_node.iface._acknowledgment.receivedNak is True
-        assert mock_node._timeout.expireTime <= original_expire_time
+        assert before_call <= mock_node._timeout.expireTime <= time.time()
         mock_node._timeout.reset.assert_not_called()
 
     @pytest.mark.unit
@@ -483,6 +481,7 @@ class TestNodeChannelResponseRuntime:
     ) -> None:
         """Handle channel response with admin message should append to partialChannels."""
         runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        runtime.mark_channel_request_sent(0)
 
         raw = admin_pb2.AdminMessage()
         channel_response = raw.get_channel_response
@@ -510,6 +509,7 @@ class TestNodeChannelResponseRuntime:
     ) -> None:
         """Handle channel response with last channel index should finalize channels."""
         runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        runtime.mark_channel_request_sent(7)
 
         # MAX_CHANNELS is 8, so index 7 (the 8th channel) should finalize
         raw = admin_pb2.AdminMessage()
@@ -525,12 +525,20 @@ class TestNodeChannelResponseRuntime:
             }
         }
 
+        lock_held_during_fixup = False
+
+        def fixup_side_effect() -> None:
+            nonlocal lock_held_during_fixup
+            lock_held_during_fixup = mock_node_for_channel._channels_lock.locked()
+
+        mock_node_for_channel._fixup_channels_locked.side_effect = fixup_side_effect
+
         with caplog.at_level(logging.DEBUG):
             runtime.handle_channel_response(packet)
 
         assert "Finished downloading channels" in caplog.text
         mock_node_for_channel._fixup_channels_locked.assert_called_once()
-        # Channels should be set from partialChannels
+        assert lock_held_during_fixup is True
         assert mock_node_for_channel.channels is not None
 
     @pytest.mark.unit
@@ -539,6 +547,7 @@ class TestNodeChannelResponseRuntime:
     ) -> None:
         """Handle channel response with non-last channel should request next channel."""
         runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        runtime.mark_channel_request_sent(3)
 
         raw = admin_pb2.AdminMessage()
         channel_response = raw.get_channel_response

@@ -25,6 +25,13 @@ logger = logging.getLogger(__name__)
 _ERR_CONFIG_OR_CHANNELS_NOT_LOADED = "Config or channels not loaded"
 
 
+def _channels_fingerprint(
+    channels: list[channel_pb2.Channel],
+) -> tuple[tuple[int, int], ...]:
+    """Return a stable fingerprint of channel indices and roles for comparison."""
+    return tuple((c.index, c.role) for c in channels)
+
+
 @dataclass(frozen=True)
 class _SetUrlParsedInput:
     """Parsed/decoded setURL input."""
@@ -151,13 +158,17 @@ class _SetUrlAddOnlyPlanner:
         """Capture original LoRa config snapshot for addOnly rollback when needed."""
         if not self._parsed_input.has_lora_update:
             return None
-        if not self._node.localConfig.HasField("lora"):
-            self._node._raise_interface_error(  # noqa: SLF001
-                "LoRa config must be loaded before setURL(addOnly=True)"
-            )
-        original_lora_config = config_pb2.Config.LoRaConfig()
-        original_lora_config.CopyFrom(self._node.localConfig.lora)
-        return original_lora_config
+
+        def _capture() -> config_pb2.Config.LoRaConfig:
+            if not self._node.localConfig.HasField("lora"):
+                self._node._raise_interface_error(  # noqa: SLF001
+                    "LoRa config must be loaded before setURL(addOnly=True)"
+                )
+            original_lora_config = config_pb2.Config.LoRaConfig()
+            original_lora_config.CopyFrom(self._node.localConfig.lora)
+            return original_lora_config
+
+        return self._node._execute_with_node_db_lock(_capture)
 
     def build_plan(
         self,
@@ -283,14 +294,21 @@ class _SetUrlReplacePlanner:
 
         replace_original_lora_config: config_pb2.Config.LoRaConfig | None = None
         if self._parsed_input.has_lora_update:
-            has_lora_config = self._node.localConfig.HasField("lora")
-            has_any_local_config = len(self._node.localConfig.ListFields()) > 0
-            if not has_lora_config or not has_any_local_config:
-                self._node._raise_interface_error(  # noqa: SLF001
-                    "LoRa config must be loaded before setURL() when the URL updates LoRa settings"
-                )
-            replace_original_lora_config = config_pb2.Config.LoRaConfig()
-            replace_original_lora_config.CopyFrom(self._node.localConfig.lora)
+
+            def _capture_replace_lora() -> config_pb2.Config.LoRaConfig:
+                has_lora_config = self._node.localConfig.HasField("lora")
+                has_any_local_config = len(self._node.localConfig.ListFields()) > 0
+                if not has_lora_config or not has_any_local_config:
+                    self._node._raise_interface_error(  # noqa: SLF001
+                        "LoRa config must be loaded before setURL() when the URL updates LoRa settings"
+                    )
+                snapshot = config_pb2.Config.LoRaConfig()
+                snapshot.CopyFrom(self._node.localConfig.lora)
+                return snapshot
+
+            replace_original_lora_config = self._node._execute_with_node_db_lock(
+                _capture_replace_lora
+            )
 
         staged_channels: list[channel_pb2.Channel] = []
         for i, channel_settings in enumerate(self._parsed_input.channel_set.settings):
@@ -393,10 +411,9 @@ class _SetUrlCacheManager:
                     "Channel cache unavailable after successful addOnly apply; reload channels to refresh local state."
                 )
                 return
-            if (
-                expected_channels_ref is not None
-                and channels is not expected_channels_ref
-            ):
+            if expected_channels_ref is not None and _channels_fingerprint(
+                channels
+            ) != _channels_fingerprint(expected_channels_ref):
                 self._invalidate_channel_cache_locked(
                     "Channel cache changed during addOnly cache update; invalidating local channel cache."
                 )
@@ -423,10 +440,9 @@ class _SetUrlCacheManager:
                 self._node._raise_interface_error(  # noqa: SLF001
                     _ERR_CONFIG_OR_CHANNELS_NOT_LOADED
                 )
-            if (
-                expected_channels_ref is not None
-                and channels is not expected_channels_ref
-            ):
+            if expected_channels_ref is not None and _channels_fingerprint(
+                channels
+            ) != _channels_fingerprint(expected_channels_ref):
                 self._invalidate_channel_cache_locked(
                     "Channel cache changed during replace-all cache update; invalidating local channel cache."
                 )
@@ -452,9 +468,11 @@ class _SetUrlCacheManager:
     ) -> None:
         """Restore replace-all channel cache from pre-transaction snapshot."""
         with self._node._channels_lock:  # noqa: SLF001
-            if (
-                expected_channels_ref is not None
-                and self._node.channels is not expected_channels_ref
+            channels = self._node.channels
+            if expected_channels_ref is not None and (
+                channels is None
+                or _channels_fingerprint(channels)
+                != _channels_fingerprint(expected_channels_ref)
             ):
                 self._invalidate_channel_cache_locked(
                     "Channel cache changed during replace-all rollback restore; invalidating local channel cache."
@@ -470,18 +488,30 @@ class _SetUrlCacheManager:
 
     def apply_lora_success(self, lora_config: config_pb2.Config.LoRaConfig) -> None:
         """Apply successful LoRa cache update."""
-        self._node.localConfig.lora.CopyFrom(lora_config)
+
+        def _apply() -> None:
+            self._node.localConfig.lora.CopyFrom(lora_config)
+
+        self._node._execute_with_node_db_lock(_apply)
 
     def restore_lora_snapshot(
         self,
         original_lora_config: config_pb2.Config.LoRaConfig,
     ) -> None:
         """Restore LoRa cache from pre-transaction snapshot."""
-        self._node.localConfig.lora.CopyFrom(original_lora_config)
+
+        def _restore() -> None:
+            self._node.localConfig.lora.CopyFrom(original_lora_config)
+
+        self._node._execute_with_node_db_lock(_restore)
 
     def clear_lora_cache_with_warning(self, warning_message: str) -> None:
         """Clear LoRa cache when rollback cannot restore prior value."""
-        self._node.localConfig.ClearField("lora")
+
+        def _clear() -> None:
+            self._node.localConfig.ClearField("lora")
+
+        self._node._execute_with_node_db_lock(_clear)
         logger.warning("%s", warning_message)
 
 

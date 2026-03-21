@@ -1733,10 +1733,10 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
 
 
 @pytest.mark.unit
-def test_setURL_add_only_invalidates_channels_cache_on_partial_rollback_failure(
+def test_setURL_add_only_skips_rollback_when_deferred_write_never_started(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """setURL(addOnly=True) should invalidate local channels if channel rollback is partial."""
+    """setURL(addOnly=True) should skip rollback when deferred write fails before being marked started."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
 
     primary = Channel(index=0, role=Channel.Role.PRIMARY)
@@ -1862,10 +1862,10 @@ def test_setURL_add_only_rolls_back_with_fallback_admin_index_after_deferred_adm
 
 
 @pytest.mark.unit
-def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
+def test_setURL_add_only_skips_lora_rollback_when_forward_write_never_started(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """setURL(addOnly=True) should rollback channels and LoRa when final LoRa write fails."""
+    """setURL(addOnly=True) should skip LoRa rollback when forward write fails before being marked started."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
 
     primary = Channel(index=0, role=Channel.Role.PRIMARY)
@@ -2281,10 +2281,10 @@ def test_setURL_replace_rolls_back_written_channels_on_midflight_failure(
 
 
 @pytest.mark.unit
-def test_setURL_replace_rolls_back_lora_when_lora_write_fails(
+def test_setURL_replace_skips_lora_rollback_when_forward_write_never_started(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """setURL(addOnly=False) should restore channels and LoRa config when LoRa write fails."""
+    """setURL(addOnly=False) should skip LoRa rollback when forward write fails before being marked started."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
     anode.iface.localNode = anode
 
@@ -2509,6 +2509,7 @@ def test_onResponseRequestChannel_handles_partial_and_final_channel(
     anode._request_channel = MagicMock()  # type: ignore[method-assign]
 
     partial = Channel(index=2, role=Channel.Role.SECONDARY)
+    anode._channel_response_runtime.mark_channel_request_sent(2)
     anode.onResponseRequestChannel(
         {
             "decoded": {
@@ -2521,6 +2522,7 @@ def test_onResponseRequestChannel_handles_partial_and_final_channel(
 
     final = Channel(index=CHANNEL_LIMIT - 1, role=Channel.Role.SECONDARY)
     anode._request_channel.reset_mock()
+    anode._channel_response_runtime.mark_channel_request_sent(CHANNEL_LIMIT - 1)
     anode.onResponseRequestChannel(
         {
             "decoded": {

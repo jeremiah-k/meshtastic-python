@@ -807,16 +807,14 @@ class BLENotificationDispatcher:
             cache_attr: str,
             factory: Callable[[], Callable[[Any, Any], None]],
         ) -> Callable[[Any, Any], None]:
-            cached_handler: Callable[[Any, Any], None] | None = getattr(
-                self, cache_attr, None
-            )
+            cached_handler = getattr(self, cache_attr, None)
             if not callable(cached_handler):
                 cached_handler = factory()
                 setattr(self, cache_attr, cached_handler)
             active_handler = self._notification_manager._get_callback(uuid)
             if active_handler is not cached_handler:
                 self._notification_manager._subscribe(uuid, cached_handler)
-            return cached_handler
+            return cast(Callable[[Any, Any], None], cached_handler)
 
         def _get_or_create_cached_handler(
             *,

@@ -1,6 +1,7 @@
 """Metadata and channel response runtimes for Node admin requests."""
 
 import logging
+import time
 from typing import TYPE_CHECKING, Any
 
 from meshtastic.node_runtime.shared import MAX_CHANNELS
@@ -59,6 +60,7 @@ class _NodeMetadataResponseRuntime:
                 error_reason,
             )
             self._node.iface._acknowledgment.receivedNak = True
+            self._node._timeout.expireTime = time.time()
             self._node._signal_metadata_stdout_event()
             return True  # Don't try to parse this routing message
         logger.debug(
@@ -82,6 +84,7 @@ class _NodeMetadataResponseRuntime:
         if error_reason != "NONE":
             logger.error("Error on response: %s", error_reason)
             self._node.iface._acknowledgment.receivedNak = True
+            self._node._timeout.expireTime = time.time()
             self._node._signal_metadata_stdout_event()
             return True
         return False
@@ -271,7 +274,7 @@ class _NodeChannelResponseRuntime:
                 )
         return True
 
-    def handle_channel_response(self, packet: dict[str, Any]) -> None:
+    def handle_channel_response(self, packet: dict[str, Any]) -> None:  # pylint: disable=too-many-return-statements
         """Process channel response packet and maintain partial/final channel sequencing."""
         decoded = packet.get("decoded")
         if not isinstance(decoded, dict):
@@ -308,7 +311,32 @@ class _NodeChannelResponseRuntime:
         response_channel = raw_admin.get_channel_response
         channel_response = channel_pb2.Channel()
         channel_response.CopyFrom(response_channel)
+
+        expected_index = self._pending_channel_request_index
+        if expected_index is None:
+            logger.debug(
+                "Ignoring unexpected channel response index=%s with no pending request.",
+                channel_response.index,
+            )
+            return
+        if channel_response.index != expected_index:
+            logger.debug(
+                "Ignoring stale channel response index=%s; expected %s.",
+                channel_response.index,
+                expected_index,
+            )
+            return
+
         with self._node._channels_lock:  # noqa: SLF001
+            if any(
+                existing.index == channel_response.index
+                for existing in self._node.partialChannels
+            ):
+                logger.debug(
+                    "Ignoring duplicate channel response index=%s.",
+                    channel_response.index,
+                )
+                return
             self._node.partialChannels.append(channel_response)
         self._node._timeout.reset()  # We made forward progress
         safe_role = (
