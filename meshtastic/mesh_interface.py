@@ -3820,7 +3820,17 @@ class MeshInterface:  # pylint: disable=R0902
     def _apply_local_config_from_radio(self, config: config_pb2.Config) -> bool:
         """Apply all present localConfig fields from inbound config payload."""
         applied = False
+        source_fields = config.DESCRIPTOR.fields_by_name
+        target_fields = self.localNode.localConfig.DESCRIPTOR.fields_by_name
         for field_name in LOCAL_CONFIG_FROM_RADIO_FIELDS:
+            if field_name not in source_fields:
+                continue
+            if field_name not in target_fields:
+                logger.debug(
+                    "Skipping unsupported localConfig field from radio update: %s",
+                    field_name,
+                )
+                continue
             if config.HasField(field_name):  # type: ignore[arg-type]  # field_name is from known-valid LOCAL_CONFIG_FROM_RADIO_FIELDS
                 getattr(self.localNode.localConfig, field_name).CopyFrom(
                     getattr(config, field_name)
@@ -3833,7 +3843,17 @@ class MeshInterface:  # pylint: disable=R0902
     ) -> bool:
         """Apply all present moduleConfig fields from inbound moduleConfig payload."""
         applied = False
+        source_fields = module_config.DESCRIPTOR.fields_by_name
+        target_fields = self.localNode.moduleConfig.DESCRIPTOR.fields_by_name
         for field_name in MODULE_CONFIG_FROM_RADIO_FIELDS:
+            if field_name not in source_fields:
+                continue
+            if field_name not in target_fields:
+                logger.debug(
+                    "Skipping unsupported moduleConfig field from radio update: %s",
+                    field_name,
+                )
+                continue
             if module_config.HasField(field_name):  # type: ignore[arg-type]  # field_name is from known-valid MODULE_CONFIG_FROM_RADIO_FIELDS
                 getattr(self.localNode.moduleConfig, field_name).CopyFrom(
                     getattr(module_config, field_name)

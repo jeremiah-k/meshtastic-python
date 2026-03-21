@@ -3764,6 +3764,30 @@ def test_handle_from_radio_config_and_module_config_branches() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_handle_from_radio_config_update_skips_unsupported_local_cache_fields() -> None:
+    """Config updates should skip unsupported local-only cache fields without raising."""
+    with MeshInterface(noProto=True) as iface:
+        msg_supported = mesh_pb2.FromRadio()
+        msg_supported.config.device.SetInParent()
+        iface._handle_from_radio(msg_supported.SerializeToString())
+        assert iface.localNode.localConfig.HasField("device")
+
+        # Regression coverage for multinode CI: these fields may exist on
+        # FromRadio.config but not on localNode.localConfig.
+        msg_sessionkey = mesh_pb2.FromRadio()
+        msg_sessionkey.config.sessionkey.SetInParent()
+        iface._handle_from_radio(msg_sessionkey.SerializeToString())
+
+        msg_device_ui = mesh_pb2.FromRadio()
+        msg_device_ui.config.device_ui.SetInParent()
+        iface._handle_from_radio(msg_device_ui.SerializeToString())
+
+        # Supported cached fields remain intact after unsupported updates.
+        assert iface.localNode.localConfig.HasField("device")
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_node_num_to_id_invalid_user_payloads() -> None:
     """_node_num_to_id() should return None when user payload is missing or has invalid id type."""
     with MeshInterface(noProto=True) as iface:
