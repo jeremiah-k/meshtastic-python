@@ -432,7 +432,9 @@ class _SetUrlCacheManager:
                 self._invalidate_channel_cache_locked(
                     "Channel cache changed during replace-all cache update; invalidating local channel cache."
                 )
-                return
+                self._node._raise_interface_error(  # noqa: SLF001
+                    "Channel cache changed during replace-all cache update; aborting transaction."
+                )
             if staged_channel.index < 0 or staged_channel.index >= len(channels):
                 self._node._raise_interface_error(  # noqa: SLF001
                     f"Channel index {staged_channel.index} out of range during cache update"
@@ -548,10 +550,15 @@ class _SetUrlExecutionEngine:
             set_lora.set_config.lora.CopyFrom(parsed_input.channel_set.lora_config)
             self._node.ensureSessionKey(adminIndex=admin_context.admin_index_for_write)
             state.lora_write_started = True
-            self._node._send_admin(  # noqa: SLF001
+            request = self._node._send_admin(  # noqa: SLF001
                 set_lora,
                 adminIndex=admin_context.admin_index_for_write,
             )
+            if request is None:
+                state.lora_write_started = False
+                self._node._raise_interface_error(  # noqa: SLF001
+                    "LoRa config update was not started"
+                )
 
         if plan.deferred_add_only_admin_channel is not None:
             staged_channel, channel_name = plan.deferred_add_only_admin_channel
@@ -603,10 +610,15 @@ class _SetUrlExecutionEngine:
             set_lora.set_config.lora.CopyFrom(parsed_input.channel_set.lora_config)
             self._node.ensureSessionKey(adminIndex=admin_context.admin_index_for_write)
             state.lora_write_started = True
-            self._node._send_admin(  # noqa: SLF001
+            request = self._node._send_admin(  # noqa: SLF001
                 set_lora,
                 adminIndex=admin_context.admin_index_for_write,
             )
+            if request is None:
+                state.lora_write_started = False
+                self._node._raise_interface_error(  # noqa: SLF001
+                    "LoRa config update was not started"
+                )
             self._cache_manager.apply_lora_success(parsed_input.channel_set.lora_config)
 
         if plan.deferred_new_named_admin_channel is not None:
@@ -728,7 +740,9 @@ class _SetUrlRollbackEngine:
                     rollback_succeeded = True
                     break
                 # Best-effort rollback path; keep attempting remaining steps.
-                except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                except (
+                    Exception
+                ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                     last_rollback_error = rollback_error
             if not rollback_succeeded:
                 rollback_failed = True
@@ -840,7 +854,9 @@ class _SetUrlRollbackEngine:
                     )
                     rollback_succeeded = True
                     break
-                except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                except (
+                    Exception
+                ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                     replace_last_rollback_error = rollback_error
             if not rollback_succeeded:
                 rollback_failed = True
@@ -939,7 +955,9 @@ class _SetUrlTransactionCoordinator:
             self._node._raise_interface_error(  # noqa: SLF001
                 "Interface localNode not initialized"
             )
-        admin_index_for_write = admin_write_node._get_admin_channel_index()  # noqa: SLF001
+        admin_index_for_write = (
+            admin_write_node._get_admin_channel_index()
+        )  # noqa: SLF001
         named_admin_index_for_write = (
             admin_write_node._get_named_admin_channel_index()  # noqa: SLF001
         )

@@ -2,7 +2,7 @@
 
 import logging
 import warnings
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
 from meshtastic.protobuf import admin_pb2, channel_pb2, mesh_pb2
@@ -13,6 +13,23 @@ if TYPE_CHECKING:
     from meshtastic.node import Node
 
 logger = logging.getLogger(__name__)
+
+
+class _LocalConfigFieldProbe:
+    """Expose local-config field presence as a boolean wait target."""
+
+    def __init__(self, *, has_field_fn: Callable[[str], bool], name: str) -> None:
+        self._has_field_fn = has_field_fn
+        self._name = name
+
+    @property
+    def is_set(self) -> bool:
+        """Return whether the target localConfig field is currently set."""
+        try:
+            return bool(self._has_field_fn(self._name))
+        except (TypeError, ValueError) as exc:
+            logger.debug("HasField check failed for %r: %s", self._name, exc)
+            return False
 
 
 class _NodeChannelRequestRuntime:
@@ -26,6 +43,7 @@ class _NodeChannelRequestRuntime:
     ) -> None:
         self._node = node
         self._normalization_runtime = normalization_runtime
+        self._request_channel_warned = False
 
     def set_channels(self, channels: Sequence[channel_pb2.Channel]) -> None:
         """Set channels from sequence with copy + normalization semantics."""
@@ -45,7 +63,7 @@ class _NodeChannelRequestRuntime:
             with self._node._channels_lock:  # noqa: SLF001
                 self._node.channels = None
                 self._node.partialChannels = []
-        self.request_channel(starting_index)
+        self.requestChannel(starting_index)
 
     def wait_for_config(self, *, attribute: str = "channels") -> bool:
         """Wait for node attribute using historical timeout semantics."""
@@ -58,28 +76,8 @@ class _NodeChannelRequestRuntime:
         local_config = self._node.localConfig
         has_field = getattr(local_config, "HasField", None)
         if callable(has_field):
-            field_name = attribute
-
-            class _LocalConfigFieldProbe:
-                """Expose local-config field presence as a boolean wait target."""
-
-                def __init__(self, *, has_field_fn: object, name: str) -> None:
-                    self._has_field_fn = has_field_fn
-                    self._name = name
-
-                @property
-                def is_set(self) -> bool:
-                    """Return whether the target localConfig field is currently set."""
-                    has_field_fn = self._has_field_fn
-                    if not callable(has_field_fn):
-                        return False
-                    try:
-                        return bool(has_field_fn(self._name))
-                    except (TypeError, ValueError):
-                        return False
-
             return self._node._timeout.waitForSet(  # noqa: SLF001
-                _LocalConfigFieldProbe(has_field_fn=has_field, name=field_name),
+                _LocalConfigFieldProbe(has_field_fn=has_field, name=attribute),
                 attrs=("is_set",),
             )
 
@@ -109,9 +107,11 @@ class _NodeChannelRequestRuntime:
 
     def request_channel(self, channel_num: int) -> mesh_pb2.MeshPacket | None:
         """COMPAT_DEPRECATE: Use requestChannel instead."""
-        warnings.warn(
-            "request_channel is deprecated; use requestChannel instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        if not self._request_channel_warned:
+            warnings.warn(
+                "request_channel is deprecated; use requestChannel instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self._request_channel_warned = True
         return self.requestChannel(channel_num)

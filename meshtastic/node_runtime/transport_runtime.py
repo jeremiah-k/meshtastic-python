@@ -127,10 +127,18 @@ class _NodeChannelWriteRuntime:
         self._node.ensureSessionKey(adminIndex=admin_index)
         request_message = admin_pb2.AdminMessage()
         request_message.set_channel.CopyFrom(channel_to_write)
-        self._node._send_admin(
+        request = self._node._send_admin(
             request_message,
             adminIndex=admin_index,
         )
+        if request is None:
+            logger.error(
+                "Channel write was not started for index %s.",
+                channel_to_write.index,
+            )
+            self._node._raise_interface_error(  # noqa: SLF001
+                f"Channel write for index {channel_to_write.index} was not started"
+            )
         logger.debug("Wrote channel %s", channel_to_write.index)
 
     def write_channel(
@@ -140,7 +148,9 @@ class _NodeChannelWriteRuntime:
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if channels is None:
-                self._node._raise_interface_error("Error: No channels have been read")  # noqa: SLF001
+                self._node._raise_interface_error(
+                    "Error: No channels have been read"
+                )  # noqa: SLF001
             if channel_index < 0 or channel_index >= len(channels):
                 self._node._raise_interface_error(  # noqa: SLF001
                     f"Channel index {channel_index} out of range (0-{len(channels) - 1})"
@@ -215,7 +225,9 @@ class _NodeDeleteChannelRuntime:
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if channels is None:
-                self._node._raise_interface_error("Error: No channels have been read")  # noqa: SLF001
+                self._node._raise_interface_error(
+                    "Error: No channels have been read"
+                )  # noqa: SLF001
             if channel_index < 0 or channel_index >= len(channels):
                 self._node._raise_interface_error(  # noqa: SLF001
                     f"Channel index {channel_index} out of range (0-{len(channels) - 1})"

@@ -280,7 +280,7 @@ class _NodeSettingsResponseRuntime:
 
     def handle_settings_response(self, packet: dict[str, Any]) -> None:
         """Process one settings response packet with preserved ACK/NAK semantics."""
-        logger.debug("onResponseRequestSetting() response received")
+        logger.debug("handle_settings_response() response received")
         decoded = packet.get("decoded")
         if not isinstance(decoded, dict):
             logger.warning(
@@ -296,11 +296,13 @@ class _NodeSettingsResponseRuntime:
                     error_reason,
                 )
                 self._node.iface._acknowledgment.receivedNak = True
-            return
+                return
 
         admin_message = decoded.get("admin")
         if not isinstance(admin_message, dict):
-            logger.warning("Received malformed settings response (missing admin)")
+            logger.warning(
+                "Received malformed settings response (missing admin): %s", packet
+            )
             return
         target = self._resolve_config_target(admin_message)
         if target is None:
@@ -309,7 +311,10 @@ class _NodeSettingsResponseRuntime:
         oneof, field_name, config_values = target
         raw_admin = admin_message.get("raw")
         if raw_admin is None:
-            logger.warning("Received malformed settings response (missing admin.raw)")
+            logger.warning(
+                "Received malformed settings response (missing admin.raw): %s",
+                packet,
+            )
             return
         raw_config = getattr(getattr(raw_admin, oneof), field_name)
         config_values.CopyFrom(raw_config)
@@ -445,7 +450,9 @@ class _NodeAdminCommandRuntime:
     ) -> mesh_pb2.MeshPacket | None:
         """Validate OTA args and send ota_request command."""
         if self._node is not self._node.iface.localNode:
-            self._node._raise_interface_error("startOTA only possible on local node")  # noqa: SLF001
+            self._node._raise_interface_error(
+                "startOTA only possible on local node"
+            )  # noqa: SLF001
 
         # COMPAT_STABLE_SHIM: support legacy keyword aliases used by older callers:
         # `ota_mode` -> `mode`, and `ota_hash`/`hash` -> `ota_file_hash`.
@@ -503,10 +510,14 @@ class _NodeAdminCommandRuntime:
         """Send factory-reset command, preserving full/config split behavior."""
         message = admin_pb2.AdminMessage()
         if full:
-            message.factory_reset_device = self._node._get_factory_reset_request_value()  # noqa: SLF001
+            message.factory_reset_device = (
+                self._node._get_factory_reset_request_value()
+            )  # noqa: SLF001
             logger.info("Telling node to factory reset (full device reset)")
         else:
-            message.factory_reset_config = self._node._get_factory_reset_request_value()  # noqa: SLF001
+            message.factory_reset_config = (
+                self._node._get_factory_reset_request_value()
+            )  # noqa: SLF001
             logger.info("Telling node to factory reset (config reset)")
         return self._send_command(
             message,

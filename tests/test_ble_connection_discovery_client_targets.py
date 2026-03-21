@@ -164,7 +164,9 @@ def test_client_manager_thread_dispatch_and_wrapper_paths(
     manager._connect_client.assert_called_once()
 
 
-def test_client_manager_connect_client_recovers_from_services_property_bleak_error() -> None:
+def test_client_manager_connect_client_recovers_from_services_property_bleak_error() -> (
+    None
+):
     """_connect_client should force service discovery when services property access fails."""
     manager = ClientManager(
         BLEStateManager(),

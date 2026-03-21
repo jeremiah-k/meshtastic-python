@@ -1,7 +1,9 @@
 """User-facing channel/config presentation runtime owner."""
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
+
+from google.protobuf.message import Message
 
 from meshtastic.protobuf import channel_pb2
 from meshtastic.util import messageToJson, pskToString
@@ -67,24 +69,17 @@ class _NodeChannelPresentationRuntime:
 
     def show_info(self) -> None:
         """Print local/module preferences and current channel presentation."""
-        local_config_snapshot = None
-        module_config_snapshot = None
+        local_config_snapshot: Message | None = None
+        module_config_snapshot: Message | None = None
         node_db_lock = getattr(self._node, "_node_db_lock", None)
         if node_db_lock is not None:
             with node_db_lock:
-                if self._node.localConfig is not None:
-                    local_config_snapshot = type(self._node.localConfig)()
-                    local_config_snapshot.CopyFrom(self._node.localConfig)
-                if self._node.moduleConfig is not None:
-                    module_config_snapshot = type(self._node.moduleConfig)()
-                    module_config_snapshot.CopyFrom(self._node.moduleConfig)
+                (
+                    local_config_snapshot,
+                    module_config_snapshot,
+                ) = self._snapshot_configs()
         else:
-            if self._node.localConfig is not None:
-                local_config_snapshot = type(self._node.localConfig)()
-                local_config_snapshot.CopyFrom(self._node.localConfig)
-            if self._node.moduleConfig is not None:
-                module_config_snapshot = type(self._node.moduleConfig)()
-                module_config_snapshot.CopyFrom(self._node.moduleConfig)
+            local_config_snapshot, module_config_snapshot = self._snapshot_configs()
 
         prefs = ""
         if local_config_snapshot:
@@ -95,3 +90,15 @@ class _NodeChannelPresentationRuntime:
             prefs = messageToJson(module_config_snapshot, multiline=True)
         print(f"Module preferences: {prefs}\n")
         self.show_channels()
+
+    def _snapshot_configs(self) -> tuple[Message | None, Message | None]:
+        """Return detached snapshots of local/module configs when present."""
+        local_config_snapshot: Message | None = None
+        module_config_snapshot: Message | None = None
+        if self._node.localConfig is not None:
+            local_config_snapshot = cast(Message, type(self._node.localConfig)())
+            local_config_snapshot.CopyFrom(self._node.localConfig)
+        if self._node.moduleConfig is not None:
+            module_config_snapshot = cast(Message, type(self._node.moduleConfig)())
+            module_config_snapshot.CopyFrom(self._node.moduleConfig)
+        return local_config_snapshot, module_config_snapshot

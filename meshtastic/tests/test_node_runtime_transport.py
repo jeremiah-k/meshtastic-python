@@ -24,7 +24,6 @@ from meshtastic.node_runtime.transport_runtime import (
 from meshtastic.protobuf import admin_pb2, channel_pb2, mesh_pb2, portnums_pb2
 from meshtastic.util import Acknowledgment
 
-
 # ============================================================================
 # Fixtures
 # ============================================================================
@@ -370,6 +369,28 @@ class TestNodeChannelWriteRuntime:
         sent_message = call_args[0][0]
         assert isinstance(sent_message, admin_pb2.AdminMessage)
         assert sent_message.set_channel.index == 0
+
+    @pytest.mark.unit
+    def test_write_channel_snapshot_raises_when_send_not_started(
+        self,
+        channel_write_runtime: _NodeChannelWriteRuntime,
+        mock_local_node: MagicMock,
+    ) -> None:
+        """write_channel_snapshot should raise when _send_admin skips sending."""
+        channel = channel_pb2.Channel()
+        channel.index = 4
+        mock_local_node._send_admin.return_value = None
+
+        def _raise_error(msg: str) -> None:
+            raise ValueError(msg)
+
+        mock_local_node._raise_interface_error = MagicMock(side_effect=_raise_error)
+
+        with pytest.raises(
+            ValueError,
+            match="Channel write for index 4 was not started",
+        ):
+            channel_write_runtime.write_channel_snapshot(channel)
 
     @pytest.mark.unit
     def test_write_channel_validates_channel_index(
@@ -1106,10 +1127,10 @@ class TestNodePositionTimeCommandRuntime:
         assert admin_message.remove_fixed_position is True
 
     @pytest.mark.unit
+    @pytest.mark.usefixtures("mock_local_node")
     def test_remove_fixed_position_logs_info(
         self,
         position_time_runtime: _NodePositionTimeCommandRuntime,
-        mock_local_node: MagicMock,  # pylint: disable=unused-argument
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """remove_fixed_position should log info message."""
@@ -1174,10 +1195,10 @@ class TestNodePositionTimeCommandRuntime:
         assert admin_message.set_time_only == current_time
 
     @pytest.mark.unit
+    @pytest.mark.usefixtures("mock_local_node")
     def test_set_time_logs_info(
         self,
         position_time_runtime: _NodePositionTimeCommandRuntime,
-        mock_local_node: MagicMock,  # pylint: disable=unused-argument
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """set_time should log info message with timestamp."""

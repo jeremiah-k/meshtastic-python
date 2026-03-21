@@ -2,10 +2,10 @@
 
 import logging
 import threading
+import warnings
 from unittest.mock import MagicMock
 
 import pytest
-from pytest import LogCaptureFixture
 
 from meshtastic.node_runtime.channel_normalization_runtime import (
     _NodeChannelNormalizationRuntime,
@@ -168,6 +168,20 @@ def test_request_channels_with_starting_index_nonzero_preserves_channels(
 
 
 @pytest.mark.unit
+def test_request_channels_calls_canonical_request_channel_method(
+    channel_request_runtime: _NodeChannelRequestRuntime,
+) -> None:
+    """request_channels should call requestChannel directly, not deprecated alias."""
+    channel_request_runtime.requestChannel = MagicMock()  # type: ignore[method-assign]
+    channel_request_runtime.request_channel = MagicMock()  # type: ignore[method-assign]
+
+    channel_request_runtime.request_channels(starting_index=3)
+
+    channel_request_runtime.requestChannel.assert_called_once_with(3)
+    channel_request_runtime.request_channel.assert_not_called()
+
+
+@pytest.mark.unit
 def test_wait_for_config_delegates_to_timeout_wait_for_set(
     channel_request_runtime: _NodeChannelRequestRuntime,
     mock_node: MagicMock,
@@ -238,7 +252,7 @@ def test_request_channel_sends_admin_message_with_correct_channel_num(
 def test_request_channel_for_remote_node_logs_info(
     channel_request_runtime: _NodeChannelRequestRuntime,
     mock_node: MagicMock,
-    caplog: LogCaptureFixture,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """request_channel for remote node should log info message."""
     # Set up node to be different from localNode (remote request)
@@ -262,7 +276,7 @@ def test_request_channel_for_remote_node_logs_info(
 def test_request_channel_for_local_node_logs_debug(
     channel_request_runtime: _NodeChannelRequestRuntime,
     mock_node: MagicMock,
-    caplog: LogCaptureFixture,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """request_channel for local node should log debug message."""
     # Set up node to be the same as localNode (local request)
@@ -277,3 +291,26 @@ def test_request_channel_for_local_node_logs_debug(
     assert "Requesting channel 2" in caplog.text
     # Verify remote message is NOT logged
     assert "remote node" not in caplog.text.lower()
+
+
+@pytest.mark.unit
+def test_request_channel_deprecation_warning_emits_once_per_instance(
+    channel_request_runtime: _NodeChannelRequestRuntime,
+    mock_node: MagicMock,
+) -> None:
+    """request_channel deprecation warning should be emitted once per runtime instance."""
+    mock_iface = MagicMock()
+    mock_iface.localNode = mock_node
+    mock_node.iface = mock_iface
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        channel_request_runtime.request_channel(channel_num=0)
+        channel_request_runtime.request_channel(channel_num=1)
+
+    deprecation_warnings = [
+        warning
+        for warning in caught
+        if issubclass(warning.category, DeprecationWarning)
+    ]
+    assert len(deprecation_warnings) == 1

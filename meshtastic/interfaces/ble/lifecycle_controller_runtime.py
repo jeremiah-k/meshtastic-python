@@ -1,5 +1,7 @@
 """Top-level lifecycle controller runtime ownership for BLE."""
 
+# pylint: disable=import-outside-toplevel
+
 from collections.abc import Callable
 from typing import TYPE_CHECKING, TypeVar, cast
 
@@ -174,6 +176,7 @@ class BLELifecycleController:
         from meshtastic.interfaces.ble import lifecycle_service as lifecycle_service_mod
 
         iface = self._iface
+
         def _resolve_hook(
             attr_name: str,
             fallback_factory: Callable[[], _HookT],

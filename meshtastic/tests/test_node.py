@@ -1367,7 +1367,8 @@ def test_getURL_requests_lora_when_local_config_empty(
     anode.channels = [primary, secondary, disabled]
     anode.requestConfig = MagicMock()  # type: ignore[method-assign]
 
-    def _populate_lora_and_return_true(**_kwargs: Any) -> bool:
+    def _populate_lora_and_return_true(*, attribute: str = "channels") -> bool:
+        _ = attribute
         anode.localConfig.lora.hop_limit = 3
         return True
 
@@ -2434,7 +2435,8 @@ def test_setURL_replace_raises_if_channels_disappear_during_assignment(
     url = _encode_channel_set_to_url(channel_set)
 
     with pytest.raises(
-        MeshInterface.MeshInterfaceError, match="Config or channels not loaded"
+        MeshInterface.MeshInterfaceError,
+        match="Channel write for index 0 was not started",
     ):
         anode.setURL(url, addOnly=False)
 
@@ -2477,7 +2479,7 @@ def test_fill_channels_handles_none_and_pads_to_limit(
 def test_onResponseRequestChannel_routing_paths(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """OnResponseRequestChannel should expire on routing failure and retry on routing success."""
+    """OnResponseRequestChannel should expire on routing failure and await ADMIN_APP on routing success."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
     anode._request_channel = MagicMock()  # type: ignore[method-assign]
 
@@ -2496,7 +2498,7 @@ def test_onResponseRequestChannel_routing_paths(
     anode.onResponseRequestChannel(
         {"decoded": {"portnum": "ROUTING_APP", "routing": {"errorReason": "NONE"}}}
     )
-    anode._request_channel.assert_called_once_with(3)
+    anode._request_channel.assert_not_called()
 
 
 @pytest.mark.unit

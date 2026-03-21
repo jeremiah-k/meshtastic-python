@@ -273,64 +273,124 @@ class TestBLELifecycleControllerHookResolution:
         """_resolve_hook should return fallback when hook is an unconfigured mock."""
         # An unconfigured MagicMock (default behavior)
         unconfigured_hook = MagicMock()
+        resolved_is_closing: list[bool] = []
+
+        def _discard_invalidated_connected_client(
+            *_args: Any,
+            **kwargs: Any,
+        ) -> None:
+            is_closing_getter = kwargs.get("is_closing_getter")
+            if callable(is_closing_getter):
+                resolved_is_closing.append(is_closing_getter())
 
         mock_iface = SimpleNamespace(_state_manager_is_closing=unconfigured_hook)
         mock_ownership = SimpleNamespace(
-            _discard_invalidated_connected_client=lambda *a, **kw: None
+            _discard_invalidated_connected_client=_discard_invalidated_connected_client
         )
 
         controller = BLELifecycleController(mock_iface)
         controller._connection_ownership = mock_ownership  # type: ignore[assignment]
 
         mock_client = SimpleNamespace(address="test-addr")
-        # This should use fallback instead of the unconfigured mock
-        controller._discard_invalidated_connected_client(
-            mock_client,
-            restore_address=None,
-            restore_last_connection_request=None,
-        )
+        with patch(
+            "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._state_manager_is_closing",
+            return_value=True,
+        ) as state_manager_is_closing:
+            # This should use fallback instead of the unconfigured mock.
+            controller._discard_invalidated_connected_client(
+                mock_client,
+                restore_address=None,
+                restore_last_connection_request=None,
+            )
+
+        state_manager_is_closing.assert_called_once_with(mock_iface)
+        assert resolved_is_closing == [True]
 
     def test_resolve_hook_with_missing_hook_returns_fallback(self) -> None:
         """_resolve_hook should return fallback when hook attribute is missing."""
         mock_iface = SimpleNamespace()  # No _state_manager_is_closing attribute
+        resolved_is_closing: list[bool] = []
+
+        def _discard_invalidated_connected_client(
+            *_args: Any,
+            **kwargs: Any,
+        ) -> None:
+            is_closing_getter = kwargs.get("is_closing_getter")
+            if callable(is_closing_getter):
+                resolved_is_closing.append(is_closing_getter())
+
         mock_ownership = SimpleNamespace(
-            _discard_invalidated_connected_client=lambda *a, **kw: None
+            _discard_invalidated_connected_client=_discard_invalidated_connected_client
         )
 
         controller = BLELifecycleController(mock_iface)
         controller._connection_ownership = mock_ownership  # type: ignore[assignment]
 
         mock_client = SimpleNamespace(address="test-addr")
-        # This should use fallback since no hook exists
-        controller._discard_invalidated_connected_client(
-            mock_client,
-            restore_address=None,
-            restore_last_connection_request=None,
-        )
+        with patch(
+            "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._state_manager_is_closing",
+            return_value=False,
+        ) as state_manager_is_closing:
+            # This should use fallback since no hook exists.
+            controller._discard_invalidated_connected_client(
+                mock_client,
+                restore_address=None,
+                restore_last_connection_request=None,
+            )
+
+        state_manager_is_closing.assert_called_once_with(mock_iface)
+        assert resolved_is_closing == [False]
 
     def test_resolve_hook_with_non_callable_returns_fallback(self) -> None:
         """_resolve_hook should return fallback when hook is not callable."""
         mock_iface = SimpleNamespace(_state_manager_is_closing="not-a-callable")
+        resolved_is_closing: list[bool] = []
+
+        def _discard_invalidated_connected_client(
+            *_args: Any,
+            **kwargs: Any,
+        ) -> None:
+            is_closing_getter = kwargs.get("is_closing_getter")
+            if callable(is_closing_getter):
+                resolved_is_closing.append(is_closing_getter())
+
         mock_ownership = SimpleNamespace(
-            _discard_invalidated_connected_client=lambda *a, **kw: None
+            _discard_invalidated_connected_client=_discard_invalidated_connected_client
         )
 
         controller = BLELifecycleController(mock_iface)
         controller._connection_ownership = mock_ownership  # type: ignore[assignment]
 
         mock_client = SimpleNamespace(address="test-addr")
-        # This should use fallback since hook is not callable
-        controller._discard_invalidated_connected_client(
-            mock_client,
-            restore_address=None,
-            restore_last_connection_request=None,
-        )
+        with patch(
+            "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._state_manager_is_closing",
+            return_value=True,
+        ) as state_manager_is_closing:
+            # This should use fallback since hook is not callable.
+            controller._discard_invalidated_connected_client(
+                mock_client,
+                restore_address=None,
+                restore_last_connection_request=None,
+            )
+
+        state_manager_is_closing.assert_called_once_with(mock_iface)
+        assert resolved_is_closing == [True]
 
     def test_fallback_is_closing_calls_lifecycle_service(self) -> None:
         """_fallback_is_closing should call BLELifecycleService._state_manager_is_closing."""
         mock_iface = SimpleNamespace()
+        resolved_is_closing: list[bool] = []
+
+        def _discard_invalidated_connected_client(
+            *_args: Any,
+            **kwargs: Any,
+        ) -> None:
+            is_closing_getter = kwargs.get("is_closing_getter")
+            if callable(is_closing_getter):
+                resolved_is_closing.append(is_closing_getter())
+
         mock_ownership = SimpleNamespace(
-            _discard_invalidated_connected_client=lambda *a, **kw: None
+            _discard_invalidated_connected_client=_discard_invalidated_connected_client
         )
 
         controller = BLELifecycleController(mock_iface)
@@ -339,7 +399,7 @@ class TestBLELifecycleControllerHookResolution:
         with patch(
             "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._state_manager_is_closing",
             return_value=True,
-        ):
+        ) as state_manager_is_closing:
             mock_client = SimpleNamespace(address="test-addr")
             controller._discard_invalidated_connected_client(
                 mock_client,
@@ -347,11 +407,33 @@ class TestBLELifecycleControllerHookResolution:
                 restore_last_connection_request=None,
             )
 
+        state_manager_is_closing.assert_called_once_with(mock_iface)
+        assert resolved_is_closing == [True]
+
     def test_fallback_current_state_calls_lifecycle_service(self) -> None:
         """_fallback_current_state should call BLELifecycleService._state_manager_current_state."""
         mock_iface = SimpleNamespace()
+        captured: dict[str, object] = {}
+
+        def _discard_invalidated_connected_client(
+            *_args: Any,
+            **kwargs: Any,
+        ) -> None:
+            current_state_getter = kwargs.get("current_state_getter")
+            transition_to_disconnected = kwargs.get("transition_to_disconnected")
+            safe_cleanup = kwargs.get("safe_cleanup")
+            if callable(current_state_getter):
+                captured["current_state"] = current_state_getter()
+            if callable(transition_to_disconnected):
+                captured["transitioned"] = transition_to_disconnected()
+            if callable(safe_cleanup):
+                captured["safe_cleanup"] = safe_cleanup(
+                    lambda: captured.__setitem__("cleanup_called", True),
+                    "test cleanup",
+                )
+
         mock_ownership = SimpleNamespace(
-            _discard_invalidated_connected_client=lambda *a, **kw: None
+            _discard_invalidated_connected_client=_discard_invalidated_connected_client
         )
 
         controller = BLELifecycleController(mock_iface)
@@ -361,7 +443,7 @@ class TestBLELifecycleControllerHookResolution:
             patch(
                 "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._state_manager_current_state",
                 return_value=ConnectionState.DISCONNECTED,
-            ),
+            ) as state_manager_current_state,
             patch(
                 "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._state_manager_is_closing",
                 return_value=False,
@@ -373,11 +455,11 @@ class TestBLELifecycleControllerHookResolution:
             patch(
                 "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._state_manager_transition_to",
                 return_value=True,
-            ),
+            ) as state_manager_transition_to,
             patch(
                 "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._error_handler_safe_cleanup",
-                side_effect=lambda iface, cleanup, name: cleanup(),
-            ),
+                side_effect=lambda _iface, cleanup, _name: (cleanup(), True)[1],
+            ) as safe_cleanup_handler,
         ):
             mock_client = SimpleNamespace(address="test-addr")
             controller._discard_invalidated_connected_client(
@@ -386,11 +468,38 @@ class TestBLELifecycleControllerHookResolution:
                 restore_last_connection_request=None,
             )
 
+        state_manager_current_state.assert_called_once_with(mock_iface)
+        state_manager_transition_to.assert_called_once_with(
+            mock_iface,
+            ConnectionState.DISCONNECTED,
+        )
+        safe_cleanup_handler.assert_called_once()
+        assert captured["current_state"] == ConnectionState.DISCONNECTED
+        assert captured["transitioned"] is True
+        assert captured["cleanup_called"] is True
+        assert captured["safe_cleanup"] is None
+
     def test_fallback_transition_to_state_calls_lifecycle_service(self) -> None:
         """_fallback_transition_to_state should call BLELifecycleService._state_manager_transition_to."""
         mock_iface = SimpleNamespace()
+        captured: dict[str, object] = {}
+
+        def _discard_invalidated_connected_client(
+            *_args: Any,
+            **kwargs: Any,
+        ) -> None:
+            transition_to_disconnected = kwargs.get("transition_to_disconnected")
+            safe_cleanup = kwargs.get("safe_cleanup")
+            if callable(transition_to_disconnected):
+                captured["transitioned"] = transition_to_disconnected()
+            if callable(safe_cleanup):
+                captured["safe_cleanup"] = safe_cleanup(
+                    lambda: captured.__setitem__("cleanup_called", True),
+                    "test cleanup",
+                )
+
         mock_ownership = SimpleNamespace(
-            _discard_invalidated_connected_client=lambda *a, **kw: None
+            _discard_invalidated_connected_client=_discard_invalidated_connected_client
         )
 
         controller = BLELifecycleController(mock_iface)
@@ -400,7 +509,7 @@ class TestBLELifecycleControllerHookResolution:
             patch(
                 "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._state_manager_transition_to",
                 side_effect=lambda iface, state: state == ConnectionState.DISCONNECTED,
-            ),
+            ) as state_manager_transition_to,
             patch(
                 "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._state_manager_is_closing",
                 return_value=False,
@@ -415,8 +524,8 @@ class TestBLELifecycleControllerHookResolution:
             ),
             patch(
                 "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._error_handler_safe_cleanup",
-                side_effect=lambda iface, cleanup, name: cleanup(),
-            ),
+                side_effect=lambda _iface, cleanup, _name: (cleanup(), True)[1],
+            ) as safe_cleanup_handler,
         ):
             mock_client = SimpleNamespace(address="test-addr")
             controller._discard_invalidated_connected_client(
@@ -424,6 +533,15 @@ class TestBLELifecycleControllerHookResolution:
                 restore_address=None,
                 restore_last_connection_request=None,
             )
+
+        state_manager_transition_to.assert_called_once_with(
+            mock_iface,
+            ConnectionState.DISCONNECTED,
+        )
+        safe_cleanup_handler.assert_called_once()
+        assert captured["transitioned"] is True
+        assert captured["cleanup_called"] is True
+        assert captured["safe_cleanup"] is None
 
     def test_discard_invalidated_connected_client_passes_restore_params(self) -> None:
         """_discard_invalidated_connected_client should pass restore parameters."""
@@ -481,9 +599,7 @@ class TestBLELifecycleControllerShutdownDelegation:
         """_close should delegate to the _shutdown coordinator with correct params."""
         calls: list[dict[str, float]] = []
         mock_shutdown = SimpleNamespace(
-            close=lambda *,
-            management_shutdown_wait_timeout,
-            management_wait_poll_seconds: calls.append(
+            close=lambda *, management_shutdown_wait_timeout, management_wait_poll_seconds: calls.append(
                 {
                     "timeout": management_shutdown_wait_timeout,
                     "poll": management_wait_poll_seconds,

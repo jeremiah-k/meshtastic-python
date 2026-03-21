@@ -14,6 +14,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _has_protobuf_field(obj: Any, field_name: str) -> bool:
+    """Safely check whether a protobuf message has a field set."""
+    has_field = getattr(obj, "HasField", None)
+    if not callable(has_field):
+        return False
+    try:
+        return bool(has_field(field_name))
+    except (TypeError, ValueError):
+        return False
+
+
 class _NodeMetadataResponseRuntime:
     """Owns metadata response routing/error handling, state mutation, and signaling."""
 
@@ -48,7 +59,6 @@ class _NodeMetadataResponseRuntime:
                 error_reason,
             )
             self._node.iface._acknowledgment.receivedNak = True
-            self._node._timeout.expireTime = time.time()  # Do not wait any longer
             self._node._signal_metadata_stdout_event()
             return True  # Don't try to parse this routing message
         logger.debug(
@@ -72,7 +82,6 @@ class _NodeMetadataResponseRuntime:
         if error_reason != "NONE":
             logger.error("Error on response: %s", error_reason)
             self._node.iface._acknowledgment.receivedNak = True
-            self._node._timeout.expireTime = time.time()  # Do not wait any longer
             self._node._signal_metadata_stdout_event()
             return True
         return False
@@ -143,14 +152,9 @@ class _NodeMetadataResponseRuntime:
             self._node._signal_metadata_stdout_event()
             return
         raw_admin = admin_message.get("raw")
-        has_field = getattr(raw_admin, "HasField", None)
-        has_metadata_response = False
-        if callable(has_field):
-            try:
-                has_metadata_response = bool(has_field("get_device_metadata_response"))
-            except (TypeError, ValueError):
-                has_metadata_response = False
-        if raw_admin is None or not has_metadata_response:
+        if raw_admin is None or not _has_protobuf_field(
+            raw_admin, "get_device_metadata_response"
+        ):
             logger.warning(
                 "Received malformed metadata response (missing admin.raw): %s",
                 packet,
@@ -185,6 +189,7 @@ class _NodeChannelResponseRuntime:
             logger.warning(
                 "Received malformed channel response (missing routing): %s", decoded
             )
+            self._node._timeout.expireTime = time.time()
             return True
         error_reason = routing.get("errorReason")
         if not isinstance(error_reason, str):
@@ -192,6 +197,7 @@ class _NodeChannelResponseRuntime:
                 "Received malformed channel response (invalid routing.errorReason): %s",
                 decoded,
             )
+            self._node._timeout.expireTime = time.time()
             return True
         if error_reason != "NONE":
             logger.warning(
@@ -201,16 +207,9 @@ class _NodeChannelResponseRuntime:
             self._node._timeout.expireTime = time.time()  # Do not wait any longer
             return True  # Don't try to parse this routing message
 
-        last_tried = 0
-        with self._node._channels_lock:  # noqa: SLF001
-            if self._node.partialChannels:
-                last_tried = self._node.partialChannels[-1].index
         logger.debug(
-            "Requesting next channel after index %s (requesting %s).",
-            last_tried,
-            last_tried + 1,
+            "Channel request routed successfully; waiting for ADMIN_APP payload."
         )
-        self._node._request_channel(last_tried)  # noqa: SLF001
         return True
 
     def handle_channel_response(self, packet: dict[str, Any]) -> None:
@@ -233,14 +232,9 @@ class _NodeChannelResponseRuntime:
             logger.warning("Received malformed channel response without admin payload")
             return
         raw_admin = admin_message.get("raw")
-        has_field = getattr(raw_admin, "HasField", None)
-        has_channel_response = False
-        if callable(has_field):
-            try:
-                has_channel_response = bool(has_field("get_channel_response"))
-            except (TypeError, ValueError):
-                has_channel_response = False
-        if raw_admin is None or not has_channel_response:
+        if raw_admin is None or not _has_protobuf_field(
+            raw_admin, "get_channel_response"
+        ):
             logger.warning(
                 "Received malformed channel response without admin.raw payload"
             )

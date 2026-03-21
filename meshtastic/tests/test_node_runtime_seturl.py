@@ -11,7 +11,6 @@ from typing import NoReturn
 from unittest.mock import MagicMock
 
 import pytest
-from pytest import LogCaptureFixture
 
 from meshtastic.node_runtime.seturl_runtime import (
     _SetUrlAddOnlyExecutionState,
@@ -20,11 +19,11 @@ from meshtastic.node_runtime.seturl_runtime import (
     _SetUrlCacheManager,
     _SetUrlExecutionEngine,
     _SetUrlParsedInput,
+    _SetUrlParser,
     _SetUrlReplaceExecutionState,
     _SetUrlReplacePlan,
     _SetUrlReplacePlanner,
     _SetUrlRollbackEngine,
-    _SetUrlParser,
     _SetUrlTransactionCoordinator,
 )
 from meshtastic.protobuf import (
@@ -34,7 +33,6 @@ from meshtastic.protobuf import (
     config_pb2,
     localonly_pb2,
 )
-
 
 # ============================================================================
 # Helper Functions
@@ -295,7 +293,7 @@ class TestSetUrlParser:
             captured_msg.append(msg)
             raise ValueError(msg)
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Invalid URL"):
             _SetUrlParser.parse(url, raise_interface_error=raise_error)
 
         assert len(captured_msg) == 1
@@ -312,7 +310,7 @@ class TestSetUrlParser:
             captured_msg.append(msg)
             raise ValueError(msg)
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Invalid URL"):
             _SetUrlParser.parse(url, raise_interface_error=raise_error)
 
         assert len(captured_msg) == 1
@@ -329,7 +327,7 @@ class TestSetUrlParser:
             captured_msg.append(msg)
             raise ValueError(msg)
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Invalid URL"):
             _SetUrlParser.parse(url, raise_interface_error=raise_error)
 
         assert len(captured_msg) == 1
@@ -350,7 +348,7 @@ class TestSetUrlParser:
             captured_msg.append(msg)
             raise ValueError(msg)
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Invalid URL"):
             _SetUrlParser.parse(url, raise_interface_error=raise_error)
 
         # The empty ChannelSet is encoded as empty bytes, which results in
@@ -396,7 +394,7 @@ class TestSetUrlCacheManager:
         self,
         cache_manager: _SetUrlCacheManager,
         mock_local_node: MagicMock,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """apply_add_only_success with None channels logs warning (line 381)."""
         mock_local_node.channels = None
@@ -414,7 +412,7 @@ class TestSetUrlCacheManager:
         self,
         cache_manager: _SetUrlCacheManager,
         mock_local_node: MagicMock,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """apply_add_only_success with out-of-range index invalidates cache (lines 388-393)."""
         mock_local_node.channels = [
@@ -521,11 +519,38 @@ class TestSetUrlCacheManager:
         assert mock_local_node.channels[0].settings.name == "new"
 
     @pytest.mark.unit
+    def test_apply_replace_channel_write_mismatched_expected_ref_raises(
+        self, cache_manager: _SetUrlCacheManager, mock_local_node: MagicMock
+    ) -> None:
+        """apply_replace_channel_write should fail deterministically on channel-cache ref mismatch."""
+        current_channels = [_make_channel(0, channel_pb2.Channel.Role.PRIMARY, "old")]
+        stale_channels_ref = [_make_channel(0, channel_pb2.Channel.Role.PRIMARY, "old")]
+        mock_local_node.channels = current_channels
+        staged_channel = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "new")
+
+        def raise_error(msg: str) -> NoReturn:
+            raise ValueError(msg)
+
+        mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
+
+        with pytest.raises(
+            ValueError,
+            match="Channel cache changed during replace-all cache update; aborting transaction.",
+        ):
+            cache_manager.apply_replace_channel_write(
+                staged_channel,
+                expected_channels_ref=stale_channels_ref,
+            )
+
+        assert mock_local_node.channels is None
+        assert mock_local_node.partialChannels == []
+
+    @pytest.mark.unit
     def test_clear_lora_cache_with_warning_clears_and_logs(
         self,
         cache_manager: _SetUrlCacheManager,
         mock_local_node: MagicMock,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """clear_lora_cache_with_warning clears LoRa cache and logs (lines 445-446)."""
         mock_local_node.localConfig.lora.hop_limit = 5
@@ -570,7 +595,7 @@ class TestSetUrlCacheManager:
         self,
         cache_manager: _SetUrlCacheManager,
         mock_local_node: MagicMock,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """invalidate_channel_cache clears channels and partialChannels."""
         mock_local_node.channels = [
@@ -616,7 +641,7 @@ class TestSetUrlRollbackEngine:
         self,
         rollback_engine: _SetUrlRollbackEngine,
         mock_local_node: MagicMock,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """rollback_add_only with channel failure attempts next admin index (line 658)."""
         # Set up channels with a disabled slot for addOnly
@@ -671,7 +696,7 @@ class TestSetUrlRollbackEngine:
         self,
         rollback_engine: _SetUrlRollbackEngine,
         mock_local_node: MagicMock,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """rollback_add_only with LoRa failure clears cache with warning (lines 712-727)."""
         original_channel = _make_channel(1, channel_pb2.Channel.Role.DISABLED)
@@ -732,7 +757,7 @@ class TestSetUrlRollbackEngine:
         self,
         rollback_engine: _SetUrlRollbackEngine,
         mock_local_node: MagicMock,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """rollback_replace_all with channel failure logs warning (lines 773-790)."""
         original_channel = _make_channel(
@@ -783,7 +808,7 @@ class TestSetUrlRollbackEngine:
         self,
         rollback_engine: _SetUrlRollbackEngine,
         mock_local_node: MagicMock,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """rollback_replace_all with LoRa failure clears cache with warning (lines 825-851)."""
         original_channel = _make_channel(
@@ -835,7 +860,7 @@ class TestSetUrlRollbackEngine:
         self,
         rollback_engine: _SetUrlRollbackEngine,
         mock_local_node: MagicMock,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """rollback_replace_all without snapshot clears cache (lines 844-847)."""
         original_channel = _make_channel(
@@ -883,7 +908,7 @@ class TestSetUrlRollbackEngine:
         self,
         rollback_engine: _SetUrlRollbackEngine,
         mock_local_node: MagicMock,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """rollback_replace_all with successful rollback restores snapshot."""
         original_channel = _make_channel(
@@ -1018,6 +1043,46 @@ class TestSetUrlExecutionEngine:
         assert state.lora_write_started is True
 
     @pytest.mark.unit
+    def test_execute_add_only_with_lora_update_skipped_send_raises(
+        self, execution_engine: _SetUrlExecutionEngine, mock_local_node: MagicMock
+    ) -> None:
+        """execute_add_only should abort when LoRa send is not started."""
+        channel_set = _make_channel_set_with_lora("test")
+        parsed_input = _SetUrlParsedInput(
+            url="https://meshtastic.org/d/#test",
+            channel_set=channel_set,
+            has_lora_update=True,
+        )
+        admin_context = MagicMock()
+        admin_context.admin_index_for_write = 0
+        admin_context.has_admin_write_node_named_admin = False
+        plan = _SetUrlAddOnlyPlan(
+            ignored_channel_names=[],
+            channels_to_write=[],
+            deferred_add_only_admin_channel=None,
+            deferred_add_only_admin_index=None,
+            original_channels_ref=[],
+            original_channels_by_index={},
+            original_lora_config=config_pb2.Config.LoRaConfig(),
+        )
+        state = _SetUrlAddOnlyExecutionState()
+        mock_local_node._send_admin.return_value = None
+
+        def raise_error(msg: str) -> NoReturn:
+            raise ValueError(msg)
+
+        mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
+
+        with pytest.raises(ValueError, match="LoRa config update was not started"):
+            execution_engine.execute_add_only(
+                parsed_input=parsed_input,
+                admin_context=admin_context,
+                plan=plan,
+                state=state,
+            )
+        assert state.lora_write_started is False
+
+    @pytest.mark.unit
     def test_execute_replace_all_writes_channels(
         self,
         execution_engine: _SetUrlExecutionEngine,
@@ -1070,6 +1135,55 @@ class TestSetUrlExecutionEngine:
 
         mock_local_node._write_channel_snapshot.assert_called()
         assert 0 in state.written_channel_indices
+
+    @pytest.mark.unit
+    def test_execute_replace_all_with_lora_update_skipped_send_raises(
+        self,
+        execution_engine: _SetUrlExecutionEngine,
+        mock_local_node: MagicMock,
+    ) -> None:
+        """execute_replace_all should abort when LoRa send is not started."""
+        mock_local_node.channels = [
+            _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "old"),
+        ]
+        channel_set = _make_channel_set_with_lora("newprimary")
+        parsed_input = _SetUrlParsedInput(
+            url="https://meshtastic.org/d/#test",
+            channel_set=channel_set,
+            has_lora_update=True,
+        )
+        admin_context = MagicMock()
+        admin_context.admin_index_for_write = 0
+        admin_context.has_admin_write_node_named_admin = False
+        staged = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "newprimary")
+        plan = _SetUrlReplacePlan(
+            max_channels=1,
+            replace_original_channels_ref=mock_local_node.channels,
+            replace_original_channels_snapshot=[],
+            replace_original_channels_by_index={},
+            staged_channels=[staged],
+            staged_channels_by_index={0: staged},
+            deferred_new_named_admin_channel=None,
+            deferred_new_named_admin_index=None,
+            deferred_previous_admin_slot_channel=None,
+            replace_original_lora_config=None,
+        )
+        state = _SetUrlReplaceExecutionState(rollback_admin_indexes_for_write=[0])
+        mock_local_node._send_admin.return_value = None
+
+        def raise_error(msg: str) -> NoReturn:
+            raise ValueError(msg)
+
+        mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
+
+        with pytest.raises(ValueError, match="LoRa config update was not started"):
+            execution_engine.execute_replace_all(
+                parsed_input=parsed_input,
+                admin_context=admin_context,
+                plan=plan,
+                state=state,
+            )
+        assert state.lora_write_started is False
 
     @pytest.mark.unit
     def test_post_write_fallback_admin_index_returns_named_admin(self) -> None:
@@ -1375,7 +1489,7 @@ class TestSetUrlReplacePlanner:
 
     @pytest.mark.unit
     def test_build_plan_with_too_many_channels_logs_warning(
-        self, mock_local_node: MagicMock, caplog: LogCaptureFixture
+        self, mock_local_node: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """build_plan with more URL channels than device slots logs warning."""
         mock_local_node.channels = [

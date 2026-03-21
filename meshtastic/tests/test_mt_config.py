@@ -111,15 +111,15 @@ def test_setattr_compat_alias_warn_once() -> None:
 
     # First set warns
     with pytest.warns(DeprecationWarning):
-        mt_config.tunnelInstance = (  # pyright: ignore[reportAttributeAccessIssue]
-            marker1
+        mt_config.tunnelInstance = (
+            marker1  # pyright: ignore[reportAttributeAccessIssue]
         )
 
     # Second set does not warn
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        mt_config.tunnelInstance = (  # pyright: ignore[reportAttributeAccessIssue]
-            marker2
+        mt_config.tunnelInstance = (
+            marker2  # pyright: ignore[reportAttributeAccessIssue]
         )
         assert len(caught) == 0
 
@@ -171,18 +171,20 @@ def test_getattr_unknown_name_raises_attribute_error() -> None:
 @pytest.mark.usefixtures("mt_config_state")
 def test_setattr_unknown_name_sets_attribute() -> None:
     """Setting unknown attributes should work normally."""
-    mt_config.new_attribute = (  # pyright: ignore[reportAttributeAccessIssue]
-        "test_value"
+    mt_config.new_attribute = (
+        "test_value"  # pyright: ignore[reportAttributeAccessIssue]
     )
-    assert mt_config.new_attribute == "test_value"  # pyright: ignore[reportAttributeAccessIssue]
+    assert (
+        mt_config.new_attribute == "test_value"
+    )  # pyright: ignore[reportAttributeAccessIssue]
 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("mt_config_state")
 def test_delattr_unknown_name_deletes_attribute() -> None:
     """Deleting unknown attributes should work normally."""
-    mt_config.new_attribute = (  # pyright: ignore[reportAttributeAccessIssue]
-        "test_value"
+    mt_config.new_attribute = (
+        "test_value"  # pyright: ignore[reportAttributeAccessIssue]
     )
     del mt_config.new_attribute  # pyright: ignore[reportAttributeAccessIssue]
     assert not hasattr(mt_config, "new_attribute")

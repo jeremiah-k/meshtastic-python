@@ -402,7 +402,9 @@ def test_handlePacketFromRadio_no_portnum(caplog: pytest.LogCaptureFixture) -> N
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_handlePacketFromRadio_hack_preserves_from_zero_in_publication_payload() -> None:
+def test_handlePacketFromRadio_hack_preserves_from_zero_in_publication_payload() -> (
+    None
+):
     """hack=True should preserve from==0 in emitted packet payload compatibility path."""
     with MeshInterface(noProto=True) as iface:
         mesh_packet = mesh_pb2.MeshPacket()
@@ -3404,7 +3406,9 @@ def test_request_scoped_wait_wakes_immediately_on_recorded_error() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_request_scoped_wait_times_out_for_unscoped_error_across_overlapping_waits() -> None:
+def test_request_scoped_wait_times_out_for_unscoped_error_across_overlapping_waits() -> (
+    None
+):
     """Overlapping request-scoped waits should ignore unscoped routing errors."""
     with MeshInterface(noProto=True) as iface:
         iface._timeout = Timeout(maxSecs=0.05)
@@ -3840,13 +3844,15 @@ def test_handle_from_radio_config_update_skips_unsupported_local_cache_fields() 
 
         # Regression coverage for multinode CI: these fields may exist on
         # FromRadio.config but not on localNode.localConfig.
-        msg_sessionkey = mesh_pb2.FromRadio()
-        msg_sessionkey.config.sessionkey.SetInParent()
-        iface._handle_from_radio(msg_sessionkey.SerializeToString())
+        if mesh_pb2.FromRadio().config.DESCRIPTOR.fields_by_name.get("sessionkey"):
+            msg_sessionkey = mesh_pb2.FromRadio()
+            msg_sessionkey.config.sessionkey.SetInParent()
+            iface._handle_from_radio(msg_sessionkey.SerializeToString())
 
-        msg_device_ui = mesh_pb2.FromRadio()
-        msg_device_ui.config.device_ui.SetInParent()
-        iface._handle_from_radio(msg_device_ui.SerializeToString())
+        if mesh_pb2.FromRadio().config.DESCRIPTOR.fields_by_name.get("device_ui"):
+            msg_device_ui = mesh_pb2.FromRadio()
+            msg_device_ui.config.device_ui.SetInParent()
+            iface._handle_from_radio(msg_device_ui.SerializeToString())
 
         # Supported cached fields remain intact after unsupported updates.
         assert iface.localNode.localConfig.HasField("device")

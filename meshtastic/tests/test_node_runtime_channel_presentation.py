@@ -1,5 +1,6 @@
 """Unit tests for _NodeChannelPresentationRuntime in channel_presentation_runtime.py."""
 
+import re
 import threading
 from unittest.mock import MagicMock
 
@@ -179,4 +180,4 @@ def test_show_info_with_local_config(
     assert "Module preferences:" in out
     assert "Channels:" in out
     # Verify hop_limit value is printed (from localConfig.lora.hop_limit = 3)
-    assert "hop_limit" in out.lower() or "3" in out
+    assert re.search(r'"hoplimit"\s*:\s*3', out.lower())

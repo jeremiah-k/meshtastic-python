@@ -28,6 +28,7 @@ def mock_node() -> MagicMock:
             "requestConfig",
             "waitForConfig",
             "_write_channel_snapshot",
+            "partialChannels",
         ]
     )
     node._channels_lock = threading.RLock()
@@ -37,6 +38,7 @@ def mock_node() -> MagicMock:
     node.requestConfig = MagicMock()
     node.waitForConfig = MagicMock(return_value=True)
     node._write_channel_snapshot = MagicMock()
+    node.partialChannels = []
     return node
 
 
@@ -438,6 +440,7 @@ def test_turn_off_encryption_on_primary_channel_no_cache_after_write(
         export_runtime.turn_off_encryption_on_primary_channel()
 
     assert "local channel cache is unavailable" in caplog.text
+    assert mock_node.partialChannels == []
 
 
 @pytest.mark.unit
@@ -465,3 +468,4 @@ def test_turn_off_encryption_on_primary_channel_index_not_found(
 
     assert "invalidating local channel cache" in caplog.text
     assert mock_node.channels is None
+    assert mock_node.partialChannels == []

@@ -6,7 +6,6 @@ from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
-from pytest import LogCaptureFixture
 
 from ..node_runtime.response_runtime import (
     _NodeChannelResponseRuntime,
@@ -60,7 +59,7 @@ class TestNodeMetadataResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_metadata_response_missing_decoded_logs_warning(
-        self, mock_node: MagicMock, caplog: LogCaptureFixture
+        self, mock_node: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Handle metadata response with missing decoded should log warning and signal event."""
         runtime = _NodeMetadataResponseRuntime(mock_node)
@@ -74,7 +73,7 @@ class TestNodeMetadataResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_metadata_response_with_routing_portnum_and_error(
-        self, mock_node: MagicMock, caplog: LogCaptureFixture
+        self, mock_node: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Handle metadata response with routing portnum and error should set Nak and expire timeout."""
         runtime = _NodeMetadataResponseRuntime(mock_node)
@@ -94,7 +93,7 @@ class TestNodeMetadataResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_metadata_response_with_routing_portnum_no_error(
-        self, mock_node: MagicMock, caplog: LogCaptureFixture
+        self, mock_node: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Handle metadata response with routing portnum and no error should return waiting for payload."""
         runtime = _NodeMetadataResponseRuntime(mock_node)
@@ -116,7 +115,7 @@ class TestNodeMetadataResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_metadata_response_missing_admin_logs_warning(
-        self, mock_node: MagicMock, caplog: LogCaptureFixture
+        self, mock_node: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Handle metadata response with missing admin should log warning."""
         runtime = _NodeMetadataResponseRuntime(mock_node)
@@ -134,7 +133,7 @@ class TestNodeMetadataResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_metadata_response_missing_admin_raw_logs_warning(
-        self, mock_node: MagicMock, caplog: LogCaptureFixture
+        self, mock_node: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Handle metadata response with missing admin.raw should log warning."""
         runtime = _NodeMetadataResponseRuntime(mock_node)
@@ -153,7 +152,7 @@ class TestNodeMetadataResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_metadata_response_valid_sets_ack_and_stores_snapshot(
-        self, mock_node: MagicMock, caplog: LogCaptureFixture
+        self, mock_node: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Handle valid metadata response should set ack, store snapshot, and emit lines."""
         runtime = _NodeMetadataResponseRuntime(mock_node)
@@ -190,7 +189,7 @@ class TestNodeMetadataResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_routing_portnum_malformed_routing_logs_warning(
-        self, mock_node: MagicMock, caplog: LogCaptureFixture
+        self, mock_node: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """_handle_routing_portnum with malformed routing should log warning and signal event."""
         runtime = _NodeMetadataResponseRuntime(mock_node)
@@ -208,7 +207,7 @@ class TestNodeMetadataResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_routing_portnum_invalid_error_reason_type(
-        self, mock_node: MagicMock, caplog: LogCaptureFixture
+        self, mock_node: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """_handle_routing_portnum with invalid errorReason type should log warning."""
         runtime = _NodeMetadataResponseRuntime(mock_node)
@@ -240,7 +239,7 @@ class TestNodeMetadataResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_generic_routing_error_with_error_sets_nak(
-        self, mock_node: MagicMock, caplog: LogCaptureFixture
+        self, mock_node: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """_handle_generic_routing_error with error reason should set Nak and signal event."""
         runtime = _NodeMetadataResponseRuntime(mock_node)
@@ -288,7 +287,7 @@ class TestNodeMetadataResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_generic_routing_error_invalid_error_reason_type(
-        self, mock_node: MagicMock, caplog: LogCaptureFixture
+        self, mock_node: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """_handle_generic_routing_error with invalid errorReason type should log warning."""
         runtime = _NodeMetadataResponseRuntime(mock_node)
@@ -417,7 +416,7 @@ class TestNodeChannelResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_channel_response_missing_decoded_returns_early(
-        self, mock_node_for_channel: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Handle channel response with missing decoded should return early."""
         runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
@@ -430,7 +429,7 @@ class TestNodeChannelResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_channel_response_routing_error_expires_timeout(
-        self, mock_node_for_channel: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Handle channel response with routing error should expire timeout."""
         runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
@@ -452,15 +451,11 @@ class TestNodeChannelResponseRuntime:
         assert mock_node_for_channel._timeout.expireTime <= original_expire_time
 
     @pytest.mark.unit
-    def test_handle_channel_response_routing_success_requests_next_channel(
-        self, mock_node_for_channel: MagicMock, caplog: LogCaptureFixture
+    def test_handle_channel_response_routing_success_waits_for_admin_payload(
+        self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Handle channel response with routing success should request next channel."""
+        """Handle channel response with routing success should wait for ADMIN_APP payload."""
         runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
-
-        channel = channel_pb2.Channel()
-        channel.index = 2
-        mock_node_for_channel.partialChannels = [channel]
 
         packet: dict[str, Any] = {
             "decoded": {
@@ -472,12 +467,15 @@ class TestNodeChannelResponseRuntime:
         with caplog.at_level(logging.DEBUG):
             runtime.handle_channel_response(packet)
 
-        assert "Requesting next channel after index 2" in caplog.text
-        mock_node_for_channel._request_channel.assert_called_once_with(2)
+        assert (
+            "Channel request routed successfully; waiting for ADMIN_APP payload."
+            in caplog.text
+        )
+        mock_node_for_channel._request_channel.assert_not_called()
 
     @pytest.mark.unit
     def test_handle_channel_response_admin_message_appends_to_partial_channels(
-        self, mock_node_for_channel: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Handle channel response with admin message should append to partialChannels."""
         runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
@@ -504,7 +502,7 @@ class TestNodeChannelResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_channel_response_last_channel_finalizes_channels(
-        self, mock_node_for_channel: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Handle channel response with last channel index should finalize channels."""
         runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
@@ -533,7 +531,7 @@ class TestNodeChannelResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_channel_response_non_last_channel_requests_next(
-        self, mock_node_for_channel: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Handle channel response with non-last channel should request next channel."""
         runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
@@ -558,7 +556,7 @@ class TestNodeChannelResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_channel_response_missing_admin_logs_warning(
-        self, mock_node_for_channel: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Handle channel response with missing admin should log warning."""
         runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
@@ -575,7 +573,7 @@ class TestNodeChannelResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_channel_response_missing_admin_raw_logs_warning(
-        self, mock_node_for_channel: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Handle channel response with missing admin.raw should log warning."""
         runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
@@ -608,7 +606,7 @@ class TestNodeChannelResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_routing_response_missing_routing_logs_warning(
-        self, mock_node_for_channel: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """_handle_routing_response should guard malformed routing payloads."""
         runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
@@ -624,12 +622,11 @@ class TestNodeChannelResponseRuntime:
         mock_node_for_channel._request_channel.assert_not_called()
 
     @pytest.mark.unit
-    def test_handle_routing_response_no_partial_channels_starts_at_zero(
-        self, mock_node_for_channel: MagicMock, caplog: LogCaptureFixture
+    def test_handle_routing_response_routing_success_waits_for_admin_payload(
+        self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """_handle_routing_response with no partialChannels should request channel 0."""
+        """_handle_routing_response should wait for ADMIN_APP payload on routing success."""
         runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
-        mock_node_for_channel.partialChannels = []
 
         decoded: dict[str, Any] = {
             "portnum": portnums_pb2.PortNum.Name(portnums_pb2.PortNum.ROUTING_APP),
@@ -640,5 +637,8 @@ class TestNodeChannelResponseRuntime:
             result = runtime._handle_routing_response(decoded)
 
         assert result is True
-        assert "Requesting next channel after index 0" in caplog.text
-        mock_node_for_channel._request_channel.assert_called_once_with(0)
+        assert (
+            "Channel request routed successfully; waiting for ADMIN_APP payload."
+            in caplog.text
+        )
+        mock_node_for_channel._request_channel.assert_not_called()

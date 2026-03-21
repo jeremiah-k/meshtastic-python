@@ -220,6 +220,8 @@ class _NodeAdminContentRuntime:
         self._node = node
         self._cache_store = cache_store
         self._response_runtime = response_runtime
+        self._ringtone_operation_lock = threading.RLock()
+        self._canned_message_operation_lock = threading.RLock()
 
     def _module_available_or_warn(
         self, excluded_bit: int, warning_message: str
@@ -271,96 +273,100 @@ class _NodeAdminContentRuntime:
 
     def read_ringtone(self) -> str | None:
         """Read ringtone using cached-short-circuit + request/wait orchestration."""
-        logger.debug("in get_ringtone()")
-        if not self._module_available_or_warn(
-            mesh_pb2.EXTNOTIF_CONFIG,
-            "External Notification module not present (excluded by firmware)",
-        ):
-            return None
-        cached_ringtone = self._cache_store.get_cached_ringtone()
-        if cached_ringtone is not None:
-            return cached_ringtone
-        self._cache_store.clear_ringtone_fragment()
-        return self._send_content_read_request(
-            build_request=lambda message: setattr(
-                message, "get_ringtone_request", True
-            ),
-            handle_response=self._response_runtime.handle_ringtone_response,
-            skipped_send_debug_message=(
-                "Skipping ringtone wait because protocol send was not started"
-            ),
-            timeout_warning_message="Timed out waiting for ringtone response",
-            resolve_result=self._cache_store.resolve_ringtone_after_read,
-        )
+        with self._ringtone_operation_lock:
+            logger.debug("in get_ringtone()")
+            if not self._module_available_or_warn(
+                mesh_pb2.EXTNOTIF_CONFIG,
+                "External Notification module not present (excluded by firmware)",
+            ):
+                return None
+            cached_ringtone = self._cache_store.get_cached_ringtone()
+            if cached_ringtone is not None:
+                return cached_ringtone
+            self._cache_store.clear_ringtone_fragment()
+            return self._send_content_read_request(
+                build_request=lambda message: setattr(
+                    message, "get_ringtone_request", True
+                ),
+                handle_response=self._response_runtime.handle_ringtone_response,
+                skipped_send_debug_message=(
+                    "Skipping ringtone wait because protocol send was not started"
+                ),
+                timeout_warning_message="Timed out waiting for ringtone response",
+                resolve_result=self._cache_store.resolve_ringtone_after_read,
+            )
 
     def write_ringtone(self, ringtone: str) -> mesh_pb2.MeshPacket | None:
         """Write ringtone payload and invalidate local ringtone cache."""
-        if not self._module_available_or_warn(
-            mesh_pb2.EXTNOTIF_CONFIG,
-            "External Notification module not present (excluded by firmware)",
-        ):
-            return None
-        if len(ringtone) > MAX_RINGTONE_LENGTH:
-            self._node._raise_interface_error(  # noqa: SLF001
-                f"The ringtone must be {MAX_RINGTONE_LENGTH} characters or fewer."
+        with self._ringtone_operation_lock:
+            if not self._module_available_or_warn(
+                mesh_pb2.EXTNOTIF_CONFIG,
+                "External Notification module not present (excluded by firmware)",
+            ):
+                return None
+            if len(ringtone) > MAX_RINGTONE_LENGTH:
+                self._node._raise_interface_error(  # noqa: SLF001
+                    f"The ringtone must be {MAX_RINGTONE_LENGTH} characters or fewer."
+                )
+            self._node.ensureSessionKey()
+            request_message = admin_pb2.AdminMessage()
+            request_message.set_ringtone_message = ringtone
+            logger.debug("Setting ringtone (%d chars)", len(ringtone))
+            send_result = self._node._send_admin(
+                request_message,
+                onResponse=self._select_write_response_handler(),
             )
-        self._node.ensureSessionKey()
-        request_message = admin_pb2.AdminMessage()
-        request_message.set_ringtone_message = ringtone
-        logger.debug("Setting ringtone (%d chars)", len(ringtone))
-        send_result = self._node._send_admin(
-            request_message,
-            onResponse=self._select_write_response_handler(),
-        )
-        if send_result is not None:
-            self._cache_store.invalidate_ringtone_cache()
-        return send_result
+            if send_result is not None:
+                self._cache_store.invalidate_ringtone_cache()
+            return send_result
 
     def read_canned_message(self) -> str | None:
         """Read canned-message payload using cached-short-circuit + request/wait orchestration."""
-        logger.debug("in get_canned_message()")
-        if not self._module_available_or_warn(
-            mesh_pb2.CANNEDMSG_CONFIG,
-            "Canned Message module not present (excluded by firmware)",
-        ):
-            return None
-        cached_canned_message = self._cache_store.get_cached_canned_message()
-        if cached_canned_message is not None:
-            return cached_canned_message
-        self._cache_store.clear_canned_message_fragment()
-        return self._send_content_read_request(
-            build_request=lambda message: setattr(
-                message,
-                "get_canned_message_module_messages_request",
-                True,
-            ),
-            handle_response=self._response_runtime.handle_canned_message_response,
-            skipped_send_debug_message=(
-                "Skipping canned-message wait because protocol send was not started"
-            ),
-            timeout_warning_message="Timed out waiting for canned message response",
-            resolve_result=self._cache_store.resolve_canned_message_after_read,
-        )
+        with self._canned_message_operation_lock:
+            logger.debug("in get_canned_message()")
+            if not self._module_available_or_warn(
+                mesh_pb2.CANNEDMSG_CONFIG,
+                "Canned Message module not present (excluded by firmware)",
+            ):
+                return None
+            cached_canned_message = self._cache_store.get_cached_canned_message()
+            if cached_canned_message is not None:
+                return cached_canned_message
+            self._cache_store.clear_canned_message_fragment()
+            return self._send_content_read_request(
+                build_request=lambda message: setattr(
+                    message,
+                    "get_canned_message_module_messages_request",
+                    True,
+                ),
+                handle_response=self._response_runtime.handle_canned_message_response,
+                skipped_send_debug_message=(
+                    "Skipping canned-message wait because protocol send was not started"
+                ),
+                timeout_warning_message="Timed out waiting for canned message response",
+                resolve_result=self._cache_store.resolve_canned_message_after_read,
+            )
 
     def write_canned_message(self, message: str) -> mesh_pb2.MeshPacket | None:
         """Write canned-message payload and invalidate local canned-message cache."""
-        if not self._module_available_or_warn(
-            mesh_pb2.CANNEDMSG_CONFIG,
-            "Canned Message module not present (excluded by firmware)",
-        ):
-            return None
-        if len(message) > MAX_CANNED_MESSAGE_LENGTH:
-            self._node._raise_interface_error(  # noqa: SLF001
-                f"The canned message must be {MAX_CANNED_MESSAGE_LENGTH} characters or fewer."
+        with self._canned_message_operation_lock:
+            if not self._module_available_or_warn(
+                mesh_pb2.CANNEDMSG_CONFIG,
+                "Canned Message module not present (excluded by firmware)",
+            ):
+                return None
+            if len(message) > MAX_CANNED_MESSAGE_LENGTH:
+                self._node._raise_interface_error(  # noqa: SLF001
+                    f"The canned message must be {MAX_CANNED_MESSAGE_LENGTH} characters or fewer."
+                )
+            self._node.ensureSessionKey()
+            request_message = admin_pb2.AdminMessage()
+            request_message.set_canned_message_module_messages = message
+            logger.debug("Setting canned message (%d chars)", len(message))
+            send_result = self._node._send_admin(
+                request_message,
+                onResponse=self._select_write_response_handler(),
             )
-        self._node.ensureSessionKey()
-        request_message = admin_pb2.AdminMessage()
-        request_message.set_canned_message_module_messages = message
-        logger.debug("Setting canned message (%d chars)", len(message))
-        send_result = self._node._send_admin(
-            request_message,
-            onResponse=self._select_write_response_handler(),
-        )
-        if send_result is not None:
-            self._cache_store.invalidate_canned_message_cache()
-        return send_result
+            if send_result is not None:
+                self._cache_store.invalidate_canned_message_cache()
+            return send_result

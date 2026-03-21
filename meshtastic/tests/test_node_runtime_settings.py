@@ -5,7 +5,6 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from pytest import LogCaptureFixture
 
 from ..node_runtime.settings_runtime import (
     _NodeAdminCommandRuntime,
@@ -22,6 +21,11 @@ from ..node_runtime.shared import (
 )
 from ..protobuf import admin_pb2, config_pb2, localonly_pb2
 from ..util import Acknowledgment
+
+
+def _raise_test_error(msg: str) -> None:
+    """Raise an exception with the provided message."""
+    raise Exception(msg)
 
 
 @pytest.fixture
@@ -52,9 +56,7 @@ def mock_node_for_settings(mock_iface: MagicMock) -> MagicMock:
     node.localConfig = localonly_pb2.LocalConfig()
     node.moduleConfig = localonly_pb2.LocalModuleConfig()
     node._send_admin = MagicMock(return_value=MagicMock())
-    node._raise_interface_error = MagicMock(
-        side_effect=lambda msg: (_ for _ in ()).throw(Exception(msg))
-    )
+    node._raise_interface_error = MagicMock(side_effect=_raise_test_error)
     node.onResponseRequestSettings = MagicMock()
     node.onAckNak = MagicMock()
     return node
@@ -338,7 +340,7 @@ class TestNodeSettingsRuntime:
 
     @pytest.mark.unit
     def test_validate_write_configs_loaded_passes_with_other_config_populated(
-        self, mock_local_node: MagicMock, caplog: LogCaptureFixture
+        self, mock_local_node: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """_validate_write_configs_loaded passes when other config has fields (compatibility)."""
         builder = _NodeSettingsMessageBuilder(mock_local_node)
@@ -368,7 +370,7 @@ class TestNodeSettingsRuntime:
 
     @pytest.mark.unit
     def test_write_config_local_node_sends_without_callback(
-        self, mock_local_node: MagicMock, caplog: LogCaptureFixture
+        self, mock_local_node: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """write_config on local node sends without onResponse callback."""
         builder = _NodeSettingsMessageBuilder(mock_local_node)
@@ -440,7 +442,7 @@ class TestNodeSettingsResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_settings_response_missing_decoded_returns_early(
-        self, mock_node_for_response: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_response: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """handle_settings_response with missing decoded returns early."""
         runtime = _NodeSettingsResponseRuntime(mock_node_for_response)
@@ -453,7 +455,7 @@ class TestNodeSettingsResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_settings_response_routing_error_sets_nak(
-        self, mock_node_for_response: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_response: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """handle_settings_response with routing error sets Nak."""
         runtime = _NodeSettingsResponseRuntime(mock_node_for_response)
@@ -470,25 +472,31 @@ class TestNodeSettingsResponseRuntime:
         assert mock_node_for_response.iface._acknowledgment.receivedNak is True
 
     @pytest.mark.unit
-    def test_handle_settings_response_routing_no_error_returns_early(
+    def test_handle_settings_response_routing_no_error_processes_admin_payload(
         self, mock_node_for_response: MagicMock
     ) -> None:
-        """handle_settings_response with routing NONE returns early without setting ACK/NAK."""
+        """handle_settings_response with routing NONE should continue to admin payload handling."""
         runtime = _NodeSettingsResponseRuntime(mock_node_for_response)
+        raw = admin_pb2.AdminMessage()
+        raw.get_config_response.device.role = config_pb2.Config.DeviceConfig.Role.CLIENT
         packet: dict[str, Any] = {
             "decoded": {
                 "routing": {"errorReason": "NONE"},
+                "admin": {
+                    "getConfigResponse": {"device": {}},
+                    "raw": raw,
+                },
             }
         }
 
         runtime.handle_settings_response(packet)
 
         assert mock_node_for_response.iface._acknowledgment.receivedNak is False
-        assert mock_node_for_response.iface._acknowledgment.receivedAck is False
+        assert mock_node_for_response.iface._acknowledgment.receivedAck is True
 
     @pytest.mark.unit
     def test_handle_settings_response_missing_admin_returns_early(
-        self, mock_node_for_response: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_response: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """handle_settings_response with missing admin returns early."""
         runtime = _NodeSettingsResponseRuntime(mock_node_for_response)
@@ -501,16 +509,12 @@ class TestNodeSettingsResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_settings_response_empty_config_response_logs_warning(
-        self, mock_node_for_response: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_response: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """handle_settings_response with empty config response logs warning (lines 223-224)."""
         runtime = _NodeSettingsResponseRuntime(mock_node_for_response)
         packet: dict[str, Any] = {
-            "decoded": {
-                "admin": {
-                    "getConfigResponse": {}  # Empty response
-                }
-            }
+            "decoded": {"admin": {"getConfigResponse": {}}}  # Empty response
         }
 
         with caplog.at_level(logging.WARNING):
@@ -520,16 +524,12 @@ class TestNodeSettingsResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_settings_response_empty_module_config_response_logs_warning(
-        self, mock_node_for_response: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_response: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """handle_settings_response with empty module config response logs warning (lines 247-259)."""
         runtime = _NodeSettingsResponseRuntime(mock_node_for_response)
         packet: dict[str, Any] = {
-            "decoded": {
-                "admin": {
-                    "getModuleConfigResponse": {}  # Empty response
-                }
-            }
+            "decoded": {"admin": {"getModuleConfigResponse": {}}}  # Empty response
         }
 
         with caplog.at_level(logging.WARNING):
@@ -539,7 +539,7 @@ class TestNodeSettingsResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_settings_response_unknown_local_config_field_logs_warning(
-        self, mock_node_for_response: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_response: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """_resolve_local_config_target with unknown field logs warning."""
         runtime = _NodeSettingsResponseRuntime(mock_node_for_response)
@@ -553,7 +553,7 @@ class TestNodeSettingsResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_settings_response_unknown_module_config_field_logs_warning(
-        self, mock_node_for_response: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_response: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """_resolve_module_config_target with unknown field logs warning (lines 247-259)."""
         runtime = _NodeSettingsResponseRuntime(mock_node_for_response)
@@ -609,7 +609,7 @@ class TestNodeSettingsResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_settings_response_missing_admin_raw_logs_warning(
-        self, mock_node_for_response: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_response: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """handle_settings_response with missing admin.raw logs warning (lines 316-320)."""
         runtime = _NodeSettingsResponseRuntime(mock_node_for_response)
@@ -629,7 +629,7 @@ class TestNodeSettingsResponseRuntime:
 
     @pytest.mark.unit
     def test_handle_settings_response_valid_sets_ack(
-        self, mock_node_for_response: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_response: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """handle_settings_response with valid response sets ACK and copies config."""
         runtime = _NodeSettingsResponseRuntime(mock_node_for_response)
@@ -678,9 +678,7 @@ class TestNodeAdminCommandRuntime:
         node._send_admin = MagicMock(return_value=MagicMock())
         node.ensureSessionKey = MagicMock()
         node.onAckNak = MagicMock()
-        node._raise_interface_error = MagicMock(
-            side_effect=lambda msg: (_ for _ in ()).throw(Exception(msg))
-        )
+        node._raise_interface_error = MagicMock(side_effect=_raise_test_error)
         node._get_factory_reset_request_value = MagicMock(return_value=1)
         return node
 
@@ -694,9 +692,9 @@ class TestNodeAdminCommandRuntime:
 
     @pytest.mark.unit
     def test_reboot_sends_command_with_seconds(
-        self, mock_local_node_for_admin: MagicMock, caplog: LogCaptureFixture
+        self, mock_local_node_for_admin: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """reboot sends reboot_seconds command."""
+        """Reboot sends reboot_seconds command."""
         runtime = _NodeAdminCommandRuntime(mock_local_node_for_admin)
 
         with caplog.at_level(logging.INFO):
@@ -710,7 +708,7 @@ class TestNodeAdminCommandRuntime:
 
     @pytest.mark.unit
     def test_factory_reset_full_sends_factory_reset_device(
-        self, mock_local_node_for_admin: MagicMock, caplog: LogCaptureFixture
+        self, mock_local_node_for_admin: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """factory_reset with full=True sends factory_reset_device command."""
         runtime = _NodeAdminCommandRuntime(mock_local_node_for_admin)
@@ -724,7 +722,7 @@ class TestNodeAdminCommandRuntime:
 
     @pytest.mark.unit
     def test_factory_reset_config_sends_factory_reset_config(
-        self, mock_local_node_for_admin: MagicMock, caplog: LogCaptureFixture
+        self, mock_local_node_for_admin: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """factory_reset with full=False sends factory_reset_config command."""
         runtime = _NodeAdminCommandRuntime(mock_local_node_for_admin)
@@ -738,7 +736,7 @@ class TestNodeAdminCommandRuntime:
 
     @pytest.mark.unit
     def test_begin_settings_transaction_sends_command(
-        self, mock_local_node_for_admin: MagicMock, caplog: LogCaptureFixture
+        self, mock_local_node_for_admin: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """begin_settings_transaction sends begin_edit_settings command (lines 391-416)."""
         runtime = _NodeAdminCommandRuntime(mock_local_node_for_admin)
@@ -754,7 +752,7 @@ class TestNodeAdminCommandRuntime:
 
     @pytest.mark.unit
     def test_commit_settings_transaction_sends_command(
-        self, mock_local_node_for_admin: MagicMock, caplog: LogCaptureFixture
+        self, mock_local_node_for_admin: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """commit_settings_transaction sends commit_edit_settings command (lines 391-416)."""
         runtime = _NodeAdminCommandRuntime(mock_local_node_for_admin)
@@ -773,9 +771,9 @@ class TestNodeAdminCommandRuntime:
         self,
         mock_node_for_admin: MagicMock,
         mock_iface: MagicMock,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """reboot on remote node waits for ACK/NAK."""
+        """Reboot on remote node waits for ACK/NAK."""
         mock_iface.localNode = MagicMock()  # Different from mock_node_for_admin
         runtime = _NodeAdminCommandRuntime(mock_node_for_admin)
 
@@ -792,7 +790,7 @@ class TestNodeAdminCommandRuntime:
         self,
         mock_node_for_admin: MagicMock,
         mock_iface: MagicMock,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """begin_settings_transaction on remote node waits for ACK/NAK."""
         mock_iface.localNode = MagicMock()  # Different from mock_node_for_admin
@@ -811,7 +809,7 @@ class TestNodeAdminCommandRuntime:
         self,
         mock_node_for_admin: MagicMock,
         mock_iface: MagicMock,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """commit_settings_transaction on remote node waits for ACK/NAK."""
         mock_iface.localNode = MagicMock()  # Different from mock_node_for_admin
@@ -910,7 +908,7 @@ class TestNodeAdminCommandRuntime:
         """start_OTA without mode raises TypeError."""
         runtime = _NodeAdminCommandRuntime(mock_local_node_for_admin)
 
-        with pytest.raises(TypeError, match="missing required argument.*mode"):
+        with pytest.raises(TypeError, match=r"missing required argument.*mode"):
             runtime.start_ota(
                 mode=None,
                 ota_file_hash=b"hash",
@@ -924,7 +922,9 @@ class TestNodeAdminCommandRuntime:
         """start_OTA without hash raises TypeError."""
         runtime = _NodeAdminCommandRuntime(mock_local_node_for_admin)
 
-        with pytest.raises(TypeError, match="missing required argument.*ota_file_hash"):
+        with pytest.raises(
+            TypeError, match=r"missing required argument.*ota_file_hash"
+        ):
             runtime.start_ota(
                 mode=admin_pb2.OTAMode.OTA_WIFI,
                 ota_file_hash=None,
@@ -1106,9 +1106,7 @@ class TestNodeOwnerProfileRuntime:
         )
         node.iface = mock_iface
         node.nodeNum = 0x12345678
-        node._raise_interface_error = MagicMock(
-            side_effect=lambda msg: (_ for _ in ()).throw(Exception(msg))
-        )
+        node._raise_interface_error = MagicMock(side_effect=_raise_test_error)
         return node
 
     @pytest.fixture
@@ -1127,7 +1125,7 @@ class TestNodeOwnerProfileRuntime:
     def test_set_owner_truncates_long_name(
         self,
         mock_runtime_for_owner: _NodeOwnerProfileRuntime,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """set_owner truncates long_name to MAX_LONG_NAME_LEN characters (lines 618-619)."""
         long_name = "A" * 50  # Longer than MAX_LONG_NAME_LEN (40)
@@ -1149,7 +1147,7 @@ class TestNodeOwnerProfileRuntime:
     def test_set_owner_truncates_short_name(
         self,
         mock_runtime_for_owner: _NodeOwnerProfileRuntime,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """set_owner truncates short_name to MAX_SHORT_NAME_LEN characters (lines 618-619)."""
         short_name = "LongShort"  # Longer than MAX_SHORT_NAME_LEN (4)
@@ -1257,7 +1255,7 @@ class TestNodeOwnerProfileRuntime:
     def test_set_owner_with_all_params(
         self,
         mock_runtime_for_owner: _NodeOwnerProfileRuntime,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """set_owner with all parameters sets all fields."""
         with caplog.at_level(logging.DEBUG):

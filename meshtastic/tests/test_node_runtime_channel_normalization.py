@@ -4,7 +4,6 @@ import threading
 from unittest.mock import MagicMock
 
 import pytest
-from pytest import LogCaptureFixture
 
 from meshtastic.node_runtime.channel_normalization_runtime import (
     _NodeChannelNormalizationRuntime,
@@ -32,7 +31,9 @@ def runtime(mock_node: MagicMock) -> _NodeChannelNormalizationRuntime:
 class TestFixupChannelsLocked:
     """Tests for _NodeChannelNormalizationRuntime.fixup_channels_locked()."""
 
-    def test_fixup_channels_locked_with_none_channels_returns_early(self, mock_node: MagicMock) -> None:
+    def test_fixup_channels_locked_with_none_channels_returns_early(
+        self, mock_node: MagicMock
+    ) -> None:
         """When channels is None, fixup_channels_locked should return early."""
         mock_node.channels = None
         runtime = _NodeChannelNormalizationRuntime(mock_node)
@@ -43,7 +44,9 @@ class TestFixupChannelsLocked:
         # Channels should still be None (no modification)
         assert mock_node.channels is None
 
-    def test_fixup_channels_locked_truncates_when_exceeds_max(self, mock_node: MagicMock, caplog: LogCaptureFixture) -> None:
+    def test_fixup_channels_locked_truncates_when_exceeds_max(
+        self, mock_node: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """When channels exceed MAX_CHANNELS, should truncate and log warning."""
         # Create more channels than MAX_CHANNELS
         num_channels = MAX_CHANNELS + 3
@@ -71,7 +74,9 @@ class TestFixupChannelsLocked:
             for record in caplog.records
         )
 
-    def test_fixup_channels_locked_reindexes_all_channels(self, mock_node: MagicMock) -> None:
+    def test_fixup_channels_locked_reindexes_all_channels(
+        self, mock_node: MagicMock
+    ) -> None:
         """All channels should have their index field set correctly."""
         # Create channels with incorrect indexes
         mock_node.channels = []
@@ -88,7 +93,9 @@ class TestFixupChannelsLocked:
         for i, ch in enumerate(mock_node.channels):
             assert ch.index == i
 
-    def test_fixup_channels_locked_calls_fill_channels_locked(self, mock_node: MagicMock) -> None:
+    def test_fixup_channels_locked_calls_fill_channels_locked(
+        self, mock_node: MagicMock
+    ) -> None:
         """fixup_channels_locked should call fill_channels_locked at the end."""
         runtime = _NodeChannelNormalizationRuntime(mock_node)
         runtime.fill_channels_locked = MagicMock()  # type: ignore[method-assign]
@@ -109,19 +116,23 @@ class TestFixupChannels:
         mock_node._channels_lock = MagicMock()
         mock_node._channels_lock.__enter__ = MagicMock(return_value=None)
         mock_node._channels_lock.__exit__ = MagicMock(return_value=False)
+        runtime.fixup_channels_locked = MagicMock()  # type: ignore[method-assign]
 
         runtime.fixup_channels()
 
         # Lock should have been acquired
         mock_node._channels_lock.__enter__.assert_called_once()
         mock_node._channels_lock.__exit__.assert_called_once()
+        runtime.fixup_channels_locked.assert_called_once()
 
 
 @pytest.mark.unit
 class TestFillChannelsLocked:
     """Tests for _NodeChannelNormalizationRuntime.fill_channels_locked()."""
 
-    def test_fill_channels_locked_with_none_channels_returns_early(self, mock_node: MagicMock) -> None:
+    def test_fill_channels_locked_with_none_channels_returns_early(
+        self, mock_node: MagicMock
+    ) -> None:
         """When channels is None, fill_channels_locked should return early."""
         mock_node.channels = None
         runtime = _NodeChannelNormalizationRuntime(mock_node)
@@ -132,7 +143,9 @@ class TestFillChannelsLocked:
         # Channels should still be None
         assert mock_node.channels is None
 
-    def test_fill_channels_locked_with_full_list_no_changes(self, mock_node: MagicMock) -> None:
+    def test_fill_channels_locked_with_full_list_no_changes(
+        self, mock_node: MagicMock
+    ) -> None:
         """When channel list is already at MAX_CHANNELS, no changes should occur."""
         mock_node.channels = []
         for i in range(MAX_CHANNELS):
@@ -152,7 +165,9 @@ class TestFillChannelsLocked:
         for i, ch in enumerate(mock_node.channels):
             assert ch is original_channels[i]
 
-    def test_fill_channels_locked_fills_partial_list_with_disabled(self, mock_node: MagicMock) -> None:
+    def test_fill_channels_locked_fills_partial_list_with_disabled(
+        self, mock_node: MagicMock
+    ) -> None:
         """Partial channel list should be filled with DISABLED channels."""
         initial_count = 3
         mock_node.channels = []
@@ -177,7 +192,9 @@ class TestFillChannelsLocked:
             assert mock_node.channels[i].role == channel_pb2.Channel.Role.DISABLED
             assert mock_node.channels[i].index == i
 
-    def test_fill_channels_locked_with_empty_list_fills_all_disabled(self, mock_node: MagicMock) -> None:
+    def test_fill_channels_locked_with_empty_list_fills_all_disabled(
+        self, mock_node: MagicMock
+    ) -> None:
         """Empty channel list should be filled entirely with DISABLED channels."""
         mock_node.channels = []
         runtime = _NodeChannelNormalizationRuntime(mock_node)
@@ -202,19 +219,23 @@ class TestFillChannels:
         mock_node._channels_lock = MagicMock()
         mock_node._channels_lock.__enter__ = MagicMock(return_value=None)
         mock_node._channels_lock.__exit__ = MagicMock(return_value=False)
+        runtime.fill_channels_locked = MagicMock()  # type: ignore[method-assign]
 
         runtime.fill_channels()
 
         # Lock should have been acquired
         mock_node._channels_lock.__enter__.assert_called_once()
         mock_node._channels_lock.__exit__.assert_called_once()
+        runtime.fill_channels_locked.assert_called_once()
 
 
 @pytest.mark.unit
 class TestIntegration:
     """Combined workflow tests for fixup and fill behavior."""
 
-    def test_fixup_channels_full_workflow(self, mock_node: MagicMock, caplog: LogCaptureFixture) -> None:
+    def test_fixup_channels_full_workflow(
+        self, mock_node: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """Full workflow: truncate, reindex, and fill with DISABLED channels."""
         # Create more channels than MAX_CHANNELS with wrong indexes
         num_channels = MAX_CHANNELS + 2
