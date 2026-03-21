@@ -51,7 +51,14 @@ class _NodeChannelExportRuntime:
             self._node.requestConfig(
                 local_config_snapshot.DESCRIPTOR.fields_by_name["lora"]
             )
+            wait_for_config = getattr(self._node, "waitForConfig", None)
+            if callable(wait_for_config):
+                wait_for_config(attribute="lora")
             local_config_snapshot = self._snapshot_local_config()
+            if not local_config_snapshot.HasField("lora"):
+                self._node._raise_interface_error(  # noqa: SLF001
+                    "LoRa config must be loaded before exporting a channel URL"
+                )
         channel_set.lora_config.CopyFrom(local_config_snapshot.lora)
         serialized_channel_set = channel_set.SerializeToString()
         encoded = base64.urlsafe_b64encode(serialized_channel_set).decode("ascii")

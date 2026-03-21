@@ -48,7 +48,6 @@ class _NodeMetadataResponseRuntime:
                 error_reason,
             )
             self._node.iface._acknowledgment.receivedNak = True
-            self._node._timeout.expireTime = time.time()  # Do not wait any longer
             self._node._signal_metadata_stdout_event()
             return True  # Don't try to parse this routing message
         logger.debug(
@@ -142,7 +141,14 @@ class _NodeMetadataResponseRuntime:
             self._node._signal_metadata_stdout_event()
             return
         raw_admin = admin_message.get("raw")
-        if raw_admin is None or not hasattr(raw_admin, "get_device_metadata_response"):
+        has_field = getattr(raw_admin, "HasField", None)
+        has_metadata_response = False
+        if callable(has_field):
+            try:
+                has_metadata_response = bool(has_field("get_device_metadata_response"))
+            except (TypeError, ValueError):
+                has_metadata_response = False
+        if raw_admin is None or not has_metadata_response:
             logger.warning(
                 "Received malformed metadata response (missing admin.raw): %s",
                 packet,
@@ -168,14 +174,25 @@ class _NodeChannelResponseRuntime:
 
     def _handle_routing_response(self, decoded: dict[str, Any]) -> bool:
         """Handle ROUTING_APP channel responses and indicate whether processing is complete."""
-        if decoded["portnum"] != portnums_pb2.PortNum.Name(
+        if decoded.get("portnum") != portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.ROUTING_APP
         ):
             return False
-        if decoded["routing"]["errorReason"] != "NONE":
+        routing = decoded.get("routing")
+        if not isinstance(routing, dict):
+            logger.warning("Received malformed channel response (missing routing): %s", decoded)
+            return True
+        error_reason = routing.get("errorReason")
+        if not isinstance(error_reason, str):
+            logger.warning(
+                "Received malformed channel response (invalid routing.errorReason): %s",
+                decoded,
+            )
+            return True
+        if error_reason != "NONE":
             logger.warning(
                 "Channel request failed, error reason: %s",
-                decoded["routing"]["errorReason"],
+                error_reason,
             )
             self._node._timeout.expireTime = time.time()  # Do not wait any longer
             return True  # Don't try to parse this routing message
@@ -210,7 +227,14 @@ class _NodeChannelResponseRuntime:
             logger.warning("Received malformed channel response without admin payload")
             return
         raw_admin = admin_message.get("raw")
-        if raw_admin is None or not hasattr(raw_admin, "get_channel_response"):
+        has_field = getattr(raw_admin, "HasField", None)
+        has_channel_response = False
+        if callable(has_field):
+            try:
+                has_channel_response = bool(has_field("get_channel_response"))
+            except (TypeError, ValueError):
+                has_channel_response = False
+        if raw_admin is None or not has_channel_response:
             logger.warning("Received malformed channel response without admin.raw payload")
             return
 
@@ -220,10 +244,15 @@ class _NodeChannelResponseRuntime:
         with self._node._channels_lock:  # noqa: SLF001
             self._node.partialChannels.append(channel_response)
         self._node._timeout.reset()  # We made forward progress
+        safe_role = (
+            channel_pb2.Channel.Role.Name(channel_response.role)
+            if channel_response.role in channel_pb2.Channel.Role.values()
+            else f"UNKNOWN({channel_response.role})"
+        )
         logger.debug(
             "Received channel index=%s role=%s name=%s settings=%s",
             channel_response.index,
-            channel_pb2.Channel.Role.Name(channel_response.role),
+            safe_role,
             channel_response.settings.name,
             "<REDACTED>",
         )

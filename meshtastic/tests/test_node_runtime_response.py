@@ -607,6 +607,23 @@ class TestNodeChannelResponseRuntime:
         assert result is False
 
     @pytest.mark.unit
+    def test_handle_routing_response_missing_routing_logs_warning(
+        self, mock_node_for_channel: MagicMock, caplog: LogCaptureFixture
+    ) -> None:
+        """_handle_routing_response should guard malformed routing payloads."""
+        runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        decoded: dict[str, Any] = {
+            "portnum": portnums_pb2.PortNum.Name(portnums_pb2.PortNum.ROUTING_APP),
+        }
+
+        with caplog.at_level(logging.WARNING):
+            result = runtime._handle_routing_response(decoded)
+
+        assert result is True
+        assert "missing routing" in caplog.text
+        mock_node_for_channel._request_channel.assert_not_called()
+
+    @pytest.mark.unit
     def test_handle_routing_response_no_partial_channels_starts_at_zero(
         self, mock_node_for_channel: MagicMock, caplog: LogCaptureFixture
     ) -> None:

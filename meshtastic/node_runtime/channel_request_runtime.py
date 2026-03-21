@@ -48,10 +48,43 @@ class _NodeChannelRequestRuntime:
 
     def wait_for_config(self, *, attribute: str = "channels") -> bool:
         """Wait for node attribute using historical timeout semantics."""
-        attrs = (attribute,) if attribute == "channels" else ("localConfig", attribute)
+        if attribute == "channels":
+            return self._node._timeout.waitForSet(  # noqa: SLF001
+                self._node,
+                attrs=("channels",),
+            )
+
+        local_config = self._node.localConfig
+        has_field = getattr(local_config, "HasField", None)
+        if callable(has_field):
+            field_name = attribute
+
+            class _LocalConfigFieldProbe:
+                """Expose local-config field presence as a boolean wait target."""
+
+                def __init__(self, *, has_field_fn: object, name: str) -> None:
+                    self._has_field_fn = has_field_fn
+                    self._name = name
+
+                @property
+                def is_set(self) -> bool:
+                    """Return whether the target localConfig field is currently set."""
+                    has_field_fn = self._has_field_fn
+                    if not callable(has_field_fn):
+                        return False
+                    try:
+                        return bool(has_field_fn(self._name))
+                    except (TypeError, ValueError):
+                        return False
+
+            return self._node._timeout.waitForSet(  # noqa: SLF001
+                _LocalConfigFieldProbe(has_field_fn=has_field, name=field_name),
+                attrs=("is_set",),
+            )
+
         return self._node._timeout.waitForSet(  # noqa: SLF001
-            self._node,
-            attrs=attrs,
+            local_config,
+            attrs=(attribute,),
         )
 
     def request_channel(self, channel_num: int) -> mesh_pb2.MeshPacket | None:

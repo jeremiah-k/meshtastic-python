@@ -8,7 +8,7 @@ import base64
 import logging
 import threading
 from typing import NoReturn
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from pytest import LogCaptureFixture
@@ -632,6 +632,7 @@ class TestSetUrlRollbackEngine:
             channels_to_write=[],
             deferred_add_only_admin_channel=None,
             deferred_add_only_admin_index=None,
+            original_channels_ref=[],
             original_channels_by_index={1: original_channel},
             original_lora_config=None,
         )
@@ -688,6 +689,7 @@ class TestSetUrlRollbackEngine:
             channels_to_write=[],
             deferred_add_only_admin_channel=None,
             deferred_add_only_admin_index=None,
+            original_channels_ref=[],
             original_channels_by_index={1: original_channel},
             original_lora_config=original_lora,
         )
@@ -740,6 +742,7 @@ class TestSetUrlRollbackEngine:
 
         plan = _SetUrlReplacePlan(
             max_channels=1,
+            replace_original_channels_ref=mock_local_node.channels,
             replace_original_channels_snapshot=[original_channel],
             replace_original_channels_by_index={0: original_channel},
             staged_channels=[],
@@ -793,6 +796,7 @@ class TestSetUrlRollbackEngine:
 
         plan = _SetUrlReplacePlan(
             max_channels=1,
+            replace_original_channels_ref=mock_local_node.channels,
             replace_original_channels_snapshot=[original_channel],
             replace_original_channels_by_index={0: original_channel},
             staged_channels=[],
@@ -841,6 +845,7 @@ class TestSetUrlRollbackEngine:
 
         plan = _SetUrlReplacePlan(
             max_channels=1,
+            replace_original_channels_ref=mock_local_node.channels,
             replace_original_channels_snapshot=[original_channel],
             replace_original_channels_by_index={0: original_channel},
             staged_channels=[],
@@ -888,6 +893,7 @@ class TestSetUrlRollbackEngine:
 
         plan = _SetUrlReplacePlan(
             max_channels=1,
+            replace_original_channels_ref=mock_local_node.channels,
             replace_original_channels_snapshot=[original_channel],
             replace_original_channels_by_index={0: original_channel},
             staged_channels=[],
@@ -953,6 +959,7 @@ class TestSetUrlExecutionEngine:
             channels_to_write=[(new_channel, "newchannel")],
             deferred_add_only_admin_channel=None,
             deferred_add_only_admin_index=None,
+            original_channels_ref=[],
             original_channels_by_index={},
             original_lora_config=None,
         )
@@ -992,6 +999,7 @@ class TestSetUrlExecutionEngine:
             channels_to_write=[(new_channel, "test")],
             deferred_add_only_admin_channel=None,
             deferred_add_only_admin_index=None,
+            original_channels_ref=[],
             original_channels_by_index={},
             original_lora_config=config_pb2.Config.LoRaConfig(),
         )
@@ -1040,6 +1048,7 @@ class TestSetUrlExecutionEngine:
         staged = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "newprimary")
         plan = _SetUrlReplacePlan(
             max_channels=2,
+            replace_original_channels_ref=mock_local_node.channels,
             replace_original_channels_snapshot=[],
             replace_original_channels_by_index={},
             staged_channels=[staged],
@@ -1070,6 +1079,7 @@ class TestSetUrlExecutionEngine:
 
         plan = _SetUrlReplacePlan(
             max_channels=2,
+            replace_original_channels_ref=[],
             replace_original_channels_snapshot=[],
             replace_original_channels_by_index={},
             staged_channels=[staged_primary, staged_admin],
@@ -1091,6 +1101,7 @@ class TestSetUrlExecutionEngine:
 
         plan = _SetUrlReplacePlan(
             max_channels=1,
+            replace_original_channels_ref=[],
             replace_original_channels_snapshot=[],
             replace_original_channels_by_index={},
             staged_channels=[staged_primary],

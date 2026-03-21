@@ -646,12 +646,7 @@ class BLEReceiveRecoveryController:
                     event_name,
                     timeout,
                 )
-                if isinstance(result, bool):
-                    return result
-                raise TypeError(
-                    "injected_wait_for_event must return bool in "
-                    "_validated_wait_for_runtime_event"
-                )
+                return result if isinstance(result, bool) else False
 
             return _validated_wait_for_runtime_event
 

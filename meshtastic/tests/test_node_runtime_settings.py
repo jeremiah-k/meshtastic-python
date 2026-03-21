@@ -20,7 +20,7 @@ from ..node_runtime.shared import (
     MAX_LONG_NAME_LEN,
     MAX_SHORT_NAME_LEN,
 )
-from ..protobuf import admin_pb2, config_pb2, localonly_pb2, mesh_pb2
+from ..protobuf import admin_pb2, config_pb2, localonly_pb2
 from ..util import Acknowledgment
 
 
@@ -280,6 +280,20 @@ class TestNodeSettingsRuntime:
         assert call_kwargs["wantResponse"] is True
         assert call_kwargs["onResponse"] == mock_remote_node.onResponseRequestSettings
         mock_remote_node.iface.waitForAckNak.assert_called_once()
+
+    @pytest.mark.unit
+    def test_request_config_remote_node_skips_wait_when_send_is_skipped(
+        self, mock_remote_node: MagicMock
+    ) -> None:
+        """request_config should not wait for ACK/NAK when _send_admin returns None."""
+        mock_remote_node._send_admin.return_value = None
+        builder = _NodeSettingsMessageBuilder(mock_remote_node)
+        runtime = _NodeSettingsRuntime(mock_remote_node, message_builder=builder)
+
+        runtime.request_config(admin_pb2.AdminMessage.ConfigType.DEVICE_CONFIG)
+
+        mock_remote_node._send_admin.assert_called_once()
+        mock_remote_node.iface.waitForAckNak.assert_not_called()
 
     @pytest.mark.unit
     def test_request_config_with_admin_index_passes_through(
@@ -1031,7 +1045,7 @@ class TestNodeAdminCommandRuntime:
         with patch(
             "meshtastic.node_runtime.settings_runtime.toNodeNum", return_value=999
         ) as mock_to_node_num:
-            result = runtime._send_node_id_command(
+            runtime._send_node_id_command(
                 node_id="!abc123",
                 set_field=set_field,
             )

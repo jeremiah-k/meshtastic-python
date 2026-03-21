@@ -150,7 +150,14 @@ class _NodeContentResponseRuntime:
             logger.warning("Unexpected ringtone response without admin payload")
             return False
         raw_admin = admin_message.get("raw")
-        if raw_admin is None or not hasattr(raw_admin, "get_ringtone_response"):
+        has_field = getattr(raw_admin, "HasField", None)
+        has_ringtone_response = False
+        if callable(has_field):
+            try:
+                has_ringtone_response = bool(has_field("get_ringtone_response"))
+            except (TypeError, ValueError):
+                has_ringtone_response = False
+        if raw_admin is None or not has_ringtone_response:
             logger.warning("Unexpected ringtone response without raw ringtone data")
             return False
         try:
@@ -176,9 +183,16 @@ class _NodeContentResponseRuntime:
             logger.warning("Unexpected canned-message response without admin payload")
             return False
         raw_admin = admin_message.get("raw")
-        if raw_admin is None or not hasattr(
-            raw_admin, "get_canned_message_module_messages_response"
-        ):
+        has_field = getattr(raw_admin, "HasField", None)
+        has_canned_response = False
+        if callable(has_field):
+            try:
+                has_canned_response = bool(
+                    has_field("get_canned_message_module_messages_response")
+                )
+            except (TypeError, ValueError):
+                has_canned_response = False
+        if raw_admin is None or not has_canned_response:
             logger.warning(
                 "Unexpected canned-message response without raw message data"
             )

@@ -151,13 +151,13 @@ class _NodeSettingsRuntime:
             )
 
         message = self._message_builder.build_request_message(config_type)
-        self._node._send_admin(
+        request = self._node._send_admin(
             message,
             wantResponse=True,
             onResponse=on_response,
             adminIndex=admin_index,
         )
-        if on_response is not None:
+        if on_response is not None and request is not None:
             self._node.iface.waitForAckNak()
 
     def _validate_write_configs_loaded(self, config_name: str) -> None:
@@ -451,7 +451,7 @@ class _NodeAdminCommandRuntime:
         extra_kwargs: dict[str, Any],
     ) -> mesh_pb2.MeshPacket | None:
         """Validate OTA args and send ota_request command."""
-        if self._node != self._node.iface.localNode:
+        if self._node is not self._node.iface.localNode:
             self._node._raise_interface_error(
                 "startOTA only possible on local node"
             )  # noqa: SLF001

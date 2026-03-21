@@ -283,7 +283,13 @@ class _NodeDeleteChannelRuntime:
     def delete_channel(self, channel_index: int) -> None:
         """Delete one channel and execute ordered rewrite plan."""
         rewrite_plan = self._build_rewrite_plan(channel_index)
-        self._execute_rewrite_plan(rewrite_plan)
+        try:
+            self._execute_rewrite_plan(rewrite_plan)
+        except Exception:
+            with self._node._channels_lock:  # noqa: SLF001
+                self._node.channels = None
+                self._node.partialChannels = []
+            raise
         with self._node._channels_lock:  # noqa: SLF001
             current_channels = self._node.channels
             if current_channels is None:

@@ -760,6 +760,37 @@ class TestNodeDeleteChannelRuntime:
         assert mock_local_node.channels is None
         assert mock_local_node.partialChannels == []
 
+    @pytest.mark.unit
+    def test_delete_channel_invalidates_cache_when_rewrite_raises(
+        self,
+        delete_channel_runtime: _NodeDeleteChannelRuntime,
+        mock_local_node: MagicMock,
+    ) -> None:
+        """delete_channel should invalidate cache if rewrite fails mid-transaction."""
+        channels = []
+        for i in range(MAX_CHANNELS):
+            ch = channel_pb2.Channel()
+            ch.index = i
+            if i == 0:
+                ch.role = channel_pb2.Channel.Role.PRIMARY
+            elif i == 1:
+                ch.role = channel_pb2.Channel.Role.SECONDARY
+            else:
+                ch.role = channel_pb2.Channel.Role.DISABLED
+            channels.append(ch)
+        mock_local_node.channels = channels
+
+        with patch.object(
+            delete_channel_runtime,
+            "_execute_rewrite_plan",
+            side_effect=RuntimeError("rewrite failed"),
+        ):
+            with pytest.raises(RuntimeError, match="rewrite failed"):
+                delete_channel_runtime.delete_channel(1)
+
+        assert mock_local_node.channels is None
+        assert mock_local_node.partialChannels == []
+
 
 # ============================================================================
 # Tests for _NodeAckNakRuntime

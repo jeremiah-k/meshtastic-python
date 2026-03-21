@@ -26,6 +26,7 @@ def mock_node() -> MagicMock:
             "localConfig",
             "_raise_interface_error",
             "requestConfig",
+            "waitForConfig",
             "_write_channel_snapshot",
         ]
     )
@@ -34,6 +35,7 @@ def mock_node() -> MagicMock:
     node.localConfig = localonly_pb2.LocalConfig()
     node._raise_interface_error = MagicMock(side_effect=Exception)
     node.requestConfig = MagicMock()
+    node.waitForConfig = MagicMock(return_value=True)
     node._write_channel_snapshot = MagicMock()
     return node
 
@@ -249,6 +251,7 @@ def test_get_url_requests_config_when_lora_missing(
         url = export_runtime.get_url()
 
         assert mock_node.requestConfig.called
+        mock_node.waitForConfig.assert_called_once_with(attribute="lora")
         assert url.startswith("https://meshtastic.org/e/#")
 
 

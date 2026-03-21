@@ -21,9 +21,18 @@ def mock_node() -> MagicMock:
     MagicMock
         A mock node with channels attribute and _channels_lock.
     """
-    node = MagicMock(spec=["channels", "_channels_lock", "localConfig", "moduleConfig"])
+    node = MagicMock(
+        spec=[
+            "channels",
+            "_channels_lock",
+            "_node_db_lock",
+            "localConfig",
+            "moduleConfig",
+        ]
+    )
     node.channels = []
     node._channels_lock = threading.RLock()  # noqa: SLF001
+    node._node_db_lock = threading.RLock()  # noqa: SLF001
     node.localConfig = None
     node.moduleConfig = None
     return node

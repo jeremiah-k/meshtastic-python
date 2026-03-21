@@ -378,6 +378,7 @@ def test_handlePacketFromRadio_with_a_portnum(caplog: pytest.LogCaptureFixture) 
             )
     assert isinstance(intents, list)
     assert len(intents) == 1
+    assert "portnum was not in decoded" not in caplog.text
     packet_payload = intents[0].payload["packet"]
     assert packet_payload.get("fromId") is None
     assert packet_payload["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
@@ -401,12 +402,11 @@ def test_handlePacketFromRadio_no_portnum(caplog: pytest.LogCaptureFixture) -> N
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_handlePacketFromRadio_hack_preserves_from_zero_in_publication_payload() -> (
-    None
-):
+def test_handlePacketFromRadio_hack_preserves_from_zero_in_publication_payload() -> None:
     """hack=True should preserve from==0 in emitted packet payload compatibility path."""
     with MeshInterface(noProto=True) as iface:
         mesh_packet = mesh_pb2.MeshPacket()
+        setattr(mesh_packet, "from", 0)
         intents = iface._handle_packet_from_radio(
             mesh_packet,
             hack=True,
@@ -3404,9 +3404,7 @@ def test_request_scoped_wait_wakes_immediately_on_recorded_error() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_request_scoped_wait_times_out_for_unscoped_error_across_overlapping_waits() -> (
-    None
-):
+def test_request_scoped_wait_times_out_for_unscoped_error_across_overlapping_waits() -> None:
     """Overlapping request-scoped waits should ignore unscoped routing errors."""
     with MeshInterface(noProto=True) as iface:
         iface._timeout = Timeout(maxSecs=0.05)

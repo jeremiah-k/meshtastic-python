@@ -11,7 +11,7 @@ from meshtastic.node_runtime.channel_normalization_runtime import (
     _NodeChannelNormalizationRuntime,
 )
 from meshtastic.node_runtime.channel_request_runtime import _NodeChannelRequestRuntime
-from meshtastic.protobuf import admin_pb2, channel_pb2, mesh_pb2
+from meshtastic.protobuf import admin_pb2, channel_pb2, localonly_pb2, mesh_pb2
 
 
 @pytest.fixture
@@ -34,6 +34,7 @@ def mock_node() -> MagicMock:
             "_timeout",
             "iface",
             "onResponseRequestChannel",
+            "localConfig",
         ]
     )
     node.nodeNum = 1234567890
@@ -41,6 +42,7 @@ def mock_node() -> MagicMock:
     node.channels = None
     node.partialChannels = []
     node._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())  # noqa: SLF001
+    node.localConfig = localonly_pb2.LocalConfig()
     return node
 
 
@@ -186,16 +188,20 @@ def test_wait_for_config_with_non_channels_attribute(
     channel_request_runtime: _NodeChannelRequestRuntime,
     mock_node: MagicMock,
 ) -> None:
-    """wait_for_config should pass tuple for non-channels attribute."""
+    """wait_for_config should poll localConfig field presence for nested attributes."""
     mock_timeout = MagicMock()
     mock_timeout.waitForSet.return_value = True
     mock_node._timeout = mock_timeout  # noqa: SLF001
 
-    result = channel_request_runtime.wait_for_config(attribute="localConfig")
+    result = channel_request_runtime.wait_for_config(attribute="lora")
 
     assert result is True
+    call_args = mock_timeout.waitForSet.call_args
+    assert call_args is not None
+    target = call_args[0][0]
+    assert target.__class__.__name__ == "_LocalConfigFieldProbe"
     mock_timeout.waitForSet.assert_called_once_with(
-        mock_node, attrs=("localConfig", "localConfig")
+        target, attrs=("is_set",)
     )
 
 

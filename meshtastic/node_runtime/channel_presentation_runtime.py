@@ -36,7 +36,22 @@ class _NodeChannelPresentationRuntime:
                 copied_channel.CopyFrom(source_channel)
                 channels_snapshot.append(copied_channel)
         if channels_snapshot:
-            logger.debug("self.channels:%s", channels_snapshot)
+            logger.debug(
+                "channel snapshot captured (%d entries): %s",
+                len(channels_snapshot),
+                [
+                    {
+                        "index": channel.index,
+                        "role": (
+                            channel_pb2.Channel.Role.Name(channel.role)
+                            if channel.role in channel_pb2.Channel.Role.values()
+                            else f"UNKNOWN({channel.role})"
+                        ),
+                        "name": channel.settings.name if channel.settings else "",
+                    }
+                    for channel in channels_snapshot
+                ],
+            )
             for channel in channels_snapshot:
                 channel_string = messageToJson(channel.settings)
                 if channel_pb2.Channel.Role.Name(channel.role) != "DISABLED":
@@ -52,12 +67,31 @@ class _NodeChannelPresentationRuntime:
 
     def show_info(self) -> None:
         """Print local/module preferences and current channel presentation."""
+        local_config_snapshot = None
+        module_config_snapshot = None
+        node_db_lock = getattr(self._node, "_node_db_lock", None)
+        if node_db_lock is not None:
+            with node_db_lock:
+                if self._node.localConfig is not None:
+                    local_config_snapshot = type(self._node.localConfig)()
+                    local_config_snapshot.CopyFrom(self._node.localConfig)
+                if self._node.moduleConfig is not None:
+                    module_config_snapshot = type(self._node.moduleConfig)()
+                    module_config_snapshot.CopyFrom(self._node.moduleConfig)
+        else:
+            if self._node.localConfig is not None:
+                local_config_snapshot = type(self._node.localConfig)()
+                local_config_snapshot.CopyFrom(self._node.localConfig)
+            if self._node.moduleConfig is not None:
+                module_config_snapshot = type(self._node.moduleConfig)()
+                module_config_snapshot.CopyFrom(self._node.moduleConfig)
+
         prefs = ""
-        if self._node.localConfig:
-            prefs = messageToJson(self._node.localConfig, multiline=True)
+        if local_config_snapshot:
+            prefs = messageToJson(local_config_snapshot, multiline=True)
         print(f"Preferences: {prefs}\n")
         prefs = ""
-        if self._node.moduleConfig:
-            prefs = messageToJson(self._node.moduleConfig, multiline=True)
+        if module_config_snapshot:
+            prefs = messageToJson(module_config_snapshot, multiline=True)
         print(f"Module preferences: {prefs}\n")
         self.show_channels()
