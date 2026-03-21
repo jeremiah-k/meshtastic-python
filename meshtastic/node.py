@@ -371,7 +371,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         After listing channels, the primary channel URL is printed; if the full URL that includes
         all channels differs, it is printed as the "Complete URL".
         """
-        self._channel_presentation_runtime.show_channels()
+        self._channel_presentation_runtime._show_channels()  # noqa: SLF001
 
     def showInfo(self) -> None:
         """Print the node's local and module configurations (as JSON when available) followed by its configured channels.
@@ -379,7 +379,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         If a configuration is not present, an empty placeholder is printed for that
         section. Channels are displayed using the node's channel listing format.
         """
-        self._channel_presentation_runtime.show_info()
+        self._channel_presentation_runtime._show_info()  # noqa: SLF001
 
     def setChannels(self, channels: Sequence[channel_pb2.Channel]) -> None:
         """Set the node's channel list and normalize channel entries.

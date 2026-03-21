@@ -28,7 +28,7 @@ class _NodeChannelPresentationRuntime:
         self._node = node
         self._export_runtime = export_runtime
 
-    def show_channels(self) -> None:
+    def _show_channels(self) -> None:
         """Print channels and URL exports preserving historical output behavior."""
         print("Channels:")
         with self._node._channels_lock:  # noqa: SLF001
@@ -79,7 +79,7 @@ class _NodeChannelPresentationRuntime:
         if admin_url != public_url:
             print(f"Complete URL (includes all channels): {admin_url}")
 
-    def show_info(self) -> None:
+    def _show_info(self) -> None:
         """Print local/module preferences and current channel presentation."""
         local_config_snapshot: Message | None = None
         module_config_snapshot: Message | None = None
@@ -102,7 +102,7 @@ class _NodeChannelPresentationRuntime:
         if module_config_snapshot:
             prefs = messageToJson(module_config_snapshot, multiline=True)
         print(f"Module preferences: {prefs}\n")
-        self.show_channels()
+        self._show_channels()
 
     def _snapshot_configs(self) -> tuple[Message | None, Message | None]:
         """Return detached snapshots of local/module configs when present."""

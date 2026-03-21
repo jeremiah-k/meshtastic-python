@@ -313,9 +313,9 @@ class _NodeSettingsResponseRuntime:
 
         oneof, field_name, config_values = target
         raw_admin = admin_message.get("raw")
-        if raw_admin is None:
+        if not isinstance(raw_admin, admin_pb2.AdminMessage):
             logger.warning(
-                "Received malformed settings response (missing admin.raw): %s",
+                "Received malformed settings response (invalid admin.raw): %s",
                 packet,
             )
             self._node.iface._acknowledgment.receivedNak = True
@@ -455,10 +455,10 @@ class _NodeAdminCommandRuntime:
 
     def start_ota(
         self,
-        mode: admin_pb2.OTAMode.ValueType | None = None,
+        mode: int | None = None,
         ota_file_hash: bytes | None = None,
         *,
-        ota_mode: admin_pb2.OTAMode.ValueType | None = None,
+        ota_mode: int | None = None,
         ota_hash: bytes | None = None,
         extra_kwargs: dict[str, Any],
     ) -> mesh_pb2.MeshPacket | None:
@@ -490,7 +490,7 @@ class _NodeAdminCommandRuntime:
         )
 
         message = admin_pb2.AdminMessage()
-        message.ota_request.reboot_ota_mode = resolved_mode
+        message.ota_request.reboot_ota_mode = resolved_mode  # type: ignore[assignment]
         message.ota_request.ota_hash = resolved_hash
         return self._send_command(
             message,
@@ -644,9 +644,8 @@ class _NodeOwnerProfileRuntime:
             if len(long_name) > MAX_LONG_NAME_LEN:
                 long_name = long_name[:MAX_LONG_NAME_LEN]
                 logger.warning(
-                    "Long name is longer than %s characters, truncating to '%s'",
+                    "Long name is longer than %s characters; truncating.",
                     MAX_LONG_NAME_LEN,
-                    long_name,
                 )
             message.set_owner.long_name = long_name
 
@@ -658,9 +657,8 @@ class _NodeOwnerProfileRuntime:
             if len(short_name) > MAX_SHORT_NAME_LEN:
                 short_name = short_name[:MAX_SHORT_NAME_LEN]
                 logger.warning(
-                    "Short name is longer than %s characters, truncating to '%s'",
+                    "Short name is longer than %s characters; truncating.",
                     MAX_SHORT_NAME_LEN,
-                    short_name,
                 )
             message.set_owner.short_name = short_name
 
@@ -669,8 +667,10 @@ class _NodeOwnerProfileRuntime:
             message.set_owner.is_unmessagable = is_unmessagable
 
         # Note: These debug lines are used in unit tests
-        logger.debug("p.set_owner.long_name:%s:", message.set_owner.long_name)
-        logger.debug("p.set_owner.short_name:%s:", message.set_owner.short_name)
+        logger.debug("p.set_owner.long_name_set:%s", bool(message.set_owner.long_name))
+        logger.debug(
+            "p.set_owner.short_name_set:%s", bool(message.set_owner.short_name)
+        )
         logger.debug("p.set_owner.is_licensed:%s:", message.set_owner.is_licensed)
         logger.debug(
             "p.set_owner.is_unmessagable:%s:",

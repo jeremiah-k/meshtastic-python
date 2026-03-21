@@ -70,7 +70,7 @@ def test_show_channels_with_no_channels(
     """Test show_channels prints Channels header and URLs when no channels exist."""
     mock_node.channels = []
 
-    presentation_runtime.show_channels()
+    presentation_runtime._show_channels()
 
     out, _ = capsys.readouterr()
     assert "Channels:" in out
@@ -95,7 +95,7 @@ def test_show_channels_with_channels(
 
     mock_node.channels = [primary, disabled]
 
-    presentation_runtime.show_channels()
+    presentation_runtime._show_channels()
 
     out, _ = capsys.readouterr()
     assert "Channels:" in out
@@ -119,7 +119,7 @@ def test_show_channels_handles_unknown_role_values(
     channel.settings.psk = b"\x01"
     mock_node.channels = [channel]
 
-    presentation_runtime.show_channels()
+    presentation_runtime._show_channels()
 
     out, _ = capsys.readouterr()
     assert "UNKNOWN(999)" in out
@@ -137,7 +137,7 @@ def test_show_channels_handles_export_errors_without_raising(
     )
     mock_node.channels = []
 
-    presentation_runtime.show_channels()
+    presentation_runtime._show_channels()
 
     out, _ = capsys.readouterr()
     assert "Channels:" in out
@@ -174,7 +174,7 @@ def test_show_channels_shows_complete_url_when_different_from_public(
 
     mock_node.channels = [primary, secondary]
 
-    presentation_runtime.show_channels()
+    presentation_runtime._show_channels()
 
     out, _ = capsys.readouterr()
     assert "Primary channel URL: https://meshtastic.org/e/#public" in out
@@ -195,7 +195,7 @@ def test_show_info_with_no_config(
     mock_node.moduleConfig = None
     mock_node.channels = []
 
-    presentation_runtime.show_info()
+    presentation_runtime._show_info()
 
     out, _ = capsys.readouterr()
     assert "Preferences: " in out
@@ -216,7 +216,7 @@ def test_show_info_with_local_config(
     mock_node.moduleConfig = localonly_pb2.LocalModuleConfig()
     mock_node.channels = []
 
-    presentation_runtime.show_info()
+    presentation_runtime._show_info()
 
     out, _ = capsys.readouterr()
     assert "Preferences:" in out

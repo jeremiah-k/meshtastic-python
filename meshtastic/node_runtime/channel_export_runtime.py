@@ -131,16 +131,18 @@ class _NodeChannelExportRuntime:
         primary_snapshot: channel_pb2.Channel | None = None
         original_channels_ref: list[channel_pb2.Channel] | None = None
         original_primary_slot: channel_pb2.Channel | None = None
+        original_primary_snapshot: bytes | None = None
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if not channels:
-                self._node._raise_interface_error(
+                self._node._raise_interface_error(  # noqa: SLF001
                     "Error: No channels have been read"
-                )  # noqa: SLF001
+                )
             original_channels_ref = channels
             for channel in channels:
                 if channel.role == channel_pb2.Channel.Role.PRIMARY:
                     original_primary_slot = channel
+                    original_primary_snapshot = channel.SerializeToString()
                     primary_snapshot = channel_pb2.Channel()
                     primary_snapshot.CopyFrom(channel)
                     primary_snapshot.settings.psk = fromPSK("none")
@@ -171,6 +173,16 @@ class _NodeChannelExportRuntime:
                     if channel is not original_primary_slot:
                         logger.warning(
                             "Primary channel write succeeded but primary slot object changed concurrently; invalidating local channel cache."
+                        )
+                        self._node.channels = None
+                        self._node.partialChannels = []
+                        return
+                    if (
+                        original_primary_snapshot is not None
+                        and channel.SerializeToString() != original_primary_snapshot
+                    ):
+                        logger.warning(
+                            "Primary channel write succeeded but primary slot content changed concurrently; invalidating local channel cache."
                         )
                         self._node.channels = None
                         self._node.partialChannels = []

@@ -208,6 +208,7 @@ class _NodeChannelResponseRuntime:
                 error_reason,
             )
             self._channel_request_failed = True
+            self._node._timeout.reset()  # noqa: SLF001
             return
 
         if self._pending_channel_retry_count >= CHANNEL_ROUTING_RETRY_LIMIT:
@@ -217,6 +218,7 @@ class _NodeChannelResponseRuntime:
                 request_index,
             )
             self._channel_request_failed = True
+            self._node._timeout.reset()  # noqa: SLF001
             return
 
         self._pending_channel_retry_count += 1
@@ -234,6 +236,7 @@ class _NodeChannelResponseRuntime:
                 request_index,
             )
             self._channel_request_failed = True
+            self._node._timeout.reset()  # noqa: SLF001
             return
         self._node._timeout.reset()  # We retried the in-flight request
 
@@ -250,6 +253,7 @@ class _NodeChannelResponseRuntime:
                 "Received malformed channel response (missing routing): %s", decoded
             )
             self._channel_request_failed = True
+            self._node._timeout.reset()  # noqa: SLF001
         else:
             error_reason = routing.get("errorReason")
             if not isinstance(error_reason, str):
@@ -258,6 +262,7 @@ class _NodeChannelResponseRuntime:
                     decoded,
                 )
                 self._channel_request_failed = True
+                self._node._timeout.reset()  # noqa: SLF001
             elif error_reason != "NONE":
                 self._retry_pending_channel_request(error_reason)
             else:
@@ -274,6 +279,7 @@ class _NodeChannelResponseRuntime:
                 "Received malformed channel response without decoded payload"
             )
             self._channel_request_failed = True
+            self._node._timeout.reset()  # noqa: SLF001
             return
         logger.debug(
             "onResponseRequestChannel() portnum=%s",
@@ -286,6 +292,7 @@ class _NodeChannelResponseRuntime:
         if not isinstance(admin_message, dict):
             logger.warning("Received malformed channel response without admin payload")
             self._channel_request_failed = True
+            self._node._timeout.reset()  # noqa: SLF001
             return
         raw_admin = admin_message.get("raw")
         if raw_admin is None or not _has_protobuf_field(
@@ -295,6 +302,7 @@ class _NodeChannelResponseRuntime:
                 "Received malformed channel response without admin.raw payload"
             )
             self._channel_request_failed = True
+            self._node._timeout.reset()  # noqa: SLF001
             return
 
         response_channel = raw_admin.get_channel_response

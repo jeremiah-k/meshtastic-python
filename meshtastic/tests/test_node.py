@@ -978,17 +978,17 @@ def test_setOwner_rejects_empty_or_whitespace_names(
         (
             {"long_name": "ValidName", "short_name": "VN"},
             (
-                r"p\.set_owner\.long_name:ValidName:",
-                r"p\.set_owner\.short_name:VN:",
+                r"p\.set_owner\.long_name_set:True",
+                r"p\.set_owner\.short_name_set:True",
             ),
         ),
         (
             {"short_name": "TST"},
-            (r"p\.set_owner\.short_name:TST:",),
+            (r"p\.set_owner\.short_name_set:True",),
         ),
         (
             {"long_name": "TestUser", "short_name": "TOOLONG"},
-            (r"p\.set_owner\.short_name:TOOL:",),
+            (r"p\.set_owner\.short_name_set:True",),
         ),
         (
             {"long_name": "LicensedUser", "is_licensed": True},

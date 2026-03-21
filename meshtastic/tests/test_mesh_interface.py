@@ -3604,13 +3604,21 @@ def test_send_to_radio_successful_missing_entry_is_not_immediately_requeued(
         iface.noProto = False
         packet = mesh_pb2.ToRadio()
         packet.packet.id = 123
-        monkeypatch.setattr(iface, "_send_to_radio_impl", lambda _msg: None)
+        sent_ids: list[int] = []
+
+        def _send_impl(msg: mesh_pb2.ToRadio) -> None:
+            sent_ids.append(msg.packet.id if msg.HasField("packet") else -1)
+
+        monkeypatch.setattr(iface, "_send_to_radio_impl", _send_impl)
         pops = iter([(123, packet), None])
         original_pop = iface._queue_pop_for_send
         monkeypatch.setattr(iface, "_queue_pop_for_send", lambda: next(pops))
-        iface._send_to_radio(mesh_pb2.ToRadio())
-        monkeypatch.setattr(iface, "_queue_pop_for_send", original_pop)
-        assert 123 not in iface.queue
+        try:
+            iface._send_to_radio(mesh_pb2.ToRadio())
+            assert 123 in sent_ids
+            assert 123 not in iface.queue
+        finally:
+            monkeypatch.setattr(iface, "_queue_pop_for_send", original_pop)
 
 
 @pytest.mark.unit

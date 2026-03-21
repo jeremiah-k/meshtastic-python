@@ -148,9 +148,9 @@ class _NodeChannelWriteRuntime:
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if channels is None:
-                self._node._raise_interface_error(
+                self._node._raise_interface_error(  # noqa: SLF001
                     "Error: No channels have been read"
-                )  # noqa: SLF001
+                )
             if channel_index < 0 or channel_index >= len(channels):
                 self._node._raise_interface_error(  # noqa: SLF001
                     f"Channel index {channel_index} out of range (0-{len(channels) - 1})"
@@ -227,9 +227,9 @@ class _NodeDeleteChannelRuntime:
         """
         channels = self._node.channels
         if channels is None:
-            self._node._raise_interface_error(
+            self._node._raise_interface_error(  # noqa: SLF001
                 "Error: No channels have been read"
-            )  # noqa: SLF001
+            )
         if channel_index < 0 or channel_index >= len(channels):
             self._node._raise_interface_error(  # noqa: SLF001
                 f"Channel index {channel_index} out of range (0-{len(channels) - 1})"
@@ -452,13 +452,13 @@ class _NodePositionTimeCommandRuntime:
                 )
 
         position_message = mesh_pb2.Position()
-        if lat not in (None, 0, 0.0):
+        if lat is not None:
             if isinstance(lat, float):
                 position_message.latitude_i = int(lat * 1e7)
             elif isinstance(lat, int):
                 position_message.latitude_i = lat
 
-        if lon not in (None, 0, 0.0):
+        if lon is not None:
             if isinstance(lon, float):
                 position_message.longitude_i = int(lon * 1e7)
             elif isinstance(lon, int):

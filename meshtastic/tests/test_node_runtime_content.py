@@ -385,10 +385,10 @@ class TestNodeContentResponseRuntime:
         }
 
         with caplog.at_level(logging.DEBUG):
-            result = runtime.handle_ringtone_response(packet)
+            terminal, payload = runtime.handle_ringtone_response(packet)
 
-        assert result is True
-        assert mock_node_for_cache.ringtonePart == "RTTTL: test:d=4,o=5,b=100:c"
+        assert terminal is True
+        assert payload == "RTTTL: test:d=4,o=5,b=100:c"
         assert "onResponseRequestRingtone" in caplog.text
 
     @pytest.mark.unit
@@ -410,9 +410,10 @@ class TestNodeContentResponseRuntime:
         }
 
         with caplog.at_level(logging.ERROR):
-            result = runtime.handle_ringtone_response(packet)
+            terminal, payload = runtime.handle_ringtone_response(packet)
 
-        assert result is True
+        assert terminal is True
+        assert payload is None
         assert "Error on response: NO_RESPONSE" in caplog.text
 
     @pytest.mark.unit
@@ -430,9 +431,10 @@ class TestNodeContentResponseRuntime:
         packet: dict[str, Any] = {"decoded": None}
 
         with caplog.at_level(logging.WARNING):
-            result = runtime.handle_ringtone_response(packet)
+            terminal, payload = runtime.handle_ringtone_response(packet)
 
-        assert result is True
+        assert terminal is True
+        assert payload is None
         assert "Unexpected ringtone response without decoded payload" in caplog.text
 
     @pytest.mark.unit
@@ -450,9 +452,10 @@ class TestNodeContentResponseRuntime:
         packet: dict[str, Any] = {"decoded": {}}
 
         with caplog.at_level(logging.WARNING):
-            result = runtime.handle_ringtone_response(packet)
+            terminal, payload = runtime.handle_ringtone_response(packet)
 
-        assert result is True
+        assert terminal is True
+        assert payload is None
         assert "Unexpected ringtone response without admin payload" in caplog.text
 
     @pytest.mark.unit
@@ -470,9 +473,10 @@ class TestNodeContentResponseRuntime:
         packet: dict[str, Any] = {"decoded": {"admin": {}}}
 
         with caplog.at_level(logging.WARNING):
-            result = runtime.handle_ringtone_response(packet)
+            terminal, payload = runtime.handle_ringtone_response(packet)
 
-        assert result is True
+        assert terminal is True
+        assert payload is None
         assert "Unexpected ringtone response without raw ringtone data" in caplog.text
 
     @pytest.mark.unit
@@ -497,10 +501,10 @@ class TestNodeContentResponseRuntime:
         }
 
         with caplog.at_level(logging.DEBUG):
-            result = runtime.handle_canned_message_response(packet)
+            terminal, payload = runtime.handle_canned_message_response(packet)
 
-        assert result is True
-        assert mock_node_for_cache.cannedPluginMessageMessages == "Hello\nWorld"
+        assert terminal is True
+        assert payload == "Hello\nWorld"
         assert "onResponseRequestCannedMessagePluginMessageMessages" in caplog.text
 
     @pytest.mark.unit
@@ -522,9 +526,10 @@ class TestNodeContentResponseRuntime:
         }
 
         with caplog.at_level(logging.ERROR):
-            result = runtime.handle_canned_message_response(packet)
+            terminal, payload = runtime.handle_canned_message_response(packet)
 
-        assert result is True
+        assert terminal is True
+        assert payload is None
         assert "Error on response: NO_RESPONSE" in caplog.text
 
     @pytest.mark.unit
@@ -542,9 +547,10 @@ class TestNodeContentResponseRuntime:
         packet: dict[str, Any] = {"decoded": None}
 
         with caplog.at_level(logging.WARNING):
-            result = runtime.handle_canned_message_response(packet)
+            terminal, payload = runtime.handle_canned_message_response(packet)
 
-        assert result is True
+        assert terminal is True
+        assert payload is None
         assert (
             "Unexpected canned-message response without decoded payload" in caplog.text
         )
@@ -564,9 +570,10 @@ class TestNodeContentResponseRuntime:
         packet: dict[str, Any] = {"decoded": {}}
 
         with caplog.at_level(logging.WARNING):
-            result = runtime.handle_canned_message_response(packet)
+            terminal, payload = runtime.handle_canned_message_response(packet)
 
-        assert result is True
+        assert terminal is True
+        assert payload is None
         assert "Unexpected canned-message response without admin payload" in caplog.text
 
     @pytest.mark.unit
@@ -584,9 +591,10 @@ class TestNodeContentResponseRuntime:
         packet: dict[str, Any] = {"decoded": {"admin": {}}}
 
         with caplog.at_level(logging.WARNING):
-            result = runtime.handle_canned_message_response(packet)
+            terminal, payload = runtime.handle_canned_message_response(packet)
 
-        assert result is True
+        assert terminal is True
+        assert payload is None
         assert (
             "Unexpected canned-message response without raw message data" in caplog.text
         )
@@ -1061,8 +1069,9 @@ class TestNodeAdminContentRuntime:
                 begin_read_generation=lambda: 1,
                 is_read_generation_active=lambda _generation: True,
                 retire_read_generation=lambda _generation: None,
-                build_request=lambda msg: None,
-                handle_response=lambda pkt: True,
+                build_request=lambda _msg: None,
+                handle_response=lambda _pkt: (True, None),
+                commit_payload=lambda _payload: None,
                 skipped_send_debug_message="Send was not started",
                 timeout_warning_message="Timed out",
                 resolve_result=lambda: "result",
@@ -1092,8 +1101,9 @@ class TestNodeAdminContentRuntime:
                 begin_read_generation=lambda: 1,
                 is_read_generation_active=lambda _generation: True,
                 retire_read_generation=lambda _generation: None,
-                build_request=lambda msg: None,
-                handle_response=lambda pkt: True,
+                build_request=lambda _msg: None,
+                handle_response=lambda _pkt: (True, None),
+                commit_payload=lambda _payload: None,
                 skipped_send_debug_message="Send was not started",
                 timeout_warning_message="Timed out waiting for response",
                 resolve_result=lambda: "result",

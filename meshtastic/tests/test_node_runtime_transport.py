@@ -104,7 +104,9 @@ def mock_local_node(mock_iface: MagicMock) -> MagicMock:
     node._channels_lock = threading.RLock()
     node.channels = None
     node.partialChannels = []
-    node._raise_interface_error = MagicMock(side_effect=Exception("interface error"))
+    node._raise_interface_error = MagicMock(
+        side_effect=_SentinelError("interface error")
+    )
     node.onAckNak = MagicMock()
     node._get_admin_channel_index = MagicMock(return_value=0)
     node._fixup_channels_locked = MagicMock()
@@ -153,7 +155,9 @@ def mock_remote_node(mock_iface: MagicMock) -> MagicMock:
     node._channels_lock = threading.RLock()
     node.channels = None
     node.partialChannels = []
-    node._raise_interface_error = MagicMock(side_effect=Exception("interface error"))
+    node._raise_interface_error = MagicMock(
+        side_effect=_SentinelError("interface error")
+    )
     node.onAckNak = MagicMock()
     node._get_admin_channel_index = MagicMock(return_value=0)
     return node
@@ -414,7 +418,7 @@ class TestNodeChannelWriteRuntime:
         mock_channel.index = 0
         mock_local_node.channels = [mock_channel]
 
-        with pytest.raises(Exception, match="interface error"):
+        with pytest.raises(_SentinelError, match="interface error"):
             channel_write_runtime.write_channel(5)  # Out of range
 
     @pytest.mark.unit
@@ -426,7 +430,7 @@ class TestNodeChannelWriteRuntime:
         """write_channel should raise error when no channels have been read."""
         mock_local_node.channels = None
 
-        with pytest.raises(Exception, match="interface error"):
+        with pytest.raises(_SentinelError, match="interface error"):
             channel_write_runtime.write_channel(0)
 
 
@@ -633,7 +637,7 @@ class TestNodeDeleteChannelRuntime:
 
         mock_local_node.channels = channels
 
-        with pytest.raises(Exception, match="interface error"):
+        with pytest.raises(_SentinelError, match="interface error"):
             with mock_local_node._channels_lock:
                 delete_channel_runtime._build_rewrite_plan(0)
 

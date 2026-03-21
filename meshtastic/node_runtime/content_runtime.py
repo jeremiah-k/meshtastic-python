@@ -136,19 +136,25 @@ class _NodeContentResponseRuntime:
             return True
         return False
 
-    def handle_ringtone_response(self, packet: dict[str, Any]) -> bool:
-        """Parse ringtone response packet and return True for terminal callbacks."""
+    def handle_ringtone_response(
+        self, packet: dict[str, Any]
+    ) -> tuple[bool, str | None]:
+        """Parse ringtone response packet and return (is_terminal, payload).
+
+        Returns parsed payload without committing to cache; caller must commit
+        after confirming the read generation is still active.
+        """
         logger.debug("onResponseRequestRingtone()")
         decoded = packet.get("decoded")
         if not isinstance(decoded, dict):
             logger.warning("Unexpected ringtone response without decoded payload")
-            return True
+            return (True, None)
         if "routing" in decoded:
-            return self._has_routing_error(decoded)
+            return (self._has_routing_error(decoded), None)
         admin_message = decoded.get("admin")
         if not isinstance(admin_message, dict):
             logger.warning("Unexpected ringtone response without admin payload")
-            return True
+            return (True, None)
         raw_admin = admin_message.get("raw")
         has_field = getattr(raw_admin, "HasField", None)
         has_ringtone_response = False
@@ -159,29 +165,33 @@ class _NodeContentResponseRuntime:
                 has_ringtone_response = False
         if raw_admin is None or not has_ringtone_response:
             logger.warning("Unexpected ringtone response without raw ringtone data")
-            return True
+            return (True, None)
         try:
             ringtone_part = raw_admin.get_ringtone_response
-            self._cache_store.store_ringtone_fragment(ringtone_part)
+            return (True, ringtone_part)
         except AttributeError:
             logger.warning("Failed to parse ringtone response payload")
-            return True
-        else:
-            return True
+            return (True, None)
 
-    def handle_canned_message_response(self, packet: dict[str, Any]) -> bool:
-        """Parse canned-message response packet and return True for terminal callbacks."""
+    def handle_canned_message_response(
+        self, packet: dict[str, Any]
+    ) -> tuple[bool, str | None]:
+        """Parse canned-message response packet and return (is_terminal, payload).
+
+        Returns parsed payload without committing to cache; caller must commit
+        after confirming the read generation is still active.
+        """
         logger.debug("onResponseRequestCannedMessagePluginMessageMessages()")
         decoded = packet.get("decoded")
         if not isinstance(decoded, dict):
             logger.warning("Unexpected canned-message response without decoded payload")
-            return True
+            return (True, None)
         if "routing" in decoded:
-            return self._has_routing_error(decoded)
+            return (self._has_routing_error(decoded), None)
         admin_message = decoded.get("admin")
         if not isinstance(admin_message, dict):
             logger.warning("Unexpected canned-message response without admin payload")
-            return True
+            return (True, None)
         raw_admin = admin_message.get("raw")
         has_field = getattr(raw_admin, "HasField", None)
         has_canned_response = False
@@ -196,15 +206,13 @@ class _NodeContentResponseRuntime:
             logger.warning(
                 "Unexpected canned-message response without raw message data"
             )
-            return True
+            return (True, None)
         try:
             canned_messages = raw_admin.get_canned_message_module_messages_response
-            self._cache_store.store_canned_message_fragment(canned_messages)
+            return (True, canned_messages)
         except AttributeError:
             logger.warning("Failed to parse canned-message response payload")
-            return True
-        else:
-            return True
+            return (True, None)
 
 
 class _NodeAdminContentRuntime:
@@ -282,7 +290,8 @@ class _NodeAdminContentRuntime:
         is_read_generation_active: Callable[[int], bool],
         retire_read_generation: Callable[[int], None],
         build_request: Callable[[admin_pb2.AdminMessage], None],
-        handle_response: Callable[[dict[str, Any]], bool],
+        handle_response: Callable[[dict[str, Any]], tuple[bool, str | None]],
+        commit_payload: Callable[[str], None],
         skipped_send_debug_message: str,
         timeout_warning_message: str,
         resolve_result: Callable[[], str | None],
@@ -298,13 +307,15 @@ class _NodeAdminContentRuntime:
                     read_generation,
                 )
                 return
-            terminal = handle_response(packet)
+            terminal, payload = handle_response(packet)
             if not is_read_generation_active(read_generation):
                 logger.debug(
                     "Read generation %s retired during response handling; discarding result",
                     read_generation,
                 )
                 return
+            if payload is not None:
+                commit_payload(payload)
             if terminal:
                 response_event.set()
 
@@ -356,6 +367,7 @@ class _NodeAdminContentRuntime:
                     message, "get_ringtone_request", True
                 ),
                 handle_response=self._response_runtime.handle_ringtone_response,
+                commit_payload=self._cache_store.store_ringtone_fragment,
                 skipped_send_debug_message=(
                     "Skipping ringtone wait because protocol send was not started"
                 ),
@@ -410,6 +422,7 @@ class _NodeAdminContentRuntime:
                     True,
                 ),
                 handle_response=self._response_runtime.handle_canned_message_response,
+                commit_payload=self._cache_store.store_canned_message_fragment,
                 skipped_send_debug_message=(
                     "Skipping canned-message wait because protocol send was not started"
                 ),

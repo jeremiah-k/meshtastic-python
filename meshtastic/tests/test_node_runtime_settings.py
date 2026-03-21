@@ -638,7 +638,7 @@ class TestNodeSettingsResponseRuntime:
         with caplog.at_level(logging.WARNING):
             runtime.handle_settings_response(packet)
 
-        assert "malformed settings response (missing admin.raw)" in caplog.text
+        assert "malformed settings response (invalid admin.raw)" in caplog.text
         assert mock_node_for_response.iface._acknowledgment.receivedNak is True
 
     @pytest.mark.unit
@@ -1290,9 +1290,9 @@ class TestNodeOwnerProfileRuntime:
         assert message.set_owner.is_licensed is True
         assert message.set_owner.HasField("is_unmessagable")
         assert message.set_owner.is_unmessagable is False
-        # Check debug logs
-        assert "p.set_owner.long_name:TestUser" in caplog.text
-        assert "p.set_owner.short_name:TEST" in caplog.text
+        # Check debug logs (PII redacted - only boolean indicators)
+        assert "p.set_owner.long_name_set:True" in caplog.text
+        assert "p.set_owner.short_name_set:True" in caplog.text
 
     @pytest.mark.unit
     def test_set_owner_only_long_name(
