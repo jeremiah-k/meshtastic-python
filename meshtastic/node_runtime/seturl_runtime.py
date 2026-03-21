@@ -85,7 +85,7 @@ class _SetUrlReplaceExecutionState:
 
     written_channel_indices: list[int] = field(default_factory=list)
     lora_write_started: bool = False
-    rollback_admin_index_for_write: int = 0
+    rollback_admin_indexes_for_write: list[int] = field(default_factory=list)
 
 
 class _SetUrlParser:
@@ -101,10 +101,10 @@ class _SetUrlParser:
         # URLs are of the form https://meshtastic.org/d/#{base64_channel_set}
         # Parse from '#' to support optional query parameters before the fragment.
         if "#" not in url:
-            raise_interface_error(f"Invalid URL '{url}'")
+            raise_interface_error("Invalid URL")
         b64 = url.split("#")[-1]
         if not b64:
-            raise_interface_error(f"Invalid URL '{url}': no channel data found")
+            raise_interface_error("Invalid URL: no channel data found")
 
         # We normally strip padding to make for a shorter URL, but the python parser doesn't like
         # that.  So add back any missing padding
@@ -116,14 +116,14 @@ class _SetUrlParser:
         try:
             decoded_url = base64.urlsafe_b64decode(b64)
         except (binascii.Error, ValueError) as ex:
-            raise_interface_error(f"Invalid URL '{url}': {ex}")
+            raise_interface_error(f"Invalid URL: {ex}")
 
         channel_set = apponly_pb2.ChannelSet()
         try:
             channel_set.ParseFromString(decoded_url)
         except (DecodeError, ValueError) as ex:
             raise_interface_error(
-                f"Unable to parse channel settings from URL '{url}': {ex}"
+                f"Unable to parse channel settings from URL: {ex}"
             )
 
         if len(channel_set.settings) == 0:
@@ -458,6 +458,20 @@ class _SetUrlExecutionEngine:
         self._node = node
         self._cache_manager = cache_manager
 
+    @staticmethod
+    def _post_write_fallback_admin_index(plan: _SetUrlReplacePlan) -> int:
+        """Return fallback admin index from staged post-write channel state."""
+        for channel_index in sorted(plan.staged_channels_by_index):
+            channel = plan.staged_channels_by_index[channel_index]
+            if (
+                channel.role != channel_pb2.Channel.Role.DISABLED
+                and channel.settings
+                and channel.settings.name
+                and _is_named_admin_channel_name(channel.settings.name)
+            ):
+                return channel.index
+        return 0
+
     def execute_add_only(
         self,
         *,
@@ -555,8 +569,9 @@ class _SetUrlExecutionEngine:
             self._cache_manager.apply_replace_channel_write(
                 plan.deferred_new_named_admin_channel
             )
-            state.rollback_admin_index_for_write = (
-                plan.deferred_new_named_admin_channel.index
+            state.rollback_admin_indexes_for_write = _ordered_admin_indexes(
+                plan.deferred_new_named_admin_channel.index,
+                *state.rollback_admin_indexes_for_write,
             )
 
         if plan.deferred_previous_admin_slot_channel is not None:
@@ -565,6 +580,9 @@ class _SetUrlExecutionEngine:
                 updated_admin_index_for_write = (
                     admin_context.admin_write_node._get_admin_channel_index()  # noqa: SLF001
                 )
+            post_write_fallback_admin_index = self._post_write_fallback_admin_index(
+                plan
+            )
             logger.debug(
                 "Rewriting deferred admin slot i:%s via admin index %s",
                 plan.deferred_previous_admin_slot_channel.index,
@@ -573,7 +591,11 @@ class _SetUrlExecutionEngine:
             state.written_channel_indices.append(
                 plan.deferred_previous_admin_slot_channel.index
             )
-            state.rollback_admin_index_for_write = updated_admin_index_for_write
+            state.rollback_admin_indexes_for_write = _ordered_admin_indexes(
+                updated_admin_index_for_write,
+                post_write_fallback_admin_index,
+                *state.rollback_admin_indexes_for_write,
+            )
             self._node._write_channel_snapshot(  # noqa: SLF001
                 plan.deferred_previous_admin_slot_channel,
                 adminIndex=updated_admin_index_for_write,
@@ -724,12 +746,12 @@ class _SetUrlRollbackEngine:
         if plan.deferred_new_named_admin_index in written_index_set:
             rollback_admin_indexes = _ordered_admin_indexes(
                 plan.deferred_new_named_admin_index,
-                state.rollback_admin_index_for_write,
+                *state.rollback_admin_indexes_for_write,
                 admin_context.admin_index_for_write,
             )
         else:
             rollback_admin_indexes = _ordered_admin_indexes(
-                state.rollback_admin_index_for_write,
+                *state.rollback_admin_indexes_for_write,
                 admin_context.admin_index_for_write,
                 plan.deferred_new_named_admin_index,
             )
@@ -922,7 +944,9 @@ class _SetUrlTransactionCoordinator:
         )
         plan = planner.build_plan()
         execution_state = _SetUrlReplaceExecutionState(
-            rollback_admin_index_for_write=self._admin_context.admin_index_for_write
+            rollback_admin_indexes_for_write=[
+                self._admin_context.admin_index_for_write
+            ]
         )
         try:
             self._execution_engine.execute_replace_all(

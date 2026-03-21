@@ -4,6 +4,7 @@ import math
 import threading
 import time
 from collections.abc import Callable
+from functools import wraps
 from typing import TYPE_CHECKING, cast
 
 from bleak.exc import BleakDBusError, BleakError
@@ -629,7 +630,26 @@ class BLEReceiveRecoveryController:
         if callable(wait_for_event) and not _is_unconfigured_mock_callable(
             wait_for_event
         ):
-            return wait_for_event
+            injected_wait_for_event = cast(
+                Callable[["ThreadCoordinator", str, float | None], object],
+                wait_for_event,
+            )
+
+            @wraps(injected_wait_for_event)
+            def _validated_wait_for_runtime_event(
+                target_coordinator: "ThreadCoordinator",
+                event_name: str,
+                timeout: float | None,
+            ) -> bool:
+                return bool(
+                    injected_wait_for_event(
+                        target_coordinator,
+                        event_name,
+                        timeout,
+                    )
+                )
+
+            return _validated_wait_for_runtime_event
 
         def _wait_for_runtime_event(
             target_coordinator: "ThreadCoordinator",

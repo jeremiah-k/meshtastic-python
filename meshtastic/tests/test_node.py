@@ -1160,12 +1160,15 @@ def test_turnOffEncryptionOnPrimaryChannel_updates_primary_and_writes(
     primary = Channel(index=0, role=Channel.Role.PRIMARY)
     primary.settings.psk = b"\x01"
     anode.channels = [primary]
-    anode.writeChannel = MagicMock()  # type: ignore[method-assign]
+    anode._write_channel_snapshot = MagicMock()  # type: ignore[method-assign]
 
     anode.turnOffEncryptionOnPrimaryChannel()
 
     assert anode.channels[0].settings.psk == fromPSK("none")
-    anode.writeChannel.assert_called_once_with(0)
+    anode._write_channel_snapshot.assert_called_once()
+    written_channel = anode._write_channel_snapshot.call_args.args[0]
+    assert written_channel.index == 0
+    assert written_channel.settings.psk == fromPSK("none")
 
 
 @pytest.mark.unit

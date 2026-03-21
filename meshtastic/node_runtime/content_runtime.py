@@ -27,7 +27,7 @@ class _NodeContentCacheStore:
         """Return cached full ringtone value when already present."""
         with self._node._ringtone_lock:  # noqa: SLF001
             if self._node.ringtone is not None:
-                logger.debug("ringtone:%s", self._node.ringtone)
+                logger.debug("ringtone cached (%d chars)", len(self._node.ringtone))
                 return self._node.ringtone
             return None
 
@@ -35,22 +35,29 @@ class _NodeContentCacheStore:
         """Clear stale ringtone fragment state before issuing a read request."""
         with self._node._ringtone_lock:  # noqa: SLF001
             self._node.ringtonePart = None
+        logger.debug("ringtone fragment cache cleared")
 
     def store_ringtone_fragment(self, ringtone_fragment: str) -> None:
         """Store ringtone fragment from the latest response packet."""
         with self._node._ringtone_lock:  # noqa: SLF001
             self._node.ringtonePart = ringtone_fragment
-        logger.debug("self.ringtonePart:%s", ringtone_fragment)
+        logger.debug("ringtone fragment stored (%d chars)", len(ringtone_fragment))
 
     def resolve_ringtone_after_read(self) -> str | None:
         """Resolve ringtone result after a read wait by preferring full cache, then fragment."""
         with self._node._ringtone_lock:  # noqa: SLF001
             if self._node.ringtone is not None:
-                logger.debug("ringtone:%s", self._node.ringtone)
+                logger.debug(
+                    "ringtone resolved from full cache (%d chars)",
+                    len(self._node.ringtone),
+                )
                 return self._node.ringtone
             if self._node.ringtonePart is not None:
                 self._node.ringtone = self._node.ringtonePart
-                logger.debug("ringtone:%s", self._node.ringtone)
+                logger.debug(
+                    "ringtone resolved from fragment cache (%d chars)",
+                    len(self._node.ringtone),
+                )
                 return self._node.ringtone
             return None
 
@@ -59,12 +66,16 @@ class _NodeContentCacheStore:
         with self._node._ringtone_lock:  # noqa: SLF001
             self._node.ringtone = None
             self._node.ringtonePart = None
+        logger.debug("ringtone cache invalidated")
 
     def get_cached_canned_message(self) -> str | None:
         """Return cached full canned-message value when already present."""
         with self._node._canned_message_lock:  # noqa: SLF001
             if self._node.cannedPluginMessage is not None:
-                logger.debug("canned_plugin_message:%s", self._node.cannedPluginMessage)
+                logger.debug(
+                    "canned message cached (%d chars)",
+                    len(self._node.cannedPluginMessage),
+                )
                 return self._node.cannedPluginMessage
             return None
 
@@ -72,26 +83,29 @@ class _NodeContentCacheStore:
         """Clear stale canned-message fragment state before issuing a read request."""
         with self._node._canned_message_lock:  # noqa: SLF001
             self._node.cannedPluginMessageMessages = None
+        logger.debug("canned message fragment cache cleared")
 
     def store_canned_message_fragment(self, canned_messages: str) -> None:
         """Store canned-message fragment payload from response packets."""
         with self._node._canned_message_lock:  # noqa: SLF001
             self._node.cannedPluginMessageMessages = canned_messages
-        logger.debug("self.cannedPluginMessageMessages:%s", canned_messages)
+        logger.debug("canned message fragment stored (%d chars)", len(canned_messages))
 
     def resolve_canned_message_after_read(self) -> str | None:
         """Resolve canned-message result after a read wait."""
         with self._node._canned_message_lock:  # noqa: SLF001
             if self._node.cannedPluginMessage is not None:
-                logger.debug("canned_plugin_message:%s", self._node.cannedPluginMessage)
+                logger.debug(
+                    "canned message resolved from full cache (%d chars)",
+                    len(self._node.cannedPluginMessage),
+                )
                 return self._node.cannedPluginMessage
-            logger.debug(
-                "self.cannedPluginMessageMessages:%s",
-                self._node.cannedPluginMessageMessages,
-            )
             if self._node.cannedPluginMessageMessages is not None:
                 self._node.cannedPluginMessage = self._node.cannedPluginMessageMessages
-                logger.debug("canned_plugin_message:%s", self._node.cannedPluginMessage)
+                logger.debug(
+                    "canned message resolved from fragment cache (%d chars)",
+                    len(self._node.cannedPluginMessage),
+                )
                 return self._node.cannedPluginMessage
             return None
 
@@ -100,6 +114,7 @@ class _NodeContentCacheStore:
         with self._node._canned_message_lock:  # noqa: SLF001
             self._node.cannedPluginMessage = None
             self._node.cannedPluginMessageMessages = None
+        logger.debug("canned message cache invalidated")
 
 
 class _NodeContentResponseRuntime:
@@ -123,57 +138,48 @@ class _NodeContentResponseRuntime:
 
     def handle_ringtone_response(self, packet: dict[str, Any]) -> bool:
         """Parse ringtone response packet and return True for terminal callbacks."""
-        logger.debug("onResponseRequestRingtone() p:%s", packet)
+        logger.debug("onResponseRequestRingtone()")
         decoded = packet.get("decoded")
         if not isinstance(decoded, dict):
-            logger.warning("Unexpected ringtone response without decoded payload: %s", packet)
+            logger.warning("Unexpected ringtone response without decoded payload")
             return False
         if "routing" in decoded:
             return self._has_routing_error(decoded)
         admin_message = decoded.get("admin")
         if not isinstance(admin_message, dict):
-            logger.warning("Unexpected ringtone response without admin payload: %s", packet)
+            logger.warning("Unexpected ringtone response without admin payload")
             return False
         raw_admin = admin_message.get("raw")
         if raw_admin is None or not hasattr(raw_admin, "get_ringtone_response"):
-            logger.warning("Unexpected ringtone response without raw ringtone data: %s", packet)
+            logger.warning("Unexpected ringtone response without raw ringtone data")
             return False
         try:
             ringtone_part = raw_admin.get_ringtone_response
             self._cache_store.store_ringtone_fragment(ringtone_part)
             return True
         except AttributeError:
-            logger.warning("Failed to parse ringtone response payload: %s", packet)
+            logger.warning("Failed to parse ringtone response payload")
             return False
 
     def handle_canned_message_response(self, packet: dict[str, Any]) -> bool:
         """Parse canned-message response packet and return True for terminal callbacks."""
-        logger.debug(
-            "onResponseRequestCannedMessagePluginMessageMessages() p:%s", packet
-        )
+        logger.debug("onResponseRequestCannedMessagePluginMessageMessages()")
         decoded = packet.get("decoded")
         if not isinstance(decoded, dict):
-            logger.warning(
-                "Unexpected canned-message response without decoded payload: %s",
-                packet,
-            )
+            logger.warning("Unexpected canned-message response without decoded payload")
             return False
         if "routing" in decoded:
             return self._has_routing_error(decoded)
         admin_message = decoded.get("admin")
         if not isinstance(admin_message, dict):
-            logger.warning(
-                "Unexpected canned-message response without admin payload: %s",
-                packet,
-            )
+            logger.warning("Unexpected canned-message response without admin payload")
             return False
         raw_admin = admin_message.get("raw")
         if raw_admin is None or not hasattr(
             raw_admin, "get_canned_message_module_messages_response"
         ):
             logger.warning(
-                "Unexpected canned-message response without raw message data: %s",
-                packet,
+                "Unexpected canned-message response without raw message data"
             )
             return False
         try:
@@ -181,7 +187,7 @@ class _NodeContentResponseRuntime:
             self._cache_store.store_canned_message_fragment(canned_messages)
             return True
         except AttributeError:
-            logger.warning("Failed to parse canned-message response payload: %s", packet)
+            logger.warning("Failed to parse canned-message response payload")
             return False
 
 
@@ -285,7 +291,7 @@ class _NodeAdminContentRuntime:
         self._node.ensureSessionKey()
         request_message = admin_pb2.AdminMessage()
         request_message.set_ringtone_message = ringtone
-        logger.debug("Setting ringtone '%s'", ringtone)
+        logger.debug("Setting ringtone (%d chars)", len(ringtone))
         send_result = self._node._send_admin(
             request_message,
             onResponse=self._select_write_response_handler(),
@@ -334,7 +340,7 @@ class _NodeAdminContentRuntime:
         self._node.ensureSessionKey()
         request_message = admin_pb2.AdminMessage()
         request_message.set_canned_message_module_messages = message
-        logger.debug("Setting canned message '%s'", message)
+        logger.debug("Setting canned message (%d chars)", len(message))
         send_result = self._node._send_admin(
             request_message,
             onResponse=self._select_write_response_handler(),

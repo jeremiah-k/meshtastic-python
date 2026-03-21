@@ -161,7 +161,12 @@ class _NodeSettingsRuntime:
             self._node.iface.waitForAckNak()
 
     def _validate_write_configs_loaded(self, config_name: str) -> None:
-        """Ensure the requested config section was loaded before writing."""
+        """Preserve historical writeConfig loaded-state behavior.
+
+        Historical behavior only required that *some* local/module config had
+        been loaded before writes. Keep that compatibility for configure flows
+        that intentionally write empty/default sections.
+        """
         config_entry = self._message_builder.get_write_config_entry(config_name)
         if config_entry is None:
             self._node._raise_interface_error(  # noqa: SLF001
@@ -169,11 +174,21 @@ class _NodeSettingsRuntime:
             )
 
         _, source_config = config_entry
-        if len(source_config.ListFields()) == 0:
-            self._node._raise_interface_error(  # noqa: SLF001
-                f"Error: {config_name} has not been read. "
-                "Request config from the device before writing."
+        if len(source_config.ListFields()) > 0:
+            return
+        if (
+            len(self._node.localConfig.ListFields()) > 0
+            or len(self._node.moduleConfig.ListFields()) > 0
+        ):
+            logger.debug(
+                "Writing %s with empty payload to preserve historical compatibility.",
+                config_name,
             )
+            return
+        self._node._raise_interface_error(  # noqa: SLF001
+            "Error: No localConfig has been read. "
+            "Request config from the device before writing."
+        )
 
     def write_config(self, config_name: str) -> None:
         """Send one settings write with preserved callback selection."""

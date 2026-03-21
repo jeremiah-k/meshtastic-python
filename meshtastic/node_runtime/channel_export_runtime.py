@@ -76,7 +76,7 @@ class _NodeChannelExportRuntime:
 
     def turn_off_encryption_on_primary_channel(self) -> None:
         """Disable primary-channel encryption and persist updated channel state."""
-        primary_index: int | None = None
+        primary_snapshot: channel_pb2.Channel | None = None
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if not channels:
@@ -85,12 +85,29 @@ class _NodeChannelExportRuntime:
                 )  # noqa: SLF001
             for channel in channels:
                 if channel.role == channel_pb2.Channel.Role.PRIMARY:
-                    channel.settings.psk = fromPSK("none")
-                    primary_index = channel.index
+                    primary_snapshot = channel_pb2.Channel()
+                    primary_snapshot.CopyFrom(channel)
+                    primary_snapshot.settings.psk = fromPSK("none")
                     break
-            if primary_index is None:
+            if primary_snapshot is None:
                 self._node._raise_interface_error(
                     "Error: No primary channel found"
                 )  # noqa: SLF001
         logger.info("Writing modified channels to device")
-        self._node.writeChannel(primary_index)
+        self._node._write_channel_snapshot(primary_snapshot)  # noqa: SLF001
+        with self._node._channels_lock:  # noqa: SLF001
+            channels = self._node.channels
+            if not channels:
+                logger.warning(
+                    "Primary channel write succeeded but local channel cache is unavailable; reload channels to refresh local state."
+                )
+                return
+            for channel in channels:
+                if channel.index == primary_snapshot.index:
+                    channel.CopyFrom(primary_snapshot)
+                    return
+            logger.warning(
+                "Primary channel write succeeded but local channel index %s is unavailable; invalidating local channel cache.",
+                primary_snapshot.index,
+            )
+            self._node.channels = None
