@@ -48,7 +48,7 @@ class _NodeSettingsMessageBuilder:
     def _write_config_dispatch(self) -> dict[str, tuple[str, Any]]:
         """Return config-name mapping to (setter oneof, source config message)."""
         node = self._node
-        return {
+        dispatch = {
             "device": ("set_config", node.localConfig.device),
             "position": ("set_config", node.localConfig.position),
             "power": ("set_config", node.localConfig.power),
@@ -82,11 +82,18 @@ class _NodeSettingsMessageBuilder:
                 node.moduleConfig.ambient_lighting,
             ),
             "paxcounter": ("set_module_config", node.moduleConfig.paxcounter),
+            "statusmessage": ("set_module_config", node.moduleConfig.statusmessage),
             "traffic_management": (
                 "set_module_config",
                 node.moduleConfig.traffic_management,
             ),
         }
+        # Optional fields may appear in some protobuf schema revisions.
+        if hasattr(node.localConfig, "sessionkey"):
+            dispatch["sessionkey"] = ("set_config", node.localConfig.sessionkey)
+        if hasattr(node.localConfig, "device_ui"):
+            dispatch["device_ui"] = ("set_config", node.localConfig.device_ui)
+        return dispatch
 
     def build_write_message(self, config_name: str) -> admin_pb2.AdminMessage:
         """Build one set_config/set_module_config message for a config name."""
@@ -165,7 +172,9 @@ class _NodeSettingsRuntime:
         message = self._message_builder.build_write_message(config_name)
         logger.debug("Wrote: %s", config_name)
         on_response = None if self._node == self._node.iface.localNode else self._node.onAckNak
-        self._node._send_admin(message, onResponse=on_response)
+        request = self._node._send_admin(message, onResponse=on_response)
+        if on_response is not None and request is not None:
+            self._node.iface.waitForAckNak()
 
 
 class _NodeSettingsResponseRuntime:
@@ -251,15 +260,16 @@ class _NodeSettingsResponseRuntime:
                 self._node.iface._acknowledgment.receivedNak = True
             return
 
-        self._node.iface._acknowledgment.receivedAck = True
         admin_message = decoded["admin"]
         target = self._resolve_config_target(admin_message)
         if target is None:
+            self._node.iface._acknowledgment.receivedAck = True
             return
 
         oneof, field_name, config_values = target
         raw_config = getattr(getattr(admin_message["raw"], oneof), field_name)
         config_values.CopyFrom(raw_config)
+        self._node.iface._acknowledgment.receivedAck = True
         logger.info("%s:\n%s", field_name, config_values)
 
 
@@ -288,7 +298,10 @@ class _NodeAdminCommandRuntime:
         on_response = (
             self._select_remote_ack_callback() if use_remote_ack_callback else None
         )
-        return self._node._send_admin(message, onResponse=on_response)
+        request = self._node._send_admin(message, onResponse=on_response)
+        if on_response is not None and request is not None:
+            self._node.iface.waitForAckNak()
+        return request
 
     def send_owner_message(
         self, message: admin_pb2.AdminMessage

@@ -1,5 +1,10 @@
 """Internal Node runtime owners grouped by responsibility domain."""
 
+from .channel_export_runtime import _NodeChannelExportRuntime
+from .channel_lookup_runtime import _NodeChannelLookupRuntime
+from .channel_normalization_runtime import _NodeChannelNormalizationRuntime
+from .channel_presentation_runtime import _NodeChannelPresentationRuntime
+from .channel_request_runtime import _NodeChannelRequestRuntime
 from .content_runtime import (
     _NodeAdminContentRuntime,
     _NodeContentCacheStore,
@@ -53,7 +58,12 @@ __all__ = [
     "_NodeAdminContentRuntime",
     "_NodeAdminSessionRuntime",
     "_NodeAdminTransportRuntime",
+    "_NodeChannelExportRuntime",
+    "_NodeChannelLookupRuntime",
+    "_NodeChannelNormalizationRuntime",
+    "_NodeChannelPresentationRuntime",
     "_NodeChannelResponseRuntime",
+    "_NodeChannelRequestRuntime",
     "_NodeChannelWriteRuntime",
     "_NodeContentCacheStore",
     "_NodeContentResponseRuntime",

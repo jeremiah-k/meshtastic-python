@@ -845,8 +845,10 @@ class _SetUrlTransactionCoordinator:
     def _resolve_admin_context(self) -> _SetUrlAdminContext:
         """Capture admin-channel write context before staging any transaction writes."""
         admin_write_node = self._node.iface.localNode
-        admin_index_for_write = admin_write_node._get_admin_channel_index()
-        named_admin_index_for_write = admin_write_node._get_named_admin_channel_index()
+        admin_index_for_write = admin_write_node._get_admin_channel_index()  # noqa: SLF001
+        named_admin_index_for_write = (
+            admin_write_node._get_named_admin_channel_index()  # noqa: SLF001
+        )
         return _SetUrlAdminContext(
             admin_write_node=admin_write_node,
             admin_index_for_write=admin_index_for_write,

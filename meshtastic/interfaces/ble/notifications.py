@@ -816,7 +816,7 @@ class BLENotificationDispatcher:
             active_handler = self._notification_manager._get_callback(uuid)
             if active_handler is not cached_handler:
                 self._notification_manager._subscribe(uuid, cached_handler)
-            return cached_handler
+            return cast(Callable[[Any, Any], None], cached_handler)
 
         def _get_or_create_cached_handler(
             *,

@@ -388,6 +388,22 @@ def test_handlePacketFromRadio_no_portnum(caplog: pytest.LogCaptureFixture) -> N
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_handlePacketFromRadio_hack_preserves_from_zero_in_publication_payload() -> None:
+    """hack=True should preserve from==0 in emitted packet payload compatibility path."""
+    with MeshInterface(noProto=True) as iface:
+        mesh_packet = mesh_pb2.MeshPacket()
+        intents = iface._handle_packet_from_radio(
+            mesh_packet,
+            hack=True,
+            emit_publication=False,
+        )
+    assert len(intents) == 1
+    packet_payload = intents[0].payload["packet"]
+    assert packet_payload["from"] == 0
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_getNode_with_local() -> None:
     """Test getNode."""
     with MeshInterface(noProto=True) as iface:

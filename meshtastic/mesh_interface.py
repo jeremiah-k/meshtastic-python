@@ -193,6 +193,7 @@ class _PacketRuntimeContext:
     topic: str = "meshtastic.receive"
     decoded: dict[str, Any] | None = None
     skip_response_callback_for_decode_failure: bool = False
+    on_receive_callback: Callable[[Any, dict[str, Any]], Any] | None = None
 
 
 class _RequestWaitRuntime:
@@ -3998,18 +3999,24 @@ class MeshInterface:  # pylint: disable=R0902
         self._enrich_packet_identity(packet_context.packet_dict)
         self._classify_packet_runtime(packet_context, meshPacket)
         self._apply_packet_runtime_mutations(packet_context, meshPacket)
+        published_packet = copy.deepcopy(packet_context.packet_dict)
+        if hack and "from" not in published_packet and getattr(meshPacket, "from") == 0:
+            # Preserve historical/test-facing compatibility for hack=True
+            # publications while keeping callback/runtime behavior unchanged.
+            published_packet["from"] = 0
+        self._invoke_packet_on_receive(packet_context)
         self._correlate_packet_response_handler(packet_context)
 
         publication_intents = [
             self._publication_intent(
                 packet_context.topic,
-                packet=packet_context.packet_dict,
+                packet=published_packet,
             )
         ]
         logger.debug(
             "Publishing %s: packet=%s",
             packet_context.topic,
-            stripnl(packet_context.packet_dict),
+            stripnl(published_packet),
         )
         if emit_publication:
             self._emit_publication_intents(publication_intents)
@@ -4105,7 +4112,13 @@ class MeshInterface:  # pylint: disable=R0902
 
         # Call specialized onReceive if necessary
         if handler.onReceive is not None:
-            handler.onReceive(self, packet_context.packet_dict)
+            packet_context.on_receive_callback = handler.onReceive
+
+    def _invoke_packet_on_receive(self, packet_context: _PacketRuntimeContext) -> None:
+        """Run protocol onReceive callback if one was selected during mutation."""
+        if packet_context.on_receive_callback is None:
+            return
+        packet_context.on_receive_callback(self, packet_context.packet_dict)
 
     def _decode_packet_payload_with_handler(
         self,

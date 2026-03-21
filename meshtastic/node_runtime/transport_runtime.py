@@ -144,16 +144,23 @@ class _NodeChannelWriteRuntime:
 class _DeleteChannelRewritePlan:
     """Delete-channel rewrite execution plan."""
 
+    original_channels_ref: list[channel_pb2.Channel]
     pre_delete_admin_index: int
     post_delete_admin_index: int
     switch_after_admin_slot_rewrite: bool
     channels_to_rewrite: list[channel_pb2.Channel]
+    staged_channels: list[channel_pb2.Channel]
 
 
 class _NodeDeleteChannelRuntime:
     """Owns delete-channel validation, planning, and ordered rewrite execution."""
 
-    def __init__(self, node: "Node", *, channel_write_runtime: _NodeChannelWriteRuntime):
+    def __init__(
+        self,
+        node: "Node",
+        *,
+        channel_write_runtime: _NodeChannelWriteRuntime,
+    ) -> None:
         self._node = node
         self._channel_write_runtime = channel_write_runtime
 
@@ -169,6 +176,26 @@ class _NodeDeleteChannelRuntime:
             ):
                 return channel.index
         return 0
+
+    @staticmethod
+    def _normalize_staged_channels(channels: list[channel_pb2.Channel]) -> None:
+        """Normalize staged channel list using Node lock-scoped fixup semantics."""
+        if len(channels) > MAX_CHANNELS:
+            logger.warning(
+                "Truncating channel list from %d to %d entries",
+                len(channels),
+                MAX_CHANNELS,
+            )
+            del channels[MAX_CHANNELS:]
+        for index, channel in enumerate(channels):
+            channel.index = index
+        index = len(channels)
+        while index < MAX_CHANNELS:
+            channel = channel_pb2.Channel()
+            channel.role = channel_pb2.Channel.Role.DISABLED
+            channel.index = index
+            channels.append(channel)
+            index += 1
 
     def _build_rewrite_plan(self, channel_index: int) -> _DeleteChannelRewritePlan:
         """Build lock-scoped delete/rewrite plan with pre/post admin indexes."""
@@ -196,27 +223,34 @@ class _NodeDeleteChannelRuntime:
             else:
                 pre_delete_admin_index = self._node.iface.localNode.getAdminChannelIndex()
 
-            # If we move the "admin" channel, the index used for admin writes
-            # will need to be recomputed as writes progress.
-            channels.pop(channel_index)
-            self._node._fixup_channels_locked()  # noqa: SLF001
+            staged_channels: list[channel_pb2.Channel] = []
+            for existing_channel in channels:
+                staged_channel = channel_pb2.Channel()
+                staged_channel.CopyFrom(existing_channel)
+                staged_channels.append(staged_channel)
+            staged_channels.pop(channel_index)
+            self._normalize_staged_channels(staged_channels)
 
             channels_to_rewrite: list[channel_pb2.Channel] = []
             for rewrite_index in range(channel_index, MAX_CHANNELS):
                 channel_snapshot = channel_pb2.Channel()
-                channel_snapshot.CopyFrom(channels[rewrite_index])
+                channel_snapshot.CopyFrom(staged_channels[rewrite_index])
                 channels_to_rewrite.append(channel_snapshot)
 
             if is_local_node:
-                post_delete_admin_index = self._named_admin_index_from_channels(channels)
+                post_delete_admin_index = self._named_admin_index_from_channels(
+                    staged_channels
+                )
             else:
                 post_delete_admin_index = self._node.iface.localNode.getAdminChannelIndex()
 
         return _DeleteChannelRewritePlan(
+            original_channels_ref=channels,
             pre_delete_admin_index=pre_delete_admin_index,
             post_delete_admin_index=post_delete_admin_index,
             switch_after_admin_slot_rewrite=(pre_delete_admin_index >= channel_index),
             channels_to_rewrite=channels_to_rewrite,
+            staged_channels=staged_channels,
         )
 
     def _execute_rewrite_plan(self, plan: _DeleteChannelRewritePlan) -> None:
@@ -237,6 +271,19 @@ class _NodeDeleteChannelRuntime:
         """Delete one channel and execute ordered rewrite plan."""
         rewrite_plan = self._build_rewrite_plan(channel_index)
         self._execute_rewrite_plan(rewrite_plan)
+        with self._node._channels_lock:  # noqa: SLF001
+            current_channels = self._node.channels
+            if current_channels is not rewrite_plan.original_channels_ref:
+                logger.warning(
+                    "Channel cache changed during delete rewrite; skipping staged cache commit."
+                )
+                return
+            current_channels.clear()
+            for staged_channel in rewrite_plan.staged_channels:
+                channel_copy = channel_pb2.Channel()
+                channel_copy.CopyFrom(staged_channel)
+                current_channels.append(channel_copy)
+            self._node._fixup_channels_locked()  # noqa: SLF001
 
 
 class _NodeAckNakRuntime:
@@ -301,7 +348,20 @@ class _NodePositionTimeCommandRuntime:
         lon: int | float,
         alt: int,
     ) -> mesh_pb2.MeshPacket | None:
-        """Send set_fixed_position admin command with preserved conversion semantics."""
+        """Send set_fixed_position admin command with preserved conversion semantics.
+
+        Parameters
+        ----------
+        lat : int | float
+            Latitude value. Floats are interpreted as degrees and scaled by
+            1e7; ints are treated as pre-scaled ``latitude_i`` values.
+        lon : int | float
+            Longitude value. Floats are interpreted as degrees and scaled by
+            1e7; ints are treated as pre-scaled ``longitude_i`` values.
+        alt : int
+            Altitude in meters. ``0`` preserves historical "unset altitude"
+            behavior.
+        """
         self._node.ensureSessionKey()
 
         position_message = mesh_pb2.Position()

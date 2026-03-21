@@ -5,7 +5,6 @@ This module provides the Node class which represents a (local or remote) node
 in the mesh, including methods for localConfig, moduleConfig, and channels management.
 """
 
-import base64
 import logging
 import sys
 import threading
@@ -18,7 +17,7 @@ from meshtastic.node_runtime import (
     EMPTY_SHORT_NAME_MSG as _EMPTY_SHORT_NAME_MSG,
     FACTORY_RESET_REQUEST_VALUE,
     MAX_CANNED_MESSAGE_LENGTH as _MAX_CANNED_MESSAGE_LENGTH,
-    MAX_CHANNELS,
+    MAX_CHANNELS as _MAX_CHANNELS,
     MAX_LONG_NAME_LEN as _MAX_LONG_NAME_LEN,
     MAX_RINGTONE_LENGTH as _MAX_RINGTONE_LENGTH,
     MAX_SHORT_NAME_LEN as _MAX_SHORT_NAME_LEN,
@@ -28,6 +27,11 @@ from meshtastic.node_runtime import (
     _NodeAdminContentRuntime,
     _NodeAdminSessionRuntime,
     _NodeAdminTransportRuntime,
+    _NodeChannelExportRuntime,
+    _NodeChannelLookupRuntime,
+    _NodeChannelNormalizationRuntime,
+    _NodeChannelPresentationRuntime,
+    _NodeChannelRequestRuntime,
     _NodeChannelResponseRuntime,
     _NodeChannelWriteRuntime,
     _NodeContentCacheStore,
@@ -41,11 +45,9 @@ from meshtastic.node_runtime import (
     _NodeSettingsRuntime,
     _SetUrlParser,
     _SetUrlTransactionCoordinator,
-    is_named_admin_channel_name as _is_named_admin_channel_name,
 )
 from meshtastic.protobuf import (
     admin_pb2,
-    apponly_pb2,
     channel_pb2,
     config_pb2,
     localonly_pb2,
@@ -54,10 +56,6 @@ from meshtastic.protobuf import (
 from meshtastic.util import (
     Timeout,
     flagsToList,
-    fromPSK,
-    generate_channel_hash,
-    messageToJson,
-    pskToString,
     toNodeNum,
 )
 
@@ -70,6 +68,7 @@ _ResultT = TypeVar("_ResultT")
 EMPTY_LONG_NAME_MSG = _EMPTY_LONG_NAME_MSG
 EMPTY_SHORT_NAME_MSG = _EMPTY_SHORT_NAME_MSG
 MAX_CANNED_MESSAGE_LENGTH = _MAX_CANNED_MESSAGE_LENGTH
+MAX_CHANNELS = _MAX_CHANNELS
 MAX_LONG_NAME_LEN = _MAX_LONG_NAME_LEN
 MAX_RINGTONE_LENGTH = _MAX_RINGTONE_LENGTH
 MAX_SHORT_NAME_LEN = _MAX_SHORT_NAME_LEN
@@ -120,6 +119,17 @@ class Node:  # pylint: disable=too-many-instance-attributes
         self._metadata_stdout_event: threading.Event | None = None
         self._admin_session_runtime = _NodeAdminSessionRuntime(self)
         self._admin_transport_runtime = _NodeAdminTransportRuntime(self)
+        self._channel_lookup_runtime = _NodeChannelLookupRuntime(self)
+        self._channel_normalization_runtime = _NodeChannelNormalizationRuntime(self)
+        self._channel_export_runtime = _NodeChannelExportRuntime(self)
+        self._channel_request_runtime = _NodeChannelRequestRuntime(
+            self,
+            normalization_runtime=self._channel_normalization_runtime,
+        )
+        self._channel_presentation_runtime = _NodeChannelPresentationRuntime(
+            self,
+            export_runtime=self._channel_export_runtime,
+        )
         self._channel_write_runtime = _NodeChannelWriteRuntime(
             self,
             admin_session_runtime=self._admin_session_runtime,
@@ -344,23 +354,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         After listing channels, the primary channel URL is printed; if the full URL that includes
         all channels differs, it is printed as the "Complete URL".
         """
-        print("Channels:")
-        with self._channels_lock:
-            channels_snapshot = list(self.channels) if self.channels else []
-        if channels_snapshot:
-            logger.debug("self.channels:%s", channels_snapshot)
-            for c in channels_snapshot:
-                cStr = messageToJson(c.settings)
-                # don't show disabled channels
-                if channel_pb2.Channel.Role.Name(c.role) != "DISABLED":
-                    print(
-                        f"  Index {c.index}: {channel_pb2.Channel.Role.Name(c.role)} psk={pskToString(c.settings.psk)} {cStr}"
-                    )
-        publicURL = self.getURL(includeAll=False)
-        adminURL = self.getURL(includeAll=True)
-        print(f"\nPrimary channel URL: {publicURL}")
-        if adminURL != publicURL:
-            print(f"Complete URL (includes all channels): {adminURL}")
+        self._channel_presentation_runtime.show_channels()
 
     def showInfo(self) -> None:
         """Print the node's local and module configurations (as JSON when available) followed by its configured channels.
@@ -368,15 +362,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         If a configuration is not present, an empty placeholder is printed for that
         section. Channels are displayed using the node's channel listing format.
         """
-        prefs = ""
-        if self.localConfig:
-            prefs = messageToJson(self.localConfig, multiline=True)
-        print(f"Preferences: {prefs}\n")
-        prefs = ""
-        if self.moduleConfig:
-            prefs = messageToJson(self.moduleConfig, multiline=True)
-        print(f"Module preferences: {prefs}\n")
-        self.showChannels()
+        self._channel_presentation_runtime.show_info()
 
     def setChannels(self, channels: Sequence[channel_pb2.Channel]) -> None:
         """Set the node's channel list and normalize channel entries.
@@ -388,14 +374,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             list will be normalized (indices fixed) and padded as needed to meet expected
             channel count.
         """
-        with self._channels_lock:
-            copied_channels: list[channel_pb2.Channel] = []
-            for source_channel in channels:
-                copied_channel = channel_pb2.Channel()
-                copied_channel.CopyFrom(source_channel)
-                copied_channels.append(copied_channel)
-            self.channels = copied_channels
-            self._fixup_channels_locked()
+        self._channel_request_runtime.set_channels(channels)
 
     def requestChannels(self, startingIndex: int = 0) -> None:
         """Request channel definitions from the node, starting at the given channel index.
@@ -409,14 +388,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         startingIndex : int
             Zero-based channel index to start fetching from (typically 0-7). (Default value = 0)
         """
-        logger.debug("requestChannels for nodeNum:%s", self.nodeNum)
-        # only initialize if we're starting out fresh
-        if startingIndex == 0:
-            with self._channels_lock:
-                self.channels = None
-                # We keep our channels in a temp array until finished
-                self.partialChannels = []
-        self._request_channel(startingIndex)
+        self._channel_request_runtime.request_channels(starting_index=startingIndex)
 
     def onResponseRequestSettings(self, p: dict[str, Any]) -> None:
         """Process an admin response for a settings request and update the node's config objects.
@@ -471,13 +443,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         MeshInterfaceError
             if channel data has not been loaded.
         """
-        with self._channels_lock:
-            channels = self.channels
-            if not channels:
-                self._raise_interface_error("Error: No channels have been read")
-            channels[0].settings.psk = fromPSK("none")
-        logger.info("Writing modified channels to device")
-        self.writeChannel(0)
+        self._channel_export_runtime.turn_off_encryption_on_primary_channel()
 
     def waitForConfig(self, attribute: str = "channels") -> bool:
         """Wait until a given attribute on the node's localConfig is populated or the timeout elapses.
@@ -492,7 +458,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         bool
             True if the attribute was set before the timeout expired, False otherwise.
         """
-        return self._timeout.waitForSet(self, attrs=("localConfig", attribute))
+        return self._channel_request_runtime.wait_for_config(attribute=attribute)
 
     def _raise_interface_error(self, message: str) -> NoReturn:
         """Raise a MeshInterface-style error with the provided message.
@@ -525,9 +491,12 @@ class Node:  # pylint: disable=too-many-instance-attributes
         config_name : str
             Configuration section to write. Valid values:
             "device", "position", "power", "network", "display", "lora", "bluetooth",
-            "security", "mqtt", "serial", "external_notification", "store_forward",
-            "range_test", "telemetry", "canned_message", "audio", "remote_hardware",
-            "neighbor_info", "detection_sensor", "ambient_lighting", "paxcounter".
+            "security", "sessionkey"* , "device_ui"* , "mqtt", "serial",
+            "external_notification", "store_forward", "range_test", "telemetry",
+            "canned_message", "audio", "remote_hardware", "neighbor_info",
+            "detection_sensor", "ambient_lighting", "paxcounter",
+            "statusmessage", "traffic_management".
+            * Available only when present in the active protobuf schema.
 
         Raises
         ------
@@ -603,24 +572,13 @@ class Node:  # pylint: disable=too-many-instance-attributes
         existing callers that mutate a selected channel and then persist via
         `writeChannel()`.
         """
-        with self._channels_lock:
-            channels = self.channels
-            if channels and 0 <= channelIndex < len(channels):
-                # Compatibility: return the live object, not a defensive copy.
-                return channels[channelIndex]
-            return None
+        return self._channel_lookup_runtime.get_channel_by_index(channelIndex)
 
     def getChannelCopyByChannelIndex(
         self, channelIndex: int
     ) -> channel_pb2.Channel | None:
         """Retrieve a defensive copy of the channel at the given zero-based index."""
-        with self._channels_lock:
-            channels = self.channels
-            if channels and 0 <= channelIndex < len(channels):
-                copied = channel_pb2.Channel()
-                copied.CopyFrom(channels[channelIndex])
-                return copied
-            return None
+        return self._channel_lookup_runtime.get_channel_copy_by_index(channelIndex)
 
     def deleteChannel(self, channelIndex: int) -> None:
         """Delete the channel at the given zero-based index and rewrite subsequent channels to normalize device channel state.
@@ -664,22 +622,11 @@ class Node:  # pylint: disable=too-many-instance-attributes
         existing callers that mutate a selected channel and then persist via
         `writeChannel()`.
         """
-        with self._channels_lock:
-            for c in self.channels or []:
-                if c.settings and c.settings.name == name:
-                    # Compatibility: return the live object, not a defensive copy.
-                    return c
-            return None
+        return self._channel_lookup_runtime.get_channel_by_name(name)
 
     def getChannelCopyByName(self, name: str) -> channel_pb2.Channel | None:
         """Find a channel by name and return a defensive copy for read-only use."""
-        with self._channels_lock:
-            for channel in self.channels or []:
-                if channel.settings and channel.settings.name == name:
-                    copied = channel_pb2.Channel()
-                    copied.CopyFrom(channel)
-                    return copied
-            return None
+        return self._channel_lookup_runtime.get_channel_copy_by_name(name)
 
     def getDisabledChannel(self) -> channel_pb2.Channel | None:
         """Find the first channel whose role is DISABLED.
@@ -695,28 +642,11 @@ class Node:  # pylint: disable=too-many-instance-attributes
         existing callers that mutate a selected channel and then persist via
         `writeChannel()`.
         """
-        with self._channels_lock:
-            channels = self.channels
-            if channels is None:
-                return None
-            for c in channels:
-                if c.role == channel_pb2.Channel.Role.DISABLED:
-                    # Compatibility: return the live object, not a defensive copy.
-                    return c
-            return None
+        return self._channel_lookup_runtime.get_disabled_channel()
 
     def getDisabledChannelCopy(self) -> channel_pb2.Channel | None:
         """Find the first disabled channel and return a defensive copy for read-only use."""
-        with self._channels_lock:
-            channels = self.channels
-            if channels is None:
-                return None
-            for channel in channels:
-                if channel.role == channel_pb2.Channel.Role.DISABLED:
-                    copied = channel_pb2.Channel()
-                    copied.CopyFrom(channel)
-                    return copied
-            return None
+        return self._channel_lookup_runtime.get_disabled_channel_copy()
 
     def getAdminChannelIndex(self) -> int:
         """Public accessor for the admin channel index on this node."""
@@ -724,15 +654,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
 
     def _get_named_admin_channel_index(self) -> int | None:
         """Return the index of a channel explicitly named ``admin``, if present."""
-        with self._channels_lock:
-            for channel in self.channels or []:
-                if (
-                    channel.role != channel_pb2.Channel.Role.DISABLED
-                    and channel.settings
-                    and _is_named_admin_channel_name(channel.settings.name)
-                ):
-                    return channel.index
-            return None
+        return self._channel_lookup_runtime.get_named_admin_channel_index()
 
     def _get_admin_channel_index(self) -> int:
         """Get the index of the channel named "admin", or 0 if no such channel exists.
@@ -742,8 +664,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         int
             Index of the admin channel, or 0 if no channel with name "admin" is present.
         """
-        named_admin_index = self._get_named_admin_channel_index()
-        return 0 if named_admin_index is None else named_admin_index
+        return self._channel_lookup_runtime.get_admin_channel_index()
 
     def setOwner(
         self,
@@ -799,24 +720,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         share_url : str
             A meshtastic.org URL containing the encoded channel set and LoRa configuration.
         """
-        # Only keep the primary/secondary channels, assume primary is first
-        channelSet = apponly_pb2.ChannelSet()
-        with self._channels_lock:
-            channels_snapshot = list(self.channels) if self.channels else []
-        if channels_snapshot:
-            for c in channels_snapshot:
-                if c.role == channel_pb2.Channel.Role.PRIMARY or (
-                    includeAll and c.role == channel_pb2.Channel.Role.SECONDARY
-                ):
-                    channelSet.settings.append(c.settings)
-
-        if len(self.localConfig.ListFields()) == 0:
-            self.requestConfig(self.localConfig.DESCRIPTOR.fields_by_name["lora"])
-        channelSet.lora_config.CopyFrom(self.localConfig.lora)
-        some_bytes = channelSet.SerializeToString()
-        s = base64.urlsafe_b64encode(some_bytes).decode("ascii")
-        s = s.replace("=", "").replace("+", "-").replace("/", "_")
-        return f"https://meshtastic.org/e/#{s}"
+        return self._channel_export_runtime.get_url(include_all=includeAll)
 
     def setURL(self, url: str, addOnly: bool = False) -> None:
         """Parse a Mesh URL and apply its channel and LoRa configuration to this node.
@@ -1423,29 +1327,11 @@ class Node:  # pylint: disable=too-many-instance-attributes
         field to its position in the list (starting at 0) and then appends disabled channels as
         needed so the channel list reaches the required length.
         """
-        with self._channels_lock:
-            self._fixup_channels_locked()
+        self._channel_normalization_runtime.fixup_channels()
 
     def _fixup_channels_locked(self) -> None:
         """Normalize channel indices and size while holding ``self._channels_lock``."""
-        channels = self.channels
-        if channels is None:
-            return
-
-        if len(channels) > MAX_CHANNELS:
-            logger.warning(
-                "Truncating channel list from %d to %d entries",
-                len(channels),
-                MAX_CHANNELS,
-            )
-            del channels[MAX_CHANNELS:]
-
-        # Add extra disabled channels as needed
-        # This is needed because the protobufs will have index **missing** if the channel number is zero
-        for index, ch in enumerate(channels):
-            ch.index = index  # fixup indexes
-
-        self._fill_channels_locked()
+        self._channel_normalization_runtime.fixup_channels_locked()
 
     def _fill_channels(self) -> None:
         """Ensure the node has exactly eight channels by appending DISABLED channels as needed.
@@ -1454,23 +1340,11 @@ class Node:  # pylint: disable=too-many-instance-attributes
         role `DISABLED` and sequential `index` values until the list length reaches
         ``MAX_CHANNELS``.
         """
-        with self._channels_lock:
-            self._fill_channels_locked()
+        self._channel_normalization_runtime.fill_channels()
 
     def _fill_channels_locked(self) -> None:
         """Append disabled channels up to ``MAX_CHANNELS`` while holding ``self._channels_lock``."""
-        channels = self.channels
-        if channels is None:
-            return
-
-        # Add extra disabled channels as needed
-        index = len(channels)
-        while index < MAX_CHANNELS:
-            ch = channel_pb2.Channel()
-            ch.role = channel_pb2.Channel.Role.DISABLED
-            ch.index = index
-            channels.append(ch)
-            index += 1
+        self._channel_normalization_runtime.fill_channels_locked()
 
     def onRequestGetMetadata(self, p: dict[str, Any]) -> None:
         """Handle an incoming device metadata response packet and display the parsed metadata.
@@ -1540,21 +1414,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The AdminMessage packet sent to the interface, or `None` if sending was skipped (e.g., protocol disabled).
         """
-        p = admin_pb2.AdminMessage()
-        p.get_channel_request = channelNum + 1
-
-        # Show progress message for super slow operations
-        if self != self.iface.localNode:
-            logger.info(
-                "Requesting channel %s info from remote node (this could take a while)",
-                channelNum,
-            )
-        else:
-            logger.debug("Requesting channel %s", channelNum)
-
-        return self._send_admin(
-            p, wantResponse=True, onResponse=self.onResponseRequestChannel
-        )
+        return self._channel_request_runtime.request_channel(channelNum)
 
     # pylint: disable=R1710
     def _send_admin(
@@ -1619,28 +1479,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             - "name" (str): The channel settings name, or an empty string if missing.
             - "hash" (int or None): Computed channel hash when both name and PSK are present, otherwise None.
         """
-        result: list[dict[str, Any]] = []
-        with self._channels_lock:
-            channels_snapshot = list(self.channels) if self.channels else []
-        if channels_snapshot:
-            for c in channels_snapshot:
-                settings = getattr(c, "settings", None)
-                name = getattr(settings, "name", "")
-                psk = getattr(settings, "psk", b"")
-                has_name = bool(name)
-                has_psk = bool(psk)
-                hash_val = (
-                    generate_channel_hash(name, psk) if has_name and has_psk else None
-                )
-                result.append(
-                    {
-                        "index": c.index,
-                        "role": channel_pb2.Channel.Role.Name(c.role),
-                        "name": name if has_name else "",
-                        "hash": hash_val,
-                    }
-                )
-        return result
+        return self._channel_export_runtime.get_channels_with_hash()
 
     # COMPAT_STABLE_SHIM: alias for getChannelsWithHash
     def get_channels_with_hash(self) -> list[dict[str, Any]]:

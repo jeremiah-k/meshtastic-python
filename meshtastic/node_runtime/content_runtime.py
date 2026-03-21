@@ -2,7 +2,8 @@
 
 import logging
 import threading
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from meshtastic.node_runtime.shared import (
     MAX_CANNED_MESSAGE_LENGTH,
@@ -24,7 +25,7 @@ class _NodeContentCacheStore:
     def get_cached_ringtone(self) -> str | None:
         """Return cached full ringtone value when already present."""
         with self._node._ringtone_lock:  # noqa: SLF001
-            if self._node.ringtone:
+            if self._node.ringtone is not None:
                 logger.debug("ringtone:%s", self._node.ringtone)
                 return self._node.ringtone
             return None
@@ -43,10 +44,10 @@ class _NodeContentCacheStore:
     def resolve_ringtone_after_read(self) -> str | None:
         """Resolve ringtone result after a read wait by preferring full cache, then fragment."""
         with self._node._ringtone_lock:  # noqa: SLF001
-            if self._node.ringtone:
+            if self._node.ringtone is not None:
                 logger.debug("ringtone:%s", self._node.ringtone)
                 return self._node.ringtone
-            if self._node.ringtonePart:
+            if self._node.ringtonePart is not None:
                 self._node.ringtone = self._node.ringtonePart
                 logger.debug("ringtone:%s", self._node.ringtone)
                 return self._node.ringtone
@@ -61,7 +62,7 @@ class _NodeContentCacheStore:
     def get_cached_canned_message(self) -> str | None:
         """Return cached full canned-message value when already present."""
         with self._node._canned_message_lock:  # noqa: SLF001
-            if self._node.cannedPluginMessage:
+            if self._node.cannedPluginMessage is not None:
                 logger.debug("canned_plugin_message:%s", self._node.cannedPluginMessage)
                 return self._node.cannedPluginMessage
             return None
@@ -80,14 +81,14 @@ class _NodeContentCacheStore:
     def resolve_canned_message_after_read(self) -> str | None:
         """Resolve canned-message result after a read wait."""
         with self._node._canned_message_lock:  # noqa: SLF001
-            if self._node.cannedPluginMessage:
+            if self._node.cannedPluginMessage is not None:
                 logger.debug("canned_plugin_message:%s", self._node.cannedPluginMessage)
                 return self._node.cannedPluginMessage
             logger.debug(
                 "self.cannedPluginMessageMessages:%s",
                 self._node.cannedPluginMessageMessages,
             )
-            if self._node.cannedPluginMessageMessages:
+            if self._node.cannedPluginMessageMessages is not None:
                 self._node.cannedPluginMessage = self._node.cannedPluginMessageMessages
                 logger.debug("canned_plugin_message:%s", self._node.cannedPluginMessage)
                 return self._node.cannedPluginMessage
@@ -115,29 +116,33 @@ class _NodeContentResponseRuntime:
             return True
         return False
 
-    def handle_ringtone_response(self, packet: dict[str, Any]) -> None:
-        """Parse ringtone response packet and store ringtone fragment when valid."""
+    def handle_ringtone_response(self, packet: dict[str, Any]) -> bool:
+        """Parse ringtone response packet and return True for terminal callbacks."""
         logger.debug("onResponseRequestRingtone() p:%s", packet)
         decoded = packet["decoded"]
-        if self._has_routing_error(decoded):
-            return
+        if "routing" in decoded:
+            return self._has_routing_error(decoded)
         if "admin" in decoded and "raw" in decoded["admin"]:
             ringtone_part = decoded["admin"]["raw"].get_ringtone_response
             self._cache_store.store_ringtone_fragment(ringtone_part)
+            return True
+        return False
 
-    def handle_canned_message_response(self, packet: dict[str, Any]) -> None:
-        """Parse canned-message response packet and store payload fragment when valid."""
+    def handle_canned_message_response(self, packet: dict[str, Any]) -> bool:
+        """Parse canned-message response packet and return True for terminal callbacks."""
         logger.debug(
             "onResponseRequestCannedMessagePluginMessageMessages() p:%s", packet
         )
         decoded = packet["decoded"]
-        if self._has_routing_error(decoded):
-            return
+        if "routing" in decoded:
+            return self._has_routing_error(decoded)
         if "admin" in decoded and "raw" in decoded["admin"]:
             canned_messages = decoded["admin"][
                 "raw"
             ].get_canned_message_module_messages_response
             self._cache_store.store_canned_message_fragment(canned_messages)
+            return True
+        return False
 
 
 class _NodeAdminContentRuntime:
@@ -167,7 +172,7 @@ class _NodeAdminContentRuntime:
         self,
         *,
         build_request: Callable[[admin_pb2.AdminMessage], None],
-        handle_response: Callable[[dict[str, Any]], None],
+        handle_response: Callable[[dict[str, Any]], bool],
         skipped_send_debug_message: str,
         timeout_warning_message: str,
         resolve_result: Callable[[], str | None],
@@ -176,9 +181,7 @@ class _NodeAdminContentRuntime:
         response_event = threading.Event()
 
         def _on_response(packet: dict[str, Any]) -> None:
-            try:
-                handle_response(packet)
-            finally:
+            if handle_response(packet):
                 response_event.set()
 
         request_message = admin_pb2.AdminMessage()
