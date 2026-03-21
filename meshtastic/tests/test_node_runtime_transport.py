@@ -572,10 +572,10 @@ class TestNodeDeleteChannelRuntime:
     def test_build_rewrite_plan_remote_node_uses_localnode_getadminchannelindex(
         self, mock_remote_node: MagicMock, mock_iface: MagicMock
     ) -> None:
-        """_build_rewrite_plan for remote node should use localNode.getAdminChannelIndex() (line 233, 256)."""
+        """_build_rewrite_plan for remote node should use localNode._get_admin_channel_index() (line 233, 256)."""
         # Set up local node with admin channel index
         mock_local = MagicMock()
-        mock_local.getAdminChannelIndex = MagicMock(return_value=4)
+        mock_local._get_admin_channel_index = MagicMock(return_value=4)
         mock_iface.localNode = mock_local
 
         # Set up remote node channels
@@ -607,8 +607,8 @@ class TestNodeDeleteChannelRuntime:
 
         plan = delete_runtime._build_rewrite_plan(1)  # Delete channel 1
 
-        # Pre-delete and post-delete admin index should come from localNode.getAdminChannelIndex()
-        mock_local.getAdminChannelIndex.assert_called()
+        # Pre-delete and post-delete admin index should come from localNode._get_admin_channel_index()
+        mock_local._get_admin_channel_index.assert_called()
         assert plan.pre_delete_admin_index == 4
         assert plan.post_delete_admin_index == 4
 

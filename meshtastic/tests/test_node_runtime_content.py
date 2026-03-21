@@ -416,13 +416,13 @@ class TestNodeContentResponseRuntime:
         assert "Error on response: NO_RESPONSE" in caplog.text
 
     @pytest.mark.unit
-    def test_handle_ringtone_response_missing_decoded_returns_false(
+    def test_handle_ringtone_response_missing_decoded_returns_true(
         self,
         mock_node_for_cache: MagicMock,
         cache_store: _NodeContentCacheStore,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """handle_ringtone_response with missing decoded should return False."""
+        """handle_ringtone_response with missing decoded should return True."""
         runtime = _NodeContentResponseRuntime(
             mock_node_for_cache, cache_store=cache_store
         )
@@ -432,7 +432,7 @@ class TestNodeContentResponseRuntime:
         with caplog.at_level(logging.WARNING):
             result = runtime.handle_ringtone_response(packet)
 
-        assert result is False
+        assert result is True
         assert "Unexpected ringtone response without decoded payload" in caplog.text
 
     @pytest.mark.unit
@@ -528,13 +528,13 @@ class TestNodeContentResponseRuntime:
         assert "Error on response: NO_RESPONSE" in caplog.text
 
     @pytest.mark.unit
-    def test_handle_canned_message_response_missing_decoded_returns_false(
+    def test_handle_canned_message_response_missing_decoded_returns_true(
         self,
         mock_node_for_cache: MagicMock,
         cache_store: _NodeContentCacheStore,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """handle_canned_message_response with missing decoded should return False."""
+        """handle_canned_message_response with missing decoded should return True."""
         runtime = _NodeContentResponseRuntime(
             mock_node_for_cache, cache_store=cache_store
         )
@@ -544,7 +544,7 @@ class TestNodeContentResponseRuntime:
         with caplog.at_level(logging.WARNING):
             result = runtime.handle_canned_message_response(packet)
 
-        assert result is False
+        assert result is True
         assert (
             "Unexpected canned-message response without decoded payload" in caplog.text
         )

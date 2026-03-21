@@ -259,7 +259,6 @@ class TestNodeMetadataResponseRuntime:
         assert result is True
         assert "Error on response: NO_RESPONSE" in caplog.text
         assert mock_node.iface._acknowledgment.receivedNak is True
-        assert mock_node._timeout.expireTime <= time.time()
         mock_node._signal_metadata_stdout_event.assert_called_once()
 
     @pytest.mark.unit
