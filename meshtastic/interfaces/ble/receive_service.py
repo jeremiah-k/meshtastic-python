@@ -641,12 +641,16 @@ class BLEReceiveRecoveryController:
                 event_name: str,
                 timeout: float | None,
             ) -> bool:
-                return bool(
-                    injected_wait_for_event(
-                        target_coordinator,
-                        event_name,
-                        timeout,
-                    )
+                result = injected_wait_for_event(
+                    target_coordinator,
+                    event_name,
+                    timeout,
+                )
+                if isinstance(result, bool):
+                    return result
+                raise TypeError(
+                    "injected_wait_for_event must return bool in "
+                    "_validated_wait_for_runtime_event"
                 )
 
             return _validated_wait_for_runtime_event

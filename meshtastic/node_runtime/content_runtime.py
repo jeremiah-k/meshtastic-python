@@ -156,10 +156,11 @@ class _NodeContentResponseRuntime:
         try:
             ringtone_part = raw_admin.get_ringtone_response
             self._cache_store.store_ringtone_fragment(ringtone_part)
-            return True
         except AttributeError:
             logger.warning("Failed to parse ringtone response payload")
             return False
+        else:
+            return True
 
     def handle_canned_message_response(self, packet: dict[str, Any]) -> bool:
         """Parse canned-message response packet and return True for terminal callbacks."""
@@ -185,10 +186,11 @@ class _NodeContentResponseRuntime:
         try:
             canned_messages = raw_admin.get_canned_message_module_messages_response
             self._cache_store.store_canned_message_fragment(canned_messages)
-            return True
         except AttributeError:
             logger.warning("Failed to parse canned-message response payload")
             return False
+        else:
+            return True
 
 
 class _NodeAdminContentRuntime:

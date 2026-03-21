@@ -538,6 +538,7 @@ def test_setURL_ignores_channels_over_device_limit(
     anode.channels = [
         Channel(index=i, role=Channel.Role.DISABLED) for i in range(CHANNEL_LIMIT)
     ]
+    anode.localConfig.lora.hop_limit = 2
 
     channel_set = apponly_pb2.ChannelSet()
     for i in range(CHANNEL_LIMIT + 1):
@@ -1943,6 +1944,7 @@ def test_setURL_replace_pins_admin_index_for_channel_and_lora_writes(
     iface.localNode._get_named_admin_channel_index = MagicMock(return_value=1)
     iface._get_or_create_by_num.return_value = {"adminSessionPassKey": b"secret"}
     anode = Node(iface, "!12345678", noProto=False)
+    anode.localConfig.lora.hop_limit = 2
 
     primary = Channel(index=0, role=Channel.Role.PRIMARY)
     primary.settings.name = "primary"

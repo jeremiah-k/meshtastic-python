@@ -842,7 +842,7 @@ class _SerializablePayload(Protocol):
 
     def SerializeToString(self) -> bytes:
         """Return serialized payload bytes."""
-        ...  # pylint: disable=unnecessary-ellipsis
+        ...
 
 
 PayloadData: TypeAlias = bytes | bytearray | memoryview | _SerializablePayload

@@ -280,10 +280,9 @@ class _SetUrlReplacePlanner:
 
         replace_original_lora_config: config_pb2.Config.LoRaConfig | None = None
         if self._parsed_input.has_lora_update:
-            if (
-                not self._node.localConfig.HasField("lora")
-                and len(self._node.localConfig.ListFields()) > 0
-            ):
+            has_lora_config = self._node.localConfig.HasField("lora")
+            has_any_local_config = len(self._node.localConfig.ListFields()) > 0
+            if not has_lora_config or not has_any_local_config:
                 self._node._raise_interface_error(  # noqa: SLF001
                     "LoRa config must be loaded before setURL() when the URL updates LoRa settings"
                 )

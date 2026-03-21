@@ -47,10 +47,11 @@ class _NodeChannelRequestRuntime:
         self.request_channel(starting_index)
 
     def wait_for_config(self, *, attribute: str = "channels") -> bool:
-        """Wait for node localConfig attribute using historical timeout semantics."""
+        """Wait for node attribute using historical timeout semantics."""
+        attrs = (attribute,) if attribute == "channels" else ("localConfig", attribute)
         return self._node._timeout.waitForSet(  # noqa: SLF001
             self._node,
-            attrs=("localConfig", attribute),
+            attrs=attrs,
         )
 
     def request_channel(self, channel_num: int) -> mesh_pb2.MeshPacket | None:

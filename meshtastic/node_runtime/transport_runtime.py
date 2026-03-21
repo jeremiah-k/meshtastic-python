@@ -286,10 +286,19 @@ class _NodeDeleteChannelRuntime:
         self._execute_rewrite_plan(rewrite_plan)
         with self._node._channels_lock:  # noqa: SLF001
             current_channels = self._node.channels
+            if current_channels is None:
+                logger.warning(
+                    "Channel cache became unavailable during delete rewrite; skipping staged cache commit."
+                )
+                self._node.channels = None
+                self._node.partialChannels = []
+                return
             if current_channels is not rewrite_plan.original_channels_ref:
                 logger.warning(
-                    "Channel cache changed during delete rewrite; skipping staged cache commit."
+                    "Channel cache changed during delete rewrite; invalidating local channel cache."
                 )
+                self._node.channels = None
+                self._node.partialChannels = []
                 return
             current_channels.clear()
             for staged_channel in rewrite_plan.staged_channels:
@@ -354,53 +363,63 @@ class _NodePositionTimeCommandRuntime:
             return None
         return self._node.onAckNak
 
+    def _send_position_time_command(
+        self,
+        admin_message: admin_pb2.AdminMessage,
+    ) -> mesh_pb2.MeshPacket | None:
+        """Send position/time admin command and wait for remote ACK/NAK when needed."""
+        on_response = self._select_remote_ack_callback()
+        request = self._node._send_admin(
+            admin_message,
+            onResponse=on_response,
+        )
+        if on_response is not None and request is not None:
+            self._node.iface.waitForAckNak()
+        return request
+
     def set_fixed_position(
         self,
         *,
-        lat: int | float,
-        lon: int | float,
-        alt: int,
+        lat: int | float | None,
+        lon: int | float | None,
+        alt: int | None,
     ) -> mesh_pb2.MeshPacket | None:
         """Send set_fixed_position admin command with preserved conversion semantics.
 
         Parameters
         ----------
-        lat : int | float
+        lat : int | float | None
             Latitude value. Floats are interpreted as degrees and scaled by
             1e7; ints are treated as pre-scaled ``latitude_i`` values.
-            ``0`` and ``0.0`` preserve historical unset semantics and omit
-            ``latitude_i`` from the sent message.
-        lon : int | float
+            ``None`` omits ``latitude_i`` from the sent message.
+        lon : int | float | None
             Longitude value. Floats are interpreted as degrees and scaled by
             1e7; ints are treated as pre-scaled ``longitude_i`` values.
-            ``0`` and ``0.0`` preserve historical unset semantics and omit
-            ``longitude_i`` from the sent message.
-        alt : int
-            Altitude in meters. ``0`` preserves historical "unset altitude"
-            behavior.
+            ``None`` omits ``longitude_i`` from the sent message.
+        alt : int | None
+            Altitude in meters. ``None`` omits altitude from the sent message.
         """
         self._node.ensureSessionKey()
 
         position_message = mesh_pb2.Position()
-        if isinstance(lat, float) and lat != 0.0:
-            position_message.latitude_i = int(lat * 1e7)
-        elif isinstance(lat, int) and lat != 0:
-            position_message.latitude_i = lat
+        if lat is not None:
+            if isinstance(lat, float):
+                position_message.latitude_i = int(lat * 1e7)
+            elif isinstance(lat, int):
+                position_message.latitude_i = lat
 
-        if isinstance(lon, float) and lon != 0.0:
-            position_message.longitude_i = int(lon * 1e7)
-        elif isinstance(lon, int) and lon != 0:
-            position_message.longitude_i = lon
+        if lon is not None:
+            if isinstance(lon, float):
+                position_message.longitude_i = int(lon * 1e7)
+            elif isinstance(lon, int):
+                position_message.longitude_i = lon
 
-        if alt != 0:
+        if alt is not None:
             position_message.altitude = alt
 
         admin_message = admin_pb2.AdminMessage()
         admin_message.set_fixed_position.CopyFrom(position_message)
-        return self._node._send_admin(
-            admin_message,
-            onResponse=self._select_remote_ack_callback(),
-        )
+        return self._send_position_time_command(admin_message)
 
     def remove_fixed_position(self) -> mesh_pb2.MeshPacket | None:
         """Send remove_fixed_position admin command."""
@@ -408,10 +427,7 @@ class _NodePositionTimeCommandRuntime:
         admin_message = admin_pb2.AdminMessage()
         admin_message.remove_fixed_position = True
         logger.info("Telling node to remove fixed position")
-        return self._node._send_admin(
-            admin_message,
-            onResponse=self._select_remote_ack_callback(),
-        )
+        return self._send_position_time_command(admin_message)
 
     def set_time(self, *, time_sec: int = 0) -> mesh_pb2.MeshPacket | None:
         """Send set_time_only admin command with current-time fallback."""
@@ -421,7 +437,4 @@ class _NodePositionTimeCommandRuntime:
         admin_message = admin_pb2.AdminMessage()
         admin_message.set_time_only = time_sec
         logger.info("Setting node time to %s", time_sec)
-        return self._node._send_admin(
-            admin_message,
-            onResponse=self._select_remote_ack_callback(),
-        )
+        return self._send_position_time_command(admin_message)

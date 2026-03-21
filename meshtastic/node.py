@@ -451,12 +451,13 @@ class Node:  # pylint: disable=too-many-instance-attributes
         self._channel_export_runtime.turn_off_encryption_on_primary_channel()
 
     def waitForConfig(self, attribute: str = "channels") -> bool:
-        """Wait until a given attribute on the node's localConfig is populated or the timeout elapses.
+        """Wait until a node config/channel attribute is populated or timeout elapses.
 
         Parameters
         ----------
         attribute : str
-            Name of the attribute on `localConfig` to wait for (default: "channels").
+            Attribute to wait for. ``"channels"`` waits on ``self.channels`` and
+            other values wait on ``self.localConfig.<attribute>``.
 
         Returns
         -------
@@ -1270,18 +1271,20 @@ class Node:  # pylint: disable=too-many-instance-attributes
         return self._admin_command_runtime.reset_node_db()
 
     def setFixedPosition(
-        self, lat: int | float, lon: int | float, alt: int
+        self, lat: int | float | None, lon: int | float | None, alt: int | None
     ) -> mesh_pb2.MeshPacket | None:
         """Set the node's fixed position and enable the fixed-position setting on the device.
 
         Parameters
         ----------
-        lat : int | float
+        lat : int | float | None
             Latitude specified either as an integer in 1e-7 degrees units or as a float in decimal degrees.
-        lon : int | float
+            Pass ``None`` to leave latitude unset.
+        lon : int | float | None
             Longitude specified either as an integer in 1e-7 degrees units or as a float in decimal degrees.
-        alt : int
-            Altitude in meters (0 leaves altitude unset).
+            Pass ``None`` to leave longitude unset.
+        alt : int | None
+            Altitude in meters. Pass ``None`` to leave altitude unset.
 
         Returns
         -------

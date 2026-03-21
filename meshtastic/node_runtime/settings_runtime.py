@@ -419,6 +419,28 @@ class _NodeAdminCommandRuntime:
             use_remote_ack_callback=True,
         )
 
+    @staticmethod
+    def _resolve_ota_hash(
+        *,
+        ota_file_hash: bytes | None,
+        ota_hash: bytes | None,
+        legacy_hash: bytes | None,
+    ) -> bytes:
+        """Resolve one OTA hash input while preserving legacy validation behavior."""
+        hash_values = {
+            value
+            for value in (ota_file_hash, ota_hash, legacy_hash)
+            if value is not None
+        }
+        if not hash_values:
+            raise TypeError("startOTA() missing required argument: 'ota_file_hash'")
+        if len(hash_values) > 1:
+            raise ValueError("Conflicting OTA hash arguments provided")
+        resolved_hash = hash_values.pop()
+        if not isinstance(resolved_hash, bytes):
+            raise TypeError("ota_file_hash must be bytes")
+        return resolved_hash
+
     def start_ota(
         self,
         mode: admin_pb2.OTAMode.ValueType | None = None,
@@ -449,18 +471,11 @@ class _NodeAdminCommandRuntime:
         if resolved_mode is None:
             raise TypeError("startOTA() missing required argument: 'mode'")
 
-        hash_values = {
-            value
-            for value in (ota_file_hash, ota_hash, legacy_hash)
-            if value is not None
-        }
-        if not hash_values:
-            raise TypeError("startOTA() missing required argument: 'ota_file_hash'")
-        if len(hash_values) > 1:
-            raise ValueError("Conflicting OTA hash arguments provided")
-        resolved_hash = hash_values.pop()
-        if not isinstance(resolved_hash, bytes):
-            raise TypeError("ota_file_hash must be bytes")
+        resolved_hash = self._resolve_ota_hash(
+            ota_file_hash=ota_file_hash,
+            ota_hash=ota_hash,
+            legacy_hash=legacy_hash,
+        )
 
         message = admin_pb2.AdminMessage()
         message.ota_request.reboot_ota_mode = resolved_mode

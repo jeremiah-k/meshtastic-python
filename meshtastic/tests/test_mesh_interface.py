@@ -371,10 +371,18 @@ def test_handlePacketFromRadio_with_a_portnum(caplog: pytest.LogCaptureFixture) 
         meshPacket.decoded.payload = b""
         meshPacket.decoded.portnum = portnums_pb2.PortNum.TEXT_MESSAGE_APP
         with caplog.at_level(logging.WARNING):
-            iface._handle_packet_from_radio(meshPacket, hack=True)
-    # When nodesByNum is empty, _node_num_to_id returns None (no exception)
-    # and fromId is set to None. Check that the packet was processed.
-    assert True  # Test passes if no exception was raised
+            intents = iface._handle_packet_from_radio(
+                meshPacket,
+                hack=True,
+                emit_publication=False,
+            )
+    assert isinstance(intents, list)
+    assert len(intents) == 1
+    packet_payload = intents[0].payload["packet"]
+    assert packet_payload.get("fromId") is None
+    assert packet_payload["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
+        portnums_pb2.PortNum.TEXT_MESSAGE_APP
+    )
 
 
 @pytest.mark.unit

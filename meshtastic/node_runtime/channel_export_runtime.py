@@ -4,7 +4,7 @@ import base64
 import logging
 from typing import TYPE_CHECKING, Any
 
-from meshtastic.protobuf import apponly_pb2, channel_pb2
+from meshtastic.protobuf import apponly_pb2, channel_pb2, localonly_pb2
 from meshtastic.util import fromPSK, generate_channel_hash
 
 if TYPE_CHECKING:
@@ -29,6 +29,12 @@ class _NodeChannelExportRuntime:
                 snapshot.append(copied_channel)
             return snapshot
 
+    def _snapshot_local_config(self) -> localonly_pb2.LocalConfig:
+        """Return detached localConfig snapshot for consistent field checks/copies."""
+        config_snapshot = localonly_pb2.LocalConfig()
+        config_snapshot.CopyFrom(self._node.localConfig)
+        return config_snapshot
+
     def get_url(self, *, include_all: bool = True) -> str:
         """Build channel URL export with preserved includeAll and LoRa semantics."""
         channel_set = apponly_pb2.ChannelSet()
@@ -40,14 +46,16 @@ class _NodeChannelExportRuntime:
                 ):
                     channel_set.settings.append(channel.settings)
 
-        if not self._node.localConfig.HasField("lora"):
+        local_config_snapshot = self._snapshot_local_config()
+        if not local_config_snapshot.HasField("lora"):
             self._node.requestConfig(
-                self._node.localConfig.DESCRIPTOR.fields_by_name["lora"]
+                local_config_snapshot.DESCRIPTOR.fields_by_name["lora"]
             )
-        channel_set.lora_config.CopyFrom(self._node.localConfig.lora)
+            local_config_snapshot = self._snapshot_local_config()
+        channel_set.lora_config.CopyFrom(local_config_snapshot.lora)
         serialized_channel_set = channel_set.SerializeToString()
         encoded = base64.urlsafe_b64encode(serialized_channel_set).decode("ascii")
-        encoded = encoded.replace("=", "").replace("+", "-").replace("/", "_")
+        encoded = encoded.rstrip("=")
         return f"https://meshtastic.org/e/#{encoded}"
 
     def get_channels_with_hash(self) -> list[dict[str, Any]]:

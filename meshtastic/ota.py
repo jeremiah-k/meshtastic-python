@@ -38,11 +38,11 @@ class _SHA256Digest(Protocol):
 
     def digest(self) -> bytes:
         """Return raw digest bytes."""
-        ...  # pylint: disable=unnecessary-ellipsis
+        ...
 
     def hexdigest(self) -> str:
         """Return digest as hexadecimal string."""
-        ...  # pylint: disable=unnecessary-ellipsis
+        ...
 
 
 def _file_sha256(filename: str) -> _SHA256Digest:

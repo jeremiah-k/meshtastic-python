@@ -18,7 +18,14 @@ class _NodeChannelLookupRuntime:
         self._node = node
 
     def get_channel_by_index(self, channel_index: int) -> channel_pb2.Channel | None:
-        """Return live channel by index when available, preserving compatibility."""
+        """Return live channel by index when available, preserving compatibility.
+
+        Notes
+        -----
+        Returned channels are live references and may be mutated by other threads
+        after the lock is released. Use ``get_channel_copy_by_index`` when a
+        stable read-only snapshot is required.
+        """
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if channels and 0 <= channel_index < len(channels):
@@ -38,7 +45,14 @@ class _NodeChannelLookupRuntime:
             return None
 
     def get_channel_by_name(self, name: str) -> channel_pb2.Channel | None:
-        """Return live channel whose settings.name exactly matches ``name``."""
+        """Return live channel whose settings.name exactly matches ``name``.
+
+        Notes
+        -----
+        Returned channels are live references and may be mutated by other threads
+        after the lock is released. Use ``get_channel_copy_by_name`` when a
+        stable read-only snapshot is required.
+        """
         with self._node._channels_lock:  # noqa: SLF001
             for channel in self._node.channels or []:
                 if channel.settings and channel.settings.name == name:
@@ -56,7 +70,14 @@ class _NodeChannelLookupRuntime:
             return None
 
     def get_disabled_channel(self) -> channel_pb2.Channel | None:
-        """Return first live disabled channel, if present."""
+        """Return first live disabled channel, if present.
+
+        Notes
+        -----
+        Returned channels are live references and may be mutated by other threads
+        after the lock is released. Use ``get_disabled_channel_copy`` when a
+        stable read-only snapshot is required.
+        """
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if channels is None:
