@@ -395,7 +395,11 @@ def test_handlePacketFromRadio_no_portnum(caplog: pytest.LogCaptureFixture) -> N
         meshPacket = mesh_pb2.MeshPacket()
         meshPacket.decoded.payload = b""
         with caplog.at_level(logging.WARNING):
-            iface._handle_packet_from_radio(meshPacket, hack=True)
+            iface._handle_packet_from_radio(
+                meshPacket,
+                hack=True,
+                emit_publication=False,
+            )
     # When portnum is not set, it defaults to UNKNOWN_APP and a warning is logged
     assert re.search(r"portnum was not in decoded", caplog.text, re.MULTILINE)
 
@@ -3635,12 +3639,14 @@ def test_send_to_radio_requeues_packet_when_send_impl_raises(
         pops = iter([(123, packet), None])
         original_pop = iface._queue_pop_for_send
         monkeypatch.setattr(iface, "_queue_pop_for_send", lambda: next(pops))
-        with pytest.raises(_SendImplFailure, match="send failed"):
-            iface._send_to_radio(incoming)
-        monkeypatch.setattr(iface, "_queue_pop_for_send", original_pop)
-        assert 123 in iface.queue
-        # Keep context-manager shutdown path from triggering the intentional send failure.
-        monkeypatch.setattr(iface, "_send_to_radio_impl", lambda _msg: None)
+        try:
+            with pytest.raises(_SendImplFailure, match="send failed"):
+                iface._send_to_radio(incoming)
+            assert 123 in iface.queue
+        finally:
+            monkeypatch.setattr(iface, "_queue_pop_for_send", original_pop)
+            # Keep context-manager shutdown path from triggering the intentional send failure.
+            monkeypatch.setattr(iface, "_send_to_radio_impl", lambda _msg: None)
 
 
 @pytest.mark.unit

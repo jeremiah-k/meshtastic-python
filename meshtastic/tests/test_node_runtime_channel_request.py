@@ -11,6 +11,7 @@ from meshtastic.node_runtime.channel_normalization_runtime import (
     _NodeChannelNormalizationRuntime,
 )
 from meshtastic.node_runtime.channel_request_runtime import _NodeChannelRequestRuntime
+from meshtastic.node_runtime.shared import MAX_CHANNELS
 from meshtastic.protobuf import admin_pb2, channel_pb2, localonly_pb2, mesh_pb2
 
 
@@ -113,8 +114,7 @@ def test_set_channels_with_valid_channels_copies_and_normalizes(
 
     # Verify channels were copied (not the same objects)
     assert mock_node.channels is not None
-    # fill_channels_locked pads to MAX_CHANNELS (8)
-    assert len(mock_node.channels) == 8
+    assert len(mock_node.channels) == MAX_CHANNELS
     # Verify they are copies, not the same objects
     assert mock_node.channels[0] is not source_channel1
     assert mock_node.channels[1] is not source_channel2
@@ -124,7 +124,7 @@ def test_set_channels_with_valid_channels_copies_and_normalizes(
     assert mock_node.channels[1].index == 1
     assert mock_node.channels[1].role == channel_pb2.Channel.Role.SECONDARY
     # Verify remaining channels are DISABLED (filled by fill_channels_locked)
-    for i in range(2, 8):
+    for i in range(2, MAX_CHANNELS):
         assert mock_node.channels[i].role == channel_pb2.Channel.Role.DISABLED
 
 
@@ -222,7 +222,7 @@ def test_request_channel_sends_admin_message_with_correct_channel_num(
     channel_request_runtime: _NodeChannelRequestRuntime,
     mock_node: MagicMock,
 ) -> None:
-    """request_channel should send admin message with channel_num+1 as get_channel_request."""
+    """requestChannel should send admin message with channel_num+1 as get_channel_request."""
     # Set up node to be the same as localNode (local request)
     mock_iface = MagicMock()
     mock_iface.localNode = mock_node
@@ -230,7 +230,7 @@ def test_request_channel_sends_admin_message_with_correct_channel_num(
 
     mock_node._send_admin.return_value = mesh_pb2.MeshPacket()  # noqa: SLF001
 
-    result = channel_request_runtime.request_channel(channel_num=3)
+    result = channel_request_runtime.requestChannel(channel_num=3)
 
     # Verify _send_admin was called with correct message
     mock_node._send_admin.assert_called_once()  # noqa: SLF001
@@ -254,7 +254,7 @@ def test_request_channel_for_remote_node_logs_info(
     mock_node: MagicMock,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """request_channel for remote node should log info message."""
+    """requestChannel for remote node should log info message."""
     # Set up node to be different from localNode (remote request)
     mock_iface = MagicMock()
     mock_local_node = MagicMock()
@@ -263,7 +263,7 @@ def test_request_channel_for_remote_node_logs_info(
     mock_node.iface = mock_iface
 
     with caplog.at_level(logging.INFO):
-        channel_request_runtime.request_channel(channel_num=5)
+        channel_request_runtime.requestChannel(channel_num=5)
 
     # Verify info log was emitted for remote node
     assert "Requesting channel 5 info from remote node" in caplog.text
@@ -278,14 +278,14 @@ def test_request_channel_for_local_node_logs_debug(
     mock_node: MagicMock,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """request_channel for local node should log debug message."""
+    """requestChannel for local node should log debug message."""
     # Set up node to be the same as localNode (local request)
     mock_iface = MagicMock()
     mock_iface.localNode = mock_node
     mock_node.iface = mock_iface
 
     with caplog.at_level(logging.DEBUG):
-        channel_request_runtime.request_channel(channel_num=2)
+        channel_request_runtime.requestChannel(channel_num=2)
 
     # Verify debug log was emitted for local node
     assert "Requesting channel 2" in caplog.text

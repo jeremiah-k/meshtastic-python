@@ -1034,6 +1034,23 @@ class TestNodePositionTimeCommandRuntime:
         assert position.longitude_i == 0
 
     @pytest.mark.unit
+    def test_set_fixed_position_with_zero_lat_lon_omits_coordinates(
+        self,
+        position_time_runtime: _NodePositionTimeCommandRuntime,
+        mock_local_node: MagicMock,
+    ) -> None:
+        """set_fixed_position should treat zero latitude/longitude as unset sentinels."""
+        position_time_runtime.set_fixed_position(lat=0.0, lon=0, alt=10)
+
+        call_args = mock_local_node._send_admin.call_args
+        admin_message = call_args[0][0]
+
+        position = admin_message.set_fixed_position
+        assert position.latitude_i == 0
+        assert position.longitude_i == 0
+        assert position.altitude == 10
+
+    @pytest.mark.unit
     def test_set_fixed_position_with_altitude_sets_altitude_field(
         self,
         position_time_runtime: _NodePositionTimeCommandRuntime,

@@ -32,6 +32,28 @@ class _LocalConfigFieldProbe:
             return False
 
 
+class _ChannelRequestCompletionProbe:
+    """Expose channel-request completion as a boolean wait target."""
+
+    def __init__(self, *, node: "Node", channel_response_runtime: object) -> None:
+        self._node = node
+        self._channel_response_runtime = channel_response_runtime
+
+    @property
+    def is_set(self) -> bool:
+        """Return True once channels are loaded or the request has terminally failed."""
+        if self._node.channels is not None:
+            return True
+        has_channel_request_failed = getattr(
+            self._channel_response_runtime,
+            "has_channel_request_failed",
+            None,
+        )
+        return bool(
+            callable(has_channel_request_failed) and has_channel_request_failed()
+        )
+
+
 class _NodeChannelRequestRuntime:
     """Owns channel/config bootstrap, waiting, and request-channel send path."""
 
@@ -43,7 +65,7 @@ class _NodeChannelRequestRuntime:
     ) -> None:
         self._node = node
         self._normalization_runtime = normalization_runtime
-        self._request_channel_warned = False
+        self._request_channel_warned: bool = False
 
     def set_channels(self, channels: Sequence[channel_pb2.Channel]) -> None:
         """Set channels from sequence with copy + normalization semantics."""
@@ -68,6 +90,26 @@ class _NodeChannelRequestRuntime:
     def wait_for_config(self, *, attribute: str = "channels") -> bool:
         """Wait for node attribute using historical timeout semantics."""
         if attribute == "channels":
+            channel_response_runtime = getattr(
+                self._node,
+                "_channel_response_runtime",
+                None,
+            )
+            has_channel_request_failed = (
+                getattr(channel_response_runtime, "has_channel_request_failed", None)
+                if channel_response_runtime is not None
+                else None
+            )
+            if callable(has_channel_request_failed):
+                probe = _ChannelRequestCompletionProbe(
+                    node=self._node,
+                    channel_response_runtime=channel_response_runtime,
+                )
+                completed = self._node._timeout.waitForSet(  # noqa: SLF001
+                    probe,
+                    attrs=("is_set",),
+                )
+                return bool(completed and self._node.channels is not None)
             return self._node._timeout.waitForSet(  # noqa: SLF001
                 self._node,
                 attrs=("channels",),
@@ -88,6 +130,19 @@ class _NodeChannelRequestRuntime:
 
     def requestChannel(self, channel_num: int) -> mesh_pb2.MeshPacket | None:
         """Send one get-channel request preserving progress logging behavior."""
+        channel_response_runtime = getattr(
+            self._node,
+            "_channel_response_runtime",
+            None,
+        )
+        mark_channel_request_sent = (
+            getattr(channel_response_runtime, "mark_channel_request_sent", None)
+            if channel_response_runtime is not None
+            else None
+        )
+        if callable(mark_channel_request_sent):
+            mark_channel_request_sent(channel_num)
+
         message = admin_pb2.AdminMessage()
         message.get_channel_request = channel_num + 1
 
@@ -99,11 +154,24 @@ class _NodeChannelRequestRuntime:
         else:
             logger.debug("Requesting channel %s", channel_num)
 
-        return self._node._send_admin(
+        request = self._node._send_admin(
             message,
             wantResponse=True,
             onResponse=self._node.onResponseRequestChannel,
         )
+        if request is None:
+            mark_channel_request_send_failed = (
+                getattr(
+                    channel_response_runtime,
+                    "mark_channel_request_send_failed",
+                    None,
+                )
+                if channel_response_runtime is not None
+                else None
+            )
+            if callable(mark_channel_request_send_failed):
+                mark_channel_request_send_failed(channel_num)
+        return request
 
     def request_channel(self, channel_num: int) -> mesh_pb2.MeshPacket | None:
         """COMPAT_DEPRECATE: Use requestChannel instead."""

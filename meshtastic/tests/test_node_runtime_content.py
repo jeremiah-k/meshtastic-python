@@ -6,7 +6,6 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from pytest import LogCaptureFixture
 
 from ..node_runtime.content_runtime import (
     _NodeAdminContentRuntime,
@@ -64,7 +63,7 @@ class TestNodeContentCacheStore:
 
     @pytest.mark.unit
     def test_get_cached_ringtone_with_cache_returns_ringtone(
-        self, mock_node_for_cache: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_cache: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """get_cached_ringtone with cached value should return the ringtone."""
         mock_node_for_cache.ringtone = "RTTTL: melody:d=4,o=5,b=100:c"
@@ -91,7 +90,7 @@ class TestNodeContentCacheStore:
 
     @pytest.mark.unit
     def test_clear_ringtone_fragment_clears_fragment(
-        self, mock_node_for_cache: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_cache: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """clear_ringtone_fragment should clear the fragment cache."""
         mock_node_for_cache.ringtonePart = "some_fragment"
@@ -105,7 +104,7 @@ class TestNodeContentCacheStore:
 
     @pytest.mark.unit
     def test_store_ringtone_fragment_stores_fragment(
-        self, mock_node_for_cache: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_cache: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """store_ringtone_fragment should store the ringtone fragment."""
         cache_store = _NodeContentCacheStore(mock_node_for_cache)
@@ -120,7 +119,7 @@ class TestNodeContentCacheStore:
 
     @pytest.mark.unit
     def test_resolve_ringtone_after_read_from_full_cache(
-        self, mock_node_for_cache: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_cache: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """resolve_ringtone_after_read should return cached ringtone when available."""
         mock_node_for_cache.ringtone = "RTTTL: cached:d=4,o=5,b=100:c"
@@ -134,7 +133,7 @@ class TestNodeContentCacheStore:
 
     @pytest.mark.unit
     def test_resolve_ringtone_after_read_from_fragment(
-        self, mock_node_for_cache: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_cache: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """resolve_ringtone_after_read should use fragment when full cache is None."""
         mock_node_for_cache.ringtone = None
@@ -163,7 +162,7 @@ class TestNodeContentCacheStore:
 
     @pytest.mark.unit
     def test_invalidate_ringtone_cache_clears_both(
-        self, mock_node_for_cache: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_cache: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """invalidate_ringtone_cache should clear both full and fragment cache."""
         mock_node_for_cache.ringtone = "full_ringtone"
@@ -179,7 +178,7 @@ class TestNodeContentCacheStore:
 
     @pytest.mark.unit
     def test_get_cached_canned_message_with_cache_returns_message(
-        self, mock_node_for_cache: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_cache: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """get_cached_canned_message with cached value should return the message."""
         mock_node_for_cache.cannedPluginMessage = "Hello\nWorld\nTest"
@@ -206,7 +205,7 @@ class TestNodeContentCacheStore:
 
     @pytest.mark.unit
     def test_clear_canned_message_fragment_clears_fragment(
-        self, mock_node_for_cache: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_cache: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """clear_canned_message_fragment should clear the fragment cache."""
         mock_node_for_cache.cannedPluginMessageMessages = "some_fragment"
@@ -220,7 +219,7 @@ class TestNodeContentCacheStore:
 
     @pytest.mark.unit
     def test_store_canned_message_fragment_stores_message(
-        self, mock_node_for_cache: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_cache: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """store_canned_message_fragment should store the canned message fragment."""
         cache_store = _NodeContentCacheStore(mock_node_for_cache)
@@ -235,7 +234,7 @@ class TestNodeContentCacheStore:
 
     @pytest.mark.unit
     def test_resolve_canned_message_after_read_from_full_cache(
-        self, mock_node_for_cache: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_cache: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """resolve_canned_message_after_read should return cached message when available."""
         mock_node_for_cache.cannedPluginMessage = "Cached\nMessage"
@@ -249,7 +248,7 @@ class TestNodeContentCacheStore:
 
     @pytest.mark.unit
     def test_resolve_canned_message_after_read_from_fragment(
-        self, mock_node_for_cache: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_cache: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """resolve_canned_message_after_read should use fragment when full cache is None."""
         mock_node_for_cache.cannedPluginMessage = None
@@ -278,7 +277,7 @@ class TestNodeContentCacheStore:
 
     @pytest.mark.unit
     def test_invalidate_canned_message_cache_clears_both(
-        self, mock_node_for_cache: MagicMock, caplog: LogCaptureFixture
+        self, mock_node_for_cache: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """invalidate_canned_message_cache should clear both full and fragment cache."""
         mock_node_for_cache.cannedPluginMessage = "full_message"
@@ -306,7 +305,7 @@ class TestNodeContentResponseRuntime:
         self,
         mock_node_for_cache: MagicMock,
         cache_store: _NodeContentCacheStore,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """_has_routing_error with non-NONE error should return True and log error."""
         runtime = _NodeContentResponseRuntime(
@@ -367,7 +366,7 @@ class TestNodeContentResponseRuntime:
         self,
         mock_node_for_cache: MagicMock,
         cache_store: _NodeContentCacheStore,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """handle_ringtone_response with valid response should store ringtone fragment."""
         runtime = _NodeContentResponseRuntime(
@@ -395,7 +394,7 @@ class TestNodeContentResponseRuntime:
         self,
         mock_node_for_cache: MagicMock,
         cache_store: _NodeContentCacheStore,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """handle_ringtone_response with routing error should return True."""
         runtime = _NodeContentResponseRuntime(
@@ -419,7 +418,7 @@ class TestNodeContentResponseRuntime:
         self,
         mock_node_for_cache: MagicMock,
         cache_store: _NodeContentCacheStore,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """handle_ringtone_response with missing decoded should return False."""
         runtime = _NodeContentResponseRuntime(
@@ -439,9 +438,9 @@ class TestNodeContentResponseRuntime:
         self,
         mock_node_for_cache: MagicMock,
         cache_store: _NodeContentCacheStore,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """handle_ringtone_response with missing admin should return False."""
+        """handle_ringtone_response with missing admin should return terminal True."""
         runtime = _NodeContentResponseRuntime(
             mock_node_for_cache, cache_store=cache_store
         )
@@ -451,7 +450,7 @@ class TestNodeContentResponseRuntime:
         with caplog.at_level(logging.WARNING):
             result = runtime.handle_ringtone_response(packet)
 
-        assert result is False
+        assert result is True
         assert "Unexpected ringtone response without admin payload" in caplog.text
 
     @pytest.mark.unit
@@ -459,9 +458,9 @@ class TestNodeContentResponseRuntime:
         self,
         mock_node_for_cache: MagicMock,
         cache_store: _NodeContentCacheStore,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """handle_ringtone_response with missing raw should return False."""
+        """handle_ringtone_response with missing raw should return terminal True."""
         runtime = _NodeContentResponseRuntime(
             mock_node_for_cache, cache_store=cache_store
         )
@@ -471,7 +470,7 @@ class TestNodeContentResponseRuntime:
         with caplog.at_level(logging.WARNING):
             result = runtime.handle_ringtone_response(packet)
 
-        assert result is False
+        assert result is True
         assert "Unexpected ringtone response without raw ringtone data" in caplog.text
 
     @pytest.mark.unit
@@ -479,7 +478,7 @@ class TestNodeContentResponseRuntime:
         self,
         mock_node_for_cache: MagicMock,
         cache_store: _NodeContentCacheStore,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """handle_canned_message_response with valid response should store message fragment."""
         runtime = _NodeContentResponseRuntime(
@@ -507,7 +506,7 @@ class TestNodeContentResponseRuntime:
         self,
         mock_node_for_cache: MagicMock,
         cache_store: _NodeContentCacheStore,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """handle_canned_message_response with routing error should return True."""
         runtime = _NodeContentResponseRuntime(
@@ -531,7 +530,7 @@ class TestNodeContentResponseRuntime:
         self,
         mock_node_for_cache: MagicMock,
         cache_store: _NodeContentCacheStore,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """handle_canned_message_response with missing decoded should return False."""
         runtime = _NodeContentResponseRuntime(
@@ -553,9 +552,9 @@ class TestNodeContentResponseRuntime:
         self,
         mock_node_for_cache: MagicMock,
         cache_store: _NodeContentCacheStore,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """handle_canned_message_response with missing admin should return False."""
+        """handle_canned_message_response with missing admin should return terminal True."""
         runtime = _NodeContentResponseRuntime(
             mock_node_for_cache, cache_store=cache_store
         )
@@ -565,7 +564,7 @@ class TestNodeContentResponseRuntime:
         with caplog.at_level(logging.WARNING):
             result = runtime.handle_canned_message_response(packet)
 
-        assert result is False
+        assert result is True
         assert "Unexpected canned-message response without admin payload" in caplog.text
 
     @pytest.mark.unit
@@ -573,9 +572,9 @@ class TestNodeContentResponseRuntime:
         self,
         mock_node_for_cache: MagicMock,
         cache_store: _NodeContentCacheStore,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """handle_canned_message_response with missing raw should return False."""
+        """handle_canned_message_response with missing raw should return terminal True."""
         runtime = _NodeContentResponseRuntime(
             mock_node_for_cache, cache_store=cache_store
         )
@@ -585,7 +584,7 @@ class TestNodeContentResponseRuntime:
         with caplog.at_level(logging.WARNING):
             result = runtime.handle_canned_message_response(packet)
 
-        assert result is False
+        assert result is True
         assert (
             "Unexpected canned-message response without raw message data" in caplog.text
         )
@@ -631,7 +630,7 @@ class TestNodeAdminContentRuntime:
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """_module_available_or_warn should return False and log when module is unavailable."""
         mock_node_for_admin.module_available = MagicMock(return_value=False)
@@ -674,7 +673,7 @@ class TestNodeAdminContentRuntime:
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """read_ringtone should return None when module is unavailable."""
         mock_node_for_admin.module_available = MagicMock(return_value=False)
@@ -691,12 +690,59 @@ class TestNodeAdminContentRuntime:
         assert "External Notification module not present" in caplog.text
 
     @pytest.mark.unit
+    def test_read_ringtone_ignores_late_callback_after_timeout(
+        self,
+        mock_node_for_admin: MagicMock,
+        cache_store: _NodeContentCacheStore,
+        response_runtime: _NodeContentResponseRuntime,
+    ) -> None:
+        """Late callbacks from timed-out reads should not contaminate subsequent reads."""
+        callback_by_call: dict[int, Any] = {}
+        send_call_count = {"count": 0}
+
+        def send_admin_side_effect(
+            _message: admin_pb2.AdminMessage, **kwargs: Any
+        ) -> object:
+            send_call_count["count"] += 1
+            callback = kwargs["onResponse"]
+            callback_by_call[send_call_count["count"]] = callback
+            if send_call_count["count"] == 2:
+                callback(
+                    {
+                        "decoded": {
+                            "routing": {"errorReason": "NO_RESPONSE"},
+                        }
+                    }
+                )
+            return MagicMock()
+
+        mock_node_for_admin._timeout.expireTimeout = 0.0
+        mock_node_for_admin._send_admin.side_effect = send_admin_side_effect
+        runtime = _NodeAdminContentRuntime(
+            mock_node_for_admin,
+            cache_store=cache_store,
+            response_runtime=response_runtime,
+        )
+
+        first_result = runtime.read_ringtone()
+        assert first_result is None
+
+        late_raw = admin_pb2.AdminMessage()
+        late_raw.get_ringtone_response = "RTTTL: stale:d=4,o=5,b=100:c"
+        callback_by_call[1]({"decoded": {"admin": {"raw": late_raw}}})
+        assert mock_node_for_admin.ringtonePart is None
+
+        second_result = runtime.read_ringtone()
+        assert second_result is None
+        assert mock_node_for_admin.ringtonePart is None
+
+    @pytest.mark.unit
     def test_write_ringtone_valid_ringtone_calls_send_admin(
         self,
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """write_ringtone with valid ringtone should call _send_admin."""
         runtime = _NodeAdminContentRuntime(
@@ -742,7 +788,7 @@ class TestNodeAdminContentRuntime:
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """write_ringtone should return None when module is unavailable."""
         mock_node_for_admin.module_available = MagicMock(return_value=False)
@@ -827,7 +873,7 @@ class TestNodeAdminContentRuntime:
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """read_canned_message should return None when module is unavailable."""
         mock_node_for_admin.module_available = MagicMock(return_value=False)
@@ -849,7 +895,7 @@ class TestNodeAdminContentRuntime:
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """write_canned_message with valid message should call _send_admin."""
         runtime = _NodeAdminContentRuntime(
@@ -895,7 +941,7 @@ class TestNodeAdminContentRuntime:
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """write_canned_message should return None when module is unavailable."""
         mock_node_for_admin.module_available = MagicMock(return_value=False)
@@ -998,7 +1044,7 @@ class TestNodeAdminContentRuntime:
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """_send_content_read_request should return None when _send_admin returns None."""
         mock_node_for_admin._send_admin = MagicMock(return_value=None)
@@ -1010,6 +1056,9 @@ class TestNodeAdminContentRuntime:
 
         with caplog.at_level(logging.DEBUG):
             result = runtime._send_content_read_request(
+                begin_read_generation=lambda: 1,
+                is_read_generation_active=lambda _generation: True,
+                retire_read_generation=lambda _generation: None,
                 build_request=lambda msg: None,
                 handle_response=lambda pkt: True,
                 skipped_send_debug_message="Send was not started",
@@ -1026,7 +1075,7 @@ class TestNodeAdminContentRuntime:
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
-        caplog: LogCaptureFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """_send_content_read_request should return None when waiting times out."""
         mock_node_for_admin._timeout.expireTimeout = 0.01  # Very short timeout
@@ -1038,6 +1087,9 @@ class TestNodeAdminContentRuntime:
 
         with caplog.at_level(logging.WARNING):
             result = runtime._send_content_read_request(
+                begin_read_generation=lambda: 1,
+                is_read_generation_active=lambda _generation: True,
+                retire_read_generation=lambda _generation: None,
                 build_request=lambda msg: None,
                 handle_response=lambda pkt: True,
                 skipped_send_debug_message="Send was not started",

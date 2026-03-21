@@ -102,6 +102,24 @@ def test_show_channels_with_channels(
 
 
 @pytest.mark.unit
+def test_show_channels_handles_unknown_role_values(
+    presentation_runtime: _NodeChannelPresentationRuntime,
+    mock_node: MagicMock,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """show_channels should not raise when a channel has an unknown enum role."""
+    channel = channel_pb2.Channel(index=0, role=999)
+    channel.settings.name = "mystery"
+    channel.settings.psk = b"\x01"
+    mock_node.channels = [channel]
+
+    presentation_runtime.show_channels()
+
+    out, _ = capsys.readouterr()
+    assert "UNKNOWN(999)" in out
+
+
+@pytest.mark.unit
 def test_show_channels_shows_complete_url_when_different_from_public(
     mock_node: MagicMock,
     capsys: pytest.CaptureFixture[str],

@@ -83,12 +83,15 @@ class TestNodeMetadataResponseRuntime:
                 "routing": {"errorReason": "NO_RESPONSE"},
             }
         }
+        original_expire_time = time.time() + 300
+        mock_node._timeout.expireTime = original_expire_time
 
         with caplog.at_level(logging.WARNING):
             runtime.handle_metadata_response(packet)
 
         assert "Metadata request failed, error reason: NO_RESPONSE" in caplog.text
         assert mock_node.iface._acknowledgment.receivedNak is True
+        assert mock_node._timeout.expireTime <= original_expire_time
         mock_node._timeout.reset.assert_not_called()
 
     @pytest.mark.unit
@@ -254,6 +257,7 @@ class TestNodeMetadataResponseRuntime:
         assert result is True
         assert "Error on response: NO_RESPONSE" in caplog.text
         assert mock_node.iface._acknowledgment.receivedNak is True
+        assert mock_node._timeout.expireTime <= time.time()
         mock_node._signal_metadata_stdout_event.assert_called_once()
 
     @pytest.mark.unit
@@ -428,11 +432,12 @@ class TestNodeChannelResponseRuntime:
         assert "malformed channel response without decoded payload" in caplog.text
 
     @pytest.mark.unit
-    def test_handle_channel_response_routing_error_expires_timeout(
+    def test_handle_channel_response_routing_error_retries_inflight_request(
         self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Handle channel response with routing error should expire timeout."""
+        """Handle channel response with routing error should retry in-flight request."""
         runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        runtime.mark_channel_request_sent(3)
         packet: dict[str, Any] = {
             "decoded": {
                 "portnum": portnums_pb2.PortNum.Name(portnums_pb2.PortNum.ROUTING_APP),
@@ -440,15 +445,13 @@ class TestNodeChannelResponseRuntime:
             }
         }
 
-        original_expire_time = time.time() + 300
-        mock_node_for_channel._timeout.expireTime = original_expire_time
-
         with caplog.at_level(logging.WARNING):
             runtime.handle_channel_response(packet)
 
         assert "Channel request failed, error reason: NO_RESPONSE" in caplog.text
-        # Verify timeout was expired (set to current time, which should be <= original)
-        assert mock_node_for_channel._timeout.expireTime <= original_expire_time
+        mock_node_for_channel._request_channel.assert_called_once_with(3)
+        mock_node_for_channel._timeout.reset.assert_called_once()
+        assert runtime.has_channel_request_failed() is False
 
     @pytest.mark.unit
     def test_handle_channel_response_routing_success_waits_for_admin_payload(
@@ -620,6 +623,7 @@ class TestNodeChannelResponseRuntime:
         assert result is True
         assert "missing routing" in caplog.text
         mock_node_for_channel._request_channel.assert_not_called()
+        assert runtime.has_channel_request_failed() is True
 
     @pytest.mark.unit
     def test_handle_routing_response_routing_success_waits_for_admin_payload(
@@ -642,3 +646,42 @@ class TestNodeChannelResponseRuntime:
             in caplog.text
         )
         mock_node_for_channel._request_channel.assert_not_called()
+
+    @pytest.mark.unit
+    def test_handle_routing_response_error_without_pending_index_marks_failure(
+        self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Routing errors without a pending index should set terminal channel-failure state."""
+        runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        decoded: dict[str, Any] = {
+            "portnum": portnums_pb2.PortNum.Name(portnums_pb2.PortNum.ROUTING_APP),
+            "routing": {"errorReason": "NO_RESPONSE"},
+        }
+
+        with caplog.at_level(logging.WARNING):
+            result = runtime._handle_routing_response(decoded)
+
+        assert result is True
+        assert "no pending index to retry" in caplog.text
+        assert runtime.has_channel_request_failed() is True
+        mock_node_for_channel._request_channel.assert_not_called()
+
+    @pytest.mark.unit
+    def test_handle_routing_response_retry_send_none_marks_failure(
+        self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Routing retry should mark failure if the retry send is skipped."""
+        runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        runtime.mark_channel_request_sent(4)
+        mock_node_for_channel._request_channel.return_value = None
+        decoded: dict[str, Any] = {
+            "portnum": portnums_pb2.PortNum.Name(portnums_pb2.PortNum.ROUTING_APP),
+            "routing": {"errorReason": "NO_RESPONSE"},
+        }
+
+        with caplog.at_level(logging.WARNING):
+            result = runtime._handle_routing_response(decoded)
+
+        assert result is True
+        assert "retry for index 4 was not started" in caplog.text.lower()
+        assert runtime.has_channel_request_failed() is True

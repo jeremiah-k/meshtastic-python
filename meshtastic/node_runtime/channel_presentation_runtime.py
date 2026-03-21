@@ -55,12 +55,18 @@ class _NodeChannelPresentationRuntime:
                 ],
             )
             for channel in channels_snapshot:
+                role_name = (
+                    channel_pb2.Channel.Role.Name(channel.role)
+                    if channel.role in channel_pb2.Channel.Role.values()
+                    else f"UNKNOWN({channel.role})"
+                )
+                if role_name == "DISABLED":
+                    continue
                 channel_string = messageToJson(channel.settings)
-                if channel_pb2.Channel.Role.Name(channel.role) != "DISABLED":
-                    print(
-                        f"  Index {channel.index}: {channel_pb2.Channel.Role.Name(channel.role)} "
-                        f"psk={pskToString(channel.settings.psk)} {channel_string}"
-                    )
+                print(
+                    f"  Index {channel.index}: {role_name} "
+                    f"psk={pskToString(channel.settings.psk)} {channel_string}"
+                )
         public_url = self._export_runtime.get_url(include_all=False)
         admin_url = self._export_runtime.get_url(include_all=True)
         print(f"\nPrimary channel URL: {public_url}")

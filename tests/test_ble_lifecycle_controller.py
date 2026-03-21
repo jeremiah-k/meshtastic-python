@@ -234,11 +234,10 @@ class TestBLELifecycleControllerHookResolution:
 
     def test_resolve_hook_with_callable_hook_returns_hook(self) -> None:
         """_resolve_hook should return the hook when it's a configured callable."""
-        # Create a mock that is NOT an unconfigured mock (has return_value set)
+        # Create a configured mock using public APIs.
         configured_hook = MagicMock(return_value=True)
-        configured_hook._mock_return_value = True  # Makes it "configured"
         configured_hook.side_effect = None
-        configured_hook.call_args_list = []
+        configured_hook.reset_mock()
 
         resolved_is_closing: list[bool] = []
 
@@ -419,9 +418,15 @@ class TestBLELifecycleControllerHookResolution:
             *_args: Any,
             **kwargs: Any,
         ) -> None:
+            is_closing_getter = kwargs.get("is_closing_getter")
+            reset_to_disconnected = kwargs.get("reset_to_disconnected")
             current_state_getter = kwargs.get("current_state_getter")
             transition_to_disconnected = kwargs.get("transition_to_disconnected")
             safe_cleanup = kwargs.get("safe_cleanup")
+            if callable(is_closing_getter):
+                captured["is_closing"] = is_closing_getter()
+            if callable(reset_to_disconnected):
+                captured["reset_to_disconnected"] = reset_to_disconnected()
             if callable(current_state_getter):
                 captured["current_state"] = current_state_getter()
             if callable(transition_to_disconnected):
@@ -447,18 +452,18 @@ class TestBLELifecycleControllerHookResolution:
             patch(
                 "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._state_manager_is_closing",
                 return_value=False,
-            ),
+            ) as state_manager_is_closing,
             patch(
                 "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._state_manager_reset_to_disconnected",
                 return_value=True,
-            ),
+            ) as state_manager_reset_to_disconnected,
             patch(
                 "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._state_manager_transition_to",
                 return_value=True,
             ) as state_manager_transition_to,
             patch(
                 "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._error_handler_safe_cleanup",
-                side_effect=lambda _iface, cleanup, _name: (cleanup(), True)[1],
+                side_effect=lambda _iface, cleanup, _name: (cleanup(), None)[1],
             ) as safe_cleanup_handler,
         ):
             mock_client = SimpleNamespace(address="test-addr")
@@ -469,6 +474,8 @@ class TestBLELifecycleControllerHookResolution:
             )
 
         state_manager_current_state.assert_called_once_with(mock_iface)
+        state_manager_is_closing.assert_called_once_with(mock_iface)
+        state_manager_reset_to_disconnected.assert_called_once_with(mock_iface)
         state_manager_transition_to.assert_called_once_with(
             mock_iface,
             ConnectionState.DISCONNECTED,
@@ -488,8 +495,17 @@ class TestBLELifecycleControllerHookResolution:
             *_args: Any,
             **kwargs: Any,
         ) -> None:
+            is_closing_getter = kwargs.get("is_closing_getter")
+            reset_to_disconnected = kwargs.get("reset_to_disconnected")
+            current_state_getter = kwargs.get("current_state_getter")
             transition_to_disconnected = kwargs.get("transition_to_disconnected")
             safe_cleanup = kwargs.get("safe_cleanup")
+            if callable(is_closing_getter):
+                captured["is_closing"] = is_closing_getter()
+            if callable(reset_to_disconnected):
+                captured["reset_to_disconnected"] = reset_to_disconnected()
+            if callable(current_state_getter):
+                captured["current_state"] = current_state_getter()
             if callable(transition_to_disconnected):
                 captured["transitioned"] = transition_to_disconnected()
             if callable(safe_cleanup):
@@ -508,23 +524,23 @@ class TestBLELifecycleControllerHookResolution:
         with (
             patch(
                 "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._state_manager_transition_to",
-                side_effect=lambda iface, state: state == ConnectionState.DISCONNECTED,
+                side_effect=lambda _iface, state: state == ConnectionState.DISCONNECTED,
             ) as state_manager_transition_to,
             patch(
                 "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._state_manager_is_closing",
                 return_value=False,
-            ),
+            ) as state_manager_is_closing,
             patch(
                 "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._state_manager_reset_to_disconnected",
                 return_value=True,
-            ),
+            ) as state_manager_reset_to_disconnected,
             patch(
                 "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._state_manager_current_state",
                 return_value=ConnectionState.CONNECTED,
-            ),
+            ) as state_manager_current_state,
             patch(
                 "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._error_handler_safe_cleanup",
-                side_effect=lambda _iface, cleanup, _name: (cleanup(), True)[1],
+                side_effect=lambda _iface, cleanup, _name: (cleanup(), None)[1],
             ) as safe_cleanup_handler,
         ):
             mock_client = SimpleNamespace(address="test-addr")
@@ -538,6 +554,9 @@ class TestBLELifecycleControllerHookResolution:
             mock_iface,
             ConnectionState.DISCONNECTED,
         )
+        state_manager_is_closing.assert_called_once_with(mock_iface)
+        state_manager_reset_to_disconnected.assert_called_once_with(mock_iface)
+        state_manager_current_state.assert_called_once_with(mock_iface)
         safe_cleanup_handler.assert_called_once()
         assert captured["transitioned"] is True
         assert captured["cleanup_called"] is True

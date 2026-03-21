@@ -1373,11 +1373,11 @@ class Node:  # pylint: disable=too-many-instance-attributes
     def onResponseRequestChannel(self, p: dict[str, Any]) -> None:
         """Process a response packet for a previously requested channel and update the Node's channel state.
 
-        If the packet is a routing message with an error, expire the request timeout and retry the
-        last requested channel. If the packet contains an admin get_channel_response, append that
-        channel to the node's partial channel list, reset the request timeout, and either continue
-        requesting the next channel or, when the final channel is received, replace the node's
-        channels with the collected channels and normalize them.
+        If the packet is a routing message with a retryable error, retry the in-flight channel
+        request index. If the packet contains an admin get_channel_response, append that channel to
+        the node's partial channel list, reset the request timeout, and either continue requesting
+        the next channel or, when the final channel is received, replace the node's channels with
+        the collected channels and normalize them.
 
         Parameters
         ----------
@@ -1422,7 +1422,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The AdminMessage packet sent to the interface, or `None` if sending was skipped (e.g., protocol disabled).
         """
-        return self._channel_request_runtime.request_channel(channelNum)
+        return self._channel_request_runtime.requestChannel(channelNum)
 
     # pylint: disable=R1710
     def _send_admin(

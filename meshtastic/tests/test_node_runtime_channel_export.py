@@ -1,12 +1,14 @@
 """Unit tests for the _NodeChannelExportRuntime class."""
 
+import base64
 import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from meshtastic.mesh_interface import MeshInterface
 from meshtastic.node_runtime.channel_export_runtime import _NodeChannelExportRuntime
-from meshtastic.protobuf import channel_pb2, localonly_pb2
+from meshtastic.protobuf import apponly_pb2, channel_pb2, localonly_pb2
 
 
 @pytest.fixture
@@ -223,6 +225,69 @@ def test_get_url_include_all_true(
 
 
 @pytest.mark.unit
+def test_get_url_raises_when_channels_missing(
+    export_runtime: _NodeChannelExportRuntime, mock_node: MagicMock
+) -> None:
+    """get_url should fail when local channel cache is unavailable."""
+    mock_node.channels = []
+
+    def raise_error(msg: str) -> None:
+        raise MeshInterface.MeshInterfaceError(msg)
+
+    mock_node._raise_interface_error.side_effect = raise_error
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match="Error: No channels have been read",
+    ):
+        export_runtime.get_url()
+
+
+@pytest.mark.unit
+def test_get_url_raises_when_primary_missing(
+    export_runtime: _NodeChannelExportRuntime, mock_node: MagicMock
+) -> None:
+    """get_url should fail when no PRIMARY channel is present."""
+    mock_node.channels = [_make_channel(1, channel_pb2.Channel.Role.SECONDARY)]
+    mock_node.localConfig.lora.hop_limit = 3
+    def raise_error(msg: str) -> None:
+        raise MeshInterface.MeshInterfaceError(msg)
+
+    mock_node._raise_interface_error.side_effect = raise_error
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match="Error: No primary channel found",
+    ):
+        export_runtime.get_url()
+
+
+@pytest.mark.unit
+def test_get_url_serializes_primary_first(
+    export_runtime: _NodeChannelExportRuntime, mock_node: MagicMock
+) -> None:
+    """get_url should serialize PRIMARY first regardless of cache ordering."""
+    secondary = _make_channel(
+        1, channel_pb2.Channel.Role.SECONDARY, name="secondary", psk=b"\x02"
+    )
+    primary = _make_channel(
+        0, channel_pb2.Channel.Role.PRIMARY, name="primary", psk=b"\x01"
+    )
+    mock_node.channels = [secondary, primary]
+    mock_node.localConfig.lora.hop_limit = 3
+
+    url = export_runtime.get_url(include_all=True)
+    encoded = url.split("#", maxsplit=1)[1]
+    encoded += "=" * (-len(encoded) % 4)
+    decoded = base64.urlsafe_b64decode(encoded.encode("ascii"))
+    channel_set = apponly_pb2.ChannelSet()
+    channel_set.ParseFromString(decoded)
+
+    assert channel_set.settings[0].name == "primary"
+    assert channel_set.settings[1].name == "secondary"
+
+
+@pytest.mark.unit
 def test_get_url_requests_config_when_lora_missing(
     export_runtime: _NodeChannelExportRuntime, mock_node: MagicMock
 ) -> None:
@@ -352,11 +417,14 @@ def test_turn_off_encryption_on_primary_channel_no_channels(
 ) -> None:
     """turn_off_encryption_on_primary_channel raises error when no channels available."""
     mock_node.channels = []
-    mock_node._raise_interface_error.side_effect = Exception(
+    mock_node._raise_interface_error.side_effect = MeshInterface.MeshInterfaceError(
         "Error: No channels have been read"
     )
 
-    with pytest.raises(Exception, match="Error: No channels have been read"):
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match="Error: No channels have been read",
+    ):
         export_runtime.turn_off_encryption_on_primary_channel()
 
     mock_node._raise_interface_error.assert_called_once_with(
@@ -372,11 +440,14 @@ def test_turn_off_encryption_on_primary_channel_no_primary(
     secondary = _make_channel(1, channel_pb2.Channel.Role.SECONDARY, name="secondary")
     disabled = _make_channel(2, channel_pb2.Channel.Role.DISABLED)
     mock_node.channels = [secondary, disabled]
-    mock_node._raise_interface_error.side_effect = Exception(
+    mock_node._raise_interface_error.side_effect = MeshInterface.MeshInterfaceError(
         "Error: No primary channel found"
     )
 
-    with pytest.raises(Exception, match="Error: No primary channel found"):
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match="Error: No primary channel found",
+    ):
         export_runtime.turn_off_encryption_on_primary_channel()
 
     mock_node._raise_interface_error.assert_called_once_with(

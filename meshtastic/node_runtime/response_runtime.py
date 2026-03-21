@@ -59,6 +59,7 @@ class _NodeMetadataResponseRuntime:
                 error_reason,
             )
             self._node.iface._acknowledgment.receivedNak = True
+            self._node._timeout.expireTime = time.time()  # Do not wait any longer
             self._node._signal_metadata_stdout_event()
             return True  # Don't try to parse this routing message
         logger.debug(
@@ -82,6 +83,7 @@ class _NodeMetadataResponseRuntime:
         if error_reason != "NONE":
             logger.error("Error on response: %s", error_reason)
             self._node.iface._acknowledgment.receivedNak = True
+            self._node._timeout.expireTime = time.time()  # Do not wait any longer
             self._node._signal_metadata_stdout_event()
             return True
         return False
@@ -177,6 +179,22 @@ class _NodeChannelResponseRuntime:
 
     def __init__(self, node: "Node") -> None:
         self._node = node
+        self._pending_channel_request_index: int | None = None
+        self._channel_request_failed = False
+
+    def mark_channel_request_sent(self, channel_index: int) -> None:
+        """Record the outstanding zero-based channel request index."""
+        self._pending_channel_request_index = channel_index
+        self._channel_request_failed = False
+
+    def mark_channel_request_send_failed(self, channel_index: int) -> None:
+        """Record terminal failure when a channel request could not be sent."""
+        self._pending_channel_request_index = channel_index
+        self._channel_request_failed = True
+
+    def has_channel_request_failed(self) -> bool:
+        """Return whether the active channel download has terminally failed."""
+        return self._channel_request_failed
 
     def _handle_routing_response(self, decoded: dict[str, Any]) -> bool:
         """Handle ROUTING_APP channel responses and indicate whether processing is complete."""
@@ -189,7 +207,7 @@ class _NodeChannelResponseRuntime:
             logger.warning(
                 "Received malformed channel response (missing routing): %s", decoded
             )
-            self._node._timeout.expireTime = time.time()
+            self._channel_request_failed = True
             return True
         error_reason = routing.get("errorReason")
         if not isinstance(error_reason, str):
@@ -197,14 +215,31 @@ class _NodeChannelResponseRuntime:
                 "Received malformed channel response (invalid routing.errorReason): %s",
                 decoded,
             )
-            self._node._timeout.expireTime = time.time()
+            self._channel_request_failed = True
             return True
         if error_reason != "NONE":
+            request_index = self._pending_channel_request_index
+            if request_index is None:
+                logger.warning(
+                    "Channel request failed, error reason: %s (no pending index to retry).",
+                    error_reason,
+                )
+                self._channel_request_failed = True
+                return True
             logger.warning(
-                "Channel request failed, error reason: %s",
+                "Channel request failed, error reason: %s (retrying channel %s).",
                 error_reason,
+                request_index,
             )
-            self._node._timeout.expireTime = time.time()  # Do not wait any longer
+            retry_request = self._node._request_channel(request_index)  # noqa: SLF001
+            if retry_request is None:
+                logger.warning(
+                    "Channel retry for index %s was not started.",
+                    request_index,
+                )
+                self._channel_request_failed = True
+                return True
+            self._node._timeout.reset()  # We retried the in-flight request
             return True  # Don't try to parse this routing message
 
         logger.debug(
@@ -219,6 +254,7 @@ class _NodeChannelResponseRuntime:
             logger.warning(
                 "Received malformed channel response without decoded payload"
             )
+            self._channel_request_failed = True
             return
         logger.debug(
             "onResponseRequestChannel() portnum=%s",
@@ -230,6 +266,7 @@ class _NodeChannelResponseRuntime:
         admin_message = decoded.get("admin")
         if not isinstance(admin_message, dict):
             logger.warning("Received malformed channel response without admin payload")
+            self._channel_request_failed = True
             return
         raw_admin = admin_message.get("raw")
         if raw_admin is None or not _has_protobuf_field(
@@ -238,6 +275,7 @@ class _NodeChannelResponseRuntime:
             logger.warning(
                 "Received malformed channel response without admin.raw payload"
             )
+            self._channel_request_failed = True
             return
 
         response_channel = raw_admin.get_channel_response
@@ -258,6 +296,7 @@ class _NodeChannelResponseRuntime:
             channel_response.settings.name,
             "<REDACTED>",
         )
+        self._channel_request_failed = False
         index = channel_response.index
 
         if index >= MAX_CHANNELS - 1:
@@ -265,5 +304,13 @@ class _NodeChannelResponseRuntime:
             with self._node._channels_lock:  # noqa: SLF001
                 self._node.channels = list(self._node.partialChannels)
                 self._node._fixup_channels_locked()  # noqa: SLF001
+            self._pending_channel_request_index = None
             return
-        self._node._request_channel(index + 1)  # noqa: SLF001
+        next_request = self._node._request_channel(index + 1)  # noqa: SLF001
+        if next_request is None:
+            logger.warning(
+                "Failed to request next channel index %s after receiving index %s.",
+                index + 1,
+                index,
+            )
+            self._channel_request_failed = True

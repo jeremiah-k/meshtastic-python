@@ -148,7 +148,7 @@ class _NodeContentResponseRuntime:
         admin_message = decoded.get("admin")
         if not isinstance(admin_message, dict):
             logger.warning("Unexpected ringtone response without admin payload")
-            return False
+            return True
         raw_admin = admin_message.get("raw")
         has_field = getattr(raw_admin, "HasField", None)
         has_ringtone_response = False
@@ -159,13 +159,13 @@ class _NodeContentResponseRuntime:
                 has_ringtone_response = False
         if raw_admin is None or not has_ringtone_response:
             logger.warning("Unexpected ringtone response without raw ringtone data")
-            return False
+            return True
         try:
             ringtone_part = raw_admin.get_ringtone_response
             self._cache_store.store_ringtone_fragment(ringtone_part)
         except AttributeError:
             logger.warning("Failed to parse ringtone response payload")
-            return False
+            return True
         else:
             return True
 
@@ -181,7 +181,7 @@ class _NodeContentResponseRuntime:
         admin_message = decoded.get("admin")
         if not isinstance(admin_message, dict):
             logger.warning("Unexpected canned-message response without admin payload")
-            return False
+            return True
         raw_admin = admin_message.get("raw")
         has_field = getattr(raw_admin, "HasField", None)
         has_canned_response = False
@@ -196,13 +196,13 @@ class _NodeContentResponseRuntime:
             logger.warning(
                 "Unexpected canned-message response without raw message data"
             )
-            return False
+            return True
         try:
             canned_messages = raw_admin.get_canned_message_module_messages_response
             self._cache_store.store_canned_message_fragment(canned_messages)
         except AttributeError:
             logger.warning("Failed to parse canned-message response payload")
-            return False
+            return True
         else:
             return True
 
@@ -220,8 +220,51 @@ class _NodeAdminContentRuntime:
         self._node = node
         self._cache_store = cache_store
         self._response_runtime = response_runtime
-        self._ringtone_operation_lock = threading.RLock()
-        self._canned_message_operation_lock = threading.RLock()
+        self._ringtone_operation_lock = threading.Lock()
+        self._canned_message_operation_lock = threading.Lock()
+        self._read_state_lock = threading.Lock()
+        self._ringtone_read_generation = 0
+        self._active_ringtone_read_generation: int | None = None
+        self._canned_message_read_generation = 0
+        self._active_canned_message_read_generation: int | None = None
+
+    def _begin_ringtone_read(self) -> int:
+        """Start a ringtone read generation and mark it active."""
+        with self._read_state_lock:
+            self._ringtone_read_generation += 1
+            self._active_ringtone_read_generation = self._ringtone_read_generation
+            return self._ringtone_read_generation
+
+    def _retire_ringtone_read(self, generation: int) -> None:
+        """Retire ringtone read generation to ignore late callbacks."""
+        with self._read_state_lock:
+            if self._active_ringtone_read_generation == generation:
+                self._active_ringtone_read_generation = None
+
+    def _is_ringtone_read_active(self, generation: int) -> bool:
+        """Return whether ringtone generation is still active."""
+        with self._read_state_lock:
+            return self._active_ringtone_read_generation == generation
+
+    def _begin_canned_message_read(self) -> int:
+        """Start a canned-message read generation and mark it active."""
+        with self._read_state_lock:
+            self._canned_message_read_generation += 1
+            self._active_canned_message_read_generation = (
+                self._canned_message_read_generation
+            )
+            return self._canned_message_read_generation
+
+    def _retire_canned_message_read(self, generation: int) -> None:
+        """Retire canned-message read generation to ignore late callbacks."""
+        with self._read_state_lock:
+            if self._active_canned_message_read_generation == generation:
+                self._active_canned_message_read_generation = None
+
+    def _is_canned_message_read_active(self, generation: int) -> bool:
+        """Return whether canned-message generation is still active."""
+        with self._read_state_lock:
+            return self._active_canned_message_read_generation == generation
 
     def _module_available_or_warn(
         self, excluded_bit: int, warning_message: str
@@ -235,6 +278,9 @@ class _NodeAdminContentRuntime:
     def _send_content_read_request(
         self,
         *,
+        begin_read_generation: Callable[[], int],
+        is_read_generation_active: Callable[[int], bool],
+        retire_read_generation: Callable[[int], None],
         build_request: Callable[[admin_pb2.AdminMessage], None],
         handle_response: Callable[[dict[str, Any]], bool],
         skipped_send_debug_message: str,
@@ -242,11 +288,19 @@ class _NodeAdminContentRuntime:
         resolve_result: Callable[[], str | None],
     ) -> str | None:
         """Send content read request, wait for callback, and resolve cached result."""
+        read_generation = begin_read_generation()
         response_event = threading.Event()
 
         def _on_response(packet: dict[str, Any]) -> None:
+            if not is_read_generation_active(read_generation):
+                logger.debug(
+                    "Ignoring late content response for retired read generation %s",
+                    read_generation,
+                )
+                return
             if handle_response(packet):
-                response_event.set()
+                if is_read_generation_active(read_generation):
+                    response_event.set()
 
         request_message = admin_pb2.AdminMessage()
         build_request(request_message)
@@ -256,12 +310,16 @@ class _NodeAdminContentRuntime:
             onResponse=_on_response,
         )
         if request is None:
+            retire_read_generation(read_generation)
             logger.debug("%s", skipped_send_debug_message)
             return None
-        if not response_event.wait(timeout=self._node._timeout.expireTimeout):
-            logger.warning("%s", timeout_warning_message)
-            return None
-        return resolve_result()
+        try:
+            if not response_event.wait(timeout=self._node._timeout.expireTimeout):
+                logger.warning("%s", timeout_warning_message)
+                return None
+            return resolve_result()
+        finally:
+            retire_read_generation(read_generation)
 
     def _select_write_response_handler(
         self,
@@ -285,6 +343,9 @@ class _NodeAdminContentRuntime:
                 return cached_ringtone
             self._cache_store.clear_ringtone_fragment()
             return self._send_content_read_request(
+                begin_read_generation=self._begin_ringtone_read,
+                is_read_generation_active=self._is_ringtone_read_active,
+                retire_read_generation=self._retire_ringtone_read,
                 build_request=lambda message: setattr(
                     message, "get_ringtone_request", True
                 ),
@@ -334,6 +395,9 @@ class _NodeAdminContentRuntime:
                 return cached_canned_message
             self._cache_store.clear_canned_message_fragment()
             return self._send_content_read_request(
+                begin_read_generation=self._begin_canned_message_read,
+                is_read_generation_active=self._is_canned_message_read_active,
+                retire_read_generation=self._retire_canned_message_read,
                 build_request=lambda message: setattr(
                     message,
                     "get_canned_message_module_messages_request",

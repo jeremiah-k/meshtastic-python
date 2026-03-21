@@ -23,9 +23,13 @@ from ..protobuf import admin_pb2, config_pb2, localonly_pb2
 from ..util import Acknowledgment
 
 
+class _TestInterfaceError(Exception):
+    """Sentinel exception raised by interface-error test doubles."""
+
+
 def _raise_test_error(msg: str) -> None:
     """Raise an exception with the provided message."""
-    raise Exception(msg)
+    raise _TestInterfaceError(msg)
 
 
 @pytest.fixture
@@ -225,7 +229,7 @@ class TestNodeSettingsMessageBuilder:
         """build_write_message with invalid config raises interface error."""
         builder = _NodeSettingsMessageBuilder(mock_node_for_settings)
 
-        with pytest.raises(Exception, match="No valid config with name nonexistent"):
+        with pytest.raises(_TestInterfaceError, match="No valid config with name nonexistent"):
             builder.build_write_message("nonexistent")
 
     @pytest.mark.unit
@@ -245,7 +249,7 @@ class TestNodeSettingsMessageBuilder:
         """validate_config_name with invalid name raises interface error."""
         builder = _NodeSettingsMessageBuilder(mock_node_for_settings)
 
-        with pytest.raises(Exception, match="No valid config with name invalid"):
+        with pytest.raises(_TestInterfaceError, match="No valid config with name invalid"):
             builder.validate_config_name("invalid")
 
 
@@ -320,7 +324,7 @@ class TestNodeSettingsRuntime:
         builder = _NodeSettingsMessageBuilder(mock_local_node)
         runtime = _NodeSettingsRuntime(mock_local_node, message_builder=builder)
 
-        with pytest.raises(Exception, match="No valid config with name invalid"):
+        with pytest.raises(_TestInterfaceError, match="No valid config with name invalid"):
             runtime._validate_write_configs_loaded("invalid")
 
     @pytest.mark.unit
@@ -365,7 +369,7 @@ class TestNodeSettingsRuntime:
         runtime = _NodeSettingsRuntime(mock_local_node, message_builder=builder)
         # localConfig and moduleConfig are empty
 
-        with pytest.raises(Exception, match="No localConfig has been read"):
+        with pytest.raises(_TestInterfaceError, match="No localConfig has been read"):
             runtime._validate_write_configs_loaded("device")
 
     @pytest.mark.unit
@@ -452,6 +456,7 @@ class TestNodeSettingsResponseRuntime:
             runtime.handle_settings_response(packet)
 
         assert "malformed settings response (missing decoded)" in caplog.text
+        assert mock_node_for_response.iface._acknowledgment.receivedNak is True
 
     @pytest.mark.unit
     def test_handle_settings_response_routing_error_sets_nak(
@@ -506,6 +511,7 @@ class TestNodeSettingsResponseRuntime:
             runtime.handle_settings_response(packet)
 
         assert "malformed settings response (missing admin)" in caplog.text
+        assert mock_node_for_response.iface._acknowledgment.receivedNak is True
 
     @pytest.mark.unit
     def test_handle_settings_response_empty_config_response_logs_warning(
@@ -521,6 +527,7 @@ class TestNodeSettingsResponseRuntime:
             runtime.handle_settings_response(packet)
 
         assert "Received empty config response from node" in caplog.text
+        assert mock_node_for_response.iface._acknowledgment.receivedNak is True
 
     @pytest.mark.unit
     def test_handle_settings_response_empty_module_config_response_logs_warning(
@@ -536,6 +543,7 @@ class TestNodeSettingsResponseRuntime:
             runtime.handle_settings_response(packet)
 
         assert "Received empty module config response from node" in caplog.text
+        assert mock_node_for_response.iface._acknowledgment.receivedNak is True
 
     @pytest.mark.unit
     def test_handle_settings_response_unknown_local_config_field_logs_warning(
@@ -626,6 +634,7 @@ class TestNodeSettingsResponseRuntime:
             runtime.handle_settings_response(packet)
 
         assert "malformed settings response (missing admin.raw)" in caplog.text
+        assert mock_node_for_response.iface._acknowledgment.receivedNak is True
 
     @pytest.mark.unit
     def test_handle_settings_response_valid_sets_ack(
@@ -894,7 +903,7 @@ class TestNodeAdminCommandRuntime:
         mock_iface.localNode = MagicMock()  # Different from mock_node_for_admin
         runtime = _NodeAdminCommandRuntime(mock_node_for_admin)
 
-        with pytest.raises(Exception, match="startOTA only possible on local node"):
+        with pytest.raises(_TestInterfaceError, match="startOTA only possible on local node"):
             runtime.start_ota(
                 mode=admin_pb2.OTAMode.OTA_WIFI,
                 ota_file_hash=b"hash",
@@ -1170,7 +1179,7 @@ class TestNodeOwnerProfileRuntime:
         self, mock_runtime_for_owner: _NodeOwnerProfileRuntime
     ) -> None:
         """set_owner with empty long_name raises error."""
-        with pytest.raises(Exception, match=EMPTY_LONG_NAME_MSG):
+        with pytest.raises(_TestInterfaceError, match=EMPTY_LONG_NAME_MSG):
             mock_runtime_for_owner.set_owner(long_name="")
 
     @pytest.mark.unit
@@ -1178,7 +1187,7 @@ class TestNodeOwnerProfileRuntime:
         self, mock_runtime_for_owner: _NodeOwnerProfileRuntime
     ) -> None:
         """set_owner with whitespace-only long_name raises error."""
-        with pytest.raises(Exception, match=EMPTY_LONG_NAME_MSG):
+        with pytest.raises(_TestInterfaceError, match=EMPTY_LONG_NAME_MSG):
             mock_runtime_for_owner.set_owner(long_name="   ")
 
     @pytest.mark.unit
@@ -1186,7 +1195,7 @@ class TestNodeOwnerProfileRuntime:
         self, mock_runtime_for_owner: _NodeOwnerProfileRuntime
     ) -> None:
         """set_owner with empty short_name raises error."""
-        with pytest.raises(Exception, match=EMPTY_SHORT_NAME_MSG):
+        with pytest.raises(_TestInterfaceError, match=EMPTY_SHORT_NAME_MSG):
             mock_runtime_for_owner.set_owner(short_name="")
 
     @pytest.mark.unit
@@ -1194,7 +1203,7 @@ class TestNodeOwnerProfileRuntime:
         self, mock_runtime_for_owner: _NodeOwnerProfileRuntime
     ) -> None:
         """set_owner with whitespace-only short_name raises error."""
-        with pytest.raises(Exception, match=EMPTY_SHORT_NAME_MSG):
+        with pytest.raises(_TestInterfaceError, match=EMPTY_SHORT_NAME_MSG):
             mock_runtime_for_owner.set_owner(short_name="   ")
 
     @pytest.mark.unit

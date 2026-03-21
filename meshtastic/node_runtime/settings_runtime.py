@@ -286,6 +286,7 @@ class _NodeSettingsResponseRuntime:
             logger.warning(
                 "Received malformed settings response (missing decoded): %s", packet
             )
+            self._node.iface._acknowledgment.receivedNak = True
             return
         routing = decoded.get("routing")
         if isinstance(routing, dict):
@@ -303,9 +304,11 @@ class _NodeSettingsResponseRuntime:
             logger.warning(
                 "Received malformed settings response (missing admin): %s", packet
             )
+            self._node.iface._acknowledgment.receivedNak = True
             return
         target = self._resolve_config_target(admin_message)
         if target is None:
+            self._node.iface._acknowledgment.receivedNak = True
             return
 
         oneof, field_name, config_values = target
@@ -315,6 +318,7 @@ class _NodeSettingsResponseRuntime:
                 "Received malformed settings response (missing admin.raw): %s",
                 packet,
             )
+            self._node.iface._acknowledgment.receivedNak = True
             return
         raw_config = getattr(getattr(raw_admin, oneof), field_name)
         config_values.CopyFrom(raw_config)

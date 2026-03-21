@@ -192,6 +192,22 @@ class TestFillChannelsLocked:
             assert mock_node.channels[i].role == channel_pb2.Channel.Role.DISABLED
             assert mock_node.channels[i].index == i
 
+    def test_fill_channels_locked_reindexes_existing_channels_before_append(
+        self, mock_node: MagicMock
+    ) -> None:
+        """Existing channels should be reindexed before DISABLED channels are appended."""
+        first = channel_pb2.Channel(index=3, role=channel_pb2.Channel.Role.PRIMARY)
+        second = channel_pb2.Channel(index=9, role=channel_pb2.Channel.Role.SECONDARY)
+        mock_node.channels = [first, second]
+        runtime = _NodeChannelNormalizationRuntime(mock_node)
+
+        runtime.fill_channels_locked()
+
+        assert mock_node.channels[0].index == 0
+        assert mock_node.channels[1].index == 1
+        for i in range(2, MAX_CHANNELS):
+            assert mock_node.channels[i].index == i
+
     def test_fill_channels_locked_with_empty_list_fills_all_disabled(
         self, mock_node: MagicMock
     ) -> None:

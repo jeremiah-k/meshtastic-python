@@ -44,12 +44,31 @@ class _NodeChannelExportRuntime:
         """Build channel URL export with preserved includeAll and LoRa semantics."""
         channel_set = apponly_pb2.ChannelSet()
         channels_snapshot = self._snapshot_channels()
-        if channels_snapshot:
+        if not channels_snapshot:
+            self._node._raise_interface_error(  # noqa: SLF001
+                "Error: No channels have been read"
+            )
+        primary_channel = next(
+            (
+                channel
+                for channel in channels_snapshot
+                if channel.role == channel_pb2.Channel.Role.PRIMARY
+            ),
+            None,
+        )
+        if primary_channel is None:
+            self._node._raise_interface_error(  # noqa: SLF001
+                "Error: No primary channel found"
+            )
+        channel_set.settings.append(primary_channel.settings)
+        if includeAll:
             for channel in channels_snapshot:
-                if channel.role == channel_pb2.Channel.Role.PRIMARY or (
-                    includeAll and channel.role == channel_pb2.Channel.Role.SECONDARY
-                ):
+                if channel.role == channel_pb2.Channel.Role.SECONDARY:
                     channel_set.settings.append(channel.settings)
+        if not channel_set.settings:
+            self._node._raise_interface_error(  # noqa: SLF001
+                "Error: No channels have been read"
+            )
 
         local_config_snapshot = self._snapshot_local_config()
         if not local_config_snapshot.HasField("lora"):
@@ -105,12 +124,14 @@ class _NodeChannelExportRuntime:
     def turn_off_encryption_on_primary_channel(self) -> None:
         """Disable primary-channel encryption and persist updated channel state."""
         primary_snapshot: channel_pb2.Channel | None = None
+        original_channels_ref: list[channel_pb2.Channel] | None = None
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if not channels:
                 self._node._raise_interface_error(
                     "Error: No channels have been read"
                 )  # noqa: SLF001
+            original_channels_ref = channels
             for channel in channels:
                 if channel.role == channel_pb2.Channel.Role.PRIMARY:
                     primary_snapshot = channel_pb2.Channel()
@@ -129,6 +150,13 @@ class _NodeChannelExportRuntime:
                 logger.warning(
                     "Primary channel write succeeded but local channel cache is unavailable; reload channels to refresh local state."
                 )
+                self._node.partialChannels = []
+                return
+            if channels is not original_channels_ref:
+                logger.warning(
+                    "Primary channel write succeeded but channel cache changed concurrently; invalidating local channel cache."
+                )
+                self._node.channels = None
                 self._node.partialChannels = []
                 return
             for channel in channels:

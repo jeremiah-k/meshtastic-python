@@ -539,35 +539,34 @@ class _SetUrlExecutionEngine:
             ):
                 continue
             logger.info("Adding new channel '%s' to device", channel_name)
-            state.written_indices.append(staged_channel.index)
             self._node._write_channel_snapshot(  # noqa: SLF001
                 staged_channel,
                 adminIndex=admin_context.admin_index_for_write,
             )
+            state.written_indices.append(staged_channel.index)
 
         if parsed_input.has_lora_update:
             set_lora = admin_pb2.AdminMessage()
             set_lora.set_config.lora.CopyFrom(parsed_input.channel_set.lora_config)
             self._node.ensureSessionKey(adminIndex=admin_context.admin_index_for_write)
-            state.lora_write_started = True
             request = self._node._send_admin(  # noqa: SLF001
                 set_lora,
                 adminIndex=admin_context.admin_index_for_write,
             )
             if request is None:
-                state.lora_write_started = False
                 self._node._raise_interface_error(  # noqa: SLF001
                     "LoRa config update was not started"
                 )
+            state.lora_write_started = True
 
         if plan.deferred_add_only_admin_channel is not None:
             staged_channel, channel_name = plan.deferred_add_only_admin_channel
             logger.info("Adding new channel '%s' to device", channel_name)
-            state.written_indices.append(staged_channel.index)
             self._node._write_channel_snapshot(  # noqa: SLF001
                 staged_channel,
                 adminIndex=admin_context.admin_index_for_write,
             )
+            state.written_indices.append(staged_channel.index)
 
     def execute_replace_all(
         self,
@@ -595,11 +594,11 @@ class _SetUrlExecutionEngine:
                 self._safe_channel_role_name(staged_channel.role),
                 staged_channel.settings.name,
             )
-            state.written_channel_indices.append(staged_channel.index)
             self._node._write_channel_snapshot(  # noqa: SLF001
                 staged_channel,
                 adminIndex=admin_context.admin_index_for_write,
             )
+            state.written_channel_indices.append(staged_channel.index)
             self._cache_manager.apply_replace_channel_write(
                 staged_channel,
                 expected_channels_ref=plan.replace_original_channels_ref,
@@ -609,16 +608,15 @@ class _SetUrlExecutionEngine:
             set_lora = admin_pb2.AdminMessage()
             set_lora.set_config.lora.CopyFrom(parsed_input.channel_set.lora_config)
             self._node.ensureSessionKey(adminIndex=admin_context.admin_index_for_write)
-            state.lora_write_started = True
             request = self._node._send_admin(  # noqa: SLF001
                 set_lora,
                 adminIndex=admin_context.admin_index_for_write,
             )
             if request is None:
-                state.lora_write_started = False
                 self._node._raise_interface_error(  # noqa: SLF001
                     "LoRa config update was not started"
                 )
+            state.lora_write_started = True
             self._cache_manager.apply_lora_success(parsed_input.channel_set.lora_config)
 
         if plan.deferred_new_named_admin_channel is not None:
@@ -630,12 +628,12 @@ class _SetUrlExecutionEngine:
                 ),
                 plan.deferred_new_named_admin_channel.settings.name,
             )
-            state.written_channel_indices.append(
-                plan.deferred_new_named_admin_channel.index
-            )
             self._node._write_channel_snapshot(  # noqa: SLF001
                 plan.deferred_new_named_admin_channel,
                 adminIndex=admin_context.admin_index_for_write,
+            )
+            state.written_channel_indices.append(
+                plan.deferred_new_named_admin_channel.index
             )
             self._cache_manager.apply_replace_channel_write(
                 plan.deferred_new_named_admin_channel,
@@ -660,6 +658,10 @@ class _SetUrlExecutionEngine:
                 plan.deferred_previous_admin_slot_channel.index,
                 updated_admin_index_for_write,
             )
+            self._node._write_channel_snapshot(  # noqa: SLF001
+                plan.deferred_previous_admin_slot_channel,
+                adminIndex=updated_admin_index_for_write,
+            )
             state.written_channel_indices.append(
                 plan.deferred_previous_admin_slot_channel.index
             )
@@ -667,10 +669,6 @@ class _SetUrlExecutionEngine:
                 updated_admin_index_for_write,
                 post_write_fallback_admin_index,
                 *state.rollback_admin_indexes_for_write,
-            )
-            self._node._write_channel_snapshot(  # noqa: SLF001
-                plan.deferred_previous_admin_slot_channel,
-                adminIndex=updated_admin_index_for_write,
             )
             self._cache_manager.apply_replace_channel_write(
                 plan.deferred_previous_admin_slot_channel,
@@ -773,10 +771,12 @@ class _SetUrlRollbackEngine:
             for rollback_admin_index in rollback_admin_indexes:
                 try:
                     self._node.ensureSessionKey(adminIndex=rollback_admin_index)
-                    self._node._send_admin(  # noqa: SLF001
+                    request = self._node._send_admin(  # noqa: SLF001
                         rollback_lora,
                         adminIndex=rollback_admin_index,
                     )
+                    if request is None:
+                        continue
                     self._cache_manager.restore_lora_snapshot(plan.original_lora_config)
                     rollback_lora_succeeded = True
                     break
@@ -885,10 +885,12 @@ class _SetUrlRollbackEngine:
                 for rollback_admin_index in rollback_admin_indexes:
                     try:
                         self._node.ensureSessionKey(adminIndex=rollback_admin_index)
-                        self._node._send_admin(  # noqa: SLF001
+                        request = self._node._send_admin(  # noqa: SLF001
                             rollback_lora,
                             adminIndex=rollback_admin_index,
                         )
+                        if request is None:
+                            continue
                         self._cache_manager.restore_lora_snapshot(
                             plan.replace_original_lora_config
                         )
