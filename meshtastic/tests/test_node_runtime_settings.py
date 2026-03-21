@@ -191,7 +191,7 @@ class TestNodeSettingsMessageBuilder:
         """get_write_config_entry includes device_ui if present in localConfig."""
         builder = _NodeSettingsMessageBuilder(mock_node_for_settings)
         # Add device_ui attribute to localConfig (via setattr since it's optional)
-        mock_node_for_settings.localConfig.device_ui = (  # type: ignore[attr-defined]
+        mock_node_for_settings.localConfig.device_ui = (
             localonly_pb2.LocalConfig.DeviceUIConfig()  # type: ignore[attr-defined]
         )
 
@@ -1139,9 +1139,9 @@ class TestNodeOwnerProfileRuntime:
         assert "truncating" in caplog.text
         # Verify the message was sent with truncated name
         call_args = (
-            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[reportAttributeAccessIssue]
+            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
         )
-        message = call_args[0][0]  # type: ignore[index]
+        message = call_args[0][0]
         assert len(message.set_owner.long_name) == MAX_LONG_NAME_LEN
         assert message.set_owner.long_name == "A" * MAX_LONG_NAME_LEN
 
@@ -1161,9 +1161,9 @@ class TestNodeOwnerProfileRuntime:
         assert "truncating" in caplog.text
         # Verify the message was sent with truncated name
         call_args = (
-            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[reportAttributeAccessIssue]
+            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
         )
-        message = call_args[0][0]  # type: ignore[index]
+        message = call_args[0][0]
         assert len(message.set_owner.short_name) == MAX_SHORT_NAME_LEN
         assert message.set_owner.short_name == "Long"
 
@@ -1207,9 +1207,9 @@ class TestNodeOwnerProfileRuntime:
         mock_runtime_for_owner.set_owner(long_name="  ValidName  ", short_name=" AB ")
 
         call_args = (
-            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[reportAttributeAccessIssue]
+            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
         )
-        message = call_args[0][0]  # type: ignore[index]
+        message = call_args[0][0]
         assert message.set_owner.long_name == "ValidName"
         assert message.set_owner.short_name == "AB"
 
@@ -1221,9 +1221,9 @@ class TestNodeOwnerProfileRuntime:
         mock_runtime_for_owner.set_owner(long_name="Test", is_licensed=True)
 
         call_args = (
-            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[reportAttributeAccessIssue]
+            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
         )
-        message = call_args[0][0]  # type: ignore[index]
+        message = call_args[0][0]
         assert message.set_owner.is_licensed is True
 
     @pytest.mark.unit
@@ -1234,9 +1234,9 @@ class TestNodeOwnerProfileRuntime:
         mock_runtime_for_owner.set_owner(long_name="Test", is_unmessagable=True)
 
         call_args = (
-            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[reportAttributeAccessIssue]
+            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
         )
-        message = call_args[0][0]  # type: ignore[index]
+        message = call_args[0][0]
         assert message.set_owner.is_unmessagable is True
 
     @pytest.mark.unit
@@ -1247,9 +1247,9 @@ class TestNodeOwnerProfileRuntime:
         mock_runtime_for_owner.set_owner(long_name="Test", is_unmessagable=None)
 
         call_args = (
-            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[reportAttributeAccessIssue]
+            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
         )
-        message = call_args[0][0]  # type: ignore[index]
+        message = call_args[0][0]
         # is_unmessagable should not be set (protobuf default is False)
         assert message.set_owner.is_unmessagable is False
 
@@ -1269,9 +1269,9 @@ class TestNodeOwnerProfileRuntime:
             )
 
         call_args = (
-            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[reportAttributeAccessIssue]
+            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
         )
-        message = call_args[0][0]  # type: ignore[index]
+        message = call_args[0][0]
         assert message.set_owner.long_name == "TestUser"
         assert message.set_owner.short_name == "TEST"
         assert message.set_owner.is_licensed is True
@@ -1288,9 +1288,9 @@ class TestNodeOwnerProfileRuntime:
         mock_runtime_for_owner.set_owner(long_name="OnlyLong")
 
         call_args = (
-            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[reportAttributeAccessIssue]
+            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
         )
-        message = call_args[0][0]  # type: ignore[index]
+        message = call_args[0][0]
         assert message.set_owner.long_name == "OnlyLong"
         # short_name should be empty (not set)
         assert message.set_owner.short_name == ""
@@ -1303,9 +1303,9 @@ class TestNodeOwnerProfileRuntime:
         mock_runtime_for_owner.set_owner(short_name="ABC")
 
         call_args = (
-            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[reportAttributeAccessIssue]
+            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
         )
-        message = call_args[0][0]  # type: ignore[index]
+        message = call_args[0][0]
         assert message.set_owner.short_name == "ABC"
         # long_name should be empty (not set)
         assert message.set_owner.long_name == ""

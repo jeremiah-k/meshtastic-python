@@ -429,7 +429,7 @@ def test_turn_off_encryption_on_primary_channel_no_cache_after_write(
     mock_node.channels = [primary]
 
     # After write, set channels to None to simulate unavailable cache
-    def write_side_effect(channel):
+    def write_side_effect(channel: channel_pb2.Channel) -> None:
         mock_node.channels = None
 
     mock_node._write_channel_snapshot.side_effect = write_side_effect
@@ -453,7 +453,7 @@ def test_turn_off_encryption_on_primary_channel_index_not_found(
     mock_node.channels = [primary]
 
     # After write, change the channels list to not include the primary index
-    def write_side_effect(channel):
+    def write_side_effect(channel: channel_pb2.Channel) -> None:
         # Replace with a different channel at different index
         other = _make_channel(5, channel_pb2.Channel.Role.SECONDARY, name="other")
         mock_node.channels = [other]

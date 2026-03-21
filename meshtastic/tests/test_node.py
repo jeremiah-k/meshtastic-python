@@ -1364,7 +1364,7 @@ def test_getURL_requests_lora_when_local_config_empty(
     anode.channels = [primary, secondary, disabled]
     anode.requestConfig = MagicMock()  # type: ignore[method-assign]
 
-    def _populate_lora_and_return_true(attribute: str = "channels") -> bool:
+    def _populate_lora_and_return_true(**_kwargs: Any) -> bool:
         anode.localConfig.lora.hop_limit = 3
         return True
 
@@ -3076,6 +3076,7 @@ def test_emit_cached_metadata_reads_metadata_under_node_db_lock(
         "firmware_version: mutated-after-unlock" in line for line, _ in emitted
     )
     assert iface.metadata is original_metadata
+    assert iface.metadata is not None  # type narrowing for LSP
     assert iface.metadata.firmware_version == "mutated-after-unlock"
 
 
