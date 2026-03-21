@@ -130,19 +130,25 @@ class _NodeChannelExportRuntime:
         """Disable primary-channel encryption and persist updated channel state."""
         primary_snapshot: channel_pb2.Channel | None = None
         original_channels_ref: list[channel_pb2.Channel] | None = None
+        original_primary_slot: channel_pb2.Channel | None = None
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if not channels:
-                self._node._raise_interface_error("Error: No channels have been read")  # noqa: SLF001
+                self._node._raise_interface_error(
+                    "Error: No channels have been read"
+                )  # noqa: SLF001
             original_channels_ref = channels
             for channel in channels:
                 if channel.role == channel_pb2.Channel.Role.PRIMARY:
+                    original_primary_slot = channel
                     primary_snapshot = channel_pb2.Channel()
                     primary_snapshot.CopyFrom(channel)
                     primary_snapshot.settings.psk = fromPSK("none")
                     break
             if primary_snapshot is None:
-                self._node._raise_interface_error("Error: No primary channel found")  # noqa: SLF001
+                self._node._raise_interface_error(
+                    "Error: No primary channel found"
+                )  # noqa: SLF001
         logger.info("Writing modified channels to device")
         self._node._write_channel_snapshot(primary_snapshot)  # noqa: SLF001
         with self._node._channels_lock:  # noqa: SLF001
@@ -162,6 +168,13 @@ class _NodeChannelExportRuntime:
                 return
             for channel in channels:
                 if channel.index == primary_snapshot.index:
+                    if channel is not original_primary_slot:
+                        logger.warning(
+                            "Primary channel write succeeded but primary slot object changed concurrently; invalidating local channel cache."
+                        )
+                        self._node.channels = None
+                        self._node.partialChannels = []
+                        return
                     channel.CopyFrom(primary_snapshot)
                     return
             logger.warning(

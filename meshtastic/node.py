@@ -8,7 +8,7 @@ in the mesh, including methods for localConfig, moduleConfig, and channels manag
 import logging
 import sys
 import threading
-from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, TypeVar
 
 from google.protobuf.descriptor import FieldDescriptor
 
@@ -30,10 +30,6 @@ from meshtastic.node_runtime.response_runtime import (
     _NodeChannelResponseRuntime,
     _NodeMetadataResponseRuntime,
 )
-from meshtastic.node_runtime.seturl_runtime import (
-    _SetUrlParser,
-    _SetUrlTransactionCoordinator,
-)
 from meshtastic.node_runtime.settings_runtime import (
     _NodeAdminCommandRuntime,
     _NodeOwnerProfileRuntime,
@@ -41,15 +37,23 @@ from meshtastic.node_runtime.settings_runtime import (
     _NodeSettingsResponseRuntime,
     _NodeSettingsRuntime,
 )
+from meshtastic.node_runtime.seturl_runtime import (
+    _SetUrlParser,
+    _SetUrlTransactionCoordinator,
+)
+from meshtastic.node_runtime.shared import EMPTY_LONG_NAME_MSG as _EMPTY_LONG_NAME_MSG
+from meshtastic.node_runtime.shared import EMPTY_SHORT_NAME_MSG as _EMPTY_SHORT_NAME_MSG
 from meshtastic.node_runtime.shared import (
-    EMPTY_LONG_NAME_MSG as _EMPTY_LONG_NAME_MSG,
-    EMPTY_SHORT_NAME_MSG as _EMPTY_SHORT_NAME_MSG,
     FACTORY_RESET_REQUEST_VALUE as _FACTORY_RESET_REQUEST_VALUE,
+)
+from meshtastic.node_runtime.shared import (
     MAX_CANNED_MESSAGE_LENGTH as _MAX_CANNED_MESSAGE_LENGTH,
-    MAX_CHANNELS as _MAX_CHANNELS,
-    MAX_LONG_NAME_LEN as _MAX_LONG_NAME_LEN,
-    MAX_RINGTONE_LENGTH as _MAX_RINGTONE_LENGTH,
-    MAX_SHORT_NAME_LEN as _MAX_SHORT_NAME_LEN,
+)
+from meshtastic.node_runtime.shared import MAX_CHANNELS as _MAX_CHANNELS
+from meshtastic.node_runtime.shared import MAX_LONG_NAME_LEN as _MAX_LONG_NAME_LEN
+from meshtastic.node_runtime.shared import MAX_RINGTONE_LENGTH as _MAX_RINGTONE_LENGTH
+from meshtastic.node_runtime.shared import MAX_SHORT_NAME_LEN as _MAX_SHORT_NAME_LEN
+from meshtastic.node_runtime.shared import (
     METADATA_STDOUT_COMPAT_WAIT_SECONDS,
 )
 from meshtastic.node_runtime.transport_runtime import (
@@ -309,9 +313,8 @@ class Node:  # pylint: disable=too-many-instance-attributes
         )
         role = getattr(metadata, "role", 0)
         if role in config_pb2.Config.DeviceConfig.Role.values():
-            role_value = cast(config_pb2.Config.DeviceConfig.Role.ValueType, role)
             self._emit_metadata_line(
-                f"role: {config_pb2.Config.DeviceConfig.Role.Name(role_value)}"
+                f"role: {config_pb2.Config.DeviceConfig.Role.Name(role)}"  # type: ignore[arg-type]
             )
         else:
             self._emit_metadata_line(f"role: {role}")
@@ -320,9 +323,8 @@ class Node:  # pylint: disable=too-many-instance-attributes
         )
         hw_model = getattr(metadata, "hw_model", 0)
         if hw_model in mesh_pb2.HardwareModel.values():
-            hw_model_value = cast(mesh_pb2.HardwareModel.ValueType, hw_model)
             self._emit_metadata_line(
-                f"hw_model: {mesh_pb2.HardwareModel.Name(hw_model_value)}"
+                f"hw_model: {mesh_pb2.HardwareModel.Name(hw_model)}"  # type: ignore[arg-type]
             )
         else:
             self._emit_metadata_line(f"hw_model: {hw_model}")
@@ -771,9 +773,9 @@ class Node:  # pylint: disable=too-many-instance-attributes
             parsed_input=parsed_input,
         )
         if addOnly:
-            transaction.apply_add_only()
+            transaction._apply_add_only()  # noqa: SLF001
             return
-        transaction.apply_replace_all()
+        transaction._apply_replace_all()  # noqa: SLF001
 
     def onResponseRequestRingtone(self, p: dict[str, Any]) -> None:
         """Process an admin response containing a ringtone fragment and cache it on the Node.

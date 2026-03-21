@@ -15,7 +15,6 @@ class PackageNotPublishedError(requests.RequestException):
     """Simulated PyPI lookup failure for unpublished distribution names."""
 
 
-# pylint: disable=unnecessary-ellipsis
 class ResponseLike(Protocol):
     """Small response protocol used by version-check tests."""
 

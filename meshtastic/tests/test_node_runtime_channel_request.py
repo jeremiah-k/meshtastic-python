@@ -224,7 +224,7 @@ def test_request_channel_sends_admin_message_with_correct_channel_num(
     channel_request_runtime: _NodeChannelRequestRuntime,
     mock_node: MagicMock,
 ) -> None:
-    """requestChannel should send admin message with channel_num+1 as get_channel_request."""
+    """RequestChannel should send admin message with channel_num+1 as get_channel_request."""
     # Set up node to be the same as localNode (local request)
     mock_iface = MagicMock()
     mock_iface.localNode = mock_node
@@ -256,7 +256,7 @@ def test_request_channel_for_remote_node_logs_info(
     mock_node: MagicMock,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """requestChannel for remote node should log info message."""
+    """RequestChannel for remote node should log info message."""
     # Set up node to be different from localNode (remote request)
     mock_iface = MagicMock()
     mock_local_node = MagicMock()
@@ -280,7 +280,7 @@ def test_request_channel_for_local_node_logs_debug(
     mock_node: MagicMock,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """requestChannel for local node should log debug message."""
+    """RequestChannel for local node should log debug message."""
     # Set up node to be the same as localNode (local request)
     mock_iface = MagicMock()
     mock_iface.localNode = mock_node
@@ -296,11 +296,11 @@ def test_request_channel_for_local_node_logs_debug(
 
 
 @pytest.mark.unit
-def test_request_channel_deprecation_warning_emits_once_per_instance(
+def test_request_channel_is_silent_compatibility_shim(
     channel_request_runtime: _NodeChannelRequestRuntime,
     mock_node: MagicMock,
 ) -> None:
-    """request_channel deprecation warning should be emitted once per runtime instance."""
+    """request_channel should be a silent compatibility shim without warnings."""
     mock_iface = MagicMock()
     mock_iface.localNode = mock_node
     mock_node.iface = mock_iface
@@ -315,4 +315,4 @@ def test_request_channel_deprecation_warning_emits_once_per_instance(
         for warning in caught
         if issubclass(warning.category, DeprecationWarning)
     ]
-    assert len(deprecation_warnings) == 1
+    assert len(deprecation_warnings) == 0

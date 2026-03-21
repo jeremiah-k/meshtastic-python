@@ -261,7 +261,6 @@ class TestSetUrlParser:
         result = _SetUrlParser.parse(url, raise_interface_error=raise_error)
 
         assert isinstance(result, _SetUrlParsedInput)
-        assert result.url == url
         assert len(result.channel_set.settings) == 1
         assert result.channel_set.settings[0].name == "testchannel"
         assert result.has_lora_update is False
@@ -1053,7 +1052,6 @@ class TestSetUrlExecutionEngine:
         settings.psk = b"\x01"
 
         parsed_input = _SetUrlParsedInput(
-            url="https://meshtastic.org/d/#test",
             channel_set=channel_set,
             has_lora_update=False,
         )
@@ -1093,7 +1091,6 @@ class TestSetUrlExecutionEngine:
         channel_set = _make_channel_set_with_lora("test")
 
         parsed_input = _SetUrlParsedInput(
-            url="https://meshtastic.org/d/#test",
             channel_set=channel_set,
             has_lora_update=True,
         )
@@ -1133,7 +1130,6 @@ class TestSetUrlExecutionEngine:
         """execute_add_only should abort when LoRa send is not started."""
         channel_set = _make_channel_set_with_lora("test")
         parsed_input = _SetUrlParsedInput(
-            url="https://meshtastic.org/d/#test",
             channel_set=channel_set,
             has_lora_update=True,
         )
@@ -1184,7 +1180,6 @@ class TestSetUrlExecutionEngine:
         settings.psk = b"\x01"
 
         parsed_input = _SetUrlParsedInput(
-            url="https://meshtastic.org/d/#test",
             channel_set=channel_set,
             has_lora_update=False,
         )
@@ -1231,7 +1226,6 @@ class TestSetUrlExecutionEngine:
         ]
         channel_set = _make_channel_set_with_lora("newprimary")
         parsed_input = _SetUrlParsedInput(
-            url="https://meshtastic.org/d/#test",
             channel_set=channel_set,
             has_lora_update=True,
         )
@@ -1340,7 +1334,6 @@ class TestSetUrlTransactionCoordinator:
         settings.name = "test"
 
         parsed_input = _SetUrlParsedInput(
-            url="https://meshtastic.org/d/#test",
             channel_set=channel_set,
             has_lora_update=False,
         )
@@ -1356,7 +1349,6 @@ class TestSetUrlTransactionCoordinator:
         settings.name = "test"
 
         parsed_input = _SetUrlParsedInput(
-            url="https://meshtastic.org/d/#test",
             channel_set=channel_set,
             has_lora_update=False,
         )
@@ -1382,7 +1374,6 @@ class TestSetUrlTransactionCoordinator:
         settings.name = "test"
 
         parsed_input = _SetUrlParsedInput(
-            url="https://meshtastic.org/d/#test",
             channel_set=channel_set,
             has_lora_update=False,
         )
@@ -1414,7 +1405,6 @@ class TestSetUrlAddOnlyPlanner:
         settings.name = "test"
 
         parsed_input = _SetUrlParsedInput(
-            url="https://meshtastic.org/d/#test",
             channel_set=channel_set,
             has_lora_update=False,
         )
@@ -1440,7 +1430,6 @@ class TestSetUrlAddOnlyPlanner:
         channel_set = _make_channel_set_with_lora("test")
 
         parsed_input = _SetUrlParsedInput(
-            url="https://meshtastic.org/d/#test",
             channel_set=channel_set,
             has_lora_update=True,
         )
@@ -1474,7 +1463,6 @@ class TestSetUrlAddOnlyPlanner:
         channel_set = _make_channel_set_with_lora("test")
 
         parsed_input = _SetUrlParsedInput(
-            url="https://meshtastic.org/d/#test",
             channel_set=channel_set,
             has_lora_update=True,
         )
@@ -1512,7 +1500,6 @@ class TestSetUrlReplacePlanner:
         settings.psk = b"\x01"
 
         parsed_input = _SetUrlParsedInput(
-            url="https://meshtastic.org/d/#test",
             channel_set=channel_set,
             has_lora_update=False,
         )
@@ -1553,7 +1540,6 @@ class TestSetUrlReplacePlanner:
         channel_set = _make_channel_set_with_lora("test")
 
         parsed_input = _SetUrlParsedInput(
-            url="https://meshtastic.org/d/#test",
             channel_set=channel_set,
             has_lora_update=True,
         )
@@ -1587,7 +1573,6 @@ class TestSetUrlReplacePlanner:
             settings.psk = b"\x01"
 
         parsed_input = _SetUrlParsedInput(
-            url="https://meshtastic.org/d/#test",
             channel_set=channel_set,
             has_lora_update=False,
         )
@@ -1631,7 +1616,6 @@ class TestSetUrlReplacePlanner:
             settings.psk = b"\x01"
 
         parsed_input = _SetUrlParsedInput(
-            url="https://meshtastic.org/d/#test",
             channel_set=channel_set,
             has_lora_update=False,
         )

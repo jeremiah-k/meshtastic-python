@@ -1,7 +1,6 @@
 """Channel/config request bootstrap runtime owner."""
 
 import logging
-import warnings
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
@@ -176,12 +175,5 @@ class _NodeChannelRequestRuntime:
         return request
 
     def request_channel(self, channel_num: int) -> mesh_pb2.MeshPacket | None:
-        """COMPAT_DEPRECATE: Use requestChannel instead."""
-        if not self._request_channel_warned:
-            warnings.warn(
-                "request_channel is deprecated; use requestChannel instead",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            self._request_channel_warned = True
+        """COMPAT_STABLE_SHIM: Silent alias for requestChannel."""
         return self.requestChannel(channel_num)

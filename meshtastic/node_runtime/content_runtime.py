@@ -298,9 +298,15 @@ class _NodeAdminContentRuntime:
                     read_generation,
                 )
                 return
-            if handle_response(packet):
-                if is_read_generation_active(read_generation):
-                    response_event.set()
+            terminal = handle_response(packet)
+            if not is_read_generation_active(read_generation):
+                logger.debug(
+                    "Read generation %s retired during response handling; discarding result",
+                    read_generation,
+                )
+                return
+            if terminal:
+                response_event.set()
 
         request_message = admin_pb2.AdminMessage()
         build_request(request_message)

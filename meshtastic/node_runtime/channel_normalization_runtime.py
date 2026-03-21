@@ -37,13 +37,11 @@ class _NodeChannelNormalizationRuntime:
             )
             del channels[MAX_CHANNELS:]
 
-        for index, channel in enumerate(channels):
-            channel.index = index
-
-        # Only call fill_channels_locked if we actually added new channels
-        # to avoid redundant reindexing (fill_channels_locked reindexes when called directly)
         if len(channels) < MAX_CHANNELS:
             self.fill_channels_locked()
+        else:
+            for index, channel in enumerate(channels):
+                channel.index = index
 
     def fill_channels(self) -> None:
         """Append disabled channels up to ``MAX_CHANNELS`` under lock."""

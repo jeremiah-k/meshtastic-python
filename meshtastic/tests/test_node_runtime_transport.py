@@ -563,7 +563,8 @@ class TestNodeDeleteChannelRuntime:
 
         mock_local_node.channels = channels
 
-        plan = delete_channel_runtime._build_rewrite_plan(1)  # Delete channel 1
+        with mock_local_node._channels_lock:
+            plan = delete_channel_runtime._build_rewrite_plan(1)
 
         # Pre-delete admin index should be 2 (the named admin channel)
         assert plan.pre_delete_admin_index == 2
@@ -605,7 +606,8 @@ class TestNodeDeleteChannelRuntime:
             mock_remote_node, channel_write_runtime=channel_write_runtime
         )
 
-        plan = delete_runtime._build_rewrite_plan(1)  # Delete channel 1
+        with mock_remote_node._channels_lock:
+            plan = delete_runtime._build_rewrite_plan(1)
 
         # Pre-delete and post-delete admin index should come from localNode._get_admin_channel_index()
         mock_local._get_admin_channel_index.assert_called()
@@ -632,7 +634,8 @@ class TestNodeDeleteChannelRuntime:
         mock_local_node.channels = channels
 
         with pytest.raises(Exception, match="interface error"):
-            delete_channel_runtime._build_rewrite_plan(0)  # Try to delete PRIMARY
+            with mock_local_node._channels_lock:
+                delete_channel_runtime._build_rewrite_plan(0)
 
     @pytest.mark.unit
     def test_delete_channel_executes_rewrite_plan(
@@ -1044,12 +1047,12 @@ class TestNodePositionTimeCommandRuntime:
         assert position.longitude_i == 0
 
     @pytest.mark.unit
-    def test_set_fixed_position_with_zero_lat_lon_omits_coordinates(
+    def test_set_fixed_position_with_zero_lat_lon_preserves_explicit_zeros(
         self,
         position_time_runtime: _NodePositionTimeCommandRuntime,
         mock_local_node: MagicMock,
     ) -> None:
-        """set_fixed_position should treat zero latitude/longitude as unset sentinels."""
+        """set_fixed_position should preserve explicit zero lat/lon as valid coordinates."""
         position_time_runtime.set_fixed_position(lat=0.0, lon=0, alt=10)
 
         call_args = mock_local_node._send_admin.call_args

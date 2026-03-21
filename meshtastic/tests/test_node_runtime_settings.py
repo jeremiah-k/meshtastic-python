@@ -177,9 +177,7 @@ class TestNodeSettingsMessageBuilder:
     ) -> None:
         """get_write_config_entry includes sessionkey if present in localConfig."""
         builder = _NodeSettingsMessageBuilder(mock_node_for_settings)
-        # Add sessionkey attribute to localConfig (via setattr since it's optional)
-        # pyright: ignore[reportAttributeAccessIssue] -- optional field may not exist
-        mock_node_for_settings.localConfig.sessionkey = (
+        mock_node_for_settings.localConfig.sessionkey.CopyFrom(
             localonly_pb2.LocalConfig.SessionkeyConfig()  # type: ignore[attr-defined]
         )
 
@@ -198,8 +196,7 @@ class TestNodeSettingsMessageBuilder:
     ) -> None:
         """get_write_config_entry includes device_ui if present in localConfig."""
         builder = _NodeSettingsMessageBuilder(mock_node_for_settings)
-        # Add device_ui attribute to localConfig (via setattr since it's optional)
-        mock_node_for_settings.localConfig.device_ui = (
+        mock_node_for_settings.localConfig.device_ui.CopyFrom(
             localonly_pb2.LocalConfig.DeviceUIConfig()  # type: ignore[attr-defined]
         )
 
@@ -1267,8 +1264,7 @@ class TestNodeOwnerProfileRuntime:
             mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
         )
         message = call_args[0][0]
-        # is_unmessagable should not be set (protobuf default is False)
-        assert message.set_owner.is_unmessagable is False
+        assert not message.set_owner.HasField("is_unmessagable")
 
     @pytest.mark.unit
     def test_set_owner_with_all_params(
@@ -1292,6 +1288,7 @@ class TestNodeOwnerProfileRuntime:
         assert message.set_owner.long_name == "TestUser"
         assert message.set_owner.short_name == "TEST"
         assert message.set_owner.is_licensed is True
+        assert message.set_owner.HasField("is_unmessagable")
         assert message.set_owner.is_unmessagable is False
         # Check debug logs
         assert "p.set_owner.long_name:TestUser" in caplog.text

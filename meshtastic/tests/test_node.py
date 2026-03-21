@@ -2273,7 +2273,9 @@ def test_setURL_replace_rolls_back_written_channels_on_midflight_failure(
         if msg.HasField("set_channel")
         and msg.set_channel.settings.name in {"primary", "existing"}
     ]
-    assert {(channel.index, channel.settings.name) for channel in rollback_channels} == {
+    assert {
+        (channel.index, channel.settings.name) for channel in rollback_channels
+    } == {
         (0, "primary"),
     }
 
@@ -2544,7 +2546,7 @@ def test_onAckNak_handles_missing_invalid_and_ack_variants(
 
     anode.onAckNak({"decoded": {}})
     assert iface._acknowledgment.receivedAck is False
-    assert iface._acknowledgment.receivedNak is False
+    assert iface._acknowledgment.receivedNak is True
     assert iface._acknowledgment.receivedImplAck is False
 
     anode.onAckNak({"decoded": {"routing": {"errorReason": "NO_REPLY"}}})
@@ -2555,7 +2557,7 @@ def test_onAckNak_handles_missing_invalid_and_ack_variants(
     assert iface._acknowledgment.receivedAck is False
 
     anode.onAckNak({"decoded": {"routing": {"errorReason": "NONE"}}, "from": "abc"})
-    assert iface._acknowledgment.receivedAck is False
+    assert iface._acknowledgment.receivedNak is True
 
     anode.onAckNak({"decoded": {"routing": {"errorReason": "NONE"}}, "from": 123})
     assert iface._acknowledgment.receivedImplAck is True

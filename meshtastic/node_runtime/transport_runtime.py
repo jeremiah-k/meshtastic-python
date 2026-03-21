@@ -148,7 +148,9 @@ class _NodeChannelWriteRuntime:
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if channels is None:
-                self._node._raise_interface_error("Error: No channels have been read")  # noqa: SLF001
+                self._node._raise_interface_error(
+                    "Error: No channels have been read"
+                )  # noqa: SLF001
             if channel_index < 0 or channel_index >= len(channels):
                 self._node._raise_interface_error(  # noqa: SLF001
                     f"Channel index {channel_index} out of range (0-{len(channels) - 1})"
@@ -219,55 +221,59 @@ class _NodeDeleteChannelRuntime:
             index += 1
 
     def _build_rewrite_plan(self, channel_index: int) -> _DeleteChannelRewritePlan:
-        """Build lock-scoped delete/rewrite plan with pre/post admin indexes."""
-        with self._node._channels_lock:  # noqa: SLF001
-            channels = self._node.channels
-            if channels is None:
-                self._node._raise_interface_error("Error: No channels have been read")  # noqa: SLF001
-            if channel_index < 0 or channel_index >= len(channels):
-                self._node._raise_interface_error(  # noqa: SLF001
-                    f"Channel index {channel_index} out of range (0-{len(channels) - 1})"
-                )
+        """Build delete/rewrite plan with pre/post admin indexes.
 
-            channel_to_delete = channels[channel_index]
-            if channel_to_delete.role not in (
-                channel_pb2.Channel.Role.SECONDARY,
-                channel_pb2.Channel.Role.DISABLED,
-            ):
-                self._node._raise_interface_error(  # noqa: SLF001
-                    "Only SECONDARY or DISABLED channels can be deleted"
-                )
+        Caller must hold self._node._channels_lock.
+        """
+        channels = self._node.channels
+        if channels is None:
+            self._node._raise_interface_error(
+                "Error: No channels have been read"
+            )  # noqa: SLF001
+        if channel_index < 0 or channel_index >= len(channels):
+            self._node._raise_interface_error(  # noqa: SLF001
+                f"Channel index {channel_index} out of range (0-{len(channels) - 1})"
+            )
 
-            is_local_node = self._node.iface.localNode is self._node
-            if is_local_node:
-                pre_delete_admin_index = self._named_admin_index_from_channels(channels)
-            else:
-                pre_delete_admin_index = (
-                    self._node.iface.localNode._get_admin_channel_index()
-                )
+        channel_to_delete = channels[channel_index]
+        if channel_to_delete.role not in (
+            channel_pb2.Channel.Role.SECONDARY,
+            channel_pb2.Channel.Role.DISABLED,
+        ):
+            self._node._raise_interface_error(  # noqa: SLF001
+                "Only SECONDARY or DISABLED channels can be deleted"
+            )
 
-            staged_channels: list[channel_pb2.Channel] = []
-            for existing_channel in channels:
-                staged_channel = channel_pb2.Channel()
-                staged_channel.CopyFrom(existing_channel)
-                staged_channels.append(staged_channel)
-            staged_channels.pop(channel_index)
-            self._normalize_staged_channels(staged_channels)
+        is_local_node = self._node.iface.localNode is self._node
+        if is_local_node:
+            pre_delete_admin_index = self._named_admin_index_from_channels(channels)
+        else:
+            pre_delete_admin_index = (
+                self._node.iface.localNode._get_admin_channel_index()
+            )
 
-            channels_to_rewrite: list[channel_pb2.Channel] = []
-            for rewrite_index in range(channel_index, MAX_CHANNELS):
-                channel_snapshot = channel_pb2.Channel()
-                channel_snapshot.CopyFrom(staged_channels[rewrite_index])
-                channels_to_rewrite.append(channel_snapshot)
+        staged_channels: list[channel_pb2.Channel] = []
+        for existing_channel in channels:
+            staged_channel = channel_pb2.Channel()
+            staged_channel.CopyFrom(existing_channel)
+            staged_channels.append(staged_channel)
+        staged_channels.pop(channel_index)
+        self._normalize_staged_channels(staged_channels)
 
-            if is_local_node:
-                post_delete_admin_index = self._named_admin_index_from_channels(
-                    staged_channels
-                )
-            else:
-                post_delete_admin_index = (
-                    self._node.iface.localNode._get_admin_channel_index()
-                )
+        channels_to_rewrite: list[channel_pb2.Channel] = []
+        for rewrite_index in range(channel_index, MAX_CHANNELS):
+            channel_snapshot = channel_pb2.Channel()
+            channel_snapshot.CopyFrom(staged_channels[rewrite_index])
+            channels_to_rewrite.append(channel_snapshot)
+
+        if is_local_node:
+            post_delete_admin_index = self._named_admin_index_from_channels(
+                staged_channels
+            )
+        else:
+            post_delete_admin_index = (
+                self._node.iface.localNode._get_admin_channel_index()
+            )
 
         return _DeleteChannelRewritePlan(
             original_channels_ref=channels,
@@ -342,28 +348,32 @@ class _NodeAckNakRuntime:
             logger.warning(
                 "Received ACK/NAK response without decoded payload: %s", packet
             )
+            self._node.iface._acknowledgment.receivedNak = True  # noqa: SLF001
             return
         routing = decoded.get("routing")
         if not isinstance(routing, dict):
             logger.warning(
                 "Received ACK/NAK response without routing details: %s", packet
             )
+            self._node.iface._acknowledgment.receivedNak = True  # noqa: SLF001
             return
 
         error_reason = routing.get("errorReason", "NONE")
         if error_reason != "NONE":
             logger.warning("Received a NAK, error reason: %s", error_reason)
-            self._node.iface._acknowledgment.receivedNak = True
+            self._node.iface._acknowledgment.receivedNak = True  # noqa: SLF001
             return
 
         from_value = packet.get("from")
         if from_value is None:
             logger.warning("Received ACK/NAK response without sender: %s", packet)
+            self._node.iface._acknowledgment.receivedNak = True  # noqa: SLF001
             return
         try:
             from_num = int(from_value)
         except (TypeError, ValueError):
             logger.warning("Received ACK/NAK response with invalid sender: %s", packet)
+            self._node.iface._acknowledgment.receivedNak = True  # noqa: SLF001
             return
 
         if from_num == self._node.iface.localNode.nodeNum:

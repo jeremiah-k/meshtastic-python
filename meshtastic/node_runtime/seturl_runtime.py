@@ -5,7 +5,7 @@ import binascii
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, NoReturn, cast
+from typing import TYPE_CHECKING, NoReturn
 
 from google.protobuf.message import DecodeError
 
@@ -29,7 +29,6 @@ _ERR_CONFIG_OR_CHANNELS_NOT_LOADED = "Config or channels not loaded"
 class _SetUrlParsedInput:
     """Parsed/decoded setURL input."""
 
-    url: str
     channel_set: apponly_pb2.ChannelSet
     has_lora_update: bool
 
@@ -129,7 +128,6 @@ class _SetUrlParser:
         if len(channel_set.settings) == 0:
             raise_interface_error("There were no settings.")
         return _SetUrlParsedInput(
-            url=url,
             channel_set=channel_set,
             has_lora_update=channel_set.HasField("lora_config"),
         )
@@ -503,9 +501,7 @@ class _SetUrlExecutionEngine:
     def _safe_channel_role_name(role: int) -> str:
         """Return a safe channel role label for logging."""
         if role in channel_pb2.Channel.Role.values():
-            return channel_pb2.Channel.Role.Name(
-                cast(channel_pb2.Channel.Role.ValueType, role)
-            )
+            return channel_pb2.Channel.Role.Name(role)  # type: ignore[arg-type]
         return f"UNKNOWN({role})"
 
     @staticmethod
@@ -970,7 +966,7 @@ class _SetUrlTransactionCoordinator:
             has_admin_write_node_named_admin=(named_admin_index_for_write is not None),
         )
 
-    def apply_add_only(self) -> None:
+    def _apply_add_only(self) -> None:
         """Execute the addOnly setURL transaction pipeline."""
         planner = _SetUrlAddOnlyPlanner(
             self._node,
@@ -978,16 +974,17 @@ class _SetUrlTransactionCoordinator:
             admin_context=self._admin_context,
         )
         original_lora_config = planner.capture_original_lora_snapshot()
-        # Bootstrap admin session using the snapshotted path before staging.
-        self._node.ensureSessionKey(
-            adminIndex=self._admin_context.admin_index_for_write
-        )
         plan = planner.build_plan(original_lora_config=original_lora_config)
         for ignored_name in plan.ignored_channel_names:
             logger.info(
                 'Ignoring existing or empty channel "%s" from add URL',
                 ignored_name,
             )
+        if not plan.channels_to_write and not self._parsed_input.has_lora_update:
+            return
+        self._node.ensureSessionKey(
+            adminIndex=self._admin_context.admin_index_for_write
+        )
         execution_state = _SetUrlAddOnlyExecutionState()
         try:
             self._execution_engine.execute_add_only(
@@ -996,8 +993,6 @@ class _SetUrlTransactionCoordinator:
                 plan=plan,
                 state=execution_state,
             )
-        # Intentionally broad: rollback should run for any send failure in this
-        # transactional block. The original exception is re-raised.
         except Exception:
             self._rollback_engine.rollback_add_only(
                 admin_context=self._admin_context,
@@ -1014,7 +1009,7 @@ class _SetUrlTransactionCoordinator:
                 self._parsed_input.channel_set.lora_config
             )
 
-    def apply_replace_all(self) -> None:
+    def _apply_replace_all(self) -> None:
         """Execute the replace-all setURL transaction pipeline."""
         planner = _SetUrlReplacePlanner(
             self._node,

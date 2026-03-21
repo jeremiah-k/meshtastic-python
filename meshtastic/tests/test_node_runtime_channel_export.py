@@ -503,6 +503,7 @@ def test_turn_off_encryption_on_primary_channel_no_cache_after_write(
         0, channel_pb2.Channel.Role.PRIMARY, name="primary", psk=b"\x01"
     )
     mock_node.channels = [primary]
+    mock_node.partialChannels = ["SENTINEL"]
 
     # After write, set channels to None to simulate unavailable cache
     def write_side_effect(_channel: channel_pb2.Channel) -> None:
