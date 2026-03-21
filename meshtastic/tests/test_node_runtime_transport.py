@@ -1109,7 +1109,7 @@ class TestNodePositionTimeCommandRuntime:
     def test_remove_fixed_position_logs_info(
         self,
         position_time_runtime: _NodePositionTimeCommandRuntime,
-        _mock_local_node: MagicMock,
+        mock_local_node: MagicMock,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """remove_fixed_position should log info message."""
@@ -1177,7 +1177,7 @@ class TestNodePositionTimeCommandRuntime:
     def test_set_time_logs_info(
         self,
         position_time_runtime: _NodePositionTimeCommandRuntime,
-        _mock_local_node: MagicMock,
+        mock_local_node: MagicMock,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """set_time should log info message with timestamp."""

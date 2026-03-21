@@ -1022,7 +1022,7 @@ class TestSetUrlExecutionEngine:
         self,
         execution_engine: _SetUrlExecutionEngine,
         mock_local_node: MagicMock,
-        _cache_manager: _SetUrlCacheManager,
+        cache_manager: _SetUrlCacheManager,
     ) -> None:
         """execute_replace_all writes staged channels."""
         mock_local_node.channels = [
