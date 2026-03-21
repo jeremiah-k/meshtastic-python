@@ -31,7 +31,7 @@ from meshtastic.util import Acknowledgment
 class _SentinelError(Exception):
     """Sentinel exception for testing _raise_interface_error behavior."""
 
-    pass
+    pass  # pylint: disable=unnecessary-pass
 
 
 # ============================================================================

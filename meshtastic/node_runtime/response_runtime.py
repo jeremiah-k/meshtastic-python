@@ -1,7 +1,6 @@
 """Metadata and channel response runtimes for Node admin requests."""
 
 import logging
-import time
 from typing import TYPE_CHECKING, Any
 
 from meshtastic.node_runtime.shared import MAX_CHANNELS
