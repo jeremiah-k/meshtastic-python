@@ -916,7 +916,6 @@ class TestNodeAdminCommandRuntime:
             runtime.start_ota(
                 mode=admin_pb2.OTAMode.OTA_WIFI,
                 ota_file_hash=b"hash",
-                extra_kwargs={},
             )
 
     @pytest.mark.unit
@@ -930,7 +929,6 @@ class TestNodeAdminCommandRuntime:
             runtime.start_ota(
                 mode=None,
                 ota_file_hash=b"hash",
-                extra_kwargs={},
             )
 
     @pytest.mark.unit
@@ -946,7 +944,6 @@ class TestNodeAdminCommandRuntime:
             runtime.start_ota(
                 mode=admin_pb2.OTAMode.OTA_WIFI,
                 ota_file_hash=None,
-                extra_kwargs={},
             )
 
     @pytest.mark.unit
@@ -961,7 +958,6 @@ class TestNodeAdminCommandRuntime:
                 mode=admin_pb2.OTAMode.OTA_WIFI,
                 ota_mode=admin_pb2.OTAMode.OTA_BLE,
                 ota_file_hash=b"hash",
-                extra_kwargs={},
             )
 
     @pytest.mark.unit
@@ -975,7 +971,7 @@ class TestNodeAdminCommandRuntime:
             runtime.start_ota(
                 mode=admin_pb2.OTAMode.OTA_WIFI,
                 ota_file_hash=b"hash",
-                extra_kwargs={"unknown_arg": "value"},
+                unknown_arg="value",
             )
 
     @pytest.mark.unit
@@ -988,7 +984,6 @@ class TestNodeAdminCommandRuntime:
         result = runtime.start_ota(
             mode=admin_pb2.OTAMode.OTA_WIFI,
             ota_file_hash=b"test_hash_bytes",
-            extra_kwargs={},
         )
 
         assert result is not None
@@ -1009,7 +1004,7 @@ class TestNodeAdminCommandRuntime:
         result = runtime.start_ota(
             mode=admin_pb2.OTAMode.OTA_WIFI,
             ota_file_hash=None,
-            extra_kwargs={"hash": b"legacy_hash"},
+            hash=b"legacy_hash",
         )
 
         assert result is not None

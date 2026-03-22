@@ -491,6 +491,7 @@ class _SetUrlCacheManager:
             channels_changed = False
             if (
                 expected_channels_ref is not None
+                and channels is not None
                 and channels is not expected_channels_ref
             ):
                 channels_changed = True
@@ -502,7 +503,7 @@ class _SetUrlCacheManager:
                 channels_changed = (
                     _channels_fingerprint(channels) != expected_channels_fingerprint
                 )
-            if channels_changed or channels is None:
+            if channels_changed:
                 self._invalidate_channel_cache_locked(
                     "Channel cache changed during replace-all rollback restore; invalidating local channel cache."
                 )
@@ -640,6 +641,24 @@ class _SetUrlExecutionEngine:
             )
             if channel is not None
         }
+        channels = self._node.channels
+        channels_changed = plan.replace_original_channels_ref is not channels
+        if (
+            not channels_changed
+            and plan.replace_original_channels_fingerprint
+            and channels is not None
+        ):
+            channels_changed = (
+                _channels_fingerprint(channels)
+                != plan.replace_original_channels_fingerprint
+            )
+        if channels_changed:
+            self._cache_manager.invalidate_channel_cache(
+                "Channel cache changed before replace-all write; invalidating local channel cache."
+            )
+            self._node._raise_interface_error(  # noqa: SLF001
+                "Channel cache changed before replace-all write; aborting transaction."
+            )
         for staged_channel in plan.staged_channels:
             if staged_channel.index in deferred_channel_indexes:
                 continue
@@ -654,10 +673,9 @@ class _SetUrlExecutionEngine:
                 adminIndex=admin_context.admin_index_for_write,
             )
             state.written_channel_indices.append(staged_channel.index)
-            self._cache_manager.apply_replace_channel_write(
-                staged_channel,
-                expected_channels_ref=plan.replace_original_channels_ref,
-                expected_channels_fingerprint=plan.replace_original_channels_fingerprint,
+            self._cache_manager.apply_replace_channel_write(staged_channel)
+            plan.replace_original_channels_fingerprint = _channels_fingerprint(
+                self._node.channels
             )
 
         if parsed_input.has_lora_update:
@@ -794,9 +812,7 @@ class _SetUrlRollbackEngine:
                     rollback_succeeded = True
                     break
                 # Best-effort rollback path; keep attempting remaining steps.
-                except (
-                    Exception
-                ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                     last_rollback_error = rollback_error
             if not rollback_succeeded:
                 rollback_failed = True
@@ -910,9 +926,7 @@ class _SetUrlRollbackEngine:
                     )
                     rollback_succeeded = True
                     break
-                except (
-                    Exception
-                ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                     replace_last_rollback_error = rollback_error
             if not rollback_succeeded:
                 rollback_failed = True
@@ -1014,9 +1028,7 @@ class _SetUrlTransactionCoordinator:
             self._node._raise_interface_error(  # noqa: SLF001
                 "Interface localNode not initialized"
             )
-        admin_index_for_write = (
-            admin_write_node._get_admin_channel_index()
-        )  # noqa: SLF001
+        admin_index_for_write = admin_write_node._get_admin_channel_index()  # noqa: SLF001
         named_admin_index_for_write = (
             admin_write_node._get_named_admin_channel_index()  # noqa: SLF001
         )

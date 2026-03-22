@@ -1120,7 +1120,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             ota_file_hash=ota_file_hash,
             ota_mode=ota_mode,
             ota_hash=ota_hash,
-            extra_kwargs=kwargs,
+            **kwargs,
         )
 
     def enterDFUMode(self) -> mesh_pb2.MeshPacket | None:
