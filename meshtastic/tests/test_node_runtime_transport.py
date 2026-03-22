@@ -1142,7 +1142,7 @@ class TestNodePositionTimeCommandRuntime:
         mock_local_node: MagicMock,
     ) -> None:
         """remove_fixed_position should set remove_fixed_position flag."""
-        position_time_runtime.remove_fixed_position()
+        position_time_runtime._remove_fixed_position()
 
         mock_local_node.ensureSessionKey.assert_called_once()
         call_args = mock_local_node._send_admin.call_args
@@ -1159,7 +1159,7 @@ class TestNodePositionTimeCommandRuntime:
     ) -> None:
         """remove_fixed_position should log info message."""
         with caplog.at_level(logging.INFO):
-            position_time_runtime.remove_fixed_position()
+            position_time_runtime._remove_fixed_position()
 
         assert "remove fixed position" in caplog.text
 
@@ -1176,7 +1176,7 @@ class TestNodePositionTimeCommandRuntime:
         """set_time with explicit timestamp should use provided value."""
         explicit_time = 1700000000
 
-        position_time_runtime.set_time(time_sec=explicit_time)
+        position_time_runtime._set_time(time_sec=explicit_time)
 
         mock_local_node.ensureSessionKey.assert_called_once()
         call_args = mock_local_node._send_admin.call_args
@@ -1194,7 +1194,7 @@ class TestNodePositionTimeCommandRuntime:
         current_time = 1700123456
 
         with patch.object(time_module, "time", return_value=current_time):
-            position_time_runtime.set_time(time_sec=0)
+            position_time_runtime._set_time(time_sec=0)
 
         call_args = mock_local_node._send_admin.call_args
         admin_message = call_args[0][0]
@@ -1211,7 +1211,7 @@ class TestNodePositionTimeCommandRuntime:
         current_time = 1700999999
 
         with patch.object(time_module, "time", return_value=current_time):
-            position_time_runtime.set_time()
+            position_time_runtime._set_time()
 
         call_args = mock_local_node._send_admin.call_args
         admin_message = call_args[0][0]
@@ -1227,7 +1227,7 @@ class TestNodePositionTimeCommandRuntime:
     ) -> None:
         """set_time should log info message with timestamp."""
         with caplog.at_level(logging.INFO):
-            position_time_runtime.set_time(time_sec=1700000000)
+            position_time_runtime._set_time(time_sec=1700000000)
 
         assert "Setting node time" in caplog.text
         assert "1700000000" in caplog.text

@@ -20,9 +20,15 @@ from meshtastic.tests.seturl.conftest import _make_channel
 class _WriteFailure(RuntimeError):
     """Intentional write failure sentinel."""
 
+    def __init__(self) -> None:
+        super().__init__("Write failed")
+
 
 class _LoRaRollbackFailure(RuntimeError):
     """Intentional LoRa rollback failure sentinel."""
+
+    def __init__(self) -> None:
+        super().__init__("LoRa rollback failed")
 
 
 class TestSetUrlRollbackEngine:
@@ -67,7 +73,7 @@ class TestSetUrlRollbackEngine:
         ) -> None:
             if adminIndex == 0:
                 failed_admin_indexes.append(adminIndex)
-                raise _WriteFailure("Write failed")
+                raise _WriteFailure()
 
         mock_local_node._write_channel_snapshot.side_effect = write_side_effect
 
@@ -133,7 +139,7 @@ class TestSetUrlRollbackEngine:
             _msg: admin_pb2.AdminMessage, *, adminIndex: int | None = None
         ) -> None:
             _ = adminIndex
-            raise _LoRaRollbackFailure("LoRa rollback failed")
+            raise _LoRaRollbackFailure()
 
         mock_local_node._write_channel_snapshot.side_effect = write_side_effect
         mock_local_node._send_admin.side_effect = send_admin_side_effect

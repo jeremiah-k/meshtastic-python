@@ -18,12 +18,12 @@ class _NodeChannelNormalizationRuntime:
     def __init__(self, node: "Node") -> None:
         self._node = node
 
-    def fixup_channels(self) -> None:
-        """Normalize channels under lock via ``fixup_channels_locked`` semantics."""
+    def _fixup_channels(self) -> None:
+        """Normalize channels under lock via ``_fixup_channels_locked`` semantics."""
         with self._node._channels_lock:  # noqa: SLF001
-            self.fixup_channels_locked()
+            self._fixup_channels_locked()
 
-    def fixup_channels_locked(self) -> None:
+    def _fixup_channels_locked(self) -> None:
         """Normalize channel indices/size while ``_channels_lock`` is held."""
         channels = self._node.channels
         if channels is None:
@@ -38,17 +38,17 @@ class _NodeChannelNormalizationRuntime:
             del channels[MAX_CHANNELS:]
 
         if len(channels) < MAX_CHANNELS:
-            self.fill_channels_locked()
+            self._fill_channels_locked()
         else:
             for index, channel in enumerate(channels):
                 channel.index = index
 
-    def fill_channels(self) -> None:
+    def _fill_channels(self) -> None:
         """Append disabled channels up to ``MAX_CHANNELS`` under lock."""
         with self._node._channels_lock:  # noqa: SLF001
-            self.fill_channels_locked()
+            self._fill_channels_locked()
 
-    def fill_channels_locked(self) -> None:
+    def _fill_channels_locked(self) -> None:
         """Append disabled channels up to ``MAX_CHANNELS`` while lock is held."""
         channels = self._node.channels
         if channels is None:

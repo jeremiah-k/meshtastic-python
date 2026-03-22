@@ -31,17 +31,17 @@ def runtime(mock_node: MagicMock) -> _NodeChannelNormalizationRuntime:
 
 @pytest.mark.unit
 class TestFixupChannelsLocked:
-    """Tests for _NodeChannelNormalizationRuntime.fixup_channels_locked()."""
+    """Tests for _NodeChannelNormalizationRuntime._fixup_channels_locked()."""
 
     def test_fixup_channels_locked_with_none_channels_returns_early(
         self, mock_node: MagicMock
     ) -> None:
-        """When channels is None, fixup_channels_locked should return early."""
+        """When channels is None, _fixup_channels_locked should return early."""
         mock_node.channels = None
         runtime = _NodeChannelNormalizationRuntime(mock_node)
 
         # Should not raise and should return without error
-        runtime.fixup_channels_locked()
+        runtime._fixup_channels_locked()
 
         # Channels should still be None (no modification)
         assert mock_node.channels is None
@@ -62,7 +62,7 @@ class TestFixupChannelsLocked:
         runtime = _NodeChannelNormalizationRuntime(mock_node)
 
         with caplog.at_level("WARNING"):
-            runtime.fixup_channels_locked()
+            runtime._fixup_channels_locked()
 
         # Should have truncated to MAX_CHANNELS
         assert len(mock_node.channels) == MAX_CHANNELS
@@ -89,7 +89,7 @@ class TestFixupChannelsLocked:
             mock_node.channels.append(ch)
 
         runtime = _NodeChannelNormalizationRuntime(mock_node)
-        runtime.fixup_channels_locked()
+        runtime._fixup_channels_locked()
 
         # All channels should now have correct sequential indexes
         for i, ch in enumerate(mock_node.channels):
@@ -98,49 +98,49 @@ class TestFixupChannelsLocked:
     def test_fixup_channels_locked_calls_fill_channels_locked(
         self, mock_node: MagicMock
     ) -> None:
-        """fixup_channels_locked should call fill_channels_locked at the end."""
+        """_fixup_channels_locked should call _fill_channels_locked at the end."""
         runtime = _NodeChannelNormalizationRuntime(mock_node)
-        runtime.fill_channels_locked = MagicMock()  # type: ignore[method-assign]
+        runtime._fill_channels_locked = MagicMock()  # type: ignore[method-assign]
 
-        runtime.fixup_channels_locked()
+        runtime._fixup_channels_locked()
 
-        runtime.fill_channels_locked.assert_called_once()
+        runtime._fill_channels_locked.assert_called_once()
 
 
 @pytest.mark.unit
 class TestFixupChannels:
-    """Tests for _NodeChannelNormalizationRuntime.fixup_channels()."""
+    """Tests for _NodeChannelNormalizationRuntime._fixup_channels()."""
 
     def test_fixup_channels_acquires_lock_and_calls_locked_version(
         self, mock_node: MagicMock, runtime: _NodeChannelNormalizationRuntime
     ) -> None:
-        """fixup_channels should acquire lock and call fixup_channels_locked."""
+        """_fixup_channels should acquire lock and call _fixup_channels_locked."""
         mock_node._channels_lock = MagicMock()
         mock_node._channels_lock.__enter__ = MagicMock(return_value=None)
         mock_node._channels_lock.__exit__ = MagicMock(return_value=False)
-        runtime.fixup_channels_locked = MagicMock()  # type: ignore[method-assign]
+        runtime._fixup_channels_locked = MagicMock()  # type: ignore[method-assign]
 
-        runtime.fixup_channels()
+        runtime._fixup_channels()
 
         # Lock should have been acquired
         mock_node._channels_lock.__enter__.assert_called_once()
         mock_node._channels_lock.__exit__.assert_called_once()
-        runtime.fixup_channels_locked.assert_called_once()
+        runtime._fixup_channels_locked.assert_called_once()
 
 
 @pytest.mark.unit
 class TestFillChannelsLocked:
-    """Tests for _NodeChannelNormalizationRuntime.fill_channels_locked()."""
+    """Tests for _NodeChannelNormalizationRuntime._fill_channels_locked()."""
 
     def test_fill_channels_locked_with_none_channels_returns_early(
         self, mock_node: MagicMock
     ) -> None:
-        """When channels is None, fill_channels_locked should return early."""
+        """When channels is None, _fill_channels_locked should return early."""
         mock_node.channels = None
         runtime = _NodeChannelNormalizationRuntime(mock_node)
 
         # Should not raise and should return without error
-        runtime.fill_channels_locked()
+        runtime._fill_channels_locked()
 
         # Channels should still be None
         assert mock_node.channels is None
@@ -159,7 +159,7 @@ class TestFillChannelsLocked:
         original_channels = list(mock_node.channels)
         runtime = _NodeChannelNormalizationRuntime(mock_node)
 
-        runtime.fill_channels_locked()
+        runtime._fill_channels_locked()
 
         # List length should not change
         assert len(mock_node.channels) == MAX_CHANNELS
@@ -180,7 +180,7 @@ class TestFillChannelsLocked:
             mock_node.channels.append(ch)
 
         runtime = _NodeChannelNormalizationRuntime(mock_node)
-        runtime.fill_channels_locked()
+        runtime._fill_channels_locked()
 
         # Should now have MAX_CHANNELS total
         assert len(mock_node.channels) == MAX_CHANNELS
@@ -203,7 +203,7 @@ class TestFillChannelsLocked:
         mock_node.channels = [first, second]
         runtime = _NodeChannelNormalizationRuntime(mock_node)
 
-        runtime.fill_channels_locked()
+        runtime._fill_channels_locked()
 
         assert mock_node.channels[0].index == 0
         assert mock_node.channels[1].index == 1
@@ -217,7 +217,7 @@ class TestFillChannelsLocked:
         mock_node.channels = []
         runtime = _NodeChannelNormalizationRuntime(mock_node)
 
-        runtime.fill_channels_locked()
+        runtime._fill_channels_locked()
 
         # Should have MAX_CHANNELS all DISABLED
         assert len(mock_node.channels) == MAX_CHANNELS
@@ -228,23 +228,23 @@ class TestFillChannelsLocked:
 
 @pytest.mark.unit
 class TestFillChannels:
-    """Tests for _NodeChannelNormalizationRuntime.fill_channels()."""
+    """Tests for _NodeChannelNormalizationRuntime._fill_channels()."""
 
     def test_fill_channels_acquires_lock_and_calls_locked_version(
         self, mock_node: MagicMock, runtime: _NodeChannelNormalizationRuntime
     ) -> None:
-        """fill_channels should acquire lock and call fill_channels_locked."""
+        """_fill_channels should acquire lock and call _fill_channels_locked."""
         mock_node._channels_lock = MagicMock()
         mock_node._channels_lock.__enter__ = MagicMock(return_value=None)
         mock_node._channels_lock.__exit__ = MagicMock(return_value=False)
-        runtime.fill_channels_locked = MagicMock()  # type: ignore[method-assign]
+        runtime._fill_channels_locked = MagicMock()  # type: ignore[method-assign]
 
-        runtime.fill_channels()
+        runtime._fill_channels()
 
         # Lock should have been acquired
         mock_node._channels_lock.__enter__.assert_called_once()
         mock_node._channels_lock.__exit__.assert_called_once()
-        runtime.fill_channels_locked.assert_called_once()
+        runtime._fill_channels_locked.assert_called_once()
 
 
 @pytest.mark.unit
@@ -267,7 +267,7 @@ class TestIntegration:
         runtime = _NodeChannelNormalizationRuntime(mock_node)
 
         with caplog.at_level("WARNING"):
-            runtime.fixup_channels()
+            runtime._fixup_channels()
 
         # Should be truncated to MAX_CHANNELS
         assert len(mock_node.channels) == MAX_CHANNELS
@@ -292,7 +292,7 @@ class TestIntegration:
             mock_node.channels.append(ch)
 
         runtime = _NodeChannelNormalizationRuntime(mock_node)
-        runtime.fixup_channels()
+        runtime._fixup_channels()
 
         # Should be filled to MAX_CHANNELS
         assert len(mock_node.channels) == MAX_CHANNELS

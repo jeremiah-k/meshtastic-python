@@ -77,7 +77,7 @@ class _NodeChannelRequestRuntime:
                 copied_channel.CopyFrom(source_channel)
                 copied_channels.append(copied_channel)
             self._node.channels = copied_channels
-            self._normalization_runtime.fixup_channels_locked()
+            self._normalization_runtime._fixup_channels_locked()
 
     def request_channels(self, *, starting_index: int = 0) -> None:
         """Bootstrap channel request flow from ``starting_index``."""

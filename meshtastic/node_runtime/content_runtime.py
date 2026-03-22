@@ -484,25 +484,32 @@ class _NodeAdminContentRuntime:
             ]
             first_send_result: mesh_pb2.MeshPacket | None = None
             response_handler = self._select_write_response_handler()
+            wrote_any_chunk = False
             logger.debug(
                 "Setting canned message in %d chunks (%d chars total)",
                 len(chunks),
                 len(message),
             )
 
-            for chunk_index, chunk in enumerate(chunks):
-                request_message = admin_pb2.AdminMessage()
-                request_message.set_canned_message_module_messages = chunk
-                send_result = self._node._send_admin(
-                    request_message,
-                    onResponse=response_handler,
-                )
-                if chunk_index == 0:
-                    first_send_result = send_result
-                if send_result is None:
-                    if first_send_result is not None:
-                        self._cache_store.invalidate_canned_message_cache()
-                    return None
+            try:
+                for chunk_index, chunk in enumerate(chunks):
+                    request_message = admin_pb2.AdminMessage()
+                    request_message.set_canned_message_module_messages = chunk
+                    send_result = self._node._send_admin(
+                        request_message,
+                        onResponse=response_handler,
+                    )
+                    if chunk_index == 0:
+                        first_send_result = send_result
+                    if send_result is None:
+                        if wrote_any_chunk:
+                            self._cache_store.invalidate_canned_message_cache()
+                        return None
+                    wrote_any_chunk = True
+            except Exception:
+                if wrote_any_chunk:
+                    self._cache_store.invalidate_canned_message_cache()
+                raise
 
             self._cache_store.invalidate_canned_message_cache()
             return first_send_result

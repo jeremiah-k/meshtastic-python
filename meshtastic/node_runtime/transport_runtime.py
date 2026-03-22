@@ -503,7 +503,7 @@ class _NodePositionTimeCommandRuntime:
         admin_message.set_fixed_position.CopyFrom(position_message)
         return self._send_position_time_command(admin_message)
 
-    def remove_fixed_position(self) -> mesh_pb2.MeshPacket | None:
+    def _remove_fixed_position(self) -> mesh_pb2.MeshPacket | None:
         """Send remove_fixed_position admin command."""
         self._node.ensureSessionKey()
         admin_message = admin_pb2.AdminMessage()
@@ -511,8 +511,12 @@ class _NodePositionTimeCommandRuntime:
         logger.info("Telling node to remove fixed position")
         return self._send_position_time_command(admin_message)
 
-    def set_time(self, *, time_sec: int = 0) -> mesh_pb2.MeshPacket | None:
+    def _set_time(self, *, time_sec: int = 0) -> mesh_pb2.MeshPacket | None:
         """Send set_time_only admin command with current-time fallback."""
+        if isinstance(time_sec, bool) or not isinstance(time_sec, int):
+            self._node._raise_interface_error(  # noqa: SLF001
+                f"Invalid time_sec type: {type(time_sec).__name__}. Expected int."
+            )
         self._node.ensureSessionKey()
         if time_sec == 0:
             time_sec = int(time.time())

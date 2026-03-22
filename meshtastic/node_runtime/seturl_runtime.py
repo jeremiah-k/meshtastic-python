@@ -415,6 +415,7 @@ class _SetUrlCacheManager:
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if channels is None:
+                self._node.partialChannels = []
                 logger.warning(
                     "Channel cache unavailable after successful addOnly apply; reload channels to refresh local state."
                 )
@@ -435,6 +436,8 @@ class _SetUrlCacheManager:
                         f"Channel index {staged_channel.index} out of range during addOnly cache update; invalidating local channel cache."
                     )
                     break
+            else:
+                self._node.partialChannels = []
 
     def apply_replace_channel_write(
         self,
@@ -472,6 +475,7 @@ class _SetUrlCacheManager:
                     f"Channel index {staged_channel.index} out of range during cache update"
                 )
             channels[staged_channel.index].CopyFrom(staged_channel)
+            self._node.partialChannels = []
 
     def invalidate_channel_cache(self, warning_message: str) -> None:
         """Invalidate local channel cache after incomplete rollback."""
@@ -673,7 +677,12 @@ class _SetUrlExecutionEngine:
                 adminIndex=admin_context.admin_index_for_write,
             )
             state.written_channel_indices.append(staged_channel.index)
-            self._cache_manager.apply_replace_channel_write(staged_channel)
+            self._cache_manager.apply_replace_channel_write(
+                staged_channel,
+                expected_channels_ref=plan.replace_original_channels_ref,
+                expected_channels_fingerprint=plan.replace_original_channels_fingerprint,
+            )
+            self._node.partialChannels = []
 
         if parsed_input.has_lora_update:
             set_lora = admin_pb2.AdminMessage()
@@ -709,6 +718,7 @@ class _SetUrlExecutionEngine:
             self._cache_manager.apply_replace_channel_write(
                 plan.deferred_new_named_admin_channel,
                 expected_channels_ref=plan.replace_original_channels_ref,
+                expected_channels_fingerprint=plan.replace_original_channels_fingerprint,
             )
             state.rollback_admin_indexes_for_write = _ordered_admin_indexes(
                 plan.deferred_new_named_admin_channel.index,
@@ -744,6 +754,7 @@ class _SetUrlExecutionEngine:
             self._cache_manager.apply_replace_channel_write(
                 plan.deferred_previous_admin_slot_channel,
                 expected_channels_ref=plan.replace_original_channels_ref,
+                expected_channels_fingerprint=plan.replace_original_channels_fingerprint,
             )
 
 
@@ -809,7 +820,9 @@ class _SetUrlRollbackEngine:
                     rollback_succeeded = True
                     break
                 # Best-effort rollback path; keep attempting remaining steps.
-                except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                except (
+                    Exception
+                ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                     last_rollback_error = rollback_error
             if not rollback_succeeded:
                 rollback_failed = True
@@ -923,7 +936,9 @@ class _SetUrlRollbackEngine:
                     )
                     rollback_succeeded = True
                     break
-                except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                except (
+                    Exception
+                ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                     replace_last_rollback_error = rollback_error
             if not rollback_succeeded:
                 rollback_failed = True
@@ -1024,7 +1039,9 @@ class _SetUrlTransactionCoordinator:
             self._node._raise_interface_error(  # noqa: SLF001
                 "Interface localNode not initialized"
             )
-        admin_index_for_write = admin_write_node._get_admin_channel_index()  # noqa: SLF001
+        admin_index_for_write = (
+            admin_write_node._get_admin_channel_index()
+        )  # noqa: SLF001
         named_admin_index_for_write = (
             admin_write_node._get_named_admin_channel_index()  # noqa: SLF001
         )

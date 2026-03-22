@@ -399,3 +399,4 @@ class _NodeChannelResponseRuntime:
                 index,
             )
             self._channel_request_failed = True
+            self._node._timeout.reset()  # noqa: SLF001

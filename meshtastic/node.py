@@ -1327,7 +1327,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The sent AdminMessage (`mesh_pb2.MeshPacket`) if a packet was transmitted, or `None` if sending was skipped.
         """
-        return self._position_time_runtime.remove_fixed_position()
+        return self._position_time_runtime._remove_fixed_position()
 
     def setTime(self, timeSec: int = 0) -> mesh_pb2.MeshPacket | None:
         """Set the node's clock to the specified Unix timestamp.
@@ -1346,7 +1346,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             mesh_pb2.MeshPacket or None: The sent AdminMessage packet when available, or `None` if no packet is produced.
         """
-        return self._position_time_runtime.set_time(time_sec=timeSec)
+        return self._position_time_runtime._set_time(time_sec=timeSec)
 
     def _fixup_channels(self) -> None:
         """Normalize the node's channel list by assigning sequential index values and ensuring the list contains the expected number of channels.
@@ -1355,11 +1355,11 @@ class Node:  # pylint: disable=too-many-instance-attributes
         field to its position in the list (starting at 0) and then appends disabled channels as
         needed so the channel list reaches the required length.
         """
-        self._channel_normalization_runtime.fixup_channels()
+        self._channel_normalization_runtime._fixup_channels()
 
     def _fixup_channels_locked(self) -> None:
         """Normalize channel indices and size while holding ``self._channels_lock``."""
-        self._channel_normalization_runtime.fixup_channels_locked()
+        self._channel_normalization_runtime._fixup_channels_locked()
 
     def _fill_channels(self) -> None:
         """Ensure the node has exactly eight channels by appending DISABLED channels as needed.
@@ -1368,11 +1368,11 @@ class Node:  # pylint: disable=too-many-instance-attributes
         role `DISABLED` and sequential `index` values until the list length reaches
         ``MAX_CHANNELS``.
         """
-        self._channel_normalization_runtime.fill_channels()
+        self._channel_normalization_runtime._fill_channels()
 
     def _fill_channels_locked(self) -> None:
         """Append disabled channels up to ``MAX_CHANNELS`` while holding ``self._channels_lock``."""
-        self._channel_normalization_runtime.fill_channels_locked()
+        self._channel_normalization_runtime._fill_channels_locked()
 
     def onRequestGetMetadata(self, p: dict[str, Any]) -> None:
         """Handle an incoming device metadata response packet and display the parsed metadata.

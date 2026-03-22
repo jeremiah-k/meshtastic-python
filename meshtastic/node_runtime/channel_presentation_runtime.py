@@ -68,7 +68,9 @@ class _NodeChannelPresentationRuntime:
                     f"psk={pskToString(channel.settings.psk)} {channel_string}"
                 )
         try:
-            public_url = self._export_runtime.get_url(include_all=False)
+            public_url = self._export_runtime._get_url_from_snapshot(
+                channels_snapshot, include_all=False
+            )
         except Exception as exc:  # noqa: BLE001 - show_info should remain non-fatal
             logger.warning("Unable to export primary channel URL: %s", exc)
             print("\nPrimary channel URL: unavailable")
@@ -76,7 +78,9 @@ class _NodeChannelPresentationRuntime:
 
         admin_url = public_url
         try:
-            admin_url = self._export_runtime.get_url(include_all=True)
+            admin_url = self._export_runtime._get_url_from_snapshot(
+                channels_snapshot, include_all=True
+            )
         except Exception as exc:  # noqa: BLE001 - show_info should remain non-fatal
             logger.warning("Unable to export complete channel URL: %s", exc)
 

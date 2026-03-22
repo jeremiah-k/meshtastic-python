@@ -176,9 +176,7 @@ class TestBLELifecycleControllerDisconnectDelegation:
     def test_on_ble_disconnect_delegates_to_disconnect_coordinator(self) -> None:
         """_on_ble_disconnect should delegate to the _disconnect coordinator."""
         calls: list[object] = []
-        mock_disconnect = SimpleNamespace(
-            on_ble_disconnect=lambda client: calls.append(client)
-        )
+        mock_disconnect = SimpleNamespace(on_ble_disconnect=calls.append)
         mock_iface = SimpleNamespace()
         controller = BLELifecycleController(mock_iface)
         controller._disconnect = mock_disconnect  # type: ignore[assignment]
@@ -210,7 +208,7 @@ class TestBLELifecycleControllerConnectionOwnershipDelegation:
         """_emit_verified_connection_side_effects should delegate to _connection_ownership."""
         calls: list[object] = []
         mock_ownership = SimpleNamespace(
-            _emit_verified_connection_side_effects=lambda client: calls.append(client)
+            _emit_verified_connection_side_effects=calls.append
         )
         mock_iface = SimpleNamespace()
         controller = BLELifecycleController(mock_iface)
@@ -235,8 +233,6 @@ class TestBLELifecycleControllerHookResolution:
         """_resolve_hook should return the hook when it's a configured callable."""
         # Create a configured mock using public APIs.
         configured_hook = MagicMock(return_value=True)
-        configured_hook.side_effect = None
-        configured_hook.reset_mock()
 
         resolved_is_closing: list[bool] = []
 
@@ -644,9 +640,7 @@ class TestBLELifecycleControllerClientManagement:
     ) -> None:
         """_disconnect_and_close_client should delegate to _disconnect coordinator."""
         calls: list[object] = []
-        mock_disconnect = SimpleNamespace(
-            disconnect_and_close_client=lambda client: calls.append(client)
-        )
+        mock_disconnect = SimpleNamespace(disconnect_and_close_client=calls.append)
         mock_iface = SimpleNamespace()
         controller = BLELifecycleController(mock_iface)
         controller._disconnect = mock_disconnect  # type: ignore[assignment]
