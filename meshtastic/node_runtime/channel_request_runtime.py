@@ -111,6 +111,9 @@ class _NodeChannelRequestRuntime:
                 )
                 if not completed:
                     return False
+                with self._node._channels_lock:  # noqa: SLF001
+                    if self._node.channels is not None:
+                        return True
                 return not bool(has_channel_request_failed())
             return self._node._timeout.waitForSet(  # noqa: SLF001
                 self._node,

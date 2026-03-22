@@ -152,7 +152,7 @@ def mock_local_node(mock_iface: MagicMock) -> MagicMock:
     node.ensureSessionKey = MagicMock()
     node._get_admin_channel_index = MagicMock(return_value=0)
     node._get_named_admin_channel_index = MagicMock(return_value=None)
-    node._execute_with_node_db_lock = lambda func: func()
+    node._execute_with_node_db_lock = MagicMock(side_effect=lambda func: func())
 
     mock_iface.localNode = node
     return node

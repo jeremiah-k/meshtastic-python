@@ -4,8 +4,9 @@
 
 import re
 import threading
+from types import SimpleNamespace
 from typing import cast
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, create_autospec
 
 import pytest
 
@@ -29,14 +30,14 @@ def mock_node() -> MagicMock:
         spec=[
             "channels",
             "_channels_lock",
-            "_node_db_lock",
+            "iface",
             "localConfig",
             "moduleConfig",
         ]
     )
     node.channels = []
     node._channels_lock = threading.RLock()  # noqa: SLF001
-    node._node_db_lock = threading.RLock()  # noqa: SLF001
+    node.iface = SimpleNamespace(_node_db_lock=threading.RLock())
     node.localConfig = None
     node.moduleConfig = None
     return node
@@ -56,7 +57,7 @@ def presentation_runtime(mock_node: MagicMock) -> _NodeChannelPresentationRuntim
     _NodeChannelPresentationRuntime
         The presentation runtime instance with a mocked export_runtime.
     """
-    export_runtime = MagicMock(spec=_NodeChannelExportRuntime)
+    export_runtime = create_autospec(_NodeChannelExportRuntime, instance=True)
     export_runtime.get_url.return_value = "https://meshtastic.org/e/#test"
     return _NodeChannelPresentationRuntime(mock_node, export_runtime=export_runtime)
 
@@ -130,7 +131,7 @@ def test_show_channels_handles_export_errors_without_raising(
     mock_node: MagicMock, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """show_channels should keep presentation output even if URL export fails."""
-    export_runtime = MagicMock(spec=_NodeChannelExportRuntime)
+    export_runtime = create_autospec(_NodeChannelExportRuntime, instance=True)
     export_runtime.get_url.side_effect = RuntimeError("channels not loaded")
     presentation_runtime = _NodeChannelPresentationRuntime(
         mock_node, export_runtime=export_runtime
@@ -153,12 +154,16 @@ def test_show_channels_shows_complete_url_when_different_from_public(
 
     This exercises the branch that prints complete URL when admin_url differs.
     """
-    export_runtime = MagicMock(spec=_NodeChannelExportRuntime)
-    export_runtime.get_url.side_effect = lambda include_all: (
-        "https://meshtastic.org/e/#complete"
-        if include_all
-        else "https://meshtastic.org/e/#public"
-    )
+    export_runtime = create_autospec(_NodeChannelExportRuntime, instance=True)
+
+    def get_url_side_effect(*, include_all: bool = True) -> str:
+        return (
+            "https://meshtastic.org/e/#complete"
+            if include_all
+            else "https://meshtastic.org/e/#public"
+        )
+
+    export_runtime.get_url.side_effect = get_url_side_effect
     presentation_runtime = _NodeChannelPresentationRuntime(
         mock_node, export_runtime=export_runtime
     )

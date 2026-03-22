@@ -112,12 +112,16 @@ class TestSetUrlRollbackEngine:
 
         write_call_count = [0]
 
-        def write_side_effect(_channel: channel_pb2.Channel, _adminIndex: int) -> None:
+        def write_side_effect(
+            _channel: channel_pb2.Channel, *, adminIndex: int | None = None
+        ) -> None:
+            _ = adminIndex
             write_call_count[0] += 1
 
         def send_admin_side_effect(
-            _msg: admin_pb2.AdminMessage, _adminIndex: int
+            _msg: admin_pb2.AdminMessage, *, adminIndex: int | None = None
         ) -> None:
+            _ = adminIndex
             raise RuntimeError("LoRa rollback failed")
 
         mock_local_node._write_channel_snapshot.side_effect = write_side_effect

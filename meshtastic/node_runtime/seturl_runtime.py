@@ -27,9 +27,9 @@ _ERR_CONFIG_OR_CHANNELS_NOT_LOADED = "Config or channels not loaded"
 
 def _channels_fingerprint(
     channels: list[channel_pb2.Channel],
-) -> tuple[tuple[int, int], ...]:
-    """Return a stable fingerprint of channel indices and roles for comparison."""
-    return tuple((c.index, c.role) for c in channels)
+) -> tuple[bytes, ...]:
+    """Return an immutable, deterministic fingerprint of channel states for comparison."""
+    return tuple(c.SerializeToString() for c in channels)
 
 
 @dataclass(frozen=True)

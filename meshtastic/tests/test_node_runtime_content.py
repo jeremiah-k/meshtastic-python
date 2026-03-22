@@ -4,6 +4,7 @@
 
 import logging
 import threading
+from collections.abc import Callable
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -712,10 +713,15 @@ class TestNodeAdminContentRuntime:
         send_call_count = {"count": 0}
 
         def send_admin_side_effect(
-            _message: admin_pb2.AdminMessage, **kwargs: Any
+            _message: admin_pb2.AdminMessage,
+            wantResponse: bool = False,
+            onResponse: Callable[[dict[str, Any]], Any] | None = None,
+            adminIndex: int | None = None,
         ) -> object:
+            _ = (wantResponse, adminIndex)
             send_call_count["count"] += 1
-            callback = kwargs["onResponse"]
+            assert onResponse is not None
+            callback = onResponse
             callback_by_call[send_call_count["count"]] = callback
             if send_call_count["count"] == 2:
                 callback(

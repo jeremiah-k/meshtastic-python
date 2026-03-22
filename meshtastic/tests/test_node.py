@@ -2584,7 +2584,7 @@ def test_send_admin_no_proto_returns_none(
 def test_send_admin_uses_session_passkey_and_selected_admin_index(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """_send_admin should attach passkey and send over the selected admin channel."""
+    """_send_admin should attach passkey to outbound message and send over the selected admin channel."""
     iface = autospec_local_node_iface(MeshInterface)
     iface.localNode._get_admin_channel_index.return_value = 3
     iface._get_or_create_by_num.return_value = {"adminSessionPassKey": b"secret"}
@@ -2597,8 +2597,10 @@ def test_send_admin_uses_session_passkey_and_selected_admin_index(
     result = anode._send_admin(msg, wantResponse=True, onResponse=response_handler)
 
     assert result is packet
-    assert msg.session_passkey == b"secret"
     iface.sendData.assert_called_once()
+    outbound_msg = iface.sendData.call_args[0][0]
+    assert outbound_msg.session_passkey == b"secret"
+    assert msg.session_passkey == b""
     assert iface.sendData.call_args.kwargs["channelIndex"] == 3
     assert iface.sendData.call_args.kwargs["pkiEncrypted"] is True
 

@@ -85,11 +85,13 @@ class _NodeAdminTransportRuntime:
 
         node_info = self._node.iface._get_or_create_by_num(self._node.nodeNum)
         passkey = node_info.get("adminSessionPassKey")
+        outbound_message = admin_pb2.AdminMessage()
+        outbound_message.CopyFrom(message)
         if isinstance(passkey, bytes):
-            message.session_passkey = passkey
+            outbound_message.session_passkey = passkey
 
         return self._node.iface.sendData(
-            message,
+            outbound_message,
             self._node.nodeNum,
             portNum=portnums_pb2.PortNum.ADMIN_APP,
             wantAck=True,
@@ -306,12 +308,14 @@ class _NodeDeleteChannelRuntime:
         """
         with self._node._channels_lock:  # noqa: SLF001
             rewrite_plan = self._build_rewrite_plan(channel_index)
-            try:
-                self._execute_rewrite_plan(rewrite_plan)
-            except Exception:
+        try:
+            self._execute_rewrite_plan(rewrite_plan)
+        except Exception:
+            with self._node._channels_lock:  # noqa: SLF001
                 self._node.channels = None
                 self._node.partialChannels = []
-                raise
+            raise
+        with self._node._channels_lock:  # noqa: SLF001
             current_channels = self._node.channels
             if current_channels is None:
                 logger.warning(
@@ -454,20 +458,27 @@ class _NodePositionTimeCommandRuntime:
             )
 
         position_message = mesh_pb2.Position()
-        if lat is not None:
+        if lat not in (None, 0, 0.0):
             if isinstance(lat, float):
                 position_message.latitude_i = int(lat * 1e7)
             elif isinstance(lat, int):
                 position_message.latitude_i = lat
 
-        if lon is not None:
+        if lon not in (None, 0, 0.0):
             if isinstance(lon, float):
                 position_message.longitude_i = int(lon * 1e7)
             elif isinstance(lon, int):
                 position_message.longitude_i = lon
 
         if alt is not None:
-            position_message.altitude = alt
+            if isinstance(alt, bool) or not isinstance(alt, (int, float)):
+                self._node._raise_interface_error(  # noqa: SLF001
+                    f"Invalid altitude type: {type(alt).__name__}. Expected int or float."
+                )
+            if isinstance(alt, float):
+                position_message.altitude = int(alt)
+            else:
+                position_message.altitude = alt
 
         admin_message = admin_pb2.AdminMessage()
         admin_message.set_fixed_position.CopyFrom(position_message)

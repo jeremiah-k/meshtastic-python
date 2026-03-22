@@ -16,6 +16,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+CANNED_MESSAGE_CHUNK_SIZE = 50
+
 
 class _NodeContentCacheStore:
     """Owns ringtone/canned-message cache state, fragment storage, and invalidation."""
@@ -149,8 +151,12 @@ class _NodeContentResponseRuntime:
         if not isinstance(decoded, dict):
             logger.warning("Unexpected ringtone response without decoded payload")
             return (True, None)
-        if "routing" in decoded and self._has_routing_error(decoded):
-            return (True, None)
+        routing = decoded.get("routing")
+        if isinstance(routing, dict):
+            if self._has_routing_error(decoded):
+                return (True, None)
+            if routing.get("errorReason") == "NONE":
+                return (False, None)
         admin_message = decoded.get("admin")
         if not isinstance(admin_message, dict):
             logger.warning("Unexpected ringtone response without admin payload")
@@ -186,8 +192,12 @@ class _NodeContentResponseRuntime:
         if not isinstance(decoded, dict):
             logger.warning("Unexpected canned-message response without decoded payload")
             return (True, None)
-        if "routing" in decoded and self._has_routing_error(decoded):
-            return (True, None)
+        routing = decoded.get("routing")
+        if isinstance(routing, dict):
+            if self._has_routing_error(decoded):
+                return (True, None)
+            if routing.get("errorReason") == "NONE":
+                return (False, None)
         admin_message = decoded.get("admin")
         if not isinstance(admin_message, dict):
             logger.warning("Unexpected canned-message response without admin payload")
@@ -432,7 +442,6 @@ class _NodeAdminContentRuntime:
 
     def write_canned_message(self, message: str) -> mesh_pb2.MeshPacket | None:
         """Write canned-message payload and invalidate local canned-message cache."""
-        CANNED_MESSAGE_CHUNK_SIZE = 50
         with self._canned_message_operation_lock:
             if not self._module_available_or_warn(
                 mesh_pb2.CANNEDMSG_CONFIG,
@@ -479,7 +488,9 @@ class _NodeAdminContentRuntime:
                 if chunk_index == 0:
                     first_send_result = send_result
                 if send_result is None:
-                    return first_send_result
+                    if first_send_result is not None:
+                        self._cache_store.invalidate_canned_message_cache()
+                    return None
 
             self._cache_store.invalidate_canned_message_cache()
             return first_send_result

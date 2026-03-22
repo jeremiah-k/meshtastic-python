@@ -76,7 +76,7 @@ class TestNodeMetadataResponseRuntime:
     def test_handle_metadata_response_with_routing_portnum_and_error(
         self, mock_node: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Handle metadata response with routing portnum and error should set Nak and expire timeout."""
+        """Handle metadata response with routing portnum and error should set Nak without touching shared timeout."""
         runtime = _NodeMetadataResponseRuntime(mock_node)
         packet: dict[str, Any] = {
             "decoded": {
@@ -85,13 +85,11 @@ class TestNodeMetadataResponseRuntime:
             }
         }
 
-        before_call = time.time()
         with caplog.at_level(logging.WARNING):
             runtime.handle_metadata_response(packet)
 
         assert "Metadata request failed, error reason: NO_RESPONSE" in caplog.text
         assert mock_node.iface._acknowledgment.receivedNak is True
-        assert before_call <= mock_node._timeout.expireTime <= time.time()
         mock_node._timeout.reset.assert_not_called()
 
     @pytest.mark.unit
@@ -566,6 +564,41 @@ class TestNodeChannelResponseRuntime:
             runtime.handle_channel_response(packet)
 
         mock_node_for_channel._request_channel.assert_called_once_with(4)
+
+    @pytest.mark.unit
+    def test_handle_channel_response_late_duplicate_does_not_restart(
+        self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Late duplicate channel response after successful retry should not restart installation."""
+        runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        runtime.mark_channel_request_sent(0)
+
+        raw = admin_pb2.AdminMessage()
+        channel_response = raw.get_channel_response
+        channel_response.index = 0
+        channel_response.role = channel_pb2.Channel.Role.PRIMARY
+        channel_response.settings.name = "primary"
+
+        packet: dict[str, Any] = {
+            "decoded": {
+                "portnum": "ADMIN_APP",
+                "admin": {"raw": raw},
+            }
+        }
+
+        with caplog.at_level(logging.DEBUG):
+            runtime.handle_channel_response(packet)
+
+        assert len(mock_node_for_channel.partialChannels) == 1
+        first_call_count = mock_node_for_channel._request_channel.call_count
+
+        with caplog.at_level(logging.DEBUG):
+            runtime.handle_channel_response(packet)
+
+        assert "Ignoring duplicate channel response index=0" in caplog.text
+        assert len(mock_node_for_channel.partialChannels) == 1
+        assert mock_node_for_channel._request_channel.call_count == first_call_count
+        assert runtime.has_channel_request_failed() is False
 
     @pytest.mark.unit
     def test_handle_channel_response_missing_admin_logs_warning(

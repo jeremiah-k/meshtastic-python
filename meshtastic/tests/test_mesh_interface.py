@@ -31,7 +31,6 @@ from ..node import Node
 from ..protobuf import (
     channel_pb2,
     config_pb2,
-    localonly_pb2,
     mesh_pb2,
     portnums_pb2,
     telemetry_pb2,
@@ -3868,19 +3867,15 @@ def test_handle_from_radio_config_update_skips_unsupported_local_cache_fields() 
 
         # Regression coverage for multinode CI: these fields may exist on
         # FromRadio.config but not on localNode.localConfig.
-        if (
-            localonly_pb2.LocalConfig().DESCRIPTOR.fields_by_name.get("sessionkey")
-            and "sessionkey"
-            not in iface.localNode.localConfig.DESCRIPTOR.fields_by_name
-        ):
+        source_fields = config_pb2.Config.DESCRIPTOR.fields_by_name
+        target_fields = iface.localNode.localConfig.DESCRIPTOR.fields_by_name
+
+        if "sessionkey" in source_fields and "sessionkey" not in target_fields:
             msg_sessionkey = mesh_pb2.FromRadio()
             msg_sessionkey.config.sessionkey.SetInParent()
             iface._handle_from_radio(msg_sessionkey.SerializeToString())
 
-        if (
-            localonly_pb2.LocalConfig().DESCRIPTOR.fields_by_name.get("device_ui")
-            and "device_ui" not in iface.localNode.localConfig.DESCRIPTOR.fields_by_name
-        ):
+        if "device_ui" in source_fields and "device_ui" not in target_fields:
             msg_device_ui = mesh_pb2.FromRadio()
             msg_device_ui.config.device_ui.SetInParent()
             iface._handle_from_radio(msg_device_ui.SerializeToString())

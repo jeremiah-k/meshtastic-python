@@ -139,10 +139,10 @@ class TestSetUrlCacheManager:
         assert mock_local_node.channels[0].settings.name == "new"
 
     @pytest.mark.unit
-    def test_apply_replace_channel_write_mismatched_expected_ref_raises(
+    def test_apply_replace_channel_write_mismatched_expected_ref_invalidates(
         self, cache_manager: _SetUrlCacheManager, mock_local_node: MagicMock
     ) -> None:
-        """apply_replace_channel_write should fail deterministically on channel-cache content mismatch."""
+        """apply_replace_channel_write should invalidate cache on channel-cache content mismatch."""
         current_channels = [
             _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "primary")
         ]

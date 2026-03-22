@@ -1,7 +1,6 @@
 """Metadata and channel response runtimes for Node admin requests."""
 
 import logging
-import time
 from typing import TYPE_CHECKING, Any
 
 from meshtastic.node_runtime.shared import MAX_CHANNELS
@@ -60,9 +59,8 @@ class _NodeMetadataResponseRuntime:
                 error_reason,
             )
             self._node.iface._acknowledgment.receivedNak = True
-            self._node._timeout.expireTime = time.time()
             self._node._signal_metadata_stdout_event()
-            return True  # Don't try to parse this routing message
+            return True
         logger.debug(
             "Metadata request routed successfully; waiting for ADMIN_APP payload."
         )
@@ -84,7 +82,6 @@ class _NodeMetadataResponseRuntime:
         if error_reason != "NONE":
             logger.error("Error on response: %s", error_reason)
             self._node.iface._acknowledgment.receivedNak = True
-            self._node._timeout.expireTime = time.time()
             self._node._signal_metadata_stdout_event()
             return True
         return False
@@ -274,7 +271,9 @@ class _NodeChannelResponseRuntime:
                 )
         return True
 
-    def handle_channel_response(self, packet: dict[str, Any]) -> None:  # pylint: disable=too-many-return-statements
+    def handle_channel_response(
+        self, packet: dict[str, Any]
+    ) -> None:  # pylint: disable=too-many-return-statements
         """Process channel response packet and maintain partial/final channel sequencing."""
         decoded = packet.get("decoded")
         if not isinstance(decoded, dict):
@@ -313,6 +312,12 @@ class _NodeChannelResponseRuntime:
         channel_response.CopyFrom(response_channel)
 
         expected_index = self._pending_channel_request_index
+        if self._channel_request_failed:
+            logger.debug(
+                "Ignoring channel response index=%s after terminal failure.",
+                channel_response.index,
+            )
+            return
         if expected_index is None:
             logger.debug(
                 "Ignoring unexpected channel response index=%s with no pending request.",

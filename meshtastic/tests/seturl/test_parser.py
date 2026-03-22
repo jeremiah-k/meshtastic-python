@@ -25,7 +25,7 @@ class TestSetUrlParser:
         url = _make_valid_channel_set_url("testchannel")
 
         def raise_error(msg: str) -> NoReturn:
-            raise AssertionError(f"Should not raise: {msg}")
+            pytest.fail(f"Unexpected parse error: {msg}")
 
         result = _SetUrlParser.parse(url, raise_interface_error=raise_error)
 
@@ -45,7 +45,7 @@ class TestSetUrlParser:
         url = f"https://meshtastic.org/d/#{encoded}"
 
         def raise_error(msg: str) -> NoReturn:
-            raise AssertionError(f"Should not raise: {msg}")
+            pytest.fail(f"Unexpected parse error: {msg}")
 
         result = _SetUrlParser.parse(url, raise_interface_error=raise_error)
 
@@ -141,7 +141,7 @@ class TestSetUrlParser:
         url = f"https://meshtastic.org/d/#{encoded_unpadded}"
 
         def raise_error(msg: str) -> NoReturn:
-            raise AssertionError(f"Should not raise: {msg}")
+            pytest.fail(f"Unexpected parse error: {msg}")
 
         result = _SetUrlParser.parse(url, raise_interface_error=raise_error)
 

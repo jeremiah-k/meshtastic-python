@@ -284,7 +284,7 @@ class TestNodeAdminTransportRuntime:
     def test_send_admin_includes_session_passkey(
         self, mock_local_node: MagicMock
     ) -> None:
-        """send_admin should include session_passkey in message when available."""
+        """send_admin should include session_passkey in outbound message when available."""
         mock_local_node.iface._get_or_create_by_num.return_value = {
             "adminSessionPassKey": b"test_passkey"
         }
@@ -293,7 +293,10 @@ class TestNodeAdminTransportRuntime:
         message = admin_pb2.AdminMessage()
         runtime.send_admin(message)
 
-        assert message.session_passkey == b"test_passkey"
+        call_args = mock_local_node.iface.sendData.call_args
+        outbound_message = call_args[0][0]
+        assert outbound_message.session_passkey == b"test_passkey"
+        assert message.session_passkey == b""
 
     @pytest.mark.unit
     def test_send_admin_passes_correct_parameters_to_senddata(

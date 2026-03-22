@@ -88,8 +88,7 @@ class _NodeChannelPresentationRuntime:
         """Print local/module preferences and current channel presentation."""
         local_config_snapshot: Message | None = None
         module_config_snapshot: Message | None = None
-        iface = getattr(self._node, "iface", None)
-        node_db_lock = getattr(iface, "_node_db_lock", None)
+        node_db_lock = getattr(self._node, "_node_db_lock", None)
         if node_db_lock is not None and hasattr(node_db_lock, "__enter__"):
             with node_db_lock:
                 (
