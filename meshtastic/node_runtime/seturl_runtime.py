@@ -674,8 +674,9 @@ class _SetUrlExecutionEngine:
             )
             state.written_channel_indices.append(staged_channel.index)
             self._cache_manager.apply_replace_channel_write(staged_channel)
-            plan.replace_original_channels_fingerprint = _channels_fingerprint(
-                self._node.channels
+            channels = self._node.channels
+            plan.replace_original_channels_fingerprint = _channels_fingerprint(  # type: ignore[arg-type]
+                channels
             )
 
         if parsed_input.has_lora_update:
