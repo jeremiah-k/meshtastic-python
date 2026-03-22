@@ -398,10 +398,11 @@ class TestSetUrlRollbackEngine:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """rollback_replace_all with successful rollback restores snapshot."""
-        original_channel = _make_channel(
+        snapshot_channel = _make_channel(
             0, channel_pb2.Channel.Role.PRIMARY, "original"
         )
-        mock_local_node.channels = [original_channel]
+        live_channel = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "modified")
+        mock_local_node.channels = [live_channel]
 
         plan = _SetUrlReplacePlan(
             max_channels=1,
@@ -409,8 +410,8 @@ class TestSetUrlRollbackEngine:
             replace_original_channels_fingerprint=_channels_fingerprint(
                 mock_local_node.channels
             ),
-            replace_original_channels_snapshot=[original_channel],
-            replace_original_channels_by_index={0: original_channel},
+            replace_original_channels_snapshot=[snapshot_channel],
+            replace_original_channels_by_index={0: snapshot_channel},
             staged_channels=[],
             staged_channels_by_index={},
             deferred_new_named_admin_channel=None,

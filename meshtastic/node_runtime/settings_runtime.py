@@ -42,10 +42,15 @@ class _NodeSettingsMessageBuilder:
             )
             return message
 
-        message.get_module_config_request = (
-            config_type.index  # pyright: ignore[reportAttributeAccessIssue]
+        if config_type.containing_type.name in ("ModuleConfig", "LocalModuleConfig"):
+            message.get_module_config_request = (
+                config_type.index  # pyright: ignore[reportAttributeAccessIssue]
+            )
+            return message
+
+        raise ValueError(
+            f"Unsupported config descriptor: {config_type.name} in {config_type.containing_type.name}"
         )
-        return message
 
     def _write_config_dispatch(self) -> dict[str, tuple[str, Any]]:
         """Return config-name mapping to (setter oneof, source config message)."""
@@ -284,9 +289,7 @@ class _NodeSettingsResponseRuntime:
         logger.debug("handle_settings_response() response received")
         decoded = packet.get("decoded")
         if not isinstance(decoded, dict):
-            logger.warning(
-                "Received malformed settings response (missing decoded): %s", packet
-            )
+            logger.warning("Received malformed settings response (missing decoded).")
             self._node.iface._acknowledgment.receivedNak = True
             return
         routing = decoded.get("routing")
@@ -302,9 +305,7 @@ class _NodeSettingsResponseRuntime:
 
         admin_message = decoded.get("admin")
         if not isinstance(admin_message, dict):
-            logger.warning(
-                "Received malformed settings response (missing admin): %s", packet
-            )
+            logger.warning("Received malformed settings response (missing admin).")
             self._node.iface._acknowledgment.receivedNak = True
             return
         target = self._resolve_config_target(admin_message)
@@ -315,18 +316,14 @@ class _NodeSettingsResponseRuntime:
         oneof, field_name, config_values = target
         raw_admin = admin_message.get("raw")
         if not isinstance(raw_admin, admin_pb2.AdminMessage):
-            logger.warning(
-                "Received malformed settings response (invalid admin.raw): %s",
-                packet,
-            )
+            logger.warning("Received malformed settings response (invalid admin.raw).")
             self._node.iface._acknowledgment.receivedNak = True
             return
         parent_config = getattr(raw_admin, oneof)
         if not parent_config.HasField(field_name):
             logger.warning(
-                "Received settings response without expected field '%s': %s",
+                "Received settings response without expected field '%s'.",
                 field_name,
-                packet,
             )
             self._node.iface._acknowledgment.receivedNak = True
             return
@@ -465,9 +462,7 @@ class _NodeAdminCommandRuntime:
     ) -> mesh_pb2.MeshPacket | None:
         """Validate OTA args and send ota_request command."""
         if self._node is not self._node.iface.localNode:
-            self._node._raise_interface_error(
-                "startOTA only possible on local node"
-            )  # noqa: SLF001
+            self._node._raise_interface_error("startOTA only possible on local node")  # noqa: SLF001
 
         # COMPAT_STABLE_SHIM: support legacy keyword aliases used by older callers:
         # `ota_mode` -> `mode`, and `ota_hash`/`hash` -> `ota_file_hash`.
@@ -525,14 +520,10 @@ class _NodeAdminCommandRuntime:
         """Send factory-reset command, preserving full/config split behavior."""
         message = admin_pb2.AdminMessage()
         if full:
-            message.factory_reset_device = (
-                self._node._get_factory_reset_request_value()
-            )  # noqa: SLF001
+            message.factory_reset_device = self._node._get_factory_reset_request_value()  # noqa: SLF001
             logger.info("Telling node to factory reset (full device reset)")
         else:
-            message.factory_reset_config = (
-                self._node._get_factory_reset_request_value()
-            )  # noqa: SLF001
+            message.factory_reset_config = self._node._get_factory_reset_request_value()  # noqa: SLF001
             logger.info("Telling node to factory reset (config reset)")
         return self._send_command(
             message,

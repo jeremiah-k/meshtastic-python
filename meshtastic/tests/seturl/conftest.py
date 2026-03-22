@@ -21,7 +21,7 @@ from meshtastic.protobuf import (
 
 def _make_channel(
     index: int,
-    role: channel_pb2.Channel.Role.ValueType,
+    role: int,
     name: str = "",
     psk: bytes = b"",
 ) -> channel_pb2.Channel:
@@ -31,8 +31,8 @@ def _make_channel(
     ----------
     index : int
         Channel index.
-    role : channel_pb2.Channel.Role.ValueType
-        Channel role (PRIMARY, SECONDARY, DISABLED).
+    role : int
+        Channel role (PRIMARY=1, SECONDARY=2, DISABLED=0).
     name : str
         Optional channel settings name.
     psk : bytes
@@ -43,7 +43,7 @@ def _make_channel(
     channel_pb2.Channel
         A configured Channel instance.
     """
-    channel = channel_pb2.Channel(index=index, role=role)
+    channel = channel_pb2.Channel(index=index, role=role)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]
     if name:
         channel.settings.name = name
     if psk:

@@ -392,6 +392,8 @@ class TestNodeContentResponseRuntime:
         assert terminal is True
         assert payload == "RTTTL: test:d=4,o=5,b=100:c"
         assert "onResponseRequestRingtone" in caplog.text
+        cache_store.store_ringtone_fragment(payload)
+        assert mock_node_for_cache.ringtonePart == "RTTTL: test:d=4,o=5,b=100:c"
 
     @pytest.mark.unit
     def test_handle_ringtone_response_with_routing_error_returns_true(
@@ -508,6 +510,8 @@ class TestNodeContentResponseRuntime:
         assert terminal is True
         assert payload == "Hello\nWorld"
         assert "onResponseRequestCannedMessagePluginMessageMessages" in caplog.text
+        cache_store.store_canned_message_fragment(payload)
+        assert mock_node_for_cache.cannedPluginMessageMessages == "Hello\nWorld"
 
     @pytest.mark.unit
     def test_handle_canned_message_response_with_routing_error_returns_true(

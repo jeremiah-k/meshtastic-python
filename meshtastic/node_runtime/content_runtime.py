@@ -152,12 +152,14 @@ class _NodeContentResponseRuntime:
             )
             return (True, False, None)
         routing = decoded.get("routing")
+        admin_message = decoded.get("admin")
         if isinstance(routing, dict):
             if self._has_routing_error(decoded):
                 return (True, False, None)
-            if routing.get("errorReason") == "NONE":
+            if routing.get("errorReason") == "NONE" and not isinstance(
+                admin_message, dict
+            ):
                 return (False, True, None)
-        admin_message = decoded.get("admin")
         if not isinstance(admin_message, dict):
             logger.warning("Unexpected %s response without admin payload", content_type)
             return (True, False, None)

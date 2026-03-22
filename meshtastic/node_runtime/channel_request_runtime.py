@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, cast
 from meshtastic.protobuf import admin_pb2, channel_pb2, mesh_pb2
 
 from .channel_normalization_runtime import _NodeChannelNormalizationRuntime
+from .shared import MAX_CHANNELS
 
 if TYPE_CHECKING:
     from meshtastic.node import Node
@@ -81,6 +82,13 @@ class _NodeChannelRequestRuntime:
     def request_channels(self, *, starting_index: int = 0) -> None:
         """Bootstrap channel request flow from ``starting_index``."""
         logger.debug("requestChannels for nodeNum:%s", self._node.nodeNum)
+        if not 0 <= starting_index < MAX_CHANNELS:
+            logger.warning(
+                "Invalid starting_index %d (must be 0-%d), ignoring request.",
+                starting_index,
+                MAX_CHANNELS - 1,
+            )
+            return
         if starting_index == 0:
             with self._node._channels_lock:  # noqa: SLF001
                 self._node.channels = None
@@ -138,6 +146,13 @@ class _NodeChannelRequestRuntime:
 
     def requestChannel(self, channel_num: int) -> mesh_pb2.MeshPacket | None:
         """Send one get-channel request preserving progress logging behavior."""
+        if not 0 <= channel_num < MAX_CHANNELS:
+            logger.warning(
+                "Invalid channel_num %d (must be 0-%d), ignoring request.",
+                channel_num,
+                MAX_CHANNELS - 1,
+            )
+            return None
         channel_response_runtime = getattr(
             self._node,
             "_channel_response_runtime",

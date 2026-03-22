@@ -278,6 +278,7 @@ class _SetUrlReplacePlanner:
 
     def build_plan(self) -> _SetUrlReplacePlan:
         """Build replace-all staging plan, deferred admin strategy, and snapshots."""
+        replace_original_channels_fingerprint: tuple[bytes, ...] = ()
         with self._node._channels_lock:  # noqa: SLF001
             replace_original_channels_ref: list[channel_pb2.Channel] = []
             channels = self._node.channels
@@ -296,6 +297,7 @@ class _SetUrlReplacePlanner:
                 replace_original_channels_by_index[existing_channel.index] = (
                     channel_snapshot
                 )
+            replace_original_channels_fingerprint = _channels_fingerprint(channels)
 
         replace_original_lora_config: config_pb2.Config.LoRaConfig | None = None
         if self._parsed_input.has_lora_update:
@@ -379,9 +381,7 @@ class _SetUrlReplacePlanner:
         return _SetUrlReplacePlan(
             max_channels=max_channels,
             replace_original_channels_ref=replace_original_channels_ref,
-            replace_original_channels_fingerprint=_channels_fingerprint(
-                replace_original_channels_ref
-            ),
+            replace_original_channels_fingerprint=replace_original_channels_fingerprint,
             replace_original_channels_snapshot=replace_original_channels_snapshot,
             replace_original_channels_by_index=replace_original_channels_by_index,
             staged_channels=staged_channels,
@@ -674,10 +674,6 @@ class _SetUrlExecutionEngine:
             )
             state.written_channel_indices.append(staged_channel.index)
             self._cache_manager.apply_replace_channel_write(staged_channel)
-            channels = self._node.channels
-            plan.replace_original_channels_fingerprint = _channels_fingerprint(  # type: ignore[arg-type]
-                channels
-            )
 
         if parsed_input.has_lora_update:
             set_lora = admin_pb2.AdminMessage()
@@ -1001,7 +997,6 @@ class _SetUrlRollbackEngine:
             self._cache_manager.restore_replace_channels_snapshot(
                 plan.replace_original_channels_snapshot,
                 expected_channels_ref=plan.replace_original_channels_ref,
-                expected_channels_fingerprint=plan.replace_original_channels_fingerprint,
             )
 
 

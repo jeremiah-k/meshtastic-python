@@ -1,4 +1,3 @@
-# pylint: disable=unnecessary-ellipsis
 """Retry and reconnection policies for BLE operations."""
 
 import random
@@ -23,7 +22,7 @@ class _RandomLike(Protocol):
         float
             A value x such that 0.0 <= x < 1.0.
         """
-        ...
+        ...  # pylint: disable=unnecessary-ellipsis
 
 
 class ReconnectPolicy:

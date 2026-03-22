@@ -289,8 +289,8 @@ class TestSetUrlExecutionEngine:
             replace_original_lora_config=config_pb2.Config.LoRaConfig(),
         )
         state = _SetUrlReplaceExecutionState(rollback_admin_indexes_for_write=[0])
-        mock_local_node.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
-        mock_local_node._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())  # type: ignore[method-assign]
+        mock_local_node.ensureSessionKey = MagicMock()
+        mock_local_node._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())
 
         execution_engine.execute_replace_all(
             parsed_input=parsed_input,

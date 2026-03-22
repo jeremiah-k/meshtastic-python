@@ -684,15 +684,29 @@ class TestNodeDeleteChannelRuntime:
         ):
             delete_channel_runtime._delete_channel(1)
 
-        # Verify admin_index switches after writing the admin slot (index 2)
-        # After delete, admin channel moves to index 1, so we should see switch after index 2 write
         pre_delete_admin = 2
-        post_delete_admin = 1  # Admin channel moves down after delete
+        post_delete_admin = 1
 
-        # Check that we have writes with different admin indices
-        admin_indices = [admin_idx for _, admin_idx in write_calls]
-        assert pre_delete_admin in admin_indices
-        assert post_delete_admin in admin_indices
+        pre_delete_idx = next(
+            (
+                i
+                for i, (ch_idx, admin_idx) in enumerate(write_calls)
+                if admin_idx == pre_delete_admin
+            ),
+            -1,
+        )
+        post_delete_idx = next(
+            (
+                i
+                for i, (ch_idx, admin_idx) in enumerate(write_calls)
+                if admin_idx == post_delete_admin
+            ),
+            -1,
+        )
+        assert pre_delete_idx >= 0, "pre_delete_admin write should exist"
+        assert (
+            post_delete_idx > pre_delete_idx
+        ), "post_delete_admin should appear after pre_delete_admin"
 
     @pytest.mark.unit
     def test_delete_channel_handles_cache_unavailable(

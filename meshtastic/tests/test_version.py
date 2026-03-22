@@ -1,4 +1,3 @@
-# pylint: disable=unnecessary-ellipsis
 """Tests for package-version resolution and fork-aware update checks."""
 
 import warnings
@@ -21,7 +20,7 @@ class ResponseLike(Protocol):
 
     def json(self) -> dict[str, dict[str, str]]:
         """Return a mapping containing the PyPI version payload."""
-        ...
+        ...  # pylint: disable=unnecessary-ellipsis
 
 
 def _make_fake_response(version: str) -> ResponseLike:
