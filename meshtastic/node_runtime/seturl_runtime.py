@@ -439,6 +439,7 @@ class _SetUrlCacheManager:
         staged_channel: channel_pb2.Channel,
         *,
         expected_channels_fingerprint: tuple[bytes, ...] | None = None,
+        expected_channels_ref: list[channel_pb2.Channel] | None = None,
     ) -> None:
         """Apply one replace-path channel cache update after a successful write."""
         with self._node._channels_lock:  # noqa: SLF001
@@ -447,10 +448,14 @@ class _SetUrlCacheManager:
                 self._node._raise_interface_error(  # noqa: SLF001
                     _ERR_CONFIG_OR_CHANNELS_NOT_LOADED
                 )
-            if (
-                expected_channels_fingerprint is not None
-                and _channels_fingerprint(channels) != expected_channels_fingerprint
-            ):
+            channels_changed = False
+            if expected_channels_ref is not None:
+                channels_changed = channels is not expected_channels_ref
+            elif expected_channels_fingerprint is not None:
+                channels_changed = (
+                    _channels_fingerprint(channels) != expected_channels_fingerprint
+                )
+            if channels_changed:
                 self._invalidate_channel_cache_locked(
                     "Channel cache changed during replace-all cache update; invalidating local channel cache."
                 )
@@ -473,14 +478,22 @@ class _SetUrlCacheManager:
         replace_original_channels_snapshot: list[channel_pb2.Channel],
         *,
         expected_channels_fingerprint: tuple[bytes, ...] | None = None,
+        expected_channels_ref: list[channel_pb2.Channel] | None = None,
     ) -> None:
         """Restore replace-all channel cache from pre-transaction snapshot."""
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
-            if expected_channels_fingerprint is not None and (
-                channels is None
-                or _channels_fingerprint(channels) != expected_channels_fingerprint
-            ):
+            channels_changed = False
+            if expected_channels_ref is not None:
+                channels_changed = (
+                    channels is None or channels is not expected_channels_ref
+                )
+            elif expected_channels_fingerprint is not None:
+                channels_changed = (
+                    channels is None
+                    or _channels_fingerprint(channels) != expected_channels_fingerprint
+                )
+            if channels_changed:
                 self._invalidate_channel_cache_locked(
                     "Channel cache changed during replace-all rollback restore; invalidating local channel cache."
                 )
@@ -634,7 +647,7 @@ class _SetUrlExecutionEngine:
             state.written_channel_indices.append(staged_channel.index)
             self._cache_manager.apply_replace_channel_write(
                 staged_channel,
-                expected_channels_fingerprint=plan.replace_original_channels_fingerprint,
+                expected_channels_ref=plan.replace_original_channels_ref,
             )
 
         if parsed_input.has_lora_update:
@@ -670,7 +683,7 @@ class _SetUrlExecutionEngine:
             )
             self._cache_manager.apply_replace_channel_write(
                 plan.deferred_new_named_admin_channel,
-                expected_channels_fingerprint=plan.replace_original_channels_fingerprint,
+                expected_channels_ref=plan.replace_original_channels_ref,
             )
             state.rollback_admin_indexes_for_write = _ordered_admin_indexes(
                 plan.deferred_new_named_admin_channel.index,
@@ -705,7 +718,7 @@ class _SetUrlExecutionEngine:
             )
             self._cache_manager.apply_replace_channel_write(
                 plan.deferred_previous_admin_slot_channel,
-                expected_channels_fingerprint=plan.replace_original_channels_fingerprint,
+                expected_channels_ref=plan.replace_original_channels_ref,
             )
 
 
@@ -962,7 +975,7 @@ class _SetUrlRollbackEngine:
         else:
             self._cache_manager.restore_replace_channels_snapshot(
                 plan.replace_original_channels_snapshot,
-                expected_channels_fingerprint=plan.replace_original_channels_fingerprint,
+                expected_channels_ref=plan.replace_original_channels_ref,
             )
 
 
