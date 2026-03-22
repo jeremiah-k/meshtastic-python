@@ -1,3 +1,4 @@
+# pylint: disable=unnecessary-ellipsis
 """Retry and reconnection policies for BLE operations."""
 
 import random

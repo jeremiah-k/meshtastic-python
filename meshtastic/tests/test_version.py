@@ -1,3 +1,4 @@
+# pylint: disable=unnecessary-ellipsis
 """Tests for package-version resolution and fork-aware update checks."""
 
 import warnings

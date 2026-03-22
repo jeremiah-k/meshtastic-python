@@ -228,6 +228,7 @@ def test_show_info_with_local_config(
     assert "Module preferences:" in out
     assert "Channels:" in out
     # Verify hop_limit value is printed (from localConfig.lora.hop_limit = 3)
+    # Note: This relies on protobuf's MessageToDict serialization which lowercases field names
     assert re.search(
         r'"hoplimit"\s*:\s*3', out.lower()
     ), f"hop_limit=3 not found in output: {out[:200]}"

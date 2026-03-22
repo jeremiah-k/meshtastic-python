@@ -6,7 +6,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from meshtastic.node_runtime.seturl_runtime import _SetUrlCacheManager
+from meshtastic.node_runtime.seturl_runtime import (
+    _channels_fingerprint,
+    _SetUrlCacheManager,
+)
 from meshtastic.protobuf import channel_pb2, config_pb2
 from meshtastic.tests.seturl.conftest import _make_channel
 
@@ -85,7 +88,7 @@ class TestSetUrlCacheManager:
 
         mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
 
-        with pytest.raises(Exception, match="Config or channels not loaded"):
+        with pytest.raises(ValueError, match="Config or channels not loaded"):
             cache_manager.apply_replace_channel_write(staged_channel)
 
     @pytest.mark.unit
@@ -103,7 +106,7 @@ class TestSetUrlCacheManager:
 
         mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
 
-        with pytest.raises(Exception, match="out of range"):
+        with pytest.raises(ValueError, match="out of range"):
             cache_manager.apply_replace_channel_write(staged_channel)
 
     @pytest.mark.unit
@@ -121,7 +124,7 @@ class TestSetUrlCacheManager:
 
         mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
 
-        with pytest.raises(Exception, match="out of range"):
+        with pytest.raises(ValueError, match="out of range"):
             cache_manager.apply_replace_channel_write(staged_channel)
 
     @pytest.mark.unit
@@ -159,11 +162,11 @@ class TestSetUrlCacheManager:
 
         with pytest.raises(
             ValueError,
-            match="Channel cache changed during replace-all cache update; aborting transaction.",
+            match=r"Channel cache changed during replace-all cache update; aborting transaction\.",
         ):
             cache_manager.apply_replace_channel_write(
                 staged_channel,
-                expected_channels_ref=stale_channels_ref,
+                expected_channels_fingerprint=_channels_fingerprint(stale_channels_ref),
             )
 
         assert mock_local_node.channels is None

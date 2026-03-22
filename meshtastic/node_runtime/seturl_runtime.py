@@ -59,6 +59,7 @@ class _SetUrlAddOnlyPlan:
     deferred_add_only_admin_channel: tuple[channel_pb2.Channel, str] | None
     deferred_add_only_admin_index: int | None
     original_channels_ref: list[channel_pb2.Channel]
+    original_channels_fingerprint: tuple[bytes, ...]
     original_channels_by_index: dict[int, channel_pb2.Channel]
     original_lora_config: config_pb2.Config.LoRaConfig | None
 
@@ -69,6 +70,7 @@ class _SetUrlReplacePlan:
 
     max_channels: int
     replace_original_channels_ref: list[channel_pb2.Channel]
+    replace_original_channels_fingerprint: tuple[bytes, ...]
     replace_original_channels_snapshot: list[channel_pb2.Channel]
     replace_original_channels_by_index: dict[int, channel_pb2.Channel]
     staged_channels: list[channel_pb2.Channel]
@@ -252,6 +254,7 @@ class _SetUrlAddOnlyPlanner:
             deferred_add_only_admin_channel=deferred_add_only_admin_channel,
             deferred_add_only_admin_index=deferred_add_only_admin_index,
             original_channels_ref=original_channels_ref,
+            original_channels_fingerprint=_channels_fingerprint(original_channels_ref),
             original_channels_by_index=original_channels_by_index,
             original_lora_config=original_lora_config,
         )
@@ -374,6 +377,9 @@ class _SetUrlReplacePlanner:
         return _SetUrlReplacePlan(
             max_channels=max_channels,
             replace_original_channels_ref=replace_original_channels_ref,
+            replace_original_channels_fingerprint=_channels_fingerprint(
+                replace_original_channels_ref
+            ),
             replace_original_channels_snapshot=replace_original_channels_snapshot,
             replace_original_channels_by_index=replace_original_channels_by_index,
             staged_channels=staged_channels,
@@ -401,7 +407,7 @@ class _SetUrlCacheManager:
         self,
         channels_to_write: list[tuple[channel_pb2.Channel, str]],
         *,
-        expected_channels_ref: list[channel_pb2.Channel] | None = None,
+        expected_channels_fingerprint: tuple[bytes, ...] | None = None,
     ) -> None:
         """Apply addOnly channel cache updates after remote writes succeed."""
         with self._node._channels_lock:  # noqa: SLF001
@@ -411,9 +417,10 @@ class _SetUrlCacheManager:
                     "Channel cache unavailable after successful addOnly apply; reload channels to refresh local state."
                 )
                 return
-            if expected_channels_ref is not None and _channels_fingerprint(
-                channels
-            ) != _channels_fingerprint(expected_channels_ref):
+            if (
+                expected_channels_fingerprint is not None
+                and _channels_fingerprint(channels) != expected_channels_fingerprint
+            ):
                 self._invalidate_channel_cache_locked(
                     "Channel cache changed during addOnly cache update; invalidating local channel cache."
                 )
@@ -431,7 +438,7 @@ class _SetUrlCacheManager:
         self,
         staged_channel: channel_pb2.Channel,
         *,
-        expected_channels_ref: list[channel_pb2.Channel] | None = None,
+        expected_channels_fingerprint: tuple[bytes, ...] | None = None,
     ) -> None:
         """Apply one replace-path channel cache update after a successful write."""
         with self._node._channels_lock:  # noqa: SLF001
@@ -440,9 +447,10 @@ class _SetUrlCacheManager:
                 self._node._raise_interface_error(  # noqa: SLF001
                     _ERR_CONFIG_OR_CHANNELS_NOT_LOADED
                 )
-            if expected_channels_ref is not None and _channels_fingerprint(
-                channels
-            ) != _channels_fingerprint(expected_channels_ref):
+            if (
+                expected_channels_fingerprint is not None
+                and _channels_fingerprint(channels) != expected_channels_fingerprint
+            ):
                 self._invalidate_channel_cache_locked(
                     "Channel cache changed during replace-all cache update; invalidating local channel cache."
                 )
@@ -464,15 +472,14 @@ class _SetUrlCacheManager:
         self,
         replace_original_channels_snapshot: list[channel_pb2.Channel],
         *,
-        expected_channels_ref: list[channel_pb2.Channel] | None = None,
+        expected_channels_fingerprint: tuple[bytes, ...] | None = None,
     ) -> None:
         """Restore replace-all channel cache from pre-transaction snapshot."""
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
-            if expected_channels_ref is not None and (
+            if expected_channels_fingerprint is not None and (
                 channels is None
-                or _channels_fingerprint(channels)
-                != _channels_fingerprint(expected_channels_ref)
+                or _channels_fingerprint(channels) != expected_channels_fingerprint
             ):
                 self._invalidate_channel_cache_locked(
                     "Channel cache changed during replace-all rollback restore; invalidating local channel cache."
@@ -627,7 +634,7 @@ class _SetUrlExecutionEngine:
             state.written_channel_indices.append(staged_channel.index)
             self._cache_manager.apply_replace_channel_write(
                 staged_channel,
-                expected_channels_ref=plan.replace_original_channels_ref,
+                expected_channels_fingerprint=plan.replace_original_channels_fingerprint,
             )
 
         if parsed_input.has_lora_update:
@@ -663,7 +670,7 @@ class _SetUrlExecutionEngine:
             )
             self._cache_manager.apply_replace_channel_write(
                 plan.deferred_new_named_admin_channel,
-                expected_channels_ref=plan.replace_original_channels_ref,
+                expected_channels_fingerprint=plan.replace_original_channels_fingerprint,
             )
             state.rollback_admin_indexes_for_write = _ordered_admin_indexes(
                 plan.deferred_new_named_admin_channel.index,
@@ -698,7 +705,7 @@ class _SetUrlExecutionEngine:
             )
             self._cache_manager.apply_replace_channel_write(
                 plan.deferred_previous_admin_slot_channel,
-                expected_channels_ref=plan.replace_original_channels_ref,
+                expected_channels_fingerprint=plan.replace_original_channels_fingerprint,
             )
 
 
@@ -955,7 +962,7 @@ class _SetUrlRollbackEngine:
         else:
             self._cache_manager.restore_replace_channels_snapshot(
                 plan.replace_original_channels_snapshot,
-                expected_channels_ref=plan.replace_original_channels_ref,
+                expected_channels_fingerprint=plan.replace_original_channels_fingerprint,
             )
 
 
@@ -1032,7 +1039,7 @@ class _SetUrlTransactionCoordinator:
             raise
         self._cache_manager.apply_add_only_success(
             plan.channels_to_write,
-            expected_channels_ref=plan.original_channels_ref,
+            expected_channels_fingerprint=plan.original_channels_fingerprint,
         )
         if self._parsed_input.has_lora_update:
             self._cache_manager.apply_lora_success(

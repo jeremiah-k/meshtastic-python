@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from meshtastic.node_runtime.seturl_runtime import (
+    _channels_fingerprint,
     _SetUrlAddOnlyExecutionState,
     _SetUrlAddOnlyPlan,
     _SetUrlExecutionEngine,
@@ -13,7 +14,7 @@ from meshtastic.node_runtime.seturl_runtime import (
     _SetUrlReplaceExecutionState,
     _SetUrlReplacePlan,
 )
-from meshtastic.protobuf import apponly_pb2, channel_pb2, config_pb2
+from meshtastic.protobuf import apponly_pb2, channel_pb2, config_pb2, mesh_pb2
 from meshtastic.tests.seturl.conftest import (
     _make_channel,
     _make_channel_set_with_lora,
@@ -49,6 +50,7 @@ class TestSetUrlExecutionEngine:
             deferred_add_only_admin_channel=None,
             deferred_add_only_admin_index=None,
             original_channels_ref=[],
+            original_channels_fingerprint=(),
             original_channels_by_index={},
             original_lora_config=None,
         )
@@ -88,6 +90,7 @@ class TestSetUrlExecutionEngine:
             deferred_add_only_admin_channel=None,
             deferred_add_only_admin_index=None,
             original_channels_ref=[],
+            original_channels_fingerprint=(),
             original_channels_by_index={},
             original_lora_config=config_pb2.Config.LoRaConfig(),
         )
@@ -124,6 +127,7 @@ class TestSetUrlExecutionEngine:
             deferred_add_only_admin_channel=None,
             deferred_add_only_admin_index=None,
             original_channels_ref=[],
+            original_channels_fingerprint=(),
             original_channels_by_index={},
             original_lora_config=config_pb2.Config.LoRaConfig(),
         )
@@ -174,6 +178,9 @@ class TestSetUrlExecutionEngine:
         plan = _SetUrlReplacePlan(
             max_channels=2,
             replace_original_channels_ref=mock_local_node.channels,
+            replace_original_channels_fingerprint=_channels_fingerprint(
+                mock_local_node.channels
+            ),
             replace_original_channels_snapshot=[],
             replace_original_channels_by_index={},
             staged_channels=[staged],
@@ -218,6 +225,9 @@ class TestSetUrlExecutionEngine:
         plan = _SetUrlReplacePlan(
             max_channels=1,
             replace_original_channels_ref=mock_local_node.channels,
+            replace_original_channels_fingerprint=_channels_fingerprint(
+                mock_local_node.channels
+            ),
             replace_original_channels_snapshot=[],
             replace_original_channels_by_index={},
             staged_channels=[staged],
@@ -245,6 +255,55 @@ class TestSetUrlExecutionEngine:
         assert state.lora_write_started is False
 
     @pytest.mark.unit
+    def test_execute_replace_all_with_lora_update_success(
+        self,
+        execution_engine: _SetUrlExecutionEngine,
+        mock_local_node: MagicMock,
+    ) -> None:
+        """execute_replace_all with LoRa update sends admin message and sets lora_write_started."""
+        mock_local_node.channels = [
+            _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "old"),
+        ]
+        channel_set = _make_channel_set_with_lora("newprimary")
+        parsed_input = _SetUrlParsedInput(
+            channel_set=channel_set,
+            has_lora_update=True,
+        )
+        admin_context = MagicMock()
+        admin_context.admin_index_for_write = 0
+        admin_context.has_admin_write_node_named_admin = False
+        staged = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "newprimary")
+        plan = _SetUrlReplacePlan(
+            max_channels=1,
+            replace_original_channels_ref=mock_local_node.channels,
+            replace_original_channels_fingerprint=_channels_fingerprint(
+                mock_local_node.channels
+            ),
+            replace_original_channels_snapshot=[],
+            replace_original_channels_by_index={},
+            staged_channels=[staged],
+            staged_channels_by_index={0: staged},
+            deferred_new_named_admin_channel=None,
+            deferred_new_named_admin_index=None,
+            deferred_previous_admin_slot_channel=None,
+            replace_original_lora_config=config_pb2.Config.LoRaConfig(),
+        )
+        state = _SetUrlReplaceExecutionState(rollback_admin_indexes_for_write=[0])
+        mock_local_node.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+        mock_local_node._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())  # type: ignore[method-assign]
+
+        execution_engine.execute_replace_all(
+            parsed_input=parsed_input,
+            admin_context=admin_context,
+            plan=plan,
+            state=state,
+        )
+
+        mock_local_node.ensureSessionKey.assert_called()
+        mock_local_node._send_admin.assert_called()
+        assert state.lora_write_started is True
+
+    @pytest.mark.unit
     def test_post_write_fallback_admin_index_returns_named_admin(self) -> None:
         """_post_write_fallback_admin_index returns named admin channel index."""
         staged_admin = _make_channel(1, channel_pb2.Channel.Role.SECONDARY, "admin")
@@ -253,6 +312,7 @@ class TestSetUrlExecutionEngine:
         plan = _SetUrlReplacePlan(
             max_channels=2,
             replace_original_channels_ref=[],
+            replace_original_channels_fingerprint=(),
             replace_original_channels_snapshot=[],
             replace_original_channels_by_index={},
             staged_channels=[staged_primary, staged_admin],
@@ -275,6 +335,7 @@ class TestSetUrlExecutionEngine:
         plan = _SetUrlReplacePlan(
             max_channels=1,
             replace_original_channels_ref=[],
+            replace_original_channels_fingerprint=(),
             replace_original_channels_snapshot=[],
             replace_original_channels_by_index={},
             staged_channels=[staged_primary],

@@ -489,7 +489,7 @@ def test_turn_off_encryption_on_primary_channel_updates_local_cache(
     export_runtime.turn_off_encryption_on_primary_channel()
 
     # After successful write, local cache should be updated
-    assert primary.settings.psk == b"\x00"  # Updated to "none" PSK
+    assert mock_node.channels[0].settings.psk == b"\x00"  # Updated to "none" PSK
 
 
 @pytest.mark.unit
@@ -529,6 +529,7 @@ def test_turn_off_encryption_on_primary_channel_index_not_found(
         0, channel_pb2.Channel.Role.PRIMARY, name="primary", psk=b"\x01"
     )
     mock_node.channels = [primary]
+    mock_node.partialChannels = ["SENTINEL"]
 
     # After write, change the channels list to not include the primary index
     def write_side_effect(_channel: channel_pb2.Channel) -> None:

@@ -26,12 +26,12 @@ METADATA_STDOUT_COMPAT_WAIT_SECONDS: float = 1.0
 NAMED_ADMIN_CHANNEL_NAME: str = "admin"
 
 
-def is_named_admin_channel_name(channel_name: str) -> bool:
+def _is_named_admin_channel_name(channel_name: str) -> bool:
     """Return whether a channel name designates the special named admin channel."""
     return channel_name.lower() == NAMED_ADMIN_CHANNEL_NAME
 
 
-def ordered_admin_indexes(*indexes: int | None) -> list[int]:
+def _ordered_admin_indexes(*indexes: int | None) -> list[int]:
     """Return unique non-None admin channel indexes, preserving input order."""
     ordered: list[int] = []
     for index in indexes:
@@ -39,3 +39,8 @@ def ordered_admin_indexes(*indexes: int | None) -> list[int]:
             continue
         ordered.append(index)
     return ordered
+
+
+# Compatibility aliases for internal callers that import without underscore prefix
+is_named_admin_channel_name = _is_named_admin_channel_name
+ordered_admin_indexes = _ordered_admin_indexes

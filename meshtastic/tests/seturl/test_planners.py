@@ -98,7 +98,7 @@ class TestSetUrlAddOnlyPlanner:
             admin_context=admin_context,
         )
 
-        with pytest.raises(Exception, match="LoRa config must be loaded"):
+        with pytest.raises(ValueError, match="LoRa config must be loaded"):
             planner.capture_original_lora_snapshot()
 
 
@@ -170,7 +170,9 @@ class TestSetUrlReplacePlanner:
             admin_context=admin_context,
         )
 
-        with pytest.raises(Exception, match="LoRa config must be loaded before setURL"):
+        with pytest.raises(
+            ValueError, match="LoRa config must be loaded before setURL"
+        ):
             planner.build_plan()
 
     @pytest.mark.unit
@@ -243,5 +245,5 @@ class TestSetUrlReplacePlanner:
             admin_context=admin_context,
         )
 
-        with pytest.raises(Exception, match="multiple channels named 'admin'"):
+        with pytest.raises(ValueError, match="multiple channels named 'admin'"):
             planner.build_plan()

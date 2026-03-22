@@ -31,8 +31,6 @@ from meshtastic.util import Acknowledgment
 class _SentinelError(Exception):
     """Sentinel exception for testing _raise_interface_error behavior."""
 
-    pass  # pylint: disable=unnecessary-pass
-
 
 # ============================================================================
 # Fixtures
@@ -309,7 +307,7 @@ class TestNodeAdminTransportRuntime:
         runtime.send_admin(
             message,
             want_response=True,
-            on_response=lambda x: None,
+            on_response=lambda _: None,
             admin_index=2,
         )
 
@@ -640,9 +638,11 @@ class TestNodeDeleteChannelRuntime:
 
         mock_local_node.channels = channels
 
-        with pytest.raises(_SentinelError, match="interface error"):
-            with mock_local_node._channels_lock:
-                delete_channel_runtime._build_rewrite_plan(0)
+        with (
+            pytest.raises(_SentinelError, match="interface error"),
+            mock_local_node._channels_lock,
+        ):
+            delete_channel_runtime._build_rewrite_plan(0)
 
     @pytest.mark.unit
     def test_delete_channel_executes_rewrite_plan(
@@ -824,13 +824,15 @@ class TestNodeDeleteChannelRuntime:
             channels.append(ch)
         mock_local_node.channels = channels
 
-        with patch.object(
-            delete_channel_runtime,
-            "_execute_rewrite_plan",
-            side_effect=RuntimeError("rewrite failed"),
+        with (
+            patch.object(
+                delete_channel_runtime,
+                "_execute_rewrite_plan",
+                side_effect=RuntimeError("rewrite failed"),
+            ),
+            pytest.raises(RuntimeError, match="rewrite failed"),
         ):
-            with pytest.raises(RuntimeError, match="rewrite failed"):
-                delete_channel_runtime.delete_channel(1)
+            delete_channel_runtime.delete_channel(1)
 
         assert mock_local_node.channels is None
         assert mock_local_node.partialChannels == []

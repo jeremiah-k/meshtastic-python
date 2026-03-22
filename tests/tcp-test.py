@@ -2,18 +2,16 @@
 
 import logging
 import sys
-from typing import Any
 
 from pubsub import pub
 
 import meshtastic
+from meshtastic.mesh_interface import MeshInterface
 
 LOGGER = logging.getLogger(__name__)
 
 
-def on_connection(
-    interface: Any, _topic: Any = pub.AUTO_TOPIC
-) -> None:  # called when we (re)connect to the radio
+def on_connection(interface: MeshInterface, _topic: object = pub.AUTO_TOPIC) -> None:
     LOGGER.info("%s", interface.myInfo)
     interface.close()
 

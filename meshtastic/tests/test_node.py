@@ -1750,6 +1750,7 @@ def test_setURL_add_only_skips_rollback_when_deferred_write_never_started(
     anode.ensureSessionKey = ensure_session_key_spy  # type: ignore[method-assign]
 
     send_calls = {"rollback_failures": 0, "stage_writes": 0}
+    rollback_attempts: list[int] = []
 
     def _rollback_send_fails_once(
         msg: admin_pb2.AdminMessage,
@@ -1769,6 +1770,7 @@ def test_setURL_add_only_skips_rollback_when_deferred_write_never_started(
                 and send_calls["rollback_failures"] < 2
             ):
                 send_calls["rollback_failures"] += 1
+                rollback_attempts.append(msg.set_channel.index)
                 raise OSError("channel rollback failed")
         return mesh_pb2.MeshPacket()
 
@@ -2546,11 +2548,13 @@ def test_onAckNak_handles_missing_invalid_and_ack_variants(
     iface.localNode.nodeNum = 123
     anode = Node(iface, "!12345678", noProto=True)
 
+    iface._acknowledgment = Acknowledgment()
     anode.onAckNak({"decoded": {}})
     assert iface._acknowledgment.receivedAck is False
     assert iface._acknowledgment.receivedNak is True
     assert iface._acknowledgment.receivedImplAck is False
 
+    iface._acknowledgment = Acknowledgment()
     anode.onAckNak({"decoded": {"routing": {"errorReason": "NO_REPLY"}}})
     assert iface._acknowledgment.receivedNak is True
 
@@ -2558,9 +2562,11 @@ def test_onAckNak_handles_missing_invalid_and_ack_variants(
     anode.onAckNak({"decoded": {"routing": {"errorReason": "NONE"}}})
     assert iface._acknowledgment.receivedAck is False
 
+    iface._acknowledgment = Acknowledgment()
     anode.onAckNak({"decoded": {"routing": {"errorReason": "NONE"}}, "from": "abc"})
     assert iface._acknowledgment.receivedNak is True
 
+    iface._acknowledgment = Acknowledgment()
     anode.onAckNak({"decoded": {"routing": {"errorReason": "NONE"}}, "from": 123})
     assert iface._acknowledgment.receivedImplAck is True
 

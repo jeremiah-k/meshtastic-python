@@ -138,43 +138,61 @@ class _NodeContentResponseRuntime:
             return True
         return False
 
-    def handle_ringtone_response(
-        self, packet: dict[str, Any]
-    ) -> tuple[bool, str | None]:
-        """Parse ringtone response packet and return (is_terminal, payload).
+    def _validate_admin_response_packet(
+        self, decoded: dict[str, Any] | None, content_type: str
+    ) -> tuple[bool, bool, Any | None]:
+        """Validate decoded packet and return (is_terminal, has_routing_ack, raw_admin or None).
 
-        Returns parsed payload without committing to cache; caller must commit
-        after confirming the read generation is still active.
+        has_routing_ack is True when we received a routing ACK (errorReason == "NONE")
+        but no admin payload yet - caller should continue waiting.
         """
-        logger.debug("onResponseRequestRingtone()")
-        decoded = packet.get("decoded")
         if not isinstance(decoded, dict):
-            logger.warning("Unexpected ringtone response without decoded payload")
-            return (True, None)
+            logger.warning(
+                "Unexpected %s response without decoded payload", content_type
+            )
+            return (True, False, None)
         routing = decoded.get("routing")
         if isinstance(routing, dict):
             if self._has_routing_error(decoded):
-                return (True, None)
+                return (True, False, None)
             if routing.get("errorReason") == "NONE":
-                return (False, None)
+                return (False, True, None)
         admin_message = decoded.get("admin")
         if not isinstance(admin_message, dict):
-            logger.warning("Unexpected ringtone response without admin payload")
+            logger.warning("Unexpected %s response without admin payload", content_type)
+            return (True, False, None)
+        return (False, False, admin_message.get("raw"))
+
+    def handle_ringtone_response(
+        self, packet: dict[str, Any]
+    ) -> tuple[bool, str | None]:
+        """Parse ringtone response packet and return (is_terminal, payload)."""
+        logger.debug("onResponseRequestRingtone()")
+        is_terminal, has_routing_ack, raw_admin = self._validate_admin_response_packet(
+            packet.get("decoded"), "ringtone"
+        )
+        if is_terminal:
             return (True, None)
-        raw_admin = admin_message.get("raw")
+        if has_routing_ack:
+            return (False, None)
+        if raw_admin is None:
+            logger.warning("Unexpected ringtone response without raw ringtone data")
+            return (True, None)
         has_field = getattr(raw_admin, "HasField", None)
-        has_ringtone_response = False
-        if callable(has_field):
-            try:
-                has_ringtone_response = bool(has_field("get_ringtone_response"))
-            except (TypeError, ValueError):
-                has_ringtone_response = False
-        if raw_admin is None or not has_ringtone_response:
+        try:
+            has_ringtone_response = callable(
+                has_field
+            ) and has_field(  # pylint: disable=not-callable
+                "get_ringtone_response"
+            )
+        except (TypeError, ValueError):
+            has_ringtone_response = False
+        if not has_ringtone_response:
             logger.warning("Unexpected ringtone response without raw ringtone data")
             return (True, None)
         try:
-            ringtone_part = raw_admin.get_ringtone_response
-            return (True, ringtone_part)
+            payload = raw_admin.get_ringtone_response
+            return (True, payload)
         except AttributeError:
             logger.warning("Failed to parse ringtone response payload")
             return (True, None)
@@ -182,44 +200,37 @@ class _NodeContentResponseRuntime:
     def handle_canned_message_response(
         self, packet: dict[str, Any]
     ) -> tuple[bool, str | None]:
-        """Parse canned-message response packet and return (is_terminal, payload).
-
-        Returns parsed payload without committing to cache; caller must commit
-        after confirming the read generation is still active.
-        """
+        """Parse canned-message response packet and return (is_terminal, payload)."""
         logger.debug("onResponseRequestCannedMessagePluginMessageMessages()")
-        decoded = packet.get("decoded")
-        if not isinstance(decoded, dict):
-            logger.warning("Unexpected canned-message response without decoded payload")
+        is_terminal, has_routing_ack, raw_admin = self._validate_admin_response_packet(
+            packet.get("decoded"), "canned-message"
+        )
+        if is_terminal:
             return (True, None)
-        routing = decoded.get("routing")
-        if isinstance(routing, dict):
-            if self._has_routing_error(decoded):
-                return (True, None)
-            if routing.get("errorReason") == "NONE":
-                return (False, None)
-        admin_message = decoded.get("admin")
-        if not isinstance(admin_message, dict):
-            logger.warning("Unexpected canned-message response without admin payload")
+        if has_routing_ack:
+            return (False, None)
+        if raw_admin is None:
+            logger.warning(
+                "Unexpected canned-message response without raw message data"
+            )
             return (True, None)
-        raw_admin = admin_message.get("raw")
         has_field = getattr(raw_admin, "HasField", None)
-        has_canned_response = False
-        if callable(has_field):
-            try:
-                has_canned_response = bool(
-                    has_field("get_canned_message_module_messages_response")
-                )
-            except (TypeError, ValueError):
-                has_canned_response = False
-        if raw_admin is None or not has_canned_response:
+        try:
+            has_canned_response = callable(
+                has_field
+            ) and has_field(  # pylint: disable=not-callable
+                "get_canned_message_module_messages_response"
+            )
+        except (TypeError, ValueError):
+            has_canned_response = False
+        if not has_canned_response:
             logger.warning(
                 "Unexpected canned-message response without raw message data"
             )
             return (True, None)
         try:
-            canned_messages = raw_admin.get_canned_message_module_messages_response
-            return (True, canned_messages)
+            payload = raw_admin.get_canned_message_module_messages_response
+            return (True, payload)
         except AttributeError:
             logger.warning("Failed to parse canned-message response payload")
             return (True, None)

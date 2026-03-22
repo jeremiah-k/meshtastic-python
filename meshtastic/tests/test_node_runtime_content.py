@@ -1100,7 +1100,7 @@ class TestNodeAdminContentRuntime:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """_send_content_read_request should return None when waiting times out."""
-        mock_node_for_admin._timeout.expireTimeout = 0.01  # Very short timeout
+        mock_node_for_admin._timeout.expireTimeout = 0
         runtime = _NodeAdminContentRuntime(
             mock_node_for_admin,
             cache_store=cache_store,

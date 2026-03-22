@@ -422,7 +422,7 @@ class _NodePositionTimeCommandRuntime:
         *,
         lat: int | float | None,
         lon: int | float | None,
-        alt: int | None,
+        alt: int | float | None,
     ) -> mesh_pb2.MeshPacket | None:
         """Send set_fixed_position admin command with preserved conversion semantics.
 
@@ -431,15 +431,16 @@ class _NodePositionTimeCommandRuntime:
         lat : int | float | None
             Latitude value. Floats are interpreted as degrees and scaled by
             1e7; ints are treated as pre-scaled ``latitude_i`` values.
-            ``None`` and zero values (``0``/``0.0``) omit ``latitude_i`` from
-            the sent message for backward compatibility with sentinel semantics.
+            ``None`` omits ``latitude_i`` from the sent message.
+            Zero values (``0``/``0.0``) are now treated as valid coordinates.
         lon : int | float | None
             Longitude value. Floats are interpreted as degrees and scaled by
             1e7; ints are treated as pre-scaled ``longitude_i`` values.
-            ``None`` and zero values (``0``/``0.0``) omit ``longitude_i`` from
-            the sent message for backward compatibility with sentinel semantics.
-        alt : int | None
-            Altitude in meters. ``None`` omits altitude from the sent message.
+            ``None`` omits ``longitude_i`` from the sent message.
+            Zero values (``0``/``0.0``) are now treated as valid coordinates.
+        alt : int | float | None
+            Altitude in meters. Floats are truncated to int before sending.
+            ``None`` omits altitude from the sent message.
         """
         self._node.ensureSessionKey()
 
@@ -458,13 +459,13 @@ class _NodePositionTimeCommandRuntime:
             )
 
         position_message = mesh_pb2.Position()
-        if lat not in (None, 0, 0.0):
+        if lat is not None:
             if isinstance(lat, float):
                 position_message.latitude_i = int(lat * 1e7)
             elif isinstance(lat, int):
                 position_message.latitude_i = lat
 
-        if lon not in (None, 0, 0.0):
+        if lon is not None:
             if isinstance(lon, float):
                 position_message.longitude_i = int(lon * 1e7)
             elif isinstance(lon, int):

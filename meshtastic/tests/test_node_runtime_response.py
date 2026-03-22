@@ -538,6 +538,9 @@ class TestNodeChannelResponseRuntime:
         mock_node_for_channel._fixup_channels_locked.assert_called_once()
         assert lock_held_during_fixup is True
         assert mock_node_for_channel.channels is not None
+        assert len(mock_node_for_channel.channels) == 1
+        assert mock_node_for_channel.channels[0].index == 7
+        assert mock_node_for_channel.channels[0].settings.name == "ch8"
 
     @pytest.mark.unit
     def test_handle_channel_response_non_last_channel_requests_next(

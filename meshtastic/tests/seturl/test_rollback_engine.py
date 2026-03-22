@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from meshtastic.node_runtime.seturl_runtime import (
+    _channels_fingerprint,
     _SetUrlAddOnlyExecutionState,
     _SetUrlAddOnlyPlan,
     _SetUrlReplaceExecutionState,
@@ -14,6 +15,14 @@ from meshtastic.node_runtime.seturl_runtime import (
 )
 from meshtastic.protobuf import admin_pb2, channel_pb2, config_pb2
 from meshtastic.tests.seturl.conftest import _make_channel
+
+
+class _WriteFailure(RuntimeError):
+    """Intentional write failure sentinel."""
+
+
+class _LoRaRollbackFailure(RuntimeError):
+    """Intentional LoRa rollback failure sentinel."""
 
 
 class TestSetUrlRollbackEngine:
@@ -39,6 +48,7 @@ class TestSetUrlRollbackEngine:
             deferred_add_only_admin_channel=None,
             deferred_add_only_admin_index=2,
             original_channels_ref=[],
+            original_channels_fingerprint=(),
             original_channels_by_index={1: original_channel},
             original_lora_config=None,
         )
@@ -57,7 +67,7 @@ class TestSetUrlRollbackEngine:
         ) -> None:
             if adminIndex == 0:
                 failed_admin_indexes.append(adminIndex)
-                raise RuntimeError("Write failed")
+                raise _WriteFailure("Write failed")
 
         mock_local_node._write_channel_snapshot.side_effect = write_side_effect
 
@@ -99,6 +109,7 @@ class TestSetUrlRollbackEngine:
             deferred_add_only_admin_channel=None,
             deferred_add_only_admin_index=None,
             original_channels_ref=[],
+            original_channels_fingerprint=(),
             original_channels_by_index={1: original_channel},
             original_lora_config=original_lora,
         )
@@ -122,7 +133,7 @@ class TestSetUrlRollbackEngine:
             _msg: admin_pb2.AdminMessage, *, adminIndex: int | None = None
         ) -> None:
             _ = adminIndex
-            raise RuntimeError("LoRa rollback failed")
+            raise _LoRaRollbackFailure("LoRa rollback failed")
 
         mock_local_node._write_channel_snapshot.side_effect = write_side_effect
         mock_local_node._send_admin.side_effect = send_admin_side_effect
@@ -157,6 +168,7 @@ class TestSetUrlRollbackEngine:
             deferred_add_only_admin_channel=None,
             deferred_add_only_admin_index=None,
             original_channels_ref=[],
+            original_channels_fingerprint=(),
             original_channels_by_index={1: original_channel},
             original_lora_config=original_lora,
         )
@@ -193,6 +205,9 @@ class TestSetUrlRollbackEngine:
         plan = _SetUrlReplacePlan(
             max_channels=1,
             replace_original_channels_ref=mock_local_node.channels,
+            replace_original_channels_fingerprint=_channels_fingerprint(
+                mock_local_node.channels
+            ),
             replace_original_channels_snapshot=[original_channel],
             replace_original_channels_by_index={0: original_channel},
             staged_channels=[],
@@ -245,6 +260,9 @@ class TestSetUrlRollbackEngine:
         plan = _SetUrlReplacePlan(
             max_channels=1,
             replace_original_channels_ref=mock_local_node.channels,
+            replace_original_channels_fingerprint=_channels_fingerprint(
+                mock_local_node.channels
+            ),
             replace_original_channels_snapshot=[original_channel],
             replace_original_channels_by_index={0: original_channel},
             staged_channels=[],
@@ -292,6 +310,9 @@ class TestSetUrlRollbackEngine:
         plan = _SetUrlReplacePlan(
             max_channels=1,
             replace_original_channels_ref=mock_local_node.channels,
+            replace_original_channels_fingerprint=_channels_fingerprint(
+                mock_local_node.channels
+            ),
             replace_original_channels_snapshot=[original_channel],
             replace_original_channels_by_index={0: original_channel},
             staged_channels=[],
@@ -335,6 +356,9 @@ class TestSetUrlRollbackEngine:
         plan = _SetUrlReplacePlan(
             max_channels=1,
             replace_original_channels_ref=mock_local_node.channels,
+            replace_original_channels_fingerprint=_channels_fingerprint(
+                mock_local_node.channels
+            ),
             replace_original_channels_snapshot=[original_channel],
             replace_original_channels_by_index={0: original_channel},
             staged_channels=[],
@@ -382,6 +406,9 @@ class TestSetUrlRollbackEngine:
         plan = _SetUrlReplacePlan(
             max_channels=1,
             replace_original_channels_ref=mock_local_node.channels,
+            replace_original_channels_fingerprint=_channels_fingerprint(
+                mock_local_node.channels
+            ),
             replace_original_channels_snapshot=[original_channel],
             replace_original_channels_by_index={0: original_channel},
             staged_channels=[],

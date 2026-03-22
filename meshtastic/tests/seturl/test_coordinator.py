@@ -36,7 +36,7 @@ class TestSetUrlTransactionCoordinator:
             has_lora_update=False,
         )
 
-        with pytest.raises(Exception, match="Interface localNode not initialized"):
+        with pytest.raises(ValueError, match="Interface localNode not initialized"):
             _SetUrlTransactionCoordinator(mock_local_node, parsed_input=parsed_input)
 
     @pytest.mark.unit

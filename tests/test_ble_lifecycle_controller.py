@@ -6,7 +6,6 @@ delegation to sub-controllers, and fallback hook resolution.
 """
 
 from types import SimpleNamespace
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -139,7 +138,7 @@ class TestBLELifecycleControllerDisconnectDelegation:
 
     def test_handle_disconnect_delegates_to_disconnect_coordinator(self) -> None:
         """_handle_disconnect should delegate to the _disconnect coordinator."""
-        calls: list[dict[str, Any]] = []
+        calls: list[dict[str, object]] = []
         mock_disconnect = SimpleNamespace(
             handle_disconnect=lambda source, *, client, bleak_client: (
                 calls.append(
@@ -176,7 +175,7 @@ class TestBLELifecycleControllerDisconnectDelegation:
 
     def test_on_ble_disconnect_delegates_to_disconnect_coordinator(self) -> None:
         """_on_ble_disconnect should delegate to the _disconnect coordinator."""
-        calls: list[Any] = []
+        calls: list[object] = []
         mock_disconnect = SimpleNamespace(
             on_ble_disconnect=lambda client: calls.append(client)
         )
@@ -209,7 +208,7 @@ class TestBLELifecycleControllerConnectionOwnershipDelegation:
 
     def test_emit_verified_connection_side_effects_delegates(self) -> None:
         """_emit_verified_connection_side_effects should delegate to _connection_ownership."""
-        calls: list[Any] = []
+        calls: list[object] = []
         mock_ownership = SimpleNamespace(
             _emit_verified_connection_side_effects=lambda client: calls.append(client)
         )
@@ -242,8 +241,8 @@ class TestBLELifecycleControllerHookResolution:
         resolved_is_closing: list[bool] = []
 
         def _discard_invalidated_connected_client(
-            *_args: Any,
-            **kwargs: Any,
+            *_args: object,
+            **kwargs: object,
         ) -> None:
             is_closing_getter = kwargs.get("is_closing_getter")
             if callable(is_closing_getter):
@@ -275,8 +274,8 @@ class TestBLELifecycleControllerHookResolution:
         resolved_is_closing: list[bool] = []
 
         def _discard_invalidated_connected_client(
-            *_args: Any,
-            **kwargs: Any,
+            *_args: object,
+            **kwargs: object,
         ) -> None:
             is_closing_getter = kwargs.get("is_closing_getter")
             if callable(is_closing_getter):
@@ -311,8 +310,8 @@ class TestBLELifecycleControllerHookResolution:
         resolved_is_closing: list[bool] = []
 
         def _discard_invalidated_connected_client(
-            *_args: Any,
-            **kwargs: Any,
+            *_args: object,
+            **kwargs: object,
         ) -> None:
             is_closing_getter = kwargs.get("is_closing_getter")
             if callable(is_closing_getter):
@@ -346,8 +345,8 @@ class TestBLELifecycleControllerHookResolution:
         resolved_is_closing: list[bool] = []
 
         def _discard_invalidated_connected_client(
-            *_args: Any,
-            **kwargs: Any,
+            *_args: object,
+            **kwargs: object,
         ) -> None:
             is_closing_getter = kwargs.get("is_closing_getter")
             if callable(is_closing_getter):
@@ -381,8 +380,8 @@ class TestBLELifecycleControllerHookResolution:
         resolved_is_closing: list[bool] = []
 
         def _discard_invalidated_connected_client(
-            *_args: Any,
-            **kwargs: Any,
+            *_args: object,
+            **kwargs: object,
         ) -> None:
             is_closing_getter = kwargs.get("is_closing_getter")
             if callable(is_closing_getter):
@@ -415,8 +414,8 @@ class TestBLELifecycleControllerHookResolution:
         captured: dict[str, object] = {}
 
         def _discard_invalidated_connected_client(
-            *_args: Any,
-            **kwargs: Any,
+            *_args: object,
+            **kwargs: object,
         ) -> None:
             is_closing_getter = kwargs.get("is_closing_getter")
             reset_to_disconnected = kwargs.get("reset_to_disconnected")
@@ -492,8 +491,8 @@ class TestBLELifecycleControllerHookResolution:
         captured: dict[str, object] = {}
 
         def _discard_invalidated_connected_client(
-            *_args: Any,
-            **kwargs: Any,
+            *_args: object,
+            **kwargs: object,
         ) -> None:
             is_closing_getter = kwargs.get("is_closing_getter")
             reset_to_disconnected = kwargs.get("reset_to_disconnected")
@@ -564,15 +563,15 @@ class TestBLELifecycleControllerHookResolution:
 
     def test_discard_invalidated_connected_client_passes_restore_params(self) -> None:
         """_discard_invalidated_connected_client should pass restore parameters."""
-        captured_kwargs: dict[str, Any] = {}
+        captured_kwargs: dict[str, object] = {}
         mock_iface = SimpleNamespace()
 
         def capture_kwargs(
-            _client: Any,
+            _client: object,
             *,
             restore_address: str | None,
             restore_last_connection_request: str | None,
-            **kwargs: Any,
+            **kwargs: object,
         ) -> None:
             captured_kwargs["restore_address"] = restore_address
             captured_kwargs["restore_last_connection_request"] = (
@@ -644,7 +643,7 @@ class TestBLELifecycleControllerClientManagement:
         self,
     ) -> None:
         """_disconnect_and_close_client should delegate to _disconnect coordinator."""
-        calls: list[Any] = []
+        calls: list[object] = []
         mock_disconnect = SimpleNamespace(
             disconnect_and_close_client=lambda client: calls.append(client)
         )
@@ -672,7 +671,7 @@ class TestBLELifecycleControllerClientManagement:
 
     def test_is_owned_connected_client_delegates_to_ownership_coordinator(self) -> None:
         """_is_owned_connected_client should delegate to _connection_ownership coordinator."""
-        calls: list[Any] = []
+        calls: list[object] = []
         mock_ownership = SimpleNamespace(
             _is_owned_connected_client=lambda client: (
                 calls.append(client),

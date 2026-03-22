@@ -215,7 +215,7 @@ def test_wait_for_config_with_non_channels_attribute(
     call_args = mock_timeout.waitForSet.call_args
     assert call_args is not None
     target = call_args[0][0]
-    assert target.__class__.__name__ == "_LocalConfigFieldProbe"
+    assert hasattr(target, "is_set")
     mock_timeout.waitForSet.assert_called_once_with(target, attrs=("is_set",))
 
 

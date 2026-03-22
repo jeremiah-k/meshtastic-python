@@ -194,6 +194,7 @@ class _NodeChannelResponseRuntime:
             self._pending_channel_retry_count = 0
         self._pending_channel_request_index = channel_index
         self._channel_request_failed = True
+        self._node._timeout.reset()  # noqa: SLF001
 
     def has_channel_request_failed(self) -> bool:
         """Return whether the active channel download has terminally failed."""
@@ -271,10 +272,13 @@ class _NodeChannelResponseRuntime:
                 )
         return True
 
-    def handle_channel_response(
+    def _validate_channel_response_packet(
         self, packet: dict[str, Any]
-    ) -> None:  # pylint: disable=too-many-return-statements
-        """Process channel response packet and maintain partial/final channel sequencing."""
+    ) -> tuple[bool, channel_pb2.Channel | None]:
+        """Validate channel response packet and return (is_valid, channel_response).
+
+        Returns (True, channel) if valid, (False, None) if invalid (logs warning and sets failure state).
+        """
         decoded = packet.get("decoded")
         if not isinstance(decoded, dict):
             logger.warning(
@@ -282,20 +286,20 @@ class _NodeChannelResponseRuntime:
             )
             self._channel_request_failed = True
             self._node._timeout.reset()  # noqa: SLF001
-            return
+            return (False, None)
         logger.debug(
             "onResponseRequestChannel() portnum=%s",
             decoded.get("portnum"),
         )
         if self._handle_routing_response(decoded):
-            return
+            return (False, None)
 
         admin_message = decoded.get("admin")
         if not isinstance(admin_message, dict):
             logger.warning("Received malformed channel response without admin payload")
             self._channel_request_failed = True
             self._node._timeout.reset()  # noqa: SLF001
-            return
+            return (False, None)
         raw_admin = admin_message.get("raw")
         if raw_admin is None or not _has_protobuf_field(
             raw_admin, "get_channel_response"
@@ -305,31 +309,50 @@ class _NodeChannelResponseRuntime:
             )
             self._channel_request_failed = True
             self._node._timeout.reset()  # noqa: SLF001
-            return
+            return (False, None)
 
         response_channel = raw_admin.get_channel_response
         channel_response = channel_pb2.Channel()
         channel_response.CopyFrom(response_channel)
+        return (True, channel_response)
 
+    def _should_skip_channel_response(
+        self, channel_response: channel_pb2.Channel
+    ) -> bool:
+        """Check if channel response should be skipped (stale/duplicate/failure).
+
+        Returns True if should skip, False if should process.
+        """
         expected_index = self._pending_channel_request_index
         if self._channel_request_failed:
             logger.debug(
                 "Ignoring channel response index=%s after terminal failure.",
                 channel_response.index,
             )
-            return
+            return True
         if expected_index is None:
             logger.debug(
                 "Ignoring unexpected channel response index=%s with no pending request.",
                 channel_response.index,
             )
-            return
+            return True
         if channel_response.index != expected_index:
             logger.debug(
                 "Ignoring stale channel response index=%s; expected %s.",
                 channel_response.index,
                 expected_index,
             )
+            return True
+        return False
+
+    def handle_channel_response(self, packet: dict[str, Any]) -> None:
+        """Process channel response packet and maintain partial/final channel sequencing."""
+        is_valid, channel_response = self._validate_channel_response_packet(packet)
+        if not is_valid:
+            return
+        assert channel_response is not None
+
+        if self._should_skip_channel_response(channel_response):
             return
 
         with self._node._channels_lock:  # noqa: SLF001
