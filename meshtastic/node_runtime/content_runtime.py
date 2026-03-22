@@ -340,18 +340,17 @@ class _NodeAdminContentRuntime:
             if terminal:
                 response_event.set()
 
-        request_message = admin_pb2.AdminMessage()
-        build_request(request_message)
-        request = self._node._send_admin(
-            request_message,
-            wantResponse=True,
-            onResponse=_on_response,
-        )
-        if request is None:
-            retire_read_generation(read_generation)
-            logger.debug("%s", skipped_send_debug_message)
-            return None
         try:
+            request_message = admin_pb2.AdminMessage()
+            build_request(request_message)
+            request = self._node._send_admin(
+                request_message,
+                wantResponse=True,
+                onResponse=_on_response,
+            )
+            if request is None:
+                logger.debug("%s", skipped_send_debug_message)
+                return None
             if not response_event.wait(timeout=self._node._timeout.expireTimeout):
                 logger.warning("%s", timeout_warning_message)
                 return None

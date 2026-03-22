@@ -56,6 +56,7 @@ def mock_node_for_settings(mock_iface: MagicMock) -> MagicMock:
             "_raise_interface_error",
             "onResponseRequestSettings",
             "onAckNak",
+            "ensureSessionKey",
         ]
     )
     node.iface = mock_iface
@@ -65,6 +66,7 @@ def mock_node_for_settings(mock_iface: MagicMock) -> MagicMock:
     node._raise_interface_error = MagicMock(side_effect=_raise_test_error)
     node.onResponseRequestSettings = MagicMock()
     node.onAckNak = MagicMock()
+    node.ensureSessionKey = MagicMock()
     return node
 
 

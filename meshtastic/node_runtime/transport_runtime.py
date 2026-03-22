@@ -20,13 +20,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _channels_fingerprint(
+    channels: list[channel_pb2.Channel],
+) -> tuple[bytes, ...]:
+    """Return an immutable, deterministic fingerprint of channel states for comparison."""
+    return tuple(c.SerializeToString() for c in channels)
+
+
 class _NodeAdminSessionRuntime:
     """Owns admin-session readiness checks and session-key request behavior."""
 
     def __init__(self, node: "Node") -> None:
         self._node = node
 
-    def ensure_session_key(self, *, admin_index: int | None = None) -> None:
+    def _ensure_session_key(self, *, admin_index: int | None = None) -> None:
         """Ensure session key is present, preserving historical noProto behavior."""
         if self._node.noProto:
             logger.warning(
@@ -57,7 +64,7 @@ class _NodeAdminTransportRuntime:
             return self._node.iface.localNode._get_admin_channel_index()
         return admin_index
 
-    def send_admin(
+    def _send_admin(
         self,
         message: admin_pb2.AdminMessage,
         *,
@@ -116,7 +123,7 @@ class _NodeChannelWriteRuntime:
         self._admin_session_runtime = admin_session_runtime
         self._admin_transport_runtime = admin_transport_runtime
 
-    def write_channel_snapshot(
+    def _write_channel_snapshot(
         self,
         channel_to_write: channel_pb2.Channel,
         *,
@@ -143,7 +150,7 @@ class _NodeChannelWriteRuntime:
             )
         logger.debug("Wrote channel %s", channel_to_write.index)
 
-    def write_channel(
+    def _write_channel(
         self, channel_index: int, *, admin_index: int | None = None
     ) -> None:
         """Validate and write one channel by index using snapshot semantics."""
@@ -159,7 +166,7 @@ class _NodeChannelWriteRuntime:
                 )
             channel_snapshot = channel_pb2.Channel()
             channel_snapshot.CopyFrom(channels[channel_index])
-        self.write_channel_snapshot(
+        self._write_channel_snapshot(
             channel_snapshot,
             admin_index=admin_index,
         )
@@ -170,6 +177,7 @@ class _DeleteChannelRewritePlan:
     """Delete-channel rewrite execution plan."""
 
     original_channels_ref: list[channel_pb2.Channel]
+    original_channels_fingerprint: tuple[bytes, ...]
     pre_delete_admin_index: int
     post_delete_admin_index: int
     switch_after_admin_slot_rewrite: bool
@@ -279,6 +287,7 @@ class _NodeDeleteChannelRuntime:
 
         return _DeleteChannelRewritePlan(
             original_channels_ref=channels,
+            original_channels_fingerprint=_channels_fingerprint(channels),
             pre_delete_admin_index=pre_delete_admin_index,
             post_delete_admin_index=post_delete_admin_index,
             switch_after_admin_slot_rewrite=(pre_delete_admin_index >= channel_index),
@@ -290,7 +299,7 @@ class _NodeDeleteChannelRuntime:
         """Execute channel rewrites while preserving historical admin-index switch timing."""
         admin_index_for_write = plan.pre_delete_admin_index
         for channel_snapshot in plan.channels_to_rewrite:
-            self._channel_write_runtime.write_channel_snapshot(
+            self._channel_write_runtime._write_channel_snapshot(
                 channel_snapshot,
                 admin_index=admin_index_for_write,
             )
@@ -300,7 +309,7 @@ class _NodeDeleteChannelRuntime:
             ):
                 admin_index_for_write = plan.post_delete_admin_index
 
-    def delete_channel(self, channel_index: int) -> None:
+    def _delete_channel(self, channel_index: int) -> None:
         """Delete one channel and execute ordered rewrite plan.
 
         The entire delete operation is serialized under the channels lock to prevent
@@ -331,6 +340,16 @@ class _NodeDeleteChannelRuntime:
                 self._node.channels = None
                 self._node.partialChannels = []
                 return
+            if (
+                _channels_fingerprint(current_channels)
+                != rewrite_plan.original_channels_fingerprint
+            ):
+                logger.warning(
+                    "Channel fingerprint mismatch after delete rewrite; invalidating local channel cache."
+                )
+                self._node.channels = None
+                self._node.partialChannels = []
+                return
             current_channels.clear()
             for staged_channel in rewrite_plan.staged_channels:
                 channel_copy = channel_pb2.Channel()
@@ -345,7 +364,7 @@ class _NodeAckNakRuntime:
     def __init__(self, node: "Node") -> None:
         self._node = node
 
-    def handle_ack_nak(self, packet: dict[str, Any]) -> None:
+    def _handle_ack_nak(self, packet: dict[str, Any]) -> None:
         """Classify ACK/NAK payload and update interface acknowledgment state."""
         decoded = packet.get("decoded")
         if not isinstance(decoded, dict):
@@ -417,7 +436,7 @@ class _NodePositionTimeCommandRuntime:
             self._node.iface.waitForAckNak()
         return request
 
-    def set_fixed_position(
+    def _set_fixed_position(
         self,
         *,
         lat: int | float | None,
@@ -442,8 +461,6 @@ class _NodePositionTimeCommandRuntime:
             Altitude in meters. Floats are truncated to int before sending.
             ``None`` omits altitude from the sent message.
         """
-        self._node.ensureSessionKey()
-
         # Type validation: reject bool and non-numeric types
         if lat is not None and (
             isinstance(lat, bool) or not isinstance(lat, (int, float))
@@ -481,6 +498,7 @@ class _NodePositionTimeCommandRuntime:
             else:
                 position_message.altitude = alt
 
+        self._node.ensureSessionKey()
         admin_message = admin_pb2.AdminMessage()
         admin_message.set_fixed_position.CopyFrom(position_message)
         return self._send_position_time_command(admin_message)

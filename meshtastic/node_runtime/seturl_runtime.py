@@ -182,6 +182,7 @@ class _SetUrlAddOnlyPlanner:
         channels_to_write: list[tuple[channel_pb2.Channel, str]] = []
         original_channels_ref: list[channel_pb2.Channel] = []
         original_channels_by_index: dict[int, channel_pb2.Channel] = {}
+        original_channels_fingerprint: tuple[bytes, ...] = ()
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if channels is None:
@@ -189,6 +190,7 @@ class _SetUrlAddOnlyPlanner:
                     _ERR_CONFIG_OR_CHANNELS_NOT_LOADED
                 )
             original_channels_ref = channels
+            original_channels_fingerprint = _channels_fingerprint(channels)
             existing_names_normalized = {
                 channel.settings.name.lower()
                 for channel in channels
@@ -254,7 +256,7 @@ class _SetUrlAddOnlyPlanner:
             deferred_add_only_admin_channel=deferred_add_only_admin_channel,
             deferred_add_only_admin_index=deferred_add_only_admin_index,
             original_channels_ref=original_channels_ref,
-            original_channels_fingerprint=_channels_fingerprint(original_channels_ref),
+            original_channels_fingerprint=original_channels_fingerprint,
             original_channels_by_index=original_channels_by_index,
             original_lora_config=original_lora_config,
         )
@@ -449,9 +451,12 @@ class _SetUrlCacheManager:
                     _ERR_CONFIG_OR_CHANNELS_NOT_LOADED
                 )
             channels_changed = False
-            if expected_channels_ref is not None:
-                channels_changed = channels is not expected_channels_ref
-            elif expected_channels_fingerprint is not None:
+            if (
+                expected_channels_ref is not None
+                and channels is not expected_channels_ref
+            ):
+                channels_changed = True
+            if not channels_changed and expected_channels_fingerprint is not None:
                 channels_changed = (
                     _channels_fingerprint(channels) != expected_channels_fingerprint
                 )
@@ -484,16 +489,20 @@ class _SetUrlCacheManager:
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             channels_changed = False
-            if expected_channels_ref is not None:
+            if (
+                expected_channels_ref is not None
+                and channels is not expected_channels_ref
+            ):
+                channels_changed = True
+            if (
+                not channels_changed
+                and expected_channels_fingerprint is not None
+                and channels is not None
+            ):
                 channels_changed = (
-                    channels is None or channels is not expected_channels_ref
+                    _channels_fingerprint(channels) != expected_channels_fingerprint
                 )
-            elif expected_channels_fingerprint is not None:
-                channels_changed = (
-                    channels is None
-                    or _channels_fingerprint(channels) != expected_channels_fingerprint
-                )
-            if channels_changed:
+            if channels_changed or channels is None:
                 self._invalidate_channel_cache_locked(
                     "Channel cache changed during replace-all rollback restore; invalidating local channel cache."
                 )
@@ -648,6 +657,7 @@ class _SetUrlExecutionEngine:
             self._cache_manager.apply_replace_channel_write(
                 staged_channel,
                 expected_channels_ref=plan.replace_original_channels_ref,
+                expected_channels_fingerprint=plan.replace_original_channels_fingerprint,
             )
 
         if parsed_input.has_lora_update:
@@ -976,6 +986,7 @@ class _SetUrlRollbackEngine:
             self._cache_manager.restore_replace_channels_snapshot(
                 plan.replace_original_channels_snapshot,
                 expected_channels_ref=plan.replace_original_channels_ref,
+                expected_channels_fingerprint=plan.replace_original_channels_fingerprint,
             )
 
 

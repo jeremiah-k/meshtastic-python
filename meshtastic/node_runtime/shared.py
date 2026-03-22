@@ -41,6 +41,7 @@ def _ordered_admin_indexes(*indexes: int | None) -> list[int]:
     return ordered
 
 
-# Compatibility aliases for internal callers that import without underscore prefix
+# COMPAT_STABLE_SHIM: internal callers historically imported these helpers
+# without a leading underscore; keep them callable without warnings.
 is_named_admin_channel_name = _is_named_admin_channel_name
 ordered_admin_indexes = _ordered_admin_indexes

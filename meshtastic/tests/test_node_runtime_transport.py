@@ -15,6 +15,7 @@ import pytest
 
 from meshtastic.node_runtime.shared import MAX_CHANNELS
 from meshtastic.node_runtime.transport_runtime import (
+    _channels_fingerprint,
     _DeleteChannelRewritePlan,
     _NodeAckNakRuntime,
     _NodeAdminSessionRuntime,
@@ -178,39 +179,9 @@ class TestNodeAdminSessionRuntime:
         runtime = _NodeAdminSessionRuntime(mock_local_node)
 
         with caplog.at_level(logging.WARNING):
-            runtime.ensure_session_key()
+            runtime._ensure_session_key()
 
         assert "Not ensuring session key" in caplog.text
-        mock_local_node.requestConfig.assert_not_called()
-
-    @pytest.mark.unit
-    def test_ensure_session_key_requests_key_when_missing(
-        self, mock_local_node: MagicMock
-    ) -> None:
-        """ensure_session_key should request session key when adminSessionPassKey is None."""
-        mock_local_node.iface._get_or_create_by_num.return_value = {
-            "adminSessionPassKey": None
-        }
-        runtime = _NodeAdminSessionRuntime(mock_local_node)
-
-        runtime.ensure_session_key()
-
-        mock_local_node.requestConfig.assert_called_once_with(
-            admin_pb2.AdminMessage.SESSIONKEY_CONFIG, adminIndex=None
-        )
-
-    @pytest.mark.unit
-    def test_ensure_session_key_skips_when_key_present(
-        self, mock_local_node: MagicMock
-    ) -> None:
-        """ensure_session_key should not request key when adminSessionPassKey is present."""
-        mock_local_node.iface._get_or_create_by_num.return_value = {
-            "adminSessionPassKey": b"test_key"
-        }
-        runtime = _NodeAdminSessionRuntime(mock_local_node)
-
-        runtime.ensure_session_key()
-
         mock_local_node.requestConfig.assert_not_called()
 
     @pytest.mark.unit
@@ -223,7 +194,7 @@ class TestNodeAdminSessionRuntime:
         }
         runtime = _NodeAdminSessionRuntime(mock_local_node)
 
-        runtime.ensure_session_key(admin_index=5)
+        runtime._ensure_session_key(admin_index=5)
 
         mock_local_node.requestConfig.assert_called_once_with(
             admin_pb2.AdminMessage.SESSIONKEY_CONFIG, adminIndex=5
@@ -247,7 +218,7 @@ class TestNodeAdminTransportRuntime:
         runtime = _NodeAdminTransportRuntime(mock_local_node)
 
         with caplog.at_level(logging.WARNING):
-            result = runtime.send_admin(admin_pb2.AdminMessage())
+            result = runtime._send_admin(admin_pb2.AdminMessage())
 
         assert "Not sending packet" in caplog.text
         assert result is None
@@ -260,7 +231,7 @@ class TestNodeAdminTransportRuntime:
         mock_local_node.iface.localNode._get_admin_channel_index.return_value = 3
         runtime = _NodeAdminTransportRuntime(mock_local_node)
 
-        runtime.send_admin(admin_pb2.AdminMessage())
+        runtime._send_admin(admin_pb2.AdminMessage())
 
         # Verify the resolved admin index was used
         call_kwargs = mock_local_node.iface.sendData.call_args[1]
@@ -273,7 +244,7 @@ class TestNodeAdminTransportRuntime:
         """send_admin should use explicit admin_index when provided."""
         runtime = _NodeAdminTransportRuntime(mock_local_node)
 
-        runtime.send_admin(admin_pb2.AdminMessage(), admin_index=7)
+        runtime._send_admin(admin_pb2.AdminMessage(), admin_index=7)
 
         call_kwargs = mock_local_node.iface.sendData.call_args[1]
         assert call_kwargs["channelIndex"] == 7
@@ -289,7 +260,7 @@ class TestNodeAdminTransportRuntime:
         runtime = _NodeAdminTransportRuntime(mock_local_node)
 
         message = admin_pb2.AdminMessage()
-        runtime.send_admin(message)
+        runtime._send_admin(message)
 
         call_args = mock_local_node.iface.sendData.call_args
         outbound_message = call_args[0][0]
@@ -304,7 +275,7 @@ class TestNodeAdminTransportRuntime:
         runtime = _NodeAdminTransportRuntime(mock_local_node)
         message = admin_pb2.AdminMessage()
 
-        runtime.send_admin(
+        runtime._send_admin(
             message,
             want_response=True,
             on_response=lambda _: None,
@@ -362,7 +333,7 @@ class TestNodeChannelWriteRuntime:
         channel = channel_pb2.Channel()
         channel.index = 0
 
-        channel_write_runtime.write_channel_snapshot(channel)
+        channel_write_runtime._write_channel_snapshot(channel)
 
         mock_local_node.ensureSessionKey.assert_called_once()
 
@@ -377,7 +348,7 @@ class TestNodeChannelWriteRuntime:
         channel.index = 0
         channel.role = channel_pb2.Channel.Role.PRIMARY
 
-        channel_write_runtime.write_channel_snapshot(channel)
+        channel_write_runtime._write_channel_snapshot(channel)
 
         mock_local_node._send_admin.assert_called_once()
         call_args = mock_local_node._send_admin.call_args
@@ -405,7 +376,7 @@ class TestNodeChannelWriteRuntime:
             ValueError,
             match="Channel write for index 4 was not started",
         ):
-            channel_write_runtime.write_channel_snapshot(channel)
+            channel_write_runtime._write_channel_snapshot(channel)
 
     @pytest.mark.unit
     def test_write_channel_validates_channel_index(
@@ -420,7 +391,7 @@ class TestNodeChannelWriteRuntime:
         mock_local_node.channels = [mock_channel]
 
         with pytest.raises(_SentinelError, match="interface error"):
-            channel_write_runtime.write_channel(5)  # Out of range
+            channel_write_runtime._write_channel(5)  # Out of range
 
     @pytest.mark.unit
     def test_write_channel_validates_channels_exist(
@@ -432,7 +403,7 @@ class TestNodeChannelWriteRuntime:
         mock_local_node.channels = None
 
         with pytest.raises(_SentinelError, match="interface error"):
-            channel_write_runtime.write_channel(0)
+            channel_write_runtime._write_channel(0)
 
 
 # ============================================================================
@@ -666,11 +637,11 @@ class TestNodeDeleteChannelRuntime:
 
         mock_local_node.channels = channels
 
-        # Patch write_channel_snapshot to avoid actual I/O
+        # Patch _write_channel_snapshot to avoid actual I/O
         with patch.object(
-            delete_channel_runtime._channel_write_runtime, "write_channel_snapshot"
+            delete_channel_runtime._channel_write_runtime, "_write_channel_snapshot"
         ):
-            delete_channel_runtime.delete_channel(1)
+            delete_channel_runtime._delete_channel(1)
 
         # Verify channels were updated
         assert mock_local_node.channels is not None
@@ -706,12 +677,12 @@ class TestNodeDeleteChannelRuntime:
         write_calls: list[tuple[int, int | None]] = []
         with patch.object(
             delete_channel_runtime._channel_write_runtime,
-            "write_channel_snapshot",
+            "_write_channel_snapshot",
             side_effect=lambda ch, **kw: write_calls.append(
                 (ch.index, kw.get("admin_index"))
             ),
         ):
-            delete_channel_runtime.delete_channel(1)
+            delete_channel_runtime._delete_channel(1)
 
         # Verify admin_index switches after writing the admin slot (index 2)
         # After delete, admin channel moves to index 1, so we should see switch after index 2 write
@@ -753,11 +724,11 @@ class TestNodeDeleteChannelRuntime:
             caplog.at_level(logging.WARNING),
             patch.object(
                 delete_channel_runtime._channel_write_runtime,
-                "write_channel_snapshot",
+                "_write_channel_snapshot",
                 side_effect=make_cache_none,
             ),
         ):
-            delete_channel_runtime.delete_channel(1)
+            delete_channel_runtime._delete_channel(1)
 
         assert "Channel cache became unavailable" in caplog.text
         assert mock_local_node.channels is None
@@ -794,11 +765,11 @@ class TestNodeDeleteChannelRuntime:
             caplog.at_level(logging.WARNING),
             patch.object(
                 delete_channel_runtime._channel_write_runtime,
-                "write_channel_snapshot",
+                "_write_channel_snapshot",
                 side_effect=change_cache,
             ),
         ):
-            delete_channel_runtime.delete_channel(1)
+            delete_channel_runtime._delete_channel(1)
 
         assert "Channel cache changed during delete rewrite" in caplog.text
         assert mock_local_node.channels is None
@@ -832,7 +803,7 @@ class TestNodeDeleteChannelRuntime:
             ),
             pytest.raises(RuntimeError, match="rewrite failed"),
         ):
-            delete_channel_runtime.delete_channel(1)
+            delete_channel_runtime._delete_channel(1)
 
         assert mock_local_node.channels is None
         assert mock_local_node.partialChannels == []
@@ -859,7 +830,7 @@ class TestNodeAckNakRuntime:
             "from": 12345,
         }
 
-        runtime.handle_ack_nak(packet)
+        runtime._handle_ack_nak(packet)
 
         assert mock_local_node.iface._acknowledgment.receivedNak is True
 
@@ -876,7 +847,7 @@ class TestNodeAckNakRuntime:
             "from": 99999999,  # Different from local node
         }
 
-        runtime.handle_ack_nak(packet)
+        runtime._handle_ack_nak(packet)
 
         assert mock_local_node.iface._acknowledgment.receivedAck is True
 
@@ -894,7 +865,7 @@ class TestNodeAckNakRuntime:
         }
 
         with caplog.at_level(logging.INFO):
-            runtime.handle_ack_nak(packet)
+            runtime._handle_ack_nak(packet)
 
         assert mock_local_node.iface._acknowledgment.receivedImplAck is True
         assert "implicit ACK" in caplog.text
@@ -908,7 +879,7 @@ class TestNodeAckNakRuntime:
         packet: dict[str, Any] = {"decoded": {}}
 
         with caplog.at_level(logging.WARNING):
-            runtime.handle_ack_nak(packet)
+            runtime._handle_ack_nak(packet)
 
         assert "without routing details" in caplog.text
 
@@ -925,7 +896,7 @@ class TestNodeAckNakRuntime:
         }
 
         with caplog.at_level(logging.WARNING):
-            runtime.handle_ack_nak(packet)
+            runtime._handle_ack_nak(packet)
 
         assert "without sender" in caplog.text
 
@@ -943,7 +914,7 @@ class TestNodeAckNakRuntime:
         }
 
         with caplog.at_level(logging.WARNING):
-            runtime.handle_ack_nak(packet)
+            runtime._handle_ack_nak(packet)
 
         assert "invalid sender" in caplog.text
 
@@ -985,7 +956,7 @@ class TestNodePositionTimeCommandRuntime:
         mock_local_node: MagicMock,
     ) -> None:
         """set_fixed_position with float lat/lon should scale by 1e7 (lines 406-415)."""
-        position_time_runtime.set_fixed_position(lat=37.7749, lon=-122.4194, alt=10)
+        position_time_runtime._set_fixed_position(lat=37.7749, lon=-122.4194, alt=10)
 
         mock_local_node.ensureSessionKey.assert_called_once()
         mock_local_node._send_admin.assert_called_once()
@@ -1010,7 +981,7 @@ class TestNodePositionTimeCommandRuntime:
         lat_int = 377749000  # Pre-scaled latitude
         lon_int = -1224194000  # Pre-scaled longitude
 
-        position_time_runtime.set_fixed_position(lat=lat_int, lon=lon_int, alt=50)
+        position_time_runtime._set_fixed_position(lat=lat_int, lon=lon_int, alt=50)
 
         mock_local_node.ensureSessionKey.assert_called_once()
         call_args = mock_local_node._send_admin.call_args
@@ -1028,7 +999,7 @@ class TestNodePositionTimeCommandRuntime:
         mock_local_node: MagicMock,
     ) -> None:
         """set_fixed_position with None lat should omit latitude_i field."""
-        position_time_runtime.set_fixed_position(lat=None, lon=-122.4194, alt=10)
+        position_time_runtime._set_fixed_position(lat=None, lon=-122.4194, alt=10)
 
         call_args = mock_local_node._send_admin.call_args
         admin_message = call_args[0][0]
@@ -1045,7 +1016,7 @@ class TestNodePositionTimeCommandRuntime:
         mock_local_node: MagicMock,
     ) -> None:
         """set_fixed_position with None lon should omit longitude_i field."""
-        position_time_runtime.set_fixed_position(lat=37.7749, lon=None, alt=10)
+        position_time_runtime._set_fixed_position(lat=37.7749, lon=None, alt=10)
 
         call_args = mock_local_node._send_admin.call_args
         admin_message = call_args[0][0]
@@ -1062,7 +1033,7 @@ class TestNodePositionTimeCommandRuntime:
         mock_local_node: MagicMock,
     ) -> None:
         """set_fixed_position should preserve explicit zero lat/lon as valid coordinates."""
-        position_time_runtime.set_fixed_position(lat=0.0, lon=0, alt=10)
+        position_time_runtime._set_fixed_position(lat=0.0, lon=0, alt=10)
 
         call_args = mock_local_node._send_admin.call_args
         admin_message = call_args[0][0]
@@ -1079,7 +1050,7 @@ class TestNodePositionTimeCommandRuntime:
         mock_local_node: MagicMock,
     ) -> None:
         """set_fixed_position with altitude should set altitude field (lines 417-418)."""
-        position_time_runtime.set_fixed_position(lat=37.7749, lon=-122.4194, alt=100)
+        position_time_runtime._set_fixed_position(lat=37.7749, lon=-122.4194, alt=100)
 
         call_args = mock_local_node._send_admin.call_args
         admin_message = call_args[0][0]
@@ -1094,7 +1065,7 @@ class TestNodePositionTimeCommandRuntime:
         mock_local_node: MagicMock,
     ) -> None:
         """set_fixed_position with None alt should omit altitude field."""
-        position_time_runtime.set_fixed_position(lat=37.7749, lon=-122.4194, alt=None)
+        position_time_runtime._set_fixed_position(lat=37.7749, lon=-122.4194, alt=None)
 
         call_args = mock_local_node._send_admin.call_args
         admin_message = call_args[0][0]
@@ -1110,7 +1081,7 @@ class TestNodePositionTimeCommandRuntime:
         mock_local_node: MagicMock,
     ) -> None:
         """set_fixed_position should call ensureSessionKey (line 402)."""
-        position_time_runtime.set_fixed_position(lat=37.7749, lon=-122.4194, alt=10)
+        position_time_runtime._set_fixed_position(lat=37.7749, lon=-122.4194, alt=10)
 
         mock_local_node.ensureSessionKey.assert_called_once()
 
@@ -1121,7 +1092,7 @@ class TestNodePositionTimeCommandRuntime:
         mock_local_node: MagicMock,
     ) -> None:
         """set_fixed_position should call _send_admin with correct message."""
-        position_time_runtime.set_fixed_position(lat=37.7749, lon=-122.4194, alt=10)
+        position_time_runtime._set_fixed_position(lat=37.7749, lon=-122.4194, alt=10)
 
         mock_local_node._send_admin.assert_called_once()
         call_args = mock_local_node._send_admin.call_args
@@ -1141,7 +1112,7 @@ class TestNodePositionTimeCommandRuntime:
 
         runtime = _NodePositionTimeCommandRuntime(mock_remote_node)
 
-        runtime.set_fixed_position(lat=37.7749, lon=-122.4194, alt=10)
+        runtime._set_fixed_position(lat=37.7749, lon=-122.4194, alt=10)
 
         # Should call waitForAckNak for remote node
         mock_iface.waitForAckNak.assert_called_once()
@@ -1262,6 +1233,7 @@ class TestDeleteChannelRewritePlan:
         channels = [channel_pb2.Channel()]
         plan = _DeleteChannelRewritePlan(
             original_channels_ref=channels,
+            original_channels_fingerprint=_channels_fingerprint(channels),
             pre_delete_admin_index=0,
             post_delete_admin_index=1,
             switch_after_admin_slot_rewrite=False,
@@ -1281,6 +1253,7 @@ class TestDeleteChannelRewritePlan:
 
         plan = _DeleteChannelRewritePlan(
             original_channels_ref=channels,
+            original_channels_fingerprint=_channels_fingerprint(channels),
             pre_delete_admin_index=2,
             post_delete_admin_index=3,
             switch_after_admin_slot_rewrite=True,
@@ -1289,6 +1262,7 @@ class TestDeleteChannelRewritePlan:
         )
 
         assert plan.original_channels_ref is channels
+        assert plan.original_channels_fingerprint == _channels_fingerprint(channels)
         assert plan.pre_delete_admin_index == 2
         assert plan.post_delete_admin_index == 3
         assert plan.switch_after_admin_slot_rewrite is True

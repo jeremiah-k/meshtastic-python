@@ -196,6 +196,7 @@ class _NodeSettingsRuntime:
         self._validate_write_configs_loaded(config_name)
         message = self._message_builder.build_write_message(config_name)
         logger.debug("Wrote: %s", config_name)
+        self._node.ensureSessionKey()
         on_response = (
             None if self._node is self._node.iface.localNode else self._node.onAckNak
         )
@@ -460,7 +461,7 @@ class _NodeAdminCommandRuntime:
         *,
         ota_mode: int | None = None,
         ota_hash: bytes | None = None,
-        extra_kwargs: dict[str, Any],
+        **extra_kwargs: Any,
     ) -> mesh_pb2.MeshPacket | None:
         """Validate OTA args and send ota_request command."""
         if self._node is not self._node.iface.localNode:

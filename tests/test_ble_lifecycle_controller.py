@@ -143,9 +143,9 @@ class TestBLELifecycleControllerDisconnectDelegation:
             handle_disconnect=lambda source, *, client, bleak_client: (
                 calls.append(
                     {"source": source, "client": client, "bleak_client": bleak_client}
-                ),
-                True,
-            )[1]
+                )
+                or True
+            )
         )
         mock_iface = SimpleNamespace()
         controller = BLELifecycleController(mock_iface)
@@ -673,10 +673,7 @@ class TestBLELifecycleControllerClientManagement:
         """_is_owned_connected_client should delegate to _connection_ownership coordinator."""
         calls: list[object] = []
         mock_ownership = SimpleNamespace(
-            _is_owned_connected_client=lambda client: (
-                calls.append(client),
-                True,
-            )[1]
+            _is_owned_connected_client=lambda client: (calls.append(client) or True)
         )
         mock_iface = SimpleNamespace()
         controller = BLELifecycleController(mock_iface)

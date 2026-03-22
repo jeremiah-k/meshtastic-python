@@ -540,15 +540,22 @@ class Node:  # pylint: disable=too-many-instance-attributes
             configured admin channel is used. Pass 0 to force channel 0.
             (Default value = None)
         """
-        self._channel_write_runtime.write_channel_snapshot(
+        self._channel_write_runtime._write_channel_snapshot(
             channel_to_write,
             admin_index=adminIndex,
         )
 
-    def writeChannel(self, channelIndex: int, adminIndex: int | None = None) -> None:
-        """Write the channel at the given index to the device.
+    def writeChannel(
+        self,
+        channelIndex: int,
+        *,
+        adminIndex: int | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Write the current local channel settings to the device.
 
-        Sends the specified channel configuration to the node and ensures an admin session key is present before sending.
+        An admin session key is requested if one is not already present,
+        ensuring that an admin session key is present before sending.
 
         Parameters
         ----------
@@ -560,10 +567,11 @@ class Node:  # pylint: disable=too-many-instance-attributes
 
         Raises
         ------
-        MeshInterfaceError
+        AssertionError
             If channels have not been loaded (no channels to write).
         """
-        self._channel_write_runtime.write_channel(
+        _ = kwargs
+        self._channel_write_runtime._write_channel(
             channelIndex,
             admin_index=adminIndex,
         )
@@ -619,7 +627,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         MeshInterfaceError
             If the channel at channelIndex is not Role.SECONDARY or Role.DISABLED.
         """
-        self._delete_channel_runtime.delete_channel(channelIndex)
+        self._delete_channel_runtime._delete_channel(channelIndex)
 
     def getChannelByName(self, name: str) -> channel_pb2.Channel | None:
         """Find a channel whose settings.name exactly matches the provided name.
@@ -1303,7 +1311,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_packet : mesh_pb2.MeshPacket | None
             The result from sending the AdminMessage, or `None` if no packet was sent.
         """
-        return self._position_time_runtime.set_fixed_position(
+        return self._position_time_runtime._set_fixed_position(
             lat=lat,
             lon=lon,
             alt=alt,
@@ -1417,7 +1425,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             - p["decoded"]["routing"]["errorReason"]: routing error reason string.
             - p["from"]: numeric origin node identifier (string or int convertible).
         """
-        self._ack_nak_runtime.handle_ack_nak(p)
+        self._ack_nak_runtime._handle_ack_nak(p)
 
     def _request_channel(self, channelNum: int) -> mesh_pb2.MeshPacket | None:
         """Request settings for a single channel from this node.
@@ -1465,7 +1473,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             The MeshPacket returned by the send operation,
             or `None` if sending was skipped because protocol use is disabled.
         """
-        return self._admin_transport_runtime.send_admin(
+        return self._admin_transport_runtime._send_admin(
             p,
             want_response=wantResponse,
             on_response=onResponse,
@@ -1485,7 +1493,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             the node's configured admin channel is used. Pass 0 to force
             channel 0. (Default value = None)
         """
-        self._admin_session_runtime.ensure_session_key(admin_index=adminIndex)
+        self._admin_session_runtime._ensure_session_key(admin_index=adminIndex)
 
     def _get_channels_with_hash(self) -> list[dict[str, Any]]:
         """Return a list of channel descriptors containing index, role, name, and an optional hash.

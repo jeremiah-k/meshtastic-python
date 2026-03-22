@@ -34,10 +34,14 @@ class _NodeChannelExportRuntime:
         config_snapshot = localonly_pb2.LocalConfig()
         node_db_lock = getattr(self._node, "_node_db_lock", None)
         if node_db_lock is None:
-            config_snapshot.CopyFrom(self._node.localConfig)
+            local_config = getattr(self._node, "localConfig", None)
+            if local_config is not None:
+                config_snapshot.CopyFrom(local_config)
             return config_snapshot
         with node_db_lock:
-            config_snapshot.CopyFrom(self._node.localConfig)
+            local_config = getattr(self._node, "localConfig", None)
+            if local_config is not None:
+                config_snapshot.CopyFrom(local_config)
         return config_snapshot
 
     def getUrl(self, *, includeAll: bool = True) -> str:
@@ -188,6 +192,7 @@ class _NodeChannelExportRuntime:
                         self._node.partialChannels = []
                         return
                     channel.CopyFrom(primary_snapshot)
+                    self._node.partialChannels = []
                     return
             logger.warning(
                 "Primary channel write succeeded but local channel index %s is unavailable; invalidating local channel cache.",
