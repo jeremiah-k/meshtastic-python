@@ -511,7 +511,22 @@ def _platform_socket_mocks() -> Generator[tuple[MagicMock, MagicMock], None, Non
         yield platform_mock, socket_mock
 
 
-# Fixtures for behavioral compatibility tests
+@pytest.fixture(scope="session", autouse=True)
+def _shutdown_publishing_thread() -> Generator[None, None, None]:
+    """Ensure the global publishing thread is shut down after all tests complete.
+
+    The publishingThread is a global DeferredExecution instance that creates a
+    daemon worker thread. While daemon threads should exit when the main thread
+    exits, pytest can hang waiting for them. This fixture ensures clean shutdown.
+    """
+    yield
+    # After all tests complete, shut down the publishing thread
+    from meshtastic import publishingThread
+
+    publishingThread.stop()
+    publishingThread.join(timeout=5.0)
+
+
 @pytest.fixture
 def mock_interface() -> Iterator[Any]:
     """Provide a MeshInterface with mocked internals for behavioral testing."""

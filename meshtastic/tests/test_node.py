@@ -3211,4 +3211,4 @@ def test_on_response_request_settings_warns_for_unrecognized_payload_shape(
             {"decoded": {"admin": {"raw": admin_pb2.AdminMessage()}}}
         )
 
-    assert "Did not receive a valid response" in caplog.text
+    assert "Did not receive a valid config response" in caplog.text

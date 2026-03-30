@@ -644,9 +644,9 @@ def test_messageToJson_shows_all() -> None:
         "nodedbCount": 0,
     }
     for key, value in expected.items():
-        assert (
-            actual.get(key) == value
-        ), f"Key {key}: expected {value}, got {actual.get(key)}"
+        assert actual.get(key) == value, (
+            f"Key {key}: expected {value}, got {actual.get(key)}"
+        )
     # firmwareEdition presence only — value depends on proto enum default name
     assert "firmwareEdition" in actual
 
@@ -955,15 +955,15 @@ def test_tdeck_vid_pid_mapping() -> None:
         for d in supported_devices
         if d.usb_vendor_id_in_hex == "303a" and d.usb_product_id_in_hex == "1001"
     ]
-    assert (
-        len(tdeck_devices) == 1
-    ), "Expected exactly one T-Deck device with VID 303a and PID 1001"
-    assert (
-        tdeck_devices[0].name == "T-Deck"
-    ), f"Expected device name 'T-Deck', got '{tdeck_devices[0].name}'"
-    assert (
-        tdeck_devices[0].for_firmware == "t-deck"
-    ), f"Expected for_firmware 't-deck', got '{tdeck_devices[0].for_firmware}'"
+    assert len(tdeck_devices) == 1, (
+        "Expected exactly one T-Deck device with VID 303a and PID 1001"
+    )
+    assert tdeck_devices[0].name == "T-Deck", (
+        f"Expected device name 'T-Deck', got '{tdeck_devices[0].name}'"
+    )
+    assert tdeck_devices[0].for_firmware == "t-deck", (
+        f"Expected for_firmware 't-deck', got '{tdeck_devices[0].for_firmware}'"
+    )
 
 
 @pytest.mark.unit
@@ -1349,10 +1349,14 @@ def test_deferred_execution_runs_closure() -> None:
     second = threading.Event()
     de = DeferredExecution(name="test_thread")
 
-    de.queueWork(first.set)
-    de.queueWork(second.set)
-    assert first.wait(timeout=1.0)
-    assert second.wait(timeout=1.0)
+    try:
+        de.queueWork(first.set)
+        de.queueWork(second.set)
+        assert first.wait(timeout=1.0)
+        assert second.wait(timeout=1.0)
+    finally:
+        de.stop()
+        de.join(timeout=1.0)
 
 
 @pytest.mark.unit
@@ -1364,20 +1368,24 @@ def test_deferred_execution_handles_exceptions(
     completion = threading.Event()
     de = DeferredExecution(name="test_exception_thread")
 
-    # Queue work that raises exception
-    def bad_closure() -> None:
-        raise ValueError("Test exception")
+    try:
+        # Queue work that raises exception
+        def bad_closure() -> None:
+            raise ValueError("Test exception")
 
-    def signal_completion() -> None:
-        completion.set()
+        def signal_completion() -> None:
+            completion.set()
 
-    with caplog.at_level(logging.DEBUG):
-        de.queueWork(bad_closure)
-        de.queueWork(signal_completion)
-        assert completion.wait(timeout=1.0)
+        with caplog.at_level(logging.DEBUG):
+            de.queueWork(bad_closure)
+            de.queueWork(signal_completion)
+            assert completion.wait(timeout=1.0)
 
-    # Should have logged the exception
-    assert "Unexpected error in deferred execution" in caplog.text
+        # Should have logged the exception
+        assert "Unexpected error in deferred execution" in caplog.text
+    finally:
+        de.stop()
+        de.join(timeout=1.0)
 
 
 # Tests for Timeout.waitForAckNak
