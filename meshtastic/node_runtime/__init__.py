@@ -1,4 +1,9 @@
-"""Internal Node runtime owners grouped by responsibility domain."""
+"""Public API for node runtime constants and helpers.
+
+This module exports constants and utility functions intended for use across
+Meshtastic Node implementations. Symbols listed in __all__ are part of the
+stable public interface.
+"""
 
 from .shared import (
     EMPTY_LONG_NAME_MSG,
@@ -11,8 +16,8 @@ from .shared import (
     MAX_SHORT_NAME_LEN,
     METADATA_STDOUT_COMPAT_WAIT_SECONDS,
     NAMED_ADMIN_CHANNEL_NAME,
-    is_named_admin_channel_name,
-    ordered_admin_indexes,
+    isNamedAdminChannelName,
+    orderedAdminIndexes,
 )
 
 __all__ = [
@@ -26,6 +31,6 @@ __all__ = [
     "MAX_SHORT_NAME_LEN",
     "METADATA_STDOUT_COMPAT_WAIT_SECONDS",
     "NAMED_ADMIN_CHANNEL_NAME",
-    "is_named_admin_channel_name",
-    "ordered_admin_indexes",
+    "isNamedAdminChannelName",
+    "orderedAdminIndexes",
 ]

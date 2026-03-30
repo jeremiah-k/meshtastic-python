@@ -6,7 +6,6 @@ Outputs a JSON baseline that can be diffed between branches.
 
 Usage:
     python bin/extract_api_surface.py /path/to/meshtastic-package-dir
-    python bin/extract_api_surface.py /path/to/meshtastic-package-dir --class MeshInterface
 """
 
 import ast
@@ -31,8 +30,6 @@ def _annotation_to_str(node: ast.AST | None) -> str:
         return ", ".join(_annotation_to_str(e) for e in node.elts)
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
         return f"{_annotation_to_str(node.left)} | {_annotation_to_str(node.right)}"
-    if isinstance(node, ast.Index) and hasattr(node, "value"):
-        return _annotation_to_str(node.value)
     if isinstance(node, ast.Starred):
         return f"*{_annotation_to_str(node.value)}"
     if isinstance(node, ast.List):
@@ -89,11 +86,16 @@ def _signature_from_function(
     if func_node.args.kwonlyargs:
         if not func_node.args.vararg:
             params.append("*")
-        for kw_arg in func_node.args.kwonlyargs:
+        for kw_arg, kw_default in zip(
+            func_node.args.kwonlyargs, func_node.args.kw_defaults
+        ):
             s = kw_arg.arg
             ann = _annotation_to_str(kw_arg.annotation) if kw_arg.annotation else None
             if ann:
                 s += f": {ann}"
+            dv = _default_to_str(kw_default)
+            if dv is not None:
+                s += f"={dv}"
             params.append(s)
     if func_node.args.kwarg:
         params.append(f"**{func_node.args.kwarg.arg}")
@@ -165,17 +167,17 @@ def extract_api_surface(
 
     module_map = {}
     for cls in classes:
-        for candidate in ["mesh_interface", "node"]:
-            src = _find_source_file(pkg_dir, candidate)
-            if src is None:
-                continue
-            if src in module_map:
-                continue
-            tree = ast.parse(src.read_text(encoding="utf-8"))
-            methods = _extract_class_methods(tree, cls)
-            if methods:
-                module_map[src] = (tree, candidate)
-                break
+        # Derive module name from class name using snake_case convention
+        module_name = cls.lower().replace("meshinterface", "mesh_interface")
+        src = _find_source_file(pkg_dir, module_name)
+        if src is None:
+            continue
+        if src in module_map:
+            continue
+        tree = ast.parse(src.read_text(encoding="utf-8"))
+        methods = _extract_class_methods(tree, cls)
+        if methods:
+            module_map[src] = (tree, module_name)
 
     result = {
         "node_methods": {},

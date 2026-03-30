@@ -16,6 +16,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _get_role_name(role: int) -> str:
+    """Return the role name or UNKNOWN(<value>) for unrecognized roles."""
+    if role in channel_pb2.Channel.Role.values():
+        return channel_pb2.Channel.Role.Name(role)
+    return f"UNKNOWN({role})"
+
+
 class _NodeChannelPresentationRuntime:
     """Owns channel/info display formatting and presentation orchestration."""
 
@@ -44,22 +51,14 @@ class _NodeChannelPresentationRuntime:
                 [
                     {
                         "index": channel.index,
-                        "role": (
-                            channel_pb2.Channel.Role.Name(channel.role)
-                            if channel.role in channel_pb2.Channel.Role.values()
-                            else f"UNKNOWN({channel.role})"
-                        ),
+                        "role": _get_role_name(channel.role),
                         "name": channel.settings.name if channel.settings else "",
                     }
                     for channel in channels_snapshot
                 ],
             )
             for channel in channels_snapshot:
-                role_name = (
-                    channel_pb2.Channel.Role.Name(channel.role)
-                    if channel.role in channel_pb2.Channel.Role.values()
-                    else f"UNKNOWN({channel.role})"
-                )
+                role_name = _get_role_name(channel.role)
                 if role_name == "DISABLED":
                     continue
                 channel_string = messageToJson(channel.settings)
@@ -100,7 +99,7 @@ class _NodeChannelPresentationRuntime:
         get_url = getattr(self._export_runtime, "get_url", None)
         if callable(get_url):
             return cast(str, get_url(include_all=include_all))
-        return self._export_runtime._get_url_from_snapshot(
+        return self._export_runtime._get_url_from_snapshot(  # noqa: SLF001
             channels_snapshot,
             include_all=include_all,
         )

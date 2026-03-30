@@ -34,29 +34,32 @@ def extractNodeFieldValue(node_dict: dict[str, Any], field_path: str) -> Any:
     return value
 
 
+DEFAULT_SHOW_FIELDS: list[str] = [
+    "N",
+    "user.longName",
+    "user.id",
+    "user.shortName",
+    "user.hwModel",
+    "user.publicKey",
+    "user.role",
+    "position.latitude",
+    "position.longitude",
+    "position.altitude",
+    "deviceMetrics.batteryLevel",
+    "deviceMetrics.channelUtilization",
+    "deviceMetrics.airUtilTx",
+    "snr",
+    "hopsAway",
+    "channel",
+    "isFavorite",
+    "lastHeard",
+    "since",
+]
+
+
 def getDefaultShowFields() -> list[str]:
     """Return the default list of fields to display in showNodes output."""
-    return [
-        "N",
-        "user.longName",
-        "user.id",
-        "user.shortName",
-        "user.hwModel",
-        "user.publicKey",
-        "user.role",
-        "position.latitude",
-        "position.longitude",
-        "position.altitude",
-        "deviceMetrics.batteryLevel",
-        "deviceMetrics.channelUtilization",
-        "deviceMetrics.airUtilTx",
-        "snr",
-        "hopsAway",
-        "channel",
-        "isFavorite",
-        "lastHeard",
-        "since",
-    ]
+    return DEFAULT_SHOW_FIELDS.copy()
 
 
 def filterNodes(

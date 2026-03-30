@@ -6,9 +6,7 @@ from typing import TYPE_CHECKING
 
 from meshtastic.node_runtime.shared import (
     MAX_CHANNELS,
-)
-from meshtastic.node_runtime.shared import (
-    is_named_admin_channel_name as _is_named_admin_channel_name,
+    isNamedAdminChannelName as _isNamedAdminChannelName,
 )
 from meshtastic.node_runtime.transport_runtime.admin import _NodeAdminTransportRuntime
 from meshtastic.node_runtime.transport_runtime.session import _NodeAdminSessionRuntime
@@ -73,6 +71,8 @@ class _NodeChannelWriteRuntime:
             channels = self._node.channels
             if channels is None:
                 self._node._raise_interface_error("Error: No channels have been read")
+            if len(channels) == 0:
+                self._node._raise_interface_error("Error: Channels list is empty")
             if channel_index < 0 or channel_index >= len(channels):
                 self._node._raise_interface_error(
                     f"Channel index {channel_index} out of range (0-{len(channels) - 1})"
@@ -118,7 +118,7 @@ class _NodeDeleteChannelRuntime:
             if (
                 channel.role != channel_pb2.Channel.Role.DISABLED
                 and channel.settings
-                and _is_named_admin_channel_name(channel.settings.name)
+                and _isNamedAdminChannelName(channel.settings.name)
             ):
                 return channel.index
         return 0
@@ -151,6 +151,8 @@ class _NodeDeleteChannelRuntime:
         channels = self._node.channels
         if channels is None:
             self._node._raise_interface_error("Error: No channels have been read")
+        if len(channels) == 0:
+            self._node._raise_interface_error("Error: Channels list is empty")
         if channel_index < 0 or channel_index >= len(channels):
             self._node._raise_interface_error(
                 f"Channel index {channel_index} out of range (0-{len(channels) - 1})"
@@ -241,7 +243,6 @@ class _NodeDeleteChannelRuntime:
                 logger.warning(
                     "Channel cache became unavailable during delete rewrite; skipping staged cache commit."
                 )
-                self._node.channels = None
                 self._node.partialChannels = []
                 return
             if current_channels is not rewrite_plan.original_channels_ref:

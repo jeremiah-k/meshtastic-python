@@ -14,8 +14,8 @@ import sys
 
 
 def _normalize_type(type_str: str) -> str:
-    type_str = re.sub(r"\bUnion\[([^,]+),\s*None\]", r"Optional[\1]", type_str)
-    type_str = re.sub(r"\bOptional\[([^]]+)\]", r"\1 | None", type_str)
+    type_str = re.sub(r"\bUnion\[([^\[\]]+),\s*None\]", r"Optional[\1]", type_str)
+    type_str = re.sub(r"\bOptional\[([^\[\]]+)\]", r"\1 | None", type_str)
     type_str = re.sub(r"typing\.", "", type_str)
     return type_str
 
@@ -32,7 +32,9 @@ def _normalize_sig(sig: str) -> str:
 
 
 def compare_methods(
-    master: dict, pr: dict, class_name: str
+    master: dict[str, str],
+    pr: dict[str, str],
+    class_name: str,
 ) -> tuple[list[str], list[str]]:
     blocking = []
     informational = []
@@ -82,7 +84,10 @@ NOISE_EXPORTS = {
 }
 
 
-def compare_exports(master: list, pr: list) -> tuple[list[str], list[str]]:
+def compare_exports(
+    master: list[str],
+    pr: list[str],
+) -> tuple[list[str], list[str]]:
     blocking = []
     informational = []
     removed = set(master) - set(pr)
@@ -100,14 +105,14 @@ def compare_exports(master: list, pr: list) -> tuple[list[str], list[str]]:
     return blocking, informational
 
 
-def main():
+def main() -> int:
     if len(sys.argv) != 3:
         print(f"Usage: {sys.argv[0]} <master.json> <pr.json>", file=sys.stderr)
         sys.exit(1)
 
-    with open(sys.argv[1]) as f:
+    with open(sys.argv[1], encoding="utf-8") as f:
         master = json.load(f)
-    with open(sys.argv[2]) as f:
+    with open(sys.argv[2], encoding="utf-8") as f:
         pr = json.load(f)
 
     all_informational = []

@@ -10,6 +10,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+TIMEOUT_SESSION_KEY_MSG = "Timeout waiting for adminSessionPassKey after request"
+
 
 class _AdminSessionPassKeyProbe:
     """Probe to wait for adminSessionPassKey in node data."""
@@ -51,6 +53,4 @@ class _NodeAdminSessionRuntime:
             probe = _AdminSessionPassKeyProbe(self._node)
             key_received = self._node._timeout.waitForSet(probe, attrs=("is_set",))
             if not key_received:
-                raise TimeoutError(
-                    "Timeout waiting for adminSessionPassKey after request"
-                )
+                raise TimeoutError(TIMEOUT_SESSION_KEY_MSG)

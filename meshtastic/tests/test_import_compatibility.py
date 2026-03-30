@@ -238,6 +238,9 @@ class TestBackwardCompatAliases:
             assert dotdict is not None
             assert isinstance(dotdict, type)
 
+            # Instantiate to trigger deprecation warning
+            _ = dotdict()
+
             # Should have emitted a deprecation warning
             deprecation_warnings = [
                 x for x in w if issubclass(x.category, DeprecationWarning)

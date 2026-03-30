@@ -7,6 +7,8 @@ JSONValue: TypeAlias = (
     None | bool | int | float | str | list["JSONValue"] | dict[str, "JSONValue"]
 )
 
+_BATTERY_LEVEL_POWERED_SENTINELS = (0, 101)
+
 _COLUMN_LABEL_MAP: dict[str, str] = {
     "user.longName": "User",
     "user.id": "ID",
@@ -120,7 +122,7 @@ def format_time_ago(ts: int | float | None) -> str | None:
     """
     if ts is None or ts == 0:
         return None
-    delta = datetime.now() - datetime.fromtimestamp(ts)
+    delta = datetime.now(tz=timezone.utc) - datetime.fromtimestamp(ts, tz=timezone.utc)
     delta_secs = int(delta.total_seconds())
     if delta_secs < 0:
         return None
@@ -165,7 +167,7 @@ def format_node_field(
     str | None
         The formatted string value for display, or None if value is None.
     """
-    # COMPAT_STABLE_SHIM: defensive access for node["num"] to avoid KeyError on malformed dicts
+    # Defensive access for node["num"] to avoid KeyError on malformed dicts
     node_num = node.get("num")
     if node_num is not None:
         presumptive_id = f"!{node_num:08x}"
@@ -181,7 +183,7 @@ def format_node_field(
     elif col_name == "deviceMetrics.airUtilTx":
         return format_numeric_value(raw_value, 2, "%")
     elif col_name == "deviceMetrics.batteryLevel":
-        if raw_value in (0, 101):
+        if raw_value in _BATTERY_LEVEL_POWERED_SENTINELS:
             return "Powered"
         else:
             return format_numeric_value(raw_value, 0, "%")

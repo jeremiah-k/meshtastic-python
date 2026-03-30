@@ -451,7 +451,10 @@ class _RequestWaitRuntime:
             "Dropping response callback for requestId %s due to admin decode failure.",
             request_id,
         )
-        admin_decoded_payload = packet_dict.get("decoded", {}).get("admin", {})
+        decoded = packet_dict.get("decoded")
+        admin_decoded_payload = (
+            decoded.get("admin", {}) if isinstance(decoded, dict) else {}
+        )
         if isinstance(admin_decoded_payload, dict):
             admin_decode_error = admin_decoded_payload.get(
                 DECODE_ERROR_KEY,

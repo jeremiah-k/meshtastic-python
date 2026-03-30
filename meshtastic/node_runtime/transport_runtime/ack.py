@@ -8,6 +8,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+ERROR_REASON_NONE = "NONE"
+
 
 class _NodeAckNakRuntime:
     """Owns ACK/NAK payload classification and acknowledgment flag mutation."""
@@ -36,8 +38,8 @@ class _NodeAckNakRuntime:
             self._node.iface._acknowledgment.receivedNak = True
             return
 
-        error_reason = routing.get("errorReason", "NONE")
-        if error_reason != "NONE":
+        error_reason = routing.get("errorReason", ERROR_REASON_NONE)
+        if error_reason != ERROR_REASON_NONE:
             logger.warning("Received a NAK, error reason: %s", error_reason)
             self._node.iface._acknowledgment.receivedNak = True
             return
@@ -61,7 +63,16 @@ class _NodeAckNakRuntime:
             self._node.iface._acknowledgment.receivedNak = True
             return
 
-        if from_num == self._node.iface.localNode.nodeNum:
+        local_node = self._node.iface.localNode
+        if local_node is None:
+            logger.warning(
+                "Received ACK/NAK response but localNode is not available: packet_id=%s",
+                packet.get("id"),
+            )
+            self._node.iface._acknowledgment.receivedNak = True
+            return
+
+        if from_num == local_node.nodeNum:
             logger.info(
                 "Received an implicit ACK. Packet will likely arrive, but cannot be guaranteed."
             )

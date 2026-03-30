@@ -10,7 +10,7 @@ from meshtastic.node_runtime.seturl.context import _SetUrlAdminContext
 from meshtastic.node_runtime.seturl.helpers import _channels_fingerprint
 from meshtastic.node_runtime.seturl.parser import _SetUrlParsedInput
 from meshtastic.node_runtime.shared import (
-    is_named_admin_channel_name as _is_named_admin_channel_name,
+    isNamedAdminChannelName as _isNamedAdminChannelName,
 )
 from meshtastic.protobuf import channel_pb2, config_pb2
 
@@ -154,7 +154,7 @@ class _SetUrlAddOnlyPlanner:
                 (
                     candidate
                     for candidate in channels_to_write
-                    if _is_named_admin_channel_name(candidate[1])
+                    if _isNamedAdminChannelName(candidate[1])
                 ),
                 None,
             )
@@ -259,7 +259,7 @@ class _SetUrlReplacePlanner:
             for staged_channel in staged_channels
             if staged_channel.settings
             and staged_channel.settings.name
-            and _is_named_admin_channel_name(staged_channel.settings.name)
+            and _isNamedAdminChannelName(staged_channel.settings.name)
         ]
         if len(staged_named_admin_channels) > 1:
             self._node._raise_interface_error(  # noqa: SLF001

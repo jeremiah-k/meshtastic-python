@@ -728,7 +728,7 @@ class TestSendPosition:
     def test_send_position_delegates(self, send_pipeline: SendPipeline) -> None:
         """Test sendPosition delegates to flow function."""
         with patch(
-            "meshtastic.mesh_interface_runtime.send_pipeline.send_position"
+            "meshtastic.mesh_interface_runtime.send_pipeline.sendPosition"
         ) as mock_flow:
             mock_flow.return_value = MagicMock()
             send_pipeline.sendPosition(
@@ -770,7 +770,7 @@ class TestSendTraceRoute:
     def test_send_traceroute_delegates(self, send_pipeline: SendPipeline) -> None:
         """Test sendTraceRoute delegates to flow function."""
         with patch(
-            "meshtastic.mesh_interface_runtime.send_pipeline.send_traceroute"
+            "meshtastic.mesh_interface_runtime.send_pipeline.sendTraceroute"
         ) as mock_flow:
             send_pipeline.sendTraceRoute("!1234abcd", hopLimit=3, channelIndex=0)
 
@@ -784,7 +784,7 @@ class TestSendTelemetry:
     def test_send_telemetry_delegates(self, send_pipeline: SendPipeline) -> None:
         """Test sendTelemetry delegates to flow function."""
         with patch(
-            "meshtastic.mesh_interface_runtime.send_pipeline.send_telemetry"
+            "meshtastic.mesh_interface_runtime.send_pipeline.sendTelemetry"
         ) as mock_flow:
             send_pipeline.sendTelemetry(
                 destinationId=BROADCAST_ADDR,
@@ -834,7 +834,7 @@ class TestSendWaypoint:
     def test_send_waypoint_delegates(self, send_pipeline: SendPipeline) -> None:
         """Test sendWaypoint delegates to flow function."""
         with patch(
-            "meshtastic.mesh_interface_runtime.send_pipeline.send_waypoint"
+            "meshtastic.mesh_interface_runtime.send_pipeline.sendWaypoint"
         ) as mock_flow:
             mock_flow.return_value = MagicMock()
             send_pipeline.sendWaypoint(
@@ -856,7 +856,7 @@ class TestDeleteWaypoint:
     def test_delete_waypoint_delegates(self, send_pipeline: SendPipeline) -> None:
         """Test deleteWaypoint delegates to flow function."""
         with patch(
-            "meshtastic.mesh_interface_runtime.send_pipeline.delete_waypoint"
+            "meshtastic.mesh_interface_runtime.send_pipeline.deleteWaypoint"
         ) as mock_flow:
             mock_flow.return_value = MagicMock()
             send_pipeline.deleteWaypoint(

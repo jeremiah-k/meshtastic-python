@@ -325,8 +325,6 @@ class TestWriteCannedMessageChunking:
         self, mock_node_for_read_gen: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Test long message is split into multiple chunks."""
-        # CANNED_MESSAGE_CHUNK_SIZE already imported at top
-
         cache_store = _NodeContentCacheStore(mock_node_for_read_gen)
         runtime = _NodeAdminContentRuntime(
             mock_node_for_read_gen,
@@ -351,8 +349,6 @@ class TestWriteCannedMessageChunking:
         self, mock_node_for_read_gen: MagicMock
     ) -> None:
         """Test that cache is invalidated if chunk send fails after previous chunks sent."""
-        # CANNED_MESSAGE_CHUNK_SIZE already imported at top
-
         cache_store = _NodeContentCacheStore(mock_node_for_read_gen)
         runtime = _NodeAdminContentRuntime(
             mock_node_for_read_gen,
@@ -390,8 +386,6 @@ class TestWriteCannedMessageChunking:
         self, mock_node_for_read_gen: MagicMock
     ) -> None:
         """Test that cache is NOT invalidated if first chunk send fails."""
-        # CANNED_MESSAGE_CHUNK_SIZE already imported at top
-
         cache_store = _NodeContentCacheStore(mock_node_for_read_gen)
         runtime = _NodeAdminContentRuntime(
             mock_node_for_read_gen,
@@ -420,8 +414,6 @@ class TestWriteCannedMessageChunking:
         self, mock_node_for_read_gen: MagicMock
     ) -> None:
         """Test that exception during chunking invalidates cache and re-raises."""
-        # CANNED_MESSAGE_CHUNK_SIZE already imported at top
-
         cache_store = _NodeContentCacheStore(mock_node_for_read_gen)
         runtime = _NodeAdminContentRuntime(
             mock_node_for_read_gen,
@@ -458,8 +450,6 @@ class TestWriteCannedMessageChunking:
         self, mock_node_for_read_gen: MagicMock
     ) -> None:
         """Test that successful multi-chunk write returns first chunk's result."""
-        # CANNED_MESSAGE_CHUNK_SIZE already imported at top
-
         cache_store = _NodeContentCacheStore(mock_node_for_read_gen)
         runtime = _NodeAdminContentRuntime(
             mock_node_for_read_gen,
@@ -493,8 +483,6 @@ class TestWriteCannedMessageChunking:
         self, mock_node_for_read_gen: MagicMock
     ) -> None:
         """Test that cache is invalidated after successful multi-chunk write."""
-        # CANNED_MESSAGE_CHUNK_SIZE already imported at top
-
         cache_store = _NodeContentCacheStore(mock_node_for_read_gen)
         runtime = _NodeAdminContentRuntime(
             mock_node_for_read_gen,
@@ -517,3 +505,4 @@ class TestWriteCannedMessageChunking:
         # Cache should be invalidated
         assert mock_node_for_read_gen.cannedPluginMessage is None
         assert mock_node_for_read_gen.cannedPluginMessageMessages is None
+

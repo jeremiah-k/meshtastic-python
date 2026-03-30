@@ -84,7 +84,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 _ResultT = TypeVar("_ResultT")
-# Compatibility re-exports preserved for callers/tests importing constants from meshtastic.node.
+# COMPAT_STABLE_SHIM: Compatibility re-exports preserved for callers/tests importing constants from meshtastic.node.
 EMPTY_LONG_NAME_MSG = _EMPTY_LONG_NAME_MSG
 EMPTY_SHORT_NAME_MSG = _EMPTY_SHORT_NAME_MSG
 MAX_CANNED_MESSAGE_LENGTH = _MAX_CANNED_MESSAGE_LENGTH
@@ -172,12 +172,20 @@ class Node:  # pylint: disable=too-many-instance-attributes
             self,
             admin_command_runtime=self._admin_command_runtime,
         )
-        self._content_cache_store_cache: Any = None
-        self._content_response_runtime_cache: Any = None
-        self._content_request_runtime_cache: Any = None
-        self._metadata_response_runtime_cache: Any = None
-        self._channel_response_runtime_cache: Any = None
-        self._position_time_runtime_cache: Any = None
+        self._content_cache_store_cache: "_NodeContentCacheStore | None" = None
+        self._content_response_runtime_cache: "_NodeContentResponseRuntime | None" = (
+            None
+        )
+        self._content_request_runtime_cache: "_NodeContentRequestRuntime | None" = None
+        self._metadata_response_runtime_cache: "_NodeMetadataResponseRuntime | None" = (
+            None
+        )
+        self._channel_response_runtime_cache: "_NodeChannelResponseRuntime | None" = (
+            None
+        )
+        self._position_time_runtime_cache: "_NodePositionTimeCommandRuntime | None" = (
+            None
+        )
 
     @property
     def _content_cache_store(self) -> "_NodeContentCacheStore":

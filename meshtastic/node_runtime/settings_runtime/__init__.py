@@ -16,6 +16,6 @@ __all__ = [
     "_NodeSettingsMessageBuilder",
     "_NodeSettingsResponseRuntime",
     "_NodeSettingsRuntime",
-    # For compatibility with code mocking toNodeNum at this module level
+    # COMPAT_STABLE_SHIM: For compatibility with code mocking toNodeNum at this module level
     "toNodeNum",
 ]

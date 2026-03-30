@@ -76,6 +76,7 @@ class _SetUrlCacheManager:
                 self._node._raise_interface_error(  # noqa: SLF001
                     _ERR_CONFIG_OR_CHANNELS_NOT_LOADED
                 )
+                return  # unreachable; satisfies type checker
             channels_changed = False
             if (
                 expected_channels_ref is not None
@@ -97,6 +98,7 @@ class _SetUrlCacheManager:
                 self._node._raise_interface_error(  # noqa: SLF001
                     f"Channel index {staged_channel.index} out of range during cache update"
                 )
+                return  # unreachable; satisfies type checker
             channels[staged_channel.index].CopyFrom(staged_channel)
             self._node.partialChannels = []
 

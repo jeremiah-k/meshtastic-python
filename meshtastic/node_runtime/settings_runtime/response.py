@@ -11,6 +11,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+ERROR_REASON_NONE = "NONE"
+
 
 class _NodeSettingsResponseRuntime:
     """Owns onResponseRequestSettings routing, decode, mutation, and output behavior."""
@@ -28,7 +30,7 @@ class _NodeSettingsResponseRuntime:
         if not response:
             logger.warning("Received empty config response from node.")
             return None
-        response_field = next(iter(response.keys()))
+        response_field = next(iter(response))
         field_name = camel_to_snake(response_field)
         config_type = self._node.localConfig.DESCRIPTOR.fields_by_name.get(field_name)
         if config_type is None:
@@ -53,7 +55,7 @@ class _NodeSettingsResponseRuntime:
         if not response:
             logger.warning("Received empty module config response from node.")
             return None
-        response_field = next(iter(response.keys()))
+        response_field = next(iter(response))
         field_name = camel_to_snake(response_field)
         config_type = self._node.moduleConfig.DESCRIPTOR.fields_by_name.get(field_name)
         if config_type is None:
@@ -86,9 +88,9 @@ class _NodeSettingsResponseRuntime:
         )
         return None
 
-    def handle_settings_response(self, packet: dict[str, Any]) -> None:
+    def handleSettingsResponse(self, packet: dict[str, Any]) -> None:
         """Process one settings response packet with preserved ACK/NAK semantics."""
-        logger.debug("handle_settings_response() response received")
+        logger.debug("handleSettingsResponse() response received")
         decoded = packet.get("decoded")
         if not isinstance(decoded, dict):
             logger.warning("Received malformed settings response (missing decoded).")
@@ -97,7 +99,7 @@ class _NodeSettingsResponseRuntime:
         routing = decoded.get("routing")
         if isinstance(routing, dict):
             error_reason = routing.get("errorReason")
-            if isinstance(error_reason, str) and error_reason != "NONE":
+            if isinstance(error_reason, str) and error_reason != ERROR_REASON_NONE:
                 logger.error(
                     "Error on response: %s",
                     error_reason,

@@ -3,7 +3,7 @@
 from typing import TYPE_CHECKING
 
 from meshtastic.node_runtime.shared import (
-    is_named_admin_channel_name as _is_named_admin_channel_name,
+    isNamedAdminChannelName as _isNamedAdminChannelName,
 )
 from meshtastic.protobuf import channel_pb2
 
@@ -16,6 +16,13 @@ class _NodeChannelLookupRuntime:
 
     def __init__(self, node: "Node") -> None:
         self._node = node
+
+    @staticmethod
+    def _copy_channel(channel: channel_pb2.Channel) -> channel_pb2.Channel:
+        """Return a defensive copy of a channel."""
+        copied = channel_pb2.Channel()
+        copied.CopyFrom(channel)
+        return copied
 
     def _get_channel_by_index(self, channel_index: int) -> channel_pb2.Channel | None:
         """Return live channel by index when available, preserving compatibility.
@@ -39,9 +46,7 @@ class _NodeChannelLookupRuntime:
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             if channels and 0 <= channel_index < len(channels):
-                copied = channel_pb2.Channel()
-                copied.CopyFrom(channels[channel_index])
-                return copied
+                return self._copy_channel(channels[channel_index])
             return None
 
     def _get_channel_by_name(self, name: str) -> channel_pb2.Channel | None:
@@ -64,9 +69,7 @@ class _NodeChannelLookupRuntime:
         with self._node._channels_lock:  # noqa: SLF001
             for channel in self._node.channels or []:
                 if channel.settings and channel.settings.name == name:
-                    copied = channel_pb2.Channel()
-                    copied.CopyFrom(channel)
-                    return copied
+                    return self._copy_channel(channel)
             return None
 
     def _get_disabled_channel(self) -> channel_pb2.Channel | None:
@@ -79,10 +82,7 @@ class _NodeChannelLookupRuntime:
         stable read-only snapshot is required.
         """
         with self._node._channels_lock:  # noqa: SLF001
-            channels = self._node.channels
-            if channels is None:
-                return None
-            for channel in channels:
+            for channel in self._node.channels or []:
                 if channel.role == channel_pb2.Channel.Role.DISABLED:
                     return channel
             return None
@@ -90,14 +90,9 @@ class _NodeChannelLookupRuntime:
     def _get_disabled_channel_copy(self) -> channel_pb2.Channel | None:
         """Return defensive copy of first disabled channel, if present."""
         with self._node._channels_lock:  # noqa: SLF001
-            channels = self._node.channels
-            if channels is None:
-                return None
-            for channel in channels:
+            for channel in self._node.channels or []:
                 if channel.role == channel_pb2.Channel.Role.DISABLED:
-                    copied = channel_pb2.Channel()
-                    copied.CopyFrom(channel)
-                    return copied
+                    return self._copy_channel(channel)
             return None
 
     def _get_named_admin_channel_index(self) -> int | None:
@@ -107,7 +102,7 @@ class _NodeChannelLookupRuntime:
                 if (
                     channel.role != channel_pb2.Channel.Role.DISABLED
                     and channel.settings
-                    and _is_named_admin_channel_name(channel.settings.name)
+                    and _isNamedAdminChannelName(channel.settings.name)
                 ):
                     return channel.index
             return None

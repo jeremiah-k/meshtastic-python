@@ -29,6 +29,15 @@ class _SetUrlTransactionCoordinator:
     """Coordinates setURL transaction planning, execution, rollback, and cache policy."""
 
     def __init__(self, node: "Node", *, parsed_input: _SetUrlParsedInput) -> None:
+        """Initialize the setURL transaction coordinator.
+
+        Parameters
+        ----------
+        node : Node
+            The node instance to coordinate transactions for.
+        parsed_input : _SetUrlParsedInput
+            Parsed setURL input containing channel set and flags.
+        """
         self._node = node
         self._parsed_input = parsed_input
         self._admin_context = self._resolve_admin_context()
@@ -49,9 +58,7 @@ class _SetUrlTransactionCoordinator:
             self._node._raise_interface_error(  # noqa: SLF001
                 "Interface localNode not initialized"
             )
-        admin_index_for_write = (
-            admin_write_node._get_admin_channel_index()
-        )  # noqa: SLF001
+        admin_index_for_write = admin_write_node._get_admin_channel_index()  # noqa: SLF001
         named_admin_index_for_write = (
             admin_write_node._get_named_admin_channel_index()  # noqa: SLF001
         )

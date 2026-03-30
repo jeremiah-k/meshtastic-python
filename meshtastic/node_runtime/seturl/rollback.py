@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, Callable
 
 from meshtastic.node_runtime.seturl.cache import _SetUrlCacheManager
 from meshtastic.node_runtime.seturl.context import _SetUrlAdminContext
@@ -16,7 +16,7 @@ from meshtastic.node_runtime.seturl.planner import (
     _SetUrlReplacePlan,
 )
 from meshtastic.node_runtime.shared import (
-    ordered_admin_indexes as _ordered_admin_indexes,
+    orderedAdminIndexes as _orderedAdminIndexes,
 )
 from meshtastic.protobuf import admin_pb2
 
@@ -24,8 +24,6 @@ if TYPE_CHECKING:
     from meshtastic.node import Node
 
 logger = logging.getLogger(__name__)
-
-T = TypeVar("T")
 
 
 class _SetUrlRollbackEngine:
@@ -51,6 +49,7 @@ class _SetUrlRollbackEngine:
         lora_write_started: bool,
         original_lora_config: Any | None,
         lora_warning_message: str,
+        lora_no_snapshot_message: str,
         cache_invalidate_message: str,
     ) -> bool:
         """Shared helper for best-effort rollback of channels and LoRa config.
@@ -132,9 +131,7 @@ class _SetUrlRollbackEngine:
                     "LoRa config cache cleared after rollback failure; reload config before using localConfig.lora."
                 )
         elif lora_write_started:
-            self._cache_manager.clear_lora_cache_with_warning(
-                "LoRa config cache cleared after addOnly failure without rollback snapshot; reload config before using localConfig.lora."
-            )
+            self._cache_manager.clear_lora_cache_with_warning(lora_no_snapshot_message)
 
         return rollback_failed
 
@@ -155,12 +152,12 @@ class _SetUrlRollbackEngine:
         # Compute rollback admin indexes
         written_index_set = set(state.written_indices)
         if plan.deferred_add_only_admin_index in written_index_set:
-            rollback_admin_indexes = _ordered_admin_indexes(
+            rollback_admin_indexes = _orderedAdminIndexes(
                 plan.deferred_add_only_admin_index,
                 admin_context.admin_index_for_write,
             )
         else:
-            rollback_admin_indexes = _ordered_admin_indexes(
+            rollback_admin_indexes = _orderedAdminIndexes(
                 admin_context.admin_index_for_write,
                 plan.deferred_add_only_admin_index,
             )
@@ -196,6 +193,7 @@ class _SetUrlRollbackEngine:
             lora_write_started=state.lora_write_started,
             original_lora_config=plan.original_lora_config,
             lora_warning_message="Rollback of LoRa config failed after addOnly partial failure.",
+            lora_no_snapshot_message="LoRa config cache cleared after addOnly failure without rollback snapshot; reload config before using localConfig.lora.",
             cache_invalidate_message="Channel rollback incomplete after addOnly failure; invalidated local channel cache.",
         )
 
@@ -215,13 +213,13 @@ class _SetUrlRollbackEngine:
         rollback_failed = False
         written_index_set = set(state.written_channel_indices)
         if plan.deferred_new_named_admin_index in written_index_set:
-            rollback_admin_indexes = _ordered_admin_indexes(
+            rollback_admin_indexes = _orderedAdminIndexes(
                 plan.deferred_new_named_admin_index,
                 *state.rollback_admin_indexes_for_write,
                 admin_context.admin_index_for_write,
             )
         else:
-            rollback_admin_indexes = _ordered_admin_indexes(
+            rollback_admin_indexes = _orderedAdminIndexes(
                 *state.rollback_admin_indexes_for_write,
                 admin_context.admin_index_for_write,
                 plan.deferred_new_named_admin_index,
@@ -252,6 +250,7 @@ class _SetUrlRollbackEngine:
             lora_write_started=state.lora_write_started,
             original_lora_config=plan.replace_original_lora_config,
             lora_warning_message="Rollback of LoRa config failed after replace-all partial failure.",
+            lora_no_snapshot_message="LoRa config cache cleared after replace-all failure without rollback snapshot; reload config before using localConfig.lora.",
             cache_invalidate_message="Replace-all rollback incomplete after failure; invalidated local channel cache.",
         )
         if not rollback_failed:

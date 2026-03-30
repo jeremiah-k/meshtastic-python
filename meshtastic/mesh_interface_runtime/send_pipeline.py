@@ -12,15 +12,15 @@ from meshtastic import BROADCAST_ADDR, BROADCAST_NUM, LOCAL_ADDR
 from meshtastic.mesh_interface_runtime.flows import (
     DEFAULT_TELEMETRY_TYPE,
     TelemetryType,
-    delete_waypoint,
+    deleteWaypoint,
     on_response_position,
     on_response_telemetry,
     on_response_traceroute,
     on_response_waypoint,
-    send_position,
-    send_telemetry,
-    send_traceroute,
-    send_waypoint,
+    sendPosition,
+    sendTelemetry,
+    sendTraceroute,
+    sendWaypoint,
 )
 from meshtastic.mesh_interface_runtime.request_wait import (
     WAIT_ATTR_NAK,
@@ -488,7 +488,7 @@ class SendPipeline:
         hopLimit: int | None = None,
     ) -> mesh_pb2.MeshPacket:
         """Send the device's position to a specific node or to broadcast."""
-        return send_position(
+        return sendPosition(
             self,
             latitude=latitude,
             longitude=longitude,
@@ -508,7 +508,7 @@ class SendPipeline:
         self, dest: int | str, hopLimit: int, channelIndex: int = 0
     ) -> None:
         """Initiate a traceroute request toward a destination node and wait for responses."""
-        return send_traceroute(self, dest, hopLimit, channelIndex=channelIndex)
+        return sendTraceroute(self, dest, hopLimit, channelIndex=channelIndex)
 
     def sendTelemetry(
         self,
@@ -519,7 +519,7 @@ class SendPipeline:
         hopLimit: int | None = None,
     ) -> None:
         """Send a telemetry message to a node or broadcast and optionally wait for a telemetry response."""
-        return send_telemetry(
+        return sendTelemetry(
             self,
             destinationId=destinationId,
             wantResponse=wantResponse,
@@ -552,7 +552,7 @@ class SendPipeline:
         hopLimit: int | None = None,
     ) -> mesh_pb2.MeshPacket:
         """Send a waypoint to a node or broadcast."""
-        return send_waypoint(
+        return sendWaypoint(
             self,
             name=name,
             description=description,
@@ -578,7 +578,7 @@ class SendPipeline:
         hopLimit: int | None = None,
     ) -> mesh_pb2.MeshPacket:
         """Delete a waypoint by sending a Waypoint message with expire=0 to a destination."""
-        return delete_waypoint(
+        return deleteWaypoint(
             self,
             waypoint_id=waypoint_id,
             destinationId=destinationId,
@@ -705,7 +705,7 @@ class SendPipeline:
         pkiEncrypted: bool | None = False,
         publicKey: bytes | None = None,
     ) -> mesh_pb2.MeshPacket:
-        """Backward-compatible alias for `_send_packet`."""
+        """Backward-compatible alias for `_send_packet`."""  # COMPAT_STABLE_SHIM
         return self._send_packet(
             meshPacket=meshPacket,
             destinationId=destinationId,

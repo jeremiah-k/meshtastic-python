@@ -350,7 +350,8 @@ class _NodeChannelResponseRuntime:
         is_valid, channel_response = self._validate_channel_response_packet(packet)
         if not is_valid:
             return
-        assert channel_response is not None
+        if channel_response is None:
+            return  # Defensive: should never happen given is_valid=True
 
         if self._should_skip_channel_response(channel_response):
             return

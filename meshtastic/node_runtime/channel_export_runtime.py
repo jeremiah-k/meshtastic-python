@@ -73,10 +73,6 @@ class _NodeChannelExportRuntime:
             for channel in channels_snapshot:
                 if channel.role == channel_pb2.Channel.Role.SECONDARY:
                     channel_set.settings.append(channel.settings)
-        if not channel_set.settings:
-            self._node._raise_interface_error(  # noqa: SLF001
-                "Error: No channels have been read"
-            )
 
         local_config_snapshot = self._snapshot_local_config()
         if not local_config_snapshot.HasField("lora"):
@@ -181,9 +177,7 @@ class _NodeChannelExportRuntime:
                     primary_snapshot.settings.psk = fromPSK("none")
                     break
             if primary_snapshot is None:
-                self._node._raise_interface_error(
-                    "Error: No primary channel found"
-                )  # noqa: SLF001
+                self._node._raise_interface_error("Error: No primary channel found")  # noqa: SLF001
         logger.info("Writing modified channels to device")
         self._node._write_channel_snapshot(primary_snapshot)  # noqa: SLF001
         with self._node._channels_lock:  # noqa: SLF001

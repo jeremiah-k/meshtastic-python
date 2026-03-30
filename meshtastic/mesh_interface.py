@@ -38,15 +38,15 @@ from meshtastic import (
 from meshtastic.mesh_interface_runtime.flows import (
     DEFAULT_TELEMETRY_TYPE,
     TelemetryType,
-    delete_waypoint,
+    deleteWaypoint,
     on_response_position,
     on_response_telemetry,
     on_response_traceroute,
     on_response_waypoint,
-    send_position,
-    send_telemetry,
-    send_traceroute,
-    send_waypoint,
+    sendPosition,
+    sendTelemetry,
+    sendTraceroute,
+    sendWaypoint,
 )
 from meshtastic.mesh_interface_runtime.node_view import NodeView
 from meshtastic.mesh_interface_runtime.receive_pipeline import (
@@ -104,9 +104,7 @@ NODE_NOT_FOUND_DB_UNAVAILABLE_ERROR_TEMPLATE = (
     "NodeId {destination_id} not found and node DB is unavailable"
 )
 HEX_NODE_ID_TAIL_CHARS = frozenset("0123456789abcdefABCDEF")
-NO_RESPONSE_FIRMWARE_ERROR: str = (
-    "No response from node. At least firmware 2.1.22 is required on the destination node."
-)
+NO_RESPONSE_FIRMWARE_ERROR: str = "No response from node. At least firmware 2.1.22 is required on the destination node."
 
 JSONValue: TypeAlias = (
     None | bool | int | float | str | list["JSONValue"] | dict[str, "JSONValue"]
@@ -457,9 +455,9 @@ class MeshInterface:  # pylint: disable=R0902
         # _handle_packet_from_radio (receive thread). Use this lock to serialize
         # responseHandlers access across those call sites.
         self._response_handlers_lock = threading.RLock()
-        self.responseHandlers: dict[int, ResponseHandler] = (
-            {}
-        )  # A map from request ID to the handler
+        self.responseHandlers: dict[
+            int, ResponseHandler
+        ] = {}  # A map from request ID to the handler
         self._response_wait_errors: dict[tuple[str, int], str] = {}
         self._response_wait_acks: set[tuple[str, int]] = set()
         self._active_wait_request_ids: dict[str, set[int]] = {}
@@ -1124,7 +1122,7 @@ class MeshInterface:  # pylint: disable=R0902
         mesh_pb2.MeshPacket
             The sent packet with its `id` populated.
         """
-        return send_position(
+        return sendPosition(
             self._send_pipeline,
             latitude=latitude,
             longitude=longitude,
@@ -1316,7 +1314,7 @@ class MeshInterface:  # pylint: disable=R0902
         MeshInterfaceError
             If waiting for traceroute responses times out or the operation fails.
         """
-        return send_traceroute(
+        return sendTraceroute(
             self._send_pipeline, dest, hopLimit, channelIndex=channelIndex
         )
 
@@ -1355,7 +1353,7 @@ class MeshInterface:  # pylint: disable=R0902
         hopLimit : int | None
             Optional hop limit override for the outgoing packet. (Default value = None)
         """
-        return send_telemetry(
+        return sendTelemetry(
             self._send_pipeline,
             destinationId=destinationId,
             wantResponse=wantResponse,
@@ -1433,7 +1431,7 @@ class MeshInterface:  # pylint: disable=R0902
         mesh_pb2.MeshPacket
             The MeshPacket that was sent; its `id` is populated for tracking.
         """
-        return send_waypoint(
+        return sendWaypoint(
             self._send_pipeline,
             name=name,
             description=description,
@@ -1480,7 +1478,7 @@ class MeshInterface:  # pylint: disable=R0902
         mesh_pb2.MeshPacket
             The MeshPacket that was sent; its `id` field is populated and can be used to track acknowledgements.
         """
-        return delete_waypoint(
+        return deleteWaypoint(
             self._send_pipeline,
             waypoint_id=waypoint_id,
             destinationId=destinationId,
@@ -1737,8 +1735,7 @@ class MeshInterface:  # pylint: disable=R0902
                 next_packet_id & PACKET_ID_COUNTER_MASK
             )  # Keep only low 10-bit counter (clear upper 22 bits)
             random_part = (
-                random.randint(0, PACKET_ID_RANDOM_MAX)
-                << PACKET_ID_RANDOM_SHIFT_BITS  # noqa: S311
+                random.randint(0, PACKET_ID_RANDOM_MAX) << PACKET_ID_RANDOM_SHIFT_BITS  # noqa: S311
             ) & PACKET_ID_MASK  # generate number with 10 zeros at end
             self.currentPacketId = next_packet_id | random_part  # combine
             return self.currentPacketId
@@ -1856,9 +1853,7 @@ class MeshInterface:  # pylint: disable=R0902
             self.myInfo = None
             self.nodes = {}  # nodes keyed by ID
             self.nodesByNum = {}  # nodes keyed by nodenum
-            self._localChannels = (
-                []
-            )  # empty until we start getting channels pushed from the device (during config)
+            self._localChannels = []  # empty until we start getting channels pushed from the device (during config)
             config_id = self.configId
             if config_id is None or not self.noNodes:
                 # Keep config_complete_id zero reserved as an unset sentinel.
@@ -2600,9 +2595,9 @@ class MeshInterface:  # pylint: disable=R0902
                 DECODE_ERROR_KEY: decode_error
             }
             if handler.name == "routing":
-                packet_context.packet_dict["decoded"][handler.name][
-                    "errorReason"
-                ] = decode_error
+                packet_context.packet_dict["decoded"][handler.name]["errorReason"] = (
+                    decode_error
+                )
             if handler.name == "admin":
                 # Admin callbacks frequently expect decoded.admin.raw.
                 # Avoid dispatching malformed payloads through that path.

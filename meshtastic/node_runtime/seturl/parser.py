@@ -5,21 +5,26 @@ import binascii
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, NoReturn
+from typing import NoReturn
 
 from google.protobuf.message import DecodeError
 
 from meshtastic.protobuf import apponly_pb2
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class _SetUrlParsedInput:
-    """Parsed/decoded setURL input."""
+    """Parsed/decoded setURL input.
+
+    Attributes
+    ----------
+    channel_set : apponly_pb2.ChannelSet
+        The decoded channel set from the URL fragment.
+    has_lora_update : bool
+        Whether the channel set contains a LoRa configuration update.
+    """
 
     channel_set: apponly_pb2.ChannelSet
     has_lora_update: bool
@@ -34,7 +39,20 @@ class _SetUrlParser:
         *,
         raise_interface_error: Callable[[str], NoReturn],
     ) -> _SetUrlParsedInput:
-        """Parse URL fragment into a ChannelSet payload with setURL validations."""
+        """Parse URL fragment into a ChannelSet payload with setURL validations.
+
+        Parameters
+        ----------
+        url : str
+            The URL containing the base64-encoded channel set data.
+        raise_interface_error : Callable[[str], NoReturn]
+            Callback function to raise an interface error with a message.
+
+        Returns
+        -------
+        _SetUrlParsedInput
+            The parsed channel set and LoRa update flag.
+        """
         # URLs are of the form https://meshtastic.org/d/#{base64_channel_set}
         # Parse from '#' to support optional query parameters before the fragment.
         if "#" not in url:
@@ -61,7 +79,7 @@ class _SetUrlParser:
         except (DecodeError, ValueError) as ex:
             raise_interface_error(f"Unable to parse channel settings from URL: {ex}")
 
-        if len(channel_set.settings) == 0:
+        if not channel_set.settings:
             raise_interface_error("There were no settings.")
         return _SetUrlParsedInput(
             channel_set=channel_set,

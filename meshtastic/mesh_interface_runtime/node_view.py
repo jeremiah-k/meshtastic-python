@@ -142,10 +142,6 @@ class NodeView:
         ----------
         line : str
             The raw log text to print.
-        interface : Any
-            The MeshInterface instance (or similar) providing a `debugOut`
-            attribute which may be stdout, a callable that accepts a string, or a
-            file-like object with a `write()` method.
         """
         interface = self._interface
         if print_color is not None and interface.debugOut == sys.stdout:

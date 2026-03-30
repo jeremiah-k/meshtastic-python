@@ -117,10 +117,11 @@ class _NodeAdminCommandRuntime:
         """Resolve one OTA hash input while preserving legacy validation behavior."""
         # Build list of provided hash values first
         provided_hashes: list[bytes] = []
-        for value in (ota_file_hash, ota_hash, legacy_hash):
+        param_names = ("ota_file_hash", "ota_hash", "legacy_hash")
+        for name, value in zip(param_names, (ota_file_hash, ota_hash, legacy_hash)):
             if value is not None:
                 if not isinstance(value, bytes):
-                    raise TypeError("ota_file_hash must be bytes")
+                    raise TypeError(f"{name} must be bytes")
                 provided_hashes.append(value)
         if not provided_hashes:
             raise TypeError("startOTA() missing required argument: 'ota_file_hash'")

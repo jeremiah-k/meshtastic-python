@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_ERR_INVALID_CONFIG_NAME = "Error: No valid config with name {}"
+
 
 class _NodeSettingsMessageBuilder:
     """Owns settings request/write AdminMessage construction and field mapping."""
@@ -103,7 +105,7 @@ class _NodeSettingsMessageBuilder:
         config_entry = self.get_write_config_entry(config_name)
         if config_entry is None:
             self._node._raise_interface_error(  # noqa: SLF001
-                f"Error: No valid config with name {config_name}"
+                _ERR_INVALID_CONFIG_NAME.format(config_name)
             )
             raise AssertionError("Unreachable: _raise_interface_error must raise")
 
@@ -117,5 +119,6 @@ class _NodeSettingsMessageBuilder:
         """Validate config-name dispatch key without constructing a message."""
         if self.get_write_config_entry(config_name) is None:
             self._node._raise_interface_error(  # noqa: SLF001
-                f"Error: No valid config with name {config_name}"
+                _ERR_INVALID_CONFIG_NAME.format(config_name)
             )
+            raise AssertionError("Unreachable: _raise_interface_error must raise")

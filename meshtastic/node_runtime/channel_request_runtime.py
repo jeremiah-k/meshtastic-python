@@ -66,7 +66,6 @@ class _NodeChannelRequestRuntime:
     ) -> None:
         self._node = node
         self._normalization_runtime = normalization_runtime
-        self._request_channel_warned: bool = False
 
     def set_channels(self, channels: Sequence[channel_pb2.Channel]) -> None:
         """Set channels from sequence with copy + normalization semantics."""

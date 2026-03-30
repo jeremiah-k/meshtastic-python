@@ -618,14 +618,8 @@ class TestSendTelemetrySemanticDeprecation:
                     destinationId=BROADCAST_ADDR, telemetryType="unsupported_type"
                 )
 
-            # Check that a warning was emitted
-            _deprecation_warnings = [
-                x
-                for x in w
-                if issubclass(x.category, (DeprecationWarning, UserWarning))
-            ]
-            # The warning should be emitted via logger.warning, not Python warnings
-            # So we check the method doesn't raise and works
+        # Verify warning was logged
+        assert "unsupported_type" in caplog.text
 
     def test_sendTelemetry_unsupported_type_falls_back_to_device_metrics(
         self, mock_interface

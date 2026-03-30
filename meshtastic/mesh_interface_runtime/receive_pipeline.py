@@ -140,27 +140,6 @@ class _PacketRuntimeContext:
     on_receive_callback: Callable[[Any, dict[str, Any]], Any] | None = None
 
 
-def _emit_response_summary(message: str) -> None:
-    """Emit a short response summary without hiding legacy stdout behavior."""
-    logger.info("%s", message)
-
-
-def _normalize_json_serializable(value: object) -> JSONValue:
-    """Recursively normalize common non-JSON-native values into JSON-safe forms."""
-    if isinstance(value, (bytes, bytearray, memoryview)):
-        return "base64:" + base64.b64encode(bytes(value)).decode("ascii")
-    if isinstance(value, dict):
-        return {
-            str(key): _normalize_json_serializable(inner_value)
-            for key, inner_value in value.items()
-        }
-    if isinstance(value, (list, tuple, set)):
-        return [_normalize_json_serializable(item) for item in value]
-    if value is None or isinstance(value, (bool, int, float, str)):
-        return value
-    return str(value)
-
-
 class MeshInterfaceError(Exception):
     """An exception class for general mesh interface errors."""
 
@@ -345,7 +324,11 @@ class ReceivePipeline:
         self, context: _FromRadioContext
     ) -> list[_PublicationIntent]:
         """Apply node_info updates and emit node-updated publication intents."""
-        node_info = context.message_dict.get()["nodeInfo"]
+        message_dict = context.message_dict.get()
+        if "nodeInfo" not in message_dict:
+            logger.warning("Received node_info without nodeInfo payload")
+            return []
+        node_info = message_dict["nodeInfo"]
         logger.debug("Received nodeinfo: %s", node_info)
 
         node = self._get_or_create_by_num(node_info["num"])

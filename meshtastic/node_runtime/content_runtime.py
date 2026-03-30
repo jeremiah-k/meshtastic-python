@@ -202,9 +202,7 @@ class _NodeContentResponseRuntime:
             return (True, None)
         has_field = getattr(raw_admin, "HasField", None)
         try:
-            has_ringtone_response = callable(
-                has_field
-            ) and has_field(  # pylint: disable=not-callable
+            has_ringtone_response = callable(has_field) and has_field(  # pylint: disable=not-callable
                 "get_ringtone_response"
             )
         except (TypeError, ValueError):
@@ -212,13 +210,12 @@ class _NodeContentResponseRuntime:
         if not has_ringtone_response:
             logger.warning("Unexpected ringtone response without raw ringtone data")
             return (True, None)
-        else:
-            try:
-                payload = raw_admin.get_ringtone_response
-                return (True, payload)
-            except AttributeError:
-                logger.warning("Failed to parse ringtone response payload")
-                return (True, None)
+        try:
+            payload = raw_admin.get_ringtone_response
+            return (True, payload)
+        except AttributeError:
+            logger.warning("Failed to parse ringtone response payload")
+            return (True, None)
 
     def handle_canned_message_response(
         self, packet: dict[str, Any]
@@ -239,9 +236,7 @@ class _NodeContentResponseRuntime:
             return (True, None)
         has_field = getattr(raw_admin, "HasField", None)
         try:
-            has_canned_response = callable(
-                has_field
-            ) and has_field(  # pylint: disable=not-callable
+            has_canned_response = callable(has_field) and has_field(  # pylint: disable=not-callable
                 "get_canned_message_module_messages_response"
             )
         except (TypeError, ValueError):

@@ -15,10 +15,10 @@ from meshtastic.node_runtime.seturl.planner import (
     _SetUrlReplacePlan,
 )
 from meshtastic.node_runtime.shared import (
-    is_named_admin_channel_name as _is_named_admin_channel_name,
+    isNamedAdminChannelName as _isNamedAdminChannelName,
 )
 from meshtastic.node_runtime.shared import (
-    ordered_admin_indexes as _ordered_admin_indexes,
+    orderedAdminIndexes as _orderedAdminIndexes,
 )
 from meshtastic.protobuf import admin_pb2, channel_pb2
 
@@ -73,12 +73,12 @@ class _SetUrlExecutionEngine:
                 channel.role != channel_pb2.Channel.Role.DISABLED
                 and channel.settings
                 and channel.settings.name
-                and _is_named_admin_channel_name(channel.settings.name)
+                and _isNamedAdminChannelName(channel.settings.name)
             ):
                 return channel.index
         return 0
 
-    def execute_add_only(
+    def executeAddOnly(
         self,
         *,
         parsed_input: _SetUrlParsedInput,
@@ -124,7 +124,7 @@ class _SetUrlExecutionEngine:
             )
             state.written_indices.append(staged_channel.index)
 
-    def execute_replace_all(
+    def executeReplaceAll(
         self,
         *,
         parsed_input: _SetUrlParsedInput,
@@ -215,7 +215,7 @@ class _SetUrlExecutionEngine:
                 plan.deferred_new_named_admin_channel,
                 expected_channels_ref=plan.replace_original_channels_ref,
             )
-            state.rollback_admin_indexes_for_write = _ordered_admin_indexes(
+            state.rollback_admin_indexes_for_write = _orderedAdminIndexes(
                 plan.deferred_new_named_admin_channel.index,
                 *state.rollback_admin_indexes_for_write,
             )
@@ -241,7 +241,7 @@ class _SetUrlExecutionEngine:
             state.written_channel_indices.append(
                 plan.deferred_previous_admin_slot_channel.index
             )
-            state.rollback_admin_indexes_for_write = _ordered_admin_indexes(
+            state.rollback_admin_indexes_for_write = _orderedAdminIndexes(
                 updated_admin_index_for_write,
                 post_write_fallback_admin_index,
                 *state.rollback_admin_indexes_for_write,

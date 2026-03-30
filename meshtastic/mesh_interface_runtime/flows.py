@@ -126,11 +126,11 @@ def sendPosition(
     """Send the device's position to a specific node or to broadcast."""
     p = mesh_pb2.Position()
     if latitude != 0.0:
-        p.latitude_i = int(latitude / 1e-7)
+        p.latitude_i = int(latitude * 1e7)  # was / 1e-7
         logger.debug("p.latitude_i:%s", p.latitude_i)
 
     if longitude != 0.0:
-        p.longitude_i = int(longitude / 1e-7)
+        p.longitude_i = int(longitude * 1e7)  # was / 1e-7
         logger.debug("p.longitude_i:%s", p.longitude_i)
 
     if altitude != 0:
@@ -476,7 +476,12 @@ def sendWaypoint(
     w = mesh_pb2.Waypoint()
     w.name = name
     w.description = description
-    w.icon = int(icon)
+    try:
+        w.icon = int(icon)
+    except (ValueError, TypeError) as exc:
+        raise pipeline._interface.MeshInterfaceError(
+            f"Invalid icon value '{icon}': must be an integer or numeric string"
+        ) from exc
     w.expire = expire
     if waypoint_id is None:
         w.id = secrets.randbelow(1_000_000_000)
