@@ -482,7 +482,7 @@ class TestBLELifecycleControllerHookResolution:
         )
         safe_cleanup_handler.assert_called_once()
         assert captured["current_state"] == ConnectionState.DISCONNECTED
-        assert captured["transitioned"] is True
+        assert captured["transition_to_disconnected"] is True
         assert captured["cleanup_called"] is True
         assert captured["safe_cleanup"] is None
 
@@ -534,7 +534,7 @@ class TestBLELifecycleControllerHookResolution:
         state_manager_reset_to_disconnected.assert_called_once_with(mock_iface)
         state_manager_current_state.assert_called_once_with(mock_iface)
         safe_cleanup_handler.assert_called_once()
-        assert captured["transitioned"] is True
+        assert captured["transition_to_disconnected"] is True
         assert captured["cleanup_called"] is True
         assert captured["safe_cleanup"] is None
 
