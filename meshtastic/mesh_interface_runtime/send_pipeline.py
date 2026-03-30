@@ -5,17 +5,12 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, TypeAlias, cast
-
-import google.protobuf.json_format
-from google.protobuf import message as protobuf_message
+from typing import TYPE_CHECKING, Any, Callable, Protocol, TypeAlias, cast
 
 from meshtastic import BROADCAST_ADDR, BROADCAST_NUM, LOCAL_ADDR
 from meshtastic.mesh_interface_runtime.flows import (
     DEFAULT_TELEMETRY_TYPE,
     TelemetryType,
-    VALID_TELEMETRY_TYPES,
-    VALID_TELEMETRY_TYPE_SET,
     delete_waypoint,
     on_response_position,
     on_response_telemetry,
@@ -27,7 +22,6 @@ from meshtastic.mesh_interface_runtime.flows import (
     send_waypoint,
 )
 from meshtastic.mesh_interface_runtime.request_wait import (
-    RESPONSE_WAIT_REQID_ERROR,
     WAIT_ATTR_NAK,
     WAIT_ATTR_POSITION,
     WAIT_ATTR_TELEMETRY,

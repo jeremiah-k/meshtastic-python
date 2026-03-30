@@ -6,13 +6,18 @@ backward compatibility for users' existing code after the major refactor.
 Reference: COMPATIBILITY.md for documented compatibility aliases.
 """
 
+# pylint: disable=no-name-in-module
+
 from __future__ import annotations
 
 import importlib
 import sys
 from types import ModuleType
 
+# pytest is used by the test runner
+# pylint: disable=unused-import
 import pytest
+# pylint: enable=unused-import
 
 
 class TestCoreModuleImports:
@@ -164,7 +169,10 @@ class TestProtobufImports:
 
     def test_import_mesh_packet_from_mesh_pb2(self) -> None:
         """Test that MeshPacket can be imported from mesh_pb2."""
+        # MeshPacket is a protobuf message class, pylint has trouble with protobuf imports
+        # pylint: disable=no-name-in-module
         from meshtastic.protobuf.mesh_pb2 import MeshPacket
+        # pylint: enable=no-name-in-module
 
         assert MeshPacket is not None
 

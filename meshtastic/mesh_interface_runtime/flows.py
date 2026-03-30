@@ -5,14 +5,13 @@ from __future__ import annotations
 import logging
 import math
 import secrets
-from typing import TYPE_CHECKING, Any, Callable, Literal, TypeAlias
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 import google.protobuf.json_format
 from google.protobuf import message as protobuf_message
 
 from meshtastic import BROADCAST_ADDR
 from meshtastic.mesh_interface_runtime.request_wait import (
-    NO_RESPONSE_FIRMWARE_ERROR,
     RESPONSE_WAIT_REQID_ERROR,
     WAIT_ATTR_POSITION,
     WAIT_ATTR_TELEMETRY,
@@ -138,7 +137,11 @@ def send_position(
         logger.debug("p.altitude:%s", p.altitude)
 
     if wantResponse:
-        onResponse = lambda packet: on_response_position(pipeline, packet)
+
+        def _on_response(packet: dict[str, Any]) -> None:
+            on_response_position(pipeline, packet)
+
+        onResponse = _on_response
         response_wait_attr = WAIT_ATTR_POSITION
     else:
         onResponse = None
@@ -386,7 +389,11 @@ def send_telemetry(
                         r.device_metrics.uptime_seconds = uptime_seconds
 
     if wantResponse:
-        onResponse = lambda packet: on_response_telemetry(pipeline, packet)
+
+        def _on_response(packet: dict[str, Any]) -> None:
+            on_response_telemetry(pipeline, packet)
+
+        onResponse = _on_response
         response_wait_attr = WAIT_ATTR_TELEMETRY
     else:
         onResponse = None
@@ -475,7 +482,11 @@ def send_waypoint(
         logger.debug("w.longitude_i:%s", w.longitude_i)
 
     if wantResponse:
-        onResponse = lambda packet: on_response_waypoint(pipeline, packet)
+
+        def _on_response(packet: dict[str, Any]) -> None:
+            on_response_waypoint(pipeline, packet)
+
+        onResponse = _on_response
         response_wait_attr = WAIT_ATTR_WAYPOINT
     else:
         onResponse = None
@@ -515,7 +526,11 @@ def delete_waypoint(
     p.expire = 0
 
     if wantResponse:
-        onResponse = lambda packet: on_response_waypoint(pipeline, packet)
+
+        def _on_response(packet: dict[str, Any]) -> None:
+            on_response_waypoint(pipeline, packet)
+
+        onResponse = _on_response
         response_wait_attr = WAIT_ATTR_WAYPOINT
     else:
         onResponse = None

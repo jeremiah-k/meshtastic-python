@@ -120,7 +120,9 @@ def test_node_public_api_methods():
     # Document extra methods (these might be intentional additions)
     extra_methods = public_methods - expected_methods
     # Log them but don't fail - they might be intentional additions
-    # pytest.warns doesn't work well here, so we'll just accept them
+    # Use the variable to avoid linter warnings while documenting API surface
+    if extra_methods:
+        print(f"Note: Node has additional public methods: {sorted(extra_methods)}")
 
 
 # =============================================================================
@@ -193,6 +195,11 @@ def test_mesh_interface_public_api_methods():
 
     # Document extra methods
     extra_methods = public_methods - expected_methods
+    # Use the variable to avoid linter warnings while documenting API surface
+    if extra_methods:
+        print(
+            f"Note: MeshInterface has additional public methods: {sorted(extra_methods)}"
+        )
 
 
 # =============================================================================
@@ -552,11 +559,8 @@ def test_public_classes_exist():
     This test ensures that the main public API classes are available
     for import and haven't been accidentally removed or renamed.
     """
-    # Test imports from main modules
-    from meshtastic.mesh_interface import MeshInterface
-    from meshtastic.node import Node
-
-    # Verify classes are importable and are proper types
+    # Classes already imported at module level - verify they're accessible
+    # and are proper types
     assert isinstance(MeshInterface, type), "MeshInterface must be a class"
     assert isinstance(Node, type), "Node must be a class"
 
@@ -657,12 +661,16 @@ def test_node_api_shape_snapshot():
 
     # Store the snapshot for documentation
     # This list can be used to track API changes over time
-    snapshot = {
+    _snapshot = {
         "class_name": "Node",
         "method_count": len(public_api),
         "critical_methods_present": critical_methods <= actual_methods,
         "public_methods": sorted(public_api.keys()),
     }
+    # Use _snapshot to document the API shape without failing tests
+    assert _snapshot["critical_methods_present"], (
+        "Critical Node methods should be present"
+    )
 
     # Verify we have a reasonable number of public methods
     # If this changes significantly, it may indicate an API break
@@ -709,12 +717,16 @@ def test_mesh_interface_api_shape_snapshot():
         pytest.fail(f"MeshInterface is missing critical API methods: {missing}")
 
     # Store snapshot info
-    snapshot = {
+    _snapshot = {
         "class_name": "MeshInterface",
         "method_count": len(public_api),
         "critical_methods_present": critical_methods <= actual_methods,
         "public_methods": sorted(public_api.keys()),
     }
+    # Use _snapshot to document the API shape
+    assert _snapshot["critical_methods_present"], (
+        "Critical MeshInterface methods should be present"
+    )
 
     # Verify we have a reasonable number of public methods
     assert len(public_api) >= 20, (
