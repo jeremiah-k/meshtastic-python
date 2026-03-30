@@ -26,7 +26,8 @@ from hypothesis import strategies as st
 import meshtastic.mesh_interface as mesh_interface_module
 
 from .. import BROADCAST_ADDR, LOCAL_ADDR, NODELESS_WANT_CONFIG_ID, ResponseHandler
-from ..mesh_interface import MeshInterface, _timeago
+from ..mesh_interface import MeshInterface
+from ..mesh_interface.node_view import _timeago
 from ..node import Node
 from ..protobuf import (
     channel_pb2,
