@@ -14,7 +14,7 @@ python = "^3.10,<3.15"
 pyserial = "^3.5"
 protobuf = ">=4.21.12"
 tabulate = "^0.10.0"
-requests = "^2.31.0"
+requests = "^2.32.6"
 pyyaml = "^6.0.1"
 # Keep pypubsub >=4.0.7 for PEP 561 `py.typed` metadata in strict type checking.
 pypubsub = "^4.0.7"

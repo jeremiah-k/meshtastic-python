@@ -97,7 +97,7 @@ class _SetUrlRollbackEngine:
         # Rollback LoRa config if needed
         if lora_write_started and original_lora_config is not None:
             rollback_lora = admin_pb2.AdminMessage()
-            rollback_lora.set_config.lora.CopyFrom(original_lora_config)  # type: ignore[arg-type]
+            rollback_lora.set_config.lora.CopyFrom(original_lora_config)
             rollback_lora_succeeded = False
             last_rollback_lora_error: Exception | None = None
             for rollback_admin_index in rollback_admin_indexes:
@@ -109,7 +109,7 @@ class _SetUrlRollbackEngine:
                     )
                     if request is None:
                         continue
-                    self._cache_manager.restore_lora_snapshot(original_lora_config)  # type: ignore[arg-type]
+                    self._cache_manager.restore_lora_snapshot(original_lora_config)
                     rollback_lora_succeeded = True
                     break
                 # Best-effort rollback path; keep original failure semantics.
@@ -248,9 +248,7 @@ class _SetUrlRollbackEngine:
                     )
                     rollback_succeeded = True
                     break
-                except (
-                    Exception
-                ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                     replace_last_rollback_error = rollback_error
             if not rollback_succeeded:
                 rollback_failed = True

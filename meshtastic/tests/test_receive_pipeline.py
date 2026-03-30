@@ -388,8 +388,10 @@ class TestParseFromRadioBytes:
         """Test that parsing invalid bytes logs an error and raises."""
         invalid_bytes = b"invalid protobuf data"
 
+        from google.protobuf.message import DecodeError
+
         with caplog.at_level(logging.ERROR):
-            with pytest.raises(Exception):
+            with pytest.raises(DecodeError):
                 receive_pipeline._parse_from_radio_bytes(invalid_bytes)
 
         assert "Error while parsing FromRadio" in caplog.text
