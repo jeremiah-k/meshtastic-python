@@ -590,9 +590,9 @@ class ReceivePipeline:
         self._enrich_packet_identity(packet_context.packet_dict)
         self._classify_packet_runtime(packet_context, meshPacket)
         self._apply_packet_runtime_mutations(packet_context, meshPacket)
-        published_packet = copy.deepcopy(packet_context.packet_dict)
         self._invoke_packet_on_receive(packet_context)
         self._correlate_packet_response_handler(packet_context)
+        published_packet = copy.deepcopy(packet_context.packet_dict)
 
         publication_intents = [
             self._publication_intent(
@@ -750,9 +750,9 @@ class ReceivePipeline:
                 DECODE_ERROR_KEY: decode_error
             }
             if handler.name == "routing":
-                packet_context.packet_dict["decoded"][handler.name][
-                    "errorReason"
-                ] = decode_error
+                packet_context.packet_dict["decoded"][handler.name]["errorReason"] = (
+                    decode_error
+                )
             if handler.name == "admin":
                 packet_context.skip_response_callback_for_decode_failure = True
 

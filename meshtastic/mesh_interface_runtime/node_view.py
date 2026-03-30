@@ -2,6 +2,7 @@
 
 import base64
 import copy
+import json
 import logging
 import sys
 import threading
@@ -241,13 +242,7 @@ class NodeView:
             node_id = user.get("id")
             if node_id is not None:
                 nodes[str(node_id)] = _normalize_json_serializable(n2)
-        infos = (
-            owner
-            + myinfo
-            + metadata
-            + mesh
-            + str(__import__("json").dumps(nodes, indent=2))
-        )
+        infos = owner + myinfo + metadata + mesh + str(json.dumps(nodes, indent=2))
         if file is None:
             file = sys.stdout
         print(infos, file=file)

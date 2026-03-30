@@ -1,6 +1,6 @@
 """Node presentation and formatting utilities for display output."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, TypeAlias
 
 JSONValue: TypeAlias = (
@@ -77,7 +77,7 @@ def format_timestamp(ts: int | float | None) -> str | None:
         Formatted timestamp string, or `None` if `ts` is `None` or `0`.
     """
     return (
-        datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+        datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         if ts is not None and ts != 0
         else None
     )
@@ -175,7 +175,7 @@ def format_node_field(
     if col_name == "channel":
         if raw_value is None:
             return "0"
-        return str(raw_value) if raw_value is not None else None
+        return str(raw_value)
     elif col_name == "deviceMetrics.channelUtilization":
         return format_numeric_value(raw_value, 2, "%")
     elif col_name == "deviceMetrics.airUtilTx":

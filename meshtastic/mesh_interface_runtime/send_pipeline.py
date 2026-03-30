@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import TYPE_CHECKING, Any, Callable, Protocol, TypeAlias, cast
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, cast
 
 from meshtastic import BROADCAST_ADDR, BROADCAST_NUM, LOCAL_ADDR
 from meshtastic.mesh_interface_runtime.flows import (
@@ -328,8 +329,7 @@ class SendPipeline:
             meshPacket.id = self._interface._generate_packet_id()
         if replyId is not None:
             meshPacket.decoded.reply_id = replyId
-        if priority is not None:
-            meshPacket.priority = priority
+        meshPacket.priority = priority
 
         if response_wait_attr is not None:
             self._clear_wait_error(response_wait_attr, request_id=meshPacket.id)
