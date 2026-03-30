@@ -51,4 +51,6 @@ class _NodeAdminSessionRuntime:
             probe = _AdminSessionPassKeyProbe(self._node)
             key_received = self._node._timeout.waitForSet(probe, attrs=("is_set",))
             if not key_received:
-                logger.warning("Timeout waiting for adminSessionPassKey after request")
+                raise TimeoutError(
+                    "Timeout waiting for adminSessionPassKey after request"
+                )

@@ -418,7 +418,7 @@ def test_get_channels_with_hash_multiple_channels(
 def test_turn_off_encryption_on_primary_channel_no_channels(
     export_runtime: _NodeChannelExportRuntime, mock_node: MagicMock
 ) -> None:
-    """turn_off_encryption_on_primary_channel raises error when no channels available."""
+    """_turn_off_encryption_on_primary_channel raises error when no channels available."""
     mock_node.channels = []
     mock_node._raise_interface_error.side_effect = MeshInterface.MeshInterfaceError(
         "Error: No channels have been read"
@@ -428,7 +428,7 @@ def test_turn_off_encryption_on_primary_channel_no_channels(
         MeshInterface.MeshInterfaceError,
         match="Error: No channels have been read",
     ):
-        export_runtime.turn_off_encryption_on_primary_channel()
+        export_runtime._turn_off_encryption_on_primary_channel()
 
     mock_node._raise_interface_error.assert_called_once_with(
         "Error: No channels have been read"
@@ -439,9 +439,9 @@ def test_turn_off_encryption_on_primary_channel_no_channels(
 def test_turn_off_encryption_on_primary_channel_no_primary(
     export_runtime: _NodeChannelExportRuntime, mock_node: MagicMock
 ) -> None:
-    """turn_off_encryption_on_primary_channel raises error when no primary channel found."""
+    """_turn_off_encryption_on_primary_channel raises error when no primary channel found."""
     secondary = _make_channel(1, channel_pb2.Channel.Role.SECONDARY, name="secondary")
-    disabled = _make_channel(2, channel_pb2.Channel.Role.DISABLED)
+    disabled = _make_channel(5, channel_pb2.Channel.Role.DISABLED)
     mock_node.channels = [secondary, disabled]
     mock_node._raise_interface_error.side_effect = MeshInterface.MeshInterfaceError(
         "Error: No primary channel found"
@@ -451,7 +451,7 @@ def test_turn_off_encryption_on_primary_channel_no_primary(
         MeshInterface.MeshInterfaceError,
         match="Error: No primary channel found",
     ):
-        export_runtime.turn_off_encryption_on_primary_channel()
+        export_runtime._turn_off_encryption_on_primary_channel()
 
     mock_node._raise_interface_error.assert_called_once_with(
         "Error: No primary channel found"
@@ -462,13 +462,13 @@ def test_turn_off_encryption_on_primary_channel_no_primary(
 def test_turn_off_encryption_on_primary_channel_with_primary(
     export_runtime: _NodeChannelExportRuntime, mock_node: MagicMock
 ) -> None:
-    """turn_off_encryption_on_primary_channel updates primary channel PSK to 'none'."""
+    """_turn_off_encryption_on_primary_channel updates primary channel PSK to 'none'."""
     primary = _make_channel(
         0, channel_pb2.Channel.Role.PRIMARY, name="primary", psk=b"\x01\x02\x03"
     )
     mock_node.channels = [primary]
 
-    export_runtime.turn_off_encryption_on_primary_channel()
+    export_runtime._turn_off_encryption_on_primary_channel()
 
     mock_node._write_channel_snapshot.assert_called_once()
     # Verify the channel passed to _write_channel_snapshot has empty PSK
@@ -480,13 +480,13 @@ def test_turn_off_encryption_on_primary_channel_with_primary(
 def test_turn_off_encryption_on_primary_channel_updates_local_cache(
     export_runtime: _NodeChannelExportRuntime, mock_node: MagicMock
 ) -> None:
-    """turn_off_encryption_on_primary_channel updates local channel cache after write."""
+    """_turn_off_encryption_on_primary_channel updates local channel cache after write."""
     primary = _make_channel(
         0, channel_pb2.Channel.Role.PRIMARY, name="primary", psk=b"\x01\x02\x03"
     )
     mock_node.channels = [primary]
 
-    export_runtime.turn_off_encryption_on_primary_channel()
+    export_runtime._turn_off_encryption_on_primary_channel()
 
     # After successful write, local cache should be updated
     assert mock_node.channels[0].settings.psk == b"\x00"  # Updated to "none" PSK
@@ -498,7 +498,7 @@ def test_turn_off_encryption_on_primary_channel_no_cache_after_write(
     mock_node: MagicMock,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """turn_off_encryption_on_primary_channel logs warning when cache unavailable after write."""
+    """_turn_off_encryption_on_primary_channel logs warning when cache unavailable after write."""
     primary = _make_channel(
         0, channel_pb2.Channel.Role.PRIMARY, name="primary", psk=b"\x01"
     )
@@ -512,7 +512,7 @@ def test_turn_off_encryption_on_primary_channel_no_cache_after_write(
     mock_node._write_channel_snapshot.side_effect = write_side_effect
 
     with caplog.at_level("WARNING"):
-        export_runtime.turn_off_encryption_on_primary_channel()
+        export_runtime._turn_off_encryption_on_primary_channel()
 
     assert "local channel cache is unavailable" in caplog.text
     assert mock_node.partialChannels == []
@@ -524,7 +524,7 @@ def test_turn_off_encryption_on_primary_channel_index_not_found(
     mock_node: MagicMock,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """turn_off_encryption_on_primary_channel logs warning when index not in cache."""
+    """_turn_off_encryption_on_primary_channel logs warning when index not in cache."""
     primary = _make_channel(
         0, channel_pb2.Channel.Role.PRIMARY, name="primary", psk=b"\x01"
     )
@@ -540,7 +540,7 @@ def test_turn_off_encryption_on_primary_channel_index_not_found(
     mock_node._write_channel_snapshot.side_effect = write_side_effect
 
     with caplog.at_level("WARNING"):
-        export_runtime.turn_off_encryption_on_primary_channel()
+        export_runtime._turn_off_encryption_on_primary_channel()
 
     assert "invalidating local channel cache" in caplog.text
     assert mock_node.channels is None

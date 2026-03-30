@@ -131,6 +131,10 @@ class _SetUrlRollbackEngine:
                 self._cache_manager.clear_lora_cache_with_warning(
                     "LoRa config cache cleared after rollback failure; reload config before using localConfig.lora."
                 )
+        elif lora_write_started:
+            self._cache_manager.clear_lora_cache_with_warning(
+                "LoRa config cache cleared after addOnly failure without rollback snapshot; reload config before using localConfig.lora."
+            )
 
         return rollback_failed
 
@@ -248,9 +252,7 @@ class _SetUrlRollbackEngine:
                     )
                     rollback_succeeded = True
                     break
-                except (
-                    Exception
-                ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                     replace_last_rollback_error = rollback_error
             if not rollback_succeeded:
                 rollback_failed = True

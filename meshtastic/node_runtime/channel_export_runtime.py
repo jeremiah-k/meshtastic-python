@@ -45,7 +45,7 @@ class _NodeChannelExportRuntime:
         return config_snapshot
 
     def _build_and_encode_channel_set(
-        self, channels_snapshot: list[channel_pb2.Channel], include_all: bool
+        self, channels_snapshot: list[channel_pb2.Channel], *, include_all: bool
     ) -> str:
         """Build channel_set from snapshot, ensure LoRa config, serialize and encode.
 
@@ -85,7 +85,9 @@ class _NodeChannelExportRuntime:
             )
             wait_for_config = getattr(self._node, "waitForConfig", None)
             if callable(wait_for_config):
-                wait_for_config(attribute="lora")
+                result = wait_for_config(attribute="lora")
+                if not result:
+                    raise RuntimeError("Timeout waiting for LoRa config")
             local_config_snapshot = self._snapshot_local_config()
             if not local_config_snapshot.HasField("lora"):
                 self._node._raise_interface_error(  # noqa: SLF001
@@ -99,7 +101,9 @@ class _NodeChannelExportRuntime:
     def getUrl(self, *, includeAll: bool = True) -> str:
         """Build channel URL export with preserved includeAll and LoRa semantics."""
         channels_snapshot = self._snapshot_channels()
-        encoded = self._build_and_encode_channel_set(channels_snapshot, includeAll)
+        encoded = self._build_and_encode_channel_set(
+            channels_snapshot, include_all=includeAll
+        )
         return f"https://meshtastic.org/e/#{encoded}"
 
     def get_url(self, *, include_all: bool = True) -> str:
@@ -117,7 +121,9 @@ class _NodeChannelExportRuntime:
         This method allows callers to use the same snapshot for multiple
         operations, ensuring consistency between display and export.
         """
-        encoded = self._build_and_encode_channel_set(channels_snapshot, include_all)
+        encoded = self._build_and_encode_channel_set(
+            channels_snapshot, include_all=include_all
+        )
         return f"https://meshtastic.org/e/#{encoded}"
 
     def getChannelsWithHash(self) -> list[dict[str, Any]]:
@@ -153,7 +159,7 @@ class _NodeChannelExportRuntime:
         """COMPAT_STABLE_SHIM: Alias for getChannelsWithHash."""
         return self.getChannelsWithHash()
 
-    def turn_off_encryption_on_primary_channel(self) -> None:
+    def _turn_off_encryption_on_primary_channel(self) -> None:
         """Disable primary-channel encryption and persist updated channel state."""
         primary_snapshot: channel_pb2.Channel | None = None
         original_channels_ref: list[channel_pb2.Channel] | None = None
@@ -175,9 +181,7 @@ class _NodeChannelExportRuntime:
                     primary_snapshot.settings.psk = fromPSK("none")
                     break
             if primary_snapshot is None:
-                self._node._raise_interface_error(
-                    "Error: No primary channel found"
-                )  # noqa: SLF001
+                self._node._raise_interface_error("Error: No primary channel found")  # noqa: SLF001
         logger.info("Writing modified channels to device")
         self._node._write_channel_snapshot(primary_snapshot)  # noqa: SLF001
         with self._node._channels_lock:  # noqa: SLF001

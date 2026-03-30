@@ -532,7 +532,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         MeshInterfaceError
             if channel data has not been loaded.
         """
-        self._channel_export_runtime.turn_off_encryption_on_primary_channel()
+        self._channel_export_runtime._turn_off_encryption_on_primary_channel()
 
     def waitForConfig(self, attribute: str = "channels") -> bool:
         """Wait until a node config/channel attribute is populated or timeout elapses.
