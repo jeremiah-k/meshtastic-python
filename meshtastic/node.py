@@ -186,7 +186,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         self._position_time_runtime_cache: "_NodePositionTimeCommandRuntime | None" = (
             None
         )
-        self._lazy_init_lock = threading.Lock()
+        self._lazy_init_lock = threading.RLock()
 
     @property
     def _content_cache_store(self) -> "_NodeContentCacheStore":
