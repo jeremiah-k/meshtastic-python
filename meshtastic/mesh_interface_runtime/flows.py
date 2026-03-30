@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import math
 import secrets
-from typing import TYPE_CHECKING, Any, Literal, TypeAlias
+from typing import TYPE_CHECKING, Any, Callable, Literal, TypeAlias
 
 import google.protobuf.json_format
 from google.protobuf import message as protobuf_message
@@ -136,6 +136,8 @@ def send_position(
         p.altitude = int(altitude)
         logger.debug("p.altitude:%s", p.altitude)
 
+    onResponse: Callable[[dict[str, Any]], None] | None
+    response_wait_attr: str | None
     if wantResponse:
 
         def _on_response(packet: dict[str, Any]) -> None:
@@ -388,13 +390,15 @@ def send_telemetry(
                     if uptime_seconds is not None:
                         r.device_metrics.uptime_seconds = uptime_seconds
 
+    onResponse: Callable[[dict[str, Any]], None] | None
+    response_wait_attr: str | None
     if wantResponse:
 
         def _on_response(packet: dict[str, Any]) -> None:
-            on_response_telemetry(pipeline, packet)
+            on_response_waypoint(pipeline, packet)
 
         onResponse = _on_response
-        response_wait_attr = WAIT_ATTR_TELEMETRY
+        response_wait_attr = WAIT_ATTR_WAYPOINT
     else:
         onResponse = None
         response_wait_attr = None
@@ -481,6 +485,8 @@ def send_waypoint(
         w.longitude_i = int(longitude * 1e7)
         logger.debug("w.longitude_i:%s", w.longitude_i)
 
+    onResponse: Callable[[dict[str, Any]], None] | None
+    response_wait_attr: str | None
     if wantResponse:
 
         def _on_response(packet: dict[str, Any]) -> None:

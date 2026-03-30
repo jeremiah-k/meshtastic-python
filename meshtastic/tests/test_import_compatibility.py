@@ -80,7 +80,8 @@ class TestBLEImports:
 
     def test_ble_interface_import(self) -> None:
         """Test that BLEInterface can be imported from meshtastic.ble_interface."""
-        from meshtastic.ble_interface import BLEInterface
+        # BLEInterface is a re-export from meshtastic.interfaces.ble
+        from meshtastic.ble_interface import BLEInterface  # type: ignore[attr-defined]
 
         assert BLEInterface is not None
         assert isinstance(BLEInterface, type)
@@ -92,7 +93,8 @@ class TestBLEImports:
         symbols from meshtastic.ble_interface in the pre-refactor API.
         COMPAT_STABLE_SHIM
         """
-        from meshtastic.ble_interface import BleakClient
+        # Re-export of BleakClient for backwards compatibility
+        from meshtastic.ble_interface import BleakClient  # type: ignore[attr-defined]
 
         assert BleakClient is not None
 
@@ -103,7 +105,8 @@ class TestBLEImports:
         symbols from meshtastic.ble_interface in the pre-refactor API.
         COMPAT_STABLE_SHIM
         """
-        from meshtastic.ble_interface import BleakScanner
+        # Re-export of BleakScanner for backwards compatibility
+        from meshtastic.ble_interface import BleakScanner  # type: ignore[attr-defined]
 
         assert BleakScanner is not None
 
