@@ -11,6 +11,10 @@ The baselines are stored in:
     meshtastic/tests/api_baselines/api_baseline.json
 """
 
+# pylint: disable=redefined-outer-name
+# Fixture names (current_baseline, stored_baseline) appear to shadow when used as
+# test parameters - this is standard pytest fixture injection pattern.
+
 import inspect
 import json
 from pathlib import Path

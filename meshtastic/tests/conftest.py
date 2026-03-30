@@ -506,3 +506,58 @@ def _platform_socket_mocks() -> Generator[tuple[MagicMock, MagicMock], None, Non
         patch("socket.socket") as socket_mock,
     ):
         yield platform_mock, socket_mock
+
+
+# Fixtures for behavioral compatibility tests
+@pytest.fixture
+def mock_interface():
+    """Provide a MeshInterface with mocked internals for behavioral testing."""
+    iface = MeshInterface(noProto=True)
+    try:
+        # Mock critical methods to avoid hardware dependency
+        iface._send_to_radio_impl = MagicMock()
+        iface.myInfo = MagicMock()
+        iface.myInfo.my_node_num = 2475227164
+
+        # Set up sample nodes - use non-hex IDs to ensure DB lookup path
+        iface.nodes = {
+            "!9388f81c": {
+                "num": 2475227164,
+                "user": {
+                    "id": "!9388f81c",
+                    "longName": "Test Node",
+                    "shortName": "TN",
+                    "macaddr": "RBeTiPgc",
+                    "hwModel": "TBEAM",
+                },
+                "position": {"time": 1640206266},
+                "lastHeard": 1640204888,
+            },
+            "!testnode1": {
+                "num": 11259375,
+                "user": {
+                    "id": "!testnode1",
+                    "longName": "Remote Node",
+                    "shortName": "RN",
+                    "macaddr": "Test1234",
+                    "hwModel": "RAK4631",
+                },
+                "position": {},
+                "lastHeard": 1640205000,
+            },
+        }
+        iface.nodesByNum = {
+            2475227164: iface.nodes["!9388f81c"],
+            11259375: iface.nodes["!testnode1"],
+        }
+
+        yield iface
+    finally:
+        iface.close()
+
+
+@pytest.fixture
+def mock_interface_with_nodes(mock_interface):
+    """Provide a mock interface pre-configured with nodes."""
+    # Already configured in mock_interface
+    return mock_interface
