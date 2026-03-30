@@ -11,7 +11,6 @@ Reference: COMPATIBILITY.md for documented compatibility aliases.
 from __future__ import annotations
 
 import importlib
-import sys
 from types import ModuleType
 
 import pytest

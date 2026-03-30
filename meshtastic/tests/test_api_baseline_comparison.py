@@ -257,7 +257,7 @@ _EXTRACTED_SURFACE_CACHE: dict[str, Any] | None = None
 
 def _extract_api_surface() -> dict[str, Any]:
     """Return API surface from the canonical extractor script."""
-    global _EXTRACTED_SURFACE_CACHE
+    global _EXTRACTED_SURFACE_CACHE  # pylint: disable=global-statement
 
     if _EXTRACTED_SURFACE_CACHE is not None:
         return cast(dict[str, Any], _EXTRACTED_SURFACE_CACHE)
