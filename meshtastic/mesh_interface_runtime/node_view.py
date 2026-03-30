@@ -4,7 +4,6 @@ import base64
 import copy
 import sys
 import threading
-from datetime import datetime
 from typing import IO, TYPE_CHECKING, Any, TypeAlias, cast
 
 try:
@@ -27,6 +26,8 @@ from meshtastic.util import (
     messageToJson,
     remove_keys_from_dict,
 )
+
+from . import node_data, node_presentation
 
 if TYPE_CHECKING:
     from meshtastic.mesh_interface import MeshInterface
@@ -251,276 +252,6 @@ class NodeView:
         print(infos, file=file)
         return infos
 
-    @staticmethod
-    def _get_human_readable_column_label(name: str) -> str:
-        """Map an internal dotted field path to a human-readable column label.
-
-        Parameters
-        ----------
-        name : str
-            Dotted field path or key to convert (e.g., "user.longName", "position.latitude").
-
-        Returns
-        -------
-        str
-            A human-readable label for the given field when known (e.g., "User", "Latitude");
-            otherwise returns the original `name`.
-        """
-        name_map = {
-            "user.longName": "User",
-            "user.id": "ID",
-            "user.shortName": "AKA",
-            "user.hwModel": "Hardware",
-            "user.publicKey": "Pubkey",
-            "user.role": "Role",
-            "position.latitude": "Latitude",
-            "position.longitude": "Longitude",
-            "position.altitude": "Altitude",
-            "deviceMetrics.batteryLevel": "Battery",
-            "deviceMetrics.channelUtilization": "Channel util.",
-            "deviceMetrics.airUtilTx": "Tx air util.",
-            "snr": "SNR",
-            "hopsAway": "Hops",
-            "channel": "Channel",
-            "lastHeard": "LastHeard",
-            "since": "Since",
-            "isFavorite": "Fav",
-        }
-
-        return name_map.get(name, name)
-
-    @staticmethod
-    def _format_numeric_value(
-        value: int | float | None,
-        precision: int = 2,
-        unit: str = "",
-    ) -> str | None:
-        """Format a numeric value as a string with fixed decimal precision and an optional unit suffix.
-
-        Parameters
-        ----------
-        value : int | float | None
-            Value to format; returns `None` when this is `None`.
-        precision : int
-            Number of digits after the decimal point. (Default value = 2)
-        unit : str
-            Suffix appended directly after the number (for example, "V" or " dB"). (Default value = '')
-
-        Returns
-        -------
-        str | None
-            `None` if `value` is `None`, otherwise the formatted string using the given precision and unit (e.g., "3.14V").
-        """
-        return f"{value:.{precision}f}{unit}" if value is not None else None
-
-    @staticmethod
-    def _format_timestamp(ts: int | float | None) -> str | None:
-        """Format a Unix timestamp as "YYYY-MM-DD HH:MM:SS" or return None when no timestamp is available.
-
-        Parameters
-        ----------
-        ts : int | float | None
-            Seconds since the Unix epoch. If `ts` is `None` or `0`, no timestamp is available.
-
-        Returns
-        -------
-        str | None
-            Formatted timestamp string in `YYYY-MM-DD HH:MM:SS` form, or `None` if `ts` is `None` or `0`.
-        """
-        return (
-            datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
-            if ts is not None and ts != 0
-            else None
-        )
-
-    @staticmethod
-    def _format_time_ago(ts: int | float | None) -> str | None:
-        """Return a short human-readable relative time string for a past Unix epoch timestamp.
-
-        Parameters
-        ----------
-        ts : int | float | None
-            Unix timestamp in seconds since the epoch. If `None` or `0`, no computation is performed.
-
-        Returns
-        -------
-        str | None
-            A concise relative time string such as "now", "5 sec ago", or "2 min ago",
-            or `None` if `ts` is `None`, `0`, or represents a time in the future.
-        """
-        if ts is None or ts == 0:
-            return None
-        delta = datetime.now() - datetime.fromtimestamp(ts)
-        delta_secs = int(delta.total_seconds())
-        if delta_secs < 0:
-            return None
-        return _timeago(delta_secs)
-
-    @staticmethod
-    def _extract_node_field_value(node_dict: dict[str, Any], field_path: str) -> Any:
-        """Retrieve a nested value from a dictionary using a dotted key path.
-
-        Parameters
-        ----------
-        node_dict : dict[str, Any]
-            Dictionary to traverse.
-        field_path : str
-            Dotted path (e.g., "a.b.c"). Non-dotted paths are treated
-            as a single-level lookup on node_dict.
-
-        Returns
-        -------
-        Any
-            The value found at the given path, or `None` if any intermediate
-            key is missing or an intermediate value is not a dictionary.
-        """
-        if not isinstance(node_dict, dict):
-            return None
-        if "." not in field_path:
-            return node_dict.get(field_path)
-        keys = field_path.split(".")
-        value: Any = node_dict
-        for key in keys:
-            if isinstance(value, dict):
-                value = value.get(key)
-            else:
-                return None
-        return value
-
-    @staticmethod
-    def _get_default_show_fields() -> list[str]:
-        """Return the default list of fields to display in showNodes output."""
-        return [
-            "N",
-            "user.longName",
-            "user.id",
-            "user.shortName",
-            "user.hwModel",
-            "user.publicKey",
-            "user.role",
-            "position.latitude",
-            "position.longitude",
-            "position.altitude",
-            "deviceMetrics.batteryLevel",
-            "deviceMetrics.channelUtilization",
-            "deviceMetrics.airUtilTx",
-            "snr",
-            "hopsAway",
-            "channel",
-            "isFavorite",
-            "lastHeard",
-            "since",
-        ]
-
-    @staticmethod
-    # pylint: disable=too-many-return-statements
-    def _format_node_field(
-        col_name: str,
-        raw_value: Any,
-        node: dict[str, Any],
-    ) -> str | None:
-        """Format a single node field value based on its column name.
-
-        Parameters
-        ----------
-        col_name : str
-            The column/field name (e.g., "user.shortName", "deviceMetrics.batteryLevel").
-        raw_value : Any
-            The raw value extracted from the node.
-        node : dict[str, Any]
-            The full node dictionary (used for fallback values).
-
-        Returns
-        -------
-        str | None
-            The formatted string value for display, or None if value is None.
-        """
-        presumptive_id = f"!{node['num']:08x}"
-
-        if col_name == "channel":
-            if raw_value is None:
-                return "0"
-            return str(raw_value) if raw_value is not None else None
-        elif col_name == "deviceMetrics.channelUtilization":
-            return NodeView._format_numeric_value(raw_value, 2, "%")
-        elif col_name == "deviceMetrics.airUtilTx":
-            return NodeView._format_numeric_value(raw_value, 2, "%")
-        elif col_name == "deviceMetrics.batteryLevel":
-            if raw_value in (0, 101):
-                return "Powered"
-            else:
-                return NodeView._format_numeric_value(raw_value, 0, "%")
-        elif col_name == "isFavorite":
-            return "*" if raw_value else ""
-        elif col_name == "lastHeard":
-            return NodeView._format_timestamp(raw_value)
-        elif col_name == "position.latitude":
-            return NodeView._format_numeric_value(raw_value, 4, "°")
-        elif col_name == "position.longitude":
-            return NodeView._format_numeric_value(raw_value, 4, "°")
-        elif col_name == "position.altitude":
-            return NodeView._format_numeric_value(raw_value, 0, "m")
-        elif col_name == "since":
-            return NodeView._format_time_ago(raw_value) or "N/A"
-        elif col_name == "snr":
-            return NodeView._format_numeric_value(raw_value, 0, " dB")
-        elif col_name == "user.shortName":
-            if raw_value is not None:
-                return cast(str, raw_value)
-            return f"Meshtastic {presumptive_id[-4:]}"
-        elif col_name == "user.id":
-            if raw_value is not None:
-                return cast(str, raw_value)
-            return presumptive_id
-        else:
-            return cast(str, raw_value) if raw_value is not None else None
-
-    @staticmethod
-    def _filter_nodes(
-        nodes: list[dict[str, Any]],
-        include_self: bool,
-        local_node_num: int,
-    ) -> list[dict[str, Any]]:
-        """Filter nodes based on include_self option.
-
-        Parameters
-        ----------
-        nodes : list[dict[str, Any]]
-            List of node dictionaries.
-        include_self : bool
-            If False, filter out the local node.
-        local_node_num : int
-            The local node's number for comparison.
-
-        Returns
-        -------
-        list[dict[str, Any]]
-            Filtered list of nodes.
-        """
-        if include_self:
-            return nodes
-        return [node for node in nodes if node["num"] != local_node_num]
-
-    @staticmethod
-    def _sort_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Sort nodes by lastHeard timestamp in descending order.
-
-        Parameters
-        ----------
-        nodes : list[dict[str, Any]]
-            List of node dictionaries.
-
-        Returns
-        -------
-        list[dict[str, Any]]
-            Sorted list of nodes (newest first).
-        """
-        return sorted(
-            nodes,
-            key=lambda r: r.get("lastHeard") or 0,
-            reverse=True,
-        )
-
     def _build_table_data(
         self,
         nodes: list[dict[str, Any]],
@@ -545,17 +276,19 @@ class NodeView:
             fields_data: dict[str, Any] = {}
             for col_name in fields:
                 if "." in col_name:
-                    raw_value = self._extract_node_field_value(node, col_name)
+                    raw_value = node_data.extract_node_field_value(node, col_name)
                 elif col_name == "since":
                     raw_value = node.get("lastHeard")
                 else:
                     raw_value = node.get(col_name)
 
-                formatted_value = self._format_node_field(col_name, raw_value, node)
+                formatted_value = node_presentation.format_node_field(
+                    col_name, raw_value, node
+                )
                 fields_data[col_name] = formatted_value
 
             filtered_data = {
-                self._get_human_readable_column_label(k): v
+                node_presentation.get_human_readable_column_label(k): v
                 for k, v in fields_data.items()
                 if k in fields
             }
@@ -605,7 +338,7 @@ class NodeView:
         """
         # Determine fields to show
         if showFields is None or len(showFields) == 0:
-            fields = self._get_default_show_fields()
+            fields = node_data.get_default_show_fields()
         else:
             fields = ["N", *showFields] if "N" not in showFields else list(showFields)
 
@@ -619,10 +352,12 @@ class NodeView:
             logger.debug("self.nodes:%s", nodes_log_snapshot)
 
         # Filter nodes
-        filtered_nodes = self._filter_nodes(nodes_snapshot, includeSelf, local_node_num)
+        filtered_nodes = node_data.filter_nodes(
+            nodes_snapshot, includeSelf, local_node_num
+        )
 
         # Sort nodes by lastHeard
-        sorted_nodes = self._sort_nodes(filtered_nodes)
+        sorted_nodes = node_data.sort_nodes(filtered_nodes)
 
         # Build table data with field extraction and formatting
         rows = self._build_table_data(sorted_nodes, fields)

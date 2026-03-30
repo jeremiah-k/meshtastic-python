@@ -108,7 +108,24 @@ def capture_top_level_exports() -> list[str]:
     """Capture top-level exports from main meshtastic package.
 
     Returns a sorted list of exported names that don't start with underscore.
+    Ensures consistent capture by pre-importing modules that may be added
+    to namespace as side-effects during test collection.
     """
+    # Pre-import modules that may appear in namespace due to test side-effects
+    # This ensures consistent baseline between local and CI environments
+    try:
+        import meshtastic.analysis  # noqa: F401
+        import meshtastic.host_port  # noqa: F401
+        import meshtastic.interfaces  # noqa: F401
+        import meshtastic.ota  # noqa: F401
+        import meshtastic.remote_hardware  # noqa: F401
+        import meshtastic.slog  # noqa: F401
+        import meshtastic.tcp_interface  # noqa: F401
+        import meshtastic.test  # noqa: F401
+        import meshtastic.tunnel  # noqa: F401
+    except ImportError:
+        pass  # Some may not be available in all environments
+
     import meshtastic
 
     exports = []
