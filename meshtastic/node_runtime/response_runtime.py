@@ -127,7 +127,7 @@ class _NodeMetadataResponseRuntime:
                 f"excluded_modules: {self._node.excluded_modules_list(metadata.excluded_modules)}"
             )
 
-    def handle_metadata_response(self, packet: dict[str, Any]) -> None:
+    def handleMetadataResponse(self, packet: dict[str, Any]) -> None:
         """Process metadata response packet and preserve historical ACK/timeout semantics."""
         logger.debug("onRequestGetMetadata() p:%s", packet)
         decoded = packet.get("decoded")
@@ -171,6 +171,10 @@ class _NodeMetadataResponseRuntime:
         self._emit_metadata_lines(metadata_response)
         self._node._signal_metadata_stdout_event()
 
+    def handle_metadata_response(self, packet: dict[str, Any]) -> None:
+        """COMPAT_STABLE_SHIM: Silent alias for handleMetadataResponse."""
+        return self.handleMetadataResponse(packet)
+
 
 class _NodeChannelResponseRuntime:
     """Owns channel-response routing/error handling, sequencing, and final installation."""
@@ -181,14 +185,18 @@ class _NodeChannelResponseRuntime:
         self._pending_channel_retry_count = 0
         self._channel_request_failed = False
 
-    def mark_channel_request_sent(self, channel_index: int) -> None:
+    def markChannelRequestSent(self, channel_index: int) -> None:
         """Record the outstanding zero-based channel request index."""
         if self._pending_channel_request_index != channel_index:
             self._pending_channel_retry_count = 0
         self._pending_channel_request_index = channel_index
         self._channel_request_failed = False
 
-    def mark_channel_request_send_failed(self, channel_index: int) -> None:
+    def mark_channel_request_sent(self, channel_index: int) -> None:
+        """COMPAT_STABLE_SHIM: Silent alias for markChannelRequestSent."""
+        return self.markChannelRequestSent(channel_index)
+
+    def markChannelRequestSendFailed(self, channel_index: int) -> None:
         """Record terminal failure when a channel request could not be sent."""
         if self._pending_channel_request_index != channel_index:
             self._pending_channel_retry_count = 0
@@ -196,9 +204,17 @@ class _NodeChannelResponseRuntime:
         self._channel_request_failed = True
         self._node._timeout.reset()  # noqa: SLF001
 
-    def has_channel_request_failed(self) -> bool:
+    def mark_channel_request_send_failed(self, channel_index: int) -> None:
+        """COMPAT_STABLE_SHIM: Silent alias for markChannelRequestSendFailed."""
+        return self.markChannelRequestSendFailed(channel_index)
+
+    def hasChannelRequestFailed(self) -> bool:
         """Return whether the active channel download has terminally failed."""
         return self._channel_request_failed
+
+    def has_channel_request_failed(self) -> bool:
+        """COMPAT_STABLE_SHIM: Silent alias for hasChannelRequestFailed."""
+        return self.hasChannelRequestFailed()
 
     def _retry_pending_channel_request(self, error_reason: str) -> None:
         """Retry the in-flight request once for transient routing failures."""
@@ -345,7 +361,7 @@ class _NodeChannelResponseRuntime:
             return True
         return False
 
-    def handle_channel_response(self, packet: dict[str, Any]) -> None:
+    def handleChannelResponse(self, packet: dict[str, Any]) -> None:
         """Process channel response packet and maintain partial/final channel sequencing."""
         is_valid, channel_response = self._validate_channel_response_packet(packet)
         if not is_valid:
@@ -401,3 +417,7 @@ class _NodeChannelResponseRuntime:
             )
             self._channel_request_failed = True
             self._node._timeout.reset()  # noqa: SLF001
+
+    def handle_channel_response(self, packet: dict[str, Any]) -> None:
+        """COMPAT_STABLE_SHIM: Silent alias for handleChannelResponse."""
+        return self.handleChannelResponse(packet)

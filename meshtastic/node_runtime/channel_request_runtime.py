@@ -47,6 +47,10 @@ class _ChannelRequestCompletionProbe:
                 return True
         has_channel_request_failed = getattr(
             self._channel_response_runtime,
+            "hasChannelRequestFailed",
+            None,
+        ) or getattr(
+            self._channel_response_runtime,
             "has_channel_request_failed",
             None,
         )
@@ -103,7 +107,8 @@ class _NodeChannelRequestRuntime:
                 None,
             )
             has_channel_request_failed = (
-                getattr(channel_response_runtime, "has_channel_request_failed", None)
+                getattr(channel_response_runtime, "hasChannelRequestFailed", None)
+                or getattr(channel_response_runtime, "has_channel_request_failed", None)
                 if channel_response_runtime is not None
                 else None
             )
@@ -158,7 +163,8 @@ class _NodeChannelRequestRuntime:
             None,
         )
         mark_channel_request_sent = (
-            getattr(channel_response_runtime, "mark_channel_request_sent", None)
+            getattr(channel_response_runtime, "markChannelRequestSent", None)
+            or getattr(channel_response_runtime, "mark_channel_request_sent", None)
             if channel_response_runtime is not None
             else None
         )
@@ -184,6 +190,11 @@ class _NodeChannelRequestRuntime:
         if request is None:
             mark_channel_request_send_failed = (
                 getattr(
+                    channel_response_runtime,
+                    "markChannelRequestSendFailed",
+                    None,
+                )
+                or getattr(
                     channel_response_runtime,
                     "mark_channel_request_send_failed",
                     None,

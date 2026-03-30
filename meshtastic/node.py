@@ -1463,7 +1463,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             Decoded packet containing at minimum a 'decoded' key with routing and
             admin/raw get_device_metadata_response fields.
         """
-        self._metadata_response_runtime.handle_metadata_response(p)
+        self._metadata_response_runtime.handleMetadataResponse(p)
 
     def onResponseRequestChannel(self, p: dict[str, Any]) -> None:
         """Process a response packet for a previously requested channel and update the Node's channel state.
@@ -1481,7 +1481,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             - a routing message with 'routing.errorReason', or
             - an admin message with 'admin.raw.get_channel_response' (a Channel protobuf-like object with an `index` field).
         """
-        self._channel_response_runtime.handle_channel_response(p)
+        self._channel_response_runtime.handleChannelResponse(p)
 
     def onAckNak(self, p: dict[str, Any]) -> None:
         """Handle an incoming ACK/NAK admin response and update interface acknowledgment state.
