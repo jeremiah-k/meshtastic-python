@@ -684,12 +684,16 @@ def test_get_set_ringtone_workflow(mock_interface: MagicMock) -> None:
         return_packet=MagicMock(),
     )
 
-    _result = node.getRingtone()
+    result = node.getRingtone()
 
     # Verify request was made
     assert len(sent_messages) == 1
     assert sent_messages[0].get_ringtone_request is True
-    # Note: actual ringtone parsing from response may vary
+
+    # Verify response was consumed and returned
+    assert result == "fetch:ringtone:data"
+    # Verify the ringtone was cached on the node
+    assert node.ringtone == "fetch:ringtone:data"
 
 
 # =============================================================================

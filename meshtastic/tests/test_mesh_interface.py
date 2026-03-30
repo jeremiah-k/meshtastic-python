@@ -2503,11 +2503,10 @@ def test_send_telemetry_supported_and_fallback_paths(
         iface.sendTelemetry(telemetryType="power_metrics")
         iface.sendTelemetry(telemetryType="local_stats")
         iface.sendTelemetry(telemetryType="device_metrics")
-        with pytest.warns(DeprecationWarning) as record:
+        with pytest.warns(DeprecationWarning, match="Unsupported telemetryType"):
             iface.sendTelemetry(telemetryType="invalid")
+        with pytest.warns(DeprecationWarning, match="Unsupported telemetryType"):
             iface.sendTelemetry(telemetryType="invalid2")
-        assert len(record) == 2
-        assert all("Unsupported telemetryType" in str(w.message) for w in record)
         iface.sendTelemetry(telemetryType="device_metrics", wantResponse=True)
 
     assert telemetry_calls[0][0].HasField("environment_metrics")
