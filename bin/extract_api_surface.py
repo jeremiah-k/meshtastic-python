@@ -14,7 +14,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 LEGACY_IMPORT_PATHS = [
     "meshtastic.node_runtime.settings_runtime",
     "meshtastic.node_runtime.channel_request_runtime",
