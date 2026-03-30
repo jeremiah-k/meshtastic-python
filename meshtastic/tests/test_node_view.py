@@ -422,7 +422,7 @@ class TestGetNode:
 
     @pytest.mark.unit
     def test_get_node_remote(
-        self, node_view: NodeView, mock_interface: MagicMock
+        self, node_view: NodeView, _mock_interface: MagicMock
     ) -> None:
         """Test getting remote node."""
         with patch(
@@ -733,7 +733,7 @@ class TestGetOrCreateByNum:
 
     @pytest.mark.unit
     def test_get_or_create_broadcast_raises(
-        self, node_view: NodeView, mock_interface: MagicMock
+        self, node_view: NodeView, _mock_interface: MagicMock
     ) -> None:
         """Test that creating a broadcast node raises an error."""
         with pytest.raises(MeshInterface.MeshInterfaceError, match="broadcast"):
