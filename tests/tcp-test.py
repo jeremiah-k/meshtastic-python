@@ -9,6 +9,7 @@ import meshtastic
 from meshtastic.mesh_interface import MeshInterface
 
 LOGGER = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 if len(sys.argv) < 2:
     LOGGER.error("Usage: %s <hostname>", sys.argv[0])

@@ -2,7 +2,6 @@
 
 POETRY_RUN := poetry run
 API_BASELINE_FILE := meshtastic/tests/api_baselines/api_baseline.json
-API_BASELINE_MASTER_FILE := meshtastic/tests/api_baselines/api_baseline_master.json
 
 all: test
 
