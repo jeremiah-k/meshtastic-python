@@ -176,7 +176,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         self._content_response_runtime_cache: "_NodeContentResponseRuntime | None" = (
             None
         )
-        self._content_request_runtime_cache: "_NodeContentRequestRuntime | None" = None
+        self._content_request_runtime_cache: "_NodeAdminContentRuntime | None" = None
         self._metadata_response_runtime_cache: "_NodeMetadataResponseRuntime | None" = (
             None
         )

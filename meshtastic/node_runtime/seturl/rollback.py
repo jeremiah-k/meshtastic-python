@@ -193,7 +193,10 @@ class _SetUrlRollbackEngine:
             lora_write_started=state.lora_write_started,
             original_lora_config=plan.original_lora_config,
             lora_warning_message="Rollback of LoRa config failed after addOnly partial failure.",
-            lora_no_snapshot_message="LoRa config cache cleared after addOnly failure without rollback snapshot; reload config before using localConfig.lora.",
+            lora_no_snapshot_message=(
+                "LoRa config cache cleared after addOnly failure without rollback "
+                "snapshot; reload config before using localConfig.lora."
+            ),
             cache_invalidate_message="Channel rollback incomplete after addOnly failure; invalidated local channel cache.",
         )
 
@@ -250,7 +253,10 @@ class _SetUrlRollbackEngine:
             lora_write_started=state.lora_write_started,
             original_lora_config=plan.replace_original_lora_config,
             lora_warning_message="Rollback of LoRa config failed after replace-all partial failure.",
-            lora_no_snapshot_message="LoRa config cache cleared after replace-all failure without rollback snapshot; reload config before using localConfig.lora.",
+            lora_no_snapshot_message=(
+                "LoRa config cache cleared after replace-all failure without "
+                "rollback snapshot; reload config before using localConfig.lora."
+            ),
             cache_invalidate_message="Replace-all rollback incomplete after failure; invalidated local channel cache.",
         )
         if not rollback_failed:

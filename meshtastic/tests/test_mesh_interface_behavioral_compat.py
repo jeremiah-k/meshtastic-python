@@ -10,7 +10,6 @@ The module is intentionally large to cover all API edge cases.
 
 import io
 import logging
-import warnings
 from collections.abc import Generator
 from unittest.mock import MagicMock, patch
 
@@ -31,7 +30,7 @@ def mock_interface() -> Generator[MeshInterface, None, None]:
     iface = MeshInterface(noProto=True)
     try:
         # Mock critical methods to avoid hardware dependency
-        iface._send_to_radio_impl = MagicMock()
+        iface._send_to_radio_impl = MagicMock()  # type: ignore[method-assign]
         iface.myInfo = MagicMock()
         iface.myInfo.my_node_num = 2475227164
 

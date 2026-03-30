@@ -505,4 +505,3 @@ class TestWriteCannedMessageChunking:
         # Cache should be invalidated
         assert mock_node_for_read_gen.cannedPluginMessage is None
         assert mock_node_for_read_gen.cannedPluginMessageMessages is None
-

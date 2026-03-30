@@ -16,8 +16,6 @@ from types import ModuleType
 
 import pytest
 
-import pytest
-
 
 @pytest.mark.unit
 class TestCoreModuleImports:

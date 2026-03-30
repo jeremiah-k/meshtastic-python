@@ -30,8 +30,6 @@ from meshtastic.protobuf import mesh_pb2
 def mock_interface() -> MagicMock:
     """Create a minimal mock MeshInterface for node view tests."""
     # Create a spec-based mock that includes MeshInterfaceError
-    from meshtastic.mesh_interface import MeshInterface
-
     interface = MagicMock(spec=MeshInterface)
     interface._node_db_lock = threading.RLock()
     interface.localNode = MagicMock()

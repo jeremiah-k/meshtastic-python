@@ -19,6 +19,7 @@ class _NodeAckNakRuntime:
 
     def _handle_ack_nak(self, packet: dict[str, Any]) -> None:
         """Classify ACK/NAK payload and update interface acknowledgment state."""
+        # pylint: disable=too-many-return-statements
         decoded = packet.get("decoded")
         if not isinstance(decoded, dict):
             logger.warning(

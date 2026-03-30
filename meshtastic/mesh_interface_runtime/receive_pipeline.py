@@ -1,6 +1,5 @@
 """Receive pipeline for processing inbound packets from the radio."""
 
-import base64
 import copy
 import hashlib
 import logging
