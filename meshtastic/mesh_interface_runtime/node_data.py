@@ -84,7 +84,7 @@ def filterNodes(
         Filtered list of nodes.
     """
     if include_self:
-        return nodes
+        return list(nodes)
     return [node for node in nodes if node.get("num") != local_node_num]
 
 

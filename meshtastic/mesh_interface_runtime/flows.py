@@ -542,6 +542,8 @@ def deleteWaypoint(
     p.expire = 0
 
     if wantResponse:
+        onResponse: Callable[[dict[str, Any]], None] | None
+        response_wait_attr: str | None
 
         def _on_response(packet: dict[str, Any]) -> None:
             on_response_waypoint(pipeline, packet)

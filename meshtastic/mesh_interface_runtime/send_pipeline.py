@@ -325,8 +325,14 @@ class SendPipeline:
         meshPacket.decoded.portnum = portNum
         meshPacket.decoded.want_response = wantResponse
         meshPacket.id = self._interface._generate_packet_id()
-        while meshPacket.id == 0:
+        for _ in range(10):
+            if meshPacket.id != 0:
+                break
             meshPacket.id = self._interface._generate_packet_id()
+        else:
+            raise self._interface.MeshInterfaceError(
+                "Failed to generate non-zero packet ID"
+            )
         if replyId is not None:
             meshPacket.decoded.reply_id = replyId
         meshPacket.priority = priority
@@ -657,15 +663,8 @@ class SendPipeline:
                         _format_node_db_unavailable_error(destinationId)
                     )
         else:
-            with self._node_db_lock:
-                has_nodes = self.nodes is not None
-            if has_nodes:
-                raise self._interface.MeshInterfaceError(
-                    _format_node_not_found_in_db_error(destinationId)
-                )
-            raise self._interface.MeshInterfaceError(
-                _format_node_db_unavailable_error(destinationId)
-            )
+            # Defensive: should be unreachable given type hints (int | str)
+            assert False, f"Unexpected destinationId type: {type(destinationId)}"
 
         meshPacket.to = nodeNum
         meshPacket.want_ack = wantAck
@@ -674,7 +673,11 @@ class SendPipeline:
             meshPacket.hop_limit = hopLimit
         else:
             with self._node_db_lock:
-                default_hop_limit = self.localNode.localConfig.lora.hop_limit
+                local_node = self.localNode
+                if local_node is None or local_node.localConfig is None:
+                    default_hop_limit = 3  # Sensible default
+                else:
+                    default_hop_limit = local_node.localConfig.lora.hop_limit
             meshPacket.hop_limit = default_hop_limit
 
         if pkiEncrypted:

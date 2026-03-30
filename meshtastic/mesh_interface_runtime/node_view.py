@@ -40,6 +40,16 @@ JSONValue: TypeAlias = (
 
 logger = logging.getLogger(__name__)
 
+# Time intervals for _timeago() function (name, seconds)
+_TIMEAGO_INTERVALS = (
+    ("year", 60 * 60 * 24 * 365),
+    ("month", 60 * 60 * 24 * 30),
+    ("day", 60 * 60 * 24),
+    ("hour", 60 * 60),
+    ("min", 60),
+    ("sec", 1),
+)
+
 
 def _timeago(delta_secs: int) -> str:
     """Produce a short human-readable relative time string for a past interval.
@@ -54,15 +64,7 @@ def _timeago(delta_secs: int) -> str:
     str
         A compact relative time string such as "now", "30 sec ago", "1 hour ago", or "2 days ago".
     """
-    intervals = (
-        ("year", 60 * 60 * 24 * 365),
-        ("month", 60 * 60 * 24 * 30),
-        ("day", 60 * 60 * 24),
-        ("hour", 60 * 60),
-        ("min", 60),
-        ("sec", 1),
-    )
-    for name, interval_duration in intervals:
+    for name, interval_duration in _TIMEAGO_INTERVALS:
         if delta_secs < interval_duration:
             continue
         x = delta_secs // interval_duration
@@ -203,6 +205,11 @@ class NodeView:
         with self._node_db_lock:
             my_info = self.myInfo
             metadata_info = self.metadata
+            nodes_snapshot = (
+                [copy.deepcopy(node) for node in self.nodes.values()]
+                if self.nodes
+                else []
+            )
         myinfo = ""
         if my_info:
             myinfo = f"\nMy info: {messageToJson(my_info)}"
@@ -211,12 +218,6 @@ class NodeView:
             metadata = f"\nMetadata: {messageToJson(metadata_info)}"
         mesh = "\n\nNodes in mesh: "
         nodes: dict[str, JSONValue] = {}
-        with self._node_db_lock:
-            nodes_snapshot = (
-                [copy.deepcopy(node) for node in self.nodes.values()]
-                if self.nodes
-                else []
-            )
         for n in nodes_snapshot:
             keys_to_remove = ("raw", "decoded", "payload")
             n2 = remove_keys_from_dict(keys_to_remove, n)
@@ -329,7 +330,7 @@ class NodeView:
             headings.
         """
         # Determine fields to show
-        if showFields is None or len(showFields) == 0:
+        if not showFields:
             fields = node_data.getDefaultShowFields()
         else:
             fields = ["N", *showFields] if "N" not in showFields else list(showFields)
@@ -463,7 +464,7 @@ class NodeView:
         """
         user = self.getMyUser()
         if user is not None:
-            return user.get("longName", None)
+            return user.get("longName")
         return None
 
     def getShortName(self) -> str | None:
@@ -476,7 +477,7 @@ class NodeView:
         """
         user = self.getMyUser()
         if user is not None:
-            return user.get("shortName", None)
+            return user.get("shortName")
         return None
 
     def getPublicKey(self) -> bytes | None:
@@ -489,7 +490,7 @@ class NodeView:
         """
         user = self.getMyUser()
         if user is not None:
-            return user.get("publicKey", None)
+            return user.get("publicKey")
         return None
 
     def getCannedMessage(self) -> str | None:
