@@ -6,9 +6,10 @@ import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pyarrow as pa
 import pytest
-from pyarrow import feather
+
+pa = pytest.importorskip("pyarrow")
+from pyarrow import feather  # noqa: E402
 
 import meshtastic.slog.arrow as arrow_module
 from meshtastic.slog.arrow import FeatherWriter

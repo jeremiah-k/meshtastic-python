@@ -10,8 +10,9 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
-import pyarrow as pa
 import pytest
+
+pa = pytest.importorskip("pyarrow")
 
 import meshtastic.slog as slog_package
 
@@ -307,9 +308,9 @@ def test_store_current_reading_warns_once_when_voltage_unavailable(
         assert row["average_mW"] == row["average_mA"]
         assert row["max_mW"] == row["max_mA"]
         assert row["min_mW"] == row["min_mA"]
-    assert (
-        caplog.text.count("Power meter does not expose nominal voltage") == 1
-    ), caplog.text
+    assert caplog.text.count("Power meter does not expose nominal voltage") == 1, (
+        caplog.text
+    )
 
 
 @pytest.mark.unit
