@@ -186,78 +186,97 @@ class Node:  # pylint: disable=too-many-instance-attributes
         self._position_time_runtime_cache: "_NodePositionTimeCommandRuntime | None" = (
             None
         )
+        self._lazy_init_lock = threading.Lock()
 
     @property
     def _content_cache_store(self) -> "_NodeContentCacheStore":
-        """Lazy-init for content cache store."""
+        """Lazy-init for content cache store (thread-safe)."""
         if self._content_cache_store_cache is None:
-            from meshtastic.node_runtime.content_runtime import (  # pylint: disable=import-outside-toplevel
-                _NodeContentCacheStore,
-            )
+            with self._lazy_init_lock:
+                if self._content_cache_store_cache is None:
+                    from meshtastic.node_runtime.content_runtime import (  # pylint: disable=import-outside-toplevel
+                        _NodeContentCacheStore,
+                    )
 
-            self._content_cache_store_cache = _NodeContentCacheStore(self)
+                    self._content_cache_store_cache = _NodeContentCacheStore(self)
         return self._content_cache_store_cache
 
     @property
     def _content_response_runtime(self) -> "_NodeContentResponseRuntime":
-        """Lazy-init for content response runtime."""
+        """Lazy-init for content response runtime (thread-safe)."""
         if self._content_response_runtime_cache is None:
-            from meshtastic.node_runtime.content_runtime import (  # pylint: disable=import-outside-toplevel
-                _NodeContentResponseRuntime,
-            )
+            with self._lazy_init_lock:
+                if self._content_response_runtime_cache is None:
+                    from meshtastic.node_runtime.content_runtime import (  # pylint: disable=import-outside-toplevel
+                        _NodeContentResponseRuntime,
+                    )
 
-            self._content_response_runtime_cache = _NodeContentResponseRuntime(
-                self,
-                cache_store=self._content_cache_store,
-            )
+                    self._content_response_runtime_cache = _NodeContentResponseRuntime(
+                        self,
+                        cache_store=self._content_cache_store,
+                    )
         return self._content_response_runtime_cache
 
     @property
     def _content_request_runtime(self) -> "_NodeAdminContentRuntime":
-        """Lazy-init for content request runtime."""
+        """Lazy-init for content request runtime (thread-safe)."""
         if self._content_request_runtime_cache is None:
-            from meshtastic.node_runtime.content_runtime import (  # pylint: disable=import-outside-toplevel
-                _NodeAdminContentRuntime,
-            )
+            with self._lazy_init_lock:
+                if self._content_request_runtime_cache is None:
+                    from meshtastic.node_runtime.content_runtime import (  # pylint: disable=import-outside-toplevel
+                        _NodeAdminContentRuntime,
+                    )
 
-            self._content_request_runtime_cache = _NodeAdminContentRuntime(
-                self,
-                cache_store=self._content_cache_store,
-                response_runtime=self._content_response_runtime,
-            )
+                    self._content_request_runtime_cache = _NodeAdminContentRuntime(
+                        self,
+                        cache_store=self._content_cache_store,
+                        response_runtime=self._content_response_runtime,
+                    )
         return self._content_request_runtime_cache
 
     @property
     def _metadata_response_runtime(self) -> "_NodeMetadataResponseRuntime":
-        """Lazy-init for metadata response runtime."""
+        """Lazy-init for metadata response runtime (thread-safe)."""
         if self._metadata_response_runtime_cache is None:
-            from meshtastic.node_runtime.response_runtime import (  # pylint: disable=import-outside-toplevel
-                _NodeMetadataResponseRuntime,
-            )
+            with self._lazy_init_lock:
+                if self._metadata_response_runtime_cache is None:
+                    from meshtastic.node_runtime.response_runtime import (  # pylint: disable=import-outside-toplevel
+                        _NodeMetadataResponseRuntime,
+                    )
 
-            self._metadata_response_runtime_cache = _NodeMetadataResponseRuntime(self)
+                    self._metadata_response_runtime_cache = (
+                        _NodeMetadataResponseRuntime(self)
+                    )
         return self._metadata_response_runtime_cache
 
     @property
     def _channel_response_runtime(self) -> "_NodeChannelResponseRuntime":
-        """Lazy-init for channel response runtime."""
+        """Lazy-init for channel response runtime (thread-safe)."""
         if self._channel_response_runtime_cache is None:
-            from meshtastic.node_runtime.response_runtime import (  # pylint: disable=import-outside-toplevel
-                _NodeChannelResponseRuntime,
-            )
+            with self._lazy_init_lock:
+                if self._channel_response_runtime_cache is None:
+                    from meshtastic.node_runtime.response_runtime import (  # pylint: disable=import-outside-toplevel
+                        _NodeChannelResponseRuntime,
+                    )
 
-            self._channel_response_runtime_cache = _NodeChannelResponseRuntime(self)
+                    self._channel_response_runtime_cache = _NodeChannelResponseRuntime(
+                        self
+                    )
         return self._channel_response_runtime_cache
 
     @property
     def _position_time_runtime(self) -> "_NodePositionTimeCommandRuntime":
-        """Lazy-init for position/time command runtime."""
+        """Lazy-init for position/time command runtime (thread-safe)."""
         if self._position_time_runtime_cache is None:
-            from meshtastic.node_runtime.transport_runtime import (  # pylint: disable=import-outside-toplevel
-                _NodePositionTimeCommandRuntime,
-            )
+            with self._lazy_init_lock:
+                if self._position_time_runtime_cache is None:
+                    from meshtastic.node_runtime.transport_runtime import (  # pylint: disable=import-outside-toplevel
+                        _NodePositionTimeCommandRuntime,
+                    )
 
-            self._position_time_runtime_cache = _NodePositionTimeCommandRuntime(self)
+                    self._position_time_runtime_cache = _NodePositionTimeCommandRuntime(
+                        self
+                    )
         return self._position_time_runtime_cache
 
     def __repr__(self) -> str:

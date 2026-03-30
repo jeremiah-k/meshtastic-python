@@ -58,9 +58,9 @@ class _NodeChannelPresentationRuntime:
                 ],
             )
             for channel in channels_snapshot:
-                role_name = _get_role_name(channel.role)
-                if role_name == "DISABLED":
+                if channel.role == channel_pb2.Channel.Role.DISABLED:
                     continue
+                role_name = _get_role_name(channel.role)
                 channel_string = messageToJson(channel.settings)
                 print(
                     f"  Index {channel.index}: {role_name} "
