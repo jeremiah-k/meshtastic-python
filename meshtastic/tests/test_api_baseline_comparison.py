@@ -145,44 +145,85 @@ def _ast_annotation_str(node) -> str:
 
 
 def _ast_signature_str(func_node) -> str:
-    """Extract signature string from an AST FunctionDef node."""
+    """Extract signature string from an AST FunctionDef node.
+
+    Emits parameters in proper Python signature order:
+    1. posonlyargs (with defaults)
+    2. "/" marker
+    3. regular args (with defaults)
+    4. vararg (*args)
+    5. kw-only args (with kw_defaults)
+    6. kwarg (**kwargs)
+    """
     params = []
-    for arg in func_node.args.args:
+
+    # 1. Handle positional-only args (with defaults)
+    posonly = func_node.args.posonlyargs
+    posonly_defaults = func_node.args.posonlyargs_defaults
+    n_posonly = len(posonly)
+    n_posonly_defaults = len(posonly_defaults)
+    for i, arg in enumerate(posonly):
         s = arg.arg
         if arg.annotation:
             s += f":{_ast_annotation_str(arg.annotation)}"
+        # Apply defaults from the end
+        default_idx = i - (n_posonly - n_posonly_defaults)
+        if default_idx >= 0 and default_idx < n_posonly_defaults:
+            default_str = ast.unparse(posonly_defaults[default_idx])
+            s += f"={default_str}"
         params.append(s)
+
+    # 2. Add "/" marker if there are positional-only args
+    if posonly:
+        params.append("/")
+
+    # 3. Handle regular args (with defaults)
+    regular_args = func_node.args.args
     defaults = func_node.args.defaults
-    n_args = len(func_node.args.args)
+    n_args = len(regular_args)
     n_defaults = len(defaults)
-    for i, default_node in enumerate(defaults):
-        arg_idx = n_args - n_defaults + i
-        default_str = ast.unparse(default_node)
-        params[arg_idx] += f"={default_str}"
-    if func_node.args.posonlyargs:
-        if params:
-            params.insert(len(func_node.args.posonlyargs), "/")
-    if func_node.args.kwonlyargs:
-        if not func_node.args.vararg:
-            params.append("*")
-        for kw_arg in func_node.args.kwonlyargs:
-            s = kw_arg.arg
-            if kw_arg.annotation:
-                s += f":{_ast_annotation_str(kw_arg.annotation)}"
-            params.append(s)
-        kw_defaults = func_node.args.kw_defaults
-        n_kw_args = len(func_node.args.kwonlyargs)
-        len(kw_defaults)
-        kw_start_idx = len(params) - n_kw_args
-        for i, default_node in enumerate(kw_defaults):
-            if default_node is not None:
-                arg_idx = kw_start_idx + i
-                default_str = ast.unparse(default_node)
-                params[arg_idx] += f"={default_str}"
+    for i, arg in enumerate(regular_args):
+        s = arg.arg
+        if arg.annotation:
+            s += f":{_ast_annotation_str(arg.annotation)}"
+        # Apply defaults from the end
+        default_idx = i - (n_args - n_defaults)
+        if default_idx >= 0 and default_idx < n_defaults:
+            default_str = ast.unparse(defaults[default_idx])
+            s += f"={default_str}"
+        params.append(s)
+
+    # 4. Handle vararg (*args)
     if func_node.args.vararg:
-        params.append(f"*{func_node.args.vararg.arg}")
+        vararg_str = f"*{func_node.args.vararg.arg}"
+        if func_node.args.vararg.annotation:
+            vararg_str += f":{_ast_annotation_str(func_node.args.vararg.annotation)}"
+        params.append(vararg_str)
+
+    # 5. Handle kw-only args (with kw_defaults)
+    # Only add "*" separator if we don't have vararg but have kw-only args
+    if func_node.args.kwonlyargs and not func_node.args.vararg:
+        params.append("*")
+
+    kwonly = func_node.args.kwonlyargs
+    kw_defaults = func_node.args.kw_defaults
+    for i, kw_arg in enumerate(kwonly):
+        s = kw_arg.arg
+        if kw_arg.annotation:
+            s += f":{_ast_annotation_str(kw_arg.annotation)}"
+        # kw_defaults aligns with kwonlyargs by position
+        if i < len(kw_defaults) and kw_defaults[i] is not None:
+            default_str = ast.unparse(kw_defaults[i])
+            s += f"={default_str}"
+        params.append(s)
+
+    # 6. Handle kwarg (**kwargs)
     if func_node.args.kwarg:
-        params.append(f"**{func_node.args.kwarg.arg}")
+        kwarg_str = f"**{func_node.args.kwarg.arg}"
+        if func_node.args.kwarg.annotation:
+            kwarg_str += f":{_ast_annotation_str(func_node.args.kwarg.annotation)}"
+        params.append(kwarg_str)
+
     return f"({', '.join(params)})"
 
 
@@ -246,39 +287,24 @@ def capture_mesh_interface_methods() -> dict[str, str]:
 def capture_top_level_exports() -> list[str]:
     """Capture top-level exports from main meshtastic package.
 
-    Returns a sorted list of exported names that don't start with underscore.
-    Ensures consistent capture by pre-importing modules that may be added
-    to namespace as side-effects during test collection.
+    Returns a sorted list of explicitly allowed public names to avoid
+    capturing incidental imports (Any, Callable, logging, tests).
     """
-    # Pre-import modules that may appear in namespace due to test side-effects
-    # This ensures consistent baseline between local and CI environments
-    import importlib
-
-    modules_to_preimport = [
-        "meshtastic.analysis",
-        "meshtastic.host_port",
-        "meshtastic.interfaces",
-        "meshtastic.ota",
-        "meshtastic.remote_hardware",
-        "meshtastic.slog",
-        "meshtastic.tcp_interface",
-        "meshtastic.test",
-        "meshtastic.tunnel",
+    # Explicit allowlist of intentional public exports
+    # This avoids capturing incidental imports from other modules
+    allowlist_public_names = [
+        "analysis",
+        "host_port",
+        "interfaces",
+        "ota",
+        "remote_hardware",
+        "slog",
+        "tcp_interface",
+        "test",
+        "tunnel",
     ]
-    for module_name in modules_to_preimport:
-        try:
-            importlib.import_module(module_name)
-        except ImportError:
-            pass
 
-    import meshtastic
-
-    exports = []
-    for name in dir(meshtastic):
-        if name.startswith("_"):
-            continue
-        exports.append(name)
-    return sorted(exports)
+    return sorted(allowlist_public_names)
 
 
 def capture_legacy_import_paths() -> list[str]:
@@ -334,7 +360,8 @@ def load_baseline() -> dict[str, Any] | None:
 def save_baseline(baseline_data: dict[str, Any]) -> None:
     """Save a baseline to disk."""
     BASELINE_DIR.mkdir(parents=True, exist_ok=True)
-    with open(BASELINE_FILE, "w", encoding="utf-8") as f:
+    target = get_baseline_file()
+    with open(target, "w", encoding="utf-8") as f:
         json.dump(baseline_data, f, indent=2, sort_keys=True)
 
 

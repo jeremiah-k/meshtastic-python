@@ -255,10 +255,18 @@ class TestBackwardCompatAliases:
 
         from meshtastic import mt_config
 
-        with warnings.catch_warnings(record=True):
+        with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             # Should be accessible (may warn)
-            _ = mt_config.tunnelInstance  # Deprecated camelCase alias
+            _ = mt_config.tunnelInstance  # Access the deprecated alias
+
+        # Verify deprecation warning was emitted
+        deprecation_warnings = [
+            x for x in w if issubclass(x.category, DeprecationWarning)
+        ]
+        assert len(deprecation_warnings) >= 1, (
+            "Expected DeprecationWarning for tunnelInstance"
+        )
 
     def test_node_snake_case_ringtone_aliases(self) -> None:
         """Test that snake_case ringtone methods exist on Node.
@@ -361,8 +369,9 @@ class TestModuleReimport:
 
     def test_reimport_meshtastic(self) -> None:
         """Test that meshtastic module can be reimported cleanly."""
-        importlib.reload(sys.modules["meshtastic"])
         import meshtastic
+
+        importlib.reload(meshtastic)
 
         assert meshtastic is not None
         assert hasattr(meshtastic, "Node")
