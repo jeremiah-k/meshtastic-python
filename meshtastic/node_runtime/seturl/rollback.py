@@ -212,7 +212,6 @@ class _SetUrlRollbackEngine:
             "for written channels and LoRa config.",
             exc_info=True,
         )
-        rollback_failed = False
         written_index_set = set(state.written_channel_indices)
         if plan.deferred_new_named_admin_index in written_index_set:
             rollback_admin_indexes = _orderedAdminIndexes(
@@ -241,10 +240,10 @@ class _SetUrlRollbackEngine:
             return plan.replace_original_channels_by_index.get(index)
 
         def do_channel_write(channel: object, admin_index: int) -> None:
-            self._node._write_channel_snapshot(
+            self._node._write_channel_snapshot(  # noqa: SLF001
                 channel,  # type: ignore[arg-type]
                 adminIndex=admin_index,
-            )  # noqa: SLF001
+            )
 
         rollback_failed = self._best_effort_rollback(
             rollback_admin_indexes=rollback_admin_indexes,

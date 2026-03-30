@@ -16,11 +16,7 @@ from meshtastic.node_runtime.seturl.coordinator import (
 )
 from meshtastic.node_runtime.seturl.execution import (
     _SetUrlAddOnlyExecutionState as _SetUrlAddOnlyExecutionState,
-)
-from meshtastic.node_runtime.seturl.execution import (
     _SetUrlExecutionEngine as _SetUrlExecutionEngine,
-)
-from meshtastic.node_runtime.seturl.execution import (
     _SetUrlReplaceExecutionState as _SetUrlReplaceExecutionState,
 )
 from meshtastic.node_runtime.seturl.helpers import (
@@ -29,7 +25,9 @@ from meshtastic.node_runtime.seturl.helpers import (
 from meshtastic.node_runtime.seturl.parser import (
     _SetUrlParsedInput as _SetUrlParsedInput,
 )
-from meshtastic.node_runtime.seturl.parser import _SetUrlParser as _SetUrlParser
+from meshtastic.node_runtime.seturl.parser import (
+    _SetUrlParser as _SetUrlParser,
+)
 from meshtastic.node_runtime.seturl.planner import (
     _SetUrlAddOnlyPlan as _SetUrlAddOnlyPlan,
 )

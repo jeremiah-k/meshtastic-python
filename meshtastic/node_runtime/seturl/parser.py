@@ -2,7 +2,6 @@
 
 import base64
 import binascii
-import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import NoReturn
@@ -10,8 +9,6 @@ from typing import NoReturn
 from google.protobuf.message import DecodeError
 
 from meshtastic.protobuf import apponly_pb2
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)

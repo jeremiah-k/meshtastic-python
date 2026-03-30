@@ -164,7 +164,7 @@ class _SetUrlExecutionEngine:
                 "Writing channel index=%s role=%s name=%s",
                 staged_channel.index,
                 self._safe_channel_role_name(staged_channel.role),
-                staged_channel.settings.name,
+                staged_channel.settings.name if staged_channel.settings else None,
             )
             self._node._write_channel_snapshot(  # noqa: SLF001
                 staged_channel,
@@ -200,7 +200,9 @@ class _SetUrlExecutionEngine:
                 self._safe_channel_role_name(
                     plan.deferred_new_named_admin_channel.role
                 ),
-                plan.deferred_new_named_admin_channel.settings.name,
+                plan.deferred_new_named_admin_channel.settings.name
+                if plan.deferred_new_named_admin_channel.settings
+                else None,
             )
             self._node._write_channel_snapshot(  # noqa: SLF001
                 plan.deferred_new_named_admin_channel,

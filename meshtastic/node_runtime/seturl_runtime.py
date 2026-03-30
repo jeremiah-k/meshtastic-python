@@ -19,6 +19,7 @@ from meshtastic.node_runtime.seturl import (  # noqa: F401
 )
 
 __all__ = [
+    "_channels_fingerprint",
     "_SetUrlAddOnlyExecutionState",
     "_SetUrlAddOnlyPlan",
     "_SetUrlAddOnlyPlanner",
@@ -32,5 +33,4 @@ __all__ = [
     "_SetUrlReplacePlanner",
     "_SetUrlRollbackEngine",
     "_SetUrlTransactionCoordinator",
-    "_channels_fingerprint",
 ]
