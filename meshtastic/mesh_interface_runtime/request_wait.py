@@ -20,9 +20,7 @@ WAIT_ATTR_TRACEROUTE: str = "receivedTraceRoute"
 WAIT_ATTR_WAYPOINT: str = "receivedWaypoint"
 WAIT_ATTR_NAK: str = "receivedNak"
 
-NO_RESPONSE_FIRMWARE_ERROR: str = (
-    "No response from node. At least firmware 2.1.22 is required on the destination node."
-)
+NO_RESPONSE_FIRMWARE_ERROR: str = "No response from node. At least firmware 2.1.22 is required on the destination node."
 RESPONSE_WAIT_REQID_ERROR: str = (
     "Internal error: response wait requires a positive packet id."
 )
@@ -325,9 +323,12 @@ class _RequestWaitRuntime:
                         wait_errors.pop((acknowledgment_attr, active_request_id), None)
                         wait_acks.discard((acknowledgment_attr, active_request_id))
                     active_wait_request_ids.pop(acknowledgment_attr, None)
+                    # Clean up scoped waits (request_id=None)
+                    wait_errors.pop(
+                        (acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID), None
+                    )
+                    wait_acks.discard((acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID))
                 self.prune_retired_wait_request_ids_locked(acknowledgment_attr)
-                wait_errors.pop((acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID), None)
-                wait_acks.discard((acknowledgment_attr, UNSCOPED_WAIT_REQUEST_ID))
         if request_id is None:
             setattr(self._get_acknowledgment(), acknowledgment_attr, False)
 

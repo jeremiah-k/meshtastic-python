@@ -169,10 +169,9 @@ def format_node_field(
     """
     # Defensive access for node["num"] to avoid KeyError on malformed dicts
     node_num = node.get("num")
-    if node_num is not None:
+    presumptive_id = "!00000000"
+    if isinstance(node_num, int):
         presumptive_id = f"!{node_num:08x}"
-    else:
-        presumptive_id = "!00000000"
 
     if col_name == "channel":
         if raw_value is None:

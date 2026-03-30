@@ -500,6 +500,8 @@ class NodeView:
         str | None
             The canned message text, or `None` if there is no local node or no canned message configured.
         """
+        if getattr(self, "_interface", None) is None:
+            return None
         node = self.localNode
         if node is not None:
             return node.get_canned_message()
@@ -513,6 +515,8 @@ class NodeView:
         str | None
             The ringtone name or identifier as a string, or None if the local node or ringtone is unavailable.
         """
+        if getattr(self, "_interface", None) is None:
+            return None
         node = self.localNode
         if node is not None:
             return node.get_ringtone()

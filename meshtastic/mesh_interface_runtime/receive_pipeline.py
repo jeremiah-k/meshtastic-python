@@ -139,14 +139,6 @@ class _PacketRuntimeContext:
     on_receive_callback: Callable[[Any, dict[str, Any]], Any] | None = None
 
 
-class MeshInterfaceError(Exception):
-    """An exception class for general mesh interface errors."""
-
-    def __init__(self, message: str) -> None:
-        self.message = message
-        super().__init__(self.message)
-
-
 class ReceivePipeline:
     """Receives and processes inbound packets from the radio.
 
@@ -513,11 +505,17 @@ class ReceivePipeline:
         from meshtastic import BROADCAST_NUM
 
         if nodeNum == BROADCAST_NUM:
-            raise MeshInterfaceError("Can not create/find nodenum by the broadcast num")
+            from meshtastic.mesh_interface import MeshInterface
+
+            raise MeshInterface.MeshInterfaceError(
+                "Can not create/find nodenum by the broadcast num"
+            )
 
         with self._node_db_lock:
             if self.nodesByNum is None:
-                raise MeshInterfaceError("Node database not initialized")
+                from meshtastic.mesh_interface import MeshInterface
+
+                raise MeshInterface.MeshInterfaceError("Node database not initialized")
 
             if nodeNum in self.nodesByNum:
                 return self.nodesByNum[nodeNum]
@@ -752,9 +750,9 @@ class ReceivePipeline:
                 DECODE_ERROR_KEY: decode_error
             }
             if handler.name == "routing":
-                packet_context.packet_dict["decoded"][handler.name][
-                    "errorReason"
-                ] = decode_error
+                packet_context.packet_dict["decoded"][handler.name]["errorReason"] = (
+                    decode_error
+                )
             if handler.name == "admin":
                 packet_context.skip_response_callback_for_decode_failure = True
 
