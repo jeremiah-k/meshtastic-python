@@ -25,6 +25,17 @@ if TYPE_CHECKING:
     from meshtastic.powermon.riden import RidenPowerSupply
     from meshtastic.powermon.stress import PowerStressClient
 
+
+def pytest_addoption(parser, pluginmanager):
+    """Add custom command line options for baseline tests."""
+    parser.addoption(
+        "--update-baselines",
+        action="store_true",
+        default=False,
+        help="Update stored API baselines to match current code",
+    )
+
+
 _MT_CONFIG_SENTINEL = object()
 _OPTIONAL_ANALYSIS_DEPS = {
     "dash",

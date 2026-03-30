@@ -7,9 +7,7 @@ import collections
 import copy
 import hashlib
 import logging
-import math
 import random
-import secrets
 import sys
 import threading
 import time
@@ -42,6 +40,13 @@ from meshtastic.mesh_interface_runtime.flows import (
     VALID_TELEMETRY_TYPE_SET,
     VALID_TELEMETRY_TYPES,
     TelemetryType,
+    delete_waypoint,
+    on_response_telemetry,
+    on_response_traceroute,
+    on_response_waypoint,
+    send_telemetry,
+    send_traceroute,
+    send_waypoint,
 )
 from meshtastic.mesh_interface_runtime.node_view import NodeView
 from meshtastic.mesh_interface_runtime.receive_pipeline import (
@@ -75,7 +80,6 @@ from meshtastic.protobuf import (
     mesh_pb2,
     module_config_pb2,
     portnums_pb2,
-    telemetry_pb2,
 )
 from meshtastic.util import (
     Acknowledgment,
@@ -1382,155 +1386,19 @@ class MeshInterface:  # pylint: disable=R0902
         MeshInterfaceError
             If waiting for traceroute responses times out or the operation fails.
         """
-        r = mesh_pb2.RouteDiscovery()
-        packet = self._send_data_with_wait(
-            r,
-            destinationId=dest,
-            portNum=portnums_pb2.PortNum.TRACEROUTE_APP,
-            wantResponse=True,
-            onResponse=self.onResponseTraceRoute,
-            channelIndex=channelIndex,
-            hopLimit=hopLimit,
-            response_wait_attr=WAIT_ATTR_TRACEROUTE,
+        return send_traceroute(
+            self._send_pipeline, dest, hopLimit, channelIndex=channelIndex
         )
-        with self._node_db_lock:
-            node_count = len(self.nodes) if self.nodes else 0
-        nodes_based_factor = (node_count - 1) if node_count else (hopLimit + 1)
-        waitFactor = max(1, min(nodes_based_factor, hopLimit + 1))
-        request_id = self._extract_request_id_from_sent_packet(packet)
-        if request_id is None:
-            raise self.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
-        self.waitForTraceRoute(waitFactor, request_id=request_id)
 
     def onResponseTraceRoute(self, p: dict[str, Any]) -> None:
         """Emit human-readable traceroute results from a RouteDiscovery payload.
-
-        Parses the RouteDiscovery protobuf found in p["decoded"]["payload"], emits a
-        forward route from the response destination back to the origin and, when
-        present, the traced return route back to this node. When INFO logging is
-        configured, the summaries are logged; otherwise they are printed to stdout
-        for backward compatibility.
 
         Parameters
         ----------
         p : dict[str, Any]
             The traceroute response packet.
-
-        Notes
-        -----
-        Emits formatted route strings and acknowledges waits via
-        `_mark_wait_acknowledged(WAIT_ATTR_TRACEROUTE, request_id=request_id)`.
-        For legacy unscoped callers, acknowledgement falls back to
-        `self._acknowledgment.receivedTraceRoute`.
         """
-        decoded = p["decoded"]
-        request_id = self._extract_request_id_from_packet(p)
-        if decoded.get("portnum") == portnums_pb2.PortNum.Name(
-            portnums_pb2.PortNum.ROUTING_APP
-        ):
-            self._record_routing_wait_error(
-                acknowledgment_attr=WAIT_ATTR_TRACEROUTE,
-                routing_error_reason=decoded.get("routing", {}).get("errorReason"),
-                request_id=request_id,
-            )
-            return
-
-        routeDiscovery = mesh_pb2.RouteDiscovery()
-        try:
-            routeDiscovery.ParseFromString(decoded["payload"])
-            asDict = google.protobuf.json_format.MessageToDict(routeDiscovery)
-        except (protobuf_message.DecodeError, KeyError, TypeError) as exc:
-            self._set_wait_error(
-                WAIT_ATTR_TRACEROUTE,
-                f"Failed to parse traceroute response payload: {exc}",
-                request_id=request_id,
-            )
-            return
-
-        def _node_label(node_num: int) -> str:
-            """Return a human-readable identifier for a numeric node.
-
-            Parameters
-            ----------
-            node_num : int
-                Numeric node identifier.
-
-            Returns
-            -------
-            str
-                The node's ID string if known; otherwise the node number formatted as an 8-digit lowercase hexadecimal string.
-            """
-            return self._node_num_to_id(node_num, False) or f"{node_num:08x}"
-
-        def _format_snr(snr_value: int | None) -> str:
-            """Format an SNR value encoded in quarter-dB units into a human-readable string.
-
-            Parameters
-            ----------
-            snr_value : int | None
-                SNR expressed as an integer number of quarter dB units,
-                or `None`/`UNKNOWN_SNR_QUARTER_DB` to indicate an unknown value.
-
-            Returns
-            -------
-            str
-                Formatted SNR in dB as a string (for example, "7.5"), or "?" when the SNR is unknown.
-            """
-            return (
-                str(snr_value / 4)
-                if snr_value is not None and snr_value != UNKNOWN_SNR_QUARTER_DB
-                else "?"
-            )
-
-        def _append_hop(route_text: str, node_num: int, snr_text: str) -> str:
-            """Append a hop description to an existing route string.
-
-            Parameters
-            ----------
-            route_text : str
-                Current route representation.
-            node_num : int
-                Numeric node identifier to convert to a human-readable label.
-            snr_text : str
-                Signal-to-noise ratio value as text (without units).
-
-            Returns
-            -------
-            str
-                The route string with " --> <node_label> (<snr_text>dB)" appended.
-            """
-            return f"{route_text} --> {_node_label(node_num)} ({snr_text}dB)"
-
-        route_towards = asDict.get("route", [])
-        snr_towards = asDict.get("snrTowards", [])
-        snr_towards_valid = len(snr_towards) == len(route_towards) + 1
-
-        _emit_response_summary("Route traced towards destination:")
-        routeStr = _node_label(p["to"])  # Start with destination of response
-        for idx, nodeNum in enumerate(route_towards):  # Add intermediate hops
-            hop_snr = _format_snr(snr_towards[idx]) if snr_towards_valid else "?"
-            routeStr = _append_hop(routeStr, nodeNum, hop_snr)
-        final_towards_snr = _format_snr(snr_towards[-1]) if snr_towards_valid else "?"
-        routeStr = _append_hop(routeStr, p["from"], final_towards_snr)
-
-        _emit_response_summary(routeStr)
-
-        # Only if hopStart is set and there is an SNR entry (for the origin) it's valid, even though route might be empty (direct connection)
-        route_back = asDict.get("routeBack", [])
-        snr_back = asDict.get("snrBack", [])
-        backValid = "hopStart" in p and len(snr_back) == len(route_back) + 1
-        if backValid:
-            _emit_response_summary("Route traced back to us:")
-            routeStr = _node_label(p["from"])  # Start with origin of response
-            for idx, nodeNum in enumerate(route_back):  # Add intermediate hops
-                routeStr = _append_hop(routeStr, nodeNum, _format_snr(snr_back[idx]))
-            routeStr = _append_hop(routeStr, p["to"], _format_snr(snr_back[-1]))
-            _emit_response_summary(routeStr)
-
-        self._mark_wait_acknowledged(
-            WAIT_ATTR_TRACEROUTE,
-            request_id=request_id,
-        )
+        on_response_traceroute(self._send_pipeline, p)
 
     def sendTelemetry(
         self,
@@ -1557,221 +1425,34 @@ class MeshInterface:  # pylint: disable=R0902
         hopLimit : int | None
             Optional hop limit override for the outgoing packet. (Default value = None)
         """
-        normalized_telemetry_type: TelemetryType | str = telemetryType
-        if normalized_telemetry_type not in VALID_TELEMETRY_TYPE_SET:
-            logger.warning(
-                "Unsupported telemetryType '%s' is deprecated. "
-                "Supported values: %s. "
-                "Falling back to '%s'. "
-                "This will raise an error in a future version.",
-                normalized_telemetry_type,
-                sorted(VALID_TELEMETRY_TYPES),
-                DEFAULT_TELEMETRY_TYPE,
-                stacklevel=2,
-            )
-            normalized_telemetry_type = DEFAULT_TELEMETRY_TYPE
-        r = telemetry_pb2.Telemetry()
-
-        if normalized_telemetry_type == "environment_metrics":
-            r.environment_metrics.CopyFrom(telemetry_pb2.EnvironmentMetrics())
-        elif normalized_telemetry_type == "air_quality_metrics":
-            r.air_quality_metrics.CopyFrom(telemetry_pb2.AirQualityMetrics())
-        elif normalized_telemetry_type == "power_metrics":
-            r.power_metrics.CopyFrom(telemetry_pb2.PowerMetrics())
-        elif normalized_telemetry_type == "local_stats":
-            r.local_stats.CopyFrom(telemetry_pb2.LocalStats())
-        elif normalized_telemetry_type == DEFAULT_TELEMETRY_TYPE:
-            with self._node_db_lock:
-                node = (
-                    self.nodesByNum.get(self.localNode.nodeNum)
-                    if self.nodesByNum is not None
-                    else None
-                )
-                if node is not None:
-                    metrics = node.get("deviceMetrics")
-                    if metrics:
-                        batteryLevel = metrics.get("batteryLevel")
-                        if batteryLevel is not None:
-                            r.device_metrics.battery_level = batteryLevel
-                        voltage = metrics.get("voltage")
-                        if voltage is not None:
-                            r.device_metrics.voltage = voltage
-                        channel_utilization = metrics.get("channelUtilization")
-                        if channel_utilization is not None:
-                            r.device_metrics.channel_utilization = channel_utilization
-                        air_util_tx = metrics.get("airUtilTx")
-                        if air_util_tx is not None:
-                            r.device_metrics.air_util_tx = air_util_tx
-                        uptime_seconds = metrics.get("uptimeSeconds")
-                        if uptime_seconds is not None:
-                            r.device_metrics.uptime_seconds = uptime_seconds
-
-        if wantResponse:
-            onResponse = self.onResponseTelemetry
-            response_wait_attr = WAIT_ATTR_TELEMETRY
-        else:
-            onResponse = None
-            response_wait_attr = None
-
-        packet = self._send_data_with_wait(
-            r,
+        return send_telemetry(
+            self._send_pipeline,
             destinationId=destinationId,
-            portNum=portnums_pb2.PortNum.TELEMETRY_APP,
             wantResponse=wantResponse,
-            onResponse=onResponse,
             channelIndex=channelIndex,
+            telemetryType=telemetryType,
             hopLimit=hopLimit,
-            response_wait_attr=response_wait_attr,
         )
-        if wantResponse:
-            request_id = self._extract_request_id_from_sent_packet(packet)
-            if request_id is None:
-                raise self.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
-            self.waitForTelemetry(request_id=request_id)
 
     def onResponseTelemetry(self, p: dict[str, Any]) -> None:
         """Handle an incoming telemetry response: mark telemetry as received and emit human-readable telemetry values.
 
-        This inspects p["decoded"]["portnum"] and:
-        - For TELEMETRY_APP: parses the Telemetry payload, sets the telemetry-received flag on the interface,
-          and emits device metrics (battery, voltage, channel/air utilization, uptime) when present;
-          for non-device_metrics telemetry, emits top-level keys and their subfields except the protobuf 'time' field.
-          When INFO logging is configured, the summaries are logged; otherwise they are
-          printed to stdout for backward compatibility.
-        - For ROUTING_APP: records routing failures into shared wait state so
-          `waitForTelemetry()` can surface the failure to callers.
-
         Parameters
         ----------
         p : dict[str, Any]
-            Decoded packet dictionary produced by _handle_packet_from_radio. Must contain "decoded"
-            with a "portnum" string and either a "payload" (Telemetry protobuf bytes) for TELEMETRY_APP
-            or a "routing" mapping for ROUTING_APP.
-
+            Decoded packet dictionary produced by _handle_packet_from_radio.
         """
-        request_id = self._extract_request_id_from_packet(p)
-        if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
-            portnums_pb2.PortNum.TELEMETRY_APP
-        ):
-            telemetry = telemetry_pb2.Telemetry()
-            try:
-                telemetry.ParseFromString(p["decoded"]["payload"])
-            except (KeyError, TypeError, protobuf_message.DecodeError) as exc:
-                self._set_wait_error(
-                    WAIT_ATTR_TELEMETRY,
-                    f"Failed to parse telemetry response payload: {exc}",
-                    request_id=request_id,
-                )
-                return
-            try:
-                _emit_response_summary("Telemetry received:")
-                # Check if the telemetry message has the device_metrics field
-                # This is the original code that was the default for --request-telemetry and is kept for compatibility
-                if telemetry.HasField("device_metrics"):
-                    device_metrics_fields = {
-                        field.name for field, _ in telemetry.device_metrics.ListFields()
-                    }
-                    if "battery_level" in device_metrics_fields:
-                        _emit_response_summary(
-                            f"Battery level: {telemetry.device_metrics.battery_level:.2f}%"
-                        )
-                    if "voltage" in device_metrics_fields:
-                        _emit_response_summary(
-                            f"Voltage: {telemetry.device_metrics.voltage:.2f} V"
-                        )
-                    if "channel_utilization" in device_metrics_fields:
-                        _emit_response_summary(
-                            "Total channel utilization: "
-                            f"{telemetry.device_metrics.channel_utilization:.2f}%"
-                        )
-                    if "air_util_tx" in device_metrics_fields:
-                        _emit_response_summary(
-                            f"Transmit air utilization: {telemetry.device_metrics.air_util_tx:.2f}%"
-                        )
-                    if "uptime_seconds" in device_metrics_fields:
-                        _emit_response_summary(
-                            f"Uptime: {telemetry.device_metrics.uptime_seconds} s"
-                        )
-                else:
-                    # this is the new code if --request-telemetry <type> is used.
-                    telemetry_dict = google.protobuf.json_format.MessageToDict(
-                        telemetry
-                    )
-                    for key, value in telemetry_dict.items():
-                        if (
-                            key != "time"
-                        ):  # protobuf includes a time field that we don't emit for device_metrics.
-                            if isinstance(value, dict):
-                                _emit_response_summary(f"{key}:")
-                                for sub_key, sub_value in value.items():
-                                    _emit_response_summary(f"  {sub_key}: {sub_value}")
-                            else:
-                                _emit_response_summary(f"{key}: {value}")
-            except Exception as exc:  # noqa: BLE001
-                self._set_wait_error(
-                    WAIT_ATTR_TELEMETRY,
-                    f"Failed to format telemetry response: {exc}",
-                    request_id=request_id,
-                )
-                return
-            self._mark_wait_acknowledged(
-                WAIT_ATTR_TELEMETRY,
-                request_id=request_id,
-            )
-
-        elif p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
-            portnums_pb2.PortNum.ROUTING_APP
-        ):
-            self._record_routing_wait_error(
-                acknowledgment_attr=WAIT_ATTR_TELEMETRY,
-                routing_error_reason=p["decoded"].get("routing", {}).get("errorReason"),
-                request_id=request_id,
-            )
+        on_response_telemetry(self._send_pipeline, p)
 
     def onResponseWaypoint(self, p: dict[str, Any]) -> None:
         """Handle a waypoint response or routing error contained in a received packet.
 
-        When the packet's port is WAYPOINT_APP, parse the Waypoint protobuf from
-        decoded['payload'], mark the waypoint acknowledgment as received, and emit
-        the waypoint. When INFO logging is configured, the summary is logged;
-        otherwise it is printed to stdout for backward compatibility. Routing
-        errors are recorded into shared wait state so `waitForWaypoint()`
-        surfaces them directly.
-
         Parameters
         ----------
         p : dict[str, Any]
-            Packet dictionary containing a 'decoded' mapping. Expected keys include
-            'portnum' (str) and, for WAYPOINT_APP, 'payload' (bytes) with a serialized Waypoint.
-
+            Packet dictionary containing a 'decoded' mapping.
         """
-        request_id = self._extract_request_id_from_packet(p)
-        if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
-            portnums_pb2.PortNum.WAYPOINT_APP
-        ):
-            w = mesh_pb2.Waypoint()
-            try:
-                w.ParseFromString(p["decoded"]["payload"])
-            except (KeyError, TypeError, protobuf_message.DecodeError) as exc:
-                self._set_wait_error(
-                    WAIT_ATTR_WAYPOINT,
-                    f"Failed to parse waypoint response payload: {exc}",
-                    request_id=request_id,
-                )
-                return
-            _emit_response_summary(f"Waypoint received: {w}")
-            self._mark_wait_acknowledged(
-                WAIT_ATTR_WAYPOINT,
-                request_id=request_id,
-            )
-        elif p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
-            portnums_pb2.PortNum.ROUTING_APP
-        ):
-            self._record_routing_wait_error(
-                acknowledgment_attr=WAIT_ATTR_WAYPOINT,
-                routing_error_reason=p["decoded"].get("routing", {}).get("errorReason"),
-                request_id=request_id,
-            )
+        on_response_waypoint(self._send_pipeline, p)
 
     def sendWaypoint(  # pylint: disable=R0913
         self,
@@ -1822,48 +1503,21 @@ class MeshInterface:  # pylint: disable=R0902
         mesh_pb2.MeshPacket
             The MeshPacket that was sent; its `id` is populated for tracking.
         """
-        w = mesh_pb2.Waypoint()
-        w.name = name
-        w.description = description
-        w.icon = int(icon)
-        w.expire = expire
-        if waypoint_id is None:
-            seed = secrets.randbits(32)
-            w.id = math.floor(seed * math.pow(2, -32) * 1e9)
-            logger.debug("w.id:%s", w.id)
-        else:
-            w.id = waypoint_id
-        if latitude != 0.0:
-            w.latitude_i = int(latitude * 1e7)
-            logger.debug("w.latitude_i:%s", w.latitude_i)
-        if longitude != 0.0:
-            w.longitude_i = int(longitude * 1e7)
-            logger.debug("w.longitude_i:%s", w.longitude_i)
-
-        if wantResponse:
-            onResponse = self.onResponseWaypoint
-            response_wait_attr = WAIT_ATTR_WAYPOINT
-        else:
-            onResponse = None
-            response_wait_attr = None
-
-        d = self._send_data_with_wait(
-            w,
-            destinationId,
-            portNum=portnums_pb2.PortNum.WAYPOINT_APP,
+        return send_waypoint(
+            self._send_pipeline,
+            name=name,
+            description=description,
+            icon=icon,
+            expire=expire,
+            waypoint_id=waypoint_id,
+            latitude=latitude,
+            longitude=longitude,
+            destinationId=destinationId,
             wantAck=wantAck,
             wantResponse=wantResponse,
-            onResponse=onResponse,
             channelIndex=channelIndex,
             hopLimit=hopLimit,
-            response_wait_attr=response_wait_attr,
         )
-        if wantResponse:
-            request_id = self._extract_request_id_from_sent_packet(d)
-            if request_id is None:
-                raise self.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
-            self.waitForWaypoint(request_id=request_id)
-        return d
 
     def deleteWaypoint(
         self,
@@ -1896,34 +1550,15 @@ class MeshInterface:  # pylint: disable=R0902
         mesh_pb2.MeshPacket
             The MeshPacket that was sent; its `id` field is populated and can be used to track acknowledgements.
         """
-        p = mesh_pb2.Waypoint()
-        p.id = waypoint_id
-        p.expire = 0
-
-        if wantResponse:
-            onResponse = self.onResponseWaypoint
-            response_wait_attr = WAIT_ATTR_WAYPOINT
-        else:
-            onResponse = None
-            response_wait_attr = None
-
-        d = self._send_data_with_wait(
-            p,
-            destinationId,
-            portNum=portnums_pb2.PortNum.WAYPOINT_APP,
+        return delete_waypoint(
+            self._send_pipeline,
+            waypoint_id=waypoint_id,
+            destinationId=destinationId,
             wantAck=wantAck,
             wantResponse=wantResponse,
-            onResponse=onResponse,
             channelIndex=channelIndex,
             hopLimit=hopLimit,
-            response_wait_attr=response_wait_attr,
         )
-        if wantResponse:
-            request_id = self._extract_request_id_from_sent_packet(d)
-            if request_id is None:
-                raise self.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
-            self.waitForWaypoint(request_id=request_id)
-        return d
 
     def waitForConfig(self) -> None:
         """Block until the radio configuration and the local node's configuration are available.

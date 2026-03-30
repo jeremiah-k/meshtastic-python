@@ -25,6 +25,64 @@ If a compatibility symbol is not listed here, do not add or keep it by default.
 - `INTERNAL_COMPAT`: compatibility entrypoint intentionally retained for
   integrations, but not considered public API growth.
 
+## Runtime Import Compatibility
+
+This section documents the stability guarantees for runtime decomposition modules
+(`mesh_interface_runtime`, `node_runtime`). These modules contain internal
+implementation details that are NOT part of the public stable API.
+
+### Stability Categories
+
+1. **Public Stable API** - Guaranteed stable, use for production code:
+   - `meshtastic.Node` → from `meshtastic.node`
+   - `meshtastic.MeshInterface` → from `meshtastic.mesh_interface`
+   - `meshtastic.BROADCAST_ADDR`, `meshtastic.LOCAL_ADDR`
+
+2. **Runtime Modules** - Internal implementation, NOT guaranteed stable:
+   - `meshtastic.mesh_interface_runtime.*` - Internal runtime decomposition
+   - `meshtastic.node_runtime.*` - Internal runtime decomposition
+   - These modules may change without deprecation warnings
+
+3. **Compatibility Exports** - Specific exports retained for mocking/testing:
+   - `meshtastic.node_runtime.settings_runtime.toNodeNum` - For test mocking compatibility
+   - Documented individually below
+
+4. **Private Internals** - Underscore-prefixed, NOT guaranteed stable:
+   - Any symbol starting with `_` (e.g., `_NodeSettingsRuntime`)
+   - May change at any time without notice
+   - Do not import directly in production code
+
+### Documented Runtime Compatibility Exports
+
+The following specific exports from runtime modules are retained for
+test ecosystem compatibility. These are the ONLY runtime imports with
+stability guarantees:
+
+| Module Path | Export | Purpose | Status |
+|-------------|--------|---------|--------|
+| `meshtastic.node_runtime.settings_runtime` | `toNodeNum` | Test mocking compatibility | `COMPAT_STABLE_SHIM` |
+
+### Policy for External Test Authors
+
+If you need to mock or patch Meshtastic internals in your tests:
+
+1. **Prefer public API** - Mock at the public API level when possible
+2. **Use documented compatibility exports** - Only these are guaranteed stable
+3. **Accept breakage risk** - Importing underscore-prefixed internals may break in any release
+4. **Open an issue** - If you need a specific internal for mocking, request it be added as `INTERNAL_COMPAT`
+
+### Import Stability Matrix
+
+```
+meshtastic.Node                           STABLE (public API)
+meshtastic.mesh_interface.MeshInterface     STABLE (public API)
+meshtastic.node_runtime.settings_runtime.toNodeNum    COMPAT (testing)
+meshtastic.node_runtime.settings_runtime._NodeSettingsRuntime   INTERNAL (may change)
+meshtastic.mesh_interface_runtime._RequestWaitRuntime           INTERNAL (may change)
+```
+
+---
+
 ## Authoritative Baselines
 
 - BLE historical baseline tag: `2.7.7`
@@ -143,6 +201,18 @@ compatibility/patching and are not recommended public surface.
 | `meshtastic.__main__` | `_PREFERENCE_FIELD_ALIASES` legacy keys | canonical protobuf preference names    |
 | `meshtastic.version`  | `get_active_version()`                  | `getActiveVersion()`                   |
 | `meshtastic.test`     | `subscribe()`                           | `subscribeToNodeUpdates()`             |
+
+### Runtime Module Compatibility Exports
+
+The following runtime module exports are explicitly retained for test ecosystem
+compatibility. These are the ONLY runtime module imports with stability guarantees:
+
+| Module                                        | Compatibility symbol | Canonical symbol | Notes                                               |
+| --------------------------------------------- | ------------------ | ---------------- | --------------------------------------------------- |
+| `meshtastic.node_runtime.settings_runtime`    | `toNodeNum`        | `util.toNodeNum` | Test mocking compatibility. COMPAT_STABLE_SHIM.     |
+
+All other runtime module internals (especially underscore-prefixed) are NOT
+considered stable API and may change without deprecation warnings.
 
 `_PREFERENCE_FIELD_ALIASES` currently normalizes:
 

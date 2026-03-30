@@ -1,4 +1,15 @@
-"""Internal mesh-interface runtime decomposition modules."""
+"""Internal mesh-interface runtime decomposition modules.
+
+This package contains internal runtime components for MeshInterface.
+These are implementation details and NOT part of the stable public API.
+Imports from this package are not guaranteed to remain stable across versions.
+
+Re-export Policy:
+- __all__ is intentionally minimal as all internal code imports directly
+  from submodules (e.g., `from .flows import TelemetryType`)
+- Underscore-prefixed symbols are never exported
+- No stability guarantees for symbols in this package
+"""
 
 from .flows import (
     DEFAULT_TELEMETRY_TYPE,
@@ -8,15 +19,10 @@ from .flows import (
 )
 from .node_view import NodeView
 from .receive_pipeline import ReceivePipeline
-from .request_wait import _RequestWaitRuntime
 from .send_pipeline import PayloadData, SendPipeline
 
 __all__ = [
-    "NodeView",
-    "ReceivePipeline",
-    "SendPipeline",
-    "PayloadData",
-    "_RequestWaitRuntime",
+    # Telemetry types and constants - used by mesh_interface.py
     "TelemetryType",
     "DEFAULT_TELEMETRY_TYPE",
     "VALID_TELEMETRY_TYPES",

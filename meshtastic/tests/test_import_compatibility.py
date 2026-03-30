@@ -119,34 +119,21 @@ class TestBLEImports:
 
 
 class TestNodeRuntimeImports:
-    """Test node runtime module imports.
+    """Test node runtime module compatibility exports.
 
-    Note: The node_runtime modules primarily export underscore-prefixed internal
-    classes. These are internal implementation details and may change.
+    The node_runtime modules contain internal implementation details.
+    Only explicitly documented compatibility exports (like toNodeNum) are
+    guaranteed stable. Underscore-prefixed internals may change without notice.
+
+    Reference: COMPATIBILITY.md "Runtime Import Compatibility" section.
     """
 
-    def test_node_settings_runtime_internal_import(self) -> None:
-        """Test that _NodeSettingsRuntime can be imported from settings_runtime."""
-        from meshtastic.node_runtime.settings_runtime import _NodeSettingsRuntime
-
-        assert _NodeSettingsRuntime is not None
-        assert isinstance(_NodeSettingsRuntime, type)
-
-    def test_node_admin_command_runtime_import(self) -> None:
-        """Test that _NodeAdminCommandRuntime can be imported from settings_runtime."""
-        from meshtastic.node_runtime.settings_runtime import _NodeAdminCommandRuntime
-
-        assert _NodeAdminCommandRuntime is not None
-        assert isinstance(_NodeAdminCommandRuntime, type)
-
-    def test_node_settings_message_builder_import(self) -> None:
-        """Test that _NodeSettingsMessageBuilder can be imported from settings_runtime."""
-        from meshtastic.node_runtime.settings_runtime import _NodeSettingsMessageBuilder
-
-        assert _NodeSettingsMessageBuilder is not None
-
     def test_to_node_num_export_from_settings_runtime(self) -> None:
-        """Test that toNodeNum is exported from settings_runtime for mocking compatibility."""
+        """Test that toNodeNum is exported from settings_runtime for mocking compatibility.
+
+        This is a COMPAT_STABLE_SHIM explicitly maintained for test ecosystem
+        compatibility. Documented in COMPATIBILITY.md.
+        """
         from meshtastic.node_runtime.settings_runtime import toNodeNum
 
         assert toNodeNum is not None
