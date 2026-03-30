@@ -24,6 +24,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import meshtastic.mesh_interface as mesh_interface_module
+from meshtastic.mesh_interface_runtime import flows as flows_module
 from meshtastic.mesh_interface_runtime.request_wait import (
     UNSCOPED_WAIT_REQUEST_ID,
     WAIT_ATTR_NAK,
@@ -2073,7 +2074,7 @@ def test_on_response_position_success_and_routing_error(
             acknowledgment_attr=mesh_interface_module.WAIT_ATTR_POSITION,
             request_id=1001,
         )
-        with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
+        with caplog.at_level(logging.INFO, logger=flows_module.__name__):
             iface.onResponsePosition(
                 {
                     "decoded": {
@@ -2105,7 +2106,7 @@ def test_on_response_position_success_and_routing_error(
             request_id=1002,
         )
         caplog.clear()
-        with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
+        with caplog.at_level(logging.INFO, logger=flows_module.__name__):
             iface.onResponsePosition(
                 {
                     "decoded": {
@@ -2137,7 +2138,7 @@ def test_on_response_position_success_and_routing_error(
             request_id=1003,
         )
         caplog.clear()
-        with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
+        with caplog.at_level(logging.INFO, logger=flows_module.__name__):
             iface.onResponsePosition(
                 {
                     "decoded": {
@@ -2362,12 +2363,16 @@ def test_send_traceroute_and_response_rendering(
         response_packet.id = 88
         send_data = MagicMock(return_value=response_packet)
         wait_for_traceroute = MagicMock()
-        real_wait_for_traceroute = iface.waitForTraceRoute
-        monkeypatch.setattr(iface, "_send_data_with_wait", send_data)
-        monkeypatch.setattr(iface, "waitForTraceRoute", wait_for_traceroute)
+        real_wait_for_traceroute = iface._send_pipeline.waitForTraceRoute
+        monkeypatch.setattr(iface._send_pipeline, "_send_data_with_wait", send_data)
+        monkeypatch.setattr(
+            iface._send_pipeline, "waitForTraceRoute", wait_for_traceroute
+        )
         iface.sendTraceRoute(dest=123, hopLimit=3, channelIndex=1)
         wait_for_traceroute.assert_called_once_with(2, request_id=88)
-        monkeypatch.setattr(iface, "waitForTraceRoute", real_wait_for_traceroute)
+        monkeypatch.setattr(
+            iface._send_pipeline, "waitForTraceRoute", real_wait_for_traceroute
+        )
 
         route = mesh_pb2.RouteDiscovery()
         route.route.extend([11])
@@ -2385,7 +2390,7 @@ def test_send_traceroute_and_response_rendering(
             acknowledgment_attr=mesh_interface_module.WAIT_ATTR_TRACEROUTE,
             request_id=88,
         )
-        with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
+        with caplog.at_level(logging.INFO, logger=flows_module.__name__):
             iface.onResponseTraceRoute(
                 {
                     "decoded": {"payload": route.SerializeToString(), "requestId": 88},
@@ -2495,9 +2500,13 @@ def test_send_telemetry_supported_and_fallback_paths(
             telemetry_calls.append((payload, kwargs))
             return mesh_pb2.MeshPacket(id=len(telemetry_calls))
 
-        monkeypatch.setattr(iface, "_send_data_with_wait", _capture_telemetry_send)
+        monkeypatch.setattr(
+            iface._send_pipeline, "_send_data_with_wait", _capture_telemetry_send
+        )
         wait_for_telemetry = MagicMock()
-        monkeypatch.setattr(iface, "waitForTelemetry", wait_for_telemetry)
+        monkeypatch.setattr(
+            iface._send_pipeline, "waitForTelemetry", wait_for_telemetry
+        )
 
         iface.sendTelemetry(telemetryType="environment_metrics")
         iface.sendTelemetry(telemetryType="air_quality_metrics")
@@ -2542,7 +2551,7 @@ def test_on_response_telemetry_paths(
             acknowledgment_attr=mesh_interface_module.WAIT_ATTR_TELEMETRY,
             request_id=2001,
         )
-        with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
+        with caplog.at_level(logging.INFO, logger=flows_module.__name__):
             iface.onResponseTelemetry(
                 {
                     "decoded": {
@@ -2574,7 +2583,7 @@ def test_on_response_telemetry_paths(
             request_id=2002,
         )
         caplog.clear()
-        with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
+        with caplog.at_level(logging.INFO, logger=flows_module.__name__):
             iface.onResponseTelemetry(
                 {
                     "decoded": {
@@ -2666,7 +2675,7 @@ def test_on_response_waypoint_paths(caplog: pytest.LogCaptureFixture) -> None:
             acknowledgment_attr=mesh_interface_module.WAIT_ATTR_WAYPOINT,
             request_id=3001,
         )
-        with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
+        with caplog.at_level(logging.INFO, logger=flows_module.__name__):
             iface.onResponseWaypoint(
                 {
                     "decoded": {
@@ -2793,7 +2802,7 @@ def test_send_and_delete_waypoint_response_paths(
     sent_payloads: list[mesh_pb2.Waypoint] = []
     with MeshInterface(noProto=True) as iface:
         wait_for_waypoint = MagicMock()
-        monkeypatch.setattr(iface, "waitForWaypoint", wait_for_waypoint)
+        monkeypatch.setattr(iface._send_pipeline, "waitForWaypoint", wait_for_waypoint)
 
         def _capture_send_data(
             payload: mesh_pb2.Waypoint, *_args: Any, **_kwargs: Any
@@ -2801,9 +2810,11 @@ def test_send_and_delete_waypoint_response_paths(
             sent_payloads.append(payload)
             return mesh_pb2.MeshPacket(id=len(sent_payloads))
 
-        monkeypatch.setattr(iface, "_send_data_with_wait", _capture_send_data)
         monkeypatch.setattr(
-            mesh_interface_module.secrets,  # type: ignore[attr-defined]
+            iface._send_pipeline, "_send_data_with_wait", _capture_send_data
+        )
+        monkeypatch.setattr(
+            flows_module.secrets,  # type: ignore[attr-defined]
             "randbits",
             lambda _n: (1 << 32) - 1,
         )
@@ -3122,7 +3133,7 @@ def test_send_methods_pass_request_id_to_wait_helpers(
         wait_for_telemetry = MagicMock()
         wait_for_waypoint = MagicMock()
         monkeypatch.setattr(
-            iface,
+            iface._send_pipeline,
             "_send_data_with_wait",
             MagicMock(
                 side_effect=[
@@ -3134,10 +3145,14 @@ def test_send_methods_pass_request_id_to_wait_helpers(
                 ]
             ),
         )
-        monkeypatch.setattr(iface, "waitForPosition", wait_for_position)
-        monkeypatch.setattr(iface, "waitForTraceRoute", wait_for_traceroute)
-        monkeypatch.setattr(iface, "waitForTelemetry", wait_for_telemetry)
-        monkeypatch.setattr(iface, "waitForWaypoint", wait_for_waypoint)
+        monkeypatch.setattr(iface._send_pipeline, "waitForPosition", wait_for_position)
+        monkeypatch.setattr(
+            iface._send_pipeline, "waitForTraceRoute", wait_for_traceroute
+        )
+        monkeypatch.setattr(
+            iface._send_pipeline, "waitForTelemetry", wait_for_telemetry
+        )
+        monkeypatch.setattr(iface._send_pipeline, "waitForWaypoint", wait_for_waypoint)
 
         iface.sendPosition(wantResponse=True)
         iface.sendTraceRoute(dest=123, hopLimit=3)
@@ -3304,7 +3319,7 @@ def test_on_response_telemetry_logs_all_device_metric_fields(
         telemetry.device_metrics.channel_utilization = 12.5
         telemetry.device_metrics.air_util_tx = 4.5
         telemetry.device_metrics.uptime_seconds = 321
-        with caplog.at_level(logging.INFO, logger=mesh_interface_module.__name__):
+        with caplog.at_level(logging.INFO, logger=flows_module.__name__):
             iface.onResponseTelemetry(
                 {
                     "decoded": {

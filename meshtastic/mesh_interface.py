@@ -41,9 +41,11 @@ from meshtastic.mesh_interface_runtime.flows import (
     VALID_TELEMETRY_TYPES,
     TelemetryType,
     delete_waypoint,
+    on_response_position,
     on_response_telemetry,
     on_response_traceroute,
     on_response_waypoint,
+    send_position,
     send_telemetry,
     send_traceroute,
     send_waypoint,
@@ -1123,43 +1125,17 @@ class MeshInterface:  # pylint: disable=R0902
         mesh_pb2.MeshPacket
             The sent packet with its `id` populated.
         """
-        p = mesh_pb2.Position()
-        if latitude != 0.0:
-            p.latitude_i = int(latitude / 1e-7)
-            logger.debug("p.latitude_i:%s", p.latitude_i)
-
-        if longitude != 0.0:
-            p.longitude_i = int(longitude / 1e-7)
-            logger.debug("p.longitude_i:%s", p.longitude_i)
-
-        if altitude != 0:
-            p.altitude = int(altitude)
-            logger.debug("p.altitude:%s", p.altitude)
-
-        if wantResponse:
-            onResponse = self.onResponsePosition
-            response_wait_attr = WAIT_ATTR_POSITION
-        else:
-            onResponse = None
-            response_wait_attr = None
-
-        d = self._send_data_with_wait(
-            p,
-            destinationId,
-            portNum=portnums_pb2.PortNum.POSITION_APP,
+        return send_position(
+            self._send_pipeline,
+            latitude=latitude,
+            longitude=longitude,
+            altitude=altitude,
+            destinationId=destinationId,
             wantAck=wantAck,
             wantResponse=wantResponse,
-            onResponse=onResponse,
             channelIndex=channelIndex,
             hopLimit=hopLimit,
-            response_wait_attr=response_wait_attr,
         )
-        if wantResponse:
-            request_id = self._extract_request_id_from_sent_packet(d)
-            if request_id is None:
-                raise self.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
-            self.waitForPosition(request_id=request_id)
-        return d
 
     @staticmethod
     def _extract_request_id_from_packet(packet: dict[str, Any]) -> int | None:
@@ -1316,52 +1292,7 @@ class MeshInterface:  # pylint: disable=R0902
             the nested `decoded["routing"]["errorReason"]` may be present.
 
         """
-        request_id = self._extract_request_id_from_packet(p)
-        if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
-            portnums_pb2.PortNum.POSITION_APP
-        ):
-            position = mesh_pb2.Position()
-            try:
-                position.ParseFromString(p["decoded"]["payload"])
-            except (KeyError, TypeError, protobuf_message.DecodeError) as exc:
-                self._set_wait_error(
-                    WAIT_ATTR_POSITION,
-                    f"Failed to parse position response payload: {exc}",
-                    request_id=request_id,
-                )
-                return
-
-            ret = "Position received: "
-            if position.latitude_i != 0 and position.longitude_i != 0:
-                ret += (
-                    f"({position.latitude_i * 10**-7}, {position.longitude_i * 10**-7})"
-                )
-            else:
-                ret += "(unknown)"
-            if position.altitude != 0:
-                ret += f" {position.altitude}m"
-
-            if position.precision_bits not in (0, 32):
-                ret += f" precision:{position.precision_bits}"
-            elif position.precision_bits == 32:
-                ret += " full precision"
-            elif position.precision_bits == 0:
-                ret += " position disabled"
-
-            _emit_response_summary(ret)
-            self._mark_wait_acknowledged(
-                WAIT_ATTR_POSITION,
-                request_id=request_id,
-            )
-
-        elif p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
-            portnums_pb2.PortNum.ROUTING_APP
-        ):
-            self._record_routing_wait_error(
-                acknowledgment_attr=WAIT_ATTR_POSITION,
-                routing_error_reason=p["decoded"].get("routing", {}).get("errorReason"),
-                request_id=request_id,
-            )
+        on_response_position(self._send_pipeline, p)
 
     def sendTraceRoute(
         self, dest: int | str, hopLimit: int, channelIndex: int = 0

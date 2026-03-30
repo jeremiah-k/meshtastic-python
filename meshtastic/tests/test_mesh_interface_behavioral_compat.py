@@ -188,7 +188,7 @@ class TestWaitForPositionWorkflow:
 
         # Send a position request first to get a request_id
         # Mock waitForPosition to avoid actual waiting
-        with patch.object(iface, "waitForPosition"):
+        with patch.object(iface._send_pipeline, "waitForPosition"):
             packet = iface.sendPosition(
                 latitude=40.7128,
                 longitude=-74.0060,
