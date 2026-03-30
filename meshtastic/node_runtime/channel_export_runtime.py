@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+LORA_TIMEOUT_MSG = "Timeout waiting for LoRa config"
+
 
 class _NodeChannelExportRuntime:
     """Owns channel URL export, channel-hash export, and primary PSK mutation."""
@@ -68,6 +70,7 @@ class _NodeChannelExportRuntime:
             self._node._raise_interface_error(  # noqa: SLF001
                 "Error: No primary channel found"
             )
+            assert False, "unreachable"  # type narrowing for static analysis
         channel_set.settings.append(primary_channel.settings)
         if include_all:
             for channel in channels_snapshot:
@@ -83,12 +86,13 @@ class _NodeChannelExportRuntime:
             if callable(wait_for_config):
                 result = wait_for_config(attribute="lora")
                 if not result:
-                    raise RuntimeError("Timeout waiting for LoRa config")
+                    raise RuntimeError(LORA_TIMEOUT_MSG)
             local_config_snapshot = self._snapshot_local_config()
             if not local_config_snapshot.HasField("lora"):
                 self._node._raise_interface_error(  # noqa: SLF001
                     "LoRa config must be loaded before exporting a channel URL"
                 )
+                assert False, "unreachable"  # type narrowing for static analysis
         channel_set.lora_config.CopyFrom(local_config_snapshot.lora)
         serialized_channel_set = channel_set.SerializeToString()
         encoded = base64.urlsafe_b64encode(serialized_channel_set).decode("ascii")
@@ -177,9 +181,10 @@ class _NodeChannelExportRuntime:
                     primary_snapshot.settings.psk = fromPSK("none")
                     break
             if primary_snapshot is None:
-                self._node._raise_interface_error(
+                self._node._raise_interface_error(  # noqa: SLF001
                     "Error: No primary channel found"
-                )  # noqa: SLF001
+                )
+                assert False, "unreachable"  # type narrowing for static analysis
         logger.info("Writing modified channels to device")
         self._node._write_channel_snapshot(primary_snapshot)  # noqa: SLF001
         with self._node._channels_lock:  # noqa: SLF001

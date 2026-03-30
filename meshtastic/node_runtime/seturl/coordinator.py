@@ -58,9 +58,7 @@ class _SetUrlTransactionCoordinator:
             self._node._raise_interface_error(  # noqa: SLF001
                 "Interface localNode not initialized"
             )
-        admin_index_for_write = (
-            admin_write_node._get_admin_channel_index()
-        )  # noqa: SLF001
+        admin_index_for_write = admin_write_node._get_admin_channel_index()  # noqa: SLF001
         named_admin_index_for_write = (
             admin_write_node._get_named_admin_channel_index()  # noqa: SLF001
         )
@@ -99,7 +97,7 @@ class _SetUrlTransactionCoordinator:
                 state=execution_state,
             )
         except Exception:
-            self._rollback_engine.rollback_add_only(
+            self._rollback_engine._rollback_add_only(
                 admin_context=self._admin_context,
                 plan=plan,
                 state=execution_state,
@@ -133,7 +131,7 @@ class _SetUrlTransactionCoordinator:
                 state=execution_state,
             )
         except Exception:
-            self._rollback_engine.rollback_replace_all(
+            self._rollback_engine._rollback_replace_all(
                 admin_context=self._admin_context,
                 plan=plan,
                 state=execution_state,

@@ -41,7 +41,7 @@ class TestSetUrlRollbackEngine:
         mock_local_node: MagicMock,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """rollback_add_only with channel failure attempts next admin index (line 658)."""
+        """_rollback_add_only with channel failure attempts next admin index (line 658)."""
         original_channel = _make_channel(1, channel_pb2.Channel.Role.DISABLED)
         mock_local_node.channels = [
             _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "primary"),
@@ -78,7 +78,7 @@ class TestSetUrlRollbackEngine:
         mock_local_node._write_channel_snapshot.side_effect = write_side_effect
 
         with caplog.at_level(logging.WARNING):
-            rollback_engine.rollback_add_only(
+            rollback_engine._rollback_add_only(
                 admin_context=admin_context,
                 plan=plan,
                 state=state,
@@ -99,7 +99,7 @@ class TestSetUrlRollbackEngine:
         mock_local_node: MagicMock,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """rollback_add_only with LoRa failure clears cache with warning (lines 712-727)."""
+        """_rollback_add_only with LoRa failure clears cache with warning (lines 712-727)."""
         original_channel = _make_channel(1, channel_pb2.Channel.Role.DISABLED)
         mock_local_node.channels = [
             _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "primary"),
@@ -145,7 +145,7 @@ class TestSetUrlRollbackEngine:
         mock_local_node._send_admin.side_effect = send_admin_side_effect
 
         with caplog.at_level(logging.WARNING):
-            rollback_engine.rollback_add_only(
+            rollback_engine._rollback_add_only(
                 admin_context=admin_context,
                 plan=plan,
                 state=state,
@@ -160,7 +160,7 @@ class TestSetUrlRollbackEngine:
         rollback_engine: _SetUrlRollbackEngine,
         mock_local_node: MagicMock,
     ) -> None:
-        """rollback_add_only should not restore LoRa snapshot when rollback send is skipped."""
+        """_rollback_add_only should not restore LoRa snapshot when rollback send is skipped."""
         original_channel = _make_channel(1, channel_pb2.Channel.Role.DISABLED)
         mock_local_node.channels = [
             _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "primary"),
@@ -187,7 +187,7 @@ class TestSetUrlRollbackEngine:
         mock_local_node._send_admin.return_value = None
         rollback_engine._cache_manager.restore_lora_snapshot = MagicMock()  # type: ignore[method-assign]
 
-        rollback_engine.rollback_add_only(
+        rollback_engine._rollback_add_only(
             admin_context=admin_context,
             plan=plan,
             state=state,
@@ -202,7 +202,7 @@ class TestSetUrlRollbackEngine:
         mock_local_node: MagicMock,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """rollback_replace_all with channel failure logs warning (lines 773-790)."""
+        """_rollback_replace_all with channel failure logs warning (lines 773-790)."""
         original_channel = _make_channel(
             0, channel_pb2.Channel.Role.PRIMARY, "original"
         )
@@ -238,7 +238,7 @@ class TestSetUrlRollbackEngine:
         )
 
         with caplog.at_level(logging.WARNING):
-            rollback_engine.rollback_replace_all(
+            rollback_engine._rollback_replace_all(
                 admin_context=admin_context,
                 plan=plan,
                 state=state,
@@ -254,7 +254,7 @@ class TestSetUrlRollbackEngine:
         mock_local_node: MagicMock,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """rollback_replace_all with LoRa failure clears cache with warning (lines 825-851)."""
+        """_rollback_replace_all with LoRa failure clears cache with warning (lines 825-851)."""
         original_channel = _make_channel(
             0, channel_pb2.Channel.Role.PRIMARY, "original"
         )
@@ -291,7 +291,7 @@ class TestSetUrlRollbackEngine:
         mock_local_node._send_admin.side_effect = Exception("LoRa rollback failed")
 
         with caplog.at_level(logging.WARNING):
-            rollback_engine.rollback_replace_all(
+            rollback_engine._rollback_replace_all(
                 admin_context=admin_context,
                 plan=plan,
                 state=state,
@@ -306,7 +306,7 @@ class TestSetUrlRollbackEngine:
         rollback_engine: _SetUrlRollbackEngine,
         mock_local_node: MagicMock,
     ) -> None:
-        """rollback_replace_all should not restore LoRa snapshot when rollback send is skipped."""
+        """_rollback_replace_all should not restore LoRa snapshot when rollback send is skipped."""
         original_channel = _make_channel(
             0, channel_pb2.Channel.Role.PRIMARY, "original"
         )
@@ -338,7 +338,7 @@ class TestSetUrlRollbackEngine:
         mock_local_node._send_admin.return_value = None
         rollback_engine._cache_manager.restore_lora_snapshot = MagicMock()  # type: ignore[method-assign]
 
-        rollback_engine.rollback_replace_all(
+        rollback_engine._rollback_replace_all(
             admin_context=admin_context,
             plan=plan,
             state=state,
@@ -353,7 +353,7 @@ class TestSetUrlRollbackEngine:
         mock_local_node: MagicMock,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """rollback_replace_all without snapshot clears cache (lines 844-847)."""
+        """_rollback_replace_all without snapshot clears cache (lines 844-847)."""
         original_channel = _make_channel(
             0, channel_pb2.Channel.Role.PRIMARY, "original"
         )
@@ -385,7 +385,7 @@ class TestSetUrlRollbackEngine:
         admin_context.admin_index_for_write = 0
 
         with caplog.at_level(logging.WARNING):
-            rollback_engine.rollback_replace_all(
+            rollback_engine._rollback_replace_all(
                 admin_context=admin_context,
                 plan=plan,
                 state=state,
@@ -403,7 +403,7 @@ class TestSetUrlRollbackEngine:
         mock_local_node: MagicMock,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """rollback_replace_all with successful rollback restores snapshot."""
+        """_rollback_replace_all with successful rollback restores snapshot."""
         snapshot_channel = _make_channel(
             0, channel_pb2.Channel.Role.PRIMARY, "original"
         )
@@ -436,7 +436,7 @@ class TestSetUrlRollbackEngine:
         admin_context.admin_index_for_write = 0
 
         with caplog.at_level(logging.WARNING):
-            rollback_engine.rollback_replace_all(
+            rollback_engine._rollback_replace_all(
                 admin_context=admin_context,
                 plan=plan,
                 state=state,

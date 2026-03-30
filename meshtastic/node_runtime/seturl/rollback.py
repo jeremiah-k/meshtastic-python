@@ -113,6 +113,7 @@ class _SetUrlRollbackEngine:
                 except Exception as rollback_lora_error:  # noqa: BLE001
                     last_rollback_lora_error = rollback_lora_error
             if not rollback_lora_succeeded:
+                rollback_failed = True
                 logger.warning(
                     lora_warning_message,
                     exc_info=(
@@ -133,7 +134,7 @@ class _SetUrlRollbackEngine:
 
         return rollback_failed
 
-    def rollback_add_only(
+    def _rollback_add_only(
         self,
         *,
         admin_context: _SetUrlAdminContext,
@@ -198,7 +199,7 @@ class _SetUrlRollbackEngine:
             cache_invalidate_message="Channel rollback incomplete after addOnly failure; invalidated local channel cache.",
         )
 
-    def rollback_replace_all(
+    def _rollback_replace_all(
         self,
         *,
         admin_context: _SetUrlAdminContext,
