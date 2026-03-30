@@ -1160,10 +1160,10 @@ class Node:  # pylint: disable=too-many-instance-attributes
 
     def startOTA(
         self,
-        mode: admin_pb2.OTAMode.ValueType | None = None,
+        ota_mode: admin_pb2.OTAMode.ValueType | None = None,
         ota_file_hash: bytes | None = None,
         *,
-        ota_mode: admin_pb2.OTAMode.ValueType | None = None,
+        mode: admin_pb2.OTAMode.ValueType | None = None,
         ota_hash: bytes | None = None,
         **kwargs: Any,
     ) -> mesh_pb2.MeshPacket | None:
@@ -1171,14 +1171,16 @@ class Node:  # pylint: disable=too-many-instance-attributes
 
         Parameters
         ----------
-        mode : admin_pb2.OTAMode.ValueType | None
+        ota_mode : admin_pb2.OTAMode.ValueType | None
             OTA transport mode to use after reboot (for example, ``admin_pb2.OTA_WIFI``).
+            Can also be passed as positional first argument for backward compatibility.
         ota_file_hash : bytes | None
             Firmware hash bytes used by the node to validate OTA payload consistency.
-        ota_mode : admin_pb2.OTAMode.ValueType | None
-            Backward-compatible keyword alias for ``mode``.
+            Can also be passed as positional second argument for backward compatibility.
+        mode : admin_pb2.OTAMode.ValueType | None
+            Alias for ``ota_mode`` (keyword-only).
         ota_hash : bytes | None
-            Backward-compatible keyword alias for ``ota_file_hash``.
+            Alias for ``ota_file_hash`` (keyword-only).
 
         Returns
         -------
@@ -1191,10 +1193,8 @@ class Node:  # pylint: disable=too-many-instance-attributes
             If called for a non-local node.
         """
         return self._admin_command_runtime.start_ota(
-            mode=mode,
-            ota_file_hash=ota_file_hash,
-            ota_mode=ota_mode,
-            ota_hash=ota_hash,
+            mode=mode if mode is not None else ota_mode,
+            ota_file_hash=ota_file_hash if ota_file_hash is not None else ota_hash,
             **kwargs,
         )
 

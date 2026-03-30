@@ -11,6 +11,7 @@ Usage:
 import json
 import re
 import sys
+from typing import Any
 
 
 def _normalize_type(type_str: str) -> str:
@@ -119,6 +120,107 @@ def _normalize_sig(sig: str) -> str:
     return f"({', '.join(normalized)})"
 
 
+def _parse_signature_shape(sig: str) -> list[dict[str, Any]]:
+    """Parse signature into comparable parameter-shape records.
+
+    Ignores annotation text and default values, but keeps whether a parameter
+    is required and its call kind.
+    """
+    tokens = _split_top_level_params(sig)
+    slash_index = tokens.index("/") if "/" in tokens else -1
+
+    params: list[dict[str, Any]] = []
+    kw_only_mode = False
+
+    for index, token in enumerate(tokens):
+        if not token:
+            continue
+        if token == "/":
+            continue
+        if token == "*":
+            kw_only_mode = True
+            continue
+
+        raw = token.strip()
+        if raw.startswith("**"):
+            name_body = raw[2:].strip()
+            kind = "var_keyword"
+            required = False
+        elif raw.startswith("*"):
+            name_body = raw[1:].strip()
+            kind = "var_positional"
+            required = False
+            kw_only_mode = True
+        else:
+            name_body = raw
+            if slash_index != -1 and index < slash_index:
+                kind = "positional_only"
+            elif kw_only_mode:
+                kind = "keyword_only"
+            else:
+                kind = "positional_or_keyword"
+
+            equals_index = _find_top_level_char(name_body, "=")
+            required = equals_index == -1
+
+        equals_index = _find_top_level_char(name_body, "=")
+        before_default = (
+            name_body if equals_index == -1 else name_body[:equals_index].strip()
+        )
+        colon_index = _find_top_level_char(before_default, ":")
+        name = (
+            before_default
+            if colon_index == -1
+            else before_default[:colon_index].strip()
+        )
+
+        params.append(
+            {
+                "name": name,
+                "kind": kind,
+                "required": required,
+            }
+        )
+
+    return params
+
+
+def _is_breaking_signature_change(master_sig: str, pr_sig: str) -> bool:
+    """Return True if PR signature is call-incompatible with master."""
+    master_params = _parse_signature_shape(master_sig)
+    pr_params = _parse_signature_shape(pr_sig)
+
+    pr_index = 0
+    for master_param in master_params:
+        found_index = -1
+        for idx in range(pr_index, len(pr_params)):
+            if pr_params[idx]["name"] == master_param["name"]:
+                found_index = idx
+                break
+
+        if found_index == -1:
+            return True
+
+        for inserted_param in pr_params[pr_index:found_index]:
+            if inserted_param["required"]:
+                return True
+
+        pr_param = pr_params[found_index]
+        if pr_param["kind"] != master_param["kind"]:
+            return True
+
+        if not master_param["required"] and pr_param["required"]:
+            return True
+
+        pr_index = found_index + 1
+
+    for trailing_param in pr_params[pr_index:]:
+        if trailing_param["required"]:
+            return True
+
+    return False
+
+
 def compare_methods(
     master: dict[str, str],
     pr: dict[str, str],
@@ -141,9 +243,16 @@ def compare_methods(
         m_sig = _normalize_sig(master[name])
         p_sig = _normalize_sig(pr[name])
         if m_sig != p_sig:
-            blocking.append(f"CHANGED {class_name}.{name}:")
-            blocking.append(f"  master: {master[name]}")
-            blocking.append(f"  pr:     {pr[name]}")
+            if _is_breaking_signature_change(master[name], pr[name]):
+                blocking.append(f"CHANGED {class_name}.{name}:")
+                blocking.append(f"  master: {master[name]}")
+                blocking.append(f"  pr:     {pr[name]}")
+            else:
+                informational.append(
+                    f"CHANGED (non-blocking, annotation-only) {class_name}.{name}:"
+                )
+                informational.append(f"  master: {master[name]}")
+                informational.append(f"  pr:     {pr[name]}")
 
     return blocking, informational
 

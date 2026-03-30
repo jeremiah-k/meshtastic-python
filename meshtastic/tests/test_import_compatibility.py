@@ -264,9 +264,9 @@ class TestBackwardCompatAliases:
         deprecation_warnings = [
             x for x in w if issubclass(x.category, DeprecationWarning)
         ]
-        assert len(deprecation_warnings) >= 1, (
-            "Expected DeprecationWarning for tunnelInstance"
-        )
+        assert (
+            len(deprecation_warnings) >= 1
+        ), "Expected DeprecationWarning for tunnelInstance"
 
     def test_node_snake_case_ringtone_aliases(self) -> None:
         """Test that snake_case ringtone methods exist on Node.
