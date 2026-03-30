@@ -2467,7 +2467,6 @@ def test_on_response_traceroute_parse_failures_surface_to_waiters() -> None:
 @pytest.mark.usefixtures("reset_mt_config")
 def test_send_telemetry_supported_and_fallback_paths(
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """sendTelemetry() should populate each payload and log fallback warnings for unknown values."""
     telemetry_calls: list[tuple[telemetry_pb2.Telemetry, dict[str, Any]]] = []
@@ -2504,9 +2503,11 @@ def test_send_telemetry_supported_and_fallback_paths(
         iface.sendTelemetry(telemetryType="power_metrics")
         iface.sendTelemetry(telemetryType="local_stats")
         iface.sendTelemetry(telemetryType="device_metrics")
-        with caplog.at_level(logging.WARNING, logger=mesh_interface_module.__name__):
+        with pytest.warns(DeprecationWarning) as record:
             iface.sendTelemetry(telemetryType="invalid")
             iface.sendTelemetry(telemetryType="invalid2")
+        assert len(record) == 2
+        assert all("Unsupported telemetryType" in str(w.message) for w in record)
         iface.sendTelemetry(telemetryType="device_metrics", wantResponse=True)
 
     assert telemetry_calls[0][0].HasField("environment_metrics")
@@ -2516,7 +2517,6 @@ def test_send_telemetry_supported_and_fallback_paths(
     assert telemetry_calls[4][0].HasField("device_metrics")
     assert telemetry_calls[5][0].HasField("device_metrics")
     assert telemetry_calls[6][0].HasField("device_metrics")
-    assert caplog.text.count("Unsupported telemetryType") == 2
     assert telemetry_calls[7][1]["onResponse"] is not None
     wait_for_telemetry.assert_called_once_with(request_id=8)
 

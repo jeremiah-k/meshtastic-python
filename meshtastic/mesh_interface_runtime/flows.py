@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import math
 import secrets
+import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
@@ -142,10 +143,10 @@ def send_position(
     if wantResponse:
 
         def _on_response(packet: dict[str, Any]) -> None:
-            on_response_telemetry(pipeline, packet)
+            on_response_position(pipeline, packet)
 
         onResponse = _on_response
-        response_wait_attr = WAIT_ATTR_TELEMETRY
+        response_wait_attr = WAIT_ATTR_POSITION
     else:
         onResponse = None
         response_wait_attr = None
@@ -344,14 +345,12 @@ def send_telemetry(
     """Send a telemetry message to a node or broadcast and optionally wait for a telemetry response."""
     telemetry_type = telemetryType
     if telemetry_type not in VALID_TELEMETRY_TYPE_SET:
-        logger.warning(
-            "Unsupported telemetryType '%s' is deprecated. "
-            "Supported values: %s. "
-            "Falling back to '%s'. "
+        warnings.warn(
+            f"Unsupported telemetryType '{telemetry_type}' is deprecated. "
+            f"Supported values: {sorted(VALID_TELEMETRY_TYPES)}. "
+            f"Falling back to '{DEFAULT_TELEMETRY_TYPE}'. "
             "This will raise an error in a future version.",
-            telemetry_type,
-            sorted(VALID_TELEMETRY_TYPES),
-            DEFAULT_TELEMETRY_TYPE,
+            DeprecationWarning,
             stacklevel=2,
         )
         telemetry_type = DEFAULT_TELEMETRY_TYPE
@@ -396,10 +395,10 @@ def send_telemetry(
     if wantResponse:
 
         def _on_response(packet: dict[str, Any]) -> None:
-            on_response_waypoint(pipeline, packet)
+            on_response_telemetry(pipeline, packet)
 
         onResponse = _on_response
-        response_wait_attr = WAIT_ATTR_WAYPOINT
+        response_wait_attr = WAIT_ATTR_TELEMETRY
     else:
         onResponse = None
         response_wait_attr = None
@@ -474,8 +473,7 @@ def send_waypoint(
     w.icon = int(icon)
     w.expire = expire
     if waypoint_id is None:
-        seed = secrets.randbits(32)
-        w.id = math.floor(seed * math.pow(2, -32) * 1e9)
+        w.id = secrets.randbelow(1_000_000_000)
         logger.debug("w.id:%s", w.id)
     else:
         w.id = waypoint_id
