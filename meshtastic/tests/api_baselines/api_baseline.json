@@ -102,7 +102,7 @@
     "showChannels": "(self)",
     "showInfo": "(self)",
     "shutdown": "(self, secs:int=10)",
-    "startOTA": "(self, mode:admin_pb2.OTAMode.ValueType | None=None, ota_file_hash:bytes | None=None, **kwargs)",
+    "startOTA": "(self, mode:admin_pb2.OTAMode.ValueType | None=None, ota_file_hash:bytes | None=None, *, ota_mode:admin_pb2.OTAMode.ValueType | None=None, ota_hash:bytes | None=None, **kwargs)",
     "turnOffEncryptionOnPrimaryChannel": "(self)",
     "waitForConfig": "(self, attribute:str='channels')",
     "writeChannel": "(self, channelIndex:int, adminIndex:int | None=None, **kwargs)",

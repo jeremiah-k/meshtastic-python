@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 @pytest.mark.unit
-def test_node_public_api_methods():
+def test_node_public_api_methods() -> None:
     """Verify all expected Node public methods exist and document the current API surface.
 
     This test uses inspect to enumerate public methods and verifies that
@@ -134,7 +134,7 @@ def test_node_public_api_methods():
 
 
 @pytest.mark.unit
-def test_mesh_interface_public_api_methods():
+def test_mesh_interface_public_api_methods() -> None:
     """Verify all expected MeshInterface public methods exist and document the current API surface.
 
     This test uses inspect to enumerate public methods and verifies that
@@ -186,9 +186,9 @@ def test_mesh_interface_public_api_methods():
 
     # Verify dunder methods exist
     for method in dunder_methods:
-        assert hasattr(
-            MeshInterface, method
-        ), f"MeshInterface must have '{method}' method"
+        assert hasattr(MeshInterface, method), (
+            f"MeshInterface must have '{method}' method"
+        )
 
     # Verify all expected methods exist
     missing_methods = expected_methods - public_methods
@@ -201,8 +201,8 @@ def test_mesh_interface_public_api_methods():
     extra_methods = public_methods - expected_methods
     # Use the variable to avoid linter warnings while documenting API surface
     if extra_methods:
-        print(
-            f"Note: MeshInterface has additional public methods: {sorted(extra_methods)}"
+        logger.debug(
+            "MeshInterface has additional public methods: %s", sorted(extra_methods)
         )
 
 
@@ -212,7 +212,7 @@ def test_mesh_interface_public_api_methods():
 
 
 @pytest.mark.unit
-def test_node_writechannel_signature():
+def test_node_writechannel_signature() -> None:
     """Verify writeChannel accepts both old and new signatures.
 
     Must support:
@@ -225,21 +225,21 @@ def test_node_writechannel_signature():
     # Verify parameter names
     param_names = [p.name for p in params]
     assert "self" in param_names, "writeChannel must have 'self' parameter"
-    assert (
-        "channelIndex" in param_names
-    ), "writeChannel must have 'channelIndex' parameter"
+    assert "channelIndex" in param_names, (
+        "writeChannel must have 'channelIndex' parameter"
+    )
     assert "adminIndex" in param_names, "writeChannel must have 'adminIndex' parameter"
 
     # Verify adminIndex is optional (has default)
     admin_param = sig.parameters["adminIndex"]
     assert admin_param.default is None, "adminIndex must default to None"
-    assert (
-        admin_param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
-    ), "adminIndex must be positional-or-keyword"
+    assert admin_param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD, (
+        "adminIndex must be positional-or-keyword"
+    )
 
 
 @pytest.mark.unit
-def test_node_startota_signature():
+def test_node_startota_signature() -> None:
     """Verify startOTA accepts both old and new signatures.
 
     Must support the complex signature with backward compatibility.
@@ -263,18 +263,18 @@ def test_node_startota_signature():
 
     # Verify mode and ota_file_hash are positional-or-keyword
     mode_param = sig.parameters["mode"]
-    assert (
-        mode_param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
-    ), "mode must be positional-or-keyword"
+    assert mode_param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD, (
+        "mode must be positional-or-keyword"
+    )
 
     ota_file_hash_param = sig.parameters["ota_file_hash"]
-    assert (
-        ota_file_hash_param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
-    ), "ota_file_hash must be positional-or-keyword"
+    assert ota_file_hash_param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD, (
+        "ota_file_hash must be positional-or-keyword"
+    )
 
 
 @pytest.mark.unit
-def test_node_requestconfig_signature():
+def test_node_requestconfig_signature() -> None:
     """Verify requestConfig signature: requestConfig(configType, adminIndex=None)."""
     sig = inspect.signature(Node.requestConfig)
     params = list(sig.parameters.values())
@@ -289,7 +289,7 @@ def test_node_requestconfig_signature():
 
 
 @pytest.mark.unit
-def test_node_setowner_signature():
+def test_node_setowner_signature() -> None:
     """Verify setOwner signature with all optional parameters."""
     sig = inspect.signature(Node.setOwner)
     params = list(sig.parameters.values())
@@ -309,13 +309,13 @@ def test_node_setowner_signature():
     # All parameters except self should have defaults
     for param in params:
         if param.name != "self":
-            assert (
-                param.default is not inspect.Parameter.empty
-            ), f"setOwner parameter '{param.name}' must have a default value"
+            assert param.default is not inspect.Parameter.empty, (
+                f"setOwner parameter '{param.name}' must have a default value"
+            )
 
 
 @pytest.mark.unit
-def test_node_reboot_shutdown_factoryreset_signatures():
+def test_node_reboot_shutdown_factoryreset_signatures() -> None:
     """Verify reboot, shutdown, and factoryReset method signatures."""
     # reboot(secs=10)
     reboot_sig = inspect.signature(Node.reboot)
@@ -337,20 +337,20 @@ def test_node_reboot_shutdown_factoryreset_signatures():
 
 
 @pytest.mark.unit
-def test_node_ensuresessionkey_signature():
+def test_node_ensuresessionkey_signature() -> None:
     """Verify ensureSessionKey signature."""
     sig = inspect.signature(Node.ensureSessionKey)
     params = list(sig.parameters.values())
 
     param_names = [p.name for p in params]
-    assert (
-        "adminIndex" in param_names
-    ), "ensureSessionKey must have 'adminIndex' parameter"
+    assert "adminIndex" in param_names, (
+        "ensureSessionKey must have 'adminIndex' parameter"
+    )
 
     admin_param = sig.parameters["adminIndex"]
-    assert (
-        admin_param.default is None
-    ), "ensureSessionKey 'adminIndex' must default to None"
+    assert admin_param.default is None, (
+        "ensureSessionKey 'adminIndex' must default to None"
+    )
 
 
 # =============================================================================
@@ -359,7 +359,7 @@ def test_node_ensuresessionkey_signature():
 
 
 @pytest.mark.unit
-def test_mesh_interface_sendtext_signature():
+def test_mesh_interface_sendtext_signature() -> None:
     """Verify sendText signature with all expected parameters."""
     sig = inspect.signature(MeshInterface.sendText)
     params = list(sig.parameters.values())
@@ -388,7 +388,7 @@ def test_mesh_interface_sendtext_signature():
 
 
 @pytest.mark.unit
-def test_mesh_interface_senddata_signature():
+def test_mesh_interface_senddata_signature() -> None:
     """Verify sendData signature with all expected parameters."""
     sig = inspect.signature(MeshInterface.sendData)
     params = list(sig.parameters.values())
@@ -417,42 +417,42 @@ def test_mesh_interface_senddata_signature():
 
 
 @pytest.mark.unit
-def test_mesh_interface_wait_methods_signatures():
+def test_mesh_interface_wait_methods_signatures() -> None:
     """Verify wait methods accept request_id parameter where applicable."""
     # waitForPosition(request_id=None)
     sig = inspect.signature(MeshInterface.waitForPosition)
-    assert (
-        "request_id" in sig.parameters
-    ), "waitForPosition must have 'request_id' parameter"
+    assert "request_id" in sig.parameters, (
+        "waitForPosition must have 'request_id' parameter"
+    )
     assert sig.parameters["request_id"].default is None
 
     # waitForTelemetry(request_id=None)
     sig = inspect.signature(MeshInterface.waitForTelemetry)
-    assert (
-        "request_id" in sig.parameters
-    ), "waitForTelemetry must have 'request_id' parameter"
+    assert "request_id" in sig.parameters, (
+        "waitForTelemetry must have 'request_id' parameter"
+    )
     assert sig.parameters["request_id"].default is None
 
     # waitForWaypoint(request_id=None)
     sig = inspect.signature(MeshInterface.waitForWaypoint)
-    assert (
-        "request_id" in sig.parameters
-    ), "waitForWaypoint must have 'request_id' parameter"
+    assert "request_id" in sig.parameters, (
+        "waitForWaypoint must have 'request_id' parameter"
+    )
     assert sig.parameters["request_id"].default is None
 
     # waitForTraceRoute(waitFactor, request_id=None)
     sig = inspect.signature(MeshInterface.waitForTraceRoute)
-    assert (
-        "waitFactor" in sig.parameters
-    ), "waitForTraceRoute must have 'waitFactor' parameter"
-    assert (
-        "request_id" in sig.parameters
-    ), "waitForTraceRoute must have 'request_id' parameter"
+    assert "waitFactor" in sig.parameters, (
+        "waitForTraceRoute must have 'waitFactor' parameter"
+    )
+    assert "request_id" in sig.parameters, (
+        "waitForTraceRoute must have 'request_id' parameter"
+    )
     assert sig.parameters["request_id"].default is None
 
 
 @pytest.mark.unit
-def test_mesh_interface_sendposition_signature():
+def test_mesh_interface_sendposition_signature() -> None:
     """Verify sendPosition signature."""
     sig = inspect.signature(MeshInterface.sendPosition)
     params = list(sig.parameters.values())
@@ -478,24 +478,24 @@ def test_mesh_interface_sendposition_signature():
 
 
 @pytest.mark.unit
-def test_mesh_interface_sendtelemetry_signature():
+def test_mesh_interface_sendtelemetry_signature() -> None:
     """Verify sendTelemetry signature with telemetryType parameter."""
     sig = inspect.signature(MeshInterface.sendTelemetry)
     params = list(sig.parameters.values())
 
     param_names = [p.name for p in params]
-    assert (
-        "destinationId" in param_names
-    ), "sendTelemetry must have 'destinationId' parameter"
-    assert (
-        "wantResponse" in param_names
-    ), "sendTelemetry must have 'wantResponse' parameter"
-    assert (
-        "channelIndex" in param_names
-    ), "sendTelemetry must have 'channelIndex' parameter"
-    assert (
-        "telemetryType" in param_names
-    ), "sendTelemetry must have 'telemetryType' parameter"
+    assert "destinationId" in param_names, (
+        "sendTelemetry must have 'destinationId' parameter"
+    )
+    assert "wantResponse" in param_names, (
+        "sendTelemetry must have 'wantResponse' parameter"
+    )
+    assert "channelIndex" in param_names, (
+        "sendTelemetry must have 'channelIndex' parameter"
+    )
+    assert "telemetryType" in param_names, (
+        "sendTelemetry must have 'telemetryType' parameter"
+    )
     assert "hopLimit" in param_names, "sendTelemetry must have 'hopLimit' parameter"
 
     # Verify defaults
@@ -503,7 +503,7 @@ def test_mesh_interface_sendtelemetry_signature():
 
 
 @pytest.mark.unit
-def test_mesh_interface_sendtraceroute_signature():
+def test_mesh_interface_sendtraceroute_signature() -> None:
     """Verify sendTraceRoute signature."""
     sig = inspect.signature(MeshInterface.sendTraceRoute)
     params = list(sig.parameters.values())
@@ -511,13 +511,13 @@ def test_mesh_interface_sendtraceroute_signature():
     param_names = [p.name for p in params]
     assert "dest" in param_names, "sendTraceRoute must have 'dest' parameter"
     assert "hopLimit" in param_names, "sendTraceRoute must have 'hopLimit' parameter"
-    assert (
-        "channelIndex" in param_names
-    ), "sendTraceRoute must have 'channelIndex' parameter"
+    assert "channelIndex" in param_names, (
+        "sendTraceRoute must have 'channelIndex' parameter"
+    )
 
 
 @pytest.mark.unit
-def test_mesh_interface_sendwaypoint_signature():
+def test_mesh_interface_sendwaypoint_signature() -> None:
     """Verify sendWaypoint signature."""
     sig = inspect.signature(MeshInterface.sendWaypoint)
     params = list(sig.parameters.values())
@@ -544,7 +544,7 @@ def test_mesh_interface_sendwaypoint_signature():
 
 
 @pytest.mark.unit
-def test_mesh_interface_getnode_signature():
+def test_mesh_interface_getnode_signature() -> None:
     """Verify getNode signature."""
     sig = inspect.signature(MeshInterface.getNode)
     params = list(sig.parameters.values())
@@ -572,7 +572,7 @@ def test_mesh_interface_getnode_signature():
 
 
 @pytest.mark.unit
-def test_public_classes_exist():
+def test_public_classes_exist() -> None:
     """Verify key public classes can be imported and exist.
 
     This test ensures that the main public API classes are available
@@ -589,7 +589,7 @@ def test_public_classes_exist():
 
 
 @pytest.mark.unit
-def test_node_instance_attributes_documented():
+def test_node_instance_attributes_documented() -> None:
     """Document expected Node instance attributes (set in __init__).
 
     These are instance-level attributes, not class attributes, so we
@@ -612,7 +612,7 @@ def test_node_instance_attributes_documented():
 
 
 @pytest.mark.unit
-def test_meshinterface_instance_attributes_documented():
+def test_meshinterface_instance_attributes_documented() -> None:
     """Document expected MeshInterface instance attributes (set in __init__)."""
     expected_instance_attrs = [
         "nodes",
@@ -626,9 +626,9 @@ def test_meshinterface_instance_attributes_documented():
     ]
 
     # Document for reference - these are verified at runtime on instances
-    assert (
-        len(expected_instance_attrs) > 0
-    ), "MeshInterface instance attributes documented"
+    assert len(expected_instance_attrs) > 0, (
+        "MeshInterface instance attributes documented"
+    )
 
 
 # =============================================================================
@@ -637,7 +637,7 @@ def test_meshinterface_instance_attributes_documented():
 
 
 @pytest.mark.unit
-def test_node_api_shape_snapshot():
+def test_node_api_shape_snapshot() -> None:
     """Create a snapshot of the complete Node public API shape.
 
     This test captures the full public API surface including method names,
@@ -690,19 +690,19 @@ def test_node_api_shape_snapshot():
         "public_methods": sorted(public_api.keys()),
     }
     # Use _snapshot to document the API shape without failing tests
-    assert _snapshot[
-        "critical_methods_present"
-    ], "Critical Node methods should be present"
+    assert _snapshot["critical_methods_present"], (
+        "Critical Node methods should be present"
+    )
 
     # Verify we have a reasonable number of public methods
     # If this changes significantly, it may indicate an API break
-    assert (
-        len(public_api) >= 40
-    ), f"Node should have at least 40 public methods, found {len(public_api)}"
+    assert len(public_api) >= 40, (
+        f"Node should have at least 40 public methods, found {len(public_api)}"
+    )
 
 
 @pytest.mark.unit
-def test_mesh_interface_api_shape_snapshot():
+def test_mesh_interface_api_shape_snapshot() -> None:
     """Create a snapshot of the complete MeshInterface public API shape."""
     # Get all public callable members
     public_api = {}
@@ -747,14 +747,14 @@ def test_mesh_interface_api_shape_snapshot():
         "public_methods": sorted(public_api.keys()),
     }
     # Use _snapshot to document the API shape
-    assert _snapshot[
-        "critical_methods_present"
-    ], "Critical MeshInterface methods should be present"
+    assert _snapshot["critical_methods_present"], (
+        "Critical MeshInterface methods should be present"
+    )
 
     # Verify we have a reasonable number of public methods
-    assert (
-        len(public_api) >= 20
-    ), f"MeshInterface should have at least 20 public methods, found {len(public_api)}"
+    assert len(public_api) >= 20, (
+        f"MeshInterface should have at least 20 public methods, found {len(public_api)}"
+    )
 
 
 # =============================================================================
@@ -763,7 +763,7 @@ def test_mesh_interface_api_shape_snapshot():
 
 
 @pytest.mark.unit
-def test_no_positional_only_params_in_node():
+def test_no_positional_only_params_in_node() -> None:
     """Ensure Node public methods don't use positional-only parameters.
 
     Positional-only parameters break callers that pass keyword arguments,
@@ -790,7 +790,7 @@ def test_no_positional_only_params_in_node():
 
 
 @pytest.mark.unit
-def test_no_positional_only_params_in_meshinterface():
+def test_no_positional_only_params_in_meshinterface() -> None:
     """Ensure MeshInterface public methods don't use positional-only parameters."""
     for name in dir(MeshInterface):
         if name.startswith("_"):

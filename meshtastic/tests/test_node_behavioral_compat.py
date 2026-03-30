@@ -730,10 +730,9 @@ def test_snake_case_get_ringtone_compat(mock_interface: MagicMock) -> None:
     node.module_available = MagicMock(return_value=True)  # type: ignore[method-assign]
     node.ringtone = "test ringtone"
 
-    # Both should delegate to same implementation
-    # get_ringtone is a wrapper, so it calls getRingtone
-    assert callable(node.get_ringtone)
-    assert callable(node.getRingtone)
+    # Both should return the same value
+    assert node.get_ringtone() == "test ringtone"
+    assert node.get_ringtone() == node.getRingtone()
 
 
 @pytest.mark.unit

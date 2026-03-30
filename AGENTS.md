@@ -216,3 +216,14 @@ Current `COMPAT_DEPRECATE` methods:
   `mypy meshtastic/ --strict` locally to catch regressions.
 - `make ci` runs the same checks as CI (no `--strict`).
 - `make ci-strict` runs CI checks with strict mypy (for maintainers).
+
+## Baseline Generation
+
+When generating API baselines, always run via poetry to ensure all dependencies are available:
+
+```bash
+poetry run python bin/extract_api_surface.py meshtastic/tests/api_baselines/api_baseline.json
+poetry run pytest meshtastic/tests/test_api_baseline_comparison.py -v --update-baselines
+```
+
+Running without poetry may miss modules like `slog` and `tunnel` that depend on optional packages.

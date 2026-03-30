@@ -105,9 +105,12 @@ def test_meshinterface_public_methods_exist() -> None:
 
 def test_node_exports_constants() -> None:
     """Exported constants must be present and be positive integers."""
-    assert isinstance(MAX_CHANNELS, int) and MAX_CHANNELS > 0
-    assert isinstance(MAX_LONG_NAME_LEN, int) and MAX_LONG_NAME_LEN > 0
-    assert isinstance(MAX_SHORT_NAME_LEN, int) and MAX_SHORT_NAME_LEN > 0
+    assert isinstance(MAX_CHANNELS, int)
+    assert MAX_CHANNELS > 0
+    assert isinstance(MAX_LONG_NAME_LEN, int)
+    assert MAX_LONG_NAME_LEN > 0
+    assert isinstance(MAX_SHORT_NAME_LEN, int)
+    assert MAX_SHORT_NAME_LEN > 0
 
 
 # ---------------------------------------------------------------------------

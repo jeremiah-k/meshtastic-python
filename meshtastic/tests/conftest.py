@@ -10,8 +10,8 @@ import math
 import shutil
 import threading
 import time
-from collections.abc import Generator
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Iterator, NoReturn, cast
+from collections.abc import Callable, Generator, Iterator
+from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, cast
 from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
@@ -29,7 +29,9 @@ if TYPE_CHECKING:
     from meshtastic.powermon.stress import PowerStressClient
 
 
-def pytest_addoption(parser: Any) -> None:
+def pytest_addoption(
+    parser: pytest.Parser, pluginmanager: pytest.PytestPluginManager
+) -> None:
     """Add custom command line options for baseline tests."""
     parser.addoption(
         "--update-baselines",
@@ -531,7 +533,7 @@ def _shutdown_publishing_thread() -> Generator[None, None, None]:
 
 
 @pytest.fixture
-def mock_interface() -> Iterator[Any]:
+def mock_interface() -> Generator[MeshInterface, None, None]:
     """Provide a MeshInterface with mocked internals for behavioral testing."""
     iface = MeshInterface(noProto=True)
     try:
@@ -578,7 +580,7 @@ def mock_interface() -> Iterator[Any]:
 
 
 @pytest.fixture
-def mock_interface_with_nodes(mock_interface: Any) -> Any:
+def mock_interface_with_nodes(mock_interface: MeshInterface) -> MeshInterface:
     """Provide a mock interface pre-configured with nodes."""
     # Already configured in mock_interface
     return mock_interface

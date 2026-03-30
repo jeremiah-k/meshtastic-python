@@ -26,6 +26,8 @@ import pytest
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.node import Node
 
+pytestmark = pytest.mark.unit
+
 # =============================================================================
 # Configuration
 # =============================================================================
@@ -157,6 +159,26 @@ def _ast_signature_str(func_node) -> str:
         arg_idx = n_args - n_defaults + i
         default_str = ast.unparse(default_node)
         params[arg_idx] += f"={default_str}"
+    if func_node.args.posonlyargs:
+        if params:
+            params.insert(len(func_node.args.posonlyargs), "/")
+    if func_node.args.kwonlyargs:
+        if not func_node.args.vararg:
+            params.append("*")
+        for kw_arg in func_node.args.kwonlyargs:
+            s = kw_arg.arg
+            if kw_arg.annotation:
+                s += f":{_ast_annotation_str(kw_arg.annotation)}"
+            params.append(s)
+        kw_defaults = func_node.args.kw_defaults
+        n_kw_args = len(func_node.args.kwonlyargs)
+        n_kw_defaults = len(kw_defaults)
+        kw_start_idx = len(params) - n_kw_args
+        for i, default_node in enumerate(kw_defaults):
+            if default_node is not None:
+                arg_idx = kw_start_idx + i
+                default_str = ast.unparse(default_node)
+                params[arg_idx] += f"={default_str}"
     if func_node.args.vararg:
         params.append(f"*{func_node.args.vararg.arg}")
     if func_node.args.kwarg:
@@ -230,18 +252,24 @@ def capture_top_level_exports() -> list[str]:
     """
     # Pre-import modules that may appear in namespace due to test side-effects
     # This ensures consistent baseline between local and CI environments
-    try:
-        import meshtastic.analysis  # noqa: F401
-        import meshtastic.host_port  # noqa: F401
-        import meshtastic.interfaces  # noqa: F401
-        import meshtastic.ota  # noqa: F401
-        import meshtastic.remote_hardware  # noqa: F401
-        import meshtastic.slog  # noqa: F401
-        import meshtastic.tcp_interface  # noqa: F401
-        import meshtastic.test  # noqa: F401
-        import meshtastic.tunnel  # noqa: F401
-    except ImportError:
-        pass  # Some may not be available in all environments
+    import importlib
+
+    modules_to_preimport = [
+        "meshtastic.analysis",
+        "meshtastic.host_port",
+        "meshtastic.interfaces",
+        "meshtastic.ota",
+        "meshtastic.remote_hardware",
+        "meshtastic.slog",
+        "meshtastic.tcp_interface",
+        "meshtastic.test",
+        "meshtastic.tunnel",
+    ]
+    for module_name in modules_to_preimport:
+        try:
+            importlib.import_module(module_name)
+        except ImportError:
+            pass
 
     import meshtastic
 
