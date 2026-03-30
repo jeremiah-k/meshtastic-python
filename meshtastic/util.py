@@ -12,7 +12,7 @@ import threading
 import time
 import warnings
 from collections.abc import Iterable
-from queue import Queue
+from queue import Empty, Queue
 from typing import (
     Any,
     Callable,
@@ -700,14 +700,16 @@ class DeferredExecution:
 
         Runs an infinite loop that takes callables from self.queue and invokes them; any
         exception raised by a callable is logged and processing continues. The loop exits
-        when the _SHUTDOWN sentinel is received.
+        when the _SHUTDOWN sentinel is received or when stop() is called.
         """
-        while True:
+        while not self._shutdown:
             try:
-                o = self.queue.get()
+                o = self.queue.get(timeout=0.1)
                 if o is self._SHUTDOWN:
                     break
                 o()
+            except Empty:
+                continue
             except Exception:
                 logger.exception("Unexpected error in deferred execution")
 
