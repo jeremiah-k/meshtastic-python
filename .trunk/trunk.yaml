@@ -20,6 +20,7 @@ lint:
         # Ignore generated files
         - meshtastic/**/*_pb2.py
         - meshtastic/**/*_pb2.pyi
+        - meshtastic/tests/api_baselines/*.json
         # Ignore external protobufs submodule content in this repo's lint scope.
         - protobufs/**
         # Keep project license text untouched by automated lint/format tools.

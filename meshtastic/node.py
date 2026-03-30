@@ -8,7 +8,7 @@ in the mesh, including methods for localConfig, moduleConfig, and channels manag
 import logging
 import sys
 import threading
-from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, TypeVar, cast
 
 from google.protobuf.descriptor import FieldDescriptor
 
@@ -69,6 +69,18 @@ from meshtastic.util import (
 
 if TYPE_CHECKING:
     from meshtastic.mesh_interface import MeshInterface
+    from meshtastic.node_runtime.content_runtime import (
+        _NodeAdminContentRuntime,
+        _NodeContentCacheStore,
+        _NodeContentResponseRuntime,
+    )
+    from meshtastic.node_runtime.response_runtime import (
+        _NodeChannelResponseRuntime,
+        _NodeMetadataResponseRuntime,
+    )
+    from meshtastic.node_runtime.transport_runtime import (
+        _NodePositionTimeCommandRuntime,
+    )
 
 logger = logging.getLogger(__name__)
 _ResultT = TypeVar("_ResultT")
@@ -168,7 +180,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         self._position_time_runtime_cache: Any = None
 
     @property
-    def _content_cache_store(self):
+    def _content_cache_store(self) -> "_NodeContentCacheStore":
         """Lazy-init for content cache store."""
         if self._content_cache_store_cache is None:
             from meshtastic.node_runtime.content_runtime import (  # pylint: disable=import-outside-toplevel
@@ -176,10 +188,10 @@ class Node:  # pylint: disable=too-many-instance-attributes
             )
 
             self._content_cache_store_cache = _NodeContentCacheStore(self)
-        return self._content_cache_store_cache
+        return cast("_NodeContentCacheStore", self._content_cache_store_cache)
 
     @property
-    def _content_response_runtime(self):
+    def _content_response_runtime(self) -> "_NodeContentResponseRuntime":
         """Lazy-init for content response runtime."""
         if self._content_response_runtime_cache is None:
             from meshtastic.node_runtime.content_runtime import (  # pylint: disable=import-outside-toplevel
@@ -190,10 +202,10 @@ class Node:  # pylint: disable=too-many-instance-attributes
                 self,
                 cache_store=self._content_cache_store,
             )
-        return self._content_response_runtime_cache
+        return cast("_NodeContentResponseRuntime", self._content_response_runtime_cache)
 
     @property
-    def _content_request_runtime(self):
+    def _content_request_runtime(self) -> "_NodeAdminContentRuntime":
         """Lazy-init for content request runtime."""
         if self._content_request_runtime_cache is None:
             from meshtastic.node_runtime.content_runtime import (  # pylint: disable=import-outside-toplevel
@@ -205,10 +217,10 @@ class Node:  # pylint: disable=too-many-instance-attributes
                 cache_store=self._content_cache_store,
                 response_runtime=self._content_response_runtime,
             )
-        return self._content_request_runtime_cache
+        return cast("_NodeAdminContentRuntime", self._content_request_runtime_cache)
 
     @property
-    def _metadata_response_runtime(self):
+    def _metadata_response_runtime(self) -> "_NodeMetadataResponseRuntime":
         """Lazy-init for metadata response runtime."""
         if self._metadata_response_runtime_cache is None:
             from meshtastic.node_runtime.response_runtime import (  # pylint: disable=import-outside-toplevel
@@ -216,10 +228,12 @@ class Node:  # pylint: disable=too-many-instance-attributes
             )
 
             self._metadata_response_runtime_cache = _NodeMetadataResponseRuntime(self)
-        return self._metadata_response_runtime_cache
+        return cast(
+            "_NodeMetadataResponseRuntime", self._metadata_response_runtime_cache
+        )
 
     @property
-    def _channel_response_runtime(self):
+    def _channel_response_runtime(self) -> "_NodeChannelResponseRuntime":
         """Lazy-init for channel response runtime."""
         if self._channel_response_runtime_cache is None:
             from meshtastic.node_runtime.response_runtime import (  # pylint: disable=import-outside-toplevel
@@ -227,10 +241,10 @@ class Node:  # pylint: disable=too-many-instance-attributes
             )
 
             self._channel_response_runtime_cache = _NodeChannelResponseRuntime(self)
-        return self._channel_response_runtime_cache
+        return cast("_NodeChannelResponseRuntime", self._channel_response_runtime_cache)
 
     @property
-    def _position_time_runtime(self):
+    def _position_time_runtime(self) -> "_NodePositionTimeCommandRuntime":
         """Lazy-init for position/time command runtime."""
         if self._position_time_runtime_cache is None:
             from meshtastic.node_runtime.transport_runtime import (  # pylint: disable=import-outside-toplevel
@@ -238,7 +252,9 @@ class Node:  # pylint: disable=too-many-instance-attributes
             )
 
             self._position_time_runtime_cache = _NodePositionTimeCommandRuntime(self)
-        return self._position_time_runtime_cache
+        return cast(
+            "_NodePositionTimeCommandRuntime", self._position_time_runtime_cache
+        )
 
     def __repr__(self) -> str:
         """Return a developer-oriented string identifying the Node.

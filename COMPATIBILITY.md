@@ -73,12 +73,12 @@ If you need to mock or patch Meshtastic internals in your tests:
 
 ### Import Stability Matrix
 
-```
-meshtastic.Node                           STABLE (public API)
-meshtastic.mesh_interface.MeshInterface     STABLE (public API)
-meshtastic.node_runtime.settings_runtime.toNodeNum    COMPAT (testing)
-meshtastic.node_runtime.settings_runtime._NodeSettingsRuntime   INTERNAL (may change)
-meshtastic.mesh_interface_runtime._RequestWaitRuntime           INTERNAL (may change)
+```markdown
+meshtastic.Node STABLE (public API)
+meshtastic.mesh_interface.MeshInterface STABLE (public API)
+meshtastic.node_runtime.settings_runtime.toNodeNum COMPAT (testing)
+meshtastic.node_runtime.settings_runtime.\_NodeSettingsRuntime INTERNAL (may change)
+meshtastic.mesh_interface_runtime.\_RequestWaitRuntime INTERNAL (may change)
 ```
 
 ---
