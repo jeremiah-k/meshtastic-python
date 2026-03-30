@@ -2638,6 +2638,8 @@ def test_ensureSessionKey_requests_only_when_missing(
     iface = autospec_local_node_iface(MeshInterface)
     anode = Node(iface, 555, noProto=False)
     anode.requestConfig = MagicMock()  # type: ignore[method-assign]
+    anode._timeout = MagicMock()  # type: ignore[attr-defined]
+    anode._timeout.waitForSet.return_value = True
 
     iface._get_or_create_by_num.return_value = {}
     anode.ensureSessionKey(adminIndex=6)
