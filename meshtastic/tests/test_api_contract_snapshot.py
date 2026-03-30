@@ -14,7 +14,6 @@ import pytest
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.node import Node
 
-
 # =============================================================================
 # Node Public API Method Existence Tests
 # =============================================================================
@@ -182,9 +181,9 @@ def test_mesh_interface_public_api_methods():
 
     # Verify dunder methods exist
     for method in dunder_methods:
-        assert hasattr(MeshInterface, method), (
-            f"MeshInterface must have '{method}' method"
-        )
+        assert hasattr(
+            MeshInterface, method
+        ), f"MeshInterface must have '{method}' method"
 
     # Verify all expected methods exist
     missing_methods = expected_methods - public_methods
@@ -220,17 +219,17 @@ def test_node_writechannel_signature():
     # Verify parameter names
     param_names = [p.name for p in params]
     assert "self" in param_names, "writeChannel must have 'self' parameter"
-    assert "channelIndex" in param_names, (
-        "writeChannel must have 'channelIndex' parameter"
-    )
+    assert (
+        "channelIndex" in param_names
+    ), "writeChannel must have 'channelIndex' parameter"
     assert "adminIndex" in param_names, "writeChannel must have 'adminIndex' parameter"
 
     # Verify adminIndex is optional (has default)
     admin_param = sig.parameters["adminIndex"]
     assert admin_param.default is None, "adminIndex must default to None"
-    assert admin_param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD, (
-        "adminIndex must be positional-or-keyword"
-    )
+    assert (
+        admin_param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
+    ), "adminIndex must be positional-or-keyword"
 
 
 def test_node_startota_signature():
@@ -257,14 +256,14 @@ def test_node_startota_signature():
 
     # Verify mode and ota_file_hash are positional-or-keyword
     mode_param = sig.parameters["mode"]
-    assert mode_param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD, (
-        "mode must be positional-or-keyword"
-    )
+    assert (
+        mode_param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
+    ), "mode must be positional-or-keyword"
 
     ota_file_hash_param = sig.parameters["ota_file_hash"]
-    assert ota_file_hash_param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD, (
-        "ota_file_hash must be positional-or-keyword"
-    )
+    assert (
+        ota_file_hash_param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
+    ), "ota_file_hash must be positional-or-keyword"
 
 
 def test_node_requestconfig_signature():
@@ -301,9 +300,9 @@ def test_node_setowner_signature():
     # All parameters except self should have defaults
     for param in params:
         if param.name != "self":
-            assert param.default is not inspect.Parameter.empty, (
-                f"setOwner parameter '{param.name}' must have a default value"
-            )
+            assert (
+                param.default is not inspect.Parameter.empty
+            ), f"setOwner parameter '{param.name}' must have a default value"
 
 
 def test_node_reboot_shutdown_factoryreset_signatures():
@@ -333,14 +332,14 @@ def test_node_ensuresessionkey_signature():
     params = list(sig.parameters.values())
 
     param_names = [p.name for p in params]
-    assert "adminIndex" in param_names, (
-        "ensureSessionKey must have 'adminIndex' parameter"
-    )
+    assert (
+        "adminIndex" in param_names
+    ), "ensureSessionKey must have 'adminIndex' parameter"
 
     admin_param = sig.parameters["adminIndex"]
-    assert admin_param.default is None, (
-        "ensureSessionKey 'adminIndex' must default to None"
-    )
+    assert (
+        admin_param.default is None
+    ), "ensureSessionKey 'adminIndex' must default to None"
 
 
 # =============================================================================
@@ -408,33 +407,33 @@ def test_mesh_interface_wait_methods_signatures():
     """Verify wait methods accept request_id parameter where applicable."""
     # waitForPosition(request_id=None)
     sig = inspect.signature(MeshInterface.waitForPosition)
-    assert "request_id" in sig.parameters, (
-        "waitForPosition must have 'request_id' parameter"
-    )
+    assert (
+        "request_id" in sig.parameters
+    ), "waitForPosition must have 'request_id' parameter"
     assert sig.parameters["request_id"].default is None
 
     # waitForTelemetry(request_id=None)
     sig = inspect.signature(MeshInterface.waitForTelemetry)
-    assert "request_id" in sig.parameters, (
-        "waitForTelemetry must have 'request_id' parameter"
-    )
+    assert (
+        "request_id" in sig.parameters
+    ), "waitForTelemetry must have 'request_id' parameter"
     assert sig.parameters["request_id"].default is None
 
     # waitForWaypoint(request_id=None)
     sig = inspect.signature(MeshInterface.waitForWaypoint)
-    assert "request_id" in sig.parameters, (
-        "waitForWaypoint must have 'request_id' parameter"
-    )
+    assert (
+        "request_id" in sig.parameters
+    ), "waitForWaypoint must have 'request_id' parameter"
     assert sig.parameters["request_id"].default is None
 
     # waitForTraceRoute(waitFactor, request_id=None)
     sig = inspect.signature(MeshInterface.waitForTraceRoute)
-    assert "waitFactor" in sig.parameters, (
-        "waitForTraceRoute must have 'waitFactor' parameter"
-    )
-    assert "request_id" in sig.parameters, (
-        "waitForTraceRoute must have 'request_id' parameter"
-    )
+    assert (
+        "waitFactor" in sig.parameters
+    ), "waitForTraceRoute must have 'waitFactor' parameter"
+    assert (
+        "request_id" in sig.parameters
+    ), "waitForTraceRoute must have 'request_id' parameter"
     assert sig.parameters["request_id"].default is None
 
 
@@ -469,18 +468,18 @@ def test_mesh_interface_sendtelemetry_signature():
     params = list(sig.parameters.values())
 
     param_names = [p.name for p in params]
-    assert "destinationId" in param_names, (
-        "sendTelemetry must have 'destinationId' parameter"
-    )
-    assert "wantResponse" in param_names, (
-        "sendTelemetry must have 'wantResponse' parameter"
-    )
-    assert "channelIndex" in param_names, (
-        "sendTelemetry must have 'channelIndex' parameter"
-    )
-    assert "telemetryType" in param_names, (
-        "sendTelemetry must have 'telemetryType' parameter"
-    )
+    assert (
+        "destinationId" in param_names
+    ), "sendTelemetry must have 'destinationId' parameter"
+    assert (
+        "wantResponse" in param_names
+    ), "sendTelemetry must have 'wantResponse' parameter"
+    assert (
+        "channelIndex" in param_names
+    ), "sendTelemetry must have 'channelIndex' parameter"
+    assert (
+        "telemetryType" in param_names
+    ), "sendTelemetry must have 'telemetryType' parameter"
     assert "hopLimit" in param_names, "sendTelemetry must have 'hopLimit' parameter"
 
     # Verify defaults
@@ -495,9 +494,9 @@ def test_mesh_interface_sendtraceroute_signature():
     param_names = [p.name for p in params]
     assert "dest" in param_names, "sendTraceRoute must have 'dest' parameter"
     assert "hopLimit" in param_names, "sendTraceRoute must have 'hopLimit' parameter"
-    assert "channelIndex" in param_names, (
-        "sendTraceRoute must have 'channelIndex' parameter"
-    )
+    assert (
+        "channelIndex" in param_names
+    ), "sendTraceRoute must have 'channelIndex' parameter"
 
 
 def test_mesh_interface_sendwaypoint_signature():
@@ -605,9 +604,9 @@ def test_meshinterface_instance_attributes_documented():
     ]
 
     # Document for reference - these are verified at runtime on instances
-    assert len(expected_instance_attrs) > 0, (
-        "MeshInterface instance attributes documented"
-    )
+    assert (
+        len(expected_instance_attrs) > 0
+    ), "MeshInterface instance attributes documented"
 
 
 # =============================================================================
@@ -668,15 +667,15 @@ def test_node_api_shape_snapshot():
         "public_methods": sorted(public_api.keys()),
     }
     # Use _snapshot to document the API shape without failing tests
-    assert _snapshot["critical_methods_present"], (
-        "Critical Node methods should be present"
-    )
+    assert _snapshot[
+        "critical_methods_present"
+    ], "Critical Node methods should be present"
 
     # Verify we have a reasonable number of public methods
     # If this changes significantly, it may indicate an API break
-    assert len(public_api) >= 40, (
-        f"Node should have at least 40 public methods, found {len(public_api)}"
-    )
+    assert (
+        len(public_api) >= 40
+    ), f"Node should have at least 40 public methods, found {len(public_api)}"
 
 
 def test_mesh_interface_api_shape_snapshot():
@@ -724,14 +723,14 @@ def test_mesh_interface_api_shape_snapshot():
         "public_methods": sorted(public_api.keys()),
     }
     # Use _snapshot to document the API shape
-    assert _snapshot["critical_methods_present"], (
-        "Critical MeshInterface methods should be present"
-    )
+    assert _snapshot[
+        "critical_methods_present"
+    ], "Critical MeshInterface methods should be present"
 
     # Verify we have a reasonable number of public methods
-    assert len(public_api) >= 20, (
-        f"MeshInterface should have at least 20 public methods, found {len(public_api)}"
-    )
+    assert (
+        len(public_api) >= 20
+    ), f"MeshInterface should have at least 20 public methods, found {len(public_api)}"
 
 
 # =============================================================================

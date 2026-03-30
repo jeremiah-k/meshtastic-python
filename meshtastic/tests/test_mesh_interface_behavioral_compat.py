@@ -16,7 +16,6 @@ from meshtastic import BROADCAST_ADDR, LOCAL_ADDR
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import mesh_pb2, portnums_pb2, telemetry_pb2
 
-
 # -----------------------------------------------------------------------------
 # Fixtures
 # -----------------------------------------------------------------------------

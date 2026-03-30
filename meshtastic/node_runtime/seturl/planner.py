@@ -6,14 +6,13 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from meshtastic.node_runtime.seturl.context import _SetUrlAdminContext
 from meshtastic.node_runtime.seturl.helpers import _channels_fingerprint
+from meshtastic.node_runtime.seturl.parser import _SetUrlParsedInput
 from meshtastic.node_runtime.shared import (
     is_named_admin_channel_name as _is_named_admin_channel_name,
 )
 from meshtastic.protobuf import channel_pb2, config_pb2
-
-from meshtastic.node_runtime.seturl.context import _SetUrlAdminContext
-from meshtastic.node_runtime.seturl.parser import _SetUrlParsedInput
 
 if TYPE_CHECKING:
     from meshtastic.node import Node

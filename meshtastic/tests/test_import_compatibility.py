@@ -16,7 +16,7 @@ from types import ModuleType
 
 # pytest is used by the test runner
 # pylint: disable=unused-import
-import pytest
+
 # pylint: enable=unused-import
 
 
@@ -175,6 +175,7 @@ class TestProtobufImports:
         # MeshPacket is a protobuf message class, pylint has trouble with protobuf imports
         # pylint: disable=no-name-in-module
         from meshtastic.protobuf.mesh_pb2 import MeshPacket
+
         # pylint: enable=no-name-in-module
 
         assert MeshPacket is not None
@@ -282,8 +283,8 @@ class TestBackwardCompatAliases:
         assert hasattr(Node, "set_ringtone")
 
         # Verify they are callable
-        assert callable(getattr(Node, "get_ringtone"))
-        assert callable(getattr(Node, "set_ringtone"))
+        assert callable(Node.get_ringtone)
+        assert callable(Node.set_ringtone)
 
     def test_node_snake_case_canned_message_aliases(self) -> None:
         """Test that snake_case canned message methods exist on Node.
@@ -299,8 +300,8 @@ class TestBackwardCompatAliases:
         assert hasattr(Node, "set_canned_message")
 
         # Verify they are callable
-        assert callable(getattr(Node, "get_canned_message"))
-        assert callable(getattr(Node, "set_canned_message"))
+        assert callable(Node.get_canned_message)
+        assert callable(Node.set_canned_message)
 
 
 class TestUtilityCompatAliases:

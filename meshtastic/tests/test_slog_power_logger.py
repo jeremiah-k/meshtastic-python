@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 import pytest
 
 pa = pytest.importorskip("pyarrow")
-import meshtastic.slog as slog_package
+import meshtastic.slog as slog_package  # noqa: E402 - import after importorskip is valid pattern
 
 try:
     from meshtastic.slog import slog as slog_module

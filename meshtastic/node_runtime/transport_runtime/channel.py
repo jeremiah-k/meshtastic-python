@@ -10,10 +10,9 @@ from meshtastic.node_runtime.shared import (
 from meshtastic.node_runtime.shared import (
     is_named_admin_channel_name as _is_named_admin_channel_name,
 )
-from meshtastic.protobuf import admin_pb2, channel_pb2
-
 from meshtastic.node_runtime.transport_runtime.admin import _NodeAdminTransportRuntime
 from meshtastic.node_runtime.transport_runtime.session import _NodeAdminSessionRuntime
+from meshtastic.protobuf import admin_pb2, channel_pb2
 
 if TYPE_CHECKING:
     from meshtastic.node import Node

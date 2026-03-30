@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Any, Callable, TypeAlias
 
 import google.protobuf.json_format
 from google.protobuf import message as protobuf_message
-
 from pubsub import pub
 
 from meshtastic import protocols, publishingThread
@@ -750,9 +749,9 @@ class ReceivePipeline:
                 DECODE_ERROR_KEY: decode_error
             }
             if handler.name == "routing":
-                packet_context.packet_dict["decoded"][handler.name]["errorReason"] = (
-                    decode_error
-                )
+                packet_context.packet_dict["decoded"][handler.name][
+                    "errorReason"
+                ] = decode_error
             if handler.name == "admin":
                 packet_context.skip_response_callback_for_decode_failure = True
 

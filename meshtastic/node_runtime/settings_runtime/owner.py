@@ -12,10 +12,10 @@ from meshtastic.node_runtime.shared import (
 from meshtastic.protobuf import admin_pb2, mesh_pb2
 
 if TYPE_CHECKING:
+    from meshtastic.node import Node
     from meshtastic.node_runtime.settings_runtime.admin import (
         _NodeAdminCommandRuntime,
     )
-    from meshtastic.node import Node
 
 logger = logging.getLogger(__name__)
 

@@ -2,9 +2,9 @@
 
 from .flows import (
     DEFAULT_TELEMETRY_TYPE,
-    TelemetryType,
-    VALID_TELEMETRY_TYPES,
     VALID_TELEMETRY_TYPE_SET,
+    VALID_TELEMETRY_TYPES,
+    TelemetryType,
 )
 from .node_view import NodeView
 from .receive_pipeline import ReceivePipeline

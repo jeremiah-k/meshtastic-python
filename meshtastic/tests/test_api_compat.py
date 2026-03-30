@@ -10,14 +10,13 @@ import inspect
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.node import MAX_CHANNELS, MAX_LONG_NAME_LEN, MAX_SHORT_NAME_LEN, Node
 
-
 # ---------------------------------------------------------------------------
 # Node.writeChannel signature
 # ---------------------------------------------------------------------------
 
 
 def test_node_writechannel_signature():
-    """writeChannel must accept positional second arg for adminIndex."""
+    """WriteChannel must accept positional second arg for adminIndex."""
     sig = inspect.signature(Node.writeChannel)
     params = list(sig.parameters.values())
 

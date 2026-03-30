@@ -88,7 +88,9 @@ class _SetUrlRollbackEngine:
                     rollback_succeeded = True
                     break
                 # Best-effort rollback path; keep attempting remaining steps.
-                except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                except (
+                    Exception
+                ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                     last_rollback_error = rollback_error
             if not rollback_succeeded:
                 rollback_failed = True
@@ -202,7 +204,9 @@ class _SetUrlRollbackEngine:
                     )
                     rollback_succeeded = True
                     break
-                except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                except (
+                    Exception
+                ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                     replace_last_rollback_error = rollback_error
             if not rollback_succeeded:
                 rollback_failed = True
