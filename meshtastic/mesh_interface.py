@@ -980,21 +980,6 @@ class MeshInterface:  # pylint: disable=R0902
         if debugOut:
             pub.subscribe(MeshInterface._print_log_line, "meshtastic.log.line")
 
-    @property
-    def receive_pipeline(self) -> ReceivePipeline:
-        """Return the receive pipeline for inbound packet processing."""
-        return self._receive_pipeline
-
-    @property
-    def send_pipeline(self) -> SendPipeline:
-        """Return the send pipeline for outbound packet processing."""
-        return self._send_pipeline
-
-    @property
-    def node_view(self) -> NodeView:
-        """Return the node view for node access and presentation methods."""
-        return self._node_view
-
     @staticmethod
     def _print_log_line(line: str, interface: Any) -> None:
         """Print one device log line to the configured debug output sink."""
