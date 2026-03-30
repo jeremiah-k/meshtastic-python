@@ -13,7 +13,7 @@ from google.protobuf import message as protobuf_message
 
 from pubsub import pub
 
-from meshtastic import BROADCAST_NUM, BROADCAST_ADDR, protocols, publishingThread
+from meshtastic import protocols, publishingThread
 from meshtastic.protobuf import (
     channel_pb2,
     config_pb2,

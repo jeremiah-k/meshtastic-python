@@ -4,7 +4,7 @@ import base64
 import copy
 import sys
 from datetime import datetime
-from typing import IO, Any, Callable, TypeAlias, cast
+from typing import IO, Any, TypeAlias, cast
 
 try:
     import print_color  # type: ignore[import-untyped]
@@ -105,22 +105,27 @@ class NodeView:
 
     @property
     def localNode(self) -> meshtastic.node.Node:
+        """Return the local node for this interface."""
         return self._interface.localNode
 
     @property
     def nodes(self) -> dict[str, dict[str, Any]] | None:
+        """Return the node info dictionary, or None if not initialized."""
         return self._interface.nodes
 
     @property
     def nodesByNum(self) -> dict[int, dict[str, Any]] | None:
+        """Return the node-number-to-info dictionary, or None if not initialized."""
         return self._interface.nodesByNum
 
     @property
     def myInfo(self) -> mesh_pb2.MyNodeInfo | None:
+        """Return the MyNodeInfo for this interface, or None."""
         return self._interface.myInfo
 
     @property
     def metadata(self) -> mesh_pb2.DeviceMetadata | None:
+        """Return device metadata, or None if not yet received."""
         return self._interface.metadata
 
     def _print_log_line(self, line: str) -> None:

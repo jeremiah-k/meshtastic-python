@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import collections
 import logging
 import math
 import secrets
@@ -10,15 +9,15 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, TypeAlias, cast
 
-if TYPE_CHECKING:
-    from meshtastic.mesh_interface import MeshInterface
-
 import google.protobuf.json_format
 from google.protobuf import message as protobuf_message
 
 from meshtastic import BROADCAST_ADDR, BROADCAST_NUM, LOCAL_ADDR
 from meshtastic.protobuf import mesh_pb2, portnums_pb2, telemetry_pb2
 from meshtastic.util import Acknowledgment, Timeout, stripnl
+
+if TYPE_CHECKING:
+    from meshtastic.mesh_interface import MeshInterface
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +75,7 @@ class _SerializablePayload(Protocol):
 
     def SerializeToString(self) -> bytes:
         """Return serialized payload bytes."""
-        ...
+        ...  # pylint: disable=unnecessary-ellipsis
 
 
 PayloadData: TypeAlias = bytes | bytearray | memoryview | _SerializablePayload
@@ -261,7 +260,7 @@ class _RequestWaitRuntime:
             )
             error_message = wait_errors.pop(ack_key, None)
         if error_message:
-            raise error_factory(error_message)
+            raise error_factory(error_message)  # pylint: disable=broad-exception-raised
 
     def retire_wait_request(
         self, acknowledgment_attr: str, request_id: int | None = None
@@ -314,8 +313,6 @@ class _RequestWaitRuntime:
         timeout_seconds: float,
     ) -> bool:
         """Wait for a request-scoped acknowledgment flag."""
-        timeout = self._get_timeout()
-        acknowledgment = self._get_acknowledgment()
         wait_acks = self._get_wait_acks()
         ack_key = (acknowledgment_attr, request_id)
         start_time = time.time()

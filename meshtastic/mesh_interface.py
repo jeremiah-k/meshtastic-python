@@ -1,12 +1,11 @@
 """Mesh Interface class."""
 
-# pylint: disable=R0917,C0302
+# pylint: disable=C0302
 
 import base64
 import collections
 import copy
 import hashlib
-import json
 import logging
 import math
 import random
@@ -15,10 +14,8 @@ import sys
 import threading
 import time
 import traceback
-from dataclasses import dataclass, field
-from datetime import datetime
 from types import TracebackType
-from typing import IO, Any, Callable, Literal, Protocol, TypeAlias, cast
+from typing import IO, Any, Callable, TypeAlias, cast
 
 import google.protobuf.json_format
 from google.protobuf import message as protobuf_message
@@ -29,7 +26,6 @@ except ImportError:
     print_color = None
 
 from pubsub import pub
-from tabulate import tabulate
 
 import meshtastic.node
 from meshtastic import (
@@ -53,7 +49,6 @@ from meshtastic.protobuf import (
 from meshtastic.util import (
     Acknowledgment,
     Timeout,
-    messageToJson,
     stripnl,
 )
 from meshtastic.mesh_interface_runtime.receive_pipeline import (

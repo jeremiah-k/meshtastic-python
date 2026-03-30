@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from google.protobuf.descriptor import FieldDescriptor
 
-from meshtastic.node_runtime.settings_runtime.message import (
+from meshtastic.node_runtime.settings_runtime.message import (  # pylint: disable=no-name-in-module
     _NodeSettingsMessageBuilder,
 )
 

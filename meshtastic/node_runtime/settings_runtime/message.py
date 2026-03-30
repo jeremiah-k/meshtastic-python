@@ -5,14 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from google.protobuf.descriptor import FieldDescriptor
 
-from meshtastic.node_runtime.shared import (
-    EMPTY_LONG_NAME_MSG,
-    EMPTY_SHORT_NAME_MSG,
-    MAX_LONG_NAME_LEN,
-    MAX_SHORT_NAME_LEN,
-)
-from meshtastic.protobuf import admin_pb2, mesh_pb2
-from meshtastic.util import camel_to_snake, toNodeNum
+from meshtastic.protobuf import admin_pb2
 
 if TYPE_CHECKING:
     from meshtastic.node import Node

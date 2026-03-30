@@ -217,7 +217,7 @@ class _NodeAdminCommandRuntime:
         set_field: Callable[[admin_pb2.AdminMessage, int], None],
     ) -> mesh_pb2.MeshPacket | None:
         """Send one node-id command after toNodeNum conversion."""
-        from meshtastic.node_runtime.settings_runtime import toNodeNum
+        from meshtastic.util import toNodeNum
 
         node_num = toNodeNum(node_id)
         message = admin_pb2.AdminMessage()
