@@ -13,7 +13,6 @@ from unittest.mock import MagicMock
 import pytest
 
 pa = pytest.importorskip("pyarrow")
-
 import meshtastic.slog as slog_package
 
 try:
