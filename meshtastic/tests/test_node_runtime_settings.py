@@ -269,7 +269,7 @@ class TestNodeSettingsRuntime:
         builder = _NodeSettingsMessageBuilder(mock_local_node)
         runtime = _NodeSettingsRuntime(mock_local_node, message_builder=builder)
 
-        runtime.request_config(admin_pb2.AdminMessage.ConfigType.DEVICE_CONFIG)
+        runtime.requestConfig(admin_pb2.AdminMessage.ConfigType.DEVICE_CONFIG)
 
         mock_local_node._send_admin.assert_called_once()
         call_kwargs = mock_local_node._send_admin.call_args[1]
@@ -284,7 +284,7 @@ class TestNodeSettingsRuntime:
         builder = _NodeSettingsMessageBuilder(mock_remote_node)
         runtime = _NodeSettingsRuntime(mock_remote_node, message_builder=builder)
 
-        runtime.request_config(admin_pb2.AdminMessage.ConfigType.DEVICE_CONFIG)
+        runtime.requestConfig(admin_pb2.AdminMessage.ConfigType.DEVICE_CONFIG)
 
         mock_remote_node._send_admin.assert_called_once()
         call_kwargs = mock_remote_node._send_admin.call_args[1]
@@ -301,7 +301,7 @@ class TestNodeSettingsRuntime:
         builder = _NodeSettingsMessageBuilder(mock_remote_node)
         runtime = _NodeSettingsRuntime(mock_remote_node, message_builder=builder)
 
-        runtime.request_config(admin_pb2.AdminMessage.ConfigType.DEVICE_CONFIG)
+        runtime.requestConfig(admin_pb2.AdminMessage.ConfigType.DEVICE_CONFIG)
 
         mock_remote_node._send_admin.assert_called_once()
         mock_remote_node.iface.waitForAckNak.assert_not_called()
@@ -314,7 +314,7 @@ class TestNodeSettingsRuntime:
         builder = _NodeSettingsMessageBuilder(mock_local_node)
         runtime = _NodeSettingsRuntime(mock_local_node, message_builder=builder)
 
-        runtime.request_config(
+        runtime.requestConfig(
             admin_pb2.AdminMessage.ConfigType.DEVICE_CONFIG, admin_index=2
         )
 
@@ -391,7 +391,7 @@ class TestNodeSettingsRuntime:
         )
 
         with caplog.at_level(logging.DEBUG):
-            runtime.write_config("device")
+            runtime.writeConfig("device")
 
         assert "Config write completed: device" in caplog.text
         mock_local_node._send_admin.assert_called_once()
@@ -409,7 +409,7 @@ class TestNodeSettingsRuntime:
             config_pb2.Config.DeviceConfig.Role.CLIENT
         )
 
-        runtime.write_config("device")
+        runtime.writeConfig("device")
 
         mock_remote_node._send_admin.assert_called_once()
         call_kwargs = mock_remote_node._send_admin.call_args[1]
@@ -428,7 +428,7 @@ class TestNodeSettingsRuntime:
         )
         mock_remote_node._send_admin = MagicMock(return_value=None)
 
-        runtime.write_config("device")
+        runtime.writeConfig("device")
 
         mock_remote_node.iface.waitForAckNak.assert_not_called()
 
@@ -460,7 +460,7 @@ class TestNodeSettingsResponseRuntime:
         packet: dict[str, Any] = {}
 
         with caplog.at_level(logging.WARNING):
-            runtime.handle_settings_response(packet)
+            runtime.handleSettingsResponse(packet)
 
         assert "malformed settings response (missing decoded)" in caplog.text
         assert mock_node_for_response.iface._acknowledgment.receivedNak is True
@@ -478,7 +478,7 @@ class TestNodeSettingsResponseRuntime:
         }
 
         with caplog.at_level(logging.ERROR):
-            runtime.handle_settings_response(packet)
+            runtime.handleSettingsResponse(packet)
 
         assert "Error on response: NO_RESPONSE" in caplog.text
         assert mock_node_for_response.iface._acknowledgment.receivedNak is True
@@ -501,7 +501,7 @@ class TestNodeSettingsResponseRuntime:
             }
         }
 
-        runtime.handle_settings_response(packet)
+        runtime.handleSettingsResponse(packet)
 
         assert mock_node_for_response.iface._acknowledgment.receivedNak is False
         assert mock_node_for_response.iface._acknowledgment.receivedAck is True
@@ -515,7 +515,7 @@ class TestNodeSettingsResponseRuntime:
         packet: dict[str, Any] = {"decoded": {}}
 
         with caplog.at_level(logging.WARNING):
-            runtime.handle_settings_response(packet)
+            runtime.handleSettingsResponse(packet)
 
         assert "malformed settings response (missing admin)" in caplog.text
         assert mock_node_for_response.iface._acknowledgment.receivedNak is True
@@ -531,7 +531,7 @@ class TestNodeSettingsResponseRuntime:
         }
 
         with caplog.at_level(logging.WARNING):
-            runtime.handle_settings_response(packet)
+            runtime.handleSettingsResponse(packet)
 
         assert "Received empty config response from node" in caplog.text
         assert mock_node_for_response.iface._acknowledgment.receivedNak is True
@@ -547,7 +547,7 @@ class TestNodeSettingsResponseRuntime:
         }
 
         with caplog.at_level(logging.WARNING):
-            runtime.handle_settings_response(packet)
+            runtime.handleSettingsResponse(packet)
 
         assert "Received empty module config response from node" in caplog.text
         assert mock_node_for_response.iface._acknowledgment.receivedNak is True
@@ -638,7 +638,7 @@ class TestNodeSettingsResponseRuntime:
         }
 
         with caplog.at_level(logging.WARNING):
-            runtime.handle_settings_response(packet)
+            runtime.handleSettingsResponse(packet)
 
         assert "malformed settings response (invalid admin.raw)" in caplog.text
         assert mock_node_for_response.iface._acknowledgment.receivedNak is True
@@ -663,7 +663,7 @@ class TestNodeSettingsResponseRuntime:
         }
 
         with caplog.at_level(logging.INFO):
-            runtime.handle_settings_response(packet)
+            runtime.handleSettingsResponse(packet)
 
         assert mock_node_for_response.iface._acknowledgment.receivedAck is True
         assert "Received settings block: device" in caplog.text
@@ -758,7 +758,7 @@ class TestNodeAdminCommandRuntime:
         runtime = _NodeAdminCommandRuntime(mock_local_node_for_admin)
 
         with caplog.at_level(logging.INFO):
-            result = runtime.begin_settings_transaction()
+            result = runtime.beginSettingsTransaction()
 
         assert result is not None
         assert "open a transaction to edit settings" in caplog.text
@@ -774,7 +774,7 @@ class TestNodeAdminCommandRuntime:
         runtime = _NodeAdminCommandRuntime(mock_local_node_for_admin)
 
         with caplog.at_level(logging.INFO):
-            result = runtime.commit_settings_transaction()
+            result = runtime.commitSettingsTransaction()
 
         assert result is not None
         assert "commit open transaction" in caplog.text
@@ -813,7 +813,7 @@ class TestNodeAdminCommandRuntime:
         runtime = _NodeAdminCommandRuntime(mock_node_for_admin)
 
         with caplog.at_level(logging.INFO):
-            result = runtime.begin_settings_transaction()
+            result = runtime.beginSettingsTransaction()
 
         assert result is not None
         mock_node_for_admin.ensureSessionKey.assert_called_once()
@@ -832,7 +832,7 @@ class TestNodeAdminCommandRuntime:
         runtime = _NodeAdminCommandRuntime(mock_node_for_admin)
 
         with caplog.at_level(logging.INFO):
-            result = runtime.commit_settings_transaction()
+            result = runtime.commitSettingsTransaction()
 
         assert result is not None
         mock_node_for_admin.ensureSessionKey.assert_called_once()
@@ -1140,7 +1140,7 @@ class TestNodeOwnerProfileRuntime:
         long_name = "A" * 50  # Longer than MAX_LONG_NAME_LEN (40)
 
         with caplog.at_level(logging.WARNING):
-            mock_runtime_for_owner.set_owner(long_name=long_name)
+            mock_runtime_for_owner.setOwner(long_name=long_name)
 
         assert "Long name is longer than" in caplog.text
         assert "truncating" in caplog.text
@@ -1162,7 +1162,7 @@ class TestNodeOwnerProfileRuntime:
         short_name = "LongShort"  # Longer than MAX_SHORT_NAME_LEN (4)
 
         with caplog.at_level(logging.WARNING):
-            mock_runtime_for_owner.set_owner(short_name=short_name)
+            mock_runtime_for_owner.setOwner(short_name=short_name)
 
         assert "Short name is longer than" in caplog.text
         assert "truncating" in caplog.text
@@ -1180,7 +1180,7 @@ class TestNodeOwnerProfileRuntime:
     ) -> None:
         """set_owner with empty long_name raises error."""
         with pytest.raises(_TestInterfaceError, match=EMPTY_LONG_NAME_MSG):
-            mock_runtime_for_owner.set_owner(long_name="")
+            mock_runtime_for_owner.setOwner(long_name="")
 
     @pytest.mark.unit
     def test_set_owner_whitespace_long_name_raises_error(
@@ -1188,7 +1188,7 @@ class TestNodeOwnerProfileRuntime:
     ) -> None:
         """set_owner with whitespace-only long_name raises error."""
         with pytest.raises(_TestInterfaceError, match=EMPTY_LONG_NAME_MSG):
-            mock_runtime_for_owner.set_owner(long_name="   ")
+            mock_runtime_for_owner.setOwner(long_name="   ")
 
     @pytest.mark.unit
     def test_set_owner_empty_short_name_raises_error(
@@ -1196,7 +1196,7 @@ class TestNodeOwnerProfileRuntime:
     ) -> None:
         """set_owner with empty short_name raises error."""
         with pytest.raises(_TestInterfaceError, match=EMPTY_SHORT_NAME_MSG):
-            mock_runtime_for_owner.set_owner(short_name="")
+            mock_runtime_for_owner.setOwner(short_name="")
 
     @pytest.mark.unit
     def test_set_owner_whitespace_short_name_raises_error(
@@ -1204,14 +1204,14 @@ class TestNodeOwnerProfileRuntime:
     ) -> None:
         """set_owner with whitespace-only short_name raises error."""
         with pytest.raises(_TestInterfaceError, match=EMPTY_SHORT_NAME_MSG):
-            mock_runtime_for_owner.set_owner(short_name="   ")
+            mock_runtime_for_owner.setOwner(short_name="   ")
 
     @pytest.mark.unit
     def test_set_owner_strips_whitespace(
         self, mock_runtime_for_owner: _NodeOwnerProfileRuntime
     ) -> None:
         """set_owner strips whitespace from names before validation."""
-        mock_runtime_for_owner.set_owner(long_name="  ValidName  ", short_name=" AB ")
+        mock_runtime_for_owner.setOwner(long_name="  ValidName  ", short_name=" AB ")
 
         call_args = (
             mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
@@ -1225,7 +1225,7 @@ class TestNodeOwnerProfileRuntime:
         self, mock_runtime_for_owner: _NodeOwnerProfileRuntime
     ) -> None:
         """set_owner sets is_licensed flag."""
-        mock_runtime_for_owner.set_owner(long_name="Test", is_licensed=True)
+        mock_runtime_for_owner.setOwner(long_name="Test", is_licensed=True)
 
         call_args = (
             mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
@@ -1238,7 +1238,7 @@ class TestNodeOwnerProfileRuntime:
         self, mock_runtime_for_owner: _NodeOwnerProfileRuntime
     ) -> None:
         """set_owner sets is_unmessagable flag when provided."""
-        mock_runtime_for_owner.set_owner(long_name="Test", is_unmessagable=True)
+        mock_runtime_for_owner.setOwner(long_name="Test", is_unmessagable=True)
 
         call_args = (
             mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
@@ -1251,7 +1251,7 @@ class TestNodeOwnerProfileRuntime:
         self, mock_runtime_for_owner: _NodeOwnerProfileRuntime
     ) -> None:
         """set_owner does not set is_unmessagable when None."""
-        mock_runtime_for_owner.set_owner(long_name="Test", is_unmessagable=None)
+        mock_runtime_for_owner.setOwner(long_name="Test", is_unmessagable=None)
 
         call_args = (
             mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
@@ -1267,7 +1267,7 @@ class TestNodeOwnerProfileRuntime:
     ) -> None:
         """set_owner with all parameters sets all fields."""
         with caplog.at_level(logging.DEBUG):
-            mock_runtime_for_owner.set_owner(
+            mock_runtime_for_owner.setOwner(
                 long_name="TestUser",
                 short_name="TEST",
                 is_licensed=True,
@@ -1292,7 +1292,7 @@ class TestNodeOwnerProfileRuntime:
         self, mock_runtime_for_owner: _NodeOwnerProfileRuntime
     ) -> None:
         """set_owner with only long_name sets only that field."""
-        mock_runtime_for_owner.set_owner(long_name="OnlyLong")
+        mock_runtime_for_owner.setOwner(long_name="OnlyLong")
 
         call_args = (
             mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
@@ -1307,7 +1307,7 @@ class TestNodeOwnerProfileRuntime:
         self, mock_runtime_for_owner: _NodeOwnerProfileRuntime
     ) -> None:
         """set_owner with only short_name sets only that field."""
-        mock_runtime_for_owner.set_owner(short_name="ABC")
+        mock_runtime_for_owner.setOwner(short_name="ABC")
 
         call_args = (
             mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]

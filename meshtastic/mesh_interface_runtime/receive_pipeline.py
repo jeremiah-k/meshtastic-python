@@ -626,7 +626,11 @@ class ReceivePipeline:
         packet_dict = _LazyMessageDict(meshPacket).get()
 
         packet_dict["raw"] = meshPacket
-        if hack and "from" not in packet_dict and getattr(meshPacket, "from") == 0:
+        if (
+            allow_zero_source
+            and "from" not in packet_dict
+            and getattr(meshPacket, "from") == 0
+        ):
             packet_dict["from"] = 0
 
         if "to" not in packet_dict:

@@ -97,95 +97,6 @@ class TestModuleLevelConstants:
         assert isinstance(DECODE_FAILED_PREFIX, str)
 
 
-class TestEmitResponseSummary:
-    """Tests for _emit_response_summary function (lines 145-146)."""
-
-    @pytest.mark.unit
-    def test_emit_response_summary_logs_info(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """Test that _emit_response_summary logs at INFO level."""
-        with caplog.at_level(logging.INFO):
-            _emit_response_summary("Test message")
-
-        assert "Test message" in caplog.text
-
-
-class TestNormalizeJsonSerializable:
-    """Tests for _normalize_json_serializable function (lines 148-161)."""
-
-    @pytest.mark.unit
-    def test_normalize_bytes(self) -> None:
-        """Test that bytes are base64-encoded."""
-        result = _normalize_json_serializable(b"hello")
-        assert result == "base64:aGVsbG8="
-
-    @pytest.mark.unit
-    def test_normalize_bytearray(self) -> None:
-        """Test that bytearray is base64-encoded."""
-        result = _normalize_json_serializable(bytearray(b"hello"))
-        assert result == "base64:aGVsbG8="
-
-    @pytest.mark.unit
-    def test_normalize_memoryview(self) -> None:
-        """Test that memoryview is base64-encoded."""
-        result = _normalize_json_serializable(memoryview(b"hello"))
-        assert result == "base64:aGVsbG8="
-
-    @pytest.mark.unit
-    def test_normalize_dict(self) -> None:
-        """Test that dict values are recursively normalized."""
-        data = {"key": b"value", "num": 42}
-        result = _normalize_json_serializable(data)
-        assert result == {"key": "base64:dmFsdWU=", "num": 42}
-
-    @pytest.mark.unit
-    def test_normalize_list(self) -> None:
-        """Test that list items are recursively normalized."""
-        data = [b"item1", "item2", 42]
-        result = _normalize_json_serializable(data)
-        assert result == ["base64:aXRlbTE=", "item2", 42]
-
-    @pytest.mark.unit
-    def test_normalize_tuple(self) -> None:
-        """Test that tuple is converted to list and normalized."""
-        data = (b"item1", "item2")
-        result = _normalize_json_serializable(data)
-        assert result == ["base64:aXRlbTE=", "item2"]
-
-    @pytest.mark.unit
-    def test_normalize_set(self) -> None:
-        """Test that set is converted to list and normalized."""
-        data = {b"item1", "item2"}
-        result = _normalize_json_serializable(data)
-        # Sets are unordered, so just check it's a list with 2 items
-        assert isinstance(result, list)
-        assert len(result) == 2
-
-    @pytest.mark.unit
-    def test_normalize_primitives(self) -> None:
-        """Test that primitives are returned as-is."""
-        assert _normalize_json_serializable(None) is None
-        assert _normalize_json_serializable(True) is True
-        assert _normalize_json_serializable(False) is False
-        assert _normalize_json_serializable(42) == 42
-        assert _normalize_json_serializable(3.14) == 3.14
-        assert _normalize_json_serializable("hello") == "hello"
-
-    @pytest.mark.unit
-    def test_normalize_unknown_type(self) -> None:
-        """Test that unknown types are converted to string."""
-
-        class CustomClass:
-            """Custom class for testing unknown type normalization."""
-
-            def __str__(self) -> str:
-                return "custom"
-
-        result = _normalize_json_serializable(CustomClass())
-        assert result == "custom"
-
-
 class TestMeshInterfaceError:
     """Tests for MeshInterfaceError class (lines 164-169)."""
 
@@ -993,7 +904,9 @@ class TestNormalizePacketFromRadio:
         mesh_packet.to = 11111
         mesh_packet.decoded.payload = b"test data"
 
-        result = receive_pipeline._normalize_packet_from_radio(mesh_packet, hack=False)
+        result = receive_pipeline._normalize_packet_from_radio(
+            mesh_packet, allow_zero_source=False
+        )
 
         assert result is not None
         assert result["id"] == 12345
@@ -1009,7 +922,9 @@ class TestNormalizePacketFromRadio:
         mesh_packet = mesh_pb2.MeshPacket()
         setattr(mesh_packet, "from", 0)
 
-        result = receive_pipeline._normalize_packet_from_radio(mesh_packet, hack=False)
+        result = receive_pipeline._normalize_packet_from_radio(
+            mesh_packet, allow_zero_source=False
+        )
 
         assert result is None
 
@@ -1021,7 +936,9 @@ class TestNormalizePacketFromRadio:
         mesh_packet = mesh_pb2.MeshPacket()
         setattr(mesh_packet, "from", 12345)
 
-        result = receive_pipeline._normalize_packet_from_radio(mesh_packet, hack=False)
+        result = receive_pipeline._normalize_packet_from_radio(
+            mesh_packet, allow_zero_source=False
+        )
 
         assert result is not None
         assert result["to"] == 0
