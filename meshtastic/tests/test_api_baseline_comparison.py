@@ -172,7 +172,7 @@ def _ast_signature_str(func_node) -> str:
             params.append(s)
         kw_defaults = func_node.args.kw_defaults
         n_kw_args = len(func_node.args.kwonlyargs)
-        n_kw_defaults = len(kw_defaults)
+        len(kw_defaults)
         kw_start_idx = len(params) - n_kw_args
         for i, default_node in enumerate(kw_defaults):
             if default_node is not None:

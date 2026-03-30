@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import math
 import secrets
 import warnings
 from collections.abc import Callable

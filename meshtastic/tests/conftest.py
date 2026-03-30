@@ -10,7 +10,7 @@ import math
 import shutil
 import threading
 import time
-from collections.abc import Callable, Generator, Iterator
+from collections.abc import Callable, Generator
 from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, cast
 from unittest.mock import MagicMock, create_autospec, patch
 
