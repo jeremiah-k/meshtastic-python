@@ -677,6 +677,9 @@ class DeferredExecution:
     def join(self, timeout: float | None = None) -> bool:
         """Wait for the worker thread to finish.
 
+        Note: Call `stop()` before `join()` to signal the worker to exit;
+        otherwise this method may block indefinitely (or until timeout).
+
         Parameters
         ----------
         timeout : float | None, optional
