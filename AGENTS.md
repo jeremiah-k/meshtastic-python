@@ -222,7 +222,7 @@ Current `COMPAT_DEPRECATE` methods:
 When generating API baselines, always run via poetry to ensure all dependencies are available:
 
 ```bash
-poetry run python bin/extract_api_surface.py meshtastic/tests/api_baselines/api_baseline.json
+poetry run python bin/extract_api_surface.py meshtastic > meshtastic/tests/api_baselines/api_baseline.json
 poetry run pytest meshtastic/tests/test_api_baseline_comparison.py -v --update-baselines
 ```
 

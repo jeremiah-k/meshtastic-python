@@ -65,6 +65,20 @@ def _signature_from_function(
     func_node: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> str:
     params = []
+
+    # Handle positional-only arguments
+    for arg in func_node.args.posonlyargs:
+        s = arg.arg
+        ann = _annotation_to_str(arg.annotation) if arg.annotation else None
+        if ann:
+            s += f": {ann}"
+        params.append(s)
+
+    # Add "/" separator if positional-only args exist
+    if func_node.args.posonlyargs:
+        params.append("/")
+
+    # Handle regular positional arguments
     for arg in func_node.args.args:
         s = arg.arg
         ann = _annotation_to_str(arg.annotation) if arg.annotation else None
@@ -72,12 +86,34 @@ def _signature_from_function(
             s += f": {ann}"
         params.append(s)
 
+    # Calculate defaults - applies to last N args of combined posonlyargs + args
+    posonlyargs = func_node.args.posonlyargs
+    args = func_node.args.args
     defaults = func_node.args.defaults
-    n_args = len(func_node.args.args)
+    n_posonly = len(posonlyargs)
+    n_args = len(args)
     n_defaults = len(defaults)
-    for i, default_node in enumerate(defaults):
-        arg_idx = n_args - n_defaults + i
-        dv = _default_to_str(default_node)
+    has_posonly = bool(posonlyargs)
+
+    # Defaults apply to the last n_defaults of combined (posonlyargs + args)
+    # First apply defaults to posonlyargs (if any), then to args
+    n_posonly_defaults = max(0, n_defaults - n_args)
+    n_args_defaults = n_defaults - n_posonly_defaults
+
+    # Apply defaults to posonlyargs
+    for i in range(n_posonly_defaults):
+        default_idx = i
+        arg_idx = n_posonly - n_posonly_defaults + i
+        dv = _default_to_str(defaults[default_idx])
+        if dv is not None:
+            params[arg_idx] += f"={dv}"
+
+    # Apply defaults to regular args
+    slash_offset = 1 if has_posonly else 0
+    for i in range(n_args_defaults):
+        default_idx = n_posonly_defaults + i
+        arg_idx = n_posonly + slash_offset + n_args - n_args_defaults + i
+        dv = _default_to_str(defaults[default_idx])
         if dv is not None:
             params[arg_idx] += f"={dv}"
 

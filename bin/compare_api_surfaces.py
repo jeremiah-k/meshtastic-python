@@ -21,14 +21,30 @@ def _normalize_type(type_str: str) -> str:
 
 
 def _normalize_sig(sig: str) -> str:
-    def replacer(m) -> str:
-        name = m.group(1)
-        type_start = m.group(0).find(":") + 1
-        type_part = m.group(0)[type_start:].strip()
-        normalized = _normalize_type(type_part)
-        return f"{name}: {normalized}"
-
-    return re.sub(r"(\w+):\s*[^,)=]+", replacer, sig)
+    """Normalize signature with bracket-aware type parsing."""
+    result = []
+    i = 0
+    while i < len(sig):
+        # Find parameter name (word chars before colon)
+        if i < len(sig) - 1 and sig[i + 1] == ":":
+            name = sig[i]
+            i += 2  # Skip name and colon
+            # Collect type with bracket tracking
+            type_start = i
+            depth = 0
+            while i < len(sig) and (depth > 0 or sig[i] not in ",)"):
+                if sig[i] in "([{":
+                    depth += 1
+                elif sig[i] in "])}":
+                    depth -= 1
+                i += 1
+            type_str = sig[type_start:i].strip()
+            normalized = _normalize_type(type_str)
+            result.append(f"{name}: {normalized}")
+        else:
+            result.append(sig[i])
+            i += 1
+    return "".join(result)
 
 
 def compare_methods(
@@ -53,9 +69,9 @@ def compare_methods(
         m_sig = _normalize_sig(master[name])
         p_sig = _normalize_sig(pr[name])
         if m_sig != p_sig:
-            informational.append(f"CHANGED {class_name}.{name}:")
-            informational.append(f"  master: {master[name]}")
-            informational.append(f"  pr:     {pr[name]}")
+            blocking.append(f"CHANGED {class_name}.{name}:")
+            blocking.append(f"  master: {master[name]}")
+            blocking.append(f"  pr:     {pr[name]}")
 
     return blocking, informational
 
@@ -152,6 +168,7 @@ def main() -> int:
         print(
             "No breaking API changes detected vs master (informational changes above)."
         )
+        return 0
 
 
 if __name__ == "__main__":
