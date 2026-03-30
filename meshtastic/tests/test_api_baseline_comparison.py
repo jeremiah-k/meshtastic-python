@@ -155,15 +155,8 @@ def _ast_signature_str(func_node) -> str:
     n_defaults = len(defaults)
     for i, default_node in enumerate(defaults):
         arg_idx = n_args - n_defaults + i
-        if isinstance(default_node, ast.Constant):
-            if isinstance(default_node.value, str):
-                params[arg_idx] += f"='{default_node.value}'"
-            elif default_node.value is None:
-                params[arg_idx] += "=None"
-            else:
-                params[arg_idx] += f"={default_node.value!r}"
-        else:
-            params[arg_idx] += f"={ast.unparse(default_node)!r}"
+        default_str = ast.unparse(default_node)
+        params[arg_idx] += f"={default_str}"
     if func_node.args.vararg:
         params.append(f"*{func_node.args.vararg.arg}")
     if func_node.args.kwarg:
