@@ -15,6 +15,7 @@ The baselines are stored in:
 # Fixture names (current_baseline, stored_baseline) appear to shadow when used as
 # test parameters - this is standard pytest fixture injection pattern.
 
+import ast
 import inspect
 import json
 from pathlib import Path
@@ -114,16 +115,23 @@ def _normalize_type_str(type_str: str) -> str:
     # Convert Union[..., None] to Optional[...]
     result = re.sub(r"Union\[([^\]]+),\s*None\]", normalize_union_to_optional, result)
 
-    # Convert X | None to Optional[X] (but not for simple types like int | None)
-    # Only do this for complex types (containing brackets or typing. prefix)
-    def normalize_pipe_optional(match):
-        inner = match.group(1).strip()
-        # Keep simple unions as-is, only wrap complex types
-        if "[" in inner or "Callable" in inner or "IO" in inner:
-            return f"Optional[{inner}]"
-        return match.group(0)  # Return unchanged for simple types
+    # Convert Optional[X] to X | None for canonical form
+    # This must handle nested brackets (e.g. Optional[Callable[[...], ...]])
+    def normalize_optional_to_pipe(match):
+        inner = match.group(1)
+        return f"{inner} | None"
 
-    result = re.sub(r"([\w\[\]|\s]+)\|\s*None\b", normalize_pipe_optional, result)
+    result = re.sub(r"Optional\[([^\]]+)\]", normalize_optional_to_pipe, result)
+
+    # Convert remaining Union[A, B] to A | B
+    def normalize_union_to_pipe(match):
+        content = match.group(1)
+        parts = [p.strip() for p in content.split(",")]
+        if len(parts) == 2:
+            return f"{parts[0]} | {parts[1]}"
+        return f"({' | '.join(parts)})"
+
+    result = re.sub(r"Union\[([^\]]+)\]", normalize_union_to_pipe, result)
 
     return result
 
@@ -141,8 +149,6 @@ def _get_signature_str(method: Any) -> str:
             param_str = name
             if param.annotation is not inspect.Parameter.empty:
                 annotation_str = str(param.annotation)
-                # Normalize the type annotation
-                annotation_str = _normalize_type_str(annotation_str)
                 param_str += f":{annotation_str}"
             if param.default is not inspect.Parameter.empty:
                 if param.default is None:
@@ -152,31 +158,113 @@ def _get_signature_str(method: Any) -> str:
                 else:
                     param_str += f"={param.default}"
             params.append(param_str)
-        return f"({', '.join(params)})"
+        raw_sig = f"({', '.join(params)})"
+        return _normalize_type_str(raw_sig)
     except (ValueError, TypeError):
         return "(unknown)"
 
 
-def capture_node_methods() -> dict[str, str]:
-    """Capture public method signatures from Node class.
+def _ast_annotation_str(node) -> str:
+    """Convert an AST annotation node to a string representation."""
+    import ast
 
-    Returns a dictionary mapping method names to their signature strings.
-    """
+    if node is None:
+        return ""
+    if isinstance(node, ast.Constant):
+        return repr(node.value)
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return f"{_ast_annotation_str(node.value)}.{node.attr}"
+    if isinstance(node, ast.Subscript):
+        if isinstance(node.value, ast.Name) and node.value.id == "Literal":
+            if isinstance(node.slice, ast.Tuple):
+                return " | ".join(_ast_annotation_str(e) for e in node.slice.elts)
+            return _ast_annotation_str(node.slice)
+        return f"{_ast_annotation_str(node.value)}[{_ast_annotation_str(node.slice)}]"
+    if isinstance(node, ast.Tuple):
+        return ", ".join(_ast_annotation_str(e) for e in node.elts)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return f"{_ast_annotation_str(node.left)} | {_ast_annotation_str(node.right)}"
+    return ast.unparse(node)
+
+
+def _ast_signature_str(func_node) -> str:
+    """Extract signature string from an AST FunctionDef node."""
+    params = []
+    for arg in func_node.args.args:
+        s = arg.arg
+        if arg.annotation:
+            s += f":{_ast_annotation_str(arg.annotation)}"
+        params.append(s)
+    defaults = func_node.args.defaults
+    n_args = len(func_node.args.args)
+    n_defaults = len(defaults)
+    for i, default_node in enumerate(defaults):
+        arg_idx = n_args - n_defaults + i
+        if isinstance(default_node, ast.Constant):
+            if isinstance(default_node.value, str):
+                params[arg_idx] += f"='{default_node.value}'"
+            elif default_node.value is None:
+                params[arg_idx] += "=None"
+            else:
+                params[arg_idx] += f"={default_node.value}"
+        else:
+            params[arg_idx] += f"={ast.unparse(default_node)}"
+    if func_node.args.vararg:
+        params.append(f"*{func_node.args.vararg.arg}")
+    if func_node.args.kwarg:
+        params.append(f"**{func_node.args.kwarg.arg}")
+    return f"({', '.join(params)})"
+
+
+def _ast_capture_class_methods(source: str, class_name: str) -> dict[str, str]:
+    """Extract public method signatures from a class in AST source."""
+    tree = ast.parse(source)
+    methods = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name == class_name:
+            for item in node.body:
+                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    if item.name.startswith("_"):
+                        continue
+                    methods[item.name] = _ast_signature_str(item)
+    return methods
+
+
+def _find_module_source(module_name: str) -> str | None:
+    """Find the source file for a module and return its content."""
+    import importlib.util, sys
+
+    spec = importlib.util.find_spec(module_name)
+    if spec and spec.origin:
+        with open(spec.origin) as f:
+            return f.read()
+    return None
+
+
+def capture_node_methods() -> dict[str, str]:
+    """Capture public method signatures from Node class using AST."""
+    source = _find_module_source("meshtastic.node")
+    if source:
+        methods = _ast_capture_class_methods(source, "Node")
+        return dict(sorted(methods.items()))
     methods = {}
     for name in dir(Node):
         if name.startswith("_"):
             continue
         attr = getattr(Node, name)
-        if callable(attr) and inspect.isfunction(attr) or inspect.ismethod(attr):
+        if callable(attr) and (inspect.isfunction(attr) or inspect.ismethod(attr)):
             methods[name] = _get_signature_str(attr)
-    return methods
+    return dict(sorted(methods.items()))
 
 
 def capture_mesh_interface_methods() -> dict[str, str]:
-    """Capture public method signatures from MeshInterface class.
-
-    Returns a dictionary mapping method names to their signature strings.
-    """
+    """Capture public method signatures from MeshInterface class using AST."""
+    source = _find_module_source("meshtastic.mesh_interface")
+    if source:
+        methods = _ast_capture_class_methods(source, "MeshInterface")
+        return dict(sorted(methods.items()))
     methods = {}
     for name in dir(MeshInterface):
         if name.startswith("_"):
@@ -184,7 +272,7 @@ def capture_mesh_interface_methods() -> dict[str, str]:
         attr = getattr(MeshInterface, name)
         if callable(attr):
             methods[name] = _get_signature_str(attr)
-    return methods
+    return dict(sorted(methods.items()))
 
 
 def capture_top_level_exports() -> list[str]:
