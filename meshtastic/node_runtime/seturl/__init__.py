@@ -1,5 +1,7 @@
 """setURL transaction runtime owners and planning/execution boundaries."""
 
+# These are re-exported for use by other modules (internal API)
+# noqa: F401
 from meshtastic.node_runtime.seturl.cache import _SetUrlCacheManager
 from meshtastic.node_runtime.seturl.context import _SetUrlAdminContext
 from meshtastic.node_runtime.seturl.coordinator import _SetUrlTransactionCoordinator

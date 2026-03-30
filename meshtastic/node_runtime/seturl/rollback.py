@@ -241,7 +241,8 @@ class _SetUrlRollbackEngine:
 
         def do_channel_write(channel: object, admin_index: int) -> None:
             self._node._write_channel_snapshot(
-                channel, adminIndex=admin_index
+                channel,  # type: ignore[arg-type]
+                adminIndex=admin_index,
             )  # noqa: SLF001
 
         rollback_failed = self._best_effort_rollback(

@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 def _get_role_name(role: int) -> str:
     """Return the role name or UNKNOWN(<value>) for unrecognized roles."""
     if role in channel_pb2.Channel.Role.values():
-        return channel_pb2.Channel.Role.Name(role)
+        return channel_pb2.Channel.Role.Name(role)  # type: ignore[arg-type]
     return f"UNKNOWN({role})"
 
 
