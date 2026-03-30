@@ -21,7 +21,7 @@ def _normalize_type(type_str: str) -> str:
 
 
 def _normalize_sig(sig: str) -> str:
-    def replacer(m):
+    def replacer(m) -> str:
         name = m.group(1)
         type_start = m.group(0).find(":") + 1
         type_part = m.group(0)[type_start:].strip()

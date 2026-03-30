@@ -13,10 +13,10 @@ import ast
 import json
 import sys
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any
 
 
-def _annotation_to_str(node: Optional[ast.AST]) -> str:
+def _annotation_to_str(node: ast.AST | None) -> str:
     if node is None:
         return ""
     if isinstance(node, ast.Constant):
@@ -40,7 +40,7 @@ def _annotation_to_str(node: Optional[ast.AST]) -> str:
     return ast.dump(node)
 
 
-def _default_to_str(node: Optional[ast.AST]) -> Optional[str]:
+def _default_to_str(node: ast.AST | None) -> str | None:
     if node is None:
         return None
     if isinstance(node, ast.Constant):
@@ -65,7 +65,7 @@ def _default_to_str(node: Optional[ast.AST]) -> Optional[str]:
 
 
 def _signature_from_function(
-    func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
+    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> str:
     params = []
     for arg in func_node.args.args:
@@ -113,7 +113,7 @@ def _extract_class_methods(tree: ast.AST, class_name: str) -> dict[str, str]:
     return methods
 
 
-def _find_source_file(pkg_dir: Path, module_name: str) -> Optional[Path]:
+def _find_source_file(pkg_dir: Path, module_name: str) -> Path | None:
     p = pkg_dir / f"{module_name}.py"
     if p.exists():
         return p
@@ -156,7 +156,9 @@ def _get_top_level_exports(pkg_dir: Path) -> list[str]:
     return sorted(exports)
 
 
-def extract_api_surface(pkg_dir, classes=None):
+def extract_api_surface(
+    pkg_dir: str | Path, classes: list[str] | None = None
+) -> dict[str, Any]:
     pkg_dir = Path(pkg_dir)
     if classes is None:
         classes = ["MeshInterface", "Node"]
@@ -196,7 +198,7 @@ def extract_api_surface(pkg_dir, classes=None):
     return result
 
 
-def main():
+def main() -> None:
     if len(sys.argv) < 2:
         print(f"Usage: {sys.argv[0]} <path-to-meshtastic-pkg-dir>", file=sys.stderr)
         sys.exit(1)
