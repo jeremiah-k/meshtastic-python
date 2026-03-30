@@ -1,6 +1,5 @@
 """Settings request/response and admin command-family runtime owners."""
 
-# pylint: disable=no-name-in-module
 from meshtastic.node_runtime.settings_runtime.admin import _NodeAdminCommandRuntime
 from meshtastic.node_runtime.settings_runtime.config_runtime import _NodeSettingsRuntime
 from meshtastic.node_runtime.settings_runtime.message import _NodeSettingsMessageBuilder

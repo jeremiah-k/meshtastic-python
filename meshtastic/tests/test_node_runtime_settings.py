@@ -730,7 +730,7 @@ class TestNodeAdminCommandRuntime:
         runtime = _NodeAdminCommandRuntime(mock_local_node_for_admin)
 
         with caplog.at_level(logging.INFO):
-            result = runtime.factory_reset(full=True)
+            result = runtime.factoryReset(full=True)
 
         assert result is not None
         assert "factory reset (full device reset)" in caplog.text
@@ -744,7 +744,7 @@ class TestNodeAdminCommandRuntime:
         runtime = _NodeAdminCommandRuntime(mock_local_node_for_admin)
 
         with caplog.at_level(logging.INFO):
-            result = runtime.factory_reset(full=False)
+            result = runtime.factoryReset(full=False)
 
         assert result is not None
         assert "factory reset (config reset)" in caplog.text
@@ -913,7 +913,7 @@ class TestNodeAdminCommandRuntime:
         with pytest.raises(
             _TestInterfaceError, match="startOTA only possible on local node"
         ):
-            runtime.start_ota(
+            runtime.startOta(
                 mode=admin_pb2.OTAMode.OTA_WIFI,
                 ota_file_hash=b"hash",
             )
@@ -926,7 +926,7 @@ class TestNodeAdminCommandRuntime:
         runtime = _NodeAdminCommandRuntime(mock_local_node_for_admin)
 
         with pytest.raises(TypeError, match=r"missing required argument.*mode"):
-            runtime.start_ota(
+            runtime.startOta(
                 mode=None,
                 ota_file_hash=b"hash",
             )
@@ -941,7 +941,7 @@ class TestNodeAdminCommandRuntime:
         with pytest.raises(
             TypeError, match=r"missing required argument.*ota_file_hash"
         ):
-            runtime.start_ota(
+            runtime.startOta(
                 mode=admin_pb2.OTAMode.OTA_WIFI,
                 ota_file_hash=None,
             )
@@ -954,7 +954,7 @@ class TestNodeAdminCommandRuntime:
         runtime = _NodeAdminCommandRuntime(mock_local_node_for_admin)
 
         with pytest.raises(ValueError, match="Conflicting OTA mode arguments"):
-            runtime.start_ota(
+            runtime.startOta(
                 mode=admin_pb2.OTAMode.OTA_WIFI,
                 ota_mode=admin_pb2.OTAMode.OTA_BLE,
                 ota_file_hash=b"hash",
@@ -968,7 +968,7 @@ class TestNodeAdminCommandRuntime:
         runtime = _NodeAdminCommandRuntime(mock_local_node_for_admin)
 
         with pytest.raises(TypeError, match="unexpected keyword argument"):
-            runtime.start_ota(
+            runtime.startOta(
                 mode=admin_pb2.OTAMode.OTA_WIFI,
                 ota_file_hash=b"hash",
                 unknown_arg="value",
@@ -981,7 +981,7 @@ class TestNodeAdminCommandRuntime:
         """start_OTA with valid mode and hash sends OTA request (lines 441-479)."""
         runtime = _NodeAdminCommandRuntime(mock_local_node_for_admin)
 
-        result = runtime.start_ota(
+        result = runtime.startOta(
             mode=admin_pb2.OTAMode.OTA_WIFI,
             ota_file_hash=b"test_hash_bytes",
         )
@@ -1001,7 +1001,7 @@ class TestNodeAdminCommandRuntime:
         """start_OTA uses legacy 'hash' kwarg from extra_kwargs."""
         runtime = _NodeAdminCommandRuntime(mock_local_node_for_admin)
 
-        result = runtime.start_ota(
+        result = runtime.startOta(
             mode=admin_pb2.OTAMode.OTA_WIFI,
             ota_file_hash=None,
             hash=b"legacy_hash",
@@ -1020,7 +1020,7 @@ class TestNodeAdminCommandRuntime:
         runtime = _NodeAdminCommandRuntime(mock_local_node_for_admin)
 
         with patch("meshtastic.util.toNodeNum", return_value=12345) as mock_to_node_num:
-            result = runtime.set_ignored(0x12345)
+            result = runtime.setIgnored(0x12345)
 
         mock_to_node_num.assert_called_once_with(0x12345)
         assert result is not None
@@ -1039,7 +1039,7 @@ class TestNodeAdminCommandRuntime:
             "meshtastic.util.toNodeNum",
             return_value=0x9388F81C,
         ) as mock_to_node_num:
-            result = runtime.set_ignored("!9388f81c")
+            result = runtime.setIgnored("!9388f81c")
 
         mock_to_node_num.assert_called_once_with("!9388f81c")
         assert result is not None

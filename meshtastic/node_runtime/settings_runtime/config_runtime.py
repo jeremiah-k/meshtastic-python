@@ -93,9 +93,9 @@ class _NodeSettingsRuntime:
         on_response = (
             None if self._node is self._node.iface.localNode else self._node.onAckNak
         )
-        request = self._node._send_admin(
+        request = self._node._send_admin(  # noqa: SLF001
             message, onResponse=on_response
-        )  # noqa: SLF001
+        )
         if on_response is not None and request is not None:
             self._node.iface.waitForAckNak()
         logger.debug("Config write completed: %s", config_name)

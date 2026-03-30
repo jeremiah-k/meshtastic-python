@@ -1192,7 +1192,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         MeshInterfaceError
             If called for a non-local node.
         """
-        return self._admin_command_runtime.start_ota(
+        return self._admin_command_runtime.startOta(
             mode=mode if mode is not None else ota_mode,
             ota_file_hash=ota_file_hash if ota_file_hash is not None else ota_hash,
             **kwargs,
@@ -1209,7 +1209,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The sent Admin message packet, or `None` if no packet was sent.
         """
-        return self._admin_command_runtime.enter_dfu_mode()
+        return self._admin_command_runtime.enterDfuMode()
 
     def shutdown(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
         """Request the node to shut down after a given number of seconds.
@@ -1267,7 +1267,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The sent admin packet if sending succeeded, or None otherwise.
         """
-        return self._admin_command_runtime.factory_reset(full=full)
+        return self._admin_command_runtime.factoryReset(full=full)
 
     def _get_factory_reset_request_value(self) -> int:
         """Return factory-reset sentinel value used for admin reset requests."""
@@ -1290,7 +1290,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The admin packet returned by the send operation if available, `None` otherwise.
         """
-        return self._admin_command_runtime.remove_node(nodeId)
+        return self._admin_command_runtime.removeNode(nodeId)
 
     def setFavorite(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Mark a node as a favorite in the target device's NodeDB.
@@ -1305,7 +1305,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The response packet if one was received, `None` otherwise.
         """
-        return self._admin_command_runtime.set_favorite(nodeId)
+        return self._admin_command_runtime.setFavorite(nodeId)
 
     def removeFavorite(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Unmark a node as a favorite in the device's NodeDB.
@@ -1320,7 +1320,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The Admin packet sent to the device, or `None` if no packet was sent.
         """
-        return self._admin_command_runtime.remove_favorite(nodeId)
+        return self._admin_command_runtime.removeFavorite(nodeId)
 
     def setIgnored(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Mark a node in the device NodeDB as ignored.
@@ -1335,7 +1335,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The AdminMessage/packet sent to request the change, or `None` if no packet was sent.
         """
-        return self._admin_command_runtime.set_ignored(nodeId)
+        return self._admin_command_runtime.setIgnored(nodeId)
 
     def removeIgnored(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Unmark a node as ignored in the device's NodeDB.
@@ -1350,7 +1350,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             `mesh_pb2.MeshPacket` if an AdminMessage was sent, `None` otherwise.
         """
-        return self._admin_command_runtime.remove_ignored(nodeId)
+        return self._admin_command_runtime.removeIgnored(nodeId)
 
     def resetNodeDb(self) -> mesh_pb2.MeshPacket | None:
         """Request that the node clear its stored NodeDB (node database).
@@ -1363,7 +1363,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The AdminMessage packet sent, or `None` if no packet was sent.
         """
-        return self._admin_command_runtime.reset_node_db()
+        return self._admin_command_runtime.resetNodeDb()
 
     def setFixedPosition(
         self, lat: int | float | None, lon: int | float | None, alt: int | None

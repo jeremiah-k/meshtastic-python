@@ -133,7 +133,7 @@ class _NodeAdminCommandRuntime:
             raise ValueError("Conflicting OTA hash arguments provided")
         return hash_values.pop()
 
-    def start_ota(
+    def startOta(
         self,
         mode: int | None = None,
         ota_file_hash: bytes | None = None,
@@ -144,9 +144,7 @@ class _NodeAdminCommandRuntime:
     ) -> mesh_pb2.MeshPacket | None:
         """Validate OTA args and send ota_request command."""
         if self._node is not self._node.iface.localNode:
-            self._node._raise_interface_error(
-                "startOTA only possible on local node"
-            )  # noqa: SLF001
+            self._node._raise_interface_error("startOTA only possible on local node")  # noqa: SLF001
 
         # COMPAT_STABLE_SHIM: support legacy keyword aliases used by older callers:
         # `ota_mode` -> `mode`, and `ota_hash`/`hash` -> `ota_file_hash`.
@@ -178,7 +176,10 @@ class _NodeAdminCommandRuntime:
             use_remote_ack_callback=False,
         )
 
-    def enter_dfu_mode(self) -> mesh_pb2.MeshPacket | None:
+    # COMPAT_STABLE_SHIM: snake_case alias for startOta
+    start_ota = startOta
+
+    def enterDfuMode(self) -> mesh_pb2.MeshPacket | None:
         """Send enter-DFU-mode command."""
         message = admin_pb2.AdminMessage()
         message.enter_dfu_mode_request = True
@@ -188,6 +189,9 @@ class _NodeAdminCommandRuntime:
             ensure_session_key=True,
             use_remote_ack_callback=True,
         )
+
+    # COMPAT_STABLE_SHIM: snake_case alias for enterDfuMode
+    enter_dfu_mode = enterDfuMode
 
     def shutdown(self, secs: int) -> mesh_pb2.MeshPacket | None:
         """Send shutdown command with delayed shutdown seconds."""
@@ -200,24 +204,23 @@ class _NodeAdminCommandRuntime:
             use_remote_ack_callback=True,
         )
 
-    def factory_reset(self, *, full: bool) -> mesh_pb2.MeshPacket | None:
+    def factoryReset(self, *, full: bool) -> mesh_pb2.MeshPacket | None:
         """Send factory-reset command, preserving full/config split behavior."""
         message = admin_pb2.AdminMessage()
         if full:
-            message.factory_reset_device = (
-                self._node._get_factory_reset_request_value()
-            )  # noqa: SLF001
+            message.factory_reset_device = self._node._get_factory_reset_request_value()  # noqa: SLF001
             logger.info("Telling node to factory reset (full device reset)")
         else:
-            message.factory_reset_config = (
-                self._node._get_factory_reset_request_value()
-            )  # noqa: SLF001
+            message.factory_reset_config = self._node._get_factory_reset_request_value()  # noqa: SLF001
             logger.info("Telling node to factory reset (config reset)")
         return self._send_command(
             message,
             ensure_session_key=True,
             use_remote_ack_callback=True,
         )
+
+    # COMPAT_STABLE_SHIM: snake_case alias for factoryReset
+    factory_reset = factoryReset
 
     def _send_node_id_command(
         self,
@@ -237,7 +240,7 @@ class _NodeAdminCommandRuntime:
             use_remote_ack_callback=True,
         )
 
-    def remove_node(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
+    def removeNode(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
         """Send remove-by-nodenum command."""
         return self._send_node_id_command(
             node_id=node_id,
@@ -246,7 +249,10 @@ class _NodeAdminCommandRuntime:
             ),
         )
 
-    def set_favorite(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
+    # COMPAT_STABLE_SHIM: snake_case alias for removeNode
+    remove_node = removeNode
+
+    def setFavorite(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
         """Send set-favorite command."""
         return self._send_node_id_command(
             node_id=node_id,
@@ -255,7 +261,10 @@ class _NodeAdminCommandRuntime:
             ),
         )
 
-    def remove_favorite(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
+    # COMPAT_STABLE_SHIM: snake_case alias for setFavorite
+    set_favorite = setFavorite
+
+    def removeFavorite(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
         """Send remove-favorite command."""
         return self._send_node_id_command(
             node_id=node_id,
@@ -264,7 +273,10 @@ class _NodeAdminCommandRuntime:
             ),
         )
 
-    def set_ignored(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
+    # COMPAT_STABLE_SHIM: snake_case alias for removeFavorite
+    remove_favorite = removeFavorite
+
+    def setIgnored(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
         """Send set-ignored command."""
         return self._send_node_id_command(
             node_id=node_id,
@@ -273,7 +285,10 @@ class _NodeAdminCommandRuntime:
             ),
         )
 
-    def remove_ignored(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
+    # COMPAT_STABLE_SHIM: snake_case alias for setIgnored
+    set_ignored = setIgnored
+
+    def removeIgnored(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
         """Send remove-ignored command."""
         return self._send_node_id_command(
             node_id=node_id,
@@ -282,7 +297,10 @@ class _NodeAdminCommandRuntime:
             ),
         )
 
-    def reset_node_db(self) -> mesh_pb2.MeshPacket | None:
+    # COMPAT_STABLE_SHIM: snake_case alias for removeIgnored
+    remove_ignored = removeIgnored
+
+    def resetNodeDb(self) -> mesh_pb2.MeshPacket | None:
         """Send NodeDB reset command."""
         message = admin_pb2.AdminMessage()
         message.nodedb_reset = True
@@ -292,3 +310,6 @@ class _NodeAdminCommandRuntime:
             ensure_session_key=True,
             use_remote_ack_callback=True,
         )
+
+    # COMPAT_STABLE_SHIM: snake_case alias for resetNodeDb
+    reset_node_db = resetNodeDb
