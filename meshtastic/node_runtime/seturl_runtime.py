@@ -680,7 +680,6 @@ class _SetUrlExecutionEngine:
             self._cache_manager.apply_replace_channel_write(
                 staged_channel,
                 expected_channels_ref=plan.replace_original_channels_ref,
-                expected_channels_fingerprint=plan.replace_original_channels_fingerprint,
             )
             self._node.partialChannels = []
 
@@ -718,7 +717,6 @@ class _SetUrlExecutionEngine:
             self._cache_manager.apply_replace_channel_write(
                 plan.deferred_new_named_admin_channel,
                 expected_channels_ref=plan.replace_original_channels_ref,
-                expected_channels_fingerprint=plan.replace_original_channels_fingerprint,
             )
             state.rollback_admin_indexes_for_write = _ordered_admin_indexes(
                 plan.deferred_new_named_admin_channel.index,
@@ -754,7 +752,6 @@ class _SetUrlExecutionEngine:
             self._cache_manager.apply_replace_channel_write(
                 plan.deferred_previous_admin_slot_channel,
                 expected_channels_ref=plan.replace_original_channels_ref,
-                expected_channels_fingerprint=plan.replace_original_channels_fingerprint,
             )
 
 

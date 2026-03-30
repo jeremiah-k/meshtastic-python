@@ -30,7 +30,7 @@ class TestSetUrlAddOnlyExecutionState:
 
         # Verify defaults are not shared across instances
         new_state = _SetUrlAddOnlyExecutionState()
-        assert new_state.written_indices == []
+        assert not new_state.written_indices
         assert new_state.lora_write_started is False
 
 
@@ -55,6 +55,6 @@ class TestSetUrlReplaceExecutionState:
 
         # Verify defaults are not shared across instances
         new_state = _SetUrlReplaceExecutionState()
-        assert new_state.written_channel_indices == []
+        assert not new_state.written_channel_indices
         assert new_state.lora_write_started is False
-        assert new_state.rollback_admin_indexes_for_write == []
+        assert not new_state.rollback_admin_indexes_for_write

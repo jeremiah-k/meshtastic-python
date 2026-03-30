@@ -90,6 +90,7 @@ from meshtastic.interfaces.ble.gating import (
     _addr_key,
     _addr_lock_context,
     _clear_connecting,
+    _clear_connecting_for_owner,
     _is_currently_connected_elsewhere,
     _mark_connected,
     _mark_connecting,
@@ -3165,11 +3166,16 @@ class BLEInterface(MeshInterface):
         """Shut down the BLE interface and release associated resources."""
         # Clear any provisional connecting state before shutdown to prevent
         # orphaned gate claims when connection threads are forcibly terminated.
+        # This clears all provisional keys owned by this interface, not just
+        # the current self.address value.
         try:
-            self._clear_address_keys_connecting(self.address)
+            _clear_connecting_for_owner(self)
         except Exception:
             # Best-effort cleanup; don't let gate cleanup errors prevent shutdown
-            pass
+            try:
+                self._clear_address_keys_connecting(self.address)
+            except Exception:
+                pass
         lifecycle_controller = self._get_lifecycle_controller()
         close = getattr(
             lifecycle_controller, "_close", getattr(lifecycle_controller, "close", None)

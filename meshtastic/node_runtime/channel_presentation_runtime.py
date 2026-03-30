@@ -68,8 +68,9 @@ class _NodeChannelPresentationRuntime:
                     f"psk={pskToString(channel.settings.psk)} {channel_string}"
                 )
         try:
-            public_url = self._export_runtime._get_url_from_snapshot(
-                channels_snapshot, include_all=False
+            public_url = self._resolve_export_url(
+                channels_snapshot,
+                include_all=False,
             )
         except Exception as exc:  # noqa: BLE001 - show_info should remain non-fatal
             logger.warning("Unable to export primary channel URL: %s", exc)
@@ -78,8 +79,9 @@ class _NodeChannelPresentationRuntime:
 
         admin_url = public_url
         try:
-            admin_url = self._export_runtime._get_url_from_snapshot(
-                channels_snapshot, include_all=True
+            admin_url = self._resolve_export_url(
+                channels_snapshot,
+                include_all=True,
             )
         except Exception as exc:  # noqa: BLE001 - show_info should remain non-fatal
             logger.warning("Unable to export complete channel URL: %s", exc)
@@ -87,6 +89,21 @@ class _NodeChannelPresentationRuntime:
         print(f"\nPrimary channel URL: {public_url}")
         if admin_url != public_url:
             print(f"Complete URL (includes all channels): {admin_url}")
+
+    def _resolve_export_url(
+        self,
+        channels_snapshot: list[channel_pb2.Channel],
+        *,
+        include_all: bool,
+    ) -> str:
+        """Resolve URL export path while preserving compatibility with export mocks."""
+        get_url = getattr(self._export_runtime, "get_url", None)
+        if callable(get_url):
+            return cast(str, get_url(include_all=include_all))
+        return self._export_runtime._get_url_from_snapshot(
+            channels_snapshot,
+            include_all=include_all,
+        )
 
     def _show_info(self) -> None:
         """Print local/module preferences and current channel presentation."""

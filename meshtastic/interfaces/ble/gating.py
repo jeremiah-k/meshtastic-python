@@ -509,6 +509,40 @@ def _clear_connecting(addr: str | None, owner: object | None = None) -> None:
         _cleanup_addr_lock(key)
 
 
+def _clear_connecting_for_owner(owner: object | None) -> None:
+    """Clear all provisional connecting claims currently attributed to ``owner``.
+
+    Parameters
+    ----------
+    owner : object | None
+        Owner instance whose provisional claims should be removed.
+
+    Notes
+    -----
+    This is a best-effort cleanup helper for shutdown paths where the caller
+    may not know every provisional key that was claimed during connect.
+    """
+    if owner is None:
+        return
+    owner_id = id(owner)
+    with _REGISTRY_LOCK:
+        for key in tuple(_CONNECTING_ADDRS):
+            owner_ref = _CONNECTING_OWNERS.get(key)
+            current_owner = owner_ref() if owner_ref is not None else None
+            if owner_ref is not None and current_owner is None:
+                _remove_connecting_record_locked(key)
+                _maybe_remove_addr_lock_entry(key)
+                continue
+            stored_owner_id = _CONNECTING_OWNER_IDS.get(key)
+            if current_owner is owner or (
+                owner_ref is None
+                and stored_owner_id is not None
+                and stored_owner_id == owner_id
+            ):
+                _remove_connecting_record_locked(key)
+                _maybe_remove_addr_lock_entry(key)
+
+
 def _mark_connected(addr: str | None, owner: Any | None = None) -> None:
     """Mark a BLE address as connected and record optional owner metadata.
 
