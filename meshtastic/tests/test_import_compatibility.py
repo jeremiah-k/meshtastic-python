@@ -160,10 +160,7 @@ class TestProtobufImports:
     def test_import_mesh_packet_from_mesh_pb2(self) -> None:
         """Test that MeshPacket can be imported from mesh_pb2."""
         # MeshPacket is a protobuf message class, pylint has trouble with protobuf imports
-        # pylint: disable=no-name-in-module
         from meshtastic.protobuf.mesh_pb2 import MeshPacket
-
-        # pylint: enable=no-name-in-module
 
         assert MeshPacket is not None
 
@@ -244,6 +241,16 @@ class TestBackwardCompatAliases:
             ]
             assert len(deprecation_warnings) >= 1
 
+            # Verify warn-once behavior: subsequent instantiation should not warn again
+            initial_count = len(deprecation_warnings)
+            _ = dotdict()
+            new_deprecation_warnings = [
+                x for x in w if issubclass(x.category, DeprecationWarning)
+            ]
+            assert len(new_deprecation_warnings) == initial_count, (
+                "Expected warn-once behavior for dotdict deprecation"
+            )
+
     def test_mt_config_tunnel_instance_deprecated(self) -> None:
         """Test that tunnelInstance can be accessed from mt_config.
 
@@ -263,9 +270,9 @@ class TestBackwardCompatAliases:
         deprecation_warnings = [
             x for x in w if issubclass(x.category, DeprecationWarning)
         ]
-        assert (
-            len(deprecation_warnings) >= 1
-        ), "Expected DeprecationWarning for tunnelInstance"
+        assert len(deprecation_warnings) >= 1, (
+            "Expected DeprecationWarning for tunnelInstance"
+        )
 
     def test_node_snake_case_ringtone_aliases(self) -> None:
         """Test that snake_case ringtone methods exist on Node.

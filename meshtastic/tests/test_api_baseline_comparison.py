@@ -16,9 +16,11 @@ The baselines are stored in:
 # test parameters - this is standard pytest fixture injection pattern.
 
 import ast
+import importlib.util
 import inspect
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -73,7 +75,6 @@ def _normalize_type_str(type_str: str) -> str:
     - typing.* module prefixes stripped for brevity
     - <class 'X'> normalized to X
     """
-    import re
 
     result = type_str
 
@@ -131,12 +132,19 @@ def _get_signature_str(method: Any) -> str:
         return "(unknown)"
 
 
-def _ast_annotation_str(node) -> str:
-    """Convert an AST annotation node to a string representation."""
+def _ast_unparse_safe(node: ast.AST | None) -> str:
+    """Safely unparse an AST node, returning empty string if None."""
+    if node is None:
+        return ""
     return ast.unparse(node)
 
 
-def _ast_signature_str(func_node) -> str:
+def _ast_annotation_str(node: ast.expr | None) -> str:
+    """Convert an AST annotation node to a string representation."""
+    return _ast_unparse_safe(node)
+
+
+def _ast_signature_str(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
     """Extract signature string from an AST FunctionDef node.
 
     Emits parameters in proper Python signature order:
@@ -213,7 +221,7 @@ def _ast_signature_str(func_node) -> str:
             s += f":{_ast_annotation_str(kw_arg.annotation)}"
         # kw_defaults aligns with kwonlyargs by position
         if i < len(kw_defaults) and kw_defaults[i] is not None:
-            default_str = ast.unparse(kw_defaults[i])
+            default_str = _ast_unparse_safe(kw_defaults[i])
             s += f"={default_str}"
         params.append(s)
 
@@ -243,8 +251,6 @@ def _ast_capture_class_methods(source: str, class_name: str) -> dict[str, str]:
 
 def _find_module_source(module_name: str) -> str | None:
     """Find the source file for a module and return its content."""
-    import importlib.util
-
     spec = importlib.util.find_spec(module_name)
     if spec and spec.origin:
         with open(spec.origin, encoding="utf-8") as f:
@@ -270,6 +276,7 @@ def _extract_api_surface() -> dict[str, Any]:
         check=True,
         capture_output=True,
         text=True,
+        timeout=60,
     )
     _EXTRACTED_SURFACE_CACHE = json.loads(completed.stdout)
     return cast(dict[str, Any], _EXTRACTED_SURFACE_CACHE)
@@ -411,18 +418,18 @@ def compare_list_baselines(
 
 
 @pytest.fixture
-def current_baseline():
+def current_baseline() -> dict[str, Any]:
     """Fixture providing the current API baseline."""
     return generate_baseline()
 
 
 @pytest.fixture
-def stored_baseline():
+def stored_baseline() -> dict[str, Any] | None:
     """Fixture providing the stored baseline, or None if not exists."""
     return load_baseline()
 
 
-def _should_update_baselines(pytestconfig):
+def _should_update_baselines(pytestconfig: pytest.Config) -> bool:
     """Safely check if --update-baselines flag is set."""
     try:
         return pytestconfig.getoption("--update-baselines", default=False)
@@ -435,7 +442,6 @@ def _should_update_baselines(pytestconfig):
 # =============================================================================
 
 
-@pytest.mark.unit
 class TestNodeAPIAgainstBaseline:
     """Tests to verify Node public API matches baseline."""
 

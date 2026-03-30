@@ -32,10 +32,7 @@ def test_node_writechannel_signature() -> None:
     # adminIndex must accept positional call: node.writeChannel(3, 1)
     admin = params[2]
     assert admin.name == "adminIndex"
-    assert admin.kind in (
-        inspect.Parameter.POSITIONAL_OR_KEYWORD,
-        inspect.Parameter.POSITIONAL_ONLY,
-    )
+    assert admin.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
 
 
 # ---------------------------------------------------------------------------

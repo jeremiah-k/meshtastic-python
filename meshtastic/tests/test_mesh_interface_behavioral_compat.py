@@ -430,9 +430,9 @@ class TestWaitForWaypointWorkflow:
 class TestShowNodesShowInfoWorkflow:
     """Test showNodes() and showInfo() return proper output formats."""
 
-    def test_showNodes_returns_formatted_table(self, mock_interface_with_nodes):
+    def test_showNodes_returns_formatted_table(self, mock_interface):
         """Verify showNodes() returns formatted node list."""
-        iface = mock_interface_with_nodes
+        iface = mock_interface
 
         output = iface.showNodes()
 
@@ -441,9 +441,9 @@ class TestShowNodesShowInfoWorkflow:
         assert isinstance(output, str)
         assert len(output) > 0
 
-    def test_showNodes_include_self_parameter(self, mock_interface_with_nodes):
+    def test_showNodes_include_self_parameter(self, mock_interface):
         """Verify showNodes() accepts includeSelf parameter without error."""
-        iface = mock_interface_with_nodes
+        iface = mock_interface
 
         # Both calls should work without error
         output_with_self = iface.showNodes(includeSelf=True)
@@ -455,9 +455,9 @@ class TestShowNodesShowInfoWorkflow:
         assert len(output_with_self) > 0
         assert len(output_without_self) > 0
 
-    def test_showNodes_with_custom_fields(self, mock_interface_with_nodes):
+    def test_showNodes_with_custom_fields(self, mock_interface):
         """Verify showNodes() works with custom field list."""
-        iface = mock_interface_with_nodes
+        iface = mock_interface
 
         output = iface.showNodes(showFields=["id", "longName"])
 
@@ -465,9 +465,9 @@ class TestShowNodesShowInfoWorkflow:
         # Output should contain node data
         assert len(output) > 0
 
-    def test_showInfo_returns_interface_metadata(self, mock_interface_with_nodes):
+    def test_showInfo_returns_interface_metadata(self, mock_interface):
         """Verify showInfo() returns interface metadata."""
-        iface = mock_interface_with_nodes
+        iface = mock_interface
 
         output = io.StringIO()
         summary = iface.showInfo(file=output)
@@ -480,9 +480,9 @@ class TestShowNodesShowInfoWorkflow:
         stream_content = output.getvalue()
         assert isinstance(stream_content, str)
 
-    def test_showInfo_contains_nodes_data(self, mock_interface_with_nodes):
+    def test_showInfo_contains_nodes_data(self, mock_interface):
         """Verify showInfo() contains nodes information."""
-        iface = mock_interface_with_nodes
+        iface = mock_interface
 
         summary = iface.showInfo()
 
@@ -643,7 +643,7 @@ class TestSendTelemetrySemanticDeprecation:
             telemetry_arg = call_args[0][0]
             assert isinstance(telemetry_arg, telemetry_pb2.Telemetry)
 
-    def test_sendTelemetry_supported_types_no_warning(self, mock_interface):
+    def test_sendTelemetry_supported_types_no_warning(self, mock_interface, caplog):
         """Verify supported telemetryType values don't emit warnings."""
         iface = mock_interface
 
@@ -656,16 +656,18 @@ class TestSendTelemetrySemanticDeprecation:
         ]
 
         for telemetry_type in supported_types:
-            with patch.object(iface, "_send_to_radio_impl"):
-                # Should not raise or warn
-                try:
+            caplog.clear()
+            with caplog.at_level(logging.WARNING):
+                with patch.object(iface, "_send_to_radio_impl"):
                     iface.sendTelemetry(
                         destinationId=BROADCAST_ADDR,
                         telemetryType=telemetry_type,
                         wantResponse=False,
                     )
-                except Exception as e:
-                    pytest.fail(f"sendTelemetry raised {e} for type {telemetry_type}")
+            # Verify no telemetry-type-related warnings were logged
+            assert telemetry_type not in caplog.text, (
+                f"Unexpected warning for supported type {telemetry_type}"
+            )
 
     def test_sendTelemetry_with_wantResponse(self, mock_interface):
         """Verify sendTelemetry() with wantResponse=True sets up wait."""

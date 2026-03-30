@@ -670,6 +670,7 @@ def test_node_api_shape_snapshot() -> None:
         "critical_methods_present": critical_methods <= actual_methods,
         "public_methods": sorted(public_api.keys()),
     }
+    logger.debug("Node API snapshot: %d methods", _snapshot["method_count"])
     # Use _snapshot to document the API shape without failing tests
     assert _snapshot["critical_methods_present"], (
         "Critical Node methods should be present"
