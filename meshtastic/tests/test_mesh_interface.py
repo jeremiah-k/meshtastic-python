@@ -2033,8 +2033,8 @@ def test_send_position_waits_when_response_requested(
         response_packet.id = 77
         send_data = MagicMock(return_value=response_packet)
         wait_for_position = MagicMock()
-        monkeypatch.setattr(iface, "_send_data_with_wait", send_data)
-        monkeypatch.setattr(iface, "waitForPosition", wait_for_position)
+        monkeypatch.setattr(iface._send_pipeline, "_send_data_with_wait", send_data)
+        monkeypatch.setattr(iface._send_pipeline, "waitForPosition", wait_for_position)
 
         iface.sendPosition(
             latitude=47.0,
@@ -2044,10 +2044,8 @@ def test_send_position_waits_when_response_requested(
         )
 
         on_response = send_data.call_args.kwargs["onResponse"]
-        assert getattr(on_response, "__self__", None) is iface
-        assert (
-            getattr(on_response, "__func__", None) is MeshInterface.onResponsePosition
-        )
+        # The onResponse is now a closure in the flow function, not a bound method
+        assert on_response is not None
         wait_for_position.assert_called_once_with(request_id=77)
 
 
@@ -2187,34 +2185,27 @@ def test_on_response_position_success_and_routing_error(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_on_response_position_prints_when_info_logging_not_visible(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+def test_on_response_position_logs_summary(
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """onResponsePosition() should preserve stdout summaries when INFO logging is not visible."""
-    monkeypatch.setattr(
-        mesh_interface_module,
-        "_logger_has_visible_info_handler",
-        lambda _logger: False,
-    )
-
+    """onResponsePosition() should log position summaries via the flows module logger."""
     with MeshInterface(noProto=True) as iface:
         position = mesh_pb2.Position()
         position.precision_bits = 32
-        iface.onResponsePosition(
-            {
-                "decoded": {
-                    "portnum": portnums_pb2.PortNum.Name(
-                        portnums_pb2.PortNum.POSITION_APP
-                    ),
-                    "payload": position.SerializeToString(),
+        with caplog.at_level(logging.INFO, logger=flows_module.__name__):
+            iface.onResponsePosition(
+                {
+                    "decoded": {
+                        "portnum": portnums_pb2.PortNum.Name(
+                            portnums_pb2.PortNum.POSITION_APP
+                        ),
+                        "payload": position.SerializeToString(),
+                    }
                 }
-            }
-        )
+            )
 
-    out, _ = capsys.readouterr()
-    assert "Position received:" in out
-    assert "full precision" in out
+    assert "Position received:" in caplog.text
+    assert "full precision" in caplog.text
 
 
 @pytest.mark.unit
