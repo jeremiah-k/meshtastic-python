@@ -393,7 +393,7 @@ class TestNodeSettingsRuntime:
         with caplog.at_level(logging.DEBUG):
             runtime.write_config("device")
 
-        assert "Wrote: device" in caplog.text
+        assert "Config write completed: device" in caplog.text
         mock_local_node._send_admin.assert_called_once()
         call_kwargs = mock_local_node._send_admin.call_args[1]
         assert call_kwargs["onResponse"] is None

@@ -92,6 +92,7 @@ def mock_local_node(mock_iface: MagicMock) -> MagicMock:
             "onAckNak",
             "_get_admin_channel_index",
             "_fixup_channels_locked",
+            "_timeout",
         ]
     )
     node.nodeNum = 1234567890
@@ -109,6 +110,7 @@ def mock_local_node(mock_iface: MagicMock) -> MagicMock:
     node.onAckNak = MagicMock()
     node._get_admin_channel_index = MagicMock(return_value=0)
     node._fixup_channels_locked = MagicMock()
+    node._timeout.waitForSet = MagicMock(return_value=True)
 
     # Set up iface.localNode to return this node (making it a local node)
     mock_iface.localNode = node
@@ -192,6 +194,7 @@ class TestNodeAdminSessionRuntime:
         mock_local_node.iface._get_or_create_by_num.return_value = {
             "adminSessionPassKey": None
         }
+        mock_local_node._timeout.waitForSet.return_value = True
         runtime = _NodeAdminSessionRuntime(mock_local_node)
 
         runtime._ensure_session_key(admin_index=5)
@@ -704,9 +707,9 @@ class TestNodeDeleteChannelRuntime:
             -1,
         )
         assert pre_delete_idx >= 0, "pre_delete_admin write should exist"
-        assert (
-            post_delete_idx > pre_delete_idx
-        ), "post_delete_admin should appear after pre_delete_admin"
+        assert post_delete_idx > pre_delete_idx, (
+            "post_delete_admin should appear after pre_delete_admin"
+        )
 
     @pytest.mark.unit
     def test_delete_channel_handles_cache_unavailable(

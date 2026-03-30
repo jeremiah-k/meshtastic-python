@@ -434,6 +434,10 @@ def test_ensureSessionKey_workflow(
     # Setup mock to return node without session key
     iface._get_or_create_by_num = MagicMock(return_value={})
 
+    # Mock _timeout.waitForSet to return immediately
+    node._timeout = MagicMock()
+    node._timeout.waitForSet.return_value = True
+
     # Capture sent messages
     sent_messages: list[admin_pb2.AdminMessage] = []
     node._send_admin = _make_fake_send_admin(  # type: ignore[method-assign,assignment]
@@ -461,6 +465,10 @@ def test_ensureSessionKey_with_adminIndex(
 
     # Setup mock to return node without session key
     iface._get_or_create_by_num = MagicMock(return_value={})
+
+    # Mock _timeout.waitForSet to return immediately
+    node._timeout = MagicMock()
+    node._timeout.waitForSet.return_value = True
 
     captured: dict[str, object] = {}
     node._send_admin = _make_fake_send_admin(  # type: ignore[method-assign,assignment]
