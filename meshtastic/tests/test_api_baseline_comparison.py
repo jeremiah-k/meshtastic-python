@@ -18,13 +18,13 @@ The baselines are stored in:
 import ast
 import inspect
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
-
-from meshtastic.mesh_interface import MeshInterface
-from meshtastic.node import Node
 
 pytestmark = pytest.mark.unit
 
@@ -43,27 +43,19 @@ BASELINE_FILE_MASTER = BASELINE_DIR / "api_baseline_master.json"
 def get_baseline_file() -> Path:
     """Get the baseline file path.
 
-    Returns master baseline file if it exists (for CI comparisons),
-    otherwise returns the standard baseline file.
+    By default prefer api_baseline.json for local/update workflows.
+    Set MESHTASTIC_API_BASELINE_SOURCE=master to opt into api_baseline_master.json.
     """
+    if (
+        os.environ.get("MESHTASTIC_API_BASELINE_SOURCE", "").lower() == "master"
+        and BASELINE_FILE_MASTER.exists()
+    ):
+        return BASELINE_FILE_MASTER
+    if BASELINE_FILE.exists():
+        return BASELINE_FILE
     if BASELINE_FILE_MASTER.exists():
         return BASELINE_FILE_MASTER
     return BASELINE_FILE
-
-
-# Legacy import paths to verify
-LEGACY_IMPORT_PATHS = [
-    "meshtastic.node_runtime.settings_runtime",
-    "meshtastic.node_runtime.channel_request_runtime",
-    "meshtastic.node_runtime.channel_lookup_runtime",
-    "meshtastic.node_runtime.channel_export_runtime",
-    "meshtastic.node_runtime.channel_presentation_runtime",
-    "meshtastic.node_runtime.channel_normalization_runtime",
-    "meshtastic.node_runtime.seturl_runtime",
-    "meshtastic.node_runtime.transport_runtime",
-    "meshtastic.node_runtime.content_runtime",
-    "meshtastic.node_runtime.shared",
-]
 
 
 # =============================================================================
@@ -260,76 +252,49 @@ def _find_module_source(module_name: str) -> str | None:
     return None
 
 
+_EXTRACTED_SURFACE_CACHE: dict[str, Any] | None = None
+
+
+def _extract_api_surface() -> dict[str, Any]:
+    """Return API surface from the canonical extractor script."""
+    global _EXTRACTED_SURFACE_CACHE
+
+    if _EXTRACTED_SURFACE_CACHE is not None:
+        return cast(dict[str, Any], _EXTRACTED_SURFACE_CACHE)
+
+    project_root = Path(__file__).resolve().parents[2]
+    script_path = project_root / "bin" / "extract_api_surface.py"
+    package_dir = project_root / "meshtastic"
+    completed = subprocess.run(
+        [sys.executable, str(script_path), str(package_dir)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    _EXTRACTED_SURFACE_CACHE = json.loads(completed.stdout)
+    return cast(dict[str, Any], _EXTRACTED_SURFACE_CACHE)
+
+
 def capture_node_methods() -> dict[str, str]:
-    """Capture public method signatures from Node class using AST."""
-    source = _find_module_source("meshtastic.node")
-    if source:
-        methods = _ast_capture_class_methods(source, "Node")
-        return dict(sorted(methods.items()))
-    methods = {}
-    for name in dir(Node):
-        if name.startswith("_"):
-            continue
-        attr = getattr(Node, name)
-        if callable(attr) and (inspect.isfunction(attr) or inspect.ismethod(attr)):
-            methods[name] = _get_signature_str(attr)
-    return dict(sorted(methods.items()))
+    """Capture public method signatures from Node class."""
+    return dict(sorted(_extract_api_surface().get("node_methods", {}).items()))
 
 
 def capture_mesh_interface_methods() -> dict[str, str]:
-    """Capture public method signatures from MeshInterface class using AST."""
-    source = _find_module_source("meshtastic.mesh_interface")
-    if source:
-        methods = _ast_capture_class_methods(source, "MeshInterface")
-        return dict(sorted(methods.items()))
-    methods = {}
-    for name in dir(MeshInterface):
-        if name.startswith("_"):
-            continue
-        attr = getattr(MeshInterface, name)
-        if callable(attr):
-            methods[name] = _get_signature_str(attr)
-    return dict(sorted(methods.items()))
+    """Capture public method signatures from MeshInterface class."""
+    return dict(
+        sorted(_extract_api_surface().get("mesh_interface_methods", {}).items())
+    )
 
 
 def capture_top_level_exports() -> list[str]:
-    """Capture top-level exports from main meshtastic package.
-
-    Returns a sorted list of explicitly allowed public names to avoid
-    capturing incidental imports (Any, Callable, logging, tests).
-    """
-    # Explicit allowlist of intentional public exports
-    # This avoids capturing incidental imports from other modules
-    allowlist_public_names = [
-        "analysis",
-        "host_port",
-        "interfaces",
-        "ota",
-        "remote_hardware",
-        "slog",
-        "tcp_interface",
-        "test",
-        "tunnel",
-    ]
-
-    return sorted(allowlist_public_names)
+    """Capture top-level exports from main meshtastic package."""
+    return sorted(_extract_api_surface().get("top_level_exports", []))
 
 
 def capture_legacy_import_paths() -> list[str]:
-    """Verify legacy import paths still work.
-
-    Attempts to import each legacy path and records which succeed.
-    Returns a sorted list of working import paths.
-    """
-    working_paths = []
-    for path in LEGACY_IMPORT_PATHS:
-        try:
-            __import__(path)
-            working_paths.append(path)
-        except ImportError:
-            # Skip paths that don't exist (they may have been removed intentionally)
-            pass
-    return sorted(working_paths)
+    """Capture legacy import compatibility paths from extractor output."""
+    return sorted(_extract_api_surface().get("legacy_import_paths", []))
 
 
 def generate_baseline() -> dict[str, Any]:

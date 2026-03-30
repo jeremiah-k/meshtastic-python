@@ -20,31 +20,103 @@ def _normalize_type(type_str: str) -> str:
     return type_str
 
 
+def _find_top_level_char(text: str, target: str) -> int:
+    """Return index of target at top level, or -1 if absent."""
+    depth_paren = 0
+    depth_bracket = 0
+    depth_brace = 0
+    for index, char in enumerate(text):
+        if char == "(":
+            depth_paren += 1
+        elif char == ")":
+            depth_paren -= 1
+        elif char == "[":
+            depth_bracket += 1
+        elif char == "]":
+            depth_bracket -= 1
+        elif char == "{":
+            depth_brace += 1
+        elif char == "}":
+            depth_brace -= 1
+        elif (
+            char == target
+            and depth_paren == 0
+            and depth_bracket == 0
+            and depth_brace == 0
+        ):
+            return index
+    return -1
+
+
+def _split_top_level_params(sig: str) -> list[str]:
+    """Split `(a, b: X)` into top-level parameter tokens."""
+    trimmed = sig.strip()
+    if trimmed.startswith("(") and trimmed.endswith(")"):
+        trimmed = trimmed[1:-1]
+
+    if not trimmed:
+        return []
+
+    params: list[str] = []
+    start = 0
+    depth_paren = 0
+    depth_bracket = 0
+    depth_brace = 0
+
+    for index, char in enumerate(trimmed):
+        if char == "(":
+            depth_paren += 1
+        elif char == ")":
+            depth_paren -= 1
+        elif char == "[":
+            depth_bracket += 1
+        elif char == "]":
+            depth_bracket -= 1
+        elif char == "{":
+            depth_brace += 1
+        elif char == "}":
+            depth_brace -= 1
+        elif (
+            char == "," and depth_paren == 0 and depth_bracket == 0 and depth_brace == 0
+        ):
+            params.append(trimmed[start:index].strip())
+            start = index + 1
+
+    params.append(trimmed[start:].strip())
+    return params
+
+
+def _normalize_param(param: str) -> str:
+    """Normalize a single parameter token while preserving defaults."""
+    if param in {"", "*", "/"}:
+        return param
+
+    colon_index = _find_top_level_char(param, ":")
+    if colon_index == -1:
+        return param
+
+    name_part = param[:colon_index].strip()
+    rest = param[colon_index + 1 :].strip()
+
+    equals_index = _find_top_level_char(rest, "=")
+    if equals_index == -1:
+        type_part = rest
+        default_part = None
+    else:
+        type_part = rest[:equals_index].strip()
+        default_part = rest[equals_index + 1 :].strip()
+
+    normalized = f"{name_part}: {_normalize_type(type_part)}"
+    if default_part is not None:
+        normalized += f"={default_part}"
+    return normalized
+
+
 def _normalize_sig(sig: str) -> str:
-    """Normalize signature with bracket-aware type parsing."""
-    result = []
-    i = 0
-    while i < len(sig):
-        # Find parameter name (word chars before colon)
-        if i < len(sig) - 1 and sig[i + 1] == ":":
-            name = sig[i]
-            i += 2  # Skip name and colon
-            # Collect type with bracket tracking
-            type_start = i
-            depth = 0
-            while i < len(sig) and (depth > 0 or sig[i] not in ",)"):
-                if sig[i] in "([{":
-                    depth += 1
-                elif sig[i] in "])}":
-                    depth -= 1
-                i += 1
-            type_str = sig[type_start:i].strip()
-            normalized = _normalize_type(type_str)
-            result.append(f"{name}: {normalized}")
-        else:
-            result.append(sig[i])
-            i += 1
-    return "".join(result)
+    """Normalize signature with top-level parameter parsing."""
+    params = _split_top_level_params(sig)
+    normalized = [_normalize_param(param) for param in params]
+    return f"({', '.join(normalized)})"
 
 
 def compare_methods(

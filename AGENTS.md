@@ -222,8 +222,11 @@ Current `COMPAT_DEPRECATE` methods:
 When generating API baselines, always run via poetry to ensure all dependencies are available:
 
 ```bash
-poetry run python bin/extract_api_surface.py meshtastic > meshtastic/tests/api_baselines/api_baseline.json
-poetry run pytest meshtastic/tests/test_api_baseline_comparison.py -v --update-baselines
+make api-baseline
+make api-baseline-master
 ```
+
+- `make api-baseline` writes `meshtastic/tests/api_baselines/api_baseline.json` from the current tree via `bin/extract_api_surface.py`.
+- `make api-baseline-master` writes `meshtastic/tests/api_baselines/api_baseline_master.json` from `origin/master` via `bin/generate_master_api_baseline.sh`.
 
 Running without poetry may miss modules like `slog` and `tunnel` that depend on optional packages.

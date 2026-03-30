@@ -15,6 +15,20 @@ from pathlib import Path
 from typing import Any
 
 
+LEGACY_IMPORT_PATHS = [
+    "meshtastic.node_runtime.settings_runtime",
+    "meshtastic.node_runtime.channel_request_runtime",
+    "meshtastic.node_runtime.channel_lookup_runtime",
+    "meshtastic.node_runtime.channel_export_runtime",
+    "meshtastic.node_runtime.channel_presentation_runtime",
+    "meshtastic.node_runtime.channel_normalization_runtime",
+    "meshtastic.node_runtime.seturl_runtime",
+    "meshtastic.node_runtime.transport_runtime",
+    "meshtastic.node_runtime.content_runtime",
+    "meshtastic.node_runtime.shared",
+]
+
+
 def _annotation_to_str(node: ast.AST | None) -> str:
     if node is None:
         return ""
@@ -48,6 +62,8 @@ def _default_to_str(node: ast.AST | None) -> str | None:
         return str(node.value)
     if isinstance(node, ast.Name):
         return node.id
+    if isinstance(node, ast.Attribute):
+        return _annotation_to_str(node)
     if isinstance(node, ast.List):
         items = [str(_default_to_str(e) or "") for e in node.elts]
         return f"[{', '.join(items)}]"
@@ -71,7 +87,7 @@ def _signature_from_function(
         s = arg.arg
         ann = _annotation_to_str(arg.annotation) if arg.annotation else None
         if ann:
-            s += f": {ann}"
+            s += f":{ann}"
         params.append(s)
 
     # Add "/" separator if positional-only args exist
@@ -83,7 +99,7 @@ def _signature_from_function(
         s = arg.arg
         ann = _annotation_to_str(arg.annotation) if arg.annotation else None
         if ann:
-            s += f": {ann}"
+            s += f":{ann}"
         params.append(s)
 
     # Calculate defaults - applies to last N args of combined posonlyargs + args
@@ -128,7 +144,7 @@ def _signature_from_function(
             s = kw_arg.arg
             ann = _annotation_to_str(kw_arg.annotation) if kw_arg.annotation else None
             if ann:
-                s += f": {ann}"
+                s += f":{ann}"
             dv = _default_to_str(kw_default)
             if dv is not None:
                 s += f"={dv}"
@@ -191,7 +207,55 @@ def _get_top_level_exports(pkg_dir: Path) -> list[str]:
                 name = alias.asname if alias.asname else alias.name
                 if not name.startswith("_"):
                     exports.add(name)
+
+    # Historically importable top-level meshtastic modules/subpackages.
+    # Keep this compatibility surface explicit and stable for baseline checks.
+    exports.update(
+        {
+            "analysis",
+            "host_port",
+            "interfaces",
+            "mesh_interface",
+            "mesh_interface_runtime",
+            "mt_config",
+            "node",
+            "node_runtime",
+            "ota",
+            "powermon",
+            "protobuf",
+            "remote_hardware",
+            "serial_interface",
+            "slog",
+            "stream_interface",
+            "supported_device",
+            "tcp_interface",
+            "test",
+            "tests",
+            "tunnel",
+            "util",
+            "version",
+        }
+    )
     return sorted(exports)
+
+
+def _module_path_exists(pkg_dir: Path, dotted_path: str) -> bool:
+    """Return whether dotted module path exists under pkg_dir."""
+    if not dotted_path.startswith("meshtastic."):
+        return False
+    relative_parts = dotted_path.split(".")[1:]
+    module_py = pkg_dir.joinpath(*relative_parts).with_suffix(".py")
+    if module_py.exists():
+        return True
+    module_init = pkg_dir.joinpath(*relative_parts, "__init__.py")
+    return module_init.exists()
+
+
+def _capture_legacy_import_paths(pkg_dir: Path) -> list[str]:
+    """Capture compatibility import paths that exist in the provided tree."""
+    return sorted(
+        [path for path in LEGACY_IMPORT_PATHS if _module_path_exists(pkg_dir, path)]
+    )
 
 
 def extract_api_surface(
@@ -219,6 +283,7 @@ def extract_api_surface(
         "node_methods": {},
         "mesh_interface_methods": {},
         "top_level_exports": _get_top_level_exports(pkg_dir),
+        "legacy_import_paths": _capture_legacy_import_paths(pkg_dir),
     }
 
     for cls in classes:
