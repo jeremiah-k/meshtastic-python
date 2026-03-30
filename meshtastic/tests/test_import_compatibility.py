@@ -14,13 +14,12 @@ import importlib
 import sys
 from types import ModuleType
 
+import pytest
+
 # pytest is used by the test runner
 # pylint: disable=unused-import
 
 # pylint: enable=unused-import
-
-
-import pytest
 
 
 @pytest.mark.unit

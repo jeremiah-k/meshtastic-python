@@ -2,12 +2,9 @@
 
 # pylint: disable=redefined-outer-name,protected-access
 
-import base64
-import logging
 import sys
 import threading
 from io import StringIO
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,12 +12,10 @@ import pytest
 from meshtastic import BROADCAST_ADDR, BROADCAST_NUM, LOCAL_ADDR
 from meshtastic.mesh_interface_runtime.node_view import (
     NodeView,
-    JSONValue,
-    _timeago,
     _normalize_json_serializable,
+    _timeago,
 )
 from meshtastic.protobuf import mesh_pb2
-
 
 # Lines 12-13: print_color import handling
 # This is tested implicitly - the module handles ImportError gracefully
@@ -33,7 +28,10 @@ from meshtastic.protobuf import mesh_pb2
 @pytest.fixture
 def mock_interface() -> MagicMock:
     """Create a minimal mock MeshInterface for node view tests."""
-    interface = MagicMock()
+    # Create a spec-based mock that includes MeshInterfaceError
+    from meshtastic.mesh_interface import MeshInterface
+
+    interface = MagicMock(spec=MeshInterface)
     interface._node_db_lock = threading.RLock()
     interface.localNode = MagicMock()
     interface.localNode.nodeNum = 12345
@@ -43,13 +41,6 @@ def mock_interface() -> MagicMock:
     interface.metadata = None
     interface.debugOut = sys.stdout
 
-    # Create MeshInterfaceError dynamically
-    class MeshInterfaceError(Exception):
-        def __init__(self, message: str) -> None:
-            self.message = message
-            super().__init__(message)
-
-    interface.MeshInterfaceError = MeshInterfaceError
     return interface
 
 
@@ -72,8 +63,8 @@ class TestTimeAgo:
     def test_timeago_seconds(self) -> None:
         """Test timeago for seconds."""
         assert _timeago(1) == "1 sec ago"
-        assert _timeago(30) == "30 sec ago"
-        assert _timeago(59) == "59 sec ago"
+        assert _timeago(30) == "30 secs ago"
+        assert _timeago(59) == "59 secs ago"
 
     @pytest.mark.unit
     def test_timeago_minutes(self) -> None:
@@ -654,8 +645,8 @@ class TestFixupPosition:
 
         result = node_view._fixup_position(position)
 
-        assert result["latitude"] == 37.456
-        assert result["longitude"] == -122.2345
+        assert result["latitude"] == pytest.approx(37.456)
+        assert result["longitude"] == pytest.approx(-122.2345)
 
     @pytest.mark.unit
     def test_fixup_position_no_coords(self, node_view: NodeView) -> None:

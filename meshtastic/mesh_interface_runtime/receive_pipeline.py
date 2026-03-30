@@ -5,8 +5,8 @@ import copy
 import hashlib
 import logging
 import threading
-from dataclasses import dataclass, field
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TypeAlias
 
 import google.protobuf.json_format
@@ -750,9 +750,9 @@ class ReceivePipeline:
                 DECODE_ERROR_KEY: decode_error
             }
             if handler.name == "routing":
-                packet_context.packet_dict["decoded"][handler.name]["errorReason"] = (
-                    decode_error
-                )
+                packet_context.packet_dict["decoded"][handler.name][
+                    "errorReason"
+                ] = decode_error
             if handler.name == "admin":
                 packet_context.skip_response_callback_for_decode_failure = True
 

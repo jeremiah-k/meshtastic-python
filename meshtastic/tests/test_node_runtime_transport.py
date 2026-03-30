@@ -707,9 +707,9 @@ class TestNodeDeleteChannelRuntime:
             -1,
         )
         assert pre_delete_idx >= 0, "pre_delete_admin write should exist"
-        assert post_delete_idx > pre_delete_idx, (
-            "post_delete_admin should appear after pre_delete_admin"
-        )
+        assert (
+            post_delete_idx > pre_delete_idx
+        ), "post_delete_admin should appear after pre_delete_admin"
 
     @pytest.mark.unit
     def test_delete_channel_handles_cache_unavailable(

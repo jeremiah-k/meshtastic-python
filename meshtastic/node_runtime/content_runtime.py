@@ -202,7 +202,9 @@ class _NodeContentResponseRuntime:
             return (True, None)
         has_field = getattr(raw_admin, "HasField", None)
         try:
-            has_ringtone_response = callable(has_field) and has_field(  # pylint: disable=not-callable
+            has_ringtone_response = callable(
+                has_field
+            ) and has_field(  # pylint: disable=not-callable
                 "get_ringtone_response"
             )
         except (TypeError, ValueError):
@@ -237,7 +239,9 @@ class _NodeContentResponseRuntime:
             return (True, None)
         has_field = getattr(raw_admin, "HasField", None)
         try:
-            has_canned_response = callable(has_field) and has_field(  # pylint: disable=not-callable
+            has_canned_response = callable(
+                has_field
+            ) and has_field(  # pylint: disable=not-callable
                 "get_canned_message_module_messages_response"
             )
         except (TypeError, ValueError):

@@ -3,21 +3,18 @@
 # pylint: disable=redefined-outer-name,protected-access
 
 import logging
-import threading
-from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.node_runtime.content_runtime import (
+    CANNED_MESSAGE_CHUNK_SIZE,
     _NodeAdminContentRuntime,
     _NodeContentCacheStore,
     _NodeContentResponseRuntime,
-    CANNED_MESSAGE_CHUNK_SIZE,
 )
-from meshtastic.protobuf import admin_pb2, mesh_pb2
-
+from meshtastic.protobuf import admin_pb2
 
 # Tests for line 15: TYPE_CHECKING import
 # This is implicitly tested by the fact that the module imports work
@@ -317,7 +314,7 @@ class TestWriteCannedMessageChunking:
         # Message shorter than chunk size
         short_message = "x" * (CANNED_MESSAGE_CHUNK_SIZE - 1)
 
-        result = runtime.write_canned_message(short_message)
+        runtime.write_canned_message(short_message)
 
         # Should be sent as single message, not chunked
         assert mock_node_for_read_gen._send_admin.call_count == 1
@@ -340,7 +337,7 @@ class TestWriteCannedMessageChunking:
         long_message = "x" * (CANNED_MESSAGE_CHUNK_SIZE * 3 + 10)
 
         with caplog.at_level(logging.DEBUG):
-            result = runtime.write_canned_message(long_message)
+            runtime.write_canned_message(long_message)
 
         # Should be split into multiple sends
         assert (
@@ -514,7 +511,7 @@ class TestWriteCannedMessageChunking:
         mock_node_for_read_gen.cannedPluginMessage = "old_message"
         mock_node_for_read_gen.cannedPluginMessageMessages = "old_fragment"
 
-        result = runtime.write_canned_message(long_message)
+        runtime.write_canned_message(long_message)
 
         # Cache should be invalidated
         assert mock_node_for_read_gen.cannedPluginMessage is None

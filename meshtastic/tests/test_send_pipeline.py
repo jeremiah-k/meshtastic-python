@@ -4,30 +4,11 @@
 
 import logging
 import threading
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from meshtastic import BROADCAST_ADDR, BROADCAST_NUM, LOCAL_ADDR
-from meshtastic.mesh_interface_runtime.send_pipeline import (
-    HEX_NODE_ID_TAIL_CHARS,
-    LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM,
-    MISSING_NODE_NUM_ERROR_TEMPLATE,
-    NODE_NOT_FOUND_IN_DB_ERROR_TEMPLATE,
-    NODE_NOT_FOUND_DB_UNAVAILABLE_ERROR_TEMPLATE,
-    QUEUE_WAIT_DELAY_SECONDS,
-    PACKET_ID_MASK,
-    PACKET_ID_COUNTER_MASK,
-    PACKET_ID_RANDOM_MAX,
-    PACKET_ID_RANDOM_SHIFT_BITS,
-    SendPipeline,
-    _extract_hex_node_id_body,
-    _format_missing_node_num_error,
-    _format_node_db_unavailable_error,
-    _format_node_not_found_in_db_error,
-    _emit_response_summary,
-)
 from meshtastic.mesh_interface_runtime.request_wait import (
     WAIT_ATTR_NAK,
     WAIT_ATTR_POSITION,
@@ -35,8 +16,25 @@ from meshtastic.mesh_interface_runtime.request_wait import (
     WAIT_ATTR_TRACEROUTE,
     WAIT_ATTR_WAYPOINT,
 )
+from meshtastic.mesh_interface_runtime.send_pipeline import (
+    HEX_NODE_ID_TAIL_CHARS,
+    LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM,
+    MISSING_NODE_NUM_ERROR_TEMPLATE,
+    NODE_NOT_FOUND_DB_UNAVAILABLE_ERROR_TEMPLATE,
+    NODE_NOT_FOUND_IN_DB_ERROR_TEMPLATE,
+    PACKET_ID_COUNTER_MASK,
+    PACKET_ID_MASK,
+    PACKET_ID_RANDOM_MAX,
+    PACKET_ID_RANDOM_SHIFT_BITS,
+    QUEUE_WAIT_DELAY_SECONDS,
+    SendPipeline,
+    _emit_response_summary,
+    _extract_hex_node_id_body,
+    _format_missing_node_num_error,
+    _format_node_db_unavailable_error,
+    _format_node_not_found_in_db_error,
+)
 from meshtastic.protobuf import mesh_pb2, portnums_pb2
-
 
 # Line 36: TYPE_CHECKING for MeshInterface import
 # This is tested implicitly by the fact that SendPipeline works with mocked interfaces
@@ -344,7 +342,7 @@ class TestSendText:
         """Test that sendText calls sendData with encoded text."""
         with patch.object(send_pipeline, "sendData") as mock_send_data:
             mock_send_data.return_value = MagicMock()
-            result = send_pipeline.sendText(
+            send_pipeline.sendText(
                 text="Hello, World!",
                 destinationId="!1234abcd",
                 wantAck=True,
@@ -355,7 +353,7 @@ class TestSendText:
         mock_send_data.assert_called_once()
         call_args = mock_send_data.call_args
         assert call_args[0][0] == b"Hello, World!"  # Text encoded to bytes
-        assert call_args[1]["destinationId"] == "!1234abcd"
+        assert call_args[0][1] == "!1234abcd"  # destinationId is second positional arg
 
 
 class TestSendAlert:
@@ -366,7 +364,7 @@ class TestSendAlert:
         """Test that sendAlert calls sendData with ALERT_APP port."""
         with patch.object(send_pipeline, "sendData") as mock_send_data:
             mock_send_data.return_value = MagicMock()
-            result = send_pipeline.sendAlert(
+            send_pipeline.sendAlert(
                 text="Alert message",
                 destinationId=BROADCAST_ADDR,
                 channelIndex=0,
@@ -390,8 +388,8 @@ class TestSendMqttClientProxyMessage:
 
         mock_send.assert_called_once()
         call_args = mock_send.call_args[0][0]
-        assert call_args.mqtt_client_proxy_message.topic == "test/topic"
-        assert call_args.mqtt_client_proxy_message.data == b"test data"
+        assert call_args.mqttClientProxyMessage.topic == "test/topic"
+        assert call_args.mqttClientProxyMessage.data == b"test data"
 
 
 class TestSendData:
@@ -443,7 +441,7 @@ class TestSendDataWithWait:
 
         with patch.object(send_pipeline, "_send_packet") as mock_send_packet:
             mock_send_packet.return_value = MagicMock()
-            result = send_pipeline._send_data_with_wait(
+            send_pipeline._send_data_with_wait(
                 MockProtobuf(),
                 destinationId=BROADCAST_ADDR,
                 portNum=portnums_pb2.PortNum.PRIVATE_APP,
@@ -723,7 +721,7 @@ class TestSendPosition:
             "meshtastic.mesh_interface_runtime.send_pipeline.send_position"
         ) as mock_flow:
             mock_flow.return_value = MagicMock()
-            result = send_pipeline.sendPosition(
+            send_pipeline.sendPosition(
                 latitude=37.456,
                 longitude=-122.2345,
                 altitude=100,
@@ -829,7 +827,7 @@ class TestSendWaypoint:
             "meshtastic.mesh_interface_runtime.send_pipeline.send_waypoint"
         ) as mock_flow:
             mock_flow.return_value = MagicMock()
-            result = send_pipeline.sendWaypoint(
+            send_pipeline.sendWaypoint(
                 name="Test Waypoint",
                 description="Test Description",
                 icon=1,
@@ -851,7 +849,7 @@ class TestDeleteWaypoint:
             "meshtastic.mesh_interface_runtime.send_pipeline.delete_waypoint"
         ) as mock_flow:
             mock_flow.return_value = MagicMock()
-            result = send_pipeline.deleteWaypoint(
+            send_pipeline.deleteWaypoint(
                 waypoint_id=12345,
                 destinationId=BROADCAST_ADDR,
             )
@@ -889,7 +887,7 @@ class TestSendPacket:
         mesh_packet = mesh_pb2.MeshPacket()
         mesh_packet.id = 12345
 
-        with patch.object(send_pipeline, "_send_to_radio") as mock_send_to_radio:
+        with patch.object(send_pipeline, "_send_to_radio"):
             result = send_pipeline._send_packet(
                 mesh_packet,
                 destinationId=BROADCAST_ADDR,
@@ -907,7 +905,7 @@ class TestSendPacket:
         mock_interface.myInfo.my_node_num = 12345
         mesh_packet = mesh_pb2.MeshPacket()
 
-        with patch.object(send_pipeline, "_send_to_radio") as mock_send_to_radio:
+        with patch.object(send_pipeline, "_send_to_radio"):
             result = send_pipeline._send_packet(
                 mesh_packet,
                 destinationId=LOCAL_ADDR,
@@ -920,7 +918,7 @@ class TestSendPacket:
         """Test sending packet to integer destination."""
         mesh_packet = mesh_pb2.MeshPacket()
 
-        with patch.object(send_pipeline, "_send_to_radio") as mock_send_to_radio:
+        with patch.object(send_pipeline, "_send_to_radio"):
             result = send_pipeline._send_packet(
                 mesh_packet,
                 destinationId=67890,
@@ -935,7 +933,7 @@ class TestSendPacket:
         """Test sending packet to hex string destination."""
         mesh_packet = mesh_pb2.MeshPacket()
 
-        with patch.object(send_pipeline, "_send_to_radio") as mock_send_to_radio:
+        with patch.object(send_pipeline, "_send_to_radio"):
             result = send_pipeline._send_packet(
                 mesh_packet,
                 destinationId="!000109bf",  # hex for 68031
@@ -948,13 +946,14 @@ class TestSendPacket:
         self, send_pipeline: SendPipeline, mock_interface: MagicMock
     ) -> None:
         """Test sending packet to node ID that requires lookup."""
-        mock_interface.nodes = {"!1234abcd": {"num": 67890}}
+        # Use a node ID that doesn't match hex pattern (9 chars instead of 8)
+        mock_interface.nodes = {"!abcdef123": {"num": 67890}}
         mesh_packet = mesh_pb2.MeshPacket()
 
-        with patch.object(send_pipeline, "_send_to_radio") as mock_send_to_radio:
+        with patch.object(send_pipeline, "_send_to_radio"):
             result = send_pipeline._send_packet(
                 mesh_packet,
-                destinationId="!1234abcd",
+                destinationId="!abcdef123",
             )
 
         assert result.to == 67890
@@ -977,15 +976,16 @@ class TestSendPacket:
         mock_interface.nodes = {}
         mesh_packet = mesh_pb2.MeshPacket()
 
+        # Use a node ID that doesn't match the hex pattern (not 8 hex chars)
         with pytest.raises(Exception, match="not found"):
-            send_pipeline._send_packet(mesh_packet, destinationId="!1234abcd")
+            send_pipeline._send_packet(mesh_packet, destinationId="!abc123")
 
     @pytest.mark.unit
     def test_send_packet_with_hop_limit(self, send_pipeline: SendPipeline) -> None:
         """Test sending packet with custom hop limit."""
         mesh_packet = mesh_pb2.MeshPacket()
 
-        with patch.object(send_pipeline, "_send_to_radio") as mock_send_to_radio:
+        with patch.object(send_pipeline, "_send_to_radio"):
             result = send_pipeline._send_packet(
                 mesh_packet,
                 destinationId=BROADCAST_ADDR,
@@ -999,7 +999,7 @@ class TestSendPacket:
         """Test sending PKI encrypted packet."""
         mesh_packet = mesh_pb2.MeshPacket()
 
-        with patch.object(send_pipeline, "_send_to_radio") as mock_send_to_radio:
+        with patch.object(send_pipeline, "_send_to_radio"):
             result = send_pipeline._send_packet(
                 mesh_packet,
                 destinationId=BROADCAST_ADDR,
@@ -1014,7 +1014,7 @@ class TestSendPacket:
         mesh_packet = mesh_pb2.MeshPacket()
         public_key = b"public_key_bytes"
 
-        with patch.object(send_pipeline, "_send_to_radio") as mock_send_to_radio:
+        with patch.object(send_pipeline, "_send_to_radio"):
             result = send_pipeline._send_packet(
                 mesh_packet,
                 destinationId=BROADCAST_ADDR,
@@ -1036,7 +1036,7 @@ class TestSendPacket:
 
         with caplog.at_level(logging.WARNING):
             with patch.object(send_pipeline, "_send_to_radio") as mock_send_to_radio:
-                result = send_pipeline._send_packet(
+                send_pipeline._send_packet(
                     mesh_packet,
                     destinationId=BROADCAST_ADDR,
                 )
@@ -1320,5 +1320,5 @@ class TestSendHeartbeat:
             send_pipeline.sendHeartbeat()
 
         mock_send.assert_called_once()
-        call_args = mock_send.call_args[0][0]
+        mock_send.call_args[0][0]
         # Heartbeat should have heartbeat field set

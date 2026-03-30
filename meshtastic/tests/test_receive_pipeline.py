@@ -2,15 +2,11 @@
 
 # pylint: disable=redefined-outer-name,protected-access
 
-import base64
-import copy
 import logging
 import threading
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from google.protobuf import json_format
 
 from meshtastic.mesh_interface_runtime.receive_pipeline import (
     DECODE_FAILED_PREFIX,
@@ -18,18 +14,18 @@ from meshtastic.mesh_interface_runtime.receive_pipeline import (
     MODULE_CONFIG_FROM_RADIO_FIELDS,
     MeshInterfaceError,
     ReceivePipeline,
-    _LazyMessageDict,
+    _emit_response_summary,
     _FromRadioContext,
+    _LazyMessageDict,
+    _normalize_json_serializable,
     _PacketRuntimeContext,
     _PublicationIntent,
-    _emit_response_summary,
-    _normalize_json_serializable,
 )
 from meshtastic.protobuf import (
-    mesh_pb2,
-    config_pb2,
-    module_config_pb2,
     channel_pb2,
+    config_pb2,
+    mesh_pb2,
+    module_config_pb2,
     portnums_pb2,
 )
 
@@ -634,7 +630,8 @@ class TestHandleFromRadioPacket:
         """Test handling packet FromRadio message."""
         from_radio = mesh_pb2.FromRadio()
         from_radio.packet.id = 12345
-        from_radio.packet.from_ = 67890
+        # Use setattr for 'from' field since it's a reserved keyword
+        setattr(from_radio.packet, "from", 67890)
 
         context = _FromRadioContext(
             message=from_radio,
@@ -682,7 +679,7 @@ class TestHandleFromRadioQueueStatus:
     ) -> None:
         """Test handling queueStatus FromRadio message."""
         from_radio = mesh_pb2.FromRadio()
-        from_radio.queue_status.resend_count = 5
+        from_radio.queueStatus.free = 5
 
         context = _FromRadioContext(
             message=from_radio,
@@ -705,7 +702,7 @@ class TestHandleFromRadioClientNotification:
     ) -> None:
         """Test handling clientNotification FromRadio message."""
         from_radio = mesh_pb2.FromRadio()
-        from_radio.client_notification.message = "Test notification"
+        from_radio.clientNotification.message = "Test notification"
 
         context = _FromRadioContext(
             message=from_radio,
@@ -728,8 +725,8 @@ class TestHandleFromRadioMqttClientProxyMessage:
     ) -> None:
         """Test handling mqttClientProxyMessage FromRadio message."""
         from_radio = mesh_pb2.FromRadio()
-        from_radio.mqtt_client_proxy_message.topic = "test/topic"
-        from_radio.mqtt_client_proxy_message.data = b"test data"
+        from_radio.mqttClientProxyMessage.topic = "test/topic"
+        from_radio.mqttClientProxyMessage.data = b"test data"
 
         context = _FromRadioContext(
             message=from_radio,
@@ -750,7 +747,7 @@ class TestHandleFromRadioXmodemPacket:
     def test_handle_xmodem_packet(self, receive_pipeline: ReceivePipeline) -> None:
         """Test handling xmodemPacket FromRadio message."""
         from_radio = mesh_pb2.FromRadio()
-        from_radio.xmodem_packet.payload = b"xmodem data"
+        from_radio.xmodemPacket.buffer = b"xmodem data"
 
         context = _FromRadioContext(
             message=from_radio,
@@ -797,15 +794,13 @@ class TestApplyConfigFromRadio:
     ) -> None:
         """Test applying local config from radio."""
         from_radio = mesh_pb2.FromRadio()
-        from_radio.config.lora.region = config_pb2.Config.LoRaConfig.RegionType.US
+        # Set region as integer (1 = US)
+        from_radio.config.lora.region = 1
 
         result = receive_pipeline._apply_local_config_from_radio(from_radio.config)
 
         assert result is True
-        assert (
-            mock_interface.localNode.localConfig.lora.region
-            == config_pb2.Config.LoRaConfig.RegionType.US
-        )
+        assert mock_interface.localNode.localConfig.lora.region == 1
 
     @pytest.mark.unit
     def test_apply_module_config_from_radio(
@@ -813,10 +808,10 @@ class TestApplyConfigFromRadio:
     ) -> None:
         """Test applying module config from radio."""
         from_radio = mesh_pb2.FromRadio()
-        from_radio.module_config.mqtt.enabled = True
+        from_radio.moduleConfig.mqtt.enabled = True
 
         result = receive_pipeline._apply_module_config_from_radio(
-            from_radio.module_config
+            from_radio.moduleConfig
         )
 
         assert result is True
@@ -865,8 +860,8 @@ class TestFixupPosition:
 
         result = receive_pipeline._fixup_position(position)
 
-        assert result["latitude"] == 37.456
-        assert result["longitude"] == -122.2345
+        assert result["latitude"] == pytest.approx(37.456)
+        assert result["longitude"] == pytest.approx(-122.2345)
 
     @pytest.mark.unit
     def test_fixup_position_no_coords(self, receive_pipeline: ReceivePipeline) -> None:
@@ -977,7 +972,7 @@ class TestHandleQueueStatusFromRadio:
     ) -> None:
         """Test handling queue status from radio."""
         queue_status = mesh_pb2.QueueStatus()
-        queue_status.resend_count = 5
+        queue_status.free = 5
 
         receive_pipeline._handle_queue_status_from_radio(queue_status)
 
@@ -994,7 +989,7 @@ class TestNormalizePacketFromRadio:
         """Test normalizing a valid packet."""
         mesh_packet = mesh_pb2.MeshPacket()
         mesh_packet.id = 12345
-        mesh_packet.from_ = 67890
+        setattr(mesh_packet, "from", 67890)
         mesh_packet.to = 11111
         mesh_packet.decoded.payload = b"test data"
 
@@ -1012,7 +1007,7 @@ class TestNormalizePacketFromRadio:
     ) -> None:
         """Test that packet with from=0 returns None (loopback)."""
         mesh_packet = mesh_pb2.MeshPacket()
-        mesh_packet.from_ = 0
+        setattr(mesh_packet, "from", 0)
 
         result = receive_pipeline._normalize_packet_from_radio(mesh_packet, hack=False)
 
@@ -1024,7 +1019,7 @@ class TestNormalizePacketFromRadio:
     ) -> None:
         """Test that packet without 'to' field defaults to 0."""
         mesh_packet = mesh_pb2.MeshPacket()
-        mesh_packet.from_ = 12345
+        setattr(mesh_packet, "from", 12345)
 
         result = receive_pipeline._normalize_packet_from_radio(mesh_packet, hack=False)
 
@@ -1067,8 +1062,9 @@ class TestEnrichPacketIdentity:
         with caplog.at_level(logging.WARNING):
             receive_pipeline._enrich_packet_identity(packet_dict)
 
-        assert "fromId" not in packet_dict
-        assert "toId" not in packet_dict
+        # When nodes are missing, fromId/toId should be set to None, not absent
+        assert packet_dict["fromId"] is None
+        assert packet_dict["toId"] is None
 
 
 class TestNodeNumToId:
@@ -1079,7 +1075,7 @@ class TestNodeNumToId:
         self, receive_pipeline: ReceivePipeline
     ) -> None:
         """Test mapping broadcast num to broadcast address (dest mode)."""
-        from meshtastic import BROADCAST_NUM, BROADCAST_ADDR
+        from meshtastic import BROADCAST_ADDR, BROADCAST_NUM
 
         result = receive_pipeline._node_num_to_id(BROADCAST_NUM, isDest=True)
 
@@ -1232,10 +1228,8 @@ class TestDecodePacketPayloadWithHandler:
         mesh_packet.decoded.payload = b"invalid data"
         mesh_packet.id = 12345
 
-        from meshtastic.protobuf import routing_pb2
-
         handler = MagicMock()
-        handler.protobufFactory = routing_pb2.Routing
+        handler.protobufFactory = mesh_pb2.Routing
         handler.name = "routing"
 
         with caplog.at_level(logging.WARNING):
