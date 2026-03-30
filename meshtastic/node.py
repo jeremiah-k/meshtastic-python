@@ -8,7 +8,7 @@ in the mesh, including methods for localConfig, moduleConfig, and channels manag
 import logging
 import sys
 import threading
-from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, TypeVar
 
 from google.protobuf.descriptor import FieldDescriptor
 
@@ -196,7 +196,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             )
 
             self._content_cache_store_cache = _NodeContentCacheStore(self)
-        return cast("_NodeContentCacheStore", self._content_cache_store_cache)
+        return self._content_cache_store_cache
 
     @property
     def _content_response_runtime(self) -> "_NodeContentResponseRuntime":
@@ -210,7 +210,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
                 self,
                 cache_store=self._content_cache_store,
             )
-        return cast("_NodeContentResponseRuntime", self._content_response_runtime_cache)
+        return self._content_response_runtime_cache
 
     @property
     def _content_request_runtime(self) -> "_NodeAdminContentRuntime":
@@ -225,7 +225,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
                 cache_store=self._content_cache_store,
                 response_runtime=self._content_response_runtime,
             )
-        return cast("_NodeAdminContentRuntime", self._content_request_runtime_cache)
+        return self._content_request_runtime_cache
 
     @property
     def _metadata_response_runtime(self) -> "_NodeMetadataResponseRuntime":
@@ -236,9 +236,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             )
 
             self._metadata_response_runtime_cache = _NodeMetadataResponseRuntime(self)
-        return cast(
-            "_NodeMetadataResponseRuntime", self._metadata_response_runtime_cache
-        )
+        return self._metadata_response_runtime_cache
 
     @property
     def _channel_response_runtime(self) -> "_NodeChannelResponseRuntime":
@@ -249,7 +247,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             )
 
             self._channel_response_runtime_cache = _NodeChannelResponseRuntime(self)
-        return cast("_NodeChannelResponseRuntime", self._channel_response_runtime_cache)
+        return self._channel_response_runtime_cache
 
     @property
     def _position_time_runtime(self) -> "_NodePositionTimeCommandRuntime":
@@ -260,9 +258,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             )
 
             self._position_time_runtime_cache = _NodePositionTimeCommandRuntime(self)
-        return cast(
-            "_NodePositionTimeCommandRuntime", self._position_time_runtime_cache
-        )
+        return self._position_time_runtime_cache
 
     def __repr__(self) -> str:
         """Return a developer-oriented string identifying the Node.
