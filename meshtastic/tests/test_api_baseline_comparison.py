@@ -53,10 +53,71 @@ LEGACY_IMPORT_PATHS = [
 # =============================================================================
 
 
+def _normalize_type_str(type_str: str) -> str:
+    """Normalize type annotation strings to canonical form for comparison.
+
+    Python represents equivalent types differently depending on version and
+    complexity. This function converts various representations to a standard
+    format so semantically identical signatures compare as equal.
+
+    Handles:
+    - typing.Optional[X] <-> X | None
+    - typing.Union[X, Y] <-> X | Y
+    - typing.Callable[[...], R] <-> Callable[[...], R]
+    - typing.Dict[X, Y] <-> dict[X, Y]
+    - typing.List[X] <-> list[X]
+    - <class 'str'> <-> str
+    """
+    import re
+
+    result = type_str
+
+    # Normalize typing module prefixes for generic types
+    result = re.sub(r"\btyping\.Callable\b", "Callable", result)
+    result = re.sub(r"\btyping\.Optional\b", "Optional", result)
+    result = re.sub(r"\btyping\.Union\b", "Union", result)
+    result = re.sub(r"\btyping\.Dict\b", "dict", result)
+    result = re.sub(r"\btyping\.List\b", "list", result)
+    result = re.sub(r"\btyping\.Any\b", "Any", result)
+    result = re.sub(r"\btyping\.IO\b", "IO", result)
+
+    # Normalize <class 'X'> to just X
+    result = re.sub(r"<class '(\w+)'>", r"\1", result)
+
+    # Normalize Union types with None to Optional
+    # Pattern: X | Y | None -> Optional[X | Y]
+    # Pattern: Union[X, Y, None] -> Optional[X | Y]
+    def normalize_union_to_optional(match):
+        content = match.group(1)
+        parts = [p.strip() for p in content.split(",")]
+        non_none_parts = [p for p in parts if p != "None"]
+        if len(non_none_parts) == 1:
+            return f"Optional[{non_none_parts[0]}]"
+        else:
+            return f"Optional[{' | '.join(non_none_parts)}]"
+
+    # Convert Union[..., None] to Optional[...]
+    result = re.sub(r"Union\[([^\]]+),\s*None\]", normalize_union_to_optional, result)
+
+    # Convert X | None to Optional[X] (but not for simple types like int | None)
+    # Only do this for complex types (containing brackets or typing. prefix)
+    def normalize_pipe_optional(match):
+        inner = match.group(1).strip()
+        # Keep simple unions as-is, only wrap complex types
+        if "[" in inner or "Callable" in inner or "IO" in inner:
+            return f"Optional[{inner}]"
+        return match.group(0)  # Return unchanged for simple types
+
+    result = re.sub(r"([\w\[\]|\s]+)\|\s*None\b", normalize_pipe_optional, result)
+
+    return result
+
+
 def _get_signature_str(method: Any) -> str:
     """Get a string representation of a method signature.
 
     This captures parameter names, defaults, and type annotations for comparison.
+    Type annotations are normalized to canonical form for cross-version compatibility.
     """
     try:
         sig = inspect.signature(method)
@@ -64,7 +125,10 @@ def _get_signature_str(method: Any) -> str:
         for name, param in sig.parameters.items():
             param_str = name
             if param.annotation is not inspect.Parameter.empty:
-                param_str += f":{param.annotation}"
+                annotation_str = str(param.annotation)
+                # Normalize the type annotation
+                annotation_str = _normalize_type_str(annotation_str)
+                param_str += f":{annotation_str}"
             if param.default is not inspect.Parameter.empty:
                 if param.default is None:
                     param_str += "=None"
