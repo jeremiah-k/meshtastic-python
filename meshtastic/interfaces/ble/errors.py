@@ -96,9 +96,7 @@ class BLEErrorHandler:
             return default_return
         except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
             raise
-        except (
-            Exception
-        ):  # noqa: BLE001 - intentional catch-all; caller controls reraise
+        except Exception:  # noqa: BLE001 - intentional catch-all; caller controls reraise
             if log_error:
                 logger.exception("%s", error_msg)
             if reraise:
