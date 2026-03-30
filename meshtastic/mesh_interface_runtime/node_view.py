@@ -4,7 +4,7 @@ import base64
 import copy
 import sys
 from datetime import datetime
-from typing import IO, Any, TypeAlias, cast
+from typing import IO, TYPE_CHECKING, Any, TypeAlias, cast
 
 try:
     import print_color  # type: ignore[import-untyped]
@@ -26,6 +26,9 @@ from meshtastic.util import (
     messageToJson,
     remove_keys_from_dict,
 )
+
+if TYPE_CHECKING:
+    from meshtastic.mesh_interface import MeshInterface
 
 JSONValue: TypeAlias = (
     None | bool | int | float | str | list["JSONValue"] | dict[str, "JSONValue"]
@@ -154,7 +157,7 @@ class NodeView:
                 print_color.print(line)
         elif callable(interface.debugOut):
             interface.debugOut(line)
-        elif hasattr(interface.debugOut, "write"):
+        elif interface.debugOut is not None and hasattr(interface.debugOut, "write"):
             interface.debugOut.write(line + "\n")
 
     def _handle_log_line(self, line: str) -> None:

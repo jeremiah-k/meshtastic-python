@@ -4,6 +4,8 @@ These tests verify that old code patterns still work correctly during the refact
 not just that methods exist, but that they work as expected end-to-end.
 """
 
+# pylint: disable=redefined-outer-name,no-name-in-module
+
 from __future__ import annotations
 
 import base64
@@ -14,9 +16,8 @@ import pytest
 
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.node import MAX_CHANNELS, Node
-from meshtastic.protobuf import admin_pb2, apponly_pb2, channel_pb2, localonly_pb2
+from meshtastic.protobuf import admin_pb2, apponly_pb2, localonly_pb2
 from meshtastic.protobuf.channel_pb2 import Channel
-from meshtastic.util import fromPSK, toNodeNum
 
 
 def _make_fake_send_admin(
@@ -499,7 +500,7 @@ def test_startOTA_old_signature_compat(mock_interface: MagicMock) -> None:
     test_hash = b"\x01\x02\x03" * 8  # 24-byte hash
 
     # Test old signature with ota_mode and ota_hash
-    result = node.startOTA(ota_mode=admin_pb2.OTAMode.OTA_WIFI, ota_hash=test_hash)
+    _result = node.startOTA(ota_mode=admin_pb2.OTAMode.OTA_WIFI, ota_hash=test_hash)
 
     # Verify it sent correctly
     assert len(sent_messages) == 1
@@ -527,7 +528,7 @@ def test_startOTA_new_signature_compat(mock_interface: MagicMock) -> None:
     test_hash = b"\x04\x05\x06" * 8  # 24-byte hash
 
     # Test new signature with mode and ota_file_hash
-    result = node.startOTA(mode=admin_pb2.OTAMode.OTA_BLE, ota_file_hash=test_hash)
+    _result = node.startOTA(mode=admin_pb2.OTAMode.OTA_BLE, ota_file_hash=test_hash)
 
     # Verify it sent correctly
     assert len(sent_messages) == 1
@@ -675,7 +676,7 @@ def test_get_set_ringtone_workflow(mock_interface: MagicMock) -> None:
         return_packet=MagicMock(),
     )
 
-    result = node.getRingtone()
+    _result = node.getRingtone()
 
     # Verify request was made
     assert len(sent_messages) == 1

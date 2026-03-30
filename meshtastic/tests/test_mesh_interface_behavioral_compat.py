@@ -4,16 +4,13 @@ These tests verify that old code patterns continue to work during the refactor,
 not just that methods exist, but that they work correctly.
 """
 
+# pylint: disable=redefined-outer-name
+
 import io
-import re
-import time
 import warnings
-from collections.abc import Callable
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from google.protobuf import message as protobuf_message
 
 from meshtastic import BROADCAST_ADDR, LOCAL_ADDR
 from meshtastic.mesh_interface import MeshInterface
@@ -577,7 +574,7 @@ class TestGetNodeWorkflow:
             mock_node_instance.requestChannels = MagicMock()
             MockNode.return_value = mock_node_instance
 
-            node = iface.getNode("!testnode1", requestChannels=False)
+            _node = iface.getNode("!testnode1", requestChannels=False)
 
             # Verify requestChannels was not called on the node
             mock_node_instance.requestChannels.assert_not_called()
@@ -624,7 +621,7 @@ class TestSendTelemetrySemanticDeprecation:
                 )
 
             # Check that a warning was emitted
-            deprecation_warnings = [
+            _deprecation_warnings = [
                 x
                 for x in w
                 if issubclass(x.category, (DeprecationWarning, UserWarning))
@@ -703,7 +700,7 @@ class TestSendTelemetrySemanticDeprecation:
                 # Verify response handler was registered
                 mock_send.assert_called_once()
                 call_kwargs = mock_send.call_args[1]
-                assert call_kwargs.get("wantResponse") == True
+                assert call_kwargs.get("wantResponse") is True
 
 
 # -----------------------------------------------------------------------------
@@ -846,7 +843,7 @@ class TestEdgeCases:
             MockNode.return_value = mock_node_instance
 
             # Test hex string (without ! prefix) - this is parsed as direct hex
-            node = iface.getNode("abcdef12")
+            _node = iface.getNode("abcdef12")
 
             # "abcdef12" as hex is 0xabcdef12 = 2882400018
             # The string is passed directly to Node constructor, which converts it

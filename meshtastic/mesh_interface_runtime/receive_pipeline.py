@@ -6,7 +6,7 @@ import hashlib
 import logging
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Callable, TypeAlias
+from typing import TYPE_CHECKING, Any, Callable, TypeAlias
 
 import google.protobuf.json_format
 from google.protobuf import message as protobuf_message
@@ -21,6 +21,9 @@ from meshtastic.protobuf import (
     module_config_pb2,
 )
 from meshtastic.util import stripnl
+
+if TYPE_CHECKING:
+    from meshtastic.mesh_interface import MeshInterface
 
 logger = logging.getLogger(__name__)
 

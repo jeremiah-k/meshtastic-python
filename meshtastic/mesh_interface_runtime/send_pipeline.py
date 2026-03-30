@@ -361,7 +361,7 @@ class SendPipeline:
         return self._interface._node_db_lock
 
     @property
-    def _request_wait_runtime(self) -> _RequestWaitRuntime:
+    def _request_wait_runtime(self) -> Any:
         """Return the request wait runtime from the parent interface."""
         return self._interface._request_wait_runtime
 
