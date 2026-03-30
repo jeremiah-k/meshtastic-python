@@ -18,6 +18,35 @@ from meshtastic.interfaces.ble.state import ConnectionState
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture
+def mock_ownership_with_capture():
+    """Fixture providing mock ownership coordinator with capture dict."""
+    captured: dict[str, object] = {}
+
+    def _discard_invalidated_connected_client(*_args: object, **kwargs: object) -> None:
+        for key in (
+            "is_closing_getter",
+            "reset_to_disconnected",
+            "current_state_getter",
+            "transition_to_disconnected",
+            "safe_cleanup",
+        ):
+            getter = kwargs.get(key)
+            if callable(getter):
+                if key == "safe_cleanup":
+                    captured[key] = getter(
+                        lambda: captured.__setitem__("cleanup_called", True),
+                        "test cleanup",
+                    )
+                else:
+                    captured[key.replace("_getter", "")] = getter()
+
+    mock_ownership = SimpleNamespace(
+        _discard_invalidated_connected_client=_discard_invalidated_connected_client
+    )
+    return mock_ownership, captured
+
+
 class TestBLELifecycleControllerInit:
     """Test cases for BLELifecycleController initialization."""
 
@@ -404,37 +433,13 @@ class TestBLELifecycleControllerHookResolution:
         state_manager_is_closing.assert_called_once_with(mock_iface)
         assert resolved_is_closing == [True]
 
-    def test_fallback_current_state_calls_lifecycle_service(self) -> None:
+    def test_fallback_current_state_calls_lifecycle_service(
+        self,
+        mock_ownership_with_capture: tuple[SimpleNamespace, dict[str, object]],
+    ) -> None:
         """_fallback_current_state should call BLELifecycleService._state_manager_current_state."""
         mock_iface = SimpleNamespace()
-        captured: dict[str, object] = {}
-
-        def _discard_invalidated_connected_client(
-            *_args: object,
-            **kwargs: object,
-        ) -> None:
-            is_closing_getter = kwargs.get("is_closing_getter")
-            reset_to_disconnected = kwargs.get("reset_to_disconnected")
-            current_state_getter = kwargs.get("current_state_getter")
-            transition_to_disconnected = kwargs.get("transition_to_disconnected")
-            safe_cleanup = kwargs.get("safe_cleanup")
-            if callable(is_closing_getter):
-                captured["is_closing"] = is_closing_getter()
-            if callable(reset_to_disconnected):
-                captured["reset_to_disconnected"] = reset_to_disconnected()
-            if callable(current_state_getter):
-                captured["current_state"] = current_state_getter()
-            if callable(transition_to_disconnected):
-                captured["transitioned"] = transition_to_disconnected()
-            if callable(safe_cleanup):
-                captured["safe_cleanup"] = safe_cleanup(
-                    lambda: captured.__setitem__("cleanup_called", True),
-                    "test cleanup",
-                )
-
-        mock_ownership = SimpleNamespace(
-            _discard_invalidated_connected_client=_discard_invalidated_connected_client
-        )
+        mock_ownership, captured = mock_ownership_with_capture
 
         controller = BLELifecycleController(mock_iface)
         controller._connection_ownership = mock_ownership  # type: ignore[assignment]
@@ -613,7 +618,9 @@ class TestBLELifecycleControllerShutdownDelegation:
         """_close should delegate to the _shutdown coordinator with correct params."""
         calls: list[dict[str, float]] = []
         mock_shutdown = SimpleNamespace(
-            close=lambda *, management_shutdown_wait_timeout, management_wait_poll_seconds: calls.append(
+            close=lambda *,
+            management_shutdown_wait_timeout,
+            management_wait_poll_seconds: calls.append(
                 {
                     "timeout": management_shutdown_wait_timeout,
                     "poll": management_wait_poll_seconds,

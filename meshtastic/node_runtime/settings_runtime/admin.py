@@ -42,7 +42,7 @@ class _NodeAdminCommandRuntime:
             self._node.iface.waitForAckNak()
         return request
 
-    def send_owner_message(
+    def sendOwnerMessage(
         self, message: admin_pb2.AdminMessage
     ) -> mesh_pb2.MeshPacket | None:
         """Send set_owner message with historical session and remote-ACK behavior."""
@@ -52,7 +52,7 @@ class _NodeAdminCommandRuntime:
             use_remote_ack_callback=True,
         )
 
-    def exit_simulator(self) -> mesh_pb2.MeshPacket | None:
+    def exitSimulator(self) -> mesh_pb2.MeshPacket | None:
         """Send exit-simulator admin command."""
         message = admin_pb2.AdminMessage()
         message.exit_simulator = True
@@ -74,7 +74,7 @@ class _NodeAdminCommandRuntime:
             use_remote_ack_callback=True,
         )
 
-    def begin_settings_transaction(self) -> mesh_pb2.MeshPacket | None:
+    def beginSettingsTransaction(self) -> mesh_pb2.MeshPacket | None:
         """Send begin-edit-settings command."""
         message = admin_pb2.AdminMessage()
         message.begin_edit_settings = True
@@ -85,7 +85,7 @@ class _NodeAdminCommandRuntime:
             use_remote_ack_callback=True,
         )
 
-    def commit_settings_transaction(self) -> mesh_pb2.MeshPacket | None:
+    def commitSettingsTransaction(self) -> mesh_pb2.MeshPacket | None:
         """Send commit-edit-settings command."""
         message = admin_pb2.AdminMessage()
         message.commit_edit_settings = True
@@ -96,7 +96,7 @@ class _NodeAdminCommandRuntime:
             use_remote_ack_callback=True,
         )
 
-    def reboot_ota(self, secs: int) -> mesh_pb2.MeshPacket | None:
+    def rebootOta(self, secs: int) -> mesh_pb2.MeshPacket | None:
         """Send reboot-to-OTA command."""
         message = admin_pb2.AdminMessage()
         message.reboot_ota_seconds = secs
@@ -141,9 +141,7 @@ class _NodeAdminCommandRuntime:
     ) -> mesh_pb2.MeshPacket | None:
         """Validate OTA args and send ota_request command."""
         if self._node is not self._node.iface.localNode:
-            self._node._raise_interface_error(
-                "startOTA only possible on local node"
-            )  # noqa: SLF001
+            self._node._raise_interface_error("startOTA only possible on local node")  # noqa: SLF001
 
         # COMPAT_STABLE_SHIM: support legacy keyword aliases used by older callers:
         # `ota_mode` -> `mode`, and `ota_hash`/`hash` -> `ota_file_hash`.
@@ -201,14 +199,10 @@ class _NodeAdminCommandRuntime:
         """Send factory-reset command, preserving full/config split behavior."""
         message = admin_pb2.AdminMessage()
         if full:
-            message.factory_reset_device = (
-                self._node._get_factory_reset_request_value()
-            )  # noqa: SLF001
+            message.factory_reset_device = self._node._get_factory_reset_request_value()  # noqa: SLF001
             logger.info("Telling node to factory reset (full device reset)")
         else:
-            message.factory_reset_config = (
-                self._node._get_factory_reset_request_value()
-            )  # noqa: SLF001
+            message.factory_reset_config = self._node._get_factory_reset_request_value()  # noqa: SLF001
             logger.info("Telling node to factory reset (config reset)")
         return self._send_command(
             message,

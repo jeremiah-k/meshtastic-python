@@ -28,7 +28,7 @@ class _NodeSettingsRuntime:
         self._node = node
         self._message_builder = message_builder
 
-    def request_config(
+    def requestConfig(
         self,
         config_type: int | FieldDescriptor,
         *,
@@ -44,7 +44,7 @@ class _NodeSettingsRuntime:
             )
 
         message = self._message_builder.build_request_message(config_type)
-        request = self._node._send_admin(
+        request = self._node._send_admin(  # noqa: SLF001
             message,
             wantResponse=True,
             onResponse=on_response,
@@ -83,7 +83,7 @@ class _NodeSettingsRuntime:
             "Request config from the device before writing."
         )
 
-    def write_config(self, config_name: str) -> None:
+    def writeConfig(self, config_name: str) -> None:
         """Send one settings write with preserved callback selection."""
         self._message_builder.validate_config_name(config_name)
         self._validate_write_configs_loaded(config_name)
@@ -93,7 +93,7 @@ class _NodeSettingsRuntime:
         on_response = (
             None if self._node is self._node.iface.localNode else self._node.onAckNak
         )
-        request = self._node._send_admin(message, onResponse=on_response)
+        request = self._node._send_admin(message, onResponse=on_response)  # noqa: SLF001
         if on_response is not None and request is not None:
             self._node.iface.waitForAckNak()
         logger.debug("Config write completed: %s", config_name)

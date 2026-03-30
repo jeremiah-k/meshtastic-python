@@ -892,7 +892,7 @@ class TestSendPacket:
     @pytest.mark.unit
     def test_send_packet_broadcast(
         self, send_pipeline: SendPipeline, mock_interface: MagicMock
-    ) -> None:  # noqa: W0613
+    ) -> None:
         """Test sending packet to broadcast address."""
         _ = mock_interface  # Required fixture, explicitly marked as used
         mesh_packet = mesh_pb2.MeshPacket()

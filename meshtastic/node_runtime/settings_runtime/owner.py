@@ -32,7 +32,7 @@ class _NodeOwnerProfileRuntime:
         self._node = node
         self._admin_command_runtime = admin_command_runtime
 
-    def set_owner(
+    def setOwner(
         self,
         *,
         long_name: str | None = None,
@@ -40,7 +40,24 @@ class _NodeOwnerProfileRuntime:
         is_licensed: bool = False,
         is_unmessagable: bool | None = None,
     ) -> mesh_pb2.MeshPacket | None:
-        """Apply setOwner validation/truncation and send policy."""
+        """Apply setOwner validation/truncation and send policy.
+
+        Parameters
+        ----------
+        long_name : str | None, optional
+            The long name to set. Will be stripped and truncated if necessary.
+        short_name : str | None, optional
+            The short name to set. Will be stripped and truncated if necessary.
+        is_licensed : bool, default False
+            Whether the node operator is licensed.
+        is_unmessagable : bool | None, optional
+            Whether the node should be marked as unmessagable.
+
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The mesh packet returned from sending the owner message, or None.
+        """
         logger.debug("in setOwner nodeNum:%s", self._node.nodeNum)
         message = admin_pb2.AdminMessage()
 

@@ -82,6 +82,7 @@ def mock_interface_with_nodes(mock_interface):
 # -----------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestSendTextSendDataWorkflow:
     """Test sendText() and sendData() workflows with various destinations."""
 
@@ -178,6 +179,7 @@ class TestSendTextSendDataWorkflow:
 # -----------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestWaitForPositionWorkflow:
     """Test waitForPosition() workflow with timeout and request_id."""
 
@@ -249,6 +251,7 @@ class TestWaitForPositionWorkflow:
 # -----------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestWaitForTelemetryWorkflow:
     """Test waitForTelemetry() workflow with telemetry types and request_id."""
 
@@ -318,6 +321,7 @@ class TestWaitForTelemetryWorkflow:
 # -----------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestWaitForTraceRouteWorkflow:
     """Test waitForTraceRoute() workflow with waitFactor and request_id."""
 
@@ -381,6 +385,7 @@ class TestWaitForTraceRouteWorkflow:
 # -----------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestWaitForWaypointWorkflow:
     """Test waitForWaypoint() workflow with request_id parameter."""
 
@@ -428,6 +433,7 @@ class TestWaitForWaypointWorkflow:
 # -----------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestShowNodesShowInfoWorkflow:
     """Test showNodes() and showInfo() return proper output formats."""
 
@@ -515,6 +521,7 @@ class TestShowNodesShowInfoWorkflow:
 # -----------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestGetNodeWorkflow:
     """Test getNode() workflow with various node identifiers."""
 
@@ -605,6 +612,7 @@ class TestGetNodeWorkflow:
 # -----------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestSendTelemetrySemanticDeprecation:
     """Test sendTelemetry() semantic deprecation warnings."""
 
@@ -709,6 +717,7 @@ class TestSendTelemetrySemanticDeprecation:
 # -----------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestIntegrationWorkflows:
     """Integration-style tests for complete workflows."""
 
@@ -792,6 +801,7 @@ class TestIntegrationWorkflows:
 # -----------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestEdgeCases:
     """Edge case and error handling tests."""
 
@@ -859,6 +869,7 @@ class TestEdgeCases:
 # -----------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestSendWaitEdgeCases:
     """Comprehensive edge case tests for send/wait request-response flows.
 
@@ -1786,6 +1797,7 @@ class TestSendWaitEdgeCases:
 # -----------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestRequestIdExtractionEdgeCases:
     """Test edge cases for request ID extraction from packets."""
 

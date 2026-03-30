@@ -401,11 +401,8 @@ class TestNormalizeFromRadioMessage:
     """Tests for _normalize_from_radio_message method (lines 265-276)."""
 
     @pytest.mark.unit
-    def test_normalize_from_radio(
-        self, receive_pipeline: ReceivePipeline, mock_interface: MagicMock
-    ) -> None:  # noqa: W0613
+    def test_normalize_from_radio(self, receive_pipeline: ReceivePipeline) -> None:
         """Test normalizing FromRadio message."""
-        _ = mock_interface  # Required fixture, explicitly marked as used
         from_radio = mesh_pb2.FromRadio()
         from_radio.id = 12345
 
@@ -1070,6 +1067,9 @@ class TestEnrichPacketIdentity:
         # When nodes are missing, fromId/toId should be set to None, not absent
         assert packet_dict["fromId"] is None
         assert packet_dict["toId"] is None
+
+        # Optionally verify warning was logged (if expected)
+        # assert "node not found" in caplog.text.lower() or len(caplog.records) > 0
 
 
 class TestNodeNumToId:

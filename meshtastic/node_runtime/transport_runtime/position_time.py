@@ -12,6 +12,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Scaling factor for converting lat/lon degrees to integer representation
+DEGREES_TO_INT_SCALE = int(1e7)
+
 
 class _NodePositionTimeCommandRuntime:
     """Owns setFixedPosition/removeFixedPosition/setTime command orchestration."""
@@ -81,13 +84,13 @@ class _NodePositionTimeCommandRuntime:
         position_message = mesh_pb2.Position()
         if lat is not None:
             if isinstance(lat, float):
-                position_message.latitude_i = int(lat * 1e7)
+                position_message.latitude_i = int(lat * DEGREES_TO_INT_SCALE)
             elif isinstance(lat, int):
                 position_message.latitude_i = lat
 
         if lon is not None:
             if isinstance(lon, float):
-                position_message.longitude_i = int(lon * 1e7)
+                position_message.longitude_i = int(lon * DEGREES_TO_INT_SCALE)
             elif isinstance(lon, int):
                 position_message.longitude_i = lon
 
