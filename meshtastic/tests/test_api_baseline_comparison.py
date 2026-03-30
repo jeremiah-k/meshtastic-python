@@ -13,9 +13,8 @@ The baselines are stored in:
 
 import inspect
 import json
-import os
 from pathlib import Path
-from typing import Any, get_type_hints
+from typing import Any
 
 import pytest
 

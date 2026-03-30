@@ -58,8 +58,8 @@ The following specific exports from runtime modules are retained for
 test ecosystem compatibility. These are the ONLY runtime imports with
 stability guarantees:
 
-| Module Path | Export | Purpose | Status |
-|-------------|--------|---------|--------|
+| Module Path                                | Export      | Purpose                    | Status               |
+| ------------------------------------------ | ----------- | -------------------------- | -------------------- |
 | `meshtastic.node_runtime.settings_runtime` | `toNodeNum` | Test mocking compatibility | `COMPAT_STABLE_SHIM` |
 
 ### Policy for External Test Authors
@@ -207,9 +207,9 @@ compatibility/patching and are not recommended public surface.
 The following runtime module exports are explicitly retained for test ecosystem
 compatibility. These are the ONLY runtime module imports with stability guarantees:
 
-| Module                                        | Compatibility symbol | Canonical symbol | Notes                                               |
-| --------------------------------------------- | ------------------ | ---------------- | --------------------------------------------------- |
-| `meshtastic.node_runtime.settings_runtime`    | `toNodeNum`        | `util.toNodeNum` | Test mocking compatibility. COMPAT_STABLE_SHIM.     |
+| Module                                     | Compatibility symbol | Canonical symbol | Notes                                           |
+| ------------------------------------------ | -------------------- | ---------------- | ----------------------------------------------- |
+| `meshtastic.node_runtime.settings_runtime` | `toNodeNum`          | `util.toNodeNum` | Test mocking compatibility. COMPAT_STABLE_SHIM. |
 
 All other runtime module internals (especially underscore-prefixed) are NOT
 considered stable API and may change without deprecation warnings.

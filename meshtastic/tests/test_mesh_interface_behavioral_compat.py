@@ -1422,7 +1422,7 @@ class TestSendWaitEdgeCases:
             mock_packet.id = 99999
             mock_send.return_value = mock_packet
 
-            with patch.object(iface._send_pipeline, "waitForTelemetry") as mock_wait:
+            with patch.object(iface._send_pipeline, "waitForTelemetry"):
                 iface.sendTelemetry(
                     destinationId=BROADCAST_ADDR,
                     telemetryType="device_metrics",
@@ -1578,8 +1578,8 @@ class TestSendWaitEdgeCases:
             mock_packet.id = 44444
             mock_send.return_value = mock_packet
 
-            with patch.object(iface._send_pipeline, "waitForWaypoint") as mock_wait:
-                packet = iface.sendWaypoint(
+            with patch.object(iface._send_pipeline, "waitForWaypoint"):
+                iface.sendWaypoint(
                     name="Response Test",
                     description="Testing wantResponse",
                     icon=1,
@@ -1820,11 +1820,7 @@ class TestRequestIdExtractionEdgeCases:
         """Test that boolean request_id returns None."""
         iface = mock_interface
 
-        packet = {
-            "decoded": {
-                "requestId": True  # Boolean, should be rejected
-            }
-        }
+        packet = {"decoded": {"requestId": True}}  # Boolean, should be rejected
 
         result = iface._send_pipeline._extract_request_id_from_packet(packet)
         assert result is None
