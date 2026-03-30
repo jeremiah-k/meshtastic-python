@@ -421,9 +421,7 @@ class TestGetNode:
         assert result is mock_interface.localNode
 
     @pytest.mark.unit
-    def test_get_node_remote(
-        self, node_view: NodeView, _mock_interface: MagicMock
-    ) -> None:
+    def test_get_node_remote(self, node_view: NodeView) -> None:
         """Test getting remote node."""
         with patch(
             "meshtastic.mesh_interface_runtime.node_view.meshtastic.node.Node"
@@ -732,9 +730,7 @@ class TestGetOrCreateByNum:
         assert result["user"]["id"] == "!00003039"
 
     @pytest.mark.unit
-    def test_get_or_create_broadcast_raises(
-        self, node_view: NodeView, _mock_interface: MagicMock
-    ) -> None:
+    def test_get_or_create_broadcast_raises(self, node_view: NodeView) -> None:
         """Test that creating a broadcast node raises an error."""
         with pytest.raises(MeshInterface.MeshInterfaceError, match="broadcast"):
             node_view._get_or_create_by_num(BROADCAST_NUM)
