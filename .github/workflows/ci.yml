@@ -126,6 +126,8 @@ jobs:
       PYTHON_VERSION: "3.13"
       POETRY_INSTALL_ARGS: --all-extras --with dev,powermon
     steps:
+      - name: Checkout PR branch (current)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Checkout master branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -145,47 +147,35 @@ jobs:
           import json
           import sys
           sys.path.insert(0, 'meshtastic/tests')
-          from test_api_baseline_comparison import generate_baseline, save_baseline, BASELINE_FILE
+          from test_api_baseline_comparison import generate_baseline
           baseline = generate_baseline()
           with open('master_baseline.json', 'w') as f:
               json.dump(baseline, f, indent=2, sort_keys=True)
           print('Generated master baseline')
           "
-          cp master_baseline.json ../master_baseline.json
-      - name: Checkout PR branch
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          path: pr-checkout
+          cp master-checkout/master_baseline.json master_baseline.json
       - name: Install meshtastic from PR
         run: |
-          cd pr-checkout
           poetry install ${{ env.POETRY_INSTALL_ARGS }}
       - name: Compare PR against master baseline
         run: |
-          cd pr-checkout
-          cp ../master_baseline.json meshtastic/tests/api_baselines/api_baseline_master.json
-          poetry run pytest meshtastic/tests/test_api_baseline_comparison.py -v --timeout=60 -k "baseline" || true
+          cp master_baseline.json meshtastic/tests/api_baselines/api_baseline_master.json
           poetry run python -c "
           import json
           import sys
           sys.path.insert(0, 'meshtastic/tests')
           from test_api_baseline_comparison import (
-              generate_baseline, load_baseline, 
+              generate_baseline,
               compare_method_baselines, compare_list_baselines,
-              BASELINE_FILE
           )
-          
-          # Load master baseline
+
           with open('meshtastic/tests/api_baselines/api_baseline_master.json') as f:
               master_baseline = json.load(f)
-          
-          # Generate PR baseline
+
           pr_baseline = generate_baseline()
-          
-          # Compare
+
           differences = []
-          
-          # Compare Node methods
+
           node_diffs = compare_method_baselines(
               pr_baseline.get('node_methods', {}),
               master_baseline.get('node_methods', {}),
@@ -193,8 +183,7 @@ jobs:
           )
           if node_diffs:
               differences.extend(['Node API differences from master:'] + node_diffs)
-          
-          # Compare MeshInterface methods
+
           mesh_diffs = compare_method_baselines(
               pr_baseline.get('mesh_interface_methods', {}),
               master_baseline.get('mesh_interface_methods', {}),
@@ -202,8 +191,7 @@ jobs:
           )
           if mesh_diffs:
               differences.extend(['MeshInterface API differences from master:'] + mesh_diffs)
-          
-          # Compare exports
+
           export_diffs = compare_list_baselines(
               pr_baseline.get('top_level_exports', []),
               master_baseline.get('top_level_exports', []),
@@ -211,7 +199,7 @@ jobs:
           )
           if export_diffs:
               differences.extend(['Top-level export differences from master:'] + export_diffs)
-          
+
           if differences:
               print('\\n'.join(differences))
               print('\\nAPI breaking changes detected vs master!')
