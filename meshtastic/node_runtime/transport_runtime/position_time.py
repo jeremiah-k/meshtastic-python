@@ -37,7 +37,7 @@ class _NodePositionTimeCommandRuntime:
             wantResponse=True,
         )
         if on_response is not None and request is not None:
-            self._node.iface.waitForAckNak(request.requestId)
+            self._node.iface.waitForAckNak()
         return request
 
     def _set_fixed_position(

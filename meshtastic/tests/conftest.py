@@ -522,9 +522,12 @@ def _shutdown_publishing_thread() -> Generator[None, None, None]:
     yield
     # After all tests complete, shut down the publishing thread
     from meshtastic import publishingThread
+    from meshtastic.util import DeferredExecution
 
-    publishingThread.stop()
-    publishingThread.join(timeout=5.0)
+    # Use cast to satisfy mypy - publishingThread is a DeferredExecution instance
+    _thread = cast(DeferredExecution, publishingThread)
+    _thread.stop()
+    _thread.join(timeout=5.0)
 
 
 @pytest.fixture
@@ -533,7 +536,7 @@ def mock_interface() -> Iterator[Any]:
     iface = MeshInterface(noProto=True)
     try:
         # Mock critical methods to avoid hardware dependency
-        iface._send_to_radio_impl = MagicMock()
+        iface._send_to_radio_impl = MagicMock()  # type: ignore[method-assign]
         iface.myInfo = MagicMock()
         iface.myInfo.my_node_num = 2475227164
 
