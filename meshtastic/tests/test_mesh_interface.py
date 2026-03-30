@@ -24,6 +24,10 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import meshtastic.mesh_interface as mesh_interface_module
+from meshtastic.mesh_interface_runtime.request_wait import (
+    UNSCOPED_WAIT_REQUEST_ID,
+    WAIT_ATTR_NAK,
+)
 
 from .. import BROADCAST_ADDR, LOCAL_ADDR, NODELESS_WANT_CONFIG_ID, ResponseHandler
 from ..mesh_interface import MeshInterface
@@ -2882,7 +2886,7 @@ def test_waitForAckNak_raises_pending_received_nak_wait_error() -> None:
         iface._timeout = MagicMock()
         iface._timeout.waitForAckNak.return_value = False
         iface._set_wait_error(
-            mesh_interface_module.WAIT_ATTR_NAK,
+            WAIT_ATTR_NAK,
             "Failed to decode admin payload: decode-failed: malformed payload",
         )
 
@@ -3190,7 +3194,7 @@ def test_wait_state_helpers_cover_request_resolution_branches() -> None:
         with iface._response_handlers_lock:
             assert (
                 "receivedPosition",
-                mesh_interface_module.UNSCOPED_WAIT_REQUEST_ID,
+                UNSCOPED_WAIT_REQUEST_ID,
             ) in iface._response_wait_acks
 
         iface._clear_wait_error("receivedTelemetry", request_id=601)
@@ -3227,7 +3231,7 @@ def test_wait_state_helpers_cover_request_resolution_branches() -> None:
         iface._clear_wait_error("receivedPosition", request_id=700)
         with iface._response_handlers_lock:
             iface._response_wait_acks.add(
-                ("receivedPosition", mesh_interface_module.UNSCOPED_WAIT_REQUEST_ID)
+                ("receivedPosition", UNSCOPED_WAIT_REQUEST_ID)
             )
         assert not iface._wait_for_request_ack(
             "receivedPosition", 700, timeout_seconds=0.05
@@ -3235,7 +3239,7 @@ def test_wait_state_helpers_cover_request_resolution_branches() -> None:
         with iface._response_handlers_lock:
             assert (
                 "receivedPosition",
-                mesh_interface_module.UNSCOPED_WAIT_REQUEST_ID,
+                UNSCOPED_WAIT_REQUEST_ID,
             ) in iface._response_wait_acks
 
         with iface._response_handlers_lock:
@@ -3264,11 +3268,11 @@ def test_retired_scoped_wait_ids_do_not_clobber_unscoped_wait_state() -> None:
         with iface._response_handlers_lock:
             assert (
                 "receivedTelemetry",
-                mesh_interface_module.UNSCOPED_WAIT_REQUEST_ID,
+                UNSCOPED_WAIT_REQUEST_ID,
             ) not in iface._response_wait_acks
             assert (
                 "receivedTelemetry",
-                mesh_interface_module.UNSCOPED_WAIT_REQUEST_ID,
+                UNSCOPED_WAIT_REQUEST_ID,
             ) not in iface._response_wait_errors
 
         iface._mark_wait_acknowledged("receivedTelemetry")
@@ -3451,7 +3455,7 @@ def test_request_scoped_wait_times_out_for_unscoped_error_across_overlapping_wai
             assert not iface._active_wait_request_ids.get("receivedTelemetry")
             assert (
                 "receivedTelemetry",
-                mesh_interface_module.UNSCOPED_WAIT_REQUEST_ID,
+                UNSCOPED_WAIT_REQUEST_ID,
             ) not in iface._response_wait_errors
 
 
@@ -4032,7 +4036,7 @@ def test_handle_packet_from_radio_admin_decode_failure_skips_admin_response_call
             callback=response_callback,
             ackPermitted=True,
         )
-    iface._clear_wait_error(mesh_interface_module.WAIT_ATTR_NAK, request_id=42)
+    iface._clear_wait_error(WAIT_ATTR_NAK, request_id=42)
     packet = _make_decoded_packet(
         from_node=7,
         to_node=8,
@@ -4052,7 +4056,7 @@ def test_handle_packet_from_radio_admin_decode_failure_skips_admin_response_call
         match="Failed to decode admin payload",
     ):
         iface._raise_wait_error_if_present(
-            mesh_interface_module.WAIT_ATTR_NAK,
+            WAIT_ATTR_NAK,
             request_id=42,
         )
     assert "Failed to decode admin payload" in caplog.text
