@@ -19,6 +19,7 @@ class _NodeAckNakRuntime:
 
     def _handle_ack_nak(self, packet: dict[str, Any]) -> None:
         """Classify ACK/NAK payload and update interface acknowledgment state."""
+        ack_state = self._node.iface._acknowledgment
         # pylint: disable=too-many-return-statements
         decoded = packet.get("decoded")
         if not isinstance(decoded, dict):
@@ -27,7 +28,7 @@ class _NodeAckNakRuntime:
                 packet.get("id"),
                 packet.get("from"),
             )
-            self._node.iface._acknowledgment.receivedNak = True
+            ack_state.receivedNak = True
             return
         routing = decoded.get("routing")
         if not isinstance(routing, dict):
@@ -36,13 +37,13 @@ class _NodeAckNakRuntime:
                 packet.get("id"),
                 packet.get("from"),
             )
-            self._node.iface._acknowledgment.receivedNak = True
+            ack_state.receivedNak = True
             return
 
         error_reason = routing.get("errorReason", ERROR_REASON_NONE)
         if error_reason != ERROR_REASON_NONE:
             logger.warning("Received a NAK, error reason: %s", error_reason)
-            self._node.iface._acknowledgment.receivedNak = True
+            ack_state.receivedNak = True
             return
 
         from_value = packet.get("from")
@@ -51,7 +52,7 @@ class _NodeAckNakRuntime:
                 "Received ACK/NAK response without sender: packet_id=%s",
                 packet.get("id"),
             )
-            self._node.iface._acknowledgment.receivedNak = True
+            ack_state.receivedNak = True
             return
         try:
             from_num = int(from_value)
@@ -61,7 +62,7 @@ class _NodeAckNakRuntime:
                 packet.get("id"),
                 from_value,
             )
-            self._node.iface._acknowledgment.receivedNak = True
+            ack_state.receivedNak = True
             return
 
         local_node = self._node.iface.localNode
@@ -70,15 +71,15 @@ class _NodeAckNakRuntime:
                 "Received ACK/NAK response but localNode is not available: packet_id=%s",
                 packet.get("id"),
             )
-            self._node.iface._acknowledgment.receivedNak = True
+            ack_state.receivedNak = True
             return
 
         if from_num == local_node.nodeNum:
             logger.info(
                 "Received an implicit ACK. Packet will likely arrive, but cannot be guaranteed."
             )
-            self._node.iface._acknowledgment.receivedImplAck = True
+            ack_state.receivedImplAck = True
             return
 
         logger.info("Received an ACK.")
-        self._node.iface._acknowledgment.receivedAck = True
+        ack_state.receivedAck = True

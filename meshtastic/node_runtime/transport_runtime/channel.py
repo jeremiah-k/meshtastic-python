@@ -6,8 +6,6 @@ from typing import TYPE_CHECKING
 
 from meshtastic.node_runtime.shared import (
     MAX_CHANNELS,
-)
-from meshtastic.node_runtime.shared import (
     isNamedAdminChannelName as _isNamedAdminChannelName,
 )
 from meshtastic.node_runtime.transport_runtime.admin import _NodeAdminTransportRuntime
@@ -116,6 +114,19 @@ class _NodeDeleteChannelRuntime:
     def _named_admin_index_from_channels(
         channel_list: list[channel_pb2.Channel],
     ) -> int:
+        """Find the index of the named admin channel in a channel list.
+
+        Parameters
+        ----------
+        channel_list : list[channel_pb2.Channel]
+            List of channels to search.
+
+        Returns
+        -------
+        int
+            The index of the first enabled channel with a named admin channel name,
+            or 0 if none is found.
+        """
         for channel in channel_list:
             if (
                 channel.role != channel_pb2.Channel.Role.DISABLED

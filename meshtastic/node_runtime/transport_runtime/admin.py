@@ -34,6 +34,17 @@ class _NodeAdminTransportRuntime:
     ) -> mesh_pb2.MeshPacket | None:
         """Send an AdminMessage via iface.sendData with preserved transport semantics.
 
+        Parameters
+        ----------
+        message : admin_pb2.AdminMessage
+            The admin message to send.
+        want_response : bool, optional
+            Whether to request a response from the device. Default is False.
+        on_response : Callable[[dict[str, Any]], Any] | None, optional
+            Callback invoked when response is received. Default is None.
+        admin_index : int | None, optional
+            Channel index for admin messages. None auto-detects. Default is None.
+
         Returns
         -------
         MeshPacket | None
@@ -56,6 +67,11 @@ class _NodeAdminTransportRuntime:
         outbound_message.CopyFrom(message)
         if isinstance(passkey, bytes):
             outbound_message.session_passkey = passkey
+        elif passkey is not None:
+            logger.warning(
+                "adminSessionPassKey expected bytes, got %s; ignoring",
+                type(passkey).__name__,
+            )
 
         return self._node.iface.sendData(
             outbound_message,
@@ -67,3 +83,4 @@ class _NodeAdminTransportRuntime:
             channelIndex=resolved_admin_index,
             pkiEncrypted=True,
         )
+

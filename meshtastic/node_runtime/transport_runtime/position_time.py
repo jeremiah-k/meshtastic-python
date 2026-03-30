@@ -67,6 +67,11 @@ class _NodePositionTimeCommandRuntime:
         alt : int | float | None
             Altitude in meters. Floats are truncated to int before sending.
             ``None`` omits altitude from the sent message.
+
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The sent packet, or ``None`` if the send failed.
         """
         if lat is not None and (
             isinstance(lat, bool) or not isinstance(lat, (int, float))
@@ -79,6 +84,12 @@ class _NodePositionTimeCommandRuntime:
         ):
             self._node._raise_interface_error(
                 f"Invalid longitude type: {type(lon).__name__}. Expected int or float."
+            )
+        if alt is not None and (
+            isinstance(alt, bool) or not isinstance(alt, (int, float))
+        ):
+            self._node._raise_interface_error(
+                f"Invalid altitude type: {type(alt).__name__}. Expected int or float."
             )
 
         position_message = mesh_pb2.Position()
@@ -95,10 +106,6 @@ class _NodePositionTimeCommandRuntime:
                 position_message.longitude_i = lon
 
         if alt is not None:
-            if isinstance(alt, bool) or not isinstance(alt, (int, float)):
-                self._node._raise_interface_error(
-                    f"Invalid altitude type: {type(alt).__name__}. Expected int or float."
-                )
             if isinstance(alt, float):
                 position_message.altitude = int(alt)
             else:
