@@ -486,37 +486,13 @@ class TestBLELifecycleControllerHookResolution:
         assert captured["cleanup_called"] is True
         assert captured["safe_cleanup"] is None
 
-    def test_fallback_transition_to_state_calls_lifecycle_service(self) -> None:
+    def test_fallback_transition_to_state_calls_lifecycle_service(
+        self,
+        mock_ownership_with_capture: tuple[SimpleNamespace, dict[str, object]],
+    ) -> None:
         """_fallback_transition_to_state should call BLELifecycleService._state_manager_transition_to."""
         mock_iface = SimpleNamespace()
-        captured: dict[str, object] = {}
-
-        def _discard_invalidated_connected_client(
-            *_args: object,
-            **kwargs: object,
-        ) -> None:
-            is_closing_getter = kwargs.get("is_closing_getter")
-            reset_to_disconnected = kwargs.get("reset_to_disconnected")
-            current_state_getter = kwargs.get("current_state_getter")
-            transition_to_disconnected = kwargs.get("transition_to_disconnected")
-            safe_cleanup = kwargs.get("safe_cleanup")
-            if callable(is_closing_getter):
-                captured["is_closing"] = is_closing_getter()
-            if callable(reset_to_disconnected):
-                captured["reset_to_disconnected"] = reset_to_disconnected()
-            if callable(current_state_getter):
-                captured["current_state"] = current_state_getter()
-            if callable(transition_to_disconnected):
-                captured["transitioned"] = transition_to_disconnected()
-            if callable(safe_cleanup):
-                captured["safe_cleanup"] = safe_cleanup(
-                    lambda: captured.__setitem__("cleanup_called", True),
-                    "test cleanup",
-                )
-
-        mock_ownership = SimpleNamespace(
-            _discard_invalidated_connected_client=_discard_invalidated_connected_client
-        )
+        mock_ownership, captured = mock_ownership_with_capture
 
         controller = BLELifecycleController(mock_iface)
         controller._connection_ownership = mock_ownership  # type: ignore[assignment]

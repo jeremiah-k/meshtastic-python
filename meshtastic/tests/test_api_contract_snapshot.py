@@ -17,6 +17,10 @@ from meshtastic.node import Node
 
 logger = logging.getLogger(__name__)
 
+# API shape snapshot thresholds - update these if the public API expands
+MIN_NODE_PUBLIC_METHODS = 40
+MIN_MESHINTERFACE_PUBLIC_METHODS = 20
+
 # =============================================================================
 # Node Public API Method Existence Tests
 # =============================================================================
@@ -588,47 +592,24 @@ def test_public_classes_exist() -> None:
     assert Node.__name__ == "Node"
 
 
-@pytest.mark.unit
-def test_node_instance_attributes_documented() -> None:
-    """Document expected Node instance attributes (set in __init__).
+# Node instance attributes (set in Node.__init__):
+# - nodeNum: The node number
+# - localConfig: Local configuration settings
+# - moduleConfig: Module configuration settings
+# - channels: Channel settings
+# - noProto: Flag indicating no protobuf protocol
+# - iface: Interface reference
+# - timeout: Timeout setting
 
-    These are instance-level attributes, not class attributes, so we
-    document them here for reference rather than testing with hasattr.
-    """
-    # These attributes are set on Node instances in __init__:
-    expected_instance_attrs = [
-        "nodeNum",
-        "localConfig",
-        "moduleConfig",
-        "channels",
-        "noProto",
-        "iface",
-        "timeout",
-    ]
-
-    # Document for reference - these are verified at runtime on instances
-    # This test serves as documentation of the expected API contract
-    assert len(expected_instance_attrs) > 0, "Node instance attributes documented"
-
-
-@pytest.mark.unit
-def test_meshinterface_instance_attributes_documented() -> None:
-    """Document expected MeshInterface instance attributes (set in __init__)."""
-    expected_instance_attrs = [
-        "nodes",
-        "isConnected",
-        "noProto",
-        "localNode",
-        "myInfo",
-        "metadata",
-        "debugOut",
-        "nodesByNum",
-    ]
-
-    # Document for reference - these are verified at runtime on instances
-    assert len(expected_instance_attrs) > 0, (
-        "MeshInterface instance attributes documented"
-    )
+# MeshInterface instance attributes (set in MeshInterface.__init__):
+# - nodes: Dictionary of nodes
+# - isConnected: Connection status flag
+# - noProto: Flag indicating no protobuf protocol
+# - localNode: Reference to the local node
+# - myInfo: Information about this device
+# - metadata: Metadata information
+# - debugOut: Debug output stream
+# - nodesByNum: Nodes indexed by node number
 
 
 # =============================================================================
@@ -696,8 +677,8 @@ def test_node_api_shape_snapshot() -> None:
 
     # Verify we have a reasonable number of public methods
     # If this changes significantly, it may indicate an API break
-    assert len(public_api) >= 40, (
-        f"Node should have at least 40 public methods, found {len(public_api)}"
+    assert len(public_api) >= MIN_NODE_PUBLIC_METHODS, (
+        f"Node should have at least {MIN_NODE_PUBLIC_METHODS} public methods, found {len(public_api)}"
     )
 
 
@@ -752,8 +733,8 @@ def test_mesh_interface_api_shape_snapshot() -> None:
     )
 
     # Verify we have a reasonable number of public methods
-    assert len(public_api) >= 20, (
-        f"MeshInterface should have at least 20 public methods, found {len(public_api)}"
+    assert len(public_api) >= MIN_MESHINTERFACE_PUBLIC_METHODS, (
+        f"MeshInterface should have at least {MIN_MESHINTERFACE_PUBLIC_METHODS} public methods, found {len(public_api)}"
     )
 
 

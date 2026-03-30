@@ -9,7 +9,9 @@ The module is intentionally large to cover all API edge cases.
 """
 
 import io
+import logging
 import warnings
+from collections.abc import Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -24,7 +26,7 @@ from meshtastic.protobuf import mesh_pb2, portnums_pb2, telemetry_pb2
 
 
 @pytest.fixture
-def mock_interface():
+def mock_interface() -> Generator[MeshInterface, None, None]:
     """Provide a MeshInterface with mocked internals for behavioral testing."""
     iface = MeshInterface(noProto=True)
     try:
@@ -68,13 +70,6 @@ def mock_interface():
         yield iface
     finally:
         iface.close()
-
-
-@pytest.fixture
-def mock_interface_with_nodes(mock_interface):
-    """Provide a mock interface pre-configured with nodes."""
-    # Already configured in mock_interface
-    return mock_interface
 
 
 # -----------------------------------------------------------------------------
@@ -255,8 +250,8 @@ class TestWaitForPositionWorkflow:
 class TestWaitForTelemetryWorkflow:
     """Test waitForTelemetry() workflow with telemetry types and request_id."""
 
-    def test_waitForTelemetry_sets_up_wait_state(self, mock_interface):
-        """Verify waitForTelemetry() sets up correct wait state."""
+    def test_waitForTelemetry_exists_and_accepts_parameters(self, mock_interface):
+        """Verify waitForTelemetry() exists and accepts parameters."""
         iface = mock_interface
 
         # Set up telemetry in nodesByNum for device_metrics path
@@ -273,8 +268,7 @@ class TestWaitForTelemetryWorkflow:
             # Use a very short timeout for testing
             iface._timeout.expireTimeout = 0.1
 
-            # We can't easily test the full flow without mocking more,
-            # but we can verify the method exists and accepts parameters
+            # Verify the method exists and accepts parameters
             assert hasattr(iface, "waitForTelemetry")
 
     def test_waitForTelemetry_new_signature_with_request_id(self, mock_interface):
@@ -603,9 +597,6 @@ class TestGetNodeWorkflow:
             with pytest.raises(MeshInterface.MeshInterfaceError):
                 iface.getNode("!nonexistent")
 
-            with pytest.raises(MeshInterface.MeshInterfaceError):
-                iface.getNode("!nonexistent")
-
 
 # -----------------------------------------------------------------------------
 # Test: sendTelemetry Semantic Deprecation
@@ -616,13 +607,11 @@ class TestGetNodeWorkflow:
 class TestSendTelemetrySemanticDeprecation:
     """Test sendTelemetry() semantic deprecation warnings."""
 
-    def test_sendTelemetry_unsupported_type_emits_warning(self, mock_interface):
+    def test_sendTelemetry_unsupported_type_emits_warning(self, mock_interface, caplog):
         """Verify unsupported telemetryType values emit deprecation warning."""
         iface = mock_interface
 
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-
+        with caplog.at_level(logging.WARNING):
             # Send telemetry with unsupported type
             with patch.object(iface, "_send_to_radio_impl"):
                 iface.sendTelemetry(
@@ -1391,7 +1380,7 @@ class TestSendWaitEdgeCases:
         """Test that sendTelemetry with invalid type logs a warning and falls back."""
         iface = mock_interface
 
-        with caplog.at_level("WARNING"):
+        with caplog.at_level(logging.WARNING):
             with patch.object(
                 iface._send_pipeline, "_send_data_with_wait"
             ) as mock_send:

@@ -442,7 +442,7 @@ class TestNodeContentResponseRuntime:
         assert "Unexpected ringtone response without decoded payload" in caplog.text
 
     @pytest.mark.unit
-    def test_handle_ringtone_response_missing_admin_returns_false(
+    def test_handle_ringtone_response_missing_admin_returns_terminal_true(
         self,
         mock_node_for_cache: MagicMock,
         cache_store: _NodeContentCacheStore,
@@ -463,7 +463,7 @@ class TestNodeContentResponseRuntime:
         assert "Unexpected ringtone response without admin payload" in caplog.text
 
     @pytest.mark.unit
-    def test_handle_ringtone_response_missing_raw_returns_false(
+    def test_handle_ringtone_response_missing_raw_returns_terminal_true(
         self,
         mock_node_for_cache: MagicMock,
         cache_store: _NodeContentCacheStore,
@@ -562,7 +562,7 @@ class TestNodeContentResponseRuntime:
         )
 
     @pytest.mark.unit
-    def test_handle_canned_message_response_missing_admin_returns_false(
+    def test_handle_canned_message_response_missing_admin_returns_terminal_true(
         self,
         mock_node_for_cache: MagicMock,
         cache_store: _NodeContentCacheStore,
@@ -583,7 +583,7 @@ class TestNodeContentResponseRuntime:
         assert "Unexpected canned-message response without admin payload" in caplog.text
 
     @pytest.mark.unit
-    def test_handle_canned_message_response_missing_raw_returns_false(
+    def test_handle_canned_message_response_missing_raw_returns_terminal_true(
         self,
         mock_node_for_cache: MagicMock,
         cache_store: _NodeContentCacheStore,

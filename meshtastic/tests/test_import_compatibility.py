@@ -16,10 +16,7 @@ from types import ModuleType
 
 import pytest
 
-# pytest is used by the test runner
-# pylint: disable=unused-import
-
-# pylint: enable=unused-import
+import pytest
 
 
 @pytest.mark.unit
@@ -78,6 +75,7 @@ class TestCoreModuleImports:
         assert callable(toNodeNum)
 
 
+@pytest.mark.unit
 class TestBLEImports:
     """Test BLE interface imports - both old and new paths."""
 
@@ -121,6 +119,7 @@ class TestBLEImports:
         assert isinstance(BLEInterface, type)
 
 
+@pytest.mark.unit
 class TestNodeRuntimeImports:
     """Test node runtime module compatibility exports.
 
@@ -143,6 +142,7 @@ class TestNodeRuntimeImports:
         assert callable(toNodeNum)
 
 
+@pytest.mark.unit
 class TestProtobufImports:
     """Test protobuf module imports."""
 
@@ -171,6 +171,7 @@ class TestProtobufImports:
         assert MeshPacket is not None
 
 
+@pytest.mark.unit
 class TestTopLevelModuleImports:
     """Test top-level module imports and key attributes."""
 
@@ -217,6 +218,7 @@ class TestTopLevelModuleImports:
         assert isinstance(meshtastic.protocols, dict)
 
 
+@pytest.mark.unit
 class TestBackwardCompatAliases:
     """Test backward compatibility aliases that are maintained but may warn."""
 
@@ -240,8 +242,7 @@ class TestBackwardCompatAliases:
             deprecation_warnings = [
                 x for x in w if issubclass(x.category, DeprecationWarning)
             ]
-            # Check that it's actually a list (not None or something unexpected)
-            assert isinstance(deprecation_warnings, list)
+            assert len(deprecation_warnings) >= 1
 
     def test_mt_config_tunnel_instance_deprecated(self) -> None:
         """Test that tunnelInstance can be accessed from mt_config.
@@ -256,7 +257,7 @@ class TestBackwardCompatAliases:
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             # Should be accessible (may warn)
-            _ = mt_config.tunnel_instance  # Canonical name
+            _ = mt_config.tunnelInstance  # Deprecated camelCase alias
 
     def test_node_snake_case_ringtone_aliases(self) -> None:
         """Test that snake_case ringtone methods exist on Node.
@@ -293,6 +294,7 @@ class TestBackwardCompatAliases:
         assert callable(Node.set_canned_message)
 
 
+@pytest.mark.unit
 class TestUtilityCompatAliases:
     """Test utility module compatibility aliases."""
 
@@ -331,6 +333,7 @@ class TestUtilityCompatAliases:
         assert toNodeNum.__name__ == "toNodeNum"
 
 
+@pytest.mark.unit
 class TestSerialModuleLazyImport:
     """Test the lazy serial module import compatibility."""
 
@@ -351,6 +354,7 @@ class TestSerialModuleLazyImport:
         assert hasattr(serial_module, "Serial")
 
 
+@pytest.mark.unit
 class TestModuleReimport:
     """Test that modules can be reimported without errors."""
 

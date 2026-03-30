@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from meshtastic import BROADCAST_ADDR, BROADCAST_NUM, LOCAL_ADDR
+from meshtastic.mesh_interface import MeshInterface
 from meshtastic.mesh_interface_runtime.node_view import (
     NodeView,
     _normalize_json_serializable,
@@ -741,14 +742,13 @@ class TestGetOrCreateByNum:
         assert result["user"]["id"] == "!00003039"
 
     @pytest.mark.unit
-    @pytest.mark.unit
     def test_get_or_create_broadcast_raises(
         self, node_view: NodeView, mock_interface: MagicMock
     ) -> None:
         """Test that creating a broadcast node raises an error."""
         _ = mock_interface  # Explicitly mark as intentionally unused (required fixture)
 
-        with pytest.raises(Exception, match="broadcast"):
+        with pytest.raises(MeshInterface.MeshInterfaceError, match="broadcast"):
             node_view._get_or_create_by_num(BROADCAST_NUM)
 
     @pytest.mark.unit
@@ -758,5 +758,5 @@ class TestGetOrCreateByNum:
         """Test that getting/creating node when nodesByNum is None raises error."""
         mock_interface.nodesByNum = None
 
-        with pytest.raises(Exception, match="not initialized"):
+        with pytest.raises(MeshInterface.MeshInterfaceError, match="not initialized"):
             node_view._get_or_create_by_num(12345)

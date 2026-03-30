@@ -21,7 +21,17 @@ from ..util import Acknowledgment
 @pytest.fixture
 def mock_node() -> MagicMock:
     """Create a minimal mock Node for response runtime tests."""
-    node = MagicMock(spec=["iface", "_signal_metadata_stdout_event", "_timeout"])
+    node = MagicMock(
+        spec=[
+            "iface",
+            "_signal_metadata_stdout_event",
+            "_timeout",
+            "_set_metadata_snapshot",
+            "_emit_metadata_line",
+            "position_flags_list",
+            "excluded_modules_list",
+        ]
+    )
     node.iface = MagicMock()
     node.iface._acknowledgment = Acknowledgment()
     node._timeout = MagicMock()
