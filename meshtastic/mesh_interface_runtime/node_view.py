@@ -274,13 +274,13 @@ class NodeView:
                 else:
                     raw_value = node.get(col_name)
 
-                formatted_value = node_presentation.format_node_field(
+                formatted_value = node_presentation._format_node_field(
                     col_name, raw_value, node
                 )
                 fields_data[col_name] = formatted_value
 
             filtered_data = {
-                node_presentation.get_human_readable_column_label(k): v
+                node_presentation._get_human_readable_column_label(k): v
                 for k, v in fields_data.items()
                 if k in fields
             }

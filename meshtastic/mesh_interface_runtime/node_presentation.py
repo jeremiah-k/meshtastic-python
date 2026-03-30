@@ -31,7 +31,7 @@ _COLUMN_LABEL_MAP: dict[str, str] = {
 }
 
 
-def timeago(delta_secs: int) -> str:
+def _timeago(delta_secs: int) -> str:
     """Produce a short human-readable relative time string for a past interval.
 
     Parameters
@@ -62,7 +62,7 @@ def timeago(delta_secs: int) -> str:
     return "now"
 
 
-def format_numeric_value(
+def _format_numeric_value(
     value: int | float | None,
     precision: int = 2,
     unit: str = "",
@@ -86,7 +86,7 @@ def format_numeric_value(
     return f"{value:.{precision}f}{unit}" if value is not None else None
 
 
-def format_timestamp(ts: int | float | None) -> str | None:
+def _format_timestamp(ts: int | float | None) -> str | None:
     """Format a Unix timestamp as "YYYY-MM-DD HH:MM:SS" or return None when no timestamp is available.
 
     Parameters
@@ -106,7 +106,7 @@ def format_timestamp(ts: int | float | None) -> str | None:
     )
 
 
-def format_time_ago(ts: int | float | None) -> str | None:
+def _format_time_ago(ts: int | float | None) -> str | None:
     """Return a short human-readable relative time string for a past Unix epoch timestamp.
 
     Parameters
@@ -126,10 +126,10 @@ def format_time_ago(ts: int | float | None) -> str | None:
     delta_secs = int(delta.total_seconds())
     if delta_secs < 0:
         return None
-    return timeago(delta_secs)
+    return _timeago(delta_secs)
 
 
-def get_human_readable_column_label(name: str) -> str:
+def _get_human_readable_column_label(name: str) -> str:
     """Map an internal dotted field path to a human-readable column label.
 
     Parameters
@@ -146,7 +146,7 @@ def get_human_readable_column_label(name: str) -> str:
 
 
 # pylint: disable=too-many-return-statements
-def format_node_field(
+def _format_node_field(
     col_name: str,
     raw_value: Any,
     node: dict[str, Any],
@@ -178,28 +178,28 @@ def format_node_field(
             return "0"
         return str(raw_value)
     elif col_name == "deviceMetrics.channelUtilization":
-        return format_numeric_value(raw_value, 2, "%")
+        return _format_numeric_value(raw_value, 2, "%")
     elif col_name == "deviceMetrics.airUtilTx":
-        return format_numeric_value(raw_value, 2, "%")
+        return _format_numeric_value(raw_value, 2, "%")
     elif col_name == "deviceMetrics.batteryLevel":
         if raw_value in _BATTERY_LEVEL_POWERED_SENTINELS:
             return "Powered"
         else:
-            return format_numeric_value(raw_value, 0, "%")
+            return _format_numeric_value(raw_value, 0, "%")
     elif col_name == "isFavorite":
         return "*" if raw_value else ""
     elif col_name == "lastHeard":
-        return format_timestamp(raw_value)
+        return _format_timestamp(raw_value)
     elif col_name == "position.latitude":
-        return format_numeric_value(raw_value, 4, "°")
+        return _format_numeric_value(raw_value, 4, "°")
     elif col_name == "position.longitude":
-        return format_numeric_value(raw_value, 4, "°")
+        return _format_numeric_value(raw_value, 4, "°")
     elif col_name == "position.altitude":
-        return format_numeric_value(raw_value, 0, "m")
+        return _format_numeric_value(raw_value, 0, "m")
     elif col_name == "since":
-        return format_time_ago(raw_value) or "N/A"
+        return _format_time_ago(raw_value) or "N/A"
     elif col_name == "snr":
-        return format_numeric_value(raw_value, 0, " dB")
+        return _format_numeric_value(raw_value, 0, " dB")
     elif col_name == "user.shortName":
         if raw_value is not None:
             return str(raw_value)

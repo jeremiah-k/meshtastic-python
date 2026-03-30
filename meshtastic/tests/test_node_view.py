@@ -322,8 +322,8 @@ class TestBuildTableData:
                 "meshtastic.mesh_interface_runtime.node_view.node_presentation"
             ) as mock_presentation:
                 mock_node_data.extractNodeFieldValue.return_value = "extracted_value"
-                mock_presentation.format_node_field.return_value = "formatted_value"
-                mock_presentation.get_human_readable_column_label.return_value = (
+                mock_presentation._format_node_field.return_value = "formatted_value"
+                mock_presentation._get_human_readable_column_label.return_value = (
                     "Human Label"
                 )
 
