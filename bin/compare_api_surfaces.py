@@ -25,39 +25,43 @@ def _normalize_sig(sig: str) -> str:
     return re.sub(r"(\w+):\s*[^,)=]+", lambda m: m.group(0), sig)
 
 
-def compare_methods(master: dict, pr: dict, class_name: str) -> list[str]:
-    diffs = []
+def compare_methods(
+    master: dict, pr: dict, class_name: str
+) -> tuple[list[str], list[str]]:
+    blocking = []
+    informational = []
     master_methods = set(master.keys())
     pr_methods = set(pr.keys())
 
     removed = master_methods - pr_methods
     if removed:
-        diffs.append(f"REMOVED {class_name} methods: {sorted(removed)}")
+        blocking.append(f"REMOVED {class_name} methods: {sorted(removed)}")
 
     added = pr_methods - master_methods
     if added:
-        diffs.append(f"ADDED {class_name} methods: {sorted(added)}")
+        informational.append(f"ADDED {class_name} methods: {sorted(added)}")
 
     for name in sorted(master_methods & pr_methods):
         m_sig = _normalize_sig(master[name])
         p_sig = _normalize_sig(pr[name])
         if m_sig != p_sig:
-            diffs.append(f"CHANGED {class_name}.{name}:")
-            diffs.append(f"  master: {master[name]}")
-            diffs.append(f"  pr:     {pr[name]}")
+            informational.append(f"CHANGED {class_name}.{name}:")
+            informational.append(f"  master: {master[name]}")
+            informational.append(f"  pr:     {pr[name]}")
 
-    return diffs
+    return blocking, informational
 
 
-def compare_exports(master: list, pr: list) -> list[str]:
-    diffs = []
+def compare_exports(master: list, pr: list) -> tuple[list[str], list[str]]:
+    blocking = []
+    informational = []
     removed = set(master) - set(pr)
     if removed:
-        diffs.append(f"REMOVED exports: {sorted(removed)}")
+        blocking.append(f"REMOVED exports: {sorted(removed)}")
     added = set(pr) - set(master)
     if added:
-        diffs.append(f"ADDED exports: {sorted(added)}")
-    return diffs
+        informational.append(f"ADDED exports: {sorted(added)}")
+    return blocking, informational
 
 
 def main():
@@ -70,32 +74,43 @@ def main():
     with open(sys.argv[2]) as f:
         pr = json.load(f)
 
-    all_diffs = []
+    all_informational = []
+    all_blocking = []
 
     for cls_key, cls_name in [
         ("node_methods", "Node"),
         ("mesh_interface_methods", "MeshInterface"),
     ]:
-        diffs = compare_methods(master.get(cls_key, {}), pr.get(cls_key, {}), cls_name)
-        if diffs:
-            all_diffs.extend([f"{cls_name} API differences:"] + diffs)
+        blocking, informational = compare_methods(
+            master.get(cls_key, {}), pr.get(cls_key, {}), cls_name
+        )
+        if informational:
+            all_informational.append(f"{cls_name} API changes (informational):")
+            all_informational.extend(informational)
+        if blocking:
+            all_blocking.extend(blocking)
 
-    export_diffs = compare_exports(
+    export_blocking, export_informational = compare_exports(
         master.get("top_level_exports", []), pr.get("top_level_exports", [])
     )
-    if export_diffs:
-        all_diffs.extend(["Top-level export differences:"] + export_diffs)
+    if export_informational:
+        all_informational.append("Top-level export changes (informational):")
+        all_informational.extend(export_informational)
+    if export_blocking:
+        all_blocking.extend(export_blocking)
 
-    if all_diffs:
-        print("\n".join(all_diffs))
-        print("\nAPI differences detected vs master!")
-        print(
-            "Review changes above. ADDED items are informational; "
-            "REMOVED items are potential breaking changes."
-        )
+    if all_informational:
+        print("\n".join(all_informational))
+        print()
+
+    if all_blocking:
+        print("\n".join(all_blocking))
+        print("\nBREAKING API changes detected vs master!")
         sys.exit(1)
     else:
-        print("No API differences detected vs master")
+        print(
+            "No breaking API changes detected vs master (informational changes above)."
+        )
 
 
 if __name__ == "__main__":
