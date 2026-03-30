@@ -162,15 +162,15 @@ def load_baseline() -> dict[str, Any] | None:
     if not BASELINE_FILE.exists():
         return None
 
-    with open(BASELINE_FILE, "r") as f:
+    with open(BASELINE_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def save_baseline(baseline: dict[str, Any]) -> None:
+def save_baseline(baseline_data: dict[str, Any]) -> None:
     """Save a baseline to disk."""
     BASELINE_DIR.mkdir(parents=True, exist_ok=True)
-    with open(BASELINE_FILE, "w") as f:
-        json.dump(baseline, f, indent=2, sort_keys=True)
+    with open(BASELINE_FILE, "w", encoding="utf-8") as f:
+        json.dump(baseline_data, f, indent=2, sort_keys=True)
 
 
 # =============================================================================
@@ -180,8 +180,8 @@ def save_baseline(baseline: dict[str, Any]) -> None:
 
 def compare_method_baselines(
     current: dict[str, str],
-    baseline: dict[str, str],
-    class_name: str,
+    stored: dict[str, str],
+    _class_name: str,
 ) -> list[str]:
     """Compare current methods against baseline and report differences.
 
@@ -190,25 +190,25 @@ def compare_method_baselines(
     differences = []
 
     current_keys = set(current.keys())
-    baseline_keys = set(baseline.keys())
+    stored_keys = set(stored.keys())
 
     # Find added methods
-    added = current_keys - baseline_keys
+    added = current_keys - stored_keys
     if added:
         differences.append(f"ADDED methods: {sorted(added)}")
 
     # Find removed methods
-    removed = baseline_keys - current_keys
+    removed = stored_keys - current_keys
     if removed:
         differences.append(f"REMOVED methods: {sorted(removed)}")
 
     # Find changed signatures
-    common = current_keys & baseline_keys
+    common = current_keys & stored_keys
     changed = []
     for key in sorted(common):
-        if current[key] != baseline[key]:
+        if current[key] != stored[key]:
             changed.append(f"  {key}:")
-            changed.append(f"    baseline: {baseline[key]}")
+            changed.append(f"    stored: {stored[key]}")
             changed.append(f"    current:  {current[key]}")
 
     if changed:
@@ -220,20 +220,20 @@ def compare_method_baselines(
 
 def compare_list_baselines(
     current: list[str],
-    baseline: list[str],
+    stored_list: list[str],
     name: str,
 ) -> list[str]:
     """Compare two lists and report differences."""
     differences = []
 
     current_set = set(current)
-    baseline_set = set(baseline)
+    stored_set = set(stored_list)
 
-    added = current_set - baseline_set
+    added = current_set - stored_set
     if added:
         differences.append(f"ADDED {name}: {sorted(added)}")
 
-    removed = baseline_set - current_set
+    removed = stored_set - current_set
     if removed:
         differences.append(f"REMOVED {name}: {sorted(removed)}")
 
@@ -246,13 +246,13 @@ def compare_list_baselines(
 
 
 @pytest.fixture
-def current_baseline():
+def current():
     """Fixture providing the current API baseline."""
     return generate_baseline()
 
 
 @pytest.fixture
-def stored_baseline():
+def stored():
     """Fixture providing the stored baseline, or None if not exists."""
     return load_baseline()
 
@@ -273,9 +273,7 @@ def _should_update_baselines(pytestconfig):
 class TestNodeAPIAgainstBaseline:
     """Tests to verify Node public API matches baseline."""
 
-    def test_node_api_against_baseline(
-        self, current_baseline, stored_baseline, pytestconfig
-    ):
+    def test_node_api_against_baseline(self, current, stored, pytestconfig):
         """Verify Node public API methods match the stored baseline.
 
         This test fails if:
@@ -286,9 +284,9 @@ class TestNodeAPIAgainstBaseline:
         Use --update-baselines to accept intentional changes.
         """
         # Generate current baseline if none exists
-        if stored_baseline is None:
+        if stored is None:
             if _should_update_baselines(pytestconfig):
-                save_baseline(current_baseline)
+                save_baseline(current)
                 pytest.skip("Created initial baseline - re-run tests")
             else:
                 pytest.fail(
@@ -297,15 +295,15 @@ class TestNodeAPIAgainstBaseline:
 
         # Compare current against stored
         differences = compare_method_baselines(
-            current_baseline["node_methods"],
-            stored_baseline.get("node_methods", {}),
+            current["node_methods"],
+            stored.get("node_methods", {}),
             "Node",
         )
 
         if _should_update_baselines(pytestconfig):
             # Update baseline with current state
-            stored_baseline["node_methods"] = current_baseline["node_methods"]
-            save_baseline(stored_baseline)
+            stored["node_methods"] = current["node_methods"]
+            save_baseline(stored)
             pytest.skip("Updated baseline with current Node API")
 
         if differences:
@@ -315,7 +313,7 @@ class TestNodeAPIAgainstBaseline:
             msg += "\n\nTo accept these changes, run: poetry run pytest meshtastic/tests/test_api_baseline_comparison.py -v --update-baselines"
             pytest.fail(msg)
 
-    def test_node_critical_methods_present(self, current_baseline):
+    def test_node_critical_methods_present(self, current):
         """Verify critical Node methods are always present regardless of baseline.
 
         This is a safety net to ensure core functionality isn't broken.
@@ -334,7 +332,7 @@ class TestNodeAPIAgainstBaseline:
             "ensureSessionKey",
         }
 
-        current_methods = set(current_baseline["node_methods"].keys())
+        current_methods = set(current["node_methods"].keys())
         missing = critical_methods - current_methods
 
         if missing:
@@ -344,13 +342,11 @@ class TestNodeAPIAgainstBaseline:
 class TestMeshInterfaceAPIAgainstBaseline:
     """Tests to verify MeshInterface public API matches baseline."""
 
-    def test_mesh_interface_api_against_baseline(
-        self, current_baseline, stored_baseline, pytestconfig
-    ):
+    def test_mesh_interface_api_against_baseline(self, current, stored, pytestconfig):
         """Verify MeshInterface public API methods match the stored baseline."""
-        if stored_baseline is None:
+        if stored is None:
             if _should_update_baselines(pytestconfig):
-                save_baseline(current_baseline)
+                save_baseline(current)
                 pytest.skip("Created initial baseline - re-run tests")
             else:
                 pytest.fail(
@@ -358,16 +354,14 @@ class TestMeshInterfaceAPIAgainstBaseline:
                 )
 
         differences = compare_method_baselines(
-            current_baseline["mesh_interface_methods"],
-            stored_baseline.get("mesh_interface_methods", {}),
+            current["mesh_interface_methods"],
+            stored.get("mesh_interface_methods", {}),
             "MeshInterface",
         )
 
         if _should_update_baselines(pytestconfig):
-            stored_baseline["mesh_interface_methods"] = current_baseline[
-                "mesh_interface_methods"
-            ]
-            save_baseline(stored_baseline)
+            stored["mesh_interface_methods"] = current["mesh_interface_methods"]
+            save_baseline(stored)
             pytest.skip("Updated baseline with current MeshInterface API")
 
         if differences:
@@ -377,7 +371,7 @@ class TestMeshInterfaceAPIAgainstBaseline:
             msg += "\n\nTo accept these changes, run: poetry run pytest meshtastic/tests/test_api_baseline_comparison.py -v --update-baselines"
             pytest.fail(msg)
 
-    def test_mesh_interface_critical_methods_present(self, current_baseline):
+    def test_mesh_interface_critical_methods_present(self, current):
         """Verify critical MeshInterface methods are always present."""
         critical_methods = {
             "sendText",
@@ -392,7 +386,7 @@ class TestMeshInterfaceAPIAgainstBaseline:
             "close",
         }
 
-        current_methods = set(current_baseline["mesh_interface_methods"].keys())
+        current_methods = set(current["mesh_interface_methods"].keys())
         missing = critical_methods - current_methods
 
         if missing:
@@ -402,13 +396,11 @@ class TestMeshInterfaceAPIAgainstBaseline:
 class TestTopLevelExportsAgainstBaseline:
     """Tests to verify main package exports match baseline."""
 
-    def test_top_level_exports_against_baseline(
-        self, current_baseline, stored_baseline, pytestconfig
-    ):
+    def test_top_level_exports_against_baseline(self, current, stored, pytestconfig):
         """Verify top-level exports from meshtastic package match baseline."""
-        if stored_baseline is None:
+        if stored is None:
             if _should_update_baselines(pytestconfig):
-                save_baseline(current_baseline)
+                save_baseline(current)
                 pytest.skip("Created initial baseline - re-run tests")
             else:
                 pytest.fail(
@@ -416,14 +408,14 @@ class TestTopLevelExportsAgainstBaseline:
                 )
 
         differences = compare_list_baselines(
-            current_baseline["top_level_exports"],
-            stored_baseline.get("top_level_exports", []),
+            current["top_level_exports"],
+            stored.get("top_level_exports", []),
             "exports",
         )
 
         if _should_update_baselines(pytestconfig):
-            stored_baseline["top_level_exports"] = current_baseline["top_level_exports"]
-            save_baseline(stored_baseline)
+            stored["top_level_exports"] = current["top_level_exports"]
+            save_baseline(stored)
             pytest.skip("Updated baseline with current top-level exports")
 
         if differences:
@@ -433,7 +425,7 @@ class TestTopLevelExportsAgainstBaseline:
             msg += "\n\nTo accept these changes, run: poetry run pytest meshtastic/tests/test_api_baseline_comparison.py -v --update-baselines"
             pytest.fail(msg)
 
-    def test_essential_exports_present(self, current_baseline):
+    def test_essential_exports_present(self, current):
         """Verify essential exports are always present."""
         essential_exports = {
             "Node",
@@ -442,7 +434,7 @@ class TestTopLevelExportsAgainstBaseline:
             "LOCAL_ADDR",
         }
 
-        current_exports = set(current_baseline["top_level_exports"])
+        current_exports = set(current["top_level_exports"])
         missing = essential_exports - current_exports
 
         if missing:
@@ -452,17 +444,15 @@ class TestTopLevelExportsAgainstBaseline:
 class TestLegacyImportPathsAgainstBaseline:
     """Tests to verify internal import paths still work."""
 
-    def test_legacy_import_paths_against_baseline(
-        self, current_baseline, stored_baseline, pytestconfig
-    ):
+    def test_legacy_import_paths_against_baseline(self, current, stored, pytestconfig):
         """Verify legacy internal import paths still work.
 
         This test ensures that code using internal imports doesn't break
         when the package structure changes.
         """
-        if stored_baseline is None:
+        if stored is None:
             if _should_update_baselines(pytestconfig):
-                save_baseline(current_baseline)
+                save_baseline(current)
                 pytest.skip("Created initial baseline - re-run tests")
             else:
                 pytest.fail(
@@ -470,16 +460,14 @@ class TestLegacyImportPathsAgainstBaseline:
                 )
 
         differences = compare_list_baselines(
-            current_baseline["legacy_import_paths"],
-            stored_baseline.get("legacy_import_paths", []),
+            current["legacy_import_paths"],
+            stored.get("legacy_import_paths", []),
             "import paths",
         )
 
         if _should_update_baselines(pytestconfig):
-            stored_baseline["legacy_import_paths"] = current_baseline[
-                "legacy_import_paths"
-            ]
-            save_baseline(stored_baseline)
+            stored["legacy_import_paths"] = current["legacy_import_paths"]
+            save_baseline(stored)
             pytest.skip("Updated baseline with current import paths")
 
         if differences:
@@ -495,17 +483,17 @@ class TestBaselineGeneration:
 
     def test_baseline_generation_succeeds(self):
         """Verify baseline generation works without errors."""
-        baseline = generate_baseline()
+        api_baseline = generate_baseline()
 
-        assert "node_methods" in baseline
-        assert "mesh_interface_methods" in baseline
-        assert "top_level_exports" in baseline
-        assert "legacy_import_paths" in baseline
+        assert "node_methods" in api_baseline
+        assert "mesh_interface_methods" in api_baseline
+        assert "top_level_exports" in api_baseline
+        assert "legacy_import_paths" in api_baseline
 
         # Verify we got actual data
-        assert len(baseline["node_methods"]) > 0
-        assert len(baseline["mesh_interface_methods"]) > 0
-        assert len(baseline["top_level_exports"]) > 0
+        assert len(api_baseline["node_methods"]) > 0
+        assert len(api_baseline["mesh_interface_methods"]) > 0
+        assert len(api_baseline["top_level_exports"]) > 0
 
     def test_signature_capture_includes_parameters(self):
         """Verify signature capture includes parameter information."""
@@ -520,14 +508,14 @@ class TestBaselineGeneration:
 
     def test_baseline_json_serializable(self):
         """Verify generated baseline can be serialized to JSON."""
-        baseline = generate_baseline()
+        api_baseline = generate_baseline()
 
         # Should not raise
-        json_str = json.dumps(baseline, indent=2, sort_keys=True)
+        json_str = json.dumps(api_baseline, indent=2, sort_keys=True)
 
         # Should be parseable
         parsed = json.loads(json_str)
-        assert parsed == baseline
+        assert parsed == api_baseline
 
 
 # =============================================================================

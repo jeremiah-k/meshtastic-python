@@ -20,4 +20,4 @@ coverage.xml
 junit.xml
 .ipynb_checkpoints
 .cursor/
-meshtastic/tests/api_baselines/
+meshtastic/tests/api_baselines/*_test.json
