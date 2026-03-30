@@ -94,7 +94,6 @@ class TestModuleLevelConstants:
     def test_decode_failed_prefix(self) -> None:
         """Test DECODE_FAILED_PREFIX constant."""
         assert DECODE_FAILED_PREFIX == "decode-failed: "
-        assert isinstance(DECODE_FAILED_PREFIX, str)
 
 
 class TestMeshInterfaceError:
@@ -982,9 +981,6 @@ class TestEnrichPacketIdentity:
         # When nodes are missing, fromId/toId should be set to None, not absent
         assert packet_dict["fromId"] is None
         assert packet_dict["toId"] is None
-
-        # Optionally verify warning was logged (if expected)
-        # assert "node not found" in caplog.text.lower() or len(caplog.records) > 0
 
 
 class TestNodeNumToId:

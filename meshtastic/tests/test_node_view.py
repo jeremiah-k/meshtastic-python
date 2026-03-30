@@ -18,13 +18,6 @@ from meshtastic.mesh_interface_runtime.node_view import (
 )
 from meshtastic.protobuf import mesh_pb2
 
-# Lines 12-13: print_color import handling
-# This is tested implicitly - the module handles ImportError gracefully
-
-
-# Line 34: TYPE_CHECKING for MeshInterface import
-# This is tested implicitly by the fact that NodeView works with mocked interfaces
-
 
 @pytest.fixture
 def mock_interface() -> MagicMock:
@@ -430,9 +423,8 @@ class TestGetNode:
     @pytest.mark.unit
     def test_get_node_remote(
         self, node_view: NodeView, mock_interface: MagicMock
-    ) -> None:  # noqa: W0613
+    ) -> None:
         """Test getting remote node."""
-        _ = mock_interface  # Required fixture, explicitly marked as used
         with patch(
             "meshtastic.mesh_interface_runtime.node_view.meshtastic.node.Node"
         ) as mock_node_class:
@@ -744,8 +736,6 @@ class TestGetOrCreateByNum:
         self, node_view: NodeView, mock_interface: MagicMock
     ) -> None:
         """Test that creating a broadcast node raises an error."""
-        _ = mock_interface  # Explicitly mark as intentionally unused (required fixture)
-
         with pytest.raises(MeshInterface.MeshInterfaceError, match="broadcast"):
             node_view._get_or_create_by_num(BROADCAST_NUM)
 

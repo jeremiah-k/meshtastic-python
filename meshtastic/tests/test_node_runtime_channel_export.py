@@ -3,6 +3,7 @@
 # pylint: disable=redefined-outer-name
 
 import base64
+import logging
 import threading
 from unittest.mock import MagicMock, patch
 
@@ -511,7 +512,7 @@ def test_turn_off_encryption_on_primary_channel_no_cache_after_write(
 
     mock_node._write_channel_snapshot.side_effect = write_side_effect
 
-    with caplog.at_level("WARNING"):
+    with caplog.at_level(logging.WARNING):
         export_runtime._turn_off_encryption_on_primary_channel()
 
     assert "local channel cache is unavailable" in caplog.text

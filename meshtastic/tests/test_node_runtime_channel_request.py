@@ -260,7 +260,7 @@ def test_request_channel_for_remote_node_logs_info(
     # Set up node to be different from localNode (remote request)
     mock_iface = MagicMock()
     mock_local_node = MagicMock()
-    mock_local_node.nodeNum = 9999999999  # Different from mock_node.nodeNum
+    mock_local_node.nodeNum = 987654321  # Different from mock_node.nodeNum
     mock_iface.localNode = mock_local_node
     mock_node.iface = mock_iface
 
