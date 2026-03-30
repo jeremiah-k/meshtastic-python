@@ -143,7 +143,7 @@ class TestSetUrlReplacePlanner:
     def test_build_plan_with_lora_requires_loaded_config(
         self, mock_local_node: MagicMock
     ) -> None:
-        """build_plan with LoRa update requires loaded LoRa config (line 287)."""
+        """build_plan with LoRa update requires loaded LoRa config."""
         mock_local_node.channels = [
             _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "old")
         ]

@@ -41,7 +41,7 @@ class TestSetUrlRollbackEngine:
         mock_local_node: MagicMock,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """_rollback_add_only with channel failure attempts next admin index (line 658)."""
+        """_rollback_add_only with channel failure attempts next admin index."""
         original_channel = _make_channel(1, channel_pb2.Channel.Role.DISABLED)
         mock_local_node.channels = [
             _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "primary"),

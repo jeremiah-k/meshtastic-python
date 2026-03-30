@@ -14,6 +14,15 @@ from meshtastic.protobuf import channel_pb2, config_pb2
 from meshtastic.tests.seturl.conftest import _make_channel
 
 
+def _setup_raise_error_mock(mock_local_node: MagicMock) -> None:
+    """Set up mock to raise ValueError when _raise_interface_error is called."""
+
+    def raise_error(msg: str) -> NoReturn:
+        raise ValueError(msg)
+
+    mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
+
+
 class TestSetUrlCacheManager:
     """Tests for _SetUrlCacheManager."""
 
@@ -83,10 +92,7 @@ class TestSetUrlCacheManager:
         mock_local_node.channels = None
         staged_channel = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "test")
 
-        def raise_error(msg: str) -> NoReturn:
-            raise ValueError(msg)
-
-        mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
+        _setup_raise_error_mock(mock_local_node)
 
         with pytest.raises(ValueError, match="Config or channels not loaded"):
             cache_manager.apply_replace_channel_write(staged_channel)
@@ -101,10 +107,7 @@ class TestSetUrlCacheManager:
         ]
         staged_channel = _make_channel(5, channel_pb2.Channel.Role.SECONDARY, "test")
 
-        def raise_error(msg: str) -> NoReturn:
-            raise ValueError(msg)
-
-        mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
+        _setup_raise_error_mock(mock_local_node)
 
         with pytest.raises(ValueError, match="out of range"):
             cache_manager.apply_replace_channel_write(staged_channel)
@@ -119,10 +122,7 @@ class TestSetUrlCacheManager:
         ]
         staged_channel = _make_channel(-1, channel_pb2.Channel.Role.SECONDARY, "test")
 
-        def raise_error(msg: str) -> NoReturn:
-            raise ValueError(msg)
-
-        mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
+        _setup_raise_error_mock(mock_local_node)
 
         with pytest.raises(ValueError, match="out of range"):
             cache_manager.apply_replace_channel_write(staged_channel)
@@ -155,10 +155,7 @@ class TestSetUrlCacheManager:
         mock_local_node.channels = current_channels
         staged_channel = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "new")
 
-        def raise_error(msg: str) -> NoReturn:
-            raise ValueError(msg)
-
-        mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
+        _setup_raise_error_mock(mock_local_node)
 
         with pytest.raises(
             ValueError,

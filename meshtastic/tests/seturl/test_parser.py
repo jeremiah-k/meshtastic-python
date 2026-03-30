@@ -1,7 +1,7 @@
 """Tests for _SetUrlParser."""
 
 import base64
-from typing import NoReturn
+from typing import Callable, NoReturn
 
 import pytest
 
@@ -16,6 +16,21 @@ from meshtastic.tests.seturl.conftest import (
 )
 
 
+def _raise_error_for_valid_parse(msg: str) -> NoReturn:
+    """Fail test if called during successful parse cases."""
+    pytest.fail(f"Unexpected parse error: {msg}")
+
+
+def _make_capturing_raise_error(captured_msg: list[str]) -> Callable[[str], NoReturn]:
+    """Create a raise_error callback that captures the message and raises ValueError."""
+
+    def raise_error(msg: str) -> NoReturn:
+        captured_msg.append(msg)
+        raise ValueError(msg)
+
+    return raise_error
+
+
 class TestSetUrlParser:
     """Tests for _SetUrlParser."""
 
@@ -24,10 +39,9 @@ class TestSetUrlParser:
         """parse() with valid URL returns parsed config."""
         url = _make_valid_channel_set_url("testchannel")
 
-        def raise_error(msg: str) -> NoReturn:
-            pytest.fail(f"Unexpected parse error: {msg}")
-
-        result = _SetUrlParser.parse(url, raise_interface_error=raise_error)
+        result = _SetUrlParser.parse(
+            url, raise_interface_error=_raise_error_for_valid_parse
+        )
 
         assert isinstance(result, _SetUrlParsedInput)
         assert len(result.channel_set.settings) == 1
@@ -44,10 +58,9 @@ class TestSetUrlParser:
         )
         url = f"https://meshtastic.org/d/#{encoded}"
 
-        def raise_error(msg: str) -> NoReturn:
-            pytest.fail(f"Unexpected parse error: {msg}")
-
-        result = _SetUrlParser.parse(url, raise_interface_error=raise_error)
+        result = _SetUrlParser.parse(
+            url, raise_interface_error=_raise_error_for_valid_parse
+        )
 
         assert result.has_lora_update is True
         assert result.channel_set.lora_config.hop_limit == 3
@@ -59,12 +72,10 @@ class TestSetUrlParser:
 
         captured_msg: list[str] = []
 
-        def raise_error(msg: str) -> NoReturn:
-            captured_msg.append(msg)
-            raise ValueError(msg)
-
         with pytest.raises(ValueError, match="Invalid URL"):
-            _SetUrlParser.parse(url, raise_interface_error=raise_error)
+            _SetUrlParser.parse(
+                url, raise_interface_error=_make_capturing_raise_error(captured_msg)
+            )
 
         assert len(captured_msg) == 1
         assert captured_msg[0] == "Invalid URL"
@@ -76,12 +87,10 @@ class TestSetUrlParser:
 
         captured_msg: list[str] = []
 
-        def raise_error(msg: str) -> NoReturn:
-            captured_msg.append(msg)
-            raise ValueError(msg)
-
         with pytest.raises(ValueError, match="Invalid URL"):
-            _SetUrlParser.parse(url, raise_interface_error=raise_error)
+            _SetUrlParser.parse(
+                url, raise_interface_error=_make_capturing_raise_error(captured_msg)
+            )
 
         assert len(captured_msg) == 1
         assert "no channel data" in captured_msg[0]
@@ -93,12 +102,10 @@ class TestSetUrlParser:
 
         captured_msg: list[str] = []
 
-        def raise_error(msg: str) -> NoReturn:
-            captured_msg.append(msg)
-            raise ValueError(msg)
-
         with pytest.raises(ValueError, match="Invalid URL"):
-            _SetUrlParser.parse(url, raise_interface_error=raise_error)
+            _SetUrlParser.parse(
+                url, raise_interface_error=_make_capturing_raise_error(captured_msg)
+            )
 
         assert len(captured_msg) == 1
         assert "Invalid URL" in captured_msg[0]
@@ -114,18 +121,14 @@ class TestSetUrlParser:
 
         captured_msg: list[str] = []
 
-        def raise_error(msg: str) -> NoReturn:
-            captured_msg.append(msg)
-            raise ValueError(msg)
-
         with pytest.raises(ValueError, match="Invalid URL"):
-            _SetUrlParser.parse(url, raise_interface_error=raise_error)
+            _SetUrlParser.parse(
+                url, raise_interface_error=_make_capturing_raise_error(captured_msg)
+            )
 
         assert len(captured_msg) == 1
-        assert (
-            "no channel data" in captured_msg[0].lower()
-            or "no settings" in captured_msg[0].lower()
-        )
+        # Empty ChannelSet serializes to empty bytes, so we hit the "no channel data" check
+        assert "no channel data found" in captured_msg[0]
 
     @pytest.mark.unit
     def test_parse_adds_padding_to_base64(self) -> None:
@@ -140,9 +143,8 @@ class TestSetUrlParser:
         encoded_unpadded = encoded.rstrip("=")
         url = f"https://meshtastic.org/d/#{encoded_unpadded}"
 
-        def raise_error(msg: str) -> NoReturn:
-            pytest.fail(f"Unexpected parse error: {msg}")
-
-        result = _SetUrlParser.parse(url, raise_interface_error=raise_error)
+        result = _SetUrlParser.parse(
+            url, raise_interface_error=_raise_error_for_valid_parse
+        )
 
         assert result.channel_set.settings[0].name == "test"

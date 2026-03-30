@@ -19,7 +19,7 @@ class TestSetUrlTransactionCoordinator:
     def test_init_with_none_localnode_raises_error(
         self, mock_local_node: MagicMock, mock_iface: MagicMock
     ) -> None:
-        """__init__ with None localNode raises error (line 881)."""
+        """__init__ with None localNode raises ValueError."""
         mock_iface.localNode = None
 
         def raise_error(msg: str) -> NoReturn:
