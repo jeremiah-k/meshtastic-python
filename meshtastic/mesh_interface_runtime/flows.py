@@ -344,6 +344,12 @@ def send_telemetry(
     """Send a telemetry message to a node or broadcast and optionally wait for a telemetry response."""
     telemetry_type = telemetryType
     if telemetry_type not in VALID_TELEMETRY_TYPE_SET:
+        logger.warning(
+            f"Unsupported telemetryType '{telemetry_type}' is deprecated. "
+            f"Supported values: {sorted(VALID_TELEMETRY_TYPES)}. "
+            f"Falling back to '{DEFAULT_TELEMETRY_TYPE}'. "
+            "This will raise an error in a future version."
+        )
         warnings.warn(
             f"Unsupported telemetryType '{telemetry_type}' is deprecated. "
             f"Supported values: {sorted(VALID_TELEMETRY_TYPES)}. "
