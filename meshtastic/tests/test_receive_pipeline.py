@@ -8,11 +8,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from meshtastic.mesh_interface import MeshInterface
 from meshtastic.mesh_interface_runtime.receive_pipeline import (
     DECODE_FAILED_PREFIX,
     LOCAL_CONFIG_FROM_RADIO_FIELDS,
     MODULE_CONFIG_FROM_RADIO_FIELDS,
-    MeshInterfaceError,
     ReceivePipeline,
     _FromRadioContext,
     _LazyMessageDict,
@@ -44,7 +44,7 @@ def mock_interface() -> MagicMock:
     interface.nodes = {}
     interface.nodesByNum = {}
     interface._localChannels = []
-    interface.MeshInterfaceError = MeshInterfaceError
+    interface.MeshInterfaceError = MeshInterface.MeshInterfaceError
     return interface
 
 
@@ -103,15 +103,15 @@ class TestMeshInterfaceError:
     @pytest.mark.unit
     def test_error_message_stored(self) -> None:
         """Test that error message is stored in the exception."""
-        error = MeshInterfaceError("Test error message")
+        error = MeshInterface.MeshInterfaceError("Test error message")
         assert error.message == "Test error message"
         assert str(error) == "Test error message"
 
     @pytest.mark.unit
     def test_error_can_be_raised(self) -> None:
         """Test that the error can be raised and caught."""
-        with pytest.raises(MeshInterfaceError, match="Test error"):
-            raise MeshInterfaceError("Test error")
+        with pytest.raises(MeshInterface.MeshInterfaceError, match="Test error"):
+            raise MeshInterface.MeshInterfaceError("Test error")
 
 
 class TestPublicationIntent:
@@ -819,7 +819,7 @@ class TestGetOrCreateByNum:
         """Test that creating a broadcast node raises an error."""
         from meshtastic import BROADCAST_NUM
 
-        with pytest.raises(MeshInterfaceError, match="broadcast"):
+        with pytest.raises(MeshInterface.MeshInterfaceError, match="broadcast"):
             receive_pipeline._get_or_create_by_num(BROADCAST_NUM)
 
 

@@ -157,19 +157,31 @@ def _ast_signature_str(func_node) -> str:
     """
     params = []
 
-    # 1. Handle positional-only args (with defaults)
+    # Get all args and defaults
     posonly = func_node.args.posonlyargs
-    posonly_defaults = func_node.args.posonlyargs_defaults
+    regular_args = func_node.args.args
+    defaults = func_node.args.defaults
+
+    # Calculate how defaults are distributed
+    # defaults apply to the rightmost parameters of (posonly + regular)
+    total_params_with_defaults = len(defaults)
     n_posonly = len(posonly)
-    n_posonly_defaults = len(posonly_defaults)
+    n_regular = len(regular_args)
+    total_args = n_posonly + n_regular
+
+    # The rightmost N parameters have defaults
+    # So: defaults start at index (total_args - total_params_with_defaults)
+    defaults_start_idx = total_args - total_params_with_defaults
+
+    # 1. Handle positional-only args (with defaults)
     for i, arg in enumerate(posonly):
         s = arg.arg
         if arg.annotation:
             s += f":{_ast_annotation_str(arg.annotation)}"
-        # Apply defaults from the end
-        default_idx = i - (n_posonly - n_posonly_defaults)
-        if default_idx >= 0 and default_idx < n_posonly_defaults:
-            default_str = ast.unparse(posonly_defaults[default_idx])
+        # Apply defaults - check if this arg has a default
+        default_idx = i - defaults_start_idx
+        if 0 <= default_idx < total_params_with_defaults:
+            default_str = ast.unparse(defaults[default_idx])
             s += f"={default_str}"
         params.append(s)
 
@@ -178,17 +190,13 @@ def _ast_signature_str(func_node) -> str:
         params.append("/")
 
     # 3. Handle regular args (with defaults)
-    regular_args = func_node.args.args
-    defaults = func_node.args.defaults
-    n_args = len(regular_args)
-    n_defaults = len(defaults)
     for i, arg in enumerate(regular_args):
         s = arg.arg
         if arg.annotation:
             s += f":{_ast_annotation_str(arg.annotation)}"
-        # Apply defaults from the end
-        default_idx = i - (n_args - n_defaults)
-        if default_idx >= 0 and default_idx < n_defaults:
+        # Apply defaults - check if this arg has a default
+        default_idx = (i + n_posonly) - defaults_start_idx
+        if 0 <= default_idx < total_params_with_defaults:
             default_str = ast.unparse(defaults[default_idx])
             s += f"={default_str}"
         params.append(s)
