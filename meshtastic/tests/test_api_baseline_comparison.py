@@ -72,66 +72,39 @@ LEGACY_IMPORT_PATHS = [
 def _normalize_type_str(type_str: str) -> str:
     """Normalize type annotation strings to canonical form for comparison.
 
-    Python represents equivalent types differently depending on version and
-    complexity. This function converts various representations to a standard
-    format so semantically identical signatures compare as equal.
-
-    Handles:
-    - typing.Optional[X] <-> X | None
-    - typing.Union[X, Y] <-> X | Y
-    - typing.Callable[[...], R] <-> Callable[[...], R]
-    - typing.Dict[X, Y] <-> dict[X, Y]
-    - typing.List[X] <-> list[X]
-    - <class 'str'> <-> str
+    ast.unparse() produces consistent source-level representations across Python
+    versions. This function handles only the minimal differences:
+    - typing.Literal[...] stays as-is (not a union)
+    - Optional[X] and X | None are both normalized to X | None
+    - typing.* module prefixes stripped for brevity
+    - <class 'X'> normalized to X
     """
     import re
 
     result = type_str
 
-    # Normalize typing module prefixes for generic types
-    result = re.sub(r"\btyping\.Callable\b", "Callable", result)
-    result = re.sub(r"\btyping\.Optional\b", "Optional", result)
-    result = re.sub(r"\btyping\.Union\b", "Union", result)
-    result = re.sub(r"\btyping\.Dict\b", "dict", result)
-    result = re.sub(r"\btyping\.List\b", "list", result)
-    result = re.sub(r"\btyping\.Any\b", "Any", result)
-    result = re.sub(r"\btyping\.IO\b", "IO", result)
+    # Strip typing. module prefixes
+    result = re.sub(r"\btyping\.", "", result)
 
     # Normalize <class 'X'> to just X
     result = re.sub(r"<class '(\w+)'>", r"\1", result)
 
-    # Normalize Union types with None to Optional
-    # Pattern: X | Y | None -> Optional[X | Y]
-    # Pattern: Union[X, Y, None] -> Optional[X | Y]
-    def normalize_union_to_optional(match):
-        content = match.group(1)
-        parts = [p.strip() for p in content.split(",")]
-        non_none_parts = [p for p in parts if p != "None"]
-        if len(non_none_parts) == 1:
-            return f"Optional[{non_none_parts[0]}]"
-        else:
-            return f"Optional[{' | '.join(non_none_parts)}]"
-
-    # Convert Union[..., None] to Optional[...]
-    result = re.sub(r"Union\[([^\]]+),\s*None\]", normalize_union_to_optional, result)
-
-    # Convert Optional[X] to X | None for canonical form
-    # This must handle nested brackets (e.g. Optional[Callable[[...], ...]])
-    def normalize_optional_to_pipe(match):
+    # Normalize Optional[X] to X | None using a depth-aware approach
+    # Since Optional[...] can contain nested brackets, we match from Optional[ to the
+    # matching closing bracket
+    def replace_optional(match):
         inner = match.group(1)
         return f"{inner} | None"
 
-    result = re.sub(r"Optional\[([^\]]+)\]", normalize_optional_to_pipe, result)
-
-    # Convert remaining Union[A, B] to A | B
-    def normalize_union_to_pipe(match):
-        content = match.group(1)
-        parts = [p.strip() for p in content.split(",")]
-        if len(parts) == 2:
-            return f"{parts[0]} | {parts[1]}"
-        return f"({' | '.join(parts)})"
-
-    result = re.sub(r"Union\[([^\]]+)\]", normalize_union_to_pipe, result)
+    while True:
+        new_result = re.sub(
+            r"\bOptional\[([^\[\]]*(?:\[[^\[\]]*\])*[^\[\]]*)\]",
+            replace_optional,
+            result,
+        )
+        if new_result == result:
+            break
+        result = new_result
 
     return result
 
@@ -166,26 +139,6 @@ def _get_signature_str(method: Any) -> str:
 
 def _ast_annotation_str(node) -> str:
     """Convert an AST annotation node to a string representation."""
-    if node is None:
-        return ""
-    if isinstance(node, ast.Constant):
-        return repr(node.value)
-    if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.Attribute):
-        return f"{_ast_annotation_str(node.value)}.{node.attr}"
-    if isinstance(node, ast.Subscript):
-        base = _ast_annotation_str(node.value)
-        if isinstance(node.value, ast.Name) and node.value.id == "Literal":
-            if isinstance(node.slice, ast.Tuple):
-                return " | ".join(_ast_annotation_str(e) for e in node.slice.elts)
-            return _ast_annotation_str(node.slice)
-        slice_str = _ast_annotation_str(node.slice)
-        return f"{base}[{slice_str}]"
-    if isinstance(node, ast.Tuple):
-        return ", ".join(_ast_annotation_str(e) for e in node.elts)
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
-        return f"{_ast_annotation_str(node.left)} | {_ast_annotation_str(node.right)}"
     return ast.unparse(node)
 
 
