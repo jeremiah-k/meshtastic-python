@@ -467,7 +467,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             list will be normalized (indices fixed) and padded as needed to meet expected
             channel count.
         """
-        self._channel_request_runtime.set_channels(channels)
+        self._channel_request_runtime.setChannels(channels)
 
     def requestChannels(self, startingIndex: int = 0) -> None:
         """Request channel definitions from the node, starting at the given channel index.
@@ -481,7 +481,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         startingIndex : int
             Zero-based channel index to start fetching from (typically 0-7). (Default value = 0)
         """
-        self._channel_request_runtime.request_channels(starting_index=startingIndex)
+        self._channel_request_runtime.requestChannels(starting_index=startingIndex)
 
     def onResponseRequestSettings(self, p: dict[str, Any]) -> None:
         """Process an admin response for a settings request and update the node's config objects.
@@ -552,7 +552,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         bool
             True if the attribute was set before the timeout expired, False otherwise.
         """
-        return self._channel_request_runtime.wait_for_config(attribute=attribute)
+        return self._channel_request_runtime.waitForConfig(attribute=attribute)
 
     def _raise_interface_error(self, message: str) -> NoReturn:
         """Raise a MeshInterface-style error with the provided message.

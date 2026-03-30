@@ -92,11 +92,11 @@ def channel_request_runtime(
 
 
 @pytest.mark.unit
-def test_set_channels_with_valid_channels_copies_and_normalizes(
+def test_setChannels_with_valid_channels_copies_and_normalizes(
     channel_request_runtime: _NodeChannelRequestRuntime,
     mock_node: MagicMock,
 ) -> None:
-    """set_channels should copy input channels and call fixup_channels_locked.
+    """setChannels should copy input channels and call fixup_channels_locked.
 
     Note: fixup_channels_locked calls fill_channels_locked which pads the channel
     list to MAX_CHANNELS (8) with DISABLED channels.
@@ -112,7 +112,7 @@ def test_set_channels_with_valid_channels_copies_and_normalizes(
 
     source_channels = [source_channel1, source_channel2]
 
-    channel_request_runtime.set_channels(source_channels)
+    channel_request_runtime.setChannels(source_channels)
 
     # Verify channels were copied (not the same objects)
     assert mock_node.channels is not None
@@ -131,16 +131,16 @@ def test_set_channels_with_valid_channels_copies_and_normalizes(
 
 
 @pytest.mark.unit
-def test_request_channels_with_starting_index_zero_resets_channels(
+def test_requestChannels_with_starting_index_zero_resets_channels(
     channel_request_runtime: _NodeChannelRequestRuntime,
     mock_node: MagicMock,
 ) -> None:
-    """request_channels with starting_index=0 should reset channels and partialChannels."""
+    """requestChannels with starting_index=0 should reset channels and partialChannels."""
     # Set up pre-existing channels
     mock_node.channels = [channel_pb2.Channel()]
     mock_node.partialChannels = [channel_pb2.Channel()]
 
-    channel_request_runtime.request_channels(starting_index=0)
+    channel_request_runtime.requestChannels(starting_index=0)
 
     # Verify channels were reset
     assert mock_node.channels is None
@@ -150,17 +150,17 @@ def test_request_channels_with_starting_index_zero_resets_channels(
 
 
 @pytest.mark.unit
-def test_request_channels_with_starting_index_nonzero_preserves_channels(
+def test_requestChannels_with_starting_index_nonzero_preserves_channels(
     channel_request_runtime: _NodeChannelRequestRuntime,
     mock_node: MagicMock,
 ) -> None:
-    """request_channels with starting_index>0 should not reset channels or partialChannels."""
+    """requestChannels with starting_index>0 should not reset channels or partialChannels."""
     # Set up pre-existing channels
     existing_channel = channel_pb2.Channel()
     mock_node.channels = [existing_channel]
     mock_node.partialChannels = [channel_pb2.Channel()]
 
-    channel_request_runtime.request_channels(starting_index=2)
+    channel_request_runtime.requestChannels(starting_index=2)
 
     # Verify channels were NOT reset
     assert mock_node.channels == [existing_channel]
@@ -170,46 +170,46 @@ def test_request_channels_with_starting_index_nonzero_preserves_channels(
 
 
 @pytest.mark.unit
-def test_request_channels_calls_canonical_request_channel_method(
+def test_requestChannels_calls_canonical_request_channel_method(
     channel_request_runtime: _NodeChannelRequestRuntime,
 ) -> None:
-    """request_channels should call requestChannel directly, not deprecated alias."""
+    """requestChannels should call requestChannel directly, not deprecated alias."""
     channel_request_runtime.requestChannel = MagicMock()  # type: ignore[method-assign]
     channel_request_runtime.request_channel = MagicMock()  # type: ignore[method-assign]
 
-    channel_request_runtime.request_channels(starting_index=3)
+    channel_request_runtime.requestChannels(starting_index=3)
 
     channel_request_runtime.requestChannel.assert_called_once_with(3)
     channel_request_runtime.request_channel.assert_not_called()
 
 
 @pytest.mark.unit
-def test_wait_for_config_delegates_to_timeout_wait_for_set(
+def test_waitForConfig_delegates_to_timeout_wait_for_set(
     channel_request_runtime: _NodeChannelRequestRuntime,
     mock_node: MagicMock,
 ) -> None:
-    """wait_for_config should delegate to _timeout.waitForSet with correct attributes."""
+    """waitForConfig should delegate to _timeout.waitForSet with correct attributes."""
     mock_timeout = MagicMock()
     mock_timeout.waitForSet.return_value = True
     mock_node._timeout = mock_timeout  # noqa: SLF001
 
-    result = channel_request_runtime.wait_for_config(attribute="channels")
+    result = channel_request_runtime.waitForConfig(attribute="channels")
 
     assert result is True
     mock_timeout.waitForSet.assert_called_once_with(mock_node, attrs=("channels",))
 
 
 @pytest.mark.unit
-def test_wait_for_config_with_non_channels_attribute(
+def test_waitForConfig_with_non_channels_attribute(
     channel_request_runtime: _NodeChannelRequestRuntime,
     mock_node: MagicMock,
 ) -> None:
-    """wait_for_config should poll localConfig field presence for nested attributes."""
+    """waitForConfig should poll localConfig field presence for nested attributes."""
     mock_timeout = MagicMock()
     mock_timeout.waitForSet.return_value = True
     mock_node._timeout = mock_timeout  # noqa: SLF001
 
-    result = channel_request_runtime.wait_for_config(attribute="lora")
+    result = channel_request_runtime.waitForConfig(attribute="lora")
 
     assert result is True
     call_args = mock_timeout.waitForSet.call_args

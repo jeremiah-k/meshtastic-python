@@ -71,7 +71,7 @@ class _NodeChannelRequestRuntime:
         self._node = node
         self._normalization_runtime = normalization_runtime
 
-    def set_channels(self, channels: Sequence[channel_pb2.Channel]) -> None:
+    def setChannels(self, channels: Sequence[channel_pb2.Channel]) -> None:
         """Set channels from sequence with copy + normalization semantics."""
         with self._node._channels_lock:  # noqa: SLF001
             copied_channels: list[channel_pb2.Channel] = []
@@ -82,7 +82,11 @@ class _NodeChannelRequestRuntime:
             self._node.channels = copied_channels
             self._normalization_runtime._fixup_channels_locked()
 
-    def request_channels(self, *, starting_index: int = 0) -> None:
+    def set_channels(self, channels: Sequence[channel_pb2.Channel]) -> None:
+        """COMPAT_STABLE_SHIM: Silent alias for setChannels."""
+        return self.setChannels(channels)
+
+    def requestChannels(self, *, starting_index: int = 0) -> None:
         """Bootstrap channel request flow from ``starting_index``."""
         logger.debug("requestChannels for nodeNum:%s", self._node.nodeNum)
         if not 0 <= starting_index < MAX_CHANNELS:
@@ -98,7 +102,11 @@ class _NodeChannelRequestRuntime:
                 self._node.partialChannels = []
         self.requestChannel(starting_index)
 
-    def wait_for_config(self, *, attribute: str = "channels") -> bool:
+    def request_channels(self, *, starting_index: int = 0) -> None:
+        """COMPAT_STABLE_SHIM: Silent alias for requestChannels."""
+        return self.requestChannels(starting_index=starting_index)
+
+    def waitForConfig(self, *, attribute: str = "channels") -> bool:
         """Wait for node attribute using historical timeout semantics."""
         if attribute == "channels":
             channel_response_runtime = getattr(
@@ -147,6 +155,10 @@ class _NodeChannelRequestRuntime:
             local_config,
             attrs=(attribute,),
         )
+
+    def wait_for_config(self, *, attribute: str = "channels") -> bool:
+        """COMPAT_STABLE_SHIM: Silent alias for waitForConfig."""
+        return self.waitForConfig(attribute=attribute)
 
     def requestChannel(self, channel_num: int) -> mesh_pb2.MeshPacket | None:
         """Send one get-channel request preserving progress logging behavior."""
