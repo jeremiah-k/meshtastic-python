@@ -90,7 +90,7 @@ class _SetUrlTransactionCoordinator:
         )
         execution_state = _SetUrlAddOnlyExecutionState()
         try:
-            self._execution_engine.execute_add_only(
+            self._execution_engine.executeAddOnly(
                 parsed_input=self._parsed_input,
                 admin_context=self._admin_context,
                 plan=plan,
@@ -124,7 +124,7 @@ class _SetUrlTransactionCoordinator:
             rollback_admin_indexes_for_write=[self._admin_context.admin_index_for_write]
         )
         try:
-            self._execution_engine.execute_replace_all(
+            self._execution_engine.executeReplaceAll(
                 parsed_input=self._parsed_input,
                 admin_context=self._admin_context,
                 plan=plan,

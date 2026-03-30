@@ -1124,7 +1124,7 @@ class TestNodeOwnerProfileRuntime:
     ) -> _NodeOwnerProfileRuntime:
         """Create a _NodeOwnerProfileRuntime with mocked admin_command_runtime."""
         admin_runtime = MagicMock()
-        admin_runtime.send_owner_message = MagicMock(return_value=MagicMock())
+        admin_runtime.sendOwnerMessage = MagicMock(return_value=MagicMock())
         return _NodeOwnerProfileRuntime(
             mock_node_for_owner,
             admin_command_runtime=admin_runtime,
@@ -1146,7 +1146,7 @@ class TestNodeOwnerProfileRuntime:
         assert "truncating" in caplog.text
         # Verify the message was sent with truncated name
         call_args = (
-            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
+            mock_runtime_for_owner._admin_command_runtime.sendOwnerMessage.call_args  # type: ignore[attr-defined]
         )
         message = call_args[0][0]
         assert len(message.set_owner.long_name) == MAX_LONG_NAME_LEN
@@ -1168,7 +1168,7 @@ class TestNodeOwnerProfileRuntime:
         assert "truncating" in caplog.text
         # Verify the message was sent with truncated name
         call_args = (
-            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
+            mock_runtime_for_owner._admin_command_runtime.sendOwnerMessage.call_args  # type: ignore[attr-defined]
         )
         message = call_args[0][0]
         assert len(message.set_owner.short_name) == MAX_SHORT_NAME_LEN
@@ -1214,7 +1214,7 @@ class TestNodeOwnerProfileRuntime:
         mock_runtime_for_owner.setOwner(long_name="  ValidName  ", short_name=" AB ")
 
         call_args = (
-            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
+            mock_runtime_for_owner._admin_command_runtime.sendOwnerMessage.call_args  # type: ignore[attr-defined]
         )
         message = call_args[0][0]
         assert message.set_owner.long_name == "ValidName"
@@ -1228,7 +1228,7 @@ class TestNodeOwnerProfileRuntime:
         mock_runtime_for_owner.setOwner(long_name="Test", is_licensed=True)
 
         call_args = (
-            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
+            mock_runtime_for_owner._admin_command_runtime.sendOwnerMessage.call_args  # type: ignore[attr-defined]
         )
         message = call_args[0][0]
         assert message.set_owner.is_licensed is True
@@ -1241,7 +1241,7 @@ class TestNodeOwnerProfileRuntime:
         mock_runtime_for_owner.setOwner(long_name="Test", is_unmessagable=True)
 
         call_args = (
-            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
+            mock_runtime_for_owner._admin_command_runtime.sendOwnerMessage.call_args  # type: ignore[attr-defined]
         )
         message = call_args[0][0]
         assert message.set_owner.is_unmessagable is True
@@ -1254,7 +1254,7 @@ class TestNodeOwnerProfileRuntime:
         mock_runtime_for_owner.setOwner(long_name="Test", is_unmessagable=None)
 
         call_args = (
-            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
+            mock_runtime_for_owner._admin_command_runtime.sendOwnerMessage.call_args  # type: ignore[attr-defined]
         )
         message = call_args[0][0]
         assert not message.set_owner.HasField("is_unmessagable")
@@ -1275,7 +1275,7 @@ class TestNodeOwnerProfileRuntime:
             )
 
         call_args = (
-            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
+            mock_runtime_for_owner._admin_command_runtime.sendOwnerMessage.call_args  # type: ignore[attr-defined]
         )
         message = call_args[0][0]
         assert message.set_owner.long_name == "TestUser"
@@ -1295,7 +1295,7 @@ class TestNodeOwnerProfileRuntime:
         mock_runtime_for_owner.setOwner(long_name="OnlyLong")
 
         call_args = (
-            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
+            mock_runtime_for_owner._admin_command_runtime.sendOwnerMessage.call_args  # type: ignore[attr-defined]
         )
         message = call_args[0][0]
         assert message.set_owner.long_name == "OnlyLong"
@@ -1310,7 +1310,7 @@ class TestNodeOwnerProfileRuntime:
         mock_runtime_for_owner.setOwner(short_name="ABC")
 
         call_args = (
-            mock_runtime_for_owner._admin_command_runtime.send_owner_message.call_args  # type: ignore[attr-defined]
+            mock_runtime_for_owner._admin_command_runtime.sendOwnerMessage.call_args  # type: ignore[attr-defined]
         )
         message = call_args[0][0]
         assert message.set_owner.short_name == "ABC"

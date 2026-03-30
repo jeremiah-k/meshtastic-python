@@ -503,7 +503,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             contain either `getConfigResponse` or `getModuleConfigResponse` and accompanying
             `raw` bytes for the returned field.
         """
-        self._settings_response_runtime.handle_settings_response(p)
+        self._settings_response_runtime.handleSettingsResponse(p)
 
     def requestConfig(
         self, configType: int | FieldDescriptor, adminIndex: int | None = None
@@ -527,7 +527,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             configured admin channel is used. Pass 0 to force channel 0.
             (Default value = None)
         """
-        self._settings_runtime.request_config(
+        self._settings_runtime.requestConfig(
             configType,
             admin_index=adminIndex,
         )
@@ -602,7 +602,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             If `config_name` is not one of the supported names, or if
             localConfig/moduleConfig has not been loaded.
         """
-        self._settings_runtime.write_config(config_name)
+        self._settings_runtime.writeConfig(config_name)
 
     def _write_channel_snapshot(
         self,
@@ -803,7 +803,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         MeshInterfaceError
             If `long_name` or `short_name` is provided but empty or whitespace-only after trimming.
         """
-        return self._owner_profile_runtime.set_owner(
+        return self._owner_profile_runtime.setOwner(
             long_name=long_name,
             short_name=short_name,
             is_licensed=is_licensed,
@@ -1104,7 +1104,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             A MeshPacket for the sent admin request, or `None` if the admin message was not sent.
         """
-        return self._admin_command_runtime.exit_simulator()
+        return self._admin_command_runtime.exitSimulator()
 
     def reboot(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
         """Request the node to reboot after a delay.
@@ -1133,7 +1133,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The sent admin packet if available, or `None` otherwise.
         """
-        return self._admin_command_runtime.begin_settings_transaction()
+        return self._admin_command_runtime.beginSettingsTransaction()
 
     def commitSettingsTransaction(self) -> mesh_pb2.MeshPacket | None:
         """Commit the node's open settings edit transaction.
@@ -1145,7 +1145,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The sent Admin `MeshPacket` when available, or `None`.
         """
-        return self._admin_command_runtime.commit_settings_transaction()
+        return self._admin_command_runtime.commitSettingsTransaction()
 
     def rebootOTA(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
         """Request the node to perform an OTA reboot after a given delay.
@@ -1160,7 +1160,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The sent Admin message packet, or `None` if no packet was produced.
         """
-        return self._admin_command_runtime.reboot_ota(secs)
+        return self._admin_command_runtime.rebootOta(secs)
 
     def startOTA(
         self,
