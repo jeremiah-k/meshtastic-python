@@ -13,9 +13,9 @@ Re-export Policy:
 
 from .flows import (
     DEFAULT_TELEMETRY_TYPE,
-    TelemetryType,
     VALID_TELEMETRY_TYPE_SET,
     VALID_TELEMETRY_TYPES,
+    TelemetryType,
 )
 
 __all__ = [

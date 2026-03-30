@@ -17,9 +17,7 @@ from meshtastic.node_runtime.seturl.planner import (
 from meshtastic.node_runtime.shared import (
     isNamedAdminChannelName as _isNamedAdminChannelName,
 )
-from meshtastic.node_runtime.shared import (
-    orderedAdminIndexes as _orderedAdminIndexes,
-)
+from meshtastic.node_runtime.shared import orderedAdminIndexes as _orderedAdminIndexes
 from meshtastic.protobuf import admin_pb2, channel_pb2
 
 if TYPE_CHECKING:

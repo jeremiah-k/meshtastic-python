@@ -58,7 +58,9 @@ class _SetUrlTransactionCoordinator:
             self._node._raise_interface_error(  # noqa: SLF001
                 "Interface localNode not initialized"
             )
-        admin_index_for_write = admin_write_node._get_admin_channel_index()  # noqa: SLF001
+        admin_index_for_write = (
+            admin_write_node._get_admin_channel_index()
+        )  # noqa: SLF001
         named_admin_index_for_write = (
             admin_write_node._get_named_admin_channel_index()  # noqa: SLF001
         )

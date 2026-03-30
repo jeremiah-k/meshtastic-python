@@ -87,7 +87,7 @@ def _signature_from_function(
         if not func_node.args.vararg:
             params.append("*")
         for kw_arg, kw_default in zip(
-            func_node.args.kwonlyargs, func_node.args.kw_defaults
+            func_node.args.kwonlyargs, func_node.args.kw_defaults, strict=False
         ):
             s = kw_arg.arg
             ann = _annotation_to_str(kw_arg.annotation) if kw_arg.annotation else None

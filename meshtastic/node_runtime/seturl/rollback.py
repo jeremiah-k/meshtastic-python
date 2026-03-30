@@ -15,9 +15,7 @@ from meshtastic.node_runtime.seturl.planner import (
     _SetUrlAddOnlyPlan,
     _SetUrlReplacePlan,
 )
-from meshtastic.node_runtime.shared import (
-    orderedAdminIndexes as _orderedAdminIndexes,
-)
+from meshtastic.node_runtime.shared import orderedAdminIndexes as _orderedAdminIndexes
 from meshtastic.protobuf import admin_pb2
 
 if TYPE_CHECKING:
@@ -242,7 +240,9 @@ class _SetUrlRollbackEngine:
             return plan.replace_original_channels_by_index.get(index)
 
         def do_channel_write(channel: object, admin_index: int) -> None:
-            self._node._write_channel_snapshot(channel, adminIndex=admin_index)  # noqa: SLF001
+            self._node._write_channel_snapshot(
+                channel, adminIndex=admin_index
+            )  # noqa: SLF001
 
         rollback_failed = self._best_effort_rollback(
             rollback_admin_indexes=rollback_admin_indexes,
