@@ -32,7 +32,15 @@ if TYPE_CHECKING:
 def pytest_addoption(  # pylint: disable=unused-argument
     parser: pytest.Parser, pluginmanager: pytest.PytestPluginManager
 ) -> None:
-    """Add custom command line options for baseline tests."""
+    """Add custom command line options for baseline tests.
+
+    Parameters
+    ----------
+    parser : pytest.Parser
+        The pytest argument parser to add options to.
+    pluginmanager : pytest.PytestPluginManager
+        The pytest plugin manager (unused but required by hook signature).
+    """
     parser.addoption(
         "--update-baselines",
         action="store_true",
@@ -527,9 +535,10 @@ def _shutdown_publishing_thread() -> Generator[None, None, None]:
     from meshtastic.util import DeferredExecution
 
     # Use cast to satisfy mypy - publishingThread is a DeferredExecution instance
-    _thread = cast(DeferredExecution, publishingThread)
-    _thread.stop()
-    _thread.join(timeout=5.0)
+    if publishingThread is not None:
+        _thread = cast(DeferredExecution, publishingThread)
+        _thread.stop()
+        _thread.join(timeout=5.0)
 
 
 @pytest.fixture
