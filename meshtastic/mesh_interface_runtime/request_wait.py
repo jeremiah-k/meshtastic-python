@@ -20,9 +20,7 @@ WAIT_ATTR_TRACEROUTE: str = "receivedTraceRoute"
 WAIT_ATTR_WAYPOINT: str = "receivedWaypoint"
 WAIT_ATTR_NAK: str = "receivedNak"
 
-NO_RESPONSE_FIRMWARE_ERROR: str = (
-    "No response from node. At least firmware 2.1.22 is required on the destination node."
-)
+NO_RESPONSE_FIRMWARE_ERROR: str = "No response from node. At least firmware 2.1.22 is required on the destination node."
 RESPONSE_WAIT_REQID_ERROR: str = (
     "Internal error: response wait requires a positive packet id."
 )
@@ -34,7 +32,35 @@ RETIRED_WAIT_REQUEST_ID_TTL_SECONDS: float = 60.0
 
 
 class _RequestWaitRuntime:
-    """Owns request/wait bookkeeping, scoped wait semantics, and response correlation."""
+    """Owns request/wait bookkeeping, scoped wait semantics, and response correlation.
+
+    This class manages the lifecycle of request/response pairs including:
+    - Response handler registration and cleanup
+    - Scoped and unscoped wait state tracking
+    - Acknowledgment and error correlation
+    - Request ID retirement and pruning
+
+    Parameters
+    ----------
+    lock : threading.RLock
+        Shared lock for synchronizing access to wait state.
+    get_response_handlers : Callable[[], dict[int, ResponseHandler]]
+        Factory that returns the shared response handlers dictionary.
+    get_wait_errors : Callable[[], dict[tuple[str, int], str]]
+        Factory that returns the shared wait errors dictionary.
+    get_wait_acks : Callable[[], set[tuple[str, int]]]
+        Factory that returns the shared wait acknowledgments set.
+    get_active_wait_request_ids : Callable[[], dict[str, set[int]]]
+        Factory that returns the shared active wait request IDs dictionary.
+    get_retired_wait_request_ids : Callable[[], dict[str, dict[int, float]]]
+        Factory that returns the shared retired wait request IDs dictionary.
+    get_acknowledgment : Callable[[], Acknowledgment]
+        Factory that returns the shared acknowledgment state object.
+    get_timeout : Callable[[], Timeout]
+        Factory that returns the shared timeout configuration object.
+    retired_wait_ttl_seconds : float
+        Time-to-live in seconds for retired request IDs before pruning.
+    """
 
     def __init__(
         self,
@@ -246,6 +272,8 @@ class _RequestWaitRuntime:
                 )
                 return
             else:
+                resolved_request_id = UNSCOPED_WAIT_REQUEST_ID
+                wait_acks.add((acknowledgment_attr, resolved_request_id))
                 set_legacy_ack_flag = True
             if request_id is not None and not has_request_scope:
                 set_legacy_ack_flag = True
@@ -319,7 +347,7 @@ class _RequestWaitRuntime:
                 wait_errors.pop((acknowledgment_attr, request_id), None)
                 wait_acks.discard((acknowledgment_attr, request_id))
             else:
-                if acknowledgment_attr not in active_wait_request_ids:
+                if acknowledgment_attr in active_wait_request_ids:
                     for active_request_id in active_request_ids:
                         response_handlers.pop(active_request_id, None)
                         wait_errors.pop((acknowledgment_attr, active_request_id), None)
