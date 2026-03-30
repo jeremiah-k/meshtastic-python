@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from meshtastic.powermon.stress import PowerStressClient
 
 
-def pytest_addoption(parser: Any, _pluginmanager: Any) -> None:
+def pytest_addoption(parser: Any) -> None:
     """Add custom command line options for baseline tests."""
     parser.addoption(
         "--update-baselines",
