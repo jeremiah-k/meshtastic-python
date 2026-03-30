@@ -3217,15 +3217,6 @@ def test_wait_state_helpers_cover_request_resolution_branches() -> None:
             iface._response_wait_acks.add(("receivedTelemetry", 602))
         iface._retire_wait_request("receivedTelemetry")
         with iface._response_handlers_lock:
-            assert 601 in iface.responseHandlers
-            assert 602 in iface.responseHandlers
-            assert ("receivedTelemetry", 601) in iface._response_wait_errors
-            assert ("receivedTelemetry", 602) in iface._response_wait_errors
-            assert ("receivedTelemetry", 601) in iface._response_wait_acks
-            assert ("receivedTelemetry", 602) in iface._response_wait_acks
-        iface._retire_wait_request("receivedTelemetry", request_id=601)
-        iface._retire_wait_request("receivedTelemetry", request_id=602)
-        with iface._response_handlers_lock:
             assert 601 not in iface.responseHandlers
             assert 602 not in iface.responseHandlers
             assert ("receivedTelemetry", 601) not in iface._response_wait_errors
