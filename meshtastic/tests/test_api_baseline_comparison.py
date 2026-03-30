@@ -33,6 +33,21 @@ from meshtastic.node import Node
 BASELINE_DIR = Path(__file__).parent / "api_baselines"
 BASELINE_FILE = BASELINE_DIR / "api_baseline.json"
 
+# Allow override via environment variable for CI comparisons
+BASELINE_FILE_MASTER = BASELINE_DIR / "api_baseline_master.json"
+
+
+def get_baseline_file() -> Path:
+    """Get the baseline file path.
+
+    Returns master baseline file if it exists (for CI comparisons),
+    otherwise returns the standard baseline file.
+    """
+    if BASELINE_FILE_MASTER.exists():
+        return BASELINE_FILE_MASTER
+    return BASELINE_FILE
+
+
 # Legacy import paths to verify
 LEGACY_IMPORT_PATHS = [
     "meshtastic.node_runtime.settings_runtime",
@@ -243,11 +258,14 @@ def load_baseline() -> dict[str, Any] | None:
     """Load the stored baseline from disk.
 
     Returns None if no baseline exists.
+    Checks for master baseline first (used in CI comparisons),
+    falls back to standard baseline file.
     """
-    if not BASELINE_FILE.exists():
+    baseline_file = get_baseline_file()
+    if not baseline_file.exists():
         return None
 
-    with open(BASELINE_FILE, "r", encoding="utf-8") as f:
+    with open(baseline_file, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
