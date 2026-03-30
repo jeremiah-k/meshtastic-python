@@ -286,11 +286,13 @@ def extract_api_surface(
     }
 
     for cls in classes:
-        key = f"{cls.lower().replace('meshinterface', 'mesh_interface')}_methods"
         if cls == "MeshInterface":
             key = "mesh_interface_methods"
         elif cls == "Node":
             key = "node_methods"
+        else:
+            module_name = cls.lower().replace("meshinterface", "mesh_interface")
+            key = f"{module_name}_methods"
         for tree, _mod in module_map.values():
             methods = _extract_class_methods(tree, cls)
             if methods:

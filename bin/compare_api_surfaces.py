@@ -305,7 +305,7 @@ def compare_exports(
 def main() -> int:
     if len(sys.argv) != 3:
         print(f"Usage: {sys.argv[0]} <master.json> <pr.json>", file=sys.stderr)
-        sys.exit(1)
+        return 1
 
     with open(sys.argv[1], encoding="utf-8") as f:
         master = json.load(f)
@@ -344,7 +344,7 @@ def main() -> int:
     if all_blocking:
         print("\n".join(all_blocking))
         print("\nBREAKING API changes detected vs master!")
-        sys.exit(1)
+        return 1
     else:
         print(
             "No breaking API changes detected vs master (informational changes above)."
@@ -353,4 +353,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
