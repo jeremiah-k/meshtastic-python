@@ -3,6 +3,7 @@
 # pylint: disable=redefined-outer-name,protected-access
 
 import logging
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -365,7 +366,7 @@ class TestWriteCannedMessageChunking:
         # First chunk succeeds, second fails
         call_count = 0
 
-        def send_admin_side_effect(*args, **kwargs):
+        def send_admin_side_effect(*_args: Any, **_kwargs: Any) -> Any:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -434,7 +435,7 @@ class TestWriteCannedMessageChunking:
         # First chunk succeeds, second raises exception
         call_count = 0
 
-        def send_admin_side_effect(*args, **kwargs):
+        def send_admin_side_effect(*_args: Any, **_kwargs: Any) -> Any:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -473,7 +474,7 @@ class TestWriteCannedMessageChunking:
         first_result = MagicMock()
         call_count = 0
 
-        def send_admin_side_effect(*args, **kwargs):
+        def send_admin_side_effect(*_args: Any, **_kwargs: Any) -> Any:
             nonlocal call_count
             call_count += 1
             if call_count == 1:

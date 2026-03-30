@@ -4,6 +4,7 @@
 
 import logging
 import threading
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -63,7 +64,10 @@ def mock_interface() -> MagicMock:
 
     # Create MeshInterfaceError dynamically
     class MeshInterfaceError(Exception):
+        """Custom exception for MeshInterface errors."""
+
         def __init__(self, message: str) -> None:
+            """Initialize the error with a message."""
             self.message = message
             super().__init__(message)
 
@@ -140,7 +144,10 @@ class TestSerializablePayloadProtocol:
         """Test that objects with SerializeToString satisfy the protocol."""
 
         class MockPayload:
+            """Mock payload for protocol testing."""
+
             def SerializeToString(self) -> bytes:
+                """Serialize the payload."""
                 return b"serialized"
 
         # This should work without error
@@ -427,7 +434,7 @@ class TestSendData:
 
 
 class TestSendDataWithWait:
-    """Tests for _send_data_with_wait method (lines 277-359)."""
+    """Tests for _send_data_with_wait method."""
 
     @pytest.mark.unit
     def test_send_data_with_wait_serializes_protobuf(
@@ -436,7 +443,10 @@ class TestSendDataWithWait:
         """Test that _send_data_with_wait serializes protobuf payloads."""
 
         class MockProtobuf:
+            """Mock protobuf message for testing."""
+
             def SerializeToString(self) -> bytes:
+                """Serialize the protobuf message."""
                 return b"serialized protobuf"
 
         with patch.object(send_pipeline, "_send_packet") as mock_send_packet:
@@ -743,7 +753,7 @@ class TestOnResponseTraceRoute:
         self, send_pipeline: SendPipeline
     ) -> None:
         """Test onResponseTraceRoute delegates to flow function."""
-        packet = {"decoded": {"traceroute": {}}}
+        packet: dict[str, Any] = {"decoded": {"traceroute": {}}}
 
         with patch(
             "meshtastic.mesh_interface_runtime.send_pipeline.on_response_traceroute"
@@ -791,7 +801,7 @@ class TestOnResponseTelemetry:
     @pytest.mark.unit
     def test_on_response_telemetry_delegates(self, send_pipeline: SendPipeline) -> None:
         """Test onResponseTelemetry delegates to flow function."""
-        packet = {"decoded": {"telemetry": {}}}
+        packet: dict[str, Any] = {"decoded": {"telemetry": {}}}
 
         with patch(
             "meshtastic.mesh_interface_runtime.send_pipeline.on_response_telemetry"
@@ -807,7 +817,7 @@ class TestOnResponseWaypoint:
     @pytest.mark.unit
     def test_on_response_waypoint_delegates(self, send_pipeline: SendPipeline) -> None:
         """Test onResponseWaypoint delegates to flow function."""
-        packet = {"decoded": {"waypoint": {}}}
+        packet: dict[str, Any] = {"decoded": {"waypoint": {}}}
 
         with patch(
             "meshtastic.mesh_interface_runtime.send_pipeline.on_response_waypoint"
@@ -882,8 +892,9 @@ class TestSendPacket:
     @pytest.mark.unit
     def test_send_packet_broadcast(
         self, send_pipeline: SendPipeline, mock_interface: MagicMock
-    ) -> None:
+    ) -> None:  # noqa: W0613
         """Test sending packet to broadcast address."""
+        _ = mock_interface  # Required fixture, explicitly marked as used
         mesh_packet = mesh_pb2.MeshPacket()
         mesh_packet.id = 12345
 
@@ -966,7 +977,7 @@ class TestSendPacket:
         mesh_packet = mesh_pb2.MeshPacket()
 
         with pytest.raises(Exception, match="must not be None"):
-            send_pipeline._send_packet(mesh_packet, destinationId=None)
+            send_pipeline._send_packet(mesh_packet, destinationId=None)  # type: ignore[arg-type]
 
     @pytest.mark.unit
     def test_send_packet_node_not_found_raises(
@@ -1320,5 +1331,5 @@ class TestSendHeartbeat:
             send_pipeline.sendHeartbeat()
 
         mock_send.assert_called_once()
-        mock_send.call_args[0][0]
+        # call_args[0][0] would be the ToRadio message with heartbeat field set
         # Heartbeat should have heartbeat field set

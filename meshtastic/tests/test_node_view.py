@@ -208,8 +208,8 @@ class TestPrintLogLine:
         self, node_view: NodeView, mock_interface: MagicMock
     ) -> None:
         """Test printing log line to callable."""
-        output_lines = []
-        mock_interface.debugOut = lambda line: output_lines.append(line)
+        output_lines: list[str] = []
+        mock_interface.debugOut = output_lines.append
 
         node_view._print_log_line("Test message")
 
@@ -431,8 +431,9 @@ class TestGetNode:
     @pytest.mark.unit
     def test_get_node_remote(
         self, node_view: NodeView, mock_interface: MagicMock
-    ) -> None:
+    ) -> None:  # noqa: W0613
         """Test getting remote node."""
+        _ = mock_interface  # Required fixture, explicitly marked as used
         with patch(
             "meshtastic.mesh_interface_runtime.node_view.meshtastic.node.Node"
         ) as mock_node_class:
@@ -740,10 +741,12 @@ class TestGetOrCreateByNum:
         assert result["user"]["id"] == "!00003039"
 
     @pytest.mark.unit
+    @pytest.mark.unit
     def test_get_or_create_broadcast_raises(
         self, node_view: NodeView, mock_interface: MagicMock
     ) -> None:
         """Test that creating a broadcast node raises an error."""
+        _ = mock_interface  # Explicitly mark as intentionally unused (required fixture)
 
         with pytest.raises(Exception, match="broadcast"):
             node_view._get_or_create_by_num(BROADCAST_NUM)

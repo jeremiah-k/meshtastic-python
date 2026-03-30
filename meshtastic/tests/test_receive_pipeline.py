@@ -179,6 +179,8 @@ class TestNormalizeJsonSerializable:
         """Test that unknown types are converted to string."""
 
         class CustomClass:
+            """Custom class for testing unknown type normalization."""
+
             def __str__(self) -> str:
                 return "custom"
 
@@ -399,8 +401,9 @@ class TestNormalizeFromRadioMessage:
     @pytest.mark.unit
     def test_normalize_from_radio(
         self, receive_pipeline: ReceivePipeline, mock_interface: MagicMock
-    ) -> None:
+    ) -> None:  # noqa: W0613
         """Test normalizing FromRadio message."""
+        _ = mock_interface  # Required fixture, explicitly marked as used
         from_radio = mesh_pb2.FromRadio()
         from_radio.id = 12345
 
@@ -795,7 +798,7 @@ class TestApplyConfigFromRadio:
         """Test applying local config from radio."""
         from_radio = mesh_pb2.FromRadio()
         # Set region as integer (1 = US)
-        from_radio.config.lora.region = 1
+        from_radio.config.lora.region = 1  # type: ignore[assignment]
 
         result = receive_pipeline._apply_local_config_from_radio(from_radio.config)
 
