@@ -329,7 +329,7 @@ class TestBuildTableData:
             with patch(
                 "meshtastic.mesh_interface_runtime.node_view.node_presentation"
             ) as mock_presentation:
-                mock_node_data.extract_node_field_value.return_value = "extracted_value"
+                mock_node_data.extractNodeFieldValue.return_value = "extracted_value"
                 mock_presentation.format_node_field.return_value = "formatted_value"
                 mock_presentation.get_human_readable_column_label.return_value = (
                     "Human Label"
@@ -394,13 +394,13 @@ class TestShowNodes:
                 ) as mock_node_data:
                     mock_build.return_value = [{"N": 1, "Name": "Test Node"}]
                     mock_render.return_value = "Rendered Table"
-                    mock_node_data.filter_nodes.return_value = [
+                    mock_node_data.filterNodes.return_value = [
                         mock_interface.nodesByNum[1234]
                     ]
-                    mock_node_data.sort_nodes.return_value = [
+                    mock_node_data.sortNodes.return_value = [
                         mock_interface.nodesByNum[1234]
                     ]
-                    mock_node_data.get_default_show_fields.return_value = ["N", "Name"]
+                    mock_node_data.getDefaultShowFields.return_value = ["N", "Name"]
 
                     result = node_view.showNodes()
 

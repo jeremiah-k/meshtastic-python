@@ -630,6 +630,7 @@ class DeferredExecution:
 
     # Sentinel object to signal shutdown of the worker thread
     _SHUTDOWN = object()
+    _stop_lock: threading.Lock
 
     def __init__(self, name: str) -> None:
         """Create a DeferredExecution instance and start its daemon worker thread.
@@ -644,6 +645,7 @@ class DeferredExecution:
         """
         self.queue: Queue[Any] = Queue()
         self._shutdown: bool = False
+        self._stop_lock = threading.Lock()
         # this thread must be marked as daemon, otherwise it will prevent clients from exiting
         self.thread = threading.Thread(
             target=self._run, args=(), name=name, daemon=True
@@ -664,13 +666,13 @@ class DeferredExecution:
         """Signal the worker thread to shut down gracefully.
 
         Enqueues a sentinel value that causes the worker loop to exit. After calling
-        stop(), the thread attribute will eventually become None once the worker
-        finishes processing pending items and exits. This method is safe to call
-        multiple times and is a no-op if already stopped.
+        stop(), the worker will finish processing pending items and exits. This method
+        is safe to call multiple times and is a no-op if already stopped.
         """
-        if not self._shutdown:
-            self._shutdown = True
-            self.queue.put(self._SHUTDOWN)
+        with self._stop_lock:
+            if not self._shutdown:
+                self._shutdown = True
+                self.queue.put(self._SHUTDOWN)
 
     def join(self, timeout: float | None = None) -> bool:
         """Wait for the worker thread to finish.

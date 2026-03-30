@@ -7,6 +7,27 @@ JSONValue: TypeAlias = (
     None | bool | int | float | str | list["JSONValue"] | dict[str, "JSONValue"]
 )
 
+_COLUMN_LABEL_MAP: dict[str, str] = {
+    "user.longName": "User",
+    "user.id": "ID",
+    "user.shortName": "AKA",
+    "user.hwModel": "Hardware",
+    "user.publicKey": "Pubkey",
+    "user.role": "Role",
+    "position.latitude": "Latitude",
+    "position.longitude": "Longitude",
+    "position.altitude": "Altitude",
+    "deviceMetrics.batteryLevel": "Battery",
+    "deviceMetrics.channelUtilization": "Channel util.",
+    "deviceMetrics.airUtilTx": "Tx air util.",
+    "snr": "SNR",
+    "hopsAway": "Hops",
+    "channel": "Channel",
+    "lastHeard": "LastHeard",
+    "since": "Since",
+    "isFavorite": "Fav",
+}
+
 
 def timeago(delta_secs: int) -> str:
     """Produce a short human-readable relative time string for a past interval.
@@ -119,28 +140,7 @@ def get_human_readable_column_label(name: str) -> str:
     str
         A human-readable label for the given field when known; otherwise returns the original `name`.
     """
-    name_map = {
-        "user.longName": "User",
-        "user.id": "ID",
-        "user.shortName": "AKA",
-        "user.hwModel": "Hardware",
-        "user.publicKey": "Pubkey",
-        "user.role": "Role",
-        "position.latitude": "Latitude",
-        "position.longitude": "Longitude",
-        "position.altitude": "Altitude",
-        "deviceMetrics.batteryLevel": "Battery",
-        "deviceMetrics.channelUtilization": "Channel util.",
-        "deviceMetrics.airUtilTx": "Tx air util.",
-        "snr": "SNR",
-        "hopsAway": "Hops",
-        "channel": "Channel",
-        "lastHeard": "LastHeard",
-        "since": "Since",
-        "isFavorite": "Fav",
-    }
-
-    return name_map.get(name, name)
+    return _COLUMN_LABEL_MAP.get(name, name)
 
 
 # pylint: disable=too-many-return-statements

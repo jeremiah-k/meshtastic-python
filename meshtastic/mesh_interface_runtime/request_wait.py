@@ -6,7 +6,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable
-from typing import Any, Optional
+from typing import Any
 
 from meshtastic import ResponseHandler
 from meshtastic.util import Acknowledgment, Timeout
@@ -20,9 +20,7 @@ WAIT_ATTR_TRACEROUTE: str = "receivedTraceRoute"
 WAIT_ATTR_WAYPOINT: str = "receivedWaypoint"
 WAIT_ATTR_NAK: str = "receivedNak"
 
-NO_RESPONSE_FIRMWARE_ERROR: str = (
-    "No response from node. At least firmware 2.1.22 is required on the destination node."
-)
+NO_RESPONSE_FIRMWARE_ERROR: str = "No response from node. At least firmware 2.1.22 is required on the destination node."
 RESPONSE_WAIT_REQID_ERROR: str = (
     "Internal error: response wait requires a positive packet id."
 )
@@ -472,7 +470,7 @@ class _RequestWaitRuntime:
     def _invoke_response_callback(
         *,
         request_id: int,
-        response_handler: Optional[ResponseHandler],
+        response_handler: ResponseHandler | None,
         packet_dict: dict[str, Any],
     ) -> None:
         """Invoke one response callback with error isolation."""

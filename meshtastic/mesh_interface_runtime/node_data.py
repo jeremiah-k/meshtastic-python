@@ -3,7 +3,7 @@
 from typing import Any
 
 
-def extract_node_field_value(node_dict: dict[str, Any], field_path: str) -> Any:
+def extractNodeFieldValue(node_dict: dict[str, Any], field_path: str) -> Any:
     """Retrieve a nested value from a dictionary using a dotted key path.
 
     Parameters
@@ -34,7 +34,7 @@ def extract_node_field_value(node_dict: dict[str, Any], field_path: str) -> Any:
     return value
 
 
-def get_default_show_fields() -> list[str]:
+def getDefaultShowFields() -> list[str]:
     """Return the default list of fields to display in showNodes output."""
     return [
         "N",
@@ -59,7 +59,7 @@ def get_default_show_fields() -> list[str]:
     ]
 
 
-def filter_nodes(
+def filterNodes(
     nodes: list[dict[str, Any]],
     include_self: bool,
     local_node_num: int,
@@ -85,7 +85,7 @@ def filter_nodes(
     return [node for node in nodes if node.get("num") != local_node_num]
 
 
-def sort_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def sortNodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Sort nodes by lastHeard timestamp in descending order.
 
     Parameters

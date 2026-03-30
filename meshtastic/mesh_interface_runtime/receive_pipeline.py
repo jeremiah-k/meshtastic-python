@@ -577,12 +577,22 @@ class ReceivePipeline:
     def _handle_packet_from_radio(
         self,
         meshPacket: mesh_pb2.MeshPacket,
-        hack: bool = False,
+        allow_zero_source: bool = False,
         *,
         emit_publication: bool = True,
     ) -> list[_PublicationIntent]:
-        """Process incoming MeshPacket with explicit normalize/classify/mutate/publish phases."""
-        packet_dict = self._normalize_packet_from_radio(meshPacket, hack=hack)
+        """Process incoming MeshPacket with explicit normalize/classify/mutate/publish phases.
+
+        Parameters
+        ----------
+        allow_zero_source : bool
+            If True, process packets with from==0 (normally filtered as echoed sends).
+        emit_publication : bool, optional
+            Whether to emit publication intents immediately (default: True).
+        """
+        packet_dict = self._normalize_packet_from_radio(
+            meshPacket, allow_zero_source=allow_zero_source
+        )
         if packet_dict is None:
             return []
 
@@ -613,10 +623,16 @@ class ReceivePipeline:
         self,
         meshPacket: mesh_pb2.MeshPacket,
         *,
-        hack: bool,
+        allow_zero_source: bool,
     ) -> dict[str, Any] | None:
-        """Convert protobuf packet into runtime dict and enforce legacy defaults."""
-        if not hack and getattr(meshPacket, "from") == 0:
+        """Convert protobuf packet into runtime dict and enforce legacy defaults.
+
+        Parameters
+        ----------
+        allow_zero_source : bool
+            If True, process packets with from==0 (normally filtered as echoed sends).
+        """
+        if not allow_zero_source and getattr(meshPacket, "from") == 0:
             packet_dict = {"raw": meshPacket, "from": 0}
             logger.error(
                 "Device returned a packet we sent, ignoring: %s",
@@ -750,9 +766,9 @@ class ReceivePipeline:
                 DECODE_ERROR_KEY: decode_error
             }
             if handler.name == "routing":
-                packet_context.packet_dict["decoded"][handler.name][
-                    "errorReason"
-                ] = decode_error
+                packet_context.packet_dict["decoded"][handler.name]["errorReason"] = (
+                    decode_error
+                )
             if handler.name == "admin":
                 packet_context.skip_response_callback_for_decode_failure = True
 

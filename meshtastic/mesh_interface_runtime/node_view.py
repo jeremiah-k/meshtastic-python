@@ -272,7 +272,7 @@ class NodeView:
             fields_data: dict[str, Any] = {}
             for col_name in fields:
                 if "." in col_name:
-                    raw_value = node_data.extract_node_field_value(node, col_name)
+                    raw_value = node_data.extractNodeFieldValue(node, col_name)
                 elif col_name == "since":
                     raw_value = node.get("lastHeard")
                 else:
@@ -334,7 +334,7 @@ class NodeView:
         """
         # Determine fields to show
         if showFields is None or len(showFields) == 0:
-            fields = node_data.get_default_show_fields()
+            fields = node_data.getDefaultShowFields()
         else:
             fields = ["N", *showFields] if "N" not in showFields else list(showFields)
 
@@ -348,12 +348,12 @@ class NodeView:
             logger.debug("self.nodes:%s", nodes_log_snapshot)
 
         # Filter nodes
-        filtered_nodes = node_data.filter_nodes(
+        filtered_nodes = node_data.filterNodes(
             nodes_snapshot, includeSelf, local_node_num
         )
 
         # Sort nodes by lastHeard
-        sorted_nodes = node_data.sort_nodes(filtered_nodes)
+        sorted_nodes = node_data.sortNodes(filtered_nodes)
 
         # Build table data with field extraction and formatting
         rows = self._build_table_data(sorted_nodes, fields)

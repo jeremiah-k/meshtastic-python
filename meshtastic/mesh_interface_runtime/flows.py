@@ -112,7 +112,7 @@ def on_response_position(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
         )
 
 
-def send_position(
+def sendPosition(
     pipeline: "SendPipeline",
     latitude: float = 0.0,
     longitude: float = 0.0,
@@ -230,7 +230,7 @@ def on_response_traceroute(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
     )
 
 
-def send_traceroute(
+def sendTraceroute(
     pipeline: "SendPipeline",
     dest: int | str,
     hopLimit: int,
@@ -333,7 +333,7 @@ def on_response_telemetry(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
         )
 
 
-def send_telemetry(
+def sendTelemetry(
     pipeline: "SendPipeline",
     destinationId: int | str = BROADCAST_ADDR,
     wantResponse: bool = False,
@@ -370,10 +370,11 @@ def send_telemetry(
     elif telemetry_type == "local_stats":
         r.local_stats.CopyFrom(telemetry_pb2.LocalStats())
     elif telemetry_type == DEFAULT_TELEMETRY_TYPE:
+        local_node = pipeline.localNode
         with pipeline._node_db_lock:
             node = (
-                pipeline.nodesByNum.get(pipeline.localNode.nodeNum)
-                if pipeline.nodesByNum is not None
+                pipeline.nodesByNum.get(local_node.nodeNum)
+                if pipeline.nodesByNum is not None and local_node is not None
                 else None
             )
             if node is not None:
@@ -456,7 +457,7 @@ def on_response_waypoint(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
         )
 
 
-def send_waypoint(
+def sendWaypoint(
     pipeline: "SendPipeline",
     name: str,
     description: str,
@@ -521,7 +522,7 @@ def send_waypoint(
     return d
 
 
-def delete_waypoint(
+def deleteWaypoint(
     pipeline: "SendPipeline",
     waypoint_id: int,
     destinationId: int | str = BROADCAST_ADDR,
