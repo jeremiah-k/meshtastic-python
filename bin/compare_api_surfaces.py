@@ -52,12 +52,42 @@ def compare_methods(
     return blocking, informational
 
 
+NOISE_EXPORTS = {
+    # stdlib modules imported in __init__.py - implementation details, not public API
+    "*",
+    "base64",
+    "datetime",
+    "os",
+    "platform",
+    "random",
+    "socket",
+    "stat",
+    "sys",
+    "threading",
+    "time",
+    "traceback",
+    # third-party imports that leaked into namespace
+    "serial",
+    "tabulate",
+    "google.protobuf.json_format",
+    # internal utility helpers that leaked into namespace
+    "fixme",
+    # any alias that starts with underscore (private)
+}
+
+
 def compare_exports(master: list, pr: list) -> tuple[list[str], list[str]]:
     blocking = []
     informational = []
     removed = set(master) - set(pr)
-    if removed:
-        blocking.append(f"REMOVED exports: {sorted(removed)}")
+    real_removed = {r for r in removed if r not in NOISE_EXPORTS}
+    noise_removed = removed - real_removed
+    if real_removed:
+        blocking.append(f"REMOVED exports: {sorted(real_removed)}")
+    if noise_removed:
+        informational.append(
+            f"REMOVED (noise/implementation detail): {sorted(noise_removed)}"
+        )
     added = set(pr) - set(master)
     if added:
         informational.append(f"ADDED exports: {sorted(added)}")
