@@ -166,8 +166,6 @@ def _get_signature_str(method: Any) -> str:
 
 def _ast_annotation_str(node) -> str:
     """Convert an AST annotation node to a string representation."""
-    import ast
-
     if node is None:
         return ""
     if isinstance(node, ast.Constant):
@@ -177,11 +175,13 @@ def _ast_annotation_str(node) -> str:
     if isinstance(node, ast.Attribute):
         return f"{_ast_annotation_str(node.value)}.{node.attr}"
     if isinstance(node, ast.Subscript):
+        base = _ast_annotation_str(node.value)
         if isinstance(node.value, ast.Name) and node.value.id == "Literal":
             if isinstance(node.slice, ast.Tuple):
                 return " | ".join(_ast_annotation_str(e) for e in node.slice.elts)
             return _ast_annotation_str(node.slice)
-        return f"{_ast_annotation_str(node.value)}[{_ast_annotation_str(node.slice)}]"
+        slice_str = _ast_annotation_str(node.slice)
+        return f"{base}[{slice_str}]"
     if isinstance(node, ast.Tuple):
         return ", ".join(_ast_annotation_str(e) for e in node.elts)
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
@@ -234,11 +234,11 @@ def _ast_capture_class_methods(source: str, class_name: str) -> dict[str, str]:
 
 def _find_module_source(module_name: str) -> str | None:
     """Find the source file for a module and return its content."""
-    import importlib.util, sys
+    import importlib.util
 
     spec = importlib.util.find_spec(module_name)
     if spec and spec.origin:
-        with open(spec.origin) as f:
+        with open(spec.origin, encoding="utf-8") as f:
             return f.read()
     return None
 
