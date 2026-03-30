@@ -139,7 +139,7 @@ jobs:
       - name: Install meshtastic from master
         run: |
           cd master-checkout
-          poetry install ${{ env.POETRY_INSTALL_ARGS }}
+          poetry install
       - name: Generate master baseline
         run: |
           cd master-checkout
