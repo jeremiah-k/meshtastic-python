@@ -20,14 +20,18 @@ class _NodeAckNakRuntime:
         decoded = packet.get("decoded")
         if not isinstance(decoded, dict):
             logger.warning(
-                "Received ACK/NAK response without decoded payload: %s", packet
+                "Received ACK/NAK response without decoded payload: packet_id=%s, from=%s",
+                packet.get("id"),
+                packet.get("from"),
             )
             self._node.iface._acknowledgment.receivedNak = True
             return
         routing = decoded.get("routing")
         if not isinstance(routing, dict):
             logger.warning(
-                "Received ACK/NAK response without routing details: %s", packet
+                "Received ACK/NAK response without routing details: packet_id=%s, from=%s",
+                packet.get("id"),
+                packet.get("from"),
             )
             self._node.iface._acknowledgment.receivedNak = True
             return
@@ -40,13 +44,20 @@ class _NodeAckNakRuntime:
 
         from_value = packet.get("from")
         if from_value is None:
-            logger.warning("Received ACK/NAK response without sender: %s", packet)
+            logger.warning(
+                "Received ACK/NAK response without sender: packet_id=%s",
+                packet.get("id"),
+            )
             self._node.iface._acknowledgment.receivedNak = True
             return
         try:
             from_num = int(from_value)
         except (TypeError, ValueError):
-            logger.warning("Received ACK/NAK response with invalid sender: %s", packet)
+            logger.warning(
+                "Received ACK/NAK response with invalid sender: packet_id=%s, from=%s",
+                packet.get("id"),
+                from_value,
+            )
             self._node.iface._acknowledgment.receivedNak = True
             return
 

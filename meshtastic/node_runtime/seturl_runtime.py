@@ -1,3 +1,4 @@
+# COMPAT_STABLE_SHIM: historical import surface for meshtastic.node_runtime.seturl_runtime
 """Backward-compat shim — canonical code lives in meshtastic.node_runtime.seturl package."""
 
 from meshtastic.node_runtime.seturl import (  # noqa: F401

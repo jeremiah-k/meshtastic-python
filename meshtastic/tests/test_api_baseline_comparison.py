@@ -161,8 +161,7 @@ def _ast_signature_str(func_node) -> str:
         params.append(f"*{func_node.args.vararg.arg}")
     if func_node.args.kwarg:
         params.append(f"**{func_node.args.kwarg.arg}")
-    result = f"({', '.join(params)})"
-    return result
+    return f"({', '.join(params)})"
 
 
 def _ast_capture_class_methods(source: str, class_name: str) -> dict[str, str]:
@@ -408,6 +407,7 @@ def _should_update_baselines(pytestconfig):
 # =============================================================================
 
 
+@pytest.mark.unit
 class TestNodeAPIAgainstBaseline:
     """Tests to verify Node public API matches baseline."""
 

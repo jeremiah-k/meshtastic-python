@@ -13,9 +13,10 @@ import ast
 import json
 import sys
 from pathlib import Path
+from typing import Optional, Union
 
 
-def _annotation_to_str(node) -> str:
+def _annotation_to_str(node: Optional[ast.AST]) -> str:
     if node is None:
         return ""
     if isinstance(node, ast.Constant):
@@ -39,7 +40,7 @@ def _annotation_to_str(node) -> str:
     return ast.dump(node)
 
 
-def _default_to_str(node):
+def _default_to_str(node: Optional[ast.AST]) -> Optional[str]:
     if node is None:
         return None
     if isinstance(node, ast.Constant):
@@ -63,7 +64,9 @@ def _default_to_str(node):
     return "..."
 
 
-def _signature_from_function(func_node):
+def _signature_from_function(
+    func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
+) -> str:
     params = []
     for arg in func_node.args.args:
         s = arg.arg
@@ -98,7 +101,7 @@ def _signature_from_function(func_node):
     return f"({', '.join(params)})"
 
 
-def _extract_class_methods(tree, class_name):
+def _extract_class_methods(tree: ast.AST, class_name: str) -> dict[str, str]:
     methods = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.ClassDef) and node.name == class_name:
@@ -110,7 +113,7 @@ def _extract_class_methods(tree, class_name):
     return methods
 
 
-def _find_source_file(pkg_dir, module_name):
+def _find_source_file(pkg_dir: Path, module_name: str) -> Optional[Path]:
     p = pkg_dir / f"{module_name}.py"
     if p.exists():
         return p
@@ -120,7 +123,7 @@ def _find_source_file(pkg_dir, module_name):
     return None
 
 
-def _get_top_level_exports(pkg_dir):
+def _get_top_level_exports(pkg_dir: Path) -> list[str]:
     init_path = pkg_dir / "__init__.py"
     if not init_path.exists():
         return []
@@ -184,7 +187,7 @@ def extract_api_surface(pkg_dir, classes=None):
             key = "mesh_interface_methods"
         elif cls == "Node":
             key = "node_methods"
-        for _src, (tree, _mod) in module_map.items():
+        for tree, _mod in module_map.values():
             methods = _extract_class_methods(tree, cls)
             if methods:
                 result[key] = dict(sorted(methods.items()))

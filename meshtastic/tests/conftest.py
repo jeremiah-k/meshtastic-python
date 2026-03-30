@@ -11,7 +11,7 @@ import shutil
 import threading
 import time
 from collections.abc import Generator
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, NoReturn, cast
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Iterator, NoReturn, cast
 from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from meshtastic.powermon.stress import PowerStressClient
 
 
-def pytest_addoption(parser, pluginmanager):  # pylint: disable=unused-argument
+def pytest_addoption(parser: Any, pluginmanager: Any) -> None:  # pylint: disable=unused-argument
     """Add custom command line options for baseline tests."""
     parser.addoption(
         "--update-baselines",
@@ -513,7 +513,7 @@ def _platform_socket_mocks() -> Generator[tuple[MagicMock, MagicMock], None, Non
 
 # Fixtures for behavioral compatibility tests
 @pytest.fixture
-def mock_interface():
+def mock_interface() -> Iterator[Any]:
     """Provide a MeshInterface with mocked internals for behavioral testing."""
     iface = MeshInterface(noProto=True)
     try:
@@ -560,7 +560,7 @@ def mock_interface():
 
 
 @pytest.fixture
-def mock_interface_with_nodes(mock_interface):
+def mock_interface_with_nodes(mock_interface: Any) -> Any:
     """Provide a mock interface pre-configured with nodes."""
     # Already configured in mock_interface
     return mock_interface

@@ -44,69 +44,12 @@ class _NodeChannelExportRuntime:
                 config_snapshot.CopyFrom(local_config)
         return config_snapshot
 
-    def getUrl(self, *, includeAll: bool = True) -> str:
-        """Build channel URL export with preserved includeAll and LoRa semantics."""
-        channel_set = apponly_pb2.ChannelSet()
-        channels_snapshot = self._snapshot_channels()
-        if not channels_snapshot:
-            self._node._raise_interface_error(  # noqa: SLF001
-                "Error: No channels have been read"
-            )
-        primary_channel = next(
-            (
-                channel
-                for channel in channels_snapshot
-                if channel.role == channel_pb2.Channel.Role.PRIMARY
-            ),
-            None,
-        )
-        if primary_channel is None:
-            self._node._raise_interface_error(  # noqa: SLF001
-                "Error: No primary channel found"
-            )
-        channel_set.settings.append(primary_channel.settings)
-        if includeAll:
-            for channel in channels_snapshot:
-                if channel.role == channel_pb2.Channel.Role.SECONDARY:
-                    channel_set.settings.append(channel.settings)
-        if not channel_set.settings:
-            self._node._raise_interface_error(  # noqa: SLF001
-                "Error: No channels have been read"
-            )
-
-        local_config_snapshot = self._snapshot_local_config()
-        if not local_config_snapshot.HasField("lora"):
-            self._node.requestConfig(
-                local_config_snapshot.DESCRIPTOR.fields_by_name["lora"]
-            )
-            wait_for_config = getattr(self._node, "waitForConfig", None)
-            if callable(wait_for_config):
-                wait_for_config(attribute="lora")
-            local_config_snapshot = self._snapshot_local_config()
-            if not local_config_snapshot.HasField("lora"):
-                self._node._raise_interface_error(  # noqa: SLF001
-                    "LoRa config must be loaded before exporting a channel URL"
-                )
-        channel_set.lora_config.CopyFrom(local_config_snapshot.lora)
-        serialized_channel_set = channel_set.SerializeToString()
-        encoded = base64.urlsafe_b64encode(serialized_channel_set).decode("ascii")
-        encoded = encoded.rstrip("=")
-        return f"https://meshtastic.org/e/#{encoded}"
-
-    def get_url(self, *, include_all: bool = True) -> str:
-        """COMPAT_STABLE_SHIM: Alias for getUrl."""
-        return self.getUrl(includeAll=include_all)
-
-    def _get_url_from_snapshot(
-        self,
-        channels_snapshot: list[channel_pb2.Channel],
-        *,
-        include_all: bool = True,
+    def _build_and_encode_channel_set(
+        self, channels_snapshot: list[channel_pb2.Channel], include_all: bool
     ) -> str:
-        """Build channel URL export from a pre-captured channel snapshot.
+        """Build channel_set from snapshot, ensure LoRa config, serialize and encode.
 
-        This method allows callers to use the same snapshot for multiple
-        operations, ensuring consistency between display and export.
+        Returns the URL-safe base64 encoded string (rstrip'd of '=').
         """
         channel_set = apponly_pb2.ChannelSet()
         if not channels_snapshot:
@@ -151,7 +94,30 @@ class _NodeChannelExportRuntime:
         channel_set.lora_config.CopyFrom(local_config_snapshot.lora)
         serialized_channel_set = channel_set.SerializeToString()
         encoded = base64.urlsafe_b64encode(serialized_channel_set).decode("ascii")
-        encoded = encoded.rstrip("=")
+        return encoded.rstrip("=")
+
+    def getUrl(self, *, includeAll: bool = True) -> str:
+        """Build channel URL export with preserved includeAll and LoRa semantics."""
+        channels_snapshot = self._snapshot_channels()
+        encoded = self._build_and_encode_channel_set(channels_snapshot, includeAll)
+        return f"https://meshtastic.org/e/#{encoded}"
+
+    def get_url(self, *, include_all: bool = True) -> str:
+        """COMPAT_STABLE_SHIM: Alias for getUrl."""
+        return self.getUrl(includeAll=include_all)
+
+    def _get_url_from_snapshot(
+        self,
+        channels_snapshot: list[channel_pb2.Channel],
+        *,
+        include_all: bool = True,
+    ) -> str:
+        """Build channel URL export from a pre-captured channel snapshot.
+
+        This method allows callers to use the same snapshot for multiple
+        operations, ensuring consistency between display and export.
+        """
+        encoded = self._build_and_encode_channel_set(channels_snapshot, include_all)
         return f"https://meshtastic.org/e/#{encoded}"
 
     def getChannelsWithHash(self) -> list[dict[str, Any]]:
@@ -209,9 +175,7 @@ class _NodeChannelExportRuntime:
                     primary_snapshot.settings.psk = fromPSK("none")
                     break
             if primary_snapshot is None:
-                self._node._raise_interface_error(
-                    "Error: No primary channel found"
-                )  # noqa: SLF001
+                self._node._raise_interface_error("Error: No primary channel found")  # noqa: SLF001
         logger.info("Writing modified channels to device")
         self._node._write_channel_snapshot(primary_snapshot)  # noqa: SLF001
         with self._node._channels_lock:  # noqa: SLF001

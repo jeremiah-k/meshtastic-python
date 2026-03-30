@@ -82,7 +82,7 @@ def filter_nodes(
     """
     if include_self:
         return nodes
-    return [node for node in nodes if node["num"] != local_node_num]
+    return [node for node in nodes if node.get("num") != local_node_num]
 
 
 def sort_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:

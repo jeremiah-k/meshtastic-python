@@ -105,6 +105,7 @@ class _NodeSettingsMessageBuilder:
             self._node._raise_interface_error(  # noqa: SLF001
                 f"Error: No valid config with name {config_name}"
             )
+            raise AssertionError("Unreachable: _raise_interface_error must raise")
 
         message = admin_pb2.AdminMessage()
         setter_name, source_config = config_entry

@@ -6,7 +6,8 @@ import hashlib
 import logging
 import threading
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, TypeAlias
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 import google.protobuf.json_format
 from google.protobuf import message as protobuf_message
@@ -25,6 +26,36 @@ if TYPE_CHECKING:
     from meshtastic.mesh_interface import MeshInterface
 
 logger = logging.getLogger(__name__)
+
+# Module-level constant for FromRadio branch selection predicates
+_FROM_RADIO_BRANCHES: tuple[
+    tuple[Callable[[mesh_pb2.FromRadio, "_FromRadioContext"], bool], str],
+    ...,
+] = (
+    (lambda fr, _ctx: fr.HasField("my_info"), "my_info"),
+    (lambda fr, _ctx: fr.HasField("metadata"), "metadata"),
+    (lambda fr, _ctx: fr.HasField("node_info"), "node_info"),
+    (
+        lambda fr, ctx: fr.config_complete_id != 0
+        and fr.config_complete_id == ctx.config_id,
+        "config_complete_id",
+    ),
+    (lambda fr, _ctx: fr.HasField("channel"), "channel"),
+    (lambda fr, _ctx: fr.HasField("packet"), "packet"),
+    (lambda fr, _ctx: fr.HasField("log_record"), "log_record"),
+    (lambda fr, _ctx: fr.HasField("queueStatus"), "queueStatus"),
+    (lambda fr, _ctx: fr.HasField("clientNotification"), "clientNotification"),
+    (
+        lambda fr, _ctx: fr.HasField("mqttClientProxyMessage"),
+        "mqttClientProxyMessage",
+    ),
+    (lambda fr, _ctx: fr.HasField("xmodemPacket"), "xmodemPacket"),
+    (lambda fr, _ctx: fr.HasField("rebooted") and fr.rebooted, "rebooted"),
+    (
+        lambda fr, _ctx: fr.HasField("config") or fr.HasField("moduleConfig"),
+        "config_or_moduleConfig",
+    ),
+)
 
 # Module-level constants
 LOCAL_CONFIG_FROM_RADIO_FIELDS: tuple[str, ...] = (
@@ -258,37 +289,7 @@ class ReceivePipeline:
     def _select_from_radio_branch(self, context: _FromRadioContext) -> str | None:
         """Select the active FromRadio branch using the historical precedence order."""
         from_radio = context.message
-        branches: list[
-            tuple[
-                Callable[[mesh_pb2.FromRadio, _FromRadioContext], bool],
-                str,
-            ]
-        ] = [
-            (lambda fr, _ctx: fr.HasField("my_info"), "my_info"),
-            (lambda fr, _ctx: fr.HasField("metadata"), "metadata"),
-            (lambda fr, _ctx: fr.HasField("node_info"), "node_info"),
-            (
-                lambda fr, ctx: fr.config_complete_id != 0
-                and fr.config_complete_id == ctx.config_id,
-                "config_complete_id",
-            ),
-            (lambda fr, _ctx: fr.HasField("channel"), "channel"),
-            (lambda fr, _ctx: fr.HasField("packet"), "packet"),
-            (lambda fr, _ctx: fr.HasField("log_record"), "log_record"),
-            (lambda fr, _ctx: fr.HasField("queueStatus"), "queueStatus"),
-            (lambda fr, _ctx: fr.HasField("clientNotification"), "clientNotification"),
-            (
-                lambda fr, _ctx: fr.HasField("mqttClientProxyMessage"),
-                "mqttClientProxyMessage",
-            ),
-            (lambda fr, _ctx: fr.HasField("xmodemPacket"), "xmodemPacket"),
-            (lambda fr, _ctx: fr.HasField("rebooted") and fr.rebooted, "rebooted"),
-            (
-                lambda fr, _ctx: fr.HasField("config") or fr.HasField("moduleConfig"),
-                "config_or_moduleConfig",
-            ),
-        ]
-        for predicate, branch_name in branches:
+        for predicate, branch_name in _FROM_RADIO_BRANCHES:
             if predicate(from_radio, context):
                 return branch_name
         return None
@@ -749,9 +750,9 @@ class ReceivePipeline:
                 DECODE_ERROR_KEY: decode_error
             }
             if handler.name == "routing":
-                packet_context.packet_dict["decoded"][handler.name][
-                    "errorReason"
-                ] = decode_error
+                packet_context.packet_dict["decoded"][handler.name]["errorReason"] = (
+                    decode_error
+                )
             if handler.name == "admin":
                 packet_context.skip_response_callback_for_decode_failure = True
 

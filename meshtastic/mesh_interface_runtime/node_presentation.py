@@ -1,7 +1,7 @@
 """Node presentation and formatting utilities for display output."""
 
 from datetime import datetime
-from typing import Any, TypeAlias, cast
+from typing import Any, TypeAlias
 
 JSONValue: TypeAlias = (
     None | bool | int | float | str | list["JSONValue"] | dict[str, "JSONValue"]
@@ -165,7 +165,12 @@ def format_node_field(
     str | None
         The formatted string value for display, or None if value is None.
     """
-    presumptive_id = f"!{node['num']:08x}"
+    # COMPAT_STABLE_SHIM: defensive access for node["num"] to avoid KeyError on malformed dicts
+    node_num = node.get("num")
+    if node_num is not None:
+        presumptive_id = f"!{node_num:08x}"
+    else:
+        presumptive_id = "!00000000"
 
     if col_name == "channel":
         if raw_value is None:
@@ -196,11 +201,11 @@ def format_node_field(
         return format_numeric_value(raw_value, 0, " dB")
     elif col_name == "user.shortName":
         if raw_value is not None:
-            return cast(str, raw_value)
+            return str(raw_value)
         return f"Meshtastic {presumptive_id[-4:]}"
     elif col_name == "user.id":
         if raw_value is not None:
-            return cast(str, raw_value)
+            return str(raw_value)
         return presumptive_id
     else:
-        return cast(str, raw_value) if raw_value is not None else None
+        return str(raw_value) if raw_value is not None else None

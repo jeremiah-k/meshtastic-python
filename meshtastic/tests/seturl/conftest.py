@@ -69,7 +69,7 @@ def _make_valid_channel_set_url(channel_name: str = "test") -> str:
     settings.name = channel_name
     settings.psk = b"\x01"
     encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("utf-8")
-    return f"https://meshtastic.org/d/#{encoded}"
+    return f"https://meshtastic.org/e/#{encoded.rstrip('=')}"
 
 
 def _make_channel_set_with_lora(channel_name: str = "test") -> apponly_pb2.ChannelSet:

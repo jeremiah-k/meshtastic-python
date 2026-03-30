@@ -2,6 +2,7 @@
 
 import base64
 import copy
+import logging
 import sys
 import threading
 from typing import IO, TYPE_CHECKING, Any, TypeAlias, cast
@@ -36,7 +37,7 @@ JSONValue: TypeAlias = (
     None | bool | int | float | str | list["JSONValue"] | dict[str, "JSONValue"]
 )
 
-logger = __import__("logging").getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def _timeago(delta_secs: int) -> str:
@@ -173,7 +174,7 @@ class NodeView:
         if line.endswith("\n"):
             line = line[:-1]
 
-        pub.sendMessage("meshtastic.log.line", line=line, interface=self)
+        pub.sendMessage("meshtastic.log.line", line=line, interface=self._interface)
 
     def _handle_log_record(self, record: mesh_pb2.LogRecord) -> None:
         """Process a protobuf LogRecord by extracting its message text and handling it as a device log line.
@@ -409,33 +410,30 @@ class NodeView:
         MeshInterface = self._interface.__class__
         if nodeId in (LOCAL_ADDR, BROADCAST_ADDR):
             return self.localNode
-        else:
-            n = meshtastic.node.Node(self._interface, nodeId, timeout=timeout)
-            if requestChannels:
-                logger.debug("About to requestChannels")
-                n.requestChannels()
-                retries_left = requestChannelAttempts
-                last_index: int = 0
-                while retries_left > 0:
-                    retries_left -= 1
-                    if not n.waitForConfig():
-                        new_index: int = (
-                            len(n.partialChannels) if n.partialChannels else 0
+        n = meshtastic.node.Node(self._interface, nodeId, timeout=timeout)
+        if requestChannels:
+            logger.debug("About to requestChannels")
+            n.requestChannels()
+            retries_left = requestChannelAttempts
+            last_index: int = 0
+            while retries_left > 0:
+                retries_left -= 1
+                if not n.waitForConfig():
+                    new_index: int = len(n.partialChannels) if n.partialChannels else 0
+                    if new_index != last_index:
+                        retries_left = requestChannelAttempts - 1
+                    if retries_left <= 0:
+                        raise MeshInterface.MeshInterfaceError(
+                            "Error: Timed out waiting for channels, giving up"
                         )
-                        if new_index != last_index:
-                            retries_left = requestChannelAttempts - 1
-                        if retries_left <= 0:
-                            raise MeshInterface.MeshInterfaceError(
-                                "Error: Timed out waiting for channels, giving up"
-                            )
-                        logger.warning(
-                            "Timed out trying to retrieve channel info, retrying"
-                        )
-                        n.requestChannels(startingIndex=new_index)
-                        last_index = new_index
-                    else:
-                        break
-            return n
+                    logger.warning(
+                        "Timed out trying to retrieve channel info, retrying"
+                    )
+                    n.requestChannels(startingIndex=new_index)
+                    last_index = new_index
+                else:
+                    break
+        return n
 
     def getMyNodeInfo(self) -> dict[str, Any] | None:
         """Get the stored node-info dictionary for the local node.

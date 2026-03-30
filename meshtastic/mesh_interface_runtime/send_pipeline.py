@@ -109,7 +109,7 @@ def _emit_response_summary(message: str) -> None:
 class SendPipeline:
     """Send pipeline for transmitting packets to the radio.
 
-    This class encapsulates all send-related functionality, including data发送,
+    This class encapsulates all send-related functionality, including data transmission,
     position, telemetry, waypoint, and traceroute operations.
     """
 

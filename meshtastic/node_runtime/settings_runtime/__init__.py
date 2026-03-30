@@ -11,11 +11,11 @@ from meshtastic.node_runtime.settings_runtime.response import (
 from meshtastic.util import toNodeNum
 
 __all__ = [
-    "_NodeSettingsMessageBuilder",
-    "_NodeSettingsRuntime",
-    "_NodeSettingsResponseRuntime",
     "_NodeAdminCommandRuntime",
     "_NodeOwnerProfileRuntime",
+    "_NodeSettingsMessageBuilder",
+    "_NodeSettingsResponseRuntime",
+    "_NodeSettingsRuntime",
     # For compatibility with code mocking toNodeNum at this module level
     "toNodeNum",
 ]

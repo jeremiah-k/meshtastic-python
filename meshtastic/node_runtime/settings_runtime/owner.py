@@ -79,9 +79,9 @@ class _NodeOwnerProfileRuntime:
         logger.debug(
             "p.set_owner.short_name_set:%s", bool(message.set_owner.short_name)
         )
-        logger.debug("p.set_owner.is_licensed:%s:", message.set_owner.is_licensed)
+        logger.debug("p.set_owner.is_licensed:%s", message.set_owner.is_licensed)
         logger.debug(
-            "p.set_owner.is_unmessagable:%s:",
+            "p.set_owner.is_unmessagable:%s",
             message.set_owner.is_unmessagable,
         )
         return self._admin_command_runtime.send_owner_message(message)

@@ -177,7 +177,8 @@ class _SetUrlExecutionEngine:
                 staged_channel,
                 expected_channels_ref=plan.replace_original_channels_ref,
             )
-            self._node.partialChannels = []
+
+        self._node.partialChannels = []
 
         if parsed_input.has_lora_update:
             set_lora = admin_pb2.AdminMessage()

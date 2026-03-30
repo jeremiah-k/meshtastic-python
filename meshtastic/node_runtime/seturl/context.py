@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 class _SetUrlAdminContext:
     """Admin-channel write path metadata resolved before planning/execution."""
 
-    admin_write_node: "Node"
+    admin_write_node: Node
     admin_index_for_write: int
     named_admin_index_for_write: int | None
     has_admin_write_node_named_admin: bool

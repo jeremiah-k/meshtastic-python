@@ -34,9 +34,10 @@ class _NodePositionTimeCommandRuntime:
         request = self._node._send_admin(
             admin_message,
             onResponse=on_response,
+            wantResponse=True,
         )
         if on_response is not None and request is not None:
-            self._node.iface.waitForAckNak()
+            self._node.iface.waitForAckNak(request.requestId)
         return request
 
     def _set_fixed_position(

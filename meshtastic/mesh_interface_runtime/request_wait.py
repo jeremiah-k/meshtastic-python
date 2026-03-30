@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any, Optional
 
 from meshtastic import ResponseHandler
 from meshtastic.util import Acknowledgment, Timeout
@@ -19,9 +20,7 @@ WAIT_ATTR_TRACEROUTE: str = "receivedTraceRoute"
 WAIT_ATTR_WAYPOINT: str = "receivedWaypoint"
 WAIT_ATTR_NAK: str = "receivedNak"
 
-NO_RESPONSE_FIRMWARE_ERROR: str = (
-    "No response from node. At least firmware 2.1.22 is required on the destination node."
-)
+NO_RESPONSE_FIRMWARE_ERROR: str = "No response from node. At least firmware 2.1.22 is required on the destination node."
 RESPONSE_WAIT_REQID_ERROR: str = (
     "Internal error: response wait requires a positive packet id."
 )
@@ -418,9 +417,9 @@ class _RequestWaitRuntime:
         request_id: int,
         is_ack: bool,
         skip_response_callback_for_decode_failure: bool,
-    ) -> tuple[Optional[ResponseHandler], bool]:
+    ) -> tuple[ResponseHandler | None, bool]:
         """Select/pop a response handler from shared state for one packet."""
-        response_handler: Optional[ResponseHandler] = None
+        response_handler: ResponseHandler | None = None
         dropped_due_to_decode_failure = False
         with self._lock:
             response_handlers = self._get_response_handlers()

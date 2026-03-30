@@ -20,6 +20,10 @@ from types import ModuleType
 # pylint: enable=unused-import
 
 
+import pytest
+
+
+@pytest.mark.unit
 class TestCoreModuleImports:
     """Test core Meshtastic module imports that should remain stable."""
 
@@ -237,9 +241,8 @@ class TestBackwardCompatAliases:
             deprecation_warnings = [
                 x for x in w if issubclass(x.category, DeprecationWarning)
             ]
-            assert (
-                len(deprecation_warnings) >= 0
-            )  # May or may not warn depending on state
+            # Check that it's actually a list (not None or something unexpected)
+            assert isinstance(deprecation_warnings, list)
 
     def test_mt_config_tunnel_instance_deprecated(self) -> None:
         """Test that tunnelInstance can be accessed from mt_config.

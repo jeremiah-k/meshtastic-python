@@ -992,11 +992,11 @@ def test_setOwner_rejects_empty_or_whitespace_names(
         ),
         (
             {"long_name": "LicensedUser", "is_licensed": True},
-            (r"p\.set_owner\.is_licensed:True:",),
+            (r"p\.set_owner\.is_licensed:True",),
         ),
         (
             {"long_name": "TestUser", "is_unmessagable": True},
-            (r"p\.set_owner\.is_unmessagable:True:",),
+            (r"p\.set_owner\.is_unmessagable:True",),
         ),
     ],
 )

@@ -19,7 +19,7 @@ _ERR_CONFIG_OR_CHANNELS_NOT_LOADED = "Config or channels not loaded"
 class _SetUrlCacheManager:
     """Owns local cache updates, invalidation, and restoration for setURL transactions."""
 
-    def __init__(self, node: "Node") -> None:
+    def __init__(self, node: Node) -> None:
         self._node = node
 
     def _invalidate_channel_cache_locked(self, warning_message: str) -> None:

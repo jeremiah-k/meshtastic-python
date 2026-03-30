@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 import math
 import secrets
-from typing import TYPE_CHECKING, Any, Callable, Literal, TypeAlias
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 import google.protobuf.json_format
 from google.protobuf import message as protobuf_message
@@ -141,10 +142,10 @@ def send_position(
     if wantResponse:
 
         def _on_response(packet: dict[str, Any]) -> None:
-            on_response_position(pipeline, packet)
+            on_response_telemetry(pipeline, packet)
 
         onResponse = _on_response
-        response_wait_attr = WAIT_ATTR_POSITION
+        response_wait_attr = WAIT_ATTR_TELEMETRY
     else:
         onResponse = None
         response_wait_attr = None
@@ -310,7 +311,7 @@ def on_response_telemetry(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
                                 _emit_response_summary(f"  {sub_key}: {sub_value}")
                         else:
                             _emit_response_summary(f"{key}: {value}")
-        except Exception as exc:
+        except (ValueError, KeyError, AttributeError) as exc:
             pipeline._set_wait_error(
                 WAIT_ATTR_TELEMETRY,
                 f"Failed to format telemetry response: {exc}",

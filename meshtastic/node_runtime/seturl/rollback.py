@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
 from meshtastic.node_runtime.seturl.cache import _SetUrlCacheManager
 from meshtastic.node_runtime.seturl.context import _SetUrlAdminContext
@@ -25,6 +25,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+T = TypeVar("T")
+
 
 class _SetUrlRollbackEngine:
     """Owns rollback ordering/admin-index fallback and cache restore/invalidate strategy."""
@@ -37,6 +39,100 @@ class _SetUrlRollbackEngine:
     ) -> None:
         self._node = node
         self._cache_manager = cache_manager
+
+    def _best_effort_rollback(
+        self,
+        *,
+        rollback_admin_indexes: list[int],
+        channel_rollback_order: list[int],
+        get_channel_snapshot: Callable[[int], Any | None],
+        do_channel_write: Callable[[Any, int], None],
+        channel_warning_template: str,
+        lora_write_started: bool,
+        original_lora_config: Any | None,
+        lora_warning_message: str,
+        cache_invalidate_message: str,
+    ) -> bool:
+        """Shared helper for best-effort rollback of channels and LoRa config.
+
+        Returns True if any rollback failed (for cache invalidation tracking).
+        """
+        rollback_failed = False
+
+        # Rollback channels
+        for index in channel_rollback_order:
+            rollback_channel = get_channel_snapshot(index)
+            if rollback_channel is None:
+                continue
+            rollback_succeeded = False
+            last_rollback_error: Exception | None = None
+            for rollback_admin_index in rollback_admin_indexes:
+                try:
+                    do_channel_write(rollback_channel, rollback_admin_index)
+                    rollback_succeeded = True
+                    break
+                # Best-effort rollback path; keep attempting remaining steps.
+                except Exception as rollback_error:  # noqa: BLE001
+                    last_rollback_error = rollback_error
+            if not rollback_succeeded:
+                rollback_failed = True
+                logger.warning(
+                    channel_warning_template,
+                    index,
+                    exc_info=(
+                        None
+                        if last_rollback_error is None
+                        else (
+                            type(last_rollback_error),
+                            last_rollback_error,
+                            last_rollback_error.__traceback__,
+                        )
+                    ),
+                )
+
+        # Invalidate cache if channel rollback failed
+        if rollback_failed:
+            self._cache_manager.invalidate_channel_cache(cache_invalidate_message)
+
+        # Rollback LoRa config if needed
+        if lora_write_started and original_lora_config is not None:
+            rollback_lora = admin_pb2.AdminMessage()
+            rollback_lora.set_config.lora.CopyFrom(original_lora_config)  # type: ignore[arg-type]
+            rollback_lora_succeeded = False
+            last_rollback_lora_error: Exception | None = None
+            for rollback_admin_index in rollback_admin_indexes:
+                try:
+                    self._node.ensureSessionKey(adminIndex=rollback_admin_index)
+                    request = self._node._send_admin(  # noqa: SLF001
+                        rollback_lora,
+                        adminIndex=rollback_admin_index,
+                    )
+                    if request is None:
+                        continue
+                    self._cache_manager.restore_lora_snapshot(original_lora_config)  # type: ignore[arg-type]
+                    rollback_lora_succeeded = True
+                    break
+                # Best-effort rollback path; keep original failure semantics.
+                except Exception as rollback_lora_error:  # noqa: BLE001
+                    last_rollback_lora_error = rollback_lora_error
+            if not rollback_lora_succeeded:
+                logger.warning(
+                    lora_warning_message,
+                    exc_info=(
+                        None
+                        if last_rollback_lora_error is None
+                        else (
+                            type(last_rollback_lora_error),
+                            last_rollback_lora_error,
+                            last_rollback_lora_error.__traceback__,
+                        )
+                    ),
+                )
+                self._cache_manager.clear_lora_cache_with_warning(
+                    "LoRa config cache cleared after rollback failure; reload config before using localConfig.lora."
+                )
+
+        return rollback_failed
 
     def rollback_add_only(
         self,
@@ -51,7 +147,8 @@ class _SetUrlRollbackEngine:
             "for written channels and LoRa config.",
             exc_info=True,
         )
-        rollback_failed = False
+
+        # Compute rollback admin indexes
         written_index_set = set(state.written_indices)
         if plan.deferred_add_only_admin_index in written_index_set:
             rollback_admin_indexes = _ordered_admin_indexes(
@@ -63,6 +160,8 @@ class _SetUrlRollbackEngine:
                 admin_context.admin_index_for_write,
                 plan.deferred_add_only_admin_index,
             )
+
+        # Build channel rollback order
         channel_rollback_order: list[int] = []
         if (
             plan.deferred_add_only_admin_index is not None
@@ -73,83 +172,28 @@ class _SetUrlRollbackEngine:
             if index not in channel_rollback_order:
                 channel_rollback_order.append(index)
 
-        for index in channel_rollback_order:
-            rollback_channel = plan.original_channels_by_index.get(index)
-            if rollback_channel is None:
-                continue
-            rollback_succeeded = False
-            last_rollback_error: Exception | None = None
-            for rollback_admin_index in rollback_admin_indexes:
-                try:
-                    self._node._write_channel_snapshot(  # noqa: SLF001
-                        rollback_channel,
-                        adminIndex=rollback_admin_index,
-                    )
-                    rollback_succeeded = True
-                    break
-                # Best-effort rollback path; keep attempting remaining steps.
-                except (
-                    Exception
-                ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
-                    last_rollback_error = rollback_error
-            if not rollback_succeeded:
-                rollback_failed = True
-                logger.warning(
-                    "Rollback of channel index %s failed after addOnly partial failure.",
-                    index,
-                    exc_info=(
-                        None
-                        if last_rollback_error is None
-                        else (
-                            type(last_rollback_error),
-                            last_rollback_error,
-                            last_rollback_error.__traceback__,
-                        )
-                    ),
-                )
+        # Define callbacks for the shared helper
+        def get_channel_snapshot(index: int) -> object | None:
+            return plan.original_channels_by_index.get(index)
 
-        if rollback_failed:
-            self._cache_manager.invalidate_channel_cache(
-                "Channel rollback incomplete after addOnly failure; invalidated local channel cache."
+        def do_channel_write(channel: object, admin_index: int) -> None:
+            self._node._write_channel_snapshot(  # noqa: SLF001
+                channel,  # type: ignore[arg-type]
+                adminIndex=admin_index,
             )
 
-        if state.lora_write_started and plan.original_lora_config is not None:
-            rollback_lora = admin_pb2.AdminMessage()
-            rollback_lora.set_config.lora.CopyFrom(plan.original_lora_config)
-            rollback_lora_succeeded = False
-            last_rollback_lora_error: Exception | None = None
-            for rollback_admin_index in rollback_admin_indexes:
-                try:
-                    self._node.ensureSessionKey(adminIndex=rollback_admin_index)
-                    request = self._node._send_admin(  # noqa: SLF001
-                        rollback_lora,
-                        adminIndex=rollback_admin_index,
-                    )
-                    if request is None:
-                        continue
-                    self._cache_manager.restore_lora_snapshot(plan.original_lora_config)
-                    rollback_lora_succeeded = True
-                    break
-                # Best-effort rollback path; keep original failure semantics.
-                # Preserve original failure while attempting best-effort LoRa rollback.
-                except Exception as rollback_lora_error:  # noqa: BLE001
-                    last_rollback_lora_error = rollback_lora_error
-            if not rollback_lora_succeeded:
-                logger.warning(
-                    "Rollback of LoRa config failed after addOnly partial failure.",
-                    exc_info=(
-                        None
-                        if last_rollback_lora_error is None
-                        else (
-                            type(last_rollback_lora_error),
-                            last_rollback_lora_error,
-                            last_rollback_lora_error.__traceback__,
-                        )
-                    ),
-                )
-                self._cache_manager.clear_lora_cache_with_warning(
-                    "LoRa config cache cleared after rollback failure; reload config before using localConfig.lora."
-                )
+        # Use shared helper
+        self._best_effort_rollback(
+            rollback_admin_indexes=rollback_admin_indexes,
+            channel_rollback_order=channel_rollback_order,
+            get_channel_snapshot=get_channel_snapshot,
+            do_channel_write=do_channel_write,
+            channel_warning_template="Rollback of channel index %s failed after addOnly partial failure.",
+            lora_write_started=state.lora_write_started,
+            original_lora_config=plan.original_lora_config,
+            lora_warning_message="Rollback of LoRa config failed after addOnly partial failure.",
+            cache_invalidate_message="Channel rollback incomplete after addOnly failure; invalidated local channel cache.",
+        )
 
     def rollback_replace_all(
         self,
@@ -204,9 +248,7 @@ class _SetUrlRollbackEngine:
                     )
                     rollback_succeeded = True
                     break
-                except (
-                    Exception
-                ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
+                except Exception as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
                     replace_last_rollback_error = rollback_error
             if not rollback_succeeded:
                 rollback_failed = True

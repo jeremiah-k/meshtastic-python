@@ -26,96 +26,116 @@ class _NodeContentCacheStore:
         self._node = node
 
     def get_cached_ringtone(self) -> str | None:
-        """Return cached full ringtone value when already present."""
-        with self._node._ringtone_lock:  # noqa: SLF001
-            if self._node.ringtone is not None:
-                logger.debug("ringtone cached (%d chars)", len(self._node.ringtone))
-                return self._node.ringtone
-            return None
+        """Return cached full ringtone value when already present.
+
+        Locking: Assumes caller holds ringtone operation lock.
+        """
+        if self._node.ringtone is not None:
+            logger.debug("ringtone cached (%d chars)", len(self._node.ringtone))
+            return self._node.ringtone
+        return None
 
     def clear_ringtone_fragment(self) -> None:
-        """Clear stale ringtone fragment state before issuing a read request."""
-        with self._node._ringtone_lock:  # noqa: SLF001
-            self._node.ringtonePart = None
+        """Clear stale ringtone fragment state before issuing a read request.
+
+        Locking: Assumes caller holds ringtone operation lock.
+        """
+        self._node.ringtonePart = None
         logger.debug("ringtone fragment cache cleared")
 
     def store_ringtone_fragment(self, ringtone_fragment: str) -> None:
-        """Store ringtone fragment from the latest response packet."""
-        with self._node._ringtone_lock:  # noqa: SLF001
-            self._node.ringtonePart = ringtone_fragment
+        """Store ringtone fragment from the latest response packet.
+
+        Locking: Assumes caller holds ringtone operation lock.
+        """
+        self._node.ringtonePart = ringtone_fragment
         logger.debug("ringtone fragment stored (%d chars)", len(ringtone_fragment))
 
     def resolve_ringtone_after_read(self) -> str | None:
-        """Resolve ringtone result after a read wait by preferring full cache, then fragment."""
-        with self._node._ringtone_lock:  # noqa: SLF001
-            if self._node.ringtone is not None:
-                logger.debug(
-                    "ringtone resolved from full cache (%d chars)",
-                    len(self._node.ringtone),
-                )
-                return self._node.ringtone
-            if self._node.ringtonePart is not None:
-                self._node.ringtone = self._node.ringtonePart
-                logger.debug(
-                    "ringtone resolved from fragment cache (%d chars)",
-                    len(self._node.ringtone),
-                )
-                return self._node.ringtone
-            return None
+        """Resolve ringtone result after a read wait by preferring full cache, then fragment.
+
+        Locking: Assumes caller holds ringtone operation lock.
+        """
+        if self._node.ringtone is not None:
+            logger.debug(
+                "ringtone resolved from full cache (%d chars)",
+                len(self._node.ringtone),
+            )
+            return self._node.ringtone
+        if self._node.ringtonePart is not None:
+            self._node.ringtone = self._node.ringtonePart
+            logger.debug(
+                "ringtone resolved from fragment cache (%d chars)",
+                len(self._node.ringtone),
+            )
+            return self._node.ringtone
+        return None
 
     def invalidate_ringtone_cache(self) -> None:
-        """Invalidate ringtone full/fragment cache after writes."""
-        with self._node._ringtone_lock:  # noqa: SLF001
-            self._node.ringtone = None
-            self._node.ringtonePart = None
+        """Invalidate ringtone full/fragment cache after writes.
+
+        Locking: Assumes caller holds ringtone operation lock.
+        """
+        self._node.ringtone = None
+        self._node.ringtonePart = None
         logger.debug("ringtone cache invalidated")
 
     def get_cached_canned_message(self) -> str | None:
-        """Return cached full canned-message value when already present."""
-        with self._node._canned_message_lock:  # noqa: SLF001
-            if self._node.cannedPluginMessage is not None:
-                logger.debug(
-                    "canned message cached (%d chars)",
-                    len(self._node.cannedPluginMessage),
-                )
-                return self._node.cannedPluginMessage
-            return None
+        """Return cached full canned-message value when already present.
+
+        Locking: Assumes caller holds canned-message operation lock.
+        """
+        if self._node.cannedPluginMessage is not None:
+            logger.debug(
+                "canned message cached (%d chars)",
+                len(self._node.cannedPluginMessage),
+            )
+            return self._node.cannedPluginMessage
+        return None
 
     def clear_canned_message_fragment(self) -> None:
-        """Clear stale canned-message fragment state before issuing a read request."""
-        with self._node._canned_message_lock:  # noqa: SLF001
-            self._node.cannedPluginMessageMessages = None
+        """Clear stale canned-message fragment state before issuing a read request.
+
+        Locking: Assumes caller holds canned-message operation lock.
+        """
+        self._node.cannedPluginMessageMessages = None
         logger.debug("canned message fragment cache cleared")
 
     def store_canned_message_fragment(self, canned_messages: str) -> None:
-        """Store canned-message fragment payload from response packets."""
-        with self._node._canned_message_lock:  # noqa: SLF001
-            self._node.cannedPluginMessageMessages = canned_messages
+        """Store canned-message fragment payload from response packets.
+
+        Locking: Assumes caller holds canned-message operation lock.
+        """
+        self._node.cannedPluginMessageMessages = canned_messages
         logger.debug("canned message fragment stored (%d chars)", len(canned_messages))
 
     def resolve_canned_message_after_read(self) -> str | None:
-        """Resolve canned-message result after a read wait."""
-        with self._node._canned_message_lock:  # noqa: SLF001
-            if self._node.cannedPluginMessage is not None:
-                logger.debug(
-                    "canned message resolved from full cache (%d chars)",
-                    len(self._node.cannedPluginMessage),
-                )
-                return self._node.cannedPluginMessage
-            if self._node.cannedPluginMessageMessages is not None:
-                self._node.cannedPluginMessage = self._node.cannedPluginMessageMessages
-                logger.debug(
-                    "canned message resolved from fragment cache (%d chars)",
-                    len(self._node.cannedPluginMessage),
-                )
-                return self._node.cannedPluginMessage
-            return None
+        """Resolve canned-message result after a read wait.
+
+        Locking: Assumes caller holds canned-message operation lock.
+        """
+        if self._node.cannedPluginMessage is not None:
+            logger.debug(
+                "canned message resolved from full cache (%d chars)",
+                len(self._node.cannedPluginMessage),
+            )
+            return self._node.cannedPluginMessage
+        if self._node.cannedPluginMessageMessages is not None:
+            self._node.cannedPluginMessage = self._node.cannedPluginMessageMessages
+            logger.debug(
+                "canned message resolved from fragment cache (%d chars)",
+                len(self._node.cannedPluginMessage),
+            )
+            return self._node.cannedPluginMessage
+        return None
 
     def invalidate_canned_message_cache(self) -> None:
-        """Invalidate canned-message full/fragment cache after writes."""
-        with self._node._canned_message_lock:  # noqa: SLF001
-            self._node.cannedPluginMessage = None
-            self._node.cannedPluginMessageMessages = None
+        """Invalidate canned-message full/fragment cache after writes.
+
+        Locking: Assumes caller holds canned-message operation lock.
+        """
+        self._node.cannedPluginMessage = None
+        self._node.cannedPluginMessageMessages = None
         logger.debug("canned message cache invalidated")
 
 
@@ -182,9 +202,7 @@ class _NodeContentResponseRuntime:
             return (True, None)
         has_field = getattr(raw_admin, "HasField", None)
         try:
-            has_ringtone_response = callable(
-                has_field
-            ) and has_field(  # pylint: disable=not-callable
+            has_ringtone_response = callable(has_field) and has_field(  # pylint: disable=not-callable
                 "get_ringtone_response"
             )
         except (TypeError, ValueError):
@@ -192,12 +210,13 @@ class _NodeContentResponseRuntime:
         if not has_ringtone_response:
             logger.warning("Unexpected ringtone response without raw ringtone data")
             return (True, None)
-        try:
-            payload = raw_admin.get_ringtone_response
-            return (True, payload)
-        except AttributeError:
-            logger.warning("Failed to parse ringtone response payload")
-            return (True, None)
+        else:
+            try:
+                payload = raw_admin.get_ringtone_response
+                return (True, payload)
+            except AttributeError:
+                logger.warning("Failed to parse ringtone response payload")
+                return (True, None)
 
     def handle_canned_message_response(
         self, packet: dict[str, Any]
@@ -218,9 +237,7 @@ class _NodeContentResponseRuntime:
             return (True, None)
         has_field = getattr(raw_admin, "HasField", None)
         try:
-            has_canned_response = callable(
-                has_field
-            ) and has_field(  # pylint: disable=not-callable
+            has_canned_response = callable(has_field) and has_field(  # pylint: disable=not-callable
                 "get_canned_message_module_messages_response"
             )
         except (TypeError, ValueError):

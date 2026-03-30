@@ -11,6 +11,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class _AdminSessionPassKeyProbe:
+    """Probe to wait for adminSessionPassKey in node data."""
+
+    def __init__(self, node: "Node") -> None:
+        self._node = node
+
+    @property
+    def is_set(self) -> bool:
+        """Return True if adminSessionPassKey is present and non-None."""
+        node_info = self._node.iface._get_or_create_by_num(self._node.nodeNum)
+        return node_info.get("adminSessionPassKey") is not None
+
+
 class _NodeAdminSessionRuntime:
     """Owns admin-session readiness checks and session-key request behavior."""
 
@@ -34,3 +47,6 @@ class _NodeAdminSessionRuntime:
                 admin_pb2.AdminMessage.SESSIONKEY_CONFIG,
                 adminIndex=admin_index,
             )
+            # Wait for adminSessionPassKey to be populated
+            probe = _AdminSessionPassKeyProbe(self._node)
+            self._node._timeout.waitForSet(probe, attrs=("is_set",))  # type: ignore[attr-defined]

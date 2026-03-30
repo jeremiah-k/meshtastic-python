@@ -14,15 +14,21 @@ import sys
 
 
 def _normalize_type(type_str: str) -> str:
-    result = type_str
-    result = re.sub(r"\bUnion\[([^,]+),\s*None\]", r"Optional[\1]", result)
-    result = re.sub(r"\bOptional\[([^]]+)\]", r"\1 | None", result)
-    result = re.sub(r"typing\.", "", result)
-    return result
+    type_str = re.sub(r"\bUnion\[([^,]+),\s*None\]", r"Optional[\1]", type_str)
+    type_str = re.sub(r"\bOptional\[([^]]+)\]", r"\1 | None", type_str)
+    type_str = re.sub(r"typing\.", "", type_str)
+    return type_str
 
 
 def _normalize_sig(sig: str) -> str:
-    return re.sub(r"(\w+):\s*[^,)=]+", lambda m: m.group(0), sig)
+    def replacer(m):
+        name = m.group(1)
+        type_start = m.group(0).find(":") + 1
+        type_part = m.group(0)[type_start:].strip()
+        normalized = _normalize_type(type_part)
+        return f"{name}: {normalized}"
+
+    return re.sub(r"(\w+):\s*[^,)=]+", replacer, sig)
 
 
 def compare_methods(

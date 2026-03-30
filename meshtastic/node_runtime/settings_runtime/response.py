@@ -82,7 +82,7 @@ class _NodeSettingsResponseRuntime:
             return module_target
 
         logger.warning(
-            "Did not receive a valid response. Make sure to have a shared channel named 'admin'."
+            "Did not receive a valid config response (no recognized config/module field)."
         )
         return None
 

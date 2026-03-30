@@ -19,9 +19,8 @@ from .flows import (
 )
 
 __all__ = [
-    # Telemetry types and constants - used by mesh_interface.py
-    "TelemetryType",
     "DEFAULT_TELEMETRY_TYPE",
-    "VALID_TELEMETRY_TYPES",
+    "TelemetryType",
     "VALID_TELEMETRY_TYPE_SET",
+    "VALID_TELEMETRY_TYPES",
 ]

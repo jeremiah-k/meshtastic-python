@@ -88,7 +88,7 @@ class _NodeSettingsRuntime:
         self._message_builder.validate_config_name(config_name)
         self._validate_write_configs_loaded(config_name)
         message = self._message_builder.build_write_message(config_name)
-        logger.debug("Wrote: %s", config_name)
+        logger.debug("Sending write: %s", config_name)
         self._node.ensureSessionKey()
         on_response = (
             None if self._node is self._node.iface.localNode else self._node.onAckNak
@@ -96,3 +96,4 @@ class _NodeSettingsRuntime:
         request = self._node._send_admin(message, onResponse=on_response)
         if on_response is not None and request is not None:
             self._node.iface.waitForAckNak()
+        logger.debug("Config write completed: %s", config_name)

@@ -7,15 +7,19 @@ positional-argument issue) and accidental removals of public methods.
 
 import inspect
 
+import pytest
+
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.node import MAX_CHANNELS, MAX_LONG_NAME_LEN, MAX_SHORT_NAME_LEN, Node
+
+pytestmark = pytest.mark.unit
 
 # ---------------------------------------------------------------------------
 # Node.writeChannel signature
 # ---------------------------------------------------------------------------
 
 
-def test_node_writechannel_signature():
+def test_node_writechannel_signature() -> None:
     """WriteChannel must accept positional second arg for adminIndex."""
     sig = inspect.signature(Node.writeChannel)
     params = list(sig.parameters.values())
@@ -39,7 +43,7 @@ def test_node_writechannel_signature():
 # ---------------------------------------------------------------------------
 
 
-def test_node_public_methods_exist():
+def test_node_public_methods_exist() -> None:
     """Key Node methods must exist."""
     required_methods = [
         "writeChannel",
@@ -70,7 +74,7 @@ def test_node_public_methods_exist():
 # ---------------------------------------------------------------------------
 
 
-def test_meshinterface_public_methods_exist():
+def test_meshinterface_public_methods_exist() -> None:
     """Key MeshInterface methods must exist."""
     required_methods = [
         "sendText",
@@ -99,7 +103,7 @@ def test_meshinterface_public_methods_exist():
 # ---------------------------------------------------------------------------
 
 
-def test_node_exports_constants():
+def test_node_exports_constants() -> None:
     """Exported constants must be present and be positive integers."""
     assert isinstance(MAX_CHANNELS, int) and MAX_CHANNELS > 0
     assert isinstance(MAX_LONG_NAME_LEN, int) and MAX_LONG_NAME_LEN > 0
@@ -111,7 +115,7 @@ def test_node_exports_constants():
 # ---------------------------------------------------------------------------
 
 
-def test_no_unexpected_positional_only_in_node():
+def test_no_unexpected_positional_only_in_node() -> None:
     """Node public methods should not have positional-only parameters.
 
     Positional-only params break callers that pass keyword arguments,
@@ -136,7 +140,7 @@ def test_no_unexpected_positional_only_in_node():
             )
 
 
-def test_no_unexpected_positional_only_in_meshinterface():
+def test_no_unexpected_positional_only_in_meshinterface() -> None:
     """MeshInterface public methods should not have positional-only parameters."""
     for name in dir(MeshInterface):
         if name.startswith("_"):
