@@ -3,6 +3,7 @@
 import base64
 import copy
 import sys
+import threading
 from datetime import datetime
 from typing import IO, TYPE_CHECKING, Any, TypeAlias, cast
 
@@ -103,7 +104,7 @@ class NodeView:
         self._interface = interface
 
     @property
-    def _node_db_lock(self):
+    def _node_db_lock(self) -> threading.RLock:
         return self._interface._node_db_lock
 
     @property
@@ -412,6 +413,7 @@ class NodeView:
         ]
 
     @staticmethod
+    # pylint: disable=too-many-return-statements
     def _format_node_field(
         col_name: str,
         raw_value: Any,
@@ -464,14 +466,14 @@ class NodeView:
             return NodeView._format_numeric_value(raw_value, 0, " dB")
         elif col_name == "user.shortName":
             if raw_value is not None:
-                return raw_value
+                return cast(str, raw_value)
             return f"Meshtastic {presumptive_id[-4:]}"
         elif col_name == "user.id":
             if raw_value is not None:
-                return raw_value
+                return cast(str, raw_value)
             return presumptive_id
         else:
-            return raw_value
+            return cast(str, raw_value) if raw_value is not None else None
 
     @staticmethod
     def _filter_nodes(

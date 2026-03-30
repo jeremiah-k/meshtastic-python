@@ -4,7 +4,7 @@ These tests verify that old code patterns continue to work during the refactor,
 not just that methods exist, but that they work correctly.
 """
 
-# pylint: disable=redefined-outer-name
+# pylint: disable=redefined-outer-name,too-many-lines
 
 import io
 import warnings
@@ -937,9 +937,7 @@ class TestSendWaitEdgeCases:
         iface._request_wait_runtime.correlate_inbound_response(
             packet_dict=response_packet,
             skip_response_callback_for_decode_failure=False,
-            extract_request_id=lambda p: iface._send_pipeline._extract_request_id_from_packet(
-                p
-            ),
+            extract_request_id=iface._send_pipeline._extract_request_id_from_packet,
         )
 
         # Verify handler was called
@@ -1025,7 +1023,7 @@ class TestSendWaitEdgeCases:
         # Add a response handler (simulating wantResponse=True)
         handler_called = False
 
-        def dummy_handler(packet):
+        def dummy_handler(_packet):
             nonlocal handler_called
             handler_called = True
 
@@ -1097,7 +1095,7 @@ class TestSendWaitEdgeCases:
         request_id = 11111
         handler_call_count = 0
 
-        def counting_handler(packet):
+        def counting_handler(_packet):
             nonlocal handler_call_count
             handler_call_count += 1
 
@@ -1191,7 +1189,7 @@ class TestSendWaitEdgeCases:
 
         handler_called = False
 
-        def handler(packet):
+        def handler(_packet):
             nonlocal handler_called
             handler_called = True
 
@@ -1287,11 +1285,11 @@ class TestSendWaitEdgeCases:
         handler_1_called = False
         handler_2_called = False
 
-        def handler_1(packet):
+        def handler_1(_packet):
             nonlocal handler_1_called
             handler_1_called = True
 
-        def handler_2(packet):
+        def handler_2(_packet):
             nonlocal handler_2_called
             handler_2_called = True
 
