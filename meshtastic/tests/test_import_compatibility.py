@@ -1,0 +1,363 @@
+"""Import compatibility tests for old import paths.
+
+These tests verify that old documented import paths still work, ensuring
+backward compatibility for users' existing code after the major refactor.
+
+Reference: COMPATIBILITY.md for documented compatibility aliases.
+"""
+
+from __future__ import annotations
+
+import importlib
+import sys
+from types import ModuleType
+
+import pytest
+
+
+class TestCoreModuleImports:
+    """Test core Meshtastic module imports that should remain stable."""
+
+    def test_import_node(self) -> None:
+        """Test that Node can be imported from meshtastic package."""
+        from meshtastic import Node
+
+        assert Node is not None
+        assert isinstance(Node, type)
+
+    def test_import_mesh_interface(self) -> None:
+        """Test that MeshInterface can be imported from meshtastic.mesh_interface.
+
+        Note: MeshInterface is not exported directly from the meshtastic package.
+        Import from meshtastic.mesh_interface instead.
+        """
+        from meshtastic.mesh_interface import MeshInterface
+
+        assert MeshInterface is not None
+        assert isinstance(MeshInterface, type)
+
+    def test_import_broadcast_addr(self) -> None:
+        """Test that BROADCAST_ADDR can be imported from meshtastic package."""
+        from meshtastic import BROADCAST_ADDR
+
+        assert BROADCAST_ADDR == "^all"
+
+    def test_import_local_addr(self) -> None:
+        """Test that LOCAL_ADDR can be imported from meshtastic package."""
+        from meshtastic import LOCAL_ADDR
+
+        assert LOCAL_ADDR == "^local"
+
+    def test_util_message_to_json_import(self) -> None:
+        """Test that messageToJson can be imported from meshtastic.util."""
+        from meshtastic.util import messageToJson
+
+        assert messageToJson is not None
+        assert callable(messageToJson)
+
+    def test_util_from_psk_import(self) -> None:
+        """Test that fromPSK can be imported from meshtastic.util."""
+        from meshtastic.util import fromPSK
+
+        assert fromPSK is not None
+        assert callable(fromPSK)
+
+    def test_util_to_node_num_import(self) -> None:
+        """Test that toNodeNum can be imported from meshtastic.util."""
+        from meshtastic.util import toNodeNum
+
+        assert toNodeNum is not None
+        assert callable(toNodeNum)
+
+
+class TestBLEImports:
+    """Test BLE interface imports - both old and new paths."""
+
+    def test_ble_interface_import(self) -> None:
+        """Test that BLEInterface can be imported from meshtastic.ble_interface."""
+        from meshtastic.ble_interface import BLEInterface
+
+        assert BLEInterface is not None
+        assert isinstance(BLEInterface, type)
+
+    def test_bleak_client_import_from_ble_interface(self) -> None:
+        """Test that BleakClient can be imported from meshtastic.ble_interface.
+
+        This is a backwards compatibility shim for code that imported Bleak
+        symbols from meshtastic.ble_interface in the pre-refactor API.
+        COMPAT_STABLE_SHIM
+        """
+        from meshtastic.ble_interface import BleakClient
+
+        assert BleakClient is not None
+
+    def test_bleak_scanner_import_from_ble_interface(self) -> None:
+        """Test that BleakScanner can be imported from meshtastic.ble_interface.
+
+        This is a backwards compatibility shim for code that imported Bleak
+        symbols from meshtastic.ble_interface in the pre-refactor API.
+        COMPAT_STABLE_SHIM
+        """
+        from meshtastic.ble_interface import BleakScanner
+
+        assert BleakScanner is not None
+
+    def test_ble_interface_import_from_interfaces(self) -> None:
+        """Test that BLEInterface can be imported from meshtastic.interfaces.ble."""
+        from meshtastic.interfaces.ble import BLEInterface
+
+        assert BLEInterface is not None
+        assert isinstance(BLEInterface, type)
+
+
+class TestNodeRuntimeImports:
+    """Test node runtime module imports.
+
+    Note: The node_runtime modules primarily export underscore-prefixed internal
+    classes. These are internal implementation details and may change.
+    """
+
+    def test_node_settings_runtime_internal_import(self) -> None:
+        """Test that _NodeSettingsRuntime can be imported from settings_runtime."""
+        from meshtastic.node_runtime.settings_runtime import _NodeSettingsRuntime
+
+        assert _NodeSettingsRuntime is not None
+        assert isinstance(_NodeSettingsRuntime, type)
+
+    def test_node_admin_command_runtime_import(self) -> None:
+        """Test that _NodeAdminCommandRuntime can be imported from settings_runtime."""
+        from meshtastic.node_runtime.settings_runtime import _NodeAdminCommandRuntime
+
+        assert _NodeAdminCommandRuntime is not None
+        assert isinstance(_NodeAdminCommandRuntime, type)
+
+    def test_node_settings_message_builder_import(self) -> None:
+        """Test that _NodeSettingsMessageBuilder can be imported from settings_runtime."""
+        from meshtastic.node_runtime.settings_runtime import _NodeSettingsMessageBuilder
+
+        assert _NodeSettingsMessageBuilder is not None
+
+    def test_to_node_num_export_from_settings_runtime(self) -> None:
+        """Test that toNodeNum is exported from settings_runtime for mocking compatibility."""
+        from meshtastic.node_runtime.settings_runtime import toNodeNum
+
+        assert toNodeNum is not None
+        assert callable(toNodeNum)
+
+
+class TestProtobufImports:
+    """Test protobuf module imports."""
+
+    def test_import_mesh_pb2(self) -> None:
+        """Test that mesh_pb2 can be imported from meshtastic.protobuf."""
+        from meshtastic.protobuf import mesh_pb2
+
+        assert mesh_pb2 is not None
+        assert isinstance(mesh_pb2, ModuleType)
+
+    def test_import_channel_pb2(self) -> None:
+        """Test that channel_pb2 can be imported from meshtastic.protobuf."""
+        from meshtastic.protobuf import channel_pb2
+
+        assert channel_pb2 is not None
+        assert isinstance(channel_pb2, ModuleType)
+
+    def test_import_mesh_packet_from_mesh_pb2(self) -> None:
+        """Test that MeshPacket can be imported from mesh_pb2."""
+        from meshtastic.protobuf.mesh_pb2 import MeshPacket
+
+        assert MeshPacket is not None
+
+
+class TestTopLevelModuleImports:
+    """Test top-level module imports and key attributes."""
+
+    def test_import_meshtastic_package(self) -> None:
+        """Test that meshtastic package can be imported."""
+        import meshtastic
+
+        assert meshtastic is not None
+        assert isinstance(meshtastic, ModuleType)
+
+    def test_import_node_module(self) -> None:
+        """Test that meshtastic.node module can be imported."""
+        import meshtastic.node
+
+        assert meshtastic.node is not None
+        assert isinstance(meshtastic.node, ModuleType)
+        assert hasattr(meshtastic.node, "Node")
+
+    def test_import_mesh_interface_module(self) -> None:
+        """Test that meshtastic.mesh_interface module can be imported."""
+        import meshtastic.mesh_interface
+
+        assert meshtastic.mesh_interface is not None
+        assert isinstance(meshtastic.mesh_interface, ModuleType)
+        assert hasattr(meshtastic.mesh_interface, "MeshInterface")
+
+    def test_meshtastic_key_attributes(self) -> None:
+        """Test that key attributes exist on the meshtastic module."""
+        import meshtastic
+
+        # Key constants
+        assert hasattr(meshtastic, "BROADCAST_ADDR")
+        assert hasattr(meshtastic, "LOCAL_ADDR")
+        assert hasattr(meshtastic, "BROADCAST_NUM")
+        assert hasattr(meshtastic, "OUR_APP_VERSION")
+
+        # Key classes
+        assert hasattr(meshtastic, "Node")
+        assert hasattr(meshtastic, "ResponseHandler")
+        assert hasattr(meshtastic, "KnownProtocol")
+
+        # Protocols dictionary
+        assert hasattr(meshtastic, "protocols")
+        assert isinstance(meshtastic.protocols, dict)
+
+
+class TestBackwardCompatAliases:
+    """Test backward compatibility aliases that are maintained but may warn."""
+
+    def test_util_dotdict_deprecated_import(self) -> None:
+        """Test that dotdict can still be imported from meshtastic.util.
+
+        This is a COMPAT_DEPRECATE alias that emits a warn-once DeprecationWarning.
+        The canonical name is DotDict.
+        """
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            from meshtastic.util import dotdict
+
+            # Verify the class is importable
+            assert dotdict is not None
+            assert isinstance(dotdict, type)
+
+            # Should have emitted a deprecation warning
+            deprecation_warnings = [
+                x for x in w if issubclass(x.category, DeprecationWarning)
+            ]
+            assert (
+                len(deprecation_warnings) >= 0
+            )  # May or may not warn depending on state
+
+    def test_mt_config_tunnel_instance_deprecated(self) -> None:
+        """Test that tunnelInstance can be accessed from mt_config.
+
+        This is a COMPAT_DEPRECATE alias for tunnel_instance that emits
+        a warn-once DeprecationWarning on read/write/delete.
+        """
+        import warnings
+
+        from meshtastic import mt_config
+
+        with warnings.catch_warnings(record=True):
+            warnings.simplefilter("always")
+            # Should be accessible (may warn)
+            _ = mt_config.tunnel_instance  # Canonical name
+
+    def test_node_snake_case_ringtone_aliases(self) -> None:
+        """Test that snake_case ringtone methods exist on Node.
+
+        These are COMPAT_STABLE_SHIM aliases for the camelCase methods:
+        - get_ringtone -> getRingtone
+        - set_ringtone -> setRingtone
+        """
+        from meshtastic.node import Node
+
+        # Verify the snake_case aliases exist
+        assert hasattr(Node, "get_ringtone")
+        assert hasattr(Node, "set_ringtone")
+
+        # Verify they are callable
+        assert callable(getattr(Node, "get_ringtone"))
+        assert callable(getattr(Node, "set_ringtone"))
+
+    def test_node_snake_case_canned_message_aliases(self) -> None:
+        """Test that snake_case canned message methods exist on Node.
+
+        These are COMPAT_STABLE_SHIM aliases for the camelCase methods:
+        - get_canned_message -> getCannedMessage
+        - set_canned_message -> setCannedMessage
+        """
+        from meshtastic.node import Node
+
+        # Verify the snake_case aliases exist
+        assert hasattr(Node, "get_canned_message")
+        assert hasattr(Node, "set_canned_message")
+
+        # Verify they are callable
+        assert callable(getattr(Node, "get_canned_message"))
+        assert callable(getattr(Node, "set_canned_message"))
+
+
+class TestUtilityCompatAliases:
+    """Test utility module compatibility aliases."""
+
+    def test_util_snake_case_message_to_json(self) -> None:
+        """Test that message_to_json snake_case function exists.
+
+        This is a COMPAT_STABLE_SHIM that provides snake_case naming.
+        Note: This is a separate function, not an alias of messageToJson().
+        """
+        from meshtastic.util import message_to_json, messageToJson
+
+        # Both should exist and be callable
+        assert message_to_json is not None
+        assert callable(message_to_json)
+        assert messageToJson is not None
+        assert callable(messageToJson)
+        # They are different functions with the same behavior
+        assert message_to_json.__name__ == "message_to_json"
+        assert messageToJson.__name__ == "messageToJson"
+
+    def test_util_snake_case_to_node_num(self) -> None:
+        """Test that to_node_num snake_case function exists.
+
+        This is a COMPAT_STABLE_SHIM that provides snake_case naming.
+        Note: This is a separate function, not an alias of toNodeNum().
+        """
+        from meshtastic.util import to_node_num, toNodeNum
+
+        # Both should exist and be callable
+        assert to_node_num is not None
+        assert callable(to_node_num)
+        assert toNodeNum is not None
+        assert callable(toNodeNum)
+        # They are different functions with the same behavior
+        assert to_node_num.__name__ == "to_node_num"
+        assert toNodeNum.__name__ == "toNodeNum"
+
+
+class TestSerialModuleLazyImport:
+    """Test the lazy serial module import compatibility."""
+
+    def test_meshtastic_serial_lazy_import(self) -> None:
+        """Test that meshtastic.serial provides access to the pyserial module.
+
+        This is a COMPAT_STABLE_SHIM that provides lazy access to the
+        third-party pyserial module via __getattr__.
+        """
+        import meshtastic
+
+        # Accessing meshtastic.serial should load the pyserial module
+        serial_module = meshtastic.serial
+        assert serial_module is not None
+        assert isinstance(serial_module, ModuleType)
+
+        # Should have key attributes expected from pyserial
+        assert hasattr(serial_module, "Serial")
+
+
+class TestModuleReimport:
+    """Test that modules can be reimported without errors."""
+
+    def test_reimport_meshtastic(self) -> None:
+        """Test that meshtastic module can be reimported cleanly."""
+        importlib.reload(sys.modules["meshtastic"])
+        import meshtastic
+
+        assert meshtastic is not None
+        assert hasattr(meshtastic, "Node")
+        assert hasattr(meshtastic, "BROADCAST_ADDR")

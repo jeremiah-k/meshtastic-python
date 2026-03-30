@@ -10,20 +10,7 @@ from meshtastic.node_runtime.settings_runtime.response import (
 )
 from meshtastic.util import toNodeNum
 
-# Public export names (aliased from internal underscore names)
-ConfigMessageBuilder = _NodeSettingsMessageBuilder
-NodeSettingsRuntime = _NodeSettingsRuntime
-NodeSettingsResponseRuntime = _NodeSettingsResponseRuntime
-AdminCommandRuntime = _NodeAdminCommandRuntime
-OwnerProfileRuntime = _NodeOwnerProfileRuntime
-
 __all__ = [
-    "ConfigMessageBuilder",
-    "NodeSettingsRuntime",
-    "NodeSettingsResponseRuntime",
-    "AdminCommandRuntime",
-    "OwnerProfileRuntime",
-    # Private underscore names for internal use
     "_NodeSettingsMessageBuilder",
     "_NodeSettingsRuntime",
     "_NodeSettingsResponseRuntime",
