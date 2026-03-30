@@ -161,14 +161,15 @@ def _ast_signature_str(func_node) -> str:
             elif default_node.value is None:
                 params[arg_idx] += "=None"
             else:
-                params[arg_idx] += f"={default_node.value}"
+                params[arg_idx] += f"={default_node.value!r}"
         else:
-            params[arg_idx] += f"={ast.unparse(default_node)}"
+            params[arg_idx] += f"={ast.unparse(default_node)!r}"
     if func_node.args.vararg:
         params.append(f"*{func_node.args.vararg.arg}")
     if func_node.args.kwarg:
         params.append(f"**{func_node.args.kwarg.arg}")
-    return f"({', '.join(params)})"
+    result = f"({', '.join(params)})"
+    return result
 
 
 def _ast_capture_class_methods(source: str, class_name: str) -> dict[str, str]:
