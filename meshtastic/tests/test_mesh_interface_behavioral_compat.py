@@ -1,12 +1,12 @@
+# pylint: disable=redefined-outer-name,too-many-lines
 """Behavioral compatibility tests for MeshInterface public API workflows.
 
 These tests verify that old code patterns continue to work during the refactor,
 not just that methods exist, but that they work correctly.
-"""
 
-# pylint: disable=redefined-outer-name
-# Note: Comprehensive behavioral test coverage requires extensive test cases.
-# The module is intentionally large to cover all API edge cases.
+Note: Comprehensive behavioral test coverage requires extensive test cases.
+The module is intentionally large to cover all API edge cases.
+"""
 
 import io
 import warnings

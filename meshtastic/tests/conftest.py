@@ -1,5 +1,8 @@
 """Common pytest code (place for fixtures)."""
 
+# pylint: disable=redefined-outer-name
+# Pytest fixtures use parameter injection which pylint sees as redefinition.
+
 import argparse
 import copy
 import importlib
