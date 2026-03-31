@@ -44,7 +44,7 @@ class _FakeThread:
         """Start the fake thread."""
         self.started = True
 
-    def join(self, _timeout: float | None = None) -> None:
+    def join(self, timeout: float | None = None) -> None:  # noqa: W0613
         """Join the fake thread immediately."""
         self._is_alive = False
 
@@ -89,7 +89,7 @@ class _SlowStopThread:
         # Simulate thread running
         self._thread_id = threading.current_thread().ident
 
-    def join(self, _timeout: float | None = None) -> None:
+    def join(self, timeout: float | None = None) -> None:  # noqa: W0613
         """Join the slow thread - never completes."""
         # Never completes - simulates hung thread
         pass
