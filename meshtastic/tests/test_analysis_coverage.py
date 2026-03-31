@@ -324,7 +324,7 @@ def test_create_dash_fails_when_power_file_missing(tmp_path: Path) -> None:
 @pytest.mark.unit
 def test_main_uses_default_slog_path(
     monkeypatch: pytest.MonkeyPatch,
-    _cli_exit_capture: dict[str, Any],
+    cli_exit_capture: dict[str, Any],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """main() should use default slog path when --slog not provided (line 541)."""
@@ -351,7 +351,7 @@ def test_main_uses_default_slog_path(
 @pytest.mark.unit
 def test_main_disables_debug_for_non_loopback_host(
     monkeypatch: pytest.MonkeyPatch,
-    _cli_exit_capture: dict[str, Any],
+    cli_exit_capture: dict[str, Any],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """main() should disable debug mode when host is not loopback (lines 557-561)."""

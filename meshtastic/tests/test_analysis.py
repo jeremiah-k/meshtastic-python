@@ -556,9 +556,8 @@ def test_main_uses_default_slog_when_not_provided(
 
 @pytest.mark.unit
 def test_main_disables_debug_for_non_loopback_host(
-    monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
-    _cli_exit_capture: dict[str, Any],
+    cli_exit_capture: dict[str, Any],
 ) -> None:
     """main() should disable debug mode when host is not loopback."""
 
