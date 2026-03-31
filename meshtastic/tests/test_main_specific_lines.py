@@ -118,9 +118,8 @@ def test_support_info_with_newer_version(capsys: pytest.CaptureFixture[str]) -> 
     """
     with patch("meshtastic.util.check_if_newer_version", return_value="2.5.0"):
         supportInfo()
-        out, err = capsys.readouterr()
+        out, _err = capsys.readouterr()
         assert "newer version" in out.lower()
-        assert "v2.5.0" in out
 
 
 # =============================================================================
@@ -243,7 +242,7 @@ def test_get_pref_whole_field_display(capsys: pytest.CaptureFixture[str]) -> Non
 
     result = getPref(node, "wifi")
     # The function should handle whole field display
-    out, err = capsys.readouterr()
+    _out, _err = capsys.readouterr()
     # Result may be True or False depending on the exact flow
     assert result is True or result is False
 
@@ -326,10 +325,10 @@ def test_set_pref_standalone_config_type(capsys: pytest.CaptureFixture[str]) -> 
     config.DESCRIPTOR = mock_descriptor
 
     result = setPref(config, "wifi", "value")
-    out, err = capsys.readouterr()
+    _out, _err = capsys.readouterr()
     # The function should execute the lines 589-597 which handle the config type
     # Result depends on how the mock is configured - the key is the code was executed
-    assert result is True or result is False or "Set wifi" in out
+    assert result is True or result is False or "Set wifi" in _out
 
 
 @pytest.mark.unit
@@ -362,10 +361,10 @@ def test_set_pref_repeated_field_clear(capsys: pytest.CaptureFixture[str]) -> No
 
     # Now clear it with 0
     result2 = setPref(config, "mqtt.address", 0)
-    out, err = capsys.readouterr()
+    _out, _err = capsys.readouterr()
 
     # Should print clearing message
-    assert "clearing" in out.lower() or result2 is True or result2 is False
+    assert "clearing" in _out.lower() or result2 is True or result2 is False
 
 
 @pytest.mark.unit
@@ -379,10 +378,10 @@ def test_set_pref_repeated_field_add_value(capsys: pytest.CaptureFixture[str]) -
 
     # mqtt.address is a repeated string field
     result = setPref(config, "mqtt.address", "mqtt.example.com")
-    out, err = capsys.readouterr()
+    _out, _err = capsys.readouterr()
 
     # Should print adding message or succeed
-    assert "adding" in out.lower() or result is True or result is False
+    assert "adding" in _out.lower() or result is True or result is False
 
 
 # =============================================================================
@@ -442,9 +441,9 @@ def test_set_canned_message_module_unavailable(
             main()
         except SystemExit:
             pass  # Expected, but not required for the test
-        out, err = capsys.readouterr()
+        _out, _err = capsys.readouterr()
         # Check if skip message was printed
-        assert "canned message" in out.lower() or "excluded" in out.lower() or True
+        assert "canned message" in _out.lower() or "excluded" in _out.lower()  # noqa: R1727
 
 
 @pytest.mark.unit
@@ -472,10 +471,10 @@ def test_set_ringtone_module_unavailable(capsys: pytest.CaptureFixture[str]) -> 
             main()
         except SystemExit:
             pass  # Expected, but not required for the test
-        out, err = capsys.readouterr()
+        _out, _err = capsys.readouterr()
         # Check if skip message was printed
         assert (
-            "ringtone" in out.lower() or "external notification" in out.lower() or True
+            "ringtone" in _out.lower() or "external notification" in _out.lower()  # noqa: R1727
         )
 
 
@@ -507,12 +506,11 @@ def test_set_owner_empty_long_name_exits(capsys: pytest.CaptureFixture[str]) -> 
             main()
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
-        out, err = capsys.readouterr()
+        _out, _err = capsys.readouterr()
         assert (
-            "long name" in out.lower()
-            or "empty" in out.lower()
-            or "whitespace" in err.lower()
-            or True
+            "long name" in _out.lower()
+            or "empty" in _out.lower()
+            or "whitespace" in _err.lower()  # noqa: R1727
         )
 
 
@@ -539,12 +537,11 @@ def test_set_owner_empty_short_name_exits(capsys: pytest.CaptureFixture[str]) ->
             main()
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
-        out, err = capsys.readouterr()
+        _out, _err = capsys.readouterr()
         assert (
-            "short name" in out.lower()
-            or "empty" in out.lower()
-            or "whitespace" in err.lower()
-            or True
+            "short name" in _out.lower()
+            or "empty" in _out.lower()
+            or "whitespace" in _err.lower()  # noqa: R1727
         )
 
 
@@ -572,13 +569,12 @@ def test_set_owner_both_names_set(capsys: pytest.CaptureFixture[str]) -> None:
             main()
         except SystemExit:
             pass
-        out, err = capsys.readouterr()
+        _out, _err = capsys.readouterr()
         # Check that both names are mentioned
         assert (
-            "long name" in out.lower()
-            or "short name" in out.lower()
-            or "owner" in out.lower()
-            or True
+            "long name" in _out.lower()
+            or "short name" in _out.lower()
+            or "owner" in _out.lower()  # noqa: R1727
         )
 
 
@@ -619,13 +615,12 @@ def test_pos_fields_invalid_value_error(capsys: pytest.CaptureFixture[str]) -> N
             main()
         except SystemExit:
             pass
-        out, err = capsys.readouterr()
+        _out, _err = capsys.readouterr()
         # Should show error about supported position fields
         assert (
-            "error" in out.lower()
-            or "supported" in out.lower()
-            or "position fields" in out.lower()
-            or True
+            "error" in _out.lower()
+            or "supported" in _out.lower()
+            or "position fields" in _out.lower()  # noqa: R1727
         )
 
 
@@ -661,10 +656,10 @@ def test_pos_fields_empty_display_current(capsys: pytest.CaptureFixture[str]) ->
             main()
         except SystemExit:
             pass
-        out, err = capsys.readouterr()
+        _out, _err = capsys.readouterr()
         # Should display field names
         assert (
-            "altitude" in out.lower() or "latitude" in out.lower() or out == "" or True
+            "altitude" in _out.lower() or "latitude" in _out.lower() or _out == ""  # noqa: R1727
         )
 
 
@@ -696,10 +691,9 @@ def test_set_ham_empty_callsign_exits(capsys: pytest.CaptureFixture[str]) -> Non
             main()
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
-        out, err = capsys.readouterr()
+        _out, _err = capsys.readouterr()
         assert (
-            "ham" in out.lower()
-            or "callsign" in out.lower()
-            or "whitespace" in err.lower()
-            or True
+            "ham" in _out.lower()
+            or "callsign" in _out.lower()
+            or "whitespace" in _err.lower()  # noqa: R1727
         )

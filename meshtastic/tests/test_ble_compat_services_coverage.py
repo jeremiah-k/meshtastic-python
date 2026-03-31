@@ -6,6 +6,8 @@ Covers management_compat_service.py and receive_compat_service.py with focus on:
 - Deprecated API paths
 - Compatibility wrapper error handling
 - Service initialization edge cases
+
+# pylint: disable=attribute-defined-outside-init
 """
 
 from __future__ import annotations
@@ -52,7 +54,10 @@ def create_configured_handler_mock():
     """Create a properly configured handler mock that passes _is_handler_like check."""
 
     # Use a simple class instance instead of MagicMock to avoid mock detection issues
+    # pylint: disable=too-many-instance-attributes
     class HandlerLike:
+        """Mock handler class for testing management service compatibility."""
+
         pass
 
     handler = HandlerLike()
@@ -85,6 +90,8 @@ def create_configured_controller_mock():
     """Create a properly configured controller mock that passes _is_controller_like check."""
 
     class ControllerLike:
+        """Mock controller class for testing receive service compatibility."""
+
         pass
 
     controller = ControllerLike()
@@ -145,6 +152,8 @@ class TestBLEManagementCommandsServiceHandlerDetection:
         """Test handler with no required methods returns False."""
 
         class EmptyHandler:
+            """Empty handler for testing missing methods detection."""
+
             pass
 
         handler = EmptyHandler()
@@ -497,6 +506,8 @@ class TestBLEManagementCommandsServiceEdgeCases:
 
         # Create a partial handler that only has one method
         class PartialHandler:
+            """Partial handler with single method for expected method testing."""
+
             pass
 
         partial_handler = PartialHandler()
@@ -562,6 +573,8 @@ class TestBLEReceiveRecoveryServiceControllerDetection:
         """Test controller missing one method returns False."""
 
         class PartialController:
+            """Partial controller with limited methods for testing."""
+
             pass
 
         controller = PartialController()
@@ -1054,69 +1067,92 @@ class TestBLECompatServicesIntegration:
 
         # Create a realistic handler pattern
         class RealisticHandler:
-            def pair(self, address, await_timeout, kwargs):
+            """Realistic handler mock with complete management API surface."""
+
+            def pair(self, _address, _await_timeout, _kwargs):
+                """Mock pair operation."""
                 return None
 
-            def unpair(self, address, await_timeout):
+            def unpair(self, _address, _await_timeout):
+                """Mock unpair operation."""
                 return None
 
-            def trust(self, address, **kwargs):
+            def trust(self, _address, **_kwargs):
+                """Mock trust operation."""
                 return None
 
             def start_management_phase(self, address):
+                """Mock start management phase."""
                 return _ManagementStartContext(None, address, False)
 
-            def resolve_management_target(self, address, context):
+            def resolve_management_target(self, address, _context):
+                """Mock resolve management target."""
                 return (address, None)
 
-            def acquire_client_for_target(self, **kwargs):
+            def acquire_client_for_target(self, **_kwargs):
+                """Mock acquire client for target."""
                 mock_client = MagicMock(spec=BLEClient)
                 return (mock_client, None)
 
-            def execute_with_client(self, **kwargs):
+            def execute_with_client(self, **_kwargs):
+                """Mock execute with client."""
                 return b"result"
 
-            def execute_management_command(self, address, command):
+            def execute_management_command(self, _address, _command):
+                """Mock execute management command."""
                 return b"result"
 
             def validate_management_await_timeout(self, timeout):
+                """Mock validate management await timeout."""
                 return float(timeout)
 
             def validate_trust_timeout(self, timeout):
+                """Mock validate trust timeout."""
                 return float(timeout)
 
-            def validate_connect_timeout_override(self, timeout, pair_on_connect):
+            def validate_connect_timeout_override(self, _timeout, _pair_on_connect):
+                """Mock validate connect timeout override."""
                 return None
 
-            def run_bluetoothctl_trust_command(self, **kwargs):
+            def run_bluetoothctl_trust_command(self, **_kwargs):
+                """Mock run bluetoothctl trust command."""
                 return None
 
             # Full API methods
             def resolve_target_address_for_management(self):
+                """Mock resolve target address for management."""
                 return None
 
             def management_target_gate(self):
+                """Mock management target gate."""
                 return None
 
             def get_management_client_if_available(self):
+                """Mock get management client if available."""
                 return None
 
             def get_management_client_for_target(self):
+                """Mock get management client for target."""
                 return None
 
             def get_current_implicit_management_binding_locked(self):
+                """Mock get current implicit management binding locked."""
                 return None
 
             def get_current_implicit_management_address_locked(self):
+                """Mock get current implicit management address locked."""
                 return None
 
             def revalidate_implicit_management_target(self):
+                """Mock revalidate implicit management target."""
                 return None
 
             def begin_management_operation_locked(self):
+                """Mock begin management operation locked."""
                 return None
 
             def finish_management_operation(self):
+                """Mock finish management operation."""
                 return None
 
         handler = RealisticHandler()
@@ -1138,55 +1174,74 @@ class TestBLECompatServicesIntegration:
 
         # Create a realistic controller pattern
         class RealisticController:
-            def handle_read_loop_disconnect(self, error_message, previous_client):
+            """Realistic controller mock with complete receive recovery API surface."""
+
+            def handle_read_loop_disconnect(self, _error_message, _previous_client):
+                """Mock handle read loop disconnect."""
                 return True
 
-            def _wait_for_read_trigger(self, **kwargs):
+            def _wait_for_read_trigger(self, **_kwargs):
+                """Mock wait for read trigger."""
                 return (True, False)
 
             def _snapshot_client_state(self):
+                """Mock snapshot client state."""
                 return (None, False, False, False)
 
-            def _process_client_state(self, **kwargs):
+            def _process_client_state(self, **_kwargs):
+                """Mock process client state."""
                 return False
 
             def _reset_recovery_after_stability(self):
+                """Mock reset recovery after stability."""
                 return None
 
-            def _read_and_handle_payload(self, client, poll_without_notify):
+            def _read_and_handle_payload(self, _client, _poll_without_notify):
+                """Mock read and handle payload."""
                 return True
 
-            def _handle_payload_read(self, client, poll_without_notify):
+            def _handle_payload_read(self, _client, _poll_without_notify):
+                """Mock handle payload read."""
                 return (False, False)
 
-            def _run_receive_cycle(self, **kwargs):
+            def _run_receive_cycle(self, **_kwargs):
+                """Mock run receive cycle."""
                 return True
 
             def receive_from_radio_impl(self):
+                """Mock receive from radio impl."""
                 return None
 
-            def recover_receive_thread(self, disconnect_reason):
+            def recover_receive_thread(self, _disconnect_reason):
+                """Mock recover receive thread."""
                 return None
 
-            def read_from_radio_with_retries(self, client, retry_on_empty):
+            def read_from_radio_with_retries(self, _client, _retry_on_empty):
+                """Mock read from radio with retries."""
                 return b"data"
 
-            def handle_transient_read_error(self, error):
+            def handle_transient_read_error(self, _error):
+                """Mock handle transient read error."""
                 return None
 
             def log_empty_read_warning(self):
+                """Mock log empty read warning."""
                 return None
 
             def _should_run_receive_loop(self):
+                """Mock check if should run receive loop."""
                 return True
 
-            def _set_receive_wanted(self, value):
+            def _set_receive_wanted(self, _value):
+                """Mock set receive wanted."""
                 return None
 
             def _handle_disconnect(self):
+                """Mock handle disconnect."""
                 return None
 
             def _start_receive_thread(self):
+                """Mock start receive thread."""
                 return None
 
         controller = RealisticController()
