@@ -973,11 +973,12 @@ class TestLifecycleErrorAccess:
         assert result is None
 
     def test_try_safe_execute_variants_with_error_msg_kwarg(
-        self, error_access: _LifecycleErrorAccess
+        self,
+        error_access: _LifecycleErrorAccess,  # noqa: W0613
     ) -> None:
         """Test _try_safe_execute_variants with error_msg as keyword."""
 
-        def safe_exec(func: Callable[[], Any], *, error_msg: str) -> Any:
+        def safe_exec(func: Callable[[], Any], *, error_msg: str) -> Any:  # noqa: W0613
             return func()
 
         def tracked() -> str:
@@ -990,11 +991,12 @@ class TestLifecycleErrorAccess:
         assert result == "success"
 
     def test_try_safe_execute_variants_positional(
-        self, error_access: _LifecycleErrorAccess
+        self,
+        error_access: _LifecycleErrorAccess,  # noqa: W0613
     ) -> None:
         """Test _try_safe_execute_variants with positional error_msg."""
 
-        def safe_exec(func: Callable[[], Any], error_msg: str) -> Any:
+        def safe_exec(func: Callable[[], Any], error_msg: str) -> Any:  # noqa: W0613
             return func()
 
         def tracked() -> str:
@@ -1007,12 +1009,13 @@ class TestLifecycleErrorAccess:
         assert result == "success"
 
     def test_try_safe_execute_variants_no_error_msg(
-        self, error_access: _LifecycleErrorAccess
+        self,
+        error_access: _LifecycleErrorAccess,  # noqa: W0613
     ) -> None:
         """Test _try_safe_execute_variants without error_msg."""
         func_executed = False
 
-        def safe_exec(func: Callable[[], Any]) -> Any:
+        def safe_exec(func: Callable[[], Any]) -> Any:  # noqa: W0613
             return func()
 
         def tracked() -> str:
@@ -1030,11 +1033,12 @@ class TestLifecycleErrorAccess:
         assert result == "success"
 
     def test_try_safe_execute_variants_func_did_not_run(
-        self, error_access: _LifecycleErrorAccess
+        self,
+        error_access: _LifecycleErrorAccess,  # noqa: W0613
     ) -> None:
         """Test _try_safe_execute_variants when function didn't run."""
 
-        def safe_exec(func: Callable[[], Any]) -> Any:
+        def safe_exec(func: Callable[[], Any]) -> Any:  # noqa: W0613
             raise RuntimeError("error")
 
         def tracked() -> str:
@@ -1261,7 +1265,7 @@ class TestBLEReceiveLifecycleCoordinator:
         mock_thread.name = "test_thread"
         mock_thread.ident = 12345
 
-        def create_thread(**_kwargs: Any) -> MagicMock:
+        def create_thread(**_kwargs: Any) -> MagicMock:  # noqa: W0613
             return mock_thread
 
         def start_thread(_t: Any) -> None:
@@ -1597,7 +1601,9 @@ class TestBLEReceiveLifecycleCoordinatorDeferredRestart:
         return BLEReceiveLifecycleCoordinator(mock_iface)
 
     def test_schedule_deferred_receive_restart_already_inflight(
-        self, coordinator: BLEReceiveLifecycleCoordinator, mock_iface: MagicMock
+        self,
+        coordinator: BLEReceiveLifecycleCoordinator,
+        mock_iface: MagicMock,  # noqa: W0613
     ) -> None:
         """Test _schedule_deferred_receive_restart when already inflight."""
         coordinator._deferred_restart_inflight = True
@@ -1699,7 +1705,9 @@ class TestBLEReceiveLifecycleCoordinatorDeferredRestart:
         assert True
 
     def test_schedule_deferred_receive_restart_exception_in_start(
-        self, coordinator: BLEReceiveLifecycleCoordinator, mock_iface: MagicMock
+        self,
+        coordinator: BLEReceiveLifecycleCoordinator,
+        mock_iface: MagicMock,  # noqa: W0613
     ) -> None:
         """Test deferred restart handles exception in start."""
         existing_thread = MagicMock()
@@ -1728,7 +1736,9 @@ class TestBLEReceiveLifecycleCoordinatorDeferredRestart:
             restart_thread.join(timeout=1.0)
 
     def test_schedule_deferred_receive_restart_launch_failure(
-        self, coordinator: BLEReceiveLifecycleCoordinator, mock_iface: MagicMock
+        self,
+        coordinator: BLEReceiveLifecycleCoordinator,
+        mock_iface: MagicMock,  # noqa: W0613
     ) -> None:
         """Test deferred restart handles thread launch failure."""
         existing_thread = MagicMock()
@@ -1893,10 +1903,11 @@ class TestBLEReceiveLifecycleCoordinatorConcurrent:
         modifier.start()
 
         def create_thread(**_kwargs: Any) -> MagicMock:
+            _ = create_thread
             time.sleep(0.02)  # Allow modifier to run
             return MagicMock()
 
-        thread, _recovery = coordinator._check_receive_start_conditions(
+        _thread, _recovery = coordinator._check_receive_start_conditions(
             name="test",
             reset_recovery=True,
             create_runtime_thread=create_thread,
@@ -2056,7 +2067,7 @@ class TestLifecyclePrimitivesIntegration:
             cleanup_called = True
 
         # Mock that properly wraps and calls the cleanup function
-        def mock_safe_cleanup(func: Callable[[], Any], *args: Any) -> Any:
+        def mock_safe_cleanup(func: Callable[[], Any], *_args: Any) -> Any:
             return func()
 
         full_mock_iface.error_handler.safe_cleanup = MagicMock(
@@ -2066,7 +2077,7 @@ class TestLifecyclePrimitivesIntegration:
         assert cleanup_called is True
 
         # Mock that properly wraps and calls the function
-        def mock_safe_execute(func: Callable[[], Any], *args: Any) -> Any:
+        def mock_safe_execute(func: Callable[[], Any], *_args: Any) -> Any:
             func()  # Call the function so did_run becomes True
             return "result"
 
@@ -2408,7 +2419,7 @@ class TestLifecyclePrimitivesEdgeCases:
         create_called = False
         start_called = False
 
-        def custom_create(**kwargs: Any) -> MagicMock:
+        def custom_create(**_kwargs: Any) -> MagicMock:
             nonlocal create_called
             create_called = True
             return custom_thread
@@ -2565,7 +2576,7 @@ class TestLifecyclePrimitivesEdgeCases:
         class CustomException(Exception):
             """Custom exception for testing."""
 
-            pass
+            pass  # Intentional no-op for exception class body
 
         def failing_start(_t: Any) -> None:
             raise CustomException("nested failure")

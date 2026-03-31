@@ -57,31 +57,24 @@ def mock_ppk2_api_class() -> Generator[type[Any], None, None]:
 
         def start_measuring(self) -> None:
             """Mock start_measuring method."""
-            pass
 
         def stop_measuring(self) -> None:
             """Mock stop_measuring method."""
-            pass
 
         def use_source_meter(self) -> None:
             """Mock use_source_meter method."""
-            pass
 
         def use_ampere_meter(self) -> None:
             """Mock use_ampere_meter method."""
-            pass
 
         def set_source_voltage(self, _mv: int) -> None:
             """Mock set_source_voltage method."""
-            pass
 
         def toggle_DUT_power(self, _state: str) -> None:
             """Mock toggle_DUT_power method."""
-            pass
 
         def close(self) -> None:
             """Mock close method."""
-            pass
 
         @classmethod
         def list_devices(cls) -> list[str]:
@@ -99,7 +92,7 @@ def mock_ppk2_api_class() -> Generator[type[Any], None, None]:
 @pytest.mark.unit
 def test_constructor_no_devices_found_raises_error(
     monkeypatch: pytest.MonkeyPatch,
-    mock_ppk2_api_class: type[Any],
+    mock_ppk2_api_class: type[Any],  # noqa: W0621
 ) -> None:
     """PPK2PowerSupply should raise PowerError when no devices found."""
 
@@ -117,7 +110,7 @@ def test_constructor_no_devices_found_raises_error(
 @pytest.mark.unit
 def test_constructor_multiple_devices_raises_error(
     monkeypatch: pytest.MonkeyPatch,
-    mock_ppk2_api_class: type[Any],
+    mock_ppk2_api_class: type[Any],  # noqa: W0621
 ) -> None:
     """PPK2PowerSupply should raise PowerError when multiple devices found."""
 
@@ -135,7 +128,7 @@ def test_constructor_multiple_devices_raises_error(
 @pytest.mark.unit
 def test_constructor_auto_selects_single_device(
     monkeypatch: pytest.MonkeyPatch,
-    mock_ppk2_api_class: type[Any],
+    mock_ppk2_api_class: type[Any],  # noqa: W0621
 ) -> None:
     """PPK2PowerSupply should auto-select when exactly one device found."""
 
@@ -154,7 +147,7 @@ def test_constructor_auto_selects_single_device(
 @pytest.mark.unit
 def test_constructor_with_explicit_port_name(
     monkeypatch: pytest.MonkeyPatch,
-    mock_ppk2_api_class: type[Any],
+    mock_ppk2_api_class: type[Any],  # noqa: W0621
 ) -> None:
     """PPK2PowerSupply should use provided portName without auto-discovery."""
 
@@ -171,7 +164,7 @@ def test_constructor_with_explicit_port_name(
 @pytest.mark.unit
 def test_constructor_skips_auto_discovery_with_port_name(
     monkeypatch: pytest.MonkeyPatch,
-    mock_ppk2_api_class: type[Any],
+    mock_ppk2_api_class: type[Any],  # noqa: W0621
 ) -> None:
     """PPK2PowerSupply should not call list_devices when portName is provided."""
 
@@ -203,7 +196,8 @@ def test_constructor_skips_auto_discovery_with_port_name(
 
 @pytest.mark.unit
 def test_measurement_loop_handles_empty_data(
-    monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
+    monkeypatch: pytest.MonkeyPatch,
+    ppk2_stub: "PPK2PowerSupply",  # noqa: W0613
 ) -> None:
     """Measurement loop should handle empty data reads gracefully."""
 
@@ -274,7 +268,7 @@ def test_measurement_loop_handles_exception_in_get_samples(
 
     call_count = 0
 
-    def samples_side_effect(data: bytes) -> tuple[list[int], int]:
+    def samples_side_effect(data: bytes) -> tuple[list[int], int]:  # noqa: W0613
         nonlocal call_count
         call_count += 1
         if call_count == 1:
@@ -357,7 +351,8 @@ def test_measurement_loop_exits_when_measuring_false_during_error(
 
 @pytest.mark.unit
 def test_measurement_loop_processes_single_sample(
-    monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
+    monkeypatch: pytest.MonkeyPatch,
+    ppk2_stub: "PPK2PowerSupply",  # noqa: W0613
 ) -> None:
     """Measurement loop should correctly process single sample."""
 
@@ -393,7 +388,8 @@ def test_measurement_loop_processes_single_sample(
 
 @pytest.mark.unit
 def test_measurement_loop_processes_multiple_samples(
-    monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
+    monkeypatch: pytest.MonkeyPatch,
+    ppk2_stub: "PPK2PowerSupply",  # noqa: W0613
 ) -> None:
     """Measurement loop should correctly aggregate multiple samples."""
 
@@ -429,7 +425,8 @@ def test_measurement_loop_processes_multiple_samples(
 
 @pytest.mark.unit
 def test_measurement_loop_aggregates_across_multiple_reads(
-    monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
+    monkeypatch: pytest.MonkeyPatch,
+    ppk2_stub: "PPK2PowerSupply",  # noqa: W0613
 ) -> None:
     """Measurement loop should aggregate samples across multiple data reads."""
 
@@ -438,7 +435,7 @@ def test_measurement_loop_aggregates_across_multiple_reads(
 
     call_count = 0
 
-    def get_samples_side_effect(data: bytes) -> tuple[list[int], int]:
+    def get_samples_side_effect(data: bytes) -> tuple[list[int], int]:  # noqa: W0613
         nonlocal call_count
         call_count += 1
         if call_count == 1:
@@ -465,7 +462,8 @@ def test_measurement_loop_aggregates_across_multiple_reads(
 
 @pytest.mark.unit
 def test_measurement_loop_updates_min_max_correctly(
-    monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
+    monkeypatch: pytest.MonkeyPatch,
+    ppk2_stub: "PPK2PowerSupply",  # noqa: W0613
 ) -> None:
     """Measurement loop should correctly update min/max across batches."""
 
@@ -474,7 +472,7 @@ def test_measurement_loop_updates_min_max_correctly(
 
     call_count = 0
 
-    def get_samples_side_effect(data: bytes) -> tuple[list[int], int]:
+    def get_samples_side_effect(data: bytes) -> tuple[list[int], int]:  # noqa: W0613
         nonlocal call_count
         call_count += 1
         if call_count == 1:
@@ -499,7 +497,8 @@ def test_measurement_loop_updates_min_max_correctly(
 
 @pytest.mark.unit
 def test_measurement_loop_tracks_data_read_statistics(
-    monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
+    monkeypatch: pytest.MonkeyPatch,
+    ppk2_stub: "PPK2PowerSupply",  # noqa: W0613
 ) -> None:
     """Measurement loop should track data length statistics."""
 
@@ -631,7 +630,7 @@ def test_constructor_api_init_failure_raises_error(
 @pytest.mark.unit
 def test_constructor_get_modifiers_failure_raises_error(
     monkeypatch: pytest.MonkeyPatch,
-    mock_ppk2_api_class: Type[Any],
+    mock_ppk2_api_class: Type[Any],  # noqa: W0621
 ) -> None:
     """PPK2PowerSupply should propagate get_modifiers() errors."""
 
@@ -725,7 +724,7 @@ def test_close_handles_stop_measuring_exception(
 
 @pytest.mark.unit
 def test_close_handles_thread_join_timeout(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch,  # noqa: W0613
     ppk2_stub: "PPK2PowerSupply",
     caplog: pytest.LogCaptureFixture,
 ) -> None:

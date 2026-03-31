@@ -71,13 +71,13 @@ class _FakeWriter:
 
     def close(self) -> None:
         """Close the writer."""
-        pass
+        return None
 
 
 class _SlowStopThread:
     """Thread that takes longer than timeout to stop."""
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:  # noqa: W0613
         self._target = kwargs.get("target")
         self.started = False
         self._is_alive = True
@@ -91,8 +91,7 @@ class _SlowStopThread:
 
     def join(self, timeout: float | None = None) -> None:  # noqa: W0613
         """Join the slow thread - never completes."""
-        # Never completes - simulates hung thread
-        pass
+        return None
 
     def is_alive(self) -> bool:
         """Return True always - simulates hung thread."""
@@ -125,9 +124,7 @@ def _make_meter_without_voltage() -> MagicMock:
 
 
 @pytest.mark.unit
-def test_logset_dir_name_empty_raises_valueerror(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_logset_dir_name_empty_raises_valueerror() -> None:
     """LogSet should raise ValueError when dir_name is empty string."""
     with pytest.raises(ValueError, match=DIR_NAME_REQUIRED_MESSAGE):
         LogSet(MagicMock(), dir_name="")
@@ -328,9 +325,7 @@ def test_power_logger_p_meter_concurrent_setter_access(
 
 
 @pytest.mark.unit
-def test_structured_logger_raw_file_concurrent_writes(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+def test_structured_logger_raw_file_concurrent_writes() -> None:
     """Test concurrent writes to raw file are thread-safe."""
     logger = object.__new__(StructuredLogger)
     logger.writer = MagicMock()
@@ -415,7 +410,7 @@ def test_power_logger_writer_close_failure_during_error_cleanup(
     mock_writer.setSchema.side_effect = RuntimeError("schema error")
     mock_writer.close.side_effect = OSError("close error")
 
-    def mock_writer_factory(path):
+    def mock_writer_factory(path):  # noqa: W0613
         return mock_writer
 
     monkeypatch.setattr(slog_module, "FeatherWriter", mock_writer_factory)
@@ -431,7 +426,6 @@ def test_power_logger_writer_close_failure_during_error_cleanup(
 @pytest.mark.unit
 def test_power_logger_reset_after_write_failure(
     caplog: pytest.LogCaptureFixture,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """PowerLogger should reset meter even after write failure."""
     meter = _make_meter_with_voltage(3.3)
@@ -663,7 +657,6 @@ def test_power_logger_unexpected_kwargs_raises(
 @pytest.mark.unit
 def test_power_logger_meter_close_failure(
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """PowerLogger should raise meter close failure after successful writer close."""
     monkeypatch.setattr(slog_module, "FeatherWriter", _FakeWriter)
@@ -691,7 +684,7 @@ def test_power_logger_writer_close_failure_after_meter_close_failure(
     mock_writer.setSchema = MagicMock()
     mock_writer.close.side_effect = OSError("writer close failed")
 
-    def mock_writer_factory(path):
+    def mock_writer_factory(path):  # noqa: W0613
         return mock_writer
 
     monkeypatch.setattr(slog_module, "FeatherWriter", mock_writer_factory)
@@ -870,7 +863,7 @@ def test_logset_startup_failure_closes_power_logger(
     power_logger_mock = MagicMock()
     power_logger_mock.close = MagicMock()
 
-    def mock_power_factory(*args, **kwargs):
+    def mock_power_factory(*args, **kwargs):  # noqa: W0613
         return power_logger_mock
 
     monkeypatch.setattr(slog_module, "PowerLogger", mock_power_factory)
@@ -899,7 +892,7 @@ def test_logset_startup_failure_logs_secondary_error(
     power_logger_mock = MagicMock()
     power_logger_mock.close.side_effect = OSError("power close failed")
 
-    def mock_power_factory(*args, **kwargs):
+    def mock_power_factory(*args, **kwargs):  # noqa: W0613
         return power_logger_mock
 
     monkeypatch.setattr(slog_module, "PowerLogger", mock_power_factory)
@@ -964,7 +957,7 @@ def test_structured_logger_raw_file_setup_failure_cleanup(
     # Fail after raw file is opened
     call_count = 0
 
-    def fail_on_setSchema(*args, **kwargs):
+    def fail_on_setSchema(*args, **kwargs):  # noqa: W0613
         nonlocal call_count
         call_count += 1
         if call_count >= 1:
@@ -973,7 +966,7 @@ def test_structured_logger_raw_file_setup_failure_cleanup(
     mock_writer.setSchema = MagicMock(side_effect=fail_on_setSchema)
     mock_writer.close = MagicMock()
 
-    def mock_writer_factory(path):
+    def mock_writer_factory(path):  # noqa: W0613
         return mock_writer
 
     monkeypatch.setattr(slog_module, "FeatherWriter", mock_writer_factory)
@@ -1015,9 +1008,7 @@ def test_power_logger_pmeter_setter_no_lock_fallback() -> None:
 
 
 @pytest.mark.unit
-def test_power_logger_store_current_reading_no_lock_fallback(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_power_logger_store_current_reading_no_lock_fallback() -> None:
     """PowerLogger.store_current_reading deprecation should work without lock."""
     meter = _make_meter_with_voltage(3.3)
 
@@ -1035,9 +1026,7 @@ def test_power_logger_store_current_reading_no_lock_fallback(
 
 
 @pytest.mark.unit
-def test_structured_logger_raw_file_none_during_write(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+def test_structured_logger_raw_file_none_during_write() -> None:
     """StructuredLogger should skip write when raw_file is None."""
     logger = object.__new__(StructuredLogger)
     logger.writer = MagicMock()
