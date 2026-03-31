@@ -927,7 +927,7 @@ def test_structured_logger_setup_failure_cleanup(
     mock_writer.setSchema.side_effect = RuntimeError("schema failed")
     mock_writer.close = MagicMock()
 
-    def mock_writer_factory(path):
+    def mock_writer_factory(path):  # noqa: W0613
         return mock_writer
 
     monkeypatch.setattr(slog_module, "FeatherWriter", mock_writer_factory)

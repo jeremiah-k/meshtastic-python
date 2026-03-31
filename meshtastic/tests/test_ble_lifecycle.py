@@ -1265,7 +1265,7 @@ class TestBLEReceiveLifecycleCoordinator:
         mock_thread.name = "test_thread"
         mock_thread.ident = 12345
 
-        def create_thread(**_kwargs: Any) -> MagicMock:  # noqa: W0613
+        def create_thread(**_kwargs: Any) -> MagicMock:  # noqa: W0612
             return mock_thread
 
         def start_thread(_t: Any) -> None:
@@ -2576,7 +2576,7 @@ class TestLifecyclePrimitivesEdgeCases:
         class CustomException(Exception):
             """Custom exception for testing."""
 
-            pass  # Intentional no-op for exception class body
+            pass  # Intentional no-op for exception class body  # noqa: W0107
 
         def failing_start(_t: Any) -> None:
             raise CustomException("nested failure")
