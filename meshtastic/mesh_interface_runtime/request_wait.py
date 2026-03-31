@@ -9,18 +9,8 @@ from collections.abc import Callable
 from typing import Any
 
 from meshtastic import ResponseHandler
+from meshtastic.protobuf import portnums_pb2
 from meshtastic.util import Acknowledgment, Timeout
-
-
-# Re-export from canonical location in send_pipeline.py for backward compatibility
-# Uses delayed import to avoid circular dependency (send_pipeline imports from this module)
-def __getattr__(name: str) -> Any:
-    if name == "LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM":
-        from .send_pipeline import LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM
-
-        return LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM
-    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
-
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +20,13 @@ WAIT_ATTR_TELEMETRY: str = "receivedTelemetry"
 WAIT_ATTR_TRACEROUTE: str = "receivedTraceRoute"
 WAIT_ATTR_WAYPOINT: str = "receivedWaypoint"
 WAIT_ATTR_NAK: str = "receivedNak"
+
+LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM: dict[int, str] = {
+    portnums_pb2.PortNum.POSITION_APP: WAIT_ATTR_POSITION,
+    portnums_pb2.PortNum.TRACEROUTE_APP: WAIT_ATTR_TRACEROUTE,
+    portnums_pb2.PortNum.TELEMETRY_APP: WAIT_ATTR_TELEMETRY,
+    portnums_pb2.PortNum.WAYPOINT_APP: WAIT_ATTR_WAYPOINT,
+}
 
 NO_RESPONSE_FIRMWARE_ERROR: str = "No response from node. At least firmware 2.1.22 is required on the destination node."
 RESPONSE_WAIT_REQID_ERROR: str = (

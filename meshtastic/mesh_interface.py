@@ -1,6 +1,6 @@
 """Mesh Interface class."""
 
-# pylint: disable=C0302
+# pylint: disable=C0302,R0801
 
 import base64
 import collections
@@ -1214,6 +1214,9 @@ class MeshInterface:  # pylint: disable=R0902
             hopLimit=hopLimit,
         )
 
+    # These thin wrappers intentionally mirror SendPipeline helper methods to
+    # preserve historical MeshInterface compatibility entrypoints.
+    # pylint: disable=duplicate-code
     @staticmethod
     def _extract_request_id_from_packet(packet: dict[str, Any]) -> int | None:
         """Return decoded requestId as an int when present and valid."""
@@ -1350,6 +1353,7 @@ class MeshInterface:  # pylint: disable=R0902
             routing_error_reason=routing_error_reason,
             request_id=request_id,
         )
+    # pylint: enable=duplicate-code
 
     def onResponsePosition(self, p: dict[str, Any]) -> None:
         """Process a position response packet and emit a concise human-readable summary.

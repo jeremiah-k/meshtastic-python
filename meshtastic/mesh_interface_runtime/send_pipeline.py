@@ -1,5 +1,7 @@
 """Send pipeline for transmitting packets to the radio."""
 
+# pylint: disable=R0801
+
 from __future__ import annotations
 
 import logging
@@ -23,6 +25,7 @@ from meshtastic.mesh_interface_runtime.flows import (
     sendWaypoint,
 )
 from meshtastic.mesh_interface_runtime.request_wait import (
+    LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM,
     WAIT_ATTR_NAK,
     WAIT_ATTR_POSITION,
     WAIT_ATTR_TELEMETRY,
@@ -47,13 +50,6 @@ PACKET_ID_GENERATION_MAX_RETRIES = 10
 DEFAULT_HOP_LIMIT = 3
 
 QUEUE_WAIT_DELAY_SECONDS = 0.5
-
-LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM: dict[int, str] = {
-    portnums_pb2.PortNum.POSITION_APP: WAIT_ATTR_POSITION,
-    portnums_pb2.PortNum.TRACEROUTE_APP: WAIT_ATTR_TRACEROUTE,
-    portnums_pb2.PortNum.TELEMETRY_APP: WAIT_ATTR_TELEMETRY,
-    portnums_pb2.PortNum.WAYPOINT_APP: WAIT_ATTR_WAYPOINT,
-}
 
 HEX_NODE_ID_TAIL_CHARS = frozenset("0123456789abcdefABCDEF")
 MISSING_NODE_NUM_ERROR_TEMPLATE = "NodeId {destination_id} has no numeric 'num' in DB"
