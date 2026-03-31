@@ -184,6 +184,7 @@ class _NodeChannelRequestRuntime:
             mark_channel_request_sent(channel_num)
 
         message = admin_pb2.AdminMessage()
+        # Protocol uses 1-indexed channel numbers; API uses 0-indexed
         message.get_channel_request = channel_num + 1
 
         if self._node != self._node.iface.localNode:

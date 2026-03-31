@@ -94,6 +94,7 @@ class _SetUrlCacheManager:
                 self._node._raise_interface_error(  # noqa: SLF001
                     "Channel cache changed during replace-all cache update; aborting transaction."
                 )
+                return  # unreachable; satisfies type checker
             if not 0 <= staged_channel.index < len(channels):
                 self._node._raise_interface_error(  # noqa: SLF001
                     f"Channel index {staged_channel.index} out of range during cache update"

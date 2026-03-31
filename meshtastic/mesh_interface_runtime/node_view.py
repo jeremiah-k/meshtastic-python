@@ -148,7 +148,7 @@ class NodeView:
         interface = self._interface
         if print_color is not None and interface.debugOut == sys.stdout:
             if "DEBUG" in line:
-                print_color.print(line, color=cast(Any, "cyan"))
+                print_color.print(line, color="cyan")
             elif "INFO" in line:
                 print_color.print(line, color="white")
             elif "WARN" in line:
@@ -554,11 +554,11 @@ class NodeView:
 
         Parameters
         ----------
+        num : int
+            Numeric node identifier.
         isDest : bool
             When True treat the broadcast number as a destination (return
             BROADCAST_ADDR); when False treat it as an unknown source (return "Unknown"). (Default value = True)
-        num : int
-            Numeric node identifier.
 
         Returns
         -------

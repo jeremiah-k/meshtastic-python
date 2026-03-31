@@ -52,7 +52,33 @@ class _SetUrlRollbackEngine:
     ) -> bool:
         """Shared helper for best-effort rollback of channels and LoRa config.
 
-        Returns True if any rollback failed (for cache invalidation tracking).
+        Parameters
+        ----------
+        rollback_admin_indexes : list[int]
+            Ordered list of admin indexes to attempt for each rollback.
+        channel_rollback_order : list[int]
+            Order in which to restore channel snapshots.
+        get_channel_snapshot : Callable[[int], Any | None]
+            Callback to retrieve a stored snapshot for a channel index.
+        do_channel_write : Callable[[Any, int], None]
+            Callback to write a channel snapshot using an admin index.
+        channel_warning_template : str
+            Template for logging channel rollback warnings.
+        lora_write_started : bool
+            Whether LoRa config was modified in the transaction.
+        original_lora_config : Any | None
+            Pre-transaction LoRa config snapshot, if any.
+        lora_warning_message : str
+            Message for logging LoRa rollback warnings.
+        lora_no_snapshot_message : str
+            Message when LoRa was modified but no snapshot exists.
+        cache_invalidate_message : str
+            Message when channel cache is invalidated after rollback.
+
+        Returns
+        -------
+        bool
+            True if any rollback failed (for cache invalidation tracking).
         """
         rollback_failed = False
 
@@ -105,6 +131,10 @@ class _SetUrlRollbackEngine:
                         adminIndex=rollback_admin_index,
                     )
                     if request is None:
+                        logger.debug(
+                            "LoRa rollback _send_admin returned None for admin index %s; trying next.",
+                            rollback_admin_index,
+                        )
                         continue
                     self._cache_manager.restore_lora_snapshot(original_lora_config)
                     rollback_lora_succeeded = True

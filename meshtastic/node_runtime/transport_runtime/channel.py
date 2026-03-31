@@ -184,9 +184,12 @@ class _NodeDeleteChannelRuntime:
         if is_local_node:
             pre_delete_admin_index = self._named_admin_index_from_channels(channels)
         else:
-            pre_delete_admin_index = (
-                self._node.iface.localNode._get_admin_channel_index()
-            )
+            local_node = self._node.iface.localNode
+            if local_node is None:
+                self._node._raise_interface_error(
+                    "Cannot delete remote channel: local node not available"
+                )
+            pre_delete_admin_index = local_node._get_admin_channel_index()
 
         staged_channels: list[channel_pb2.Channel] = []
         for existing_channel in channels:
@@ -207,9 +210,12 @@ class _NodeDeleteChannelRuntime:
                 staged_channels
             )
         else:
-            post_delete_admin_index = (
-                self._node.iface.localNode._get_admin_channel_index()
-            )
+            local_node = self._node.iface.localNode
+            if local_node is None:
+                self._node._raise_interface_error(
+                    "Cannot delete remote channel: local node not available"
+                )
+            post_delete_admin_index = local_node._get_admin_channel_index()
 
         return _DeleteChannelRewritePlan(
             original_channels_ref=channels,

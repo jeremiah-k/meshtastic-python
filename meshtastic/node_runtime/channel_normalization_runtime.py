@@ -57,10 +57,8 @@ class _NodeChannelNormalizationRuntime:
         for index, channel in enumerate(channels):
             channel.index = index
 
-        index = len(channels)
-        while index < MAX_CHANNELS:
+        for index in range(len(channels), MAX_CHANNELS):
             channel = channel_pb2.Channel()
             channel.role = channel_pb2.Channel.Role.DISABLED
             channel.index = index
             channels.append(channel)
-            index += 1

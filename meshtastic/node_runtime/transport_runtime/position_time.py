@@ -114,6 +114,7 @@ class _NodePositionTimeCommandRuntime:
         self._node.ensureSessionKey()
         admin_message = admin_pb2.AdminMessage()
         admin_message.set_fixed_position.CopyFrom(position_message)
+        logger.info("Setting fixed position: lat=%s, lon=%s, alt=%s", lat, lon, alt)
         return self._send_position_time_command(admin_message)
 
     def _remove_fixed_position(self) -> mesh_pb2.MeshPacket | None:

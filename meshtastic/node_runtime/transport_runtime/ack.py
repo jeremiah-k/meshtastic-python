@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-ERROR_REASON_NONE = "NONE"
+ERROR_REASON_NONE: str = "NONE"
 
 
 class _NodeAckNakRuntime:
@@ -19,6 +19,12 @@ class _NodeAckNakRuntime:
 
     def _handle_ack_nak(self, packet: dict[str, Any]) -> None:  # pylint: disable=too-many-return-statements
         """Classify ACK/NAK payload and update interface acknowledgment state."""
+        if self._node.iface is None:
+            logger.warning(
+                "Received ACK/NAK response but interface is not available: packet_id=%s",
+                packet.get("id"),
+            )
+            return
         ack_state = self._node.iface._acknowledgment
         decoded = packet.get("decoded")
         if not isinstance(decoded, dict):

@@ -88,6 +88,8 @@ MODULE_CONFIG_FROM_RADIO_FIELDS: tuple[str, ...] = (
 )
 DECODE_FAILED_PREFIX = "decode-failed: "
 
+_MICRODEGREE_TO_DEGREE = 1e-7
+
 JSONValue: TypeAlias = (
     None | bool | int | float | str | list["JSONValue"] | dict[str, "JSONValue"]
 )
@@ -495,9 +497,9 @@ class ReceivePipeline:
     def _fixup_position(self, position: dict[str, Any]) -> dict[str, Any]:
         """Convert integer micro-degree coordinates in a position dict to floating-point degrees."""
         if "latitudeI" in position:
-            position["latitude"] = position["latitudeI"] * 1e-7
+            position["latitude"] = position["latitudeI"] * _MICRODEGREE_TO_DEGREE
         if "longitudeI" in position:
-            position["longitude"] = position["longitudeI"] * 1e-7
+            position["longitude"] = position["longitudeI"] * _MICRODEGREE_TO_DEGREE
         return position
 
     def _get_or_create_by_num(self, nodeNum: int) -> dict[str, Any]:
@@ -638,11 +640,11 @@ class ReceivePipeline:
         """Populate fromId/toId fields from known node-number mappings."""
         try:
             packet_dict["fromId"] = self._node_num_to_id(packet_dict["from"], False)
-        except Exception as ex:
+        except (KeyError, TypeError, ValueError) as ex:
             logger.warning("Not populating fromId: %s", ex, exc_info=True)
         try:
             packet_dict["toId"] = self._node_num_to_id(packet_dict["to"])
-        except Exception as ex:
+        except (KeyError, TypeError, ValueError) as ex:
             logger.warning("Not populating toId: %s", ex, exc_info=True)
 
     def _node_num_to_id(self, num: int, isDest: bool = True) -> str | None:
@@ -750,9 +752,9 @@ class ReceivePipeline:
                 DECODE_ERROR_KEY: decode_error
             }
             if handler.name == "routing":
-                packet_context.packet_dict["decoded"][handler.name][
-                    "errorReason"
-                ] = decode_error
+                packet_context.packet_dict["decoded"][handler.name]["errorReason"] = (
+                    decode_error
+                )
             if handler.name == "admin":
                 packet_context.skip_response_callback_for_decode_failure = True
 

@@ -43,6 +43,9 @@ PACKET_ID_COUNTER_MASK = 0x3FF
 PACKET_ID_RANDOM_MAX = 0x3FFFFF
 PACKET_ID_RANDOM_SHIFT_BITS = 10
 
+PACKET_ID_GENERATION_MAX_RETRIES = 10
+DEFAULT_HOP_LIMIT = 3
+
 QUEUE_WAIT_DELAY_SECONDS = 0.5
 
 LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM: dict[int, str] = {
@@ -325,7 +328,7 @@ class SendPipeline:
         meshPacket.decoded.portnum = portNum
         meshPacket.decoded.want_response = wantResponse
         meshPacket.id = self._interface._generate_packet_id()
-        for _ in range(10):
+        for _ in range(PACKET_ID_GENERATION_MAX_RETRIES):
             if meshPacket.id != 0:
                 break
             meshPacket.id = self._interface._generate_packet_id()
@@ -675,7 +678,7 @@ class SendPipeline:
             with self._node_db_lock:
                 local_node = self.localNode
                 if local_node is None or local_node.localConfig is None:
-                    default_hop_limit = 3  # Sensible default
+                    default_hop_limit = DEFAULT_HOP_LIMIT  # Sensible default
                 else:
                     default_hop_limit = local_node.localConfig.lora.hop_limit
             meshPacket.hop_limit = default_hop_limit
@@ -708,7 +711,8 @@ class SendPipeline:
         pkiEncrypted: bool | None = False,
         publicKey: bytes | None = None,
     ) -> mesh_pb2.MeshPacket:
-        """Backward-compatible alias for `_send_packet`."""  # COMPAT_STABLE_SHIM
+        """Backward-compatible alias for `_send_packet`."""
+        # COMPAT_STABLE_SHIM
         return self._send_packet(
             meshPacket=meshPacket,
             destinationId=destinationId,
