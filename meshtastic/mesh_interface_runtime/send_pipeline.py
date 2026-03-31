@@ -371,7 +371,7 @@ class SendPipeline:
                 meshPacket.id, onResponse, ackPermitted=onResponseAckPermitted
             )
         try:
-            return self._send_packet(
+            return self._interface._send_packet(
                 meshPacket,
                 destinationId,
                 wantAck=wantAck,
