@@ -43,7 +43,7 @@ class _FakeThread:
         """Start the fake thread."""
         self.started = True
 
-    def join(self, timeout: float | None = None) -> None:  # noqa: W0613
+    def join(self, timeout: float | None = None) -> None:  # noqa: ARG001
         """Join the fake thread immediately."""
         self._is_alive = False
 
@@ -76,7 +76,7 @@ class _FakeWriter:
 class _SlowStopThread:
     """Thread that takes longer than timeout to stop."""
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:  # noqa: W0613
+    def __init__(self, *args: Any, **kwargs: Any) -> None:  # noqa: ARG001
         self._target = kwargs.get("target")
         self.started = False
         self._is_alive = True
@@ -88,7 +88,7 @@ class _SlowStopThread:
         # Simulate thread running
         self._thread_id = threading.current_thread().ident
 
-    def join(self, timeout: float | None = None) -> None:  # noqa: W0613
+    def join(self, timeout: float | None = None) -> None:  # noqa: ARG001
         """Join the slow thread - never completes."""
         return None
 
@@ -409,7 +409,7 @@ def test_power_logger_writer_close_failure_during_error_cleanup(
     mock_writer.setSchema.side_effect = RuntimeError("schema error")
     mock_writer.close.side_effect = OSError("close error")
 
-    def mock_writer_factory(path):  # noqa: W0613
+    def mock_writer_factory(path):  # noqa: ARG001
         return mock_writer
 
     monkeypatch.setattr(slog_module, "FeatherWriter", mock_writer_factory)
@@ -683,7 +683,7 @@ def test_power_logger_writer_close_failure_after_meter_close_failure(
     mock_writer.setSchema = MagicMock()
     mock_writer.close.side_effect = OSError("writer close failed")
 
-    def mock_writer_factory(path):  # noqa: W0613
+    def mock_writer_factory(path):  # noqa: ARG001
         return mock_writer
 
     monkeypatch.setattr(slog_module, "FeatherWriter", mock_writer_factory)
@@ -862,7 +862,7 @@ def test_logset_startup_failure_closes_power_logger(
     power_logger_mock = MagicMock()
     power_logger_mock.close = MagicMock()
 
-    def mock_power_factory(*args, **kwargs):  # noqa: W0613
+    def mock_power_factory(*args, **kwargs):  # noqa: ARG001
         return power_logger_mock
 
     monkeypatch.setattr(slog_module, "PowerLogger", mock_power_factory)
@@ -891,7 +891,7 @@ def test_logset_startup_failure_logs_secondary_error(
     power_logger_mock = MagicMock()
     power_logger_mock.close.side_effect = OSError("power close failed")
 
-    def mock_power_factory(*args, **kwargs):  # noqa: W0613
+    def mock_power_factory(*args, **kwargs):  # noqa: ARG001
         return power_logger_mock
 
     monkeypatch.setattr(slog_module, "PowerLogger", mock_power_factory)
@@ -926,7 +926,7 @@ def test_structured_logger_setup_failure_cleanup(
     mock_writer.setSchema.side_effect = RuntimeError("schema failed")
     mock_writer.close = MagicMock()
 
-    def mock_writer_factory(path):  # noqa: W0613
+    def mock_writer_factory(path):  # noqa: ARG001
         return mock_writer
 
     monkeypatch.setattr(slog_module, "FeatherWriter", mock_writer_factory)
@@ -956,7 +956,7 @@ def test_structured_logger_raw_file_setup_failure_cleanup(
     # Fail after raw file is opened
     call_count = 0
 
-    def fail_on_setSchema(*args, **kwargs):  # noqa: W0613
+    def fail_on_setSchema(*args, **kwargs):  # noqa: ARG001
         nonlocal call_count
         call_count += 1
         if call_count >= 1:
@@ -965,7 +965,7 @@ def test_structured_logger_raw_file_setup_failure_cleanup(
     mock_writer.setSchema = MagicMock(side_effect=fail_on_setSchema)
     mock_writer.close = MagicMock()
 
-    def mock_writer_factory(path):  # noqa: W0613
+    def mock_writer_factory(path):  # noqa: ARG001
         return mock_writer
 
     monkeypatch.setattr(slog_module, "FeatherWriter", mock_writer_factory)

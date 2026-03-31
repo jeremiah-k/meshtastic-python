@@ -984,11 +984,11 @@ class TestLifecycleErrorAccess:
 
     def test_try_safe_execute_variants_with_error_msg_kwarg(
         self,
-        error_access: _LifecycleErrorAccess,  # noqa: W0613
+        error_access: _LifecycleErrorAccess,  # noqa: ARG001
     ) -> None:
         """Test _try_safe_execute_variants with error_msg as keyword."""
 
-        def safe_exec(func: Callable[[], Any], *, error_msg: str) -> Any:  # noqa: W0613
+        def safe_exec(func: Callable[[], Any], *, error_msg: str) -> Any:  # noqa: ARG001
             return func()
 
         def tracked() -> str:
@@ -1002,11 +1002,11 @@ class TestLifecycleErrorAccess:
 
     def test_try_safe_execute_variants_positional(
         self,
-        error_access: _LifecycleErrorAccess,  # noqa: W0613
+        error_access: _LifecycleErrorAccess,  # noqa: ARG001
     ) -> None:
         """Test _try_safe_execute_variants with positional error_msg."""
 
-        def safe_exec(func: Callable[[], Any], error_msg: str) -> Any:  # noqa: W0613
+        def safe_exec(func: Callable[[], Any], error_msg: str) -> Any:  # noqa: ARG001
             return func()
 
         def tracked() -> str:
@@ -1020,12 +1020,12 @@ class TestLifecycleErrorAccess:
 
     def test_try_safe_execute_variants_no_error_msg(
         self,
-        error_access: _LifecycleErrorAccess,  # noqa: W0613
+        error_access: _LifecycleErrorAccess,  # noqa: ARG001
     ) -> None:
         """Test _try_safe_execute_variants without error_msg."""
         func_executed = False
 
-        def safe_exec(func: Callable[[], Any]) -> Any:  # noqa: W0613
+        def safe_exec(func: Callable[[], Any]) -> Any:  # noqa: ARG001
             return func()
 
         def tracked() -> str:
@@ -1044,11 +1044,11 @@ class TestLifecycleErrorAccess:
 
     def test_try_safe_execute_variants_func_did_not_run(
         self,
-        error_access: _LifecycleErrorAccess,  # noqa: W0613
+        error_access: _LifecycleErrorAccess,  # noqa: ARG001
     ) -> None:
         """Test _try_safe_execute_variants when function didn't run."""
 
-        def safe_exec(func: Callable[[], Any]) -> Any:  # noqa: W0613
+        def safe_exec(func: Callable[[], Any]) -> Any:  # noqa: ARG001
             raise RuntimeError("error")
 
         def tracked() -> str:
@@ -1287,7 +1287,7 @@ class TestBLEReceiveLifecycleCoordinator:
         mock_thread.ident = 12345
         mock_iface._receiveThread = mock_thread
 
-        def create_thread(**_kwargs: Any) -> MagicMock:  # noqa: W0612
+        def create_thread(**_kwargs: Any) -> MagicMock:  # noqa: F841
             return mock_thread
 
         def start_thread(_t: Any) -> None:
@@ -1637,7 +1637,7 @@ class TestBLEReceiveLifecycleCoordinatorDeferredRestart:
     def test_schedule_deferred_receive_restart_already_inflight(
         self,
         coordinator: BLEReceiveLifecycleCoordinator,
-        mock_iface: MagicMock,  # noqa: W0613
+        mock_iface: MagicMock,  # noqa: ARG001
     ) -> None:
         """Test _schedule_deferred_receive_restart when already inflight."""
         coordinator._deferred_restart_inflight = True
@@ -1774,7 +1774,7 @@ class TestBLEReceiveLifecycleCoordinatorDeferredRestart:
     def test_schedule_deferred_receive_restart_launch_failure(
         self,
         coordinator: BLEReceiveLifecycleCoordinator,
-        mock_iface: MagicMock,  # noqa: W0613
+        mock_iface: MagicMock,  # noqa: ARG001
     ) -> None:
         """Test deferred restart handles thread launch failure."""
         existing_thread = MagicMock()
@@ -2695,7 +2695,7 @@ class TestLifecyclePrimitivesEdgeCases:
         class CustomException(Exception):
             """Custom exception for testing."""
 
-            pass  # Intentional no-op for exception class body  # noqa: W0107
+            pass  # Intentional no-op for exception class body  # noqa
 
         def failing_start(_t: Any) -> None:
             raise CustomException("nested failure")

@@ -445,7 +445,7 @@ def test_set_canned_message_module_unavailable(
         # Check if skip message was printed
         assert (
             "canned message" in _out.lower() or "excluded" in _out.lower()
-        )  # noqa: R1727
+        )  # noqa
 
 
 @pytest.mark.unit
@@ -477,7 +477,7 @@ def test_set_ringtone_module_unavailable(capsys: pytest.CaptureFixture[str]) -> 
         # Check if skip message was printed
         assert (
             "ringtone" in _out.lower()
-            or "external notification" in _out.lower()  # noqa: R1727
+            or "external notification" in _out.lower()  # noqa
         )
 
 
