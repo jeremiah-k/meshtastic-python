@@ -1641,10 +1641,15 @@ def onConnected(interface: MeshInterface) -> None:
 
         if args.slog or args.power_stress:
             if have_powermon:
-                if LogSet is None or PowerStress is None:
+                if args.slog and LogSet is None:
                     _cli_exit(
-                        "The powermon module loaded incompletely and required "
-                        "logging/stress classes are unavailable."
+                        "LogSet is required for --slog but not available. "
+                        "The powermon module loaded incompletely."
+                    )
+                if args.power_stress and PowerStress is None:
+                    _cli_exit(
+                        "PowerStress is required for --power-stress but not available. "
+                        "The powermon module loaded incompletely."
                     )
                 # Setup loggers
                 global meter  # pylint: disable=global-variable-not-assigned
@@ -2013,11 +2018,32 @@ def _create_power_meter() -> None:
             "You may need to run `poetry install --with powermon`. "
             f"Import Error was: {powermon_exception}"
         )
-    if (
-        RidenPowerSupply is None
-        or PPK2PowerSupply is None
-        or SimPowerSupply is None
-    ):
+    if RidenPowerSupply is None or PPK2PowerSupply is None or SimPowerSupply is None:
+        _cli_exit(
+            "The powermon module loaded incompletely and required meter classes are "
+            "unavailable."
+        )
+
+    # If the user specified a voltage, make sure it is valid AND a backend is selected
+    v = 0.0
+    if args.power_voltage is not None:
+        if not any(
+            (
+                args.power_riden,
+                args.power_ppk2_meter,
+                args.power_ppk2_supply,
+                args.power_sim,
+            )
+        ):
+            _cli_exit(
+                "--power-voltage requires one of --power-riden, --power-ppk2-meter, --power-ppk2-supply, or --power-sim"
+            )
+        v = float(args.power_voltage)
+        if v < MIN_SUPPLY_VOLTAGE_V or v > MAX_SUPPLY_VOLTAGE_V:
+            _cli_exit(
+                f"Voltage must be between {MIN_SUPPLY_VOLTAGE_V}V and {MAX_SUPPLY_VOLTAGE_V}V"
+            )
+    if RidenPowerSupply is None or PPK2PowerSupply is None or SimPowerSupply is None:
         _cli_exit(
             "The powermon module loaded incompletely and required meter classes are "
             "unavailable."
