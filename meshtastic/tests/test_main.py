@@ -4861,6 +4861,34 @@ def test_create_power_meter_requires_initialized_args(
 
 
 @pytest.mark.unit
+def test_create_power_meter_exits_when_powermon_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """_create_power_meter should exit with a clear error when powermon is unavailable."""
+    args = SimpleNamespace(
+        power_voltage=None,
+        power_riden=None,
+        power_ppk2_supply=False,
+        power_ppk2_meter=False,
+        power_sim=True,
+        power_wait=False,
+    )
+
+    monkeypatch.setattr(main_module, "meter", None)
+    monkeypatch.setattr(main_module, "have_powermon", False)
+    monkeypatch.setattr(main_module, "powermon_exception", ImportError("boom"))
+    monkeypatch.setattr(mt_config, "args", args)
+
+    with pytest.raises(SystemExit) as excinfo:
+        _create_power_meter()
+
+    _out, err = capsys.readouterr()
+    assert excinfo.value.code == 1
+    assert "The powermon module could not be loaded." in err
+
+
+@pytest.mark.unit
 def test_create_power_meter_sleeps_after_power_on_when_not_waiting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -983,6 +983,38 @@ def test_sendPacket_alias_with_destination_as_int(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_sendPacket_alias_routes_through_send_packet_seam(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_sendPacket() should delegate through MeshInterface._send_packet."""
+    with MeshInterface(noProto=True) as iface:
+        mesh_packet = mesh_pb2.MeshPacket()
+        expected_result = mesh_pb2.MeshPacket()
+        mock_send_packet = MagicMock(return_value=expected_result)
+        monkeypatch.setattr(iface, "_send_packet", mock_send_packet)
+
+        result = iface._sendPacket(
+            mesh_packet,
+            destinationId=123,
+            wantAck=True,
+            hopLimit=5,
+            pkiEncrypted=True,
+            publicKey=b"k",
+        )
+
+        assert result is expected_result
+        mock_send_packet.assert_called_once_with(
+            meshPacket=mesh_packet,
+            destinationId=123,
+            wantAck=True,
+            hopLimit=5,
+            pkiEncrypted=True,
+            publicKey=b"k",
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_sendPacket_with_short_non_hex_bang_destination_raises() -> None:
     """Short/non-hex bang IDs should raise when node DB lookup is unavailable."""
     with MeshInterface(noProto=True) as iface:

@@ -60,6 +60,13 @@ try:
 except ImportError:
     pass
 
+PowerMeter: Any | None = None
+PowerStress: Any | None = None
+PPK2PowerSupply: Any | None = None
+RidenPowerSupply: Any | None = None
+SimPowerSupply: Any | None = None
+LogSet: Any | None = None
+
 try:
     powermon_module = importlib.import_module("meshtastic.powermon")
     slog_module = importlib.import_module("meshtastic.slog")
@@ -77,6 +84,12 @@ try:
     powermon_exception = None
     meter = None
 except (ImportError, AttributeError) as exc:
+    PowerMeter = None
+    PowerStress = None
+    PPK2PowerSupply = None
+    RidenPowerSupply = None
+    SimPowerSupply = None
+    LogSet = None
     have_powermon = False
     powermon_exception = exc
     meter = None
@@ -1628,6 +1641,11 @@ def onConnected(interface: MeshInterface) -> None:
 
         if args.slog or args.power_stress:
             if have_powermon:
+                if LogSet is None or PowerStress is None:
+                    _cli_exit(
+                        "The powermon module loaded incompletely and required "
+                        "logging/stress classes are unavailable."
+                    )
                 # Setup loggers
                 global meter  # pylint: disable=global-variable-not-assigned
                 log_set = LogSet(
@@ -1987,6 +2005,22 @@ def _create_power_meter() -> None:
     if args is None:
         raise RuntimeError(
             "mt_config.args must be initialized before calling _create_power_meter()"
+        )
+
+    if not have_powermon:
+        _cli_exit(
+            "The powermon module could not be loaded. "
+            "You may need to run `poetry install --with powermon`. "
+            f"Import Error was: {powermon_exception}"
+        )
+    if (
+        RidenPowerSupply is None
+        or PPK2PowerSupply is None
+        or SimPowerSupply is None
+    ):
+        _cli_exit(
+            "The powermon module loaded incompletely and required meter classes are "
+            "unavailable."
         )
 
     # If the user specified a voltage, make sure it is valid

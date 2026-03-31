@@ -1027,7 +1027,7 @@ class MeshInterface:  # pylint: disable=R0902
         publicKey: bytes | None = None,
     ) -> mesh_pb2.MeshPacket:
         """COMPAT_STABLE_SHIM: Alias for `_send_packet`."""
-        return self._send_pipeline._sendPacket(
+        return self._send_packet(
             meshPacket=meshPacket,
             destinationId=destinationId,
             wantAck=wantAck,
