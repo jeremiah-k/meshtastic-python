@@ -344,7 +344,7 @@ class NodeView:
             node_count = len(nodes_snapshot)
 
             # Log only count and trimmed nodeNum list for privacy/safety
-            def _get_num(n):
+            def _get_num(n: Any) -> int | None:
                 return getattr(n, "nodeNum", None) or (
                     n.get("num") if isinstance(n, dict) else None
                 )

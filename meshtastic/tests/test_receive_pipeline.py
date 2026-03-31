@@ -296,7 +296,9 @@ class TestParseFromRadioBytes:
         """Test that parsing invalid bytes logs an error and raises."""
         invalid_bytes = b"invalid protobuf data"
 
-        from google.protobuf.message import DecodeError  # pylint: disable=import-outside-toplevel
+        from google.protobuf.message import (  # pylint: disable=import-outside-toplevel
+            DecodeError,
+        )
 
         with caplog.at_level(logging.ERROR):
             with pytest.raises(DecodeError):
@@ -991,7 +993,10 @@ class TestNodeNumToId:
         self, receive_pipeline: ReceivePipeline
     ) -> None:
         """Test mapping broadcast num to broadcast address (dest mode)."""
-        from meshtastic import BROADCAST_ADDR, BROADCAST_NUM  # pylint: disable=import-outside-toplevel
+        from meshtastic import (  # pylint: disable=import-outside-toplevel
+            BROADCAST_ADDR,
+            BROADCAST_NUM,
+        )
 
         result = receive_pipeline._node_num_to_id(BROADCAST_NUM, isDest=True)
 
@@ -1109,7 +1114,9 @@ class TestDecodePacketPayloadWithHandler:
         self, receive_pipeline: ReceivePipeline
     ) -> None:
         """Test successful decoding with protobuf factory."""
-        from meshtastic.protobuf import telemetry_pb2  # pylint: disable=import-outside-toplevel
+        from meshtastic.protobuf import (  # pylint: disable=import-outside-toplevel
+            telemetry_pb2,
+        )
 
         packet_context = _PacketRuntimeContext(
             packet_dict={"decoded": {"telemetry": {}}}

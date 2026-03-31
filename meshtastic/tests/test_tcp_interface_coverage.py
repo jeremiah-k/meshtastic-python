@@ -14,7 +14,6 @@ import pytest
 
 from meshtastic.tcp_interface import TCPInterface, _is_transport_fd_state_value_error
 
-
 # ============================================================================
 # Connection Timeout and Refused Handling Tests
 # ============================================================================

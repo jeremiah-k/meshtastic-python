@@ -133,7 +133,6 @@
     "channel_pb2",
     "config_pb2",
     "host_port",
-    "interfaces",
     "logger",
     "logging",
     "mesh_interface",

@@ -1,7 +1,7 @@
 """ACK/NAK payload classification and acknowledgment flag mutation."""
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from meshtastic.node_runtime.shared import ERROR_REASON_NONE
 
@@ -28,7 +28,7 @@ class _NodeAckNakRuntime:
         )
         if not callable(extract_request_id):
             return None
-        return extract_request_id(packet)
+        return cast(int | None, extract_request_id(packet))
 
     def _set_wait_nak_error(
         self,

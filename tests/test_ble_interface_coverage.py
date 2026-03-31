@@ -341,7 +341,7 @@ def test_scan_propagates_dbus_error(
 def test_find_device_raises_when_no_peripherals_found_no_address(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """findDevice should raise when no peripherals found and no address provided."""
+    """FindDevice should raise when no peripherals found and no address provided."""
     iface = _build_minimal_interface()
     iface._discovery_manager = FailingDiscoveryManager()
 
@@ -352,7 +352,7 @@ def test_find_device_raises_when_no_peripherals_found_no_address(
 def test_find_device_raises_when_no_peripherals_found_with_name(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """findDevice should raise when name doesn't look like address and no devices found."""
+    """FindDevice should raise when name doesn't look like address and no devices found."""
     iface = _build_minimal_interface()
     iface._discovery_manager = FailingDiscoveryManager()
 
@@ -364,7 +364,7 @@ def test_find_device_attempts_direct_connect_for_address(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """findDevice should attempt direct address connect when scan fails for address."""
+    """FindDevice should attempt direct address connect when scan fails for address."""
     iface = _build_minimal_interface()
     iface._discovery_manager = FailingDiscoveryManager()
 
@@ -379,7 +379,7 @@ def test_find_device_attempts_direct_connect_for_address(
 def test_find_device_raises_when_sanitization_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """findDevice should raise when address sanitization fails."""
+    """FindDevice should raise when address sanitization fails."""
     iface = _build_minimal_interface()
     iface._discovery_manager = FailingDiscoveryManager()
 
@@ -730,7 +730,9 @@ def test_finalize_connection_gates_handles_stale_client(
             None,
         )
 
-    finalize_calls.assert_called_once_with(cast(BLEClient, client), "aabbccddeeff", None)
+    finalize_calls.assert_called_once_with(
+        cast(BLEClient, client), "aabbccddeeff", None
+    )
 
 
 def test_verify_and_publish_connected_handles_lost_ownership(
@@ -854,9 +856,7 @@ def test_start_receive_thread_handles_unconfigured_mock(
     )
 
     iface._start_receive_thread(name="TestThread")
-    start_receive_thread.assert_called_once_with(
-        name="TestThread", reset_recovery=True
-    )
+    start_receive_thread.assert_called_once_with(name="TestThread", reset_recovery=True)
 
 
 def test_handle_disconnect_delegates_to_lifecycle_controller(
@@ -1107,7 +1107,7 @@ def test_close_clears_connecting_state_with_exception(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """close should handle exceptions when clearing connecting state."""
+    """Close should handle exceptions when clearing connecting state."""
     iface = _build_minimal_interface()
 
     # Make _clear_connecting_for_owner raise an exception
@@ -1139,7 +1139,7 @@ def test_close_clears_connecting_state_with_exception(
 def test_close_handles_lifecycle_close_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """close should handle exceptions from lifecycle controller close."""
+    """Close should handle exceptions from lifecycle controller close."""
     iface = _build_minimal_interface()
 
     mock_controller = MagicMock()
@@ -2102,9 +2102,7 @@ def test_disconnect_and_close_client_delegates() -> None:
 
     iface._disconnect_and_close_client(cast(BLEClient, client))
 
-    disconnect_and_close_client.assert_called_once_with(
-        cast(BLEClient, client)
-    )
+    disconnect_and_close_client.assert_called_once_with(cast(BLEClient, client))
 
 
 # ============================================================================

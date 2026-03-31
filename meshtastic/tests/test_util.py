@@ -644,9 +644,9 @@ def test_messageToJson_shows_all() -> None:
         "nodedbCount": 0,
     }
     for key, value in expected.items():
-        assert actual.get(key) == value, (
-            f"Key {key}: expected {value}, got {actual.get(key)}"
-        )
+        assert (
+            actual.get(key) == value
+        ), f"Key {key}: expected {value}, got {actual.get(key)}"
     # firmwareEdition presence only — value depends on proto enum default name
     assert "firmwareEdition" in actual
 
@@ -955,15 +955,15 @@ def test_tdeck_vid_pid_mapping() -> None:
         for d in supported_devices
         if d.usb_vendor_id_in_hex == "303a" and d.usb_product_id_in_hex == "1001"
     ]
-    assert len(tdeck_devices) == 1, (
-        "Expected exactly one T-Deck device with VID 303a and PID 1001"
-    )
-    assert tdeck_devices[0].name == "T-Deck", (
-        f"Expected device name 'T-Deck', got '{tdeck_devices[0].name}'"
-    )
-    assert tdeck_devices[0].for_firmware == "t-deck", (
-        f"Expected for_firmware 't-deck', got '{tdeck_devices[0].for_firmware}'"
-    )
+    assert (
+        len(tdeck_devices) == 1
+    ), "Expected exactly one T-Deck device with VID 303a and PID 1001"
+    assert (
+        tdeck_devices[0].name == "T-Deck"
+    ), f"Expected device name 'T-Deck', got '{tdeck_devices[0].name}'"
+    assert (
+        tdeck_devices[0].for_firmware == "t-deck"
+    ), f"Expected for_firmware 't-deck', got '{tdeck_devices[0].for_firmware}'"
 
 
 @pytest.mark.unit

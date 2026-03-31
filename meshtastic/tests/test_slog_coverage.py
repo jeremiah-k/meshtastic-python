@@ -14,17 +14,16 @@ import pytest
 
 pa = pytest.importorskip("pyarrow")
 
+import meshtastic.slog.slog as slog_module  # noqa: E402  # pylint: disable=wrong-import-position
 from meshtastic.slog.slog import (  # noqa: E402  # pylint: disable=wrong-import-position
     DIR_NAME_REQUIRED_MESSAGE,
-    SAMPLE_FAILURE_WARNING_COOLDOWN_SECONDS,
     SAMPLE_FAILURE_WARNING_BURST_COUNT,
+    SAMPLE_FAILURE_WARNING_COOLDOWN_SECONDS,
     LogSet,
     PowerLogger,
     StructuredLogger,
     rootDir,
 )
-import meshtastic.slog.slog as slog_module  # noqa: E402  # pylint: disable=wrong-import-position
-
 
 # ============================================================================
 # Test Helpers
@@ -492,9 +491,9 @@ def test_power_logger_sample_error_suppression(
 
     # Should have exactly SAMPLE_FAILURE_WARNING_BURST_COUNT warnings
     warning_count = caplog.text.count("PowerLogger sample failed")
-    assert warning_count <= SAMPLE_FAILURE_WARNING_BURST_COUNT, (
-        f"Got {warning_count} warnings"
-    )
+    assert (
+        warning_count <= SAMPLE_FAILURE_WARNING_BURST_COUNT
+    ), f"Got {warning_count} warnings"
 
 
 @pytest.mark.unit
@@ -982,7 +981,7 @@ def test_root_dir_creates_directory(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """rootDir should create slog directory if it doesn't exist."""
+    """RootDir should create slog directory if it doesn't exist."""
     slog_dir = tmp_path / "slogs"
     monkeypatch.setattr(
         "meshtastic.slog.slog.platformdirs.user_data_dir",

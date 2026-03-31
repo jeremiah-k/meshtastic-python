@@ -28,6 +28,7 @@ try:
     from meshtastic import powermon_pb2
     from meshtastic.analysis import __main__ as analysis_main
     from meshtastic.analysis.__main__ import (
+        _cli_exit,
         choose_power_column,
         choosePowerColumn,
         create_argparser,
@@ -39,7 +40,6 @@ try:
         main,
         read_pandas,
         to_pmon_names,
-        _cli_exit,
     )
     from meshtastic.protobuf import mesh_pb2
 

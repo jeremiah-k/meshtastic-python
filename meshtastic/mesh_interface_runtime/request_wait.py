@@ -28,7 +28,9 @@ LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM: dict[int, str] = {
     portnums_pb2.PortNum.WAYPOINT_APP: WAIT_ATTR_WAYPOINT,
 }
 
-NO_RESPONSE_FIRMWARE_ERROR: str = "No response from node. At least firmware 2.1.22 is required on the destination node."
+NO_RESPONSE_FIRMWARE_ERROR: str = (
+    "No response from node. At least firmware 2.1.22 is required on the destination node."
+)
 RESPONSE_WAIT_REQID_ERROR: str = (
     "Internal error: response wait requires a positive packet id."
 )

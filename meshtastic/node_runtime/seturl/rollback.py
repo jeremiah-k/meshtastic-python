@@ -200,7 +200,7 @@ class _SetUrlRollbackEngine:
                         ack_nak_result = wait_for_ack_nak()
                         # Check if waitForAckNak returned an exception (NAK/timeout)
                         if isinstance(ack_nak_result, Exception):
-                            raise ack_nak_result  # type: ignore[misc]  # noqa: TRY301
+                            raise ack_nak_result  # noqa: TRY301
                 # Only restore snapshot on ACK/success
                 self._cache_manager.restore_lora_snapshot(original_lora_config)
                 rollback_lora_succeeded = True

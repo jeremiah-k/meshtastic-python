@@ -35,7 +35,6 @@ from meshtastic.__main__ import (
 )
 from meshtastic.serial_interface import SerialInterface
 
-
 # =============================================================================
 # Test fixtures
 # =============================================================================

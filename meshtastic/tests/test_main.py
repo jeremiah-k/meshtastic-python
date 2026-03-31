@@ -4922,7 +4922,7 @@ def test_main_exits_when_power_flag_requested_without_powermon(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """main should fail fast when a power meter flag is used without powermon."""
+    """Main should fail fast when a power meter flag is used without powermon."""
     monkeypatch.setattr(main_module, "have_powermon", False)
     monkeypatch.setattr(main_module, "powermon_exception", ImportError("boom"))
     monkeypatch.setattr(sys, "argv", ["", "--power-sim"])

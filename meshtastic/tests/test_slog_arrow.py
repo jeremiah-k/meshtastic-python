@@ -17,7 +17,9 @@ else:
     feather = pytest.importorskip("pyarrow.feather")
 
 import meshtastic.slog.arrow as arrow_module  # noqa: E402  # pylint: disable=wrong-import-position
-from meshtastic.slog.arrow import FeatherWriter  # noqa: E402  # pylint: disable=wrong-import-position
+from meshtastic.slog.arrow import (  # noqa: E402  # pylint: disable=wrong-import-position
+    FeatherWriter,
+)
 
 
 def _test_schema() -> "pa.Schema":

@@ -14,13 +14,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from meshtastic.interfaces.ble.constants import EVENT_THREAD_JOIN_TIMEOUT
 from meshtastic.interfaces.ble.coordination import (
-    ThreadCoordinator,
-    _InertThread,
     _INERT_THREAD_START_ERROR,
     _LOCK_NOT_OWNED_ERROR,
+    ThreadCoordinator,
+    _InertThread,
 )
-from meshtastic.interfaces.ble.constants import EVENT_THREAD_JOIN_TIMEOUT
 
 
 @pytest.mark.unit

@@ -147,7 +147,9 @@ class _NodeAdminCommandRuntime:
     ) -> mesh_pb2.MeshPacket | None:
         """Validate OTA args and send ota_request command."""
         if self._node is not self._node.iface.localNode:
-            self._node._raise_interface_error("startOTA only possible on local node")  # noqa: SLF001
+            self._node._raise_interface_error(
+                "startOTA only possible on local node"
+            )  # noqa: SLF001
 
         # COMPAT_STABLE_SHIM: support legacy keyword aliases used by older callers:
         # `ota_mode` -> `mode`, and `ota_hash`/`hash` -> `ota_file_hash`.
@@ -211,10 +213,14 @@ class _NodeAdminCommandRuntime:
         """Send factory-reset command, preserving full/config split behavior."""
         message = admin_pb2.AdminMessage()
         if full:
-            message.factory_reset_device = self._node._get_factory_reset_request_value()  # noqa: SLF001
+            message.factory_reset_device = (
+                self._node._get_factory_reset_request_value()
+            )  # noqa: SLF001
             logger.info("Telling node to factory reset (full device reset)")
         else:
-            message.factory_reset_config = self._node._get_factory_reset_request_value()  # noqa: SLF001
+            message.factory_reset_config = (
+                self._node._get_factory_reset_request_value()
+            )  # noqa: SLF001
             logger.info("Telling node to factory reset (config reset)")
         return self._send_command(
             message,

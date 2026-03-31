@@ -3,6 +3,7 @@
 Tests cover reconnection policy edge cases, state transitions, timeouts,
 maximum retry limits, and concurrent reconnection attempt handling.
 """
+
 # pylint: disable=too-many-lines
 
 import logging

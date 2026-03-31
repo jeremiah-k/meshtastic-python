@@ -14,6 +14,7 @@ import pytest
 
 pa = pytest.importorskip("pyarrow")
 
+import meshtastic.slog as slog_package  # noqa: E402  # pylint: disable=wrong-import-position
 from meshtastic.slog.slog import (  # noqa: E402  # pylint: disable=wrong-import-position
     POWER_LOG_SCHEMA_METADATA,
     LogDef,
@@ -23,7 +24,6 @@ from meshtastic.slog.slog import (  # noqa: E402  # pylint: disable=wrong-import
     root_dir,
     rootDir,
 )
-import meshtastic.slog as slog_package  # noqa: E402  # pylint: disable=wrong-import-position
 
 try:
     from meshtastic.slog import slog as slog_module
@@ -308,9 +308,9 @@ def test_store_current_reading_warns_once_when_voltage_unavailable(
         assert row["average_mW"] == row["average_mA"]
         assert row["max_mW"] == row["max_mA"]
         assert row["min_mW"] == row["min_mA"]
-    assert caplog.text.count("Power meter does not expose nominal voltage") == 1, (
-        caplog.text
-    )
+    assert (
+        caplog.text.count("Power meter does not expose nominal voltage") == 1
+    ), caplog.text
 
 
 @pytest.mark.unit

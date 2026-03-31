@@ -37,7 +37,9 @@ def _snapshot_modules(prefixes: tuple[str, ...]) -> dict[str, ModuleType]:
     }
 
 
-def _restore_modules(snapshot: dict[str, ModuleType], prefixes: tuple[str, ...]) -> None:
+def _restore_modules(
+    snapshot: dict[str, ModuleType], prefixes: tuple[str, ...]
+) -> None:
     """Restore captured modules and remove any modules created during the test."""
     for name in list(sys.modules.keys()):
         if _module_matches_prefix(name, prefixes):

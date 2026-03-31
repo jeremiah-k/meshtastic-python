@@ -33,7 +33,9 @@ class TestCoreModuleImports:
         Note: MeshInterface is not exported directly from the meshtastic package.
         Import from meshtastic.mesh_interface instead.
         """
-        from meshtastic.mesh_interface import MeshInterface  # pylint: disable=import-outside-toplevel
+        from meshtastic.mesh_interface import (  # pylint: disable=import-outside-toplevel
+            MeshInterface,
+        )
 
         assert MeshInterface is not None
         assert isinstance(MeshInterface, type)
@@ -52,7 +54,9 @@ class TestCoreModuleImports:
 
     def test_util_message_to_json_import(self) -> None:
         """Test that messageToJson can be imported from meshtastic.util."""
-        from meshtastic.util import messageToJson  # pylint: disable=import-outside-toplevel
+        from meshtastic.util import (  # pylint: disable=import-outside-toplevel
+            messageToJson,
+        )
 
         assert messageToJson is not None
         assert callable(messageToJson)
@@ -79,7 +83,9 @@ class TestBLEImports:
     def test_ble_interface_import(self) -> None:
         """Test that BLEInterface can be imported from meshtastic.ble_interface."""
         # BLEInterface is a re-export from meshtastic.interfaces.ble
-        from meshtastic.ble_interface import BLEInterface  # type: ignore[attr-defined]  # pylint: disable=import-outside-toplevel
+        from meshtastic.ble_interface import (
+            BLEInterface,  # type: ignore[attr-defined]  # pylint: disable=import-outside-toplevel
+        )
 
         assert BLEInterface is not None
         assert isinstance(BLEInterface, type)
@@ -92,7 +98,9 @@ class TestBLEImports:
         COMPAT_STABLE_SHIM
         """
         # Re-export of BleakClient for backwards compatibility
-        from meshtastic.ble_interface import BleakClient  # type: ignore[attr-defined]  # pylint: disable=import-outside-toplevel
+        from meshtastic.ble_interface import (
+            BleakClient,  # type: ignore[attr-defined]  # pylint: disable=import-outside-toplevel
+        )
 
         assert BleakClient is not None
 
@@ -104,13 +112,17 @@ class TestBLEImports:
         COMPAT_STABLE_SHIM
         """
         # Re-export of BleakScanner for backwards compatibility
-        from meshtastic.ble_interface import BleakScanner  # type: ignore[attr-defined]  # pylint: disable=import-outside-toplevel
+        from meshtastic.ble_interface import (
+            BleakScanner,  # type: ignore[attr-defined]  # pylint: disable=import-outside-toplevel
+        )
 
         assert BleakScanner is not None
 
     def test_ble_interface_import_from_interfaces(self) -> None:
         """Test that BLEInterface can be imported from meshtastic.interfaces.ble."""
-        from meshtastic.interfaces.ble import BLEInterface  # pylint: disable=import-outside-toplevel
+        from meshtastic.interfaces.ble import (  # pylint: disable=import-outside-toplevel
+            BLEInterface,
+        )
 
         assert BLEInterface is not None
         assert isinstance(BLEInterface, type)
@@ -133,7 +145,9 @@ class TestNodeRuntimeImports:
         This is a COMPAT_STABLE_SHIM explicitly maintained for test ecosystem
         compatibility. Documented in COMPATIBILITY.md.
         """
-        from meshtastic.node_runtime.settings_runtime import toNodeNum  # pylint: disable=import-outside-toplevel
+        from meshtastic.node_runtime.settings_runtime import (  # pylint: disable=import-outside-toplevel
+            toNodeNum,
+        )
 
         assert toNodeNum is not None
         assert callable(toNodeNum)
@@ -145,14 +159,18 @@ class TestProtobufImports:
 
     def test_import_mesh_pb2(self) -> None:
         """Test that mesh_pb2 can be imported from meshtastic.protobuf."""
-        from meshtastic.protobuf import mesh_pb2  # pylint: disable=import-outside-toplevel
+        from meshtastic.protobuf import (  # pylint: disable=import-outside-toplevel
+            mesh_pb2,
+        )
 
         assert mesh_pb2 is not None
         assert isinstance(mesh_pb2, ModuleType)
 
     def test_import_channel_pb2(self) -> None:
         """Test that channel_pb2 can be imported from meshtastic.protobuf."""
-        from meshtastic.protobuf import channel_pb2  # pylint: disable=import-outside-toplevel
+        from meshtastic.protobuf import (  # pylint: disable=import-outside-toplevel
+            channel_pb2,
+        )
 
         assert channel_pb2 is not None
         assert isinstance(channel_pb2, ModuleType)
@@ -160,7 +178,9 @@ class TestProtobufImports:
     def test_import_mesh_packet_from_mesh_pb2(self) -> None:
         """Test that MeshPacket can be imported from mesh_pb2."""
         # MeshPacket is a protobuf message class, pylint has trouble with protobuf imports
-        from meshtastic.protobuf.mesh_pb2 import MeshPacket  # pylint: disable=import-outside-toplevel
+        from meshtastic.protobuf.mesh_pb2 import (  # pylint: disable=import-outside-toplevel
+            MeshPacket,
+        )
 
         assert MeshPacket is not None
 
@@ -226,7 +246,9 @@ class TestBackwardCompatAliases:
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            from meshtastic.util import dotdict  # pylint: disable=import-outside-toplevel
+            from meshtastic.util import (  # pylint: disable=import-outside-toplevel
+                dotdict,
+            )
 
             # Verify the class is importable
             assert dotdict is not None
@@ -247,9 +269,9 @@ class TestBackwardCompatAliases:
             new_deprecation_warnings = [
                 x for x in w if issubclass(x.category, DeprecationWarning)
             ]
-            assert len(new_deprecation_warnings) == initial_count, (
-                "Expected warn-once behavior for dotdict deprecation"
-            )
+            assert (
+                len(new_deprecation_warnings) == initial_count
+            ), "Expected warn-once behavior for dotdict deprecation"
 
     def test_mt_config_tunnel_instance_deprecated(self) -> None:
         """Test that tunnelInstance can be accessed from mt_config.
@@ -270,9 +292,9 @@ class TestBackwardCompatAliases:
             deprecation_warnings = [
                 x for x in w if issubclass(x.category, DeprecationWarning)
             ]
-            assert len(deprecation_warnings) >= 1, (
-                "Expected DeprecationWarning for tunnelInstance"
-            )
+            assert (
+                len(deprecation_warnings) >= 1
+            ), "Expected DeprecationWarning for tunnelInstance"
 
     def test_node_snake_case_ringtone_aliases(self) -> None:
         """Test that snake_case ringtone methods exist on Node.
@@ -319,7 +341,10 @@ class TestUtilityCompatAliases:
         This is a COMPAT_STABLE_SHIM that provides snake_case naming.
         Note: This is a separate function, not an alias of messageToJson().
         """
-        from meshtastic.util import message_to_json, messageToJson  # pylint: disable=import-outside-toplevel
+        from meshtastic.util import (  # pylint: disable=import-outside-toplevel
+            message_to_json,
+            messageToJson,
+        )
 
         # Both should exist and be callable
         assert message_to_json is not None
@@ -336,7 +361,10 @@ class TestUtilityCompatAliases:
         This is a COMPAT_STABLE_SHIM that provides snake_case naming.
         Note: This is a separate function, not an alias of toNodeNum().
         """
-        from meshtastic.util import to_node_num, toNodeNum  # pylint: disable=import-outside-toplevel
+        from meshtastic.util import (  # pylint: disable=import-outside-toplevel
+            to_node_num,
+            toNodeNum,
+        )
 
         # Both should exist and be callable
         assert to_node_num is not None

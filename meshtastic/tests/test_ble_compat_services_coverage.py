@@ -17,10 +17,6 @@ from unittest.mock import MagicMock, Mock, NonCallableMock, patch
 
 import pytest
 
-pytestmark = pytest.mark.unit
-
-# pylint: disable=attribute-defined-outside-init
-
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.management_compat_service import (
     BLEManagementCommandsService,
@@ -35,6 +31,10 @@ from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
     _is_unconfigured_mock_member,
 )
+
+pytestmark = pytest.mark.unit
+
+# pylint: disable=attribute-defined-outside-init
 
 
 def configured_mock(return_value: Any = None, side_effect: Any = None) -> MagicMock:

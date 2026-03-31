@@ -4,29 +4,22 @@ Tests for error handling, notification parsing, buffer management,
 protocol-specific handling, and malformed packet scenarios.
 """
 
-import logging
 import struct
 from collections.abc import Callable
 from typing import Any
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
-from bleak.exc import BleakDBusError, BleakError
+from bleak.exc import BleakError
 
-from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import (
-    BLEConfig,
     FROMNUM_UUID,
-    LEGACY_LOGRADIO_UUID,
-    LOGRADIO_UUID,
-    NOTIFICATION_START_TIMEOUT,
+    BLEConfig,
 )
 from meshtastic.interfaces.ble.notifications import (
     BLENotificationDispatcher,
     NotificationManager,
-    SubscriptionTokenExhaustedError,
 )
-
 
 # =============================================================================
 # Fixtures
@@ -103,8 +96,12 @@ def test_multiple_subscriptions_same_characteristic(
 ) -> None:
     """Test that multiple subscriptions to same characteristic are tracked."""
     manager = notification_manager
-    callback1 = lambda _s, _d: None
-    callback2 = lambda _s, _d: None
+
+    def callback1(_s, _d):
+        return None
+
+    def callback2(_s, _d):
+        return None
 
     token1 = manager._subscribe("char-1", callback1)
     token2 = manager._subscribe("char-1", callback2)
@@ -473,8 +470,6 @@ def test_log_radio_handler_malformed_protobuf(
 ) -> None:
     """Test log radio handler with malformed protobuf data."""
     dispatcher = notification_dispatcher
-
-    from meshtastic.interfaces.ble.notifications import DecodeError
 
     # Create malformed protobuf data
     malformed_data = b"\x00\x01\x02\x03\xff\xfe"
@@ -883,7 +878,7 @@ def test_safe_call_with_failing_handler(
 
     # Should not propagate exception
     with patch.object(dispatcher, "_resolve_error_handler", return_value=None):
-        with patch("meshtastic.interfaces.ble.notifications.logger") as mock_logger:
+        with patch("meshtastic.interfaces.ble.notifications.logger"):
             # Simulate direct call without safe_execute wrapper
             try:
                 failing_handler(None, b"test")

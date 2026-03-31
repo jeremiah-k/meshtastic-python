@@ -68,13 +68,11 @@ interface = meshtastic.serial_interface.SerialInterface()
 import copy as _copy
 import logging
 from importlib import import_module as _import_module
-from typing import (
-    Any as _Any,
-    Callable as _Callable,
-    NamedTuple as _NamedTuple,
-    TypeGuard as _TypeGuard,
-    cast as _cast,
-)
+from typing import Any as _Any
+from typing import Callable as _Callable
+from typing import NamedTuple as _NamedTuple
+from typing import TypeGuard as _TypeGuard
+from typing import cast as _cast
 
 from google.protobuf.json_format import MessageToJson
 

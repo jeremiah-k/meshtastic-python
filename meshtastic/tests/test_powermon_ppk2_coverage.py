@@ -536,7 +536,7 @@ def test_measurement_loop_tracks_data_read_statistics(
 def test_get_average_returns_nan_with_no_samples(
     ppk2_stub: "PPK2PowerSupply",
 ) -> None:
-    """getAverageCurrentMA should return NaN when no samples exist."""
+    """GetAverageCurrentMA should return NaN when no samples exist."""
 
     ppk = ppk2_stub
     ppk.current_num_samples = 0
@@ -550,7 +550,7 @@ def test_get_average_returns_nan_with_no_samples(
 def test_get_average_calculates_correctly_with_samples(
     ppk2_stub: "PPK2PowerSupply",
 ) -> None:
-    """getAverageCurrentMA should calculate correct average with samples."""
+    """GetAverageCurrentMA should calculate correct average with samples."""
 
     ppk = ppk2_stub
     ppk.current_num_samples = 4
@@ -566,7 +566,7 @@ def test_get_average_calculates_correctly_with_samples(
 def test_get_average_uses_cached_value_with_no_new_samples(
     ppk2_stub: "PPK2PowerSupply",
 ) -> None:
-    """getAverageCurrentMA should return cached average when no new samples."""
+    """GetAverageCurrentMA should return cached average when no new samples."""
 
     ppk = ppk2_stub
     ppk.current_num_samples = 0
@@ -580,7 +580,7 @@ def test_get_average_uses_cached_value_with_no_new_samples(
 def test_get_min_returns_last_reported_with_no_samples(
     ppk2_stub: "PPK2PowerSupply",
 ) -> None:
-    """getMinCurrentMA should return last_reported_min when no new samples."""
+    """GetMinCurrentMA should return last_reported_min when no new samples."""
 
     ppk = ppk2_stub
     ppk.current_num_samples = 0
@@ -594,7 +594,7 @@ def test_get_min_returns_last_reported_with_no_samples(
 def test_get_max_returns_last_reported_with_no_samples(
     ppk2_stub: "PPK2PowerSupply",
 ) -> None:
-    """getMaxCurrentMA should return last_reported_max when no new samples."""
+    """GetMaxCurrentMA should return last_reported_max when no new samples."""
 
     ppk = ppk2_stub
     ppk.current_num_samples = 0
@@ -861,7 +861,7 @@ def test_measurement_loop_sleeps_after_read_error(
 def test_setIsSupply_validates_voltage_before_supply_mode(
     ppk2_stub: "PPK2PowerSupply",
 ) -> None:
-    """setIsSupply should raise PowerError when voltage < MIN_SUPPLY_VOLTAGE_V in supply mode."""
+    """SetIsSupply should raise PowerError when voltage < MIN_SUPPLY_VOLTAGE_V in supply mode."""
 
     ppk = ppk2_stub
     ppk.v = 0.5  # Below minimum
@@ -875,7 +875,7 @@ def test_setIsSupply_validates_voltage_before_supply_mode(
 def test_setIsSupply_allows_zero_voltage_in_meter_mode(
     monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
 ) -> None:
-    """setIsSupply should allow zero voltage in amp meter mode."""
+    """SetIsSupply should allow zero voltage in amp meter mode."""
 
     ppk = ppk2_stub
     ppk.v = 0.0
@@ -893,7 +893,7 @@ def test_setIsSupply_allows_zero_voltage_in_meter_mode(
 def test_setIsSupply_sets_voltage_before_mode(
     monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
 ) -> None:
-    """setIsSupply should call set_source_voltage before setting mode."""
+    """SetIsSupply should call set_source_voltage before setting mode."""
 
     ppk = ppk2_stub
     ppk.v = 3.3
@@ -913,7 +913,7 @@ def test_setIsSupply_sets_voltage_before_mode(
 def test_setIsSupply_starts_measuring_when_thread_not_alive(
     monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
 ) -> None:
-    """setIsSupply should start measuring when thread is not alive."""
+    """SetIsSupply should start measuring when thread is not alive."""
 
     ppk = ppk2_stub
     ppk.v = 3.3
@@ -934,7 +934,7 @@ def test_setIsSupply_starts_measuring_when_thread_not_alive(
 def test_setIsSupply_uses_source_meter_for_supply_mode(
     monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
 ) -> None:
-    """setIsSupply should use source meter mode when is_supply=True."""
+    """SetIsSupply should use source meter mode when is_supply=True."""
 
     ppk = ppk2_stub
     ppk.v = 3.3
@@ -954,7 +954,7 @@ def test_setIsSupply_uses_source_meter_for_supply_mode(
 def test_setIsSupply_uses_ampere_meter_for_meter_mode(
     monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
 ) -> None:
-    """setIsSupply should use ampere meter mode when is_supply=False."""
+    """SetIsSupply should use ampere meter mode when is_supply=False."""
 
     ppk = ppk2_stub
     ppk.v = 3.3
@@ -974,7 +974,7 @@ def test_setIsSupply_uses_ampere_meter_for_meter_mode(
 def test_setIsSupply_creates_new_thread_when_previous_started(
     monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
 ) -> None:
-    """setIsSupply should create new thread when previous thread was already started."""
+    """SetIsSupply should create new thread when previous thread was already started."""
 
     ppk = ppk2_stub
     ppk.v = 3.3
@@ -1005,7 +1005,7 @@ def test_setIsSupply_creates_new_thread_when_previous_started(
 def test_setIsSupply_sets_measuring_flag_true(
     monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
 ) -> None:
-    """setIsSupply should set measuring=True after initialization."""
+    """SetIsSupply should set measuring=True after initialization."""
 
     ppk = ppk2_stub
     ppk.v = 3.3
@@ -1025,7 +1025,7 @@ def test_setIsSupply_sets_measuring_flag_true(
 def test_setIsSupply_resets_measurements_twice_with_stabilization(
     monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
 ) -> None:
-    """setIsSupply should reset measurements twice with stabilization delay."""
+    """SetIsSupply should reset measurements twice with stabilization delay."""
 
     ppk = ppk2_stub
     ppk.v = 3.3
@@ -1057,7 +1057,7 @@ def test_setIsSupply_resets_measurements_twice_with_stabilization(
 def test_setIsSupply_handles_thread_ident_none_but_alive(
     monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
 ) -> None:
-    """setIsSupply should start thread when ident is None and thread not alive."""
+    """SetIsSupply should start thread when ident is None and thread not alive."""
 
     ppk = ppk2_stub
     ppk.v = 3.3
@@ -1079,7 +1079,7 @@ def test_setIsSupply_handles_thread_ident_none_but_alive(
 def test_setIsSupply_handles_did_start_measuring_false_case(
     monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
 ) -> None:
-    """setIsSupply should call start_measuring if thread dies between checks."""
+    """SetIsSupply should call start_measuring if thread dies between checks."""
 
     ppk = ppk2_stub
     ppk.v = 3.3
@@ -1110,7 +1110,7 @@ def test_setIsSupply_handles_did_start_measuring_false_case(
 def test_setIsSupply_does_not_restart_measuring_if_already_started(
     monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
 ) -> None:
-    """setIsSupply should not call start_measuring twice if did_start_measuring is True."""
+    """SetIsSupply should not call start_measuring twice if did_start_measuring is True."""
 
     ppk = ppk2_stub
     ppk.v = 3.3
@@ -1132,7 +1132,7 @@ def test_setIsSupply_does_not_restart_measuring_if_already_started(
 def test_setIsSupply_calls_toggle_DUT_power_not_implemented(
     ppk2_stub: "PPK2PowerSupply",
 ) -> None:
-    """powerOn and powerOff should call toggle_DUT_power with correct state."""
+    """PowerOn and powerOff should call toggle_DUT_power with correct state."""
 
     ppk = ppk2_stub
     ppk.r = MagicMock()
@@ -1150,7 +1150,7 @@ def test_setIsSupply_calls_toggle_DUT_power_not_implemented(
 def test_setIsSupply_uses_lock_for_thread_safety(
     monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
 ) -> None:
-    """setIsSupply should use _measurement_state_lock for thread safety."""
+    """SetIsSupply should use _measurement_state_lock for thread safety."""
 
     ppk = ppk2_stub
     ppk.v = 3.3
@@ -1202,7 +1202,7 @@ def test_resetMeasurements_notifies_want_measurement(
     monkeypatch: pytest.MonkeyPatch,
     ppk2_stub: "PPK2PowerSupply",
 ) -> None:
-    """resetMeasurements should notify _want_measurement condition."""
+    """ResetMeasurements should notify _want_measurement condition."""
 
     ppk = ppk2_stub
 
@@ -1223,7 +1223,7 @@ def test_resetMeasurements_notifies_want_measurement(
 def test_resetMeasurements_preserves_last_reported_with_samples(
     ppk2_stub: "PPK2PowerSupply",
 ) -> None:
-    """resetMeasurements should update last_reported when samples exist."""
+    """ResetMeasurements should update last_reported when samples exist."""
 
     ppk = ppk2_stub
     ppk.current_num_samples = 5
@@ -1243,7 +1243,7 @@ def test_resetMeasurements_preserves_last_reported_with_samples(
 def test_resetMeasurements_preserves_last_reported_without_samples(
     ppk2_stub: "PPK2PowerSupply",
 ) -> None:
-    """resetMeasurements should preserve last_reported when no samples exist."""
+    """ResetMeasurements should preserve last_reported when no samples exist."""
 
     ppk = ppk2_stub
     ppk.current_num_samples = 0

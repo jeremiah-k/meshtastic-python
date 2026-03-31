@@ -258,7 +258,8 @@ def _get_top_level_exports(pkg_dir: Path) -> list[str]:
 def _camel_to_snake(name: str) -> str:
     """Convert camelCase or PascalCase to snake_case.
 
-    Examples:
+    Examples
+    --------
         "BLEInterface" -> "ble_interface"
         "SerialInterface" -> "serial_interface"
         "MeshInterface" -> "mesh_interface"

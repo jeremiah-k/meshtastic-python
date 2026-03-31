@@ -37,7 +37,7 @@ def _get_channel_request_failed_fn(
         None,
     )
     if callable(fn):
-        return fn
+        return cast(Callable[[], bool] | None, fn)
     return None
 
 

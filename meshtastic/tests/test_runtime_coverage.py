@@ -11,6 +11,7 @@ import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
+from google.protobuf.message import DecodeError
 
 from meshtastic import (
     BROADCAST_ADDR,
@@ -38,8 +39,6 @@ from meshtastic.protobuf import (
     portnums_pb2,
     telemetry_pb2,
 )
-from google.protobuf.message import DecodeError
-
 
 # =============================================================================
 # Fixtures
@@ -1068,7 +1067,9 @@ class TestReceivePipelineResponseHandlerEdgeCases:
 
         mock_interface_with_ack._request_wait_runtime.correlate_inbound_response.assert_called_once()
         # Check that skip flag was passed
-        call_args = mock_interface_with_ack._request_wait_runtime.correlate_inbound_response.call_args
+        call_args = (
+            mock_interface_with_ack._request_wait_runtime.correlate_inbound_response.call_args
+        )
         assert call_args.kwargs["skip_response_callback_for_decode_failure"] is True
 
 

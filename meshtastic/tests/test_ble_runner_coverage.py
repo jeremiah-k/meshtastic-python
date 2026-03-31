@@ -92,7 +92,9 @@ class TestBLECoroutineRunnerSingleton:
         assert fresh_runner._initialized is True
         assert fresh_runner._warned_timeout_alias is False
 
-    def test_initialization_idempotent(self, fresh_runner: BLECoroutineRunner) -> None:  # noqa: F811
+    def test_initialization_idempotent(
+        self, fresh_runner: BLECoroutineRunner
+    ) -> None:  # noqa: F811
         """Test that multiple __init__ calls are idempotent."""
         # First init already done by fixture
         original_lock = fresh_runner._internal_lock
@@ -104,7 +106,9 @@ class TestBLECoroutineRunnerSingleton:
         assert fresh_runner._initialized is True
         assert second_instance is fresh_runner  # Same singleton instance
 
-    def test_instance_lock_property(self, fresh_runner: BLECoroutineRunner) -> None:  # noqa: F811
+    def test_instance_lock_property(
+        self, fresh_runner: BLECoroutineRunner
+    ) -> None:  # noqa: F811
         """Test _instance_lock property returns the internal lock."""
         lock = fresh_runner._instance_lock
         assert isinstance(lock, type(threading.RLock()))
@@ -221,7 +225,9 @@ class TestBLECoroutineRunnerStartLocked:
 class TestBLECoroutineRunnerEnsureRunning:
     """Test the _ensure_running method."""
 
-    def test_ensure_running_starts_loop(self, fresh_runner: BLECoroutineRunner) -> None:  # noqa: F811
+    def test_ensure_running_starts_loop(
+        self, fresh_runner: BLECoroutineRunner
+    ) -> None:  # noqa: F811
         """Test _ensure_running starts the event loop."""
         fresh_runner._ensure_running(timeout=2.0)
 
@@ -342,7 +348,9 @@ class TestBLECoroutineRunnerRunLoop:
         # Should complete without raising
 
     @pytest.mark.skip(reason="Keepalive tick is internal implementation detail")
-    def test_run_loop_keepalive_tick(self, fresh_runner: BLECoroutineRunner) -> None:  # noqa: F811
+    def test_run_loop_keepalive_tick(
+        self, fresh_runner: BLECoroutineRunner
+    ) -> None:  # noqa: F811
         """Test the keepalive tick keeps loop responsive."""
         # Skipped: internal implementation detail
 
@@ -413,7 +421,9 @@ class TestBLECoroutineRunnerCancelAllTasks:
 class TestBLECoroutineRunnerRunCoroutineThreadsafe:
     """Test the _run_coroutine_threadsafe method."""
 
-    def test_run_coroutine_success(self, fresh_runner: BLECoroutineRunner) -> None:  # noqa: F811
+    def test_run_coroutine_success(
+        self, fresh_runner: BLECoroutineRunner
+    ) -> None:  # noqa: F811
         """Test _run_coroutine_threadsafe successfully runs a coroutine."""
 
         async def simple_coro() -> str:
@@ -555,7 +565,9 @@ class TestBLECoroutineRunnerRunCoroutineThreadsafe:
 class TestBLECoroutineRunnerDiscardTrackedFuture:
     """Test the _discard_tracked_future method."""
 
-    def test_discard_removes_future(self, fresh_runner: BLECoroutineRunner) -> None:  # noqa: F811
+    def test_discard_removes_future(
+        self, fresh_runner: BLECoroutineRunner
+    ) -> None:  # noqa: F811
         """Test _discard_tracked_future removes future from pending set."""
         future: Future[str] = Future()
 
@@ -566,7 +578,9 @@ class TestBLECoroutineRunnerDiscardTrackedFuture:
 
         assert future not in fresh_runner._pending_futures
 
-    def test_discard_nonexistent_future(self, fresh_runner: BLECoroutineRunner) -> None:  # noqa: F811
+    def test_discard_nonexistent_future(
+        self, fresh_runner: BLECoroutineRunner
+    ) -> None:  # noqa: F811
         """Test _discard_tracked_future handles non-existent future gracefully."""
         future: Future[str] = Future()
 
@@ -709,7 +723,9 @@ class TestBLECoroutineRunnerCancelPendingFutures:
 class TestBLECoroutineRunnerStop:
     """Test the _stop method."""
 
-    def test_stop_when_not_running(self, fresh_runner: BLECoroutineRunner) -> None:  # noqa: F811
+    def test_stop_when_not_running(
+        self, fresh_runner: BLECoroutineRunner
+    ) -> None:  # noqa: F811
         """Test _stop when runner not running."""
         result = fresh_runner._stop(timeout=1.0)
         assert result is True
@@ -782,7 +798,9 @@ class TestBLECoroutineRunnerStop:
         assert result is False
         assert get_zombie_runner_count() > 0
 
-    def test_stop_clears_references(self, fresh_runner: BLECoroutineRunner) -> None:  # noqa: F811
+    def test_stop_clears_references(
+        self, fresh_runner: BLECoroutineRunner
+    ) -> None:  # noqa: F811
         """Test _stop clears thread and loop references."""
 
         async def setup_coro() -> str:
@@ -802,7 +820,9 @@ class TestBLECoroutineRunnerStop:
 class TestBLECoroutineRunnerAtexitShutdown:
     """Test the _atexit_shutdown method."""
 
-    def test_atexit_shutdown_success(self, fresh_runner: BLECoroutineRunner) -> None:  # noqa: F811
+    def test_atexit_shutdown_success(
+        self, fresh_runner: BLECoroutineRunner
+    ) -> None:  # noqa: F811
         """Test _atexit_shutdown stops the runner."""
 
         async def setup_coro() -> str:
@@ -832,7 +852,9 @@ class TestBLECoroutineRunnerAtexitShutdown:
 class TestBLECoroutineRunnerRestart:
     """Test the _restart method."""
 
-    def test_restart_when_not_running(self, fresh_runner: BLECoroutineRunner) -> None:  # noqa: F811
+    def test_restart_when_not_running(
+        self, fresh_runner: BLECoroutineRunner
+    ) -> None:  # noqa: F811
         """Test _restart starts runner when not running."""
         result = fresh_runner._restart()
 
@@ -855,7 +877,9 @@ class TestBLECoroutineRunnerRestart:
 
         assert result is False
 
-    def test_restart_timeout_raises(self, fresh_runner: BLECoroutineRunner) -> None:  # noqa: F811
+    def test_restart_timeout_raises(
+        self, fresh_runner: BLECoroutineRunner
+    ) -> None:  # noqa: F811
         """Test _restart raises RuntimeError on timeout."""
         # Mock _start_locked to return event that never sets
         mock_event = MagicMock()
@@ -904,7 +928,9 @@ class TestBLECoroutineRunnerCloseCoroutineSafely:
 class TestBLECoroutineRunnerAtexitHandlers:
     """Test atexit handler registration and unregistration."""
 
-    def test_register_atexit_handler(self, fresh_runner: BLECoroutineRunner) -> None:  # noqa: F811
+    def test_register_atexit_handler(
+        self, fresh_runner: BLECoroutineRunner
+    ) -> None:  # noqa: F811
         """Test _register_atexit_handler_locked registers handler."""
         with fresh_runner._instance_lock:
             # Reset state
@@ -925,7 +951,9 @@ class TestBLECoroutineRunnerAtexitHandlers:
         # Should not raise or register again
         assert fresh_runner._atexit_registered is True
 
-    def test_unregister_atexit_handler(self, fresh_runner: BLECoroutineRunner) -> None:  # noqa: F811
+    def test_unregister_atexit_handler(
+        self, fresh_runner: BLECoroutineRunner
+    ) -> None:  # noqa: F811
         """Test _unregister_atexit_handler_locked unregisters handler."""
         with fresh_runner._instance_lock:
             fresh_runner._atexit_registered = True
@@ -1025,7 +1053,9 @@ class TestBLECoroutineRunnerConcurrency:
         assert len(results) == 5
         assert all(r.startswith("result_") for r in results)
 
-    def test_concurrent_stop_and_start(self, fresh_runner: BLECoroutineRunner) -> None:  # noqa: F811
+    def test_concurrent_stop_and_start(
+        self, fresh_runner: BLECoroutineRunner
+    ) -> None:  # noqa: F811
         """Test concurrent stop and start operations."""
 
         async def simple_coro() -> str:
@@ -1086,7 +1116,9 @@ class TestBLECoroutineRunnerConcurrency:
 class TestBLECoroutineRunnerEdgeCases:
     """Test edge cases and boundary conditions."""
 
-    def test_coroutine_with_none_result(self, fresh_runner: BLECoroutineRunner) -> None:  # noqa: F811
+    def test_coroutine_with_none_result(
+        self, fresh_runner: BLECoroutineRunner
+    ) -> None:  # noqa: F811
         """Test coroutine that returns None."""
 
         async def none_coro() -> None:
@@ -1120,14 +1152,18 @@ class TestBLECoroutineRunnerEdgeCases:
         with pytest.raises(RuntimeError):
             fresh_runner._ensure_running(timeout=0.0)
 
-    def test_negative_timeout(self, fresh_runner: BLECoroutineRunner) -> None:  # noqa: F811
+    def test_negative_timeout(
+        self, fresh_runner: BLECoroutineRunner
+    ) -> None:  # noqa: F811
         """Test with negative timeout."""
 
         # Negative timeout should be treated as immediate timeout
         with pytest.raises(RuntimeError):
             fresh_runner._ensure_running(timeout=-1.0)
 
-    def test_very_short_timeout(self, fresh_runner: BLECoroutineRunner) -> None:  # noqa: F811
+    def test_very_short_timeout(
+        self, fresh_runner: BLECoroutineRunner
+    ) -> None:  # noqa: F811
         """Test with very short timeout - startup timeout behavior."""
 
         async def quick_coro() -> str:
@@ -1174,7 +1210,9 @@ class TestBLECoroutineRunnerEdgeCases:
         except Exception:
             pass
 
-    def test_future_done_callback(self, fresh_runner: BLECoroutineRunner) -> None:  # noqa: F811
+    def test_future_done_callback(
+        self, fresh_runner: BLECoroutineRunner
+    ) -> None:  # noqa: F811
         """Test future done callback is called."""
         callback_called = threading.Event()
 
@@ -1258,7 +1296,9 @@ class TestBLECoroutineRunnerStopLoopErrors:
     @pytest.mark.skip(
         reason="Thread join exception handling tested indirectly via integration tests"
     )
-    def test_stop_thread_join_exception(self, fresh_runner: BLECoroutineRunner) -> None:  # noqa: F811
+    def test_stop_thread_join_exception(
+        self, fresh_runner: BLECoroutineRunner
+    ) -> None:  # noqa: F811
         """Test _stop handles thread join exception - skipped, tested via integration."""
         # Skipped: tested via integration
 

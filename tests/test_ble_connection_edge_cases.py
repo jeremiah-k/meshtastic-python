@@ -37,14 +37,12 @@ def _refresh_connection_symbols() -> None:
     """Refresh connection symbols to avoid stale class identity after reload tests."""
     connection_module = importlib.import_module("meshtastic.interfaces.ble.connection")
 
-    globals()["ClientManager"] = getattr(connection_module, "ClientManager")
-    globals()["ConnectionOrchestrator"] = getattr(
-        connection_module, "ConnectionOrchestrator"
-    )
-    globals()["ConnectionValidator"] = getattr(connection_module, "ConnectionValidator")
-    globals()["_is_device_not_found_error"] = getattr(
-        connection_module, "_is_device_not_found_error"
-    )
+    globals()["ClientManager"] = connection_module.ClientManager
+    globals()["ConnectionOrchestrator"] = connection_module.ConnectionOrchestrator
+    globals()["ConnectionValidator"] = connection_module.ConnectionValidator
+    globals()[
+        "_is_device_not_found_error"
+    ] = connection_module._is_device_not_found_error
 
 
 class MockBLEError(Exception):
@@ -342,9 +340,7 @@ def test_connection_orchestrator_get_connect_timeout_sanitizes_invalid_config(
 ) -> None:
     """Config-derived timeouts should fall back to safe finite positive values."""
     connection_module = importlib.import_module("meshtastic.interfaces.ble.connection")
-    fallback_timeout = float(
-        getattr(connection_module, "_CONNECT_TIMEOUT_FALLBACK_SECONDS")
-    )
+    fallback_timeout = float(connection_module._CONNECT_TIMEOUT_FALLBACK_SECONDS)
 
     monkeypatch.setattr(BLEConfig, "CONNECTION_TIMEOUT", float("nan"))
     monkeypatch.setattr(BLEConfig, "DIRECT_CONNECT_TIMEOUT_SECONDS", -1.0)

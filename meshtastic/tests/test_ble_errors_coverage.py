@@ -17,6 +17,7 @@ from meshtastic.interfaces.ble.errors import BLEErrorHandler, DecodeError
 
 pytestmark = pytest.mark.unit
 
+
 class TestDecodeErrorImport:
     """Test DecodeError import fallback behavior."""
 

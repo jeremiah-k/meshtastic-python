@@ -6,8 +6,6 @@ coordination in the BLE lifecycle modules.
 
 from __future__ import annotations
 
-# pylint: disable=too-many-lines
-
 import threading
 import time
 from collections.abc import Callable, Generator
@@ -23,19 +21,21 @@ from meshtastic.interfaces.ble.lifecycle_primitives import (
     STATE_MANAGER_MISSING_RESET_MSG,
     STATE_MANAGER_MISSING_TRANSITION_MSG,
     THREAD_COORDINATOR_MISSING_FMT,
+    _client_is_connected_compat,
     _DisconnectPlan,
     _LifecycleErrorAccess,
     _LifecycleStateAccess,
     _LifecycleThreadAccess,
     _OwnershipSnapshot,
-    _client_is_connected_compat,
 )
 from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
-    BLEReceiveLifecycleCoordinator,
     RECEIVE_START_PENDING_TIMEOUT_SECONDS,
+    BLEReceiveLifecycleCoordinator,
 )
 from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import _thread_start_probe
+
+# pylint: disable=too-many-lines
 
 
 def configured_mock(return_value: Any = None, side_effect: Any = None) -> MagicMock:

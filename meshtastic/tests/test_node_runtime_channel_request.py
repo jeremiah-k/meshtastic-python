@@ -300,7 +300,7 @@ def test_request_channel_send_exception_marks_request_failed(
     channel_request_runtime: _NodeChannelRequestRuntime,
     mock_node: MagicMock,
 ) -> None:
-    """requestChannel should clear in-flight state when _send_admin raises."""
+    """RequestChannel should clear in-flight state when _send_admin raises."""
     mock_iface = MagicMock()
     mock_iface.localNode = mock_node
     mock_node.iface = mock_iface

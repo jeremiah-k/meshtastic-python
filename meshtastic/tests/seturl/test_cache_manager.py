@@ -266,7 +266,9 @@ class TestSetUrlCacheManager:
         with caplog.at_level(logging.WARNING):
             cache_manager.restore_replace_channels_snapshot(
                 snapshot,
-                expected_channels_ref=[_make_channel(0, channel_pb2.Channel.Role.PRIMARY)],
+                expected_channels_ref=[
+                    _make_channel(0, channel_pb2.Channel.Role.PRIMARY)
+                ],
             )
 
         assert mock_local_node.channels is None
