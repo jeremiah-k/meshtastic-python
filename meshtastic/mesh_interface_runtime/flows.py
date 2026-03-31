@@ -531,7 +531,7 @@ def sendWaypoint(
         if request_id is None:
             raise pipeline._interface.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
         pipeline.waitForWaypoint(request_id=request_id)
-        return d
+    return d
 
 
 # pylint: disable=too-many-positional-arguments
