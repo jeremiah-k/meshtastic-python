@@ -951,7 +951,7 @@ def test_sendPacket_with_no_destination() -> None:
     with MeshInterface(noProto=True) as iface:
         with pytest.raises(
             MeshInterface.MeshInterfaceError,
-            match="destinationId must not be None",
+            match="Invalid destinationId:",
         ):
             mesh_packet = mesh_pb2.MeshPacket()
             iface._send_packet(mesh_packet, destinationId=None)  # type: ignore[arg-type]
@@ -2033,8 +2033,8 @@ def test_send_position_waits_when_response_requested(
         response_packet.id = 77
         send_data = MagicMock(return_value=response_packet)
         wait_for_position = MagicMock()
-        monkeypatch.setattr(iface._send_pipeline, "_send_data_with_wait", send_data)
-        monkeypatch.setattr(iface._send_pipeline, "waitForPosition", wait_for_position)
+        monkeypatch.setattr(iface, "_send_data_with_wait", send_data)
+        monkeypatch.setattr(iface, "waitForPosition", wait_for_position)
 
         iface.sendPosition(
             latitude=47.0,
@@ -2490,9 +2490,7 @@ def test_send_telemetry_supported_and_fallback_paths(
             telemetry_calls.append((payload, kwargs))
             return mesh_pb2.MeshPacket(id=len(telemetry_calls))
 
-        monkeypatch.setattr(
-            iface._send_pipeline, "_send_data_with_wait", _capture_telemetry_send
-        )
+        monkeypatch.setattr(iface, "_send_data_with_wait", _capture_telemetry_send)
         wait_for_telemetry = MagicMock()
         monkeypatch.setattr(iface, "waitForTelemetry", wait_for_telemetry)
 
