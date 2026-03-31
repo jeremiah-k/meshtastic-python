@@ -53,6 +53,16 @@ def configured_mock(return_value: Any = None, side_effect: Any = None) -> MagicM
     return mock
 
 
+class _ImmediateThread:
+    """Run thread targets inline for deterministic unit tests."""
+
+    def __init__(self, *, target: Callable[[], None], **_kwargs: Any) -> None:
+        self._target = target
+
+    def start(self) -> None:
+        self._target()
+
+
 @pytest.mark.unit
 class TestLifecyclePrimitivesDisconnectPlan:
     """Test _DisconnectPlan dataclass creation and defaults."""
@@ -1079,7 +1089,17 @@ class TestBLEReceiveLifecycleCoordinator:
     @pytest.fixture
     def coordinator(self, mock_iface: MagicMock) -> BLEReceiveLifecycleCoordinator:
         """Create BLEReceiveLifecycleCoordinator instance."""
-        return BLEReceiveLifecycleCoordinator(mock_iface)
+        coordinator = BLEReceiveLifecycleCoordinator(mock_iface)
+        yield coordinator
+        with mock_iface._state_lock:
+            mock_iface._closed = True
+            mock_iface._want_receive = False
+        deadline = time.monotonic() + 0.5
+        while time.monotonic() < deadline:
+            with coordinator._deferred_restart_lock:
+                if coordinator._deferred_restart_inflight is False:
+                    break
+            time.sleep(0.01)
 
     def test_init(
         self, coordinator: BLEReceiveLifecycleCoordinator, mock_iface: MagicMock
@@ -1598,7 +1618,17 @@ class TestBLEReceiveLifecycleCoordinatorDeferredRestart:
     @pytest.fixture
     def coordinator(self, mock_iface: MagicMock) -> BLEReceiveLifecycleCoordinator:
         """Create BLEReceiveLifecycleCoordinator instance."""
-        return BLEReceiveLifecycleCoordinator(mock_iface)
+        coordinator = BLEReceiveLifecycleCoordinator(mock_iface)
+        yield coordinator
+        with mock_iface._state_lock:
+            mock_iface._closed = True
+            mock_iface._want_receive = False
+        deadline = time.monotonic() + 0.5
+        while time.monotonic() < deadline:
+            with coordinator._deferred_restart_lock:
+                if coordinator._deferred_restart_inflight is False:
+                    break
+            time.sleep(0.01)
 
     def test_schedule_deferred_receive_restart_already_inflight(
         self,
@@ -1624,20 +1654,18 @@ class TestBLEReceiveLifecycleCoordinatorDeferredRestart:
         existing_thread = MagicMock()
         mock_iface._closed = True
 
-        # Start deferred restart in a thread to avoid blocking
-        def run_restart() -> None:
+        with patch(
+            "meshtastic.interfaces.ble.lifecycle_receive_runtime.threading.Thread",
+            _ImmediateThread,
+        ):
             coordinator._schedule_deferred_receive_restart(
                 existing_thread=existing_thread,
                 name="test",
                 reset_recovery=True,
             )
 
-        restart_thread = threading.Thread(target=run_restart)
-        restart_thread.start()
-        restart_thread.join(timeout=0.5)
-
         # Should complete without errors
-        assert True
+        assert coordinator._deferred_restart_inflight is False
 
     def test_schedule_deferred_receive_restart_not_wanted(
         self, coordinator: BLEReceiveLifecycleCoordinator, mock_iface: MagicMock
@@ -1646,19 +1674,18 @@ class TestBLEReceiveLifecycleCoordinatorDeferredRestart:
         existing_thread = MagicMock()
         mock_iface._want_receive = False
 
-        def run_restart() -> None:
+        with patch(
+            "meshtastic.interfaces.ble.lifecycle_receive_runtime.threading.Thread",
+            _ImmediateThread,
+        ):
             coordinator._schedule_deferred_receive_restart(
                 existing_thread=existing_thread,
                 name="test",
                 reset_recovery=True,
             )
 
-        restart_thread = threading.Thread(target=run_restart)
-        restart_thread.start()
-        restart_thread.join(timeout=0.5)
-
         # Should complete without errors
-        assert True
+        assert coordinator._deferred_restart_inflight is False
 
     def test_schedule_deferred_receive_restart_thread_changed(
         self, coordinator: BLEReceiveLifecycleCoordinator, mock_iface: MagicMock
@@ -1667,19 +1694,18 @@ class TestBLEReceiveLifecycleCoordinatorDeferredRestart:
         existing_thread = MagicMock()
         mock_iface._receiveThread = MagicMock()  # Different thread
 
-        def run_restart() -> None:
+        with patch(
+            "meshtastic.interfaces.ble.lifecycle_receive_runtime.threading.Thread",
+            _ImmediateThread,
+        ):
             coordinator._schedule_deferred_receive_restart(
                 existing_thread=existing_thread,
                 name="test",
                 reset_recovery=True,
             )
 
-        restart_thread = threading.Thread(target=run_restart)
-        restart_thread.start()
-        restart_thread.join(timeout=0.5)
-
         # Should complete without errors
-        assert True
+        assert coordinator._deferred_restart_inflight is False
 
     def test_schedule_deferred_receive_restart_thread_dies(
         self, coordinator: BLEReceiveLifecycleCoordinator, mock_iface: MagicMock
@@ -1690,28 +1716,28 @@ class TestBLEReceiveLifecycleCoordinatorDeferredRestart:
         existing_thread.ident = None
         mock_iface._receiveThread = existing_thread
 
-        def run_restart() -> None:
+        with patch(
+            "meshtastic.interfaces.ble.lifecycle_receive_runtime.threading.Thread",
+            _ImmediateThread,
+        ):
             coordinator._schedule_deferred_receive_restart(
                 existing_thread=existing_thread,
                 name="test",
                 reset_recovery=True,
             )
 
-        restart_thread = threading.Thread(target=run_restart)
-        restart_thread.start()
-        restart_thread.join(timeout=0.5)
-
         # Should complete without errors
-        assert True
+        assert coordinator._deferred_restart_inflight is False
 
     def test_schedule_deferred_receive_restart_exception_in_start(
         self,
         coordinator: BLEReceiveLifecycleCoordinator,
-        mock_iface: MagicMock,  # noqa: W0613
+        mock_iface: MagicMock,
     ) -> None:
         """Test deferred restart handles exception in start."""
         existing_thread = MagicMock()
-        existing_thread.is_alive = MagicMock(return_value=True)
+        existing_thread.is_alive = MagicMock(return_value=False)
+        mock_iface._receiveThread = existing_thread
 
         call_count = 0
 
@@ -1722,18 +1748,24 @@ class TestBLEReceiveLifecycleCoordinatorDeferredRestart:
                 raise RuntimeError("start failed")
             # Second call succeeds
 
-        with patch.object(coordinator, "start_receive_thread", mock_start_receive):
+        with (
+            patch.object(coordinator, "start_receive_thread", mock_start_receive),
+            patch(
+                "meshtastic.interfaces.ble.lifecycle_receive_runtime.threading.Thread",
+                _ImmediateThread,
+            ),
+            patch(
+                "meshtastic.interfaces.ble.lifecycle_receive_runtime.time.sleep",
+                lambda _seconds: None,
+            ),
+        ):
+            coordinator._schedule_deferred_receive_restart(
+                existing_thread=existing_thread,
+                name="test",
+                reset_recovery=True,
+            )
 
-            def run_restart() -> None:
-                coordinator._schedule_deferred_receive_restart(
-                    existing_thread=existing_thread,
-                    name="test",
-                    reset_recovery=True,
-                )
-
-            restart_thread = threading.Thread(target=run_restart)
-            restart_thread.start()
-            restart_thread.join(timeout=1.0)
+        assert call_count == 2
 
     def test_schedule_deferred_receive_restart_launch_failure(
         self,
@@ -1765,7 +1797,10 @@ class TestBLEReceiveLifecycleCoordinatorDeferredRestart:
         mock_iface._receive_start_pending = True
         mock_iface._receive_start_pending_since = time.monotonic()
 
-        def run_restart() -> None:
+        with patch(
+            "meshtastic.interfaces.ble.lifecycle_receive_runtime.threading.Thread",
+            _ImmediateThread,
+        ):
             coordinator._schedule_deferred_receive_restart(
                 existing_thread=existing_thread,
                 name="test",
@@ -1773,13 +1808,10 @@ class TestBLEReceiveLifecycleCoordinatorDeferredRestart:
                 clear_pending_if_alive=True,
             )
 
-        restart_thread = threading.Thread(target=run_restart)
-        restart_thread.start()
-        restart_thread.join(timeout=0.5)
-
         # Pending should be cleared
         assert mock_iface._receive_start_pending is False
         assert mock_iface._receive_start_pending_since is None
+        assert coordinator._deferred_restart_inflight is False
 
 
 @pytest.mark.unit
@@ -1810,7 +1842,17 @@ class TestBLEReceiveLifecycleCoordinatorCurrentThread:
     @pytest.fixture
     def coordinator(self, mock_iface: MagicMock) -> BLEReceiveLifecycleCoordinator:
         """Create BLEReceiveLifecycleCoordinator instance."""
-        return BLEReceiveLifecycleCoordinator(mock_iface)
+        coordinator = BLEReceiveLifecycleCoordinator(mock_iface)
+        yield coordinator
+        with mock_iface._state_lock:
+            mock_iface._closed = True
+            mock_iface._want_receive = False
+        deadline = time.monotonic() + 0.5
+        while time.monotonic() < deadline:
+            with coordinator._deferred_restart_lock:
+                if coordinator._deferred_restart_inflight is False:
+                    break
+            time.sleep(0.01)
 
     def test_check_receive_start_conditions_current_thread(
         self, coordinator: BLEReceiveLifecycleCoordinator, mock_iface: MagicMock
@@ -1820,6 +1862,7 @@ class TestBLEReceiveLifecycleCoordinatorCurrentThread:
         current = threading.current_thread()
         mock_iface._receiveThread = current
         mock_iface._receive_start_pending = False
+        coordinator._schedule_deferred_receive_restart = MagicMock()
 
         def create_thread(**_kwargs: Any) -> MagicMock:
             return MagicMock()
@@ -1833,6 +1876,11 @@ class TestBLEReceiveLifecycleCoordinatorCurrentThread:
         # Should defer since it's the current thread unwinding
         assert thread is None
         assert mock_iface._receive_start_pending is True
+        coordinator._schedule_deferred_receive_restart.assert_called_once_with(
+            existing_thread=current,
+            name="test",
+            reset_recovery=True,
+        )
 
     def test_check_receive_start_conditions_current_thread_timeout(
         self, coordinator: BLEReceiveLifecycleCoordinator, mock_iface: MagicMock
@@ -1842,6 +1890,7 @@ class TestBLEReceiveLifecycleCoordinatorCurrentThread:
         mock_iface._receiveThread = current
         mock_iface._receive_start_pending = True
         mock_iface._receive_start_pending_since = time.monotonic() - 10.0  # Expired
+        coordinator._schedule_deferred_receive_restart = MagicMock()
 
         def create_thread(**_kwargs: Any) -> MagicMock:
             return MagicMock()
@@ -1854,6 +1903,11 @@ class TestBLEReceiveLifecycleCoordinatorCurrentThread:
 
         # Should defer and schedule restart
         assert thread is None
+        coordinator._schedule_deferred_receive_restart.assert_called_once_with(
+            existing_thread=current,
+            name="test",
+            reset_recovery=True,
+        )
 
 
 @pytest.mark.unit
@@ -1884,7 +1938,17 @@ class TestBLEReceiveLifecycleCoordinatorConcurrent:
     @pytest.fixture
     def coordinator(self, mock_iface: MagicMock) -> BLEReceiveLifecycleCoordinator:
         """Create BLEReceiveLifecycleCoordinator instance."""
-        return BLEReceiveLifecycleCoordinator(mock_iface)
+        coordinator = BLEReceiveLifecycleCoordinator(mock_iface)
+        yield coordinator
+        with mock_iface._state_lock:
+            mock_iface._closed = True
+            mock_iface._want_receive = False
+        deadline = time.monotonic() + 0.5
+        while time.monotonic() < deadline:
+            with coordinator._deferred_restart_lock:
+                if coordinator._deferred_restart_inflight is False:
+                    break
+            time.sleep(0.01)
 
     def test_concurrent_thread_changes_during_check(
         self, coordinator: BLEReceiveLifecycleCoordinator, mock_iface: MagicMock
@@ -1992,7 +2056,10 @@ class TestLifecyclePrimitivesIntegration:
         iface._receive_start_pending = False
         iface._receive_start_pending_since = None
         iface._receive_recovery_attempts = 0
-        return iface
+        yield iface
+        with iface._state_lock:
+            iface._closed = True
+            iface._want_receive = False
 
     def test_state_access_integration(self, full_mock_iface: MagicMock) -> None:
         """Test _LifecycleStateAccess with full mock interface."""
@@ -2190,12 +2257,25 @@ class TestLifecyclePrimitivesEdgeCases:
         thread_coordinator.start_thread = MagicMock(return_value=None)
         thread_coordinator._start_thread = MagicMock(return_value=None)
         iface.thread_coordinator = thread_coordinator
-        return iface
+        yield iface
+        with iface._state_lock:
+            iface._closed = True
+            iface._want_receive = False
 
     @pytest.fixture
     def coordinator(self, mock_iface: MagicMock) -> BLEReceiveLifecycleCoordinator:
         """Create BLEReceiveLifecycleCoordinator instance."""
-        return BLEReceiveLifecycleCoordinator(mock_iface)
+        coordinator = BLEReceiveLifecycleCoordinator(mock_iface)
+        yield coordinator
+        with mock_iface._state_lock:
+            mock_iface._closed = True
+            mock_iface._want_receive = False
+        deadline = time.monotonic() + 0.5
+        while time.monotonic() < deadline:
+            with coordinator._deferred_restart_lock:
+                if coordinator._deferred_restart_inflight is False:
+                    break
+            time.sleep(0.01)
 
     def test_client_is_connected_non_bool_return(self) -> None:
         """Test _client_is_connected_compat with non-bool return value."""
@@ -2345,7 +2425,9 @@ class TestLifecyclePrimitivesEdgeCases:
         assert result is True
 
     def test_deferred_restart_with_enforce_pending_timeout(
-        self, mock_iface: MagicMock
+        self,
+        mock_iface: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Test deferred restart with enforce_pending_timeout flag."""
         mock_iface._closed = False
@@ -2354,21 +2436,28 @@ class TestLifecyclePrimitivesEdgeCases:
         mock_iface._receive_from_radio_impl = MagicMock()
 
         coordinator = BLEReceiveLifecycleCoordinator(mock_iface)
+        coordinator.start_receive_thread = MagicMock()
+        monkeypatch.setattr(
+            "meshtastic.interfaces.ble.lifecycle_receive_runtime.RECEIVE_START_PENDING_TIMEOUT_SECONDS",
+            0.01,
+        )
 
         existing_thread = MagicMock()
         existing_thread.is_alive = MagicMock(return_value=False)
-
-        def run_restart() -> None:
-            coordinator._schedule_deferred_receive_restart(
-                existing_thread=existing_thread,
-                name="test",
-                reset_recovery=True,
-                enforce_pending_timeout=True,
-            )
-
-        restart_thread = threading.Thread(target=run_restart)
-        restart_thread.start()
-        restart_thread.join(timeout=0.5)
+        coordinator._schedule_deferred_receive_restart(
+            existing_thread=existing_thread,
+            name="test",
+            reset_recovery=True,
+            enforce_pending_timeout=True,
+        )
+        deadline = time.monotonic() + 0.5
+        while time.monotonic() < deadline:
+            with coordinator._deferred_restart_lock:
+                if coordinator._deferred_restart_inflight is False:
+                    break
+            time.sleep(0.01)
+        assert coordinator._deferred_restart_inflight is False
+        coordinator.start_receive_thread.assert_not_called()
 
     def test_error_access_try_variants_all_fail(self, mock_iface: MagicMock) -> None:
         """Test _try_safe_execute_variants when all signature attempts fail."""
