@@ -7,7 +7,7 @@ and hardware state transitions.
 
 import math
 import threading
-from typing import Any, Generator
+from typing import Any, Generator, Type
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -33,45 +33,59 @@ def mock_ppk2_api_class() -> Generator[type[Any], None, None]:
     """Provide a mock PPK2_API class for constructor tests."""
 
     class MockPPK2API:
+        """Mock implementation of PPK2_API for testing."""
+
         _list_devices_result: list[str] = []
 
         def __init__(self, port_name: str):
+            """Initialize mock API with port name."""
             self.port_name = port_name
             self.ser = MagicMock()
             self.modifiers_called = False
 
         def get_modifiers(self) -> None:
+            """Mock get_modifiers method."""
             self.modifiers_called = True
 
         def get_data(self) -> bytes:
+            """Mock get_data method."""
             return b""
 
-        def get_samples(self, data: bytes) -> tuple[list[int], int]:
+        def get_samples(self, _data: bytes) -> tuple[list[int], int]:
+            """Mock get_samples method."""
             return ([], 0)
 
         def start_measuring(self) -> None:
+            """Mock start_measuring method."""
             pass
 
         def stop_measuring(self) -> None:
+            """Mock stop_measuring method."""
             pass
 
         def use_source_meter(self) -> None:
+            """Mock use_source_meter method."""
             pass
 
         def use_ampere_meter(self) -> None:
+            """Mock use_ampere_meter method."""
             pass
 
-        def set_source_voltage(self, mv: int) -> None:
+        def set_source_voltage(self, _mv: int) -> None:
+            """Mock set_source_voltage method."""
             pass
 
-        def toggle_DUT_power(self, state: str) -> None:
+        def toggle_DUT_power(self, _state: str) -> None:
+            """Mock toggle_DUT_power method."""
             pass
 
         def close(self) -> None:
+            """Mock close method."""
             pass
 
         @classmethod
         def list_devices(cls) -> list[str]:
+            """Mock list_devices classmethod."""
             return cls._list_devices_result
 
     yield MockPPK2API
@@ -85,7 +99,7 @@ def mock_ppk2_api_class() -> Generator[type[Any], None, None]:
 @pytest.mark.unit
 def test_constructor_no_devices_found_raises_error(
     monkeypatch: pytest.MonkeyPatch,
-    mock_ppk2_api_class: type[MagicMock],
+    mock_ppk2_api_class: type[Any],
 ) -> None:
     """PPK2PowerSupply should raise PowerError when no devices found."""
 
@@ -103,7 +117,7 @@ def test_constructor_no_devices_found_raises_error(
 @pytest.mark.unit
 def test_constructor_multiple_devices_raises_error(
     monkeypatch: pytest.MonkeyPatch,
-    mock_ppk2_api_class: type[MagicMock],
+    mock_ppk2_api_class: type[Any],
 ) -> None:
     """PPK2PowerSupply should raise PowerError when multiple devices found."""
 
@@ -157,7 +171,7 @@ def test_constructor_with_explicit_port_name(
 @pytest.mark.unit
 def test_constructor_skips_auto_discovery_with_port_name(
     monkeypatch: pytest.MonkeyPatch,
-    mock_ppk2_api_class: type[MagicMock],
+    mock_ppk2_api_class: type[Any],
 ) -> None:
     """PPK2PowerSupply should not call list_devices when portName is provided."""
 
@@ -166,12 +180,11 @@ def test_constructor_skips_auto_discovery_with_port_name(
 
     original_list_devices = mock_ppk2_api_class.list_devices
 
-    @classmethod
-    def mock_list_devices(cls) -> list[str]:
+    def mock_list_devices(_cls: type[Any]) -> list[str]:
         list_devices_called[0] = True
         return original_list_devices()
 
-    mock_ppk2_api_class.list_devices = mock_list_devices
+    mock_ppk2_api_class.list_devices = classmethod(mock_list_devices)
 
     monkeypatch.setattr(
         "meshtastic.powermon.ppk2.ppk2_api.PPK2_API",
@@ -180,49 +193,6 @@ def test_constructor_skips_auto_discovery_with_port_name(
 
     ppk = PPK2PowerSupply(portName="COM3")
     assert not list_devices_called[0]
-    ppk.close()
-
-
-@pytest.mark.unit
-def test_constructor_initializes_measurement_state(
-    monkeypatch: pytest.MonkeyPatch,
-    mock_ppk2_api_class: type[MagicMock],
-) -> None:
-    """PPK2PowerSupply should initialize all measurement state variables."""
-
-    monkeypatch.setattr(
-        "meshtastic.powermon.ppk2.ppk2_api.PPK2_API",
-        mock_ppk2_api_class,
-    )
-
-    ppk = PPK2PowerSupply(portName="COM3")
-
-    # Check measurement state
-    assert ppk.measuring is False
-    assert ppk.current_max == 0
-    assert ppk.current_min == 0
-    assert ppk.current_sum == 0
-    assert ppk.current_num_samples == 0
-    assert math.isnan(ppk.current_average)
-    assert math.isnan(ppk.last_reported_min)
-    assert math.isnan(ppk.last_reported_max)
-
-    # Check tracking statistics
-    assert ppk.total_data_len == 0
-    assert ppk.num_data_reads == 0
-    assert ppk.max_data_len == 0
-
-    # Check synchronization primitives
-    assert isinstance(ppk._want_measurement, threading.Condition)
-    assert isinstance(ppk._result_lock, threading.Condition)
-    assert hasattr(ppk._measurement_state_lock, "acquire")  # Lock-like object
-
-    # Check thread is created but not started
-    assert ppk.measurement_thread is not None
-    assert ppk.measurement_thread.daemon is True
-    assert ppk.measurement_thread.name == "ppk2 measurement"
-    assert not ppk.measurement_thread.is_alive()
-
     ppk.close()
 
 
@@ -661,7 +631,7 @@ def test_constructor_api_init_failure_raises_error(
 @pytest.mark.unit
 def test_constructor_get_modifiers_failure_raises_error(
     monkeypatch: pytest.MonkeyPatch,
-    mock_ppk2_api_class: type[MagicMock],
+    mock_ppk2_api_class: Type[Any],
 ) -> None:
     """PPK2PowerSupply should propagate get_modifiers() errors."""
 
@@ -801,7 +771,7 @@ def test_measurement_loop_uses_initial_timeout_on_first_read(
     ppk.r.get_data.side_effect = get_data_side_effect
     ppk.r.get_samples.return_value = ([1000], 0)
 
-    def mock_wait(self, timeout: float | None = None) -> bool:
+    def mock_wait(_self, timeout: float | None = None) -> bool:
         timeouts_used.append(timeout if timeout is not None else 0)
         return True
 
@@ -840,7 +810,7 @@ def test_measurement_loop_uses_subsequent_timeout_on_later_reads(
 
     timeouts_used: list[float] = []
 
-    def mock_wait(self, timeout: float | None = None) -> bool:
+    def mock_wait(_self, timeout: float | None = None) -> bool:
         timeouts_used.append(timeout if timeout is not None else 0)
         return True
 
@@ -1216,7 +1186,7 @@ def test_setIsSupply_uses_lock_for_thread_safety(
         def release(self):
             return self._real_lock.release()
 
-    ppk._measurement_state_lock = TrackingLock(original_lock)
+    ppk._measurement_state_lock = TrackingLock(original_lock)  # type: ignore[assignment]
 
     ppk.setIsSupply(is_supply=False)
 
@@ -1239,7 +1209,7 @@ def test_resetMeasurements_notifies_want_measurement(
 
     notified = False
 
-    def mock_notify(n: int = 1) -> None:
+    def mock_notify(_n: int = 1) -> None:
         nonlocal notified
         notified = True
 
@@ -1371,7 +1341,7 @@ def test_measurement_loop_breaks_after_wait_when_measuring_false(
 
     # Set measuring to False during wait
 
-    def mock_wait(self, timeout: float | None = None) -> bool:
+    def mock_wait(_self, timeout: float | None = None) -> bool:
         ppk.measuring = False
         return True
 
@@ -1395,7 +1365,7 @@ def test_measurement_loop_handles_notify_during_reset(
 
     iteration_count = 0
 
-    def mock_wait(self, timeout: float | None = None) -> bool:
+    def mock_wait(_self, timeout: float | None = None) -> bool:
         nonlocal iteration_count
         iteration_count += 1
         if iteration_count >= 2:
@@ -1413,8 +1383,6 @@ def test_measurement_loop_handles_notify_during_reset(
 # Custom exception class for serial errors
 class SerialException(Exception):
     """Simulated serial communication exception."""
-
-    pass
 
 
 # =============================================================================

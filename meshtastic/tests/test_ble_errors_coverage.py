@@ -19,7 +19,7 @@ class TestDecodeErrorImport:
 
     def test_decodeerror_is_protobuf_by_default(self):
         """DecodeError should be protobuf's DecodeError when available."""
-        from google.protobuf.message import DecodeError as ProtobufDecodeError
+        from google.protobuf.message import DecodeError as ProtobufDecodeError  # noqa: C0415
 
         assert DecodeError is ProtobufDecodeError
 
@@ -90,7 +90,7 @@ class TestBLEErrorHandlerSafeExecute:
         )
         assert result is custom_return
 
-    def test_safe_execute_bleak_error_logging(self, caplog):
+    def test_safe_execute_bleak_error_logging(self):
         """Test BleakError is logged correctly."""
         with patch.object(logger, "debug") as mock_debug:
             BLEErrorHandler._safe_execute(
@@ -99,7 +99,7 @@ class TestBLEErrorHandlerSafeExecute:
                 error_msg="BLE operation failed",
             )
             mock_debug.assert_called_once()
-            args, kwargs = mock_debug.call_args
+            args, _kwargs = mock_debug.call_args
             # logger.debug("%s: %s", error_msg, e) - first arg is format string
             assert args[0] == "%s: %s"
             assert "BLE operation failed" in str(args)
@@ -114,7 +114,7 @@ class TestBLEErrorHandlerSafeExecute:
                 error_msg="Parse error",
             )
             mock_debug.assert_called_once()
-            args, kwargs = mock_debug.call_args
+            args, _kwargs = mock_debug.call_args
             assert args[0] == "%s: %s"
             assert "Parse error" in str(args)
             assert "protobuf parse failed" in str(args)
@@ -130,7 +130,7 @@ class TestBLEErrorHandlerSafeExecute:
                 error_msg="Timeout occurred",
             )
             mock_debug.assert_called_once()
-            args, kwargs = mock_debug.call_args
+            args, _kwargs = mock_debug.call_args
             assert args[0] == "%s: %s"
             assert "Timeout occurred" in str(args)
             assert "operation timed out" in str(args)
@@ -180,7 +180,7 @@ class TestBLEErrorHandlerSafeExecute:
             )
             assert result is None
             mock_exception.assert_called_once()
-            args, kwargs = mock_exception.call_args
+            args, _kwargs = mock_exception.call_args
             # logger.exception("%s", error_msg) - first arg is format string
             assert args[0] == "%s"
             assert "Generic error occurred" in str(args)
@@ -267,7 +267,7 @@ class TestBLEErrorHandlerSafeCleanup:
             result = BLEErrorHandler._safe_cleanup(mock_cleanup, "custom cleanup")
             assert result is False
             mock_debug.assert_called_once()
-            args, kwargs = mock_debug.call_args
+            args, _kwargs = mock_debug.call_args
             # logger.debug("Error during %s: %s", cleanup_name, e)
             assert args[0] == "Error during %s: %s"
             assert "custom cleanup" in str(args)
@@ -279,7 +279,7 @@ class TestBLEErrorHandlerSafeCleanup:
             mock_cleanup = Mock(side_effect=RuntimeError("runtime error"))
             result = BLEErrorHandler._safe_cleanup(mock_cleanup)
             assert result is False
-            args, kwargs = mock_debug.call_args
+            args, _kwargs = mock_debug.call_args
             assert "cleanup operation" in str(args)
 
     def test_safe_cleanup_system_exit_reraised(self):
@@ -327,7 +327,7 @@ class TestErrorMessageFormatting:
                 error_msg="",
             )
             mock_debug.assert_called_once()
-            args, kwargs = mock_debug.call_args
+            args, _kwargs = mock_debug.call_args
             # logger.debug("%s: %s", error_msg, e) - with empty strings
             assert args[0] == "%s: %s"
             # Empty error message results in format args being empty strings
@@ -342,7 +342,7 @@ class TestErrorMessageFormatting:
                 error_msg="Long error",
             )
             mock_debug.assert_called_once()
-            args, kwargs = mock_debug.call_args
+            args, _kwargs = mock_debug.call_args
             assert args[0] == "%s: %s"
             assert "Long error" in str(args)
             assert long_msg in str(args)
@@ -356,7 +356,7 @@ class TestErrorMessageFormatting:
                 error_msg="Special chars",
             )
             mock_debug.assert_called_once()
-            args, kwargs = mock_debug.call_args
+            args, _kwargs = mock_debug.call_args
             # Format string is first arg, actual args follow
             assert args[0] == "%s: %s"
 
@@ -369,7 +369,7 @@ class TestErrorMessageFormatting:
                 error_msg="Unicode test",
             )
             mock_debug.assert_called_once()
-            args, kwargs = mock_debug.call_args
+            args, _kwargs = mock_debug.call_args
             assert args[0] == "%s: %s"
             assert "Unicode test" in str(args)
             assert unicode_msg in str(args)
@@ -383,7 +383,7 @@ class TestErrorMessageFormatting:
                 error_msg="Multiline",
             )
             mock_debug.assert_called_once()
-            args, kwargs = mock_debug.call_args
+            args, _kwargs = mock_debug.call_args
             assert args[0] == "%s: %s"
             assert "Multiline" in str(args)
             # The multiline message appears in the BleakError repr where newlines are escaped
@@ -511,7 +511,7 @@ class TestModuleExports:
 
     def test_all_exports_defined(self):
         """Test __all__ is properly defined."""
-        from meshtastic.interfaces.ble import errors
+        from meshtastic.interfaces.ble import errors  # noqa: C0415
 
         assert hasattr(errors, "__all__")
         assert "BLEErrorHandler" in errors.__all__

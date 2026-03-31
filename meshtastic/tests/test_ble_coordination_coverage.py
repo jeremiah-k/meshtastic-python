@@ -74,7 +74,7 @@ class TestThreadCoordinatorInitialization:
         coord = ThreadCoordinator()
         assert coord._threads == []
         assert coord._pending_start == set()
-        assert coord._events == {}
+        assert not coord._events
         assert coord._cleaned_up is False
         assert coord._lock is not None
 
@@ -324,7 +324,7 @@ class TestThreadCoordinatorThreadStarting:
         # Try to start again - should be no-op
         coord._start_thread(thread)
         time.sleep(0.05)
-        assert result == []  # Should not have run again
+        assert not result  # Should not have run again
 
     def test_start_thread_pending_start_race_prevention(self) -> None:
         """Test thread in _pending_start cannot be started again."""
@@ -337,7 +337,7 @@ class TestThreadCoordinatorThreadStarting:
         thread = coord._create_thread(slow_start, "pending_race")
 
         # Simulate race: add to pending_start without actually starting
-        coord._pending_start.add(thread)
+        coord._pending_start.add(thread)  # type: ignore[arg-type]
 
         # Try to start while in pending_start - should be blocked
         coord._start_thread(thread)
@@ -406,7 +406,7 @@ class TestThreadCoordinatorThreadStarting:
         # Track when thread.start() returns and trigger cleanup
         def patched_start():
             # Start the actual thread
-            threading.Thread.start(thread)
+            threading.Thread.start(thread)  # type: ignore[arg-type]
             entered_start.set()
             # Small delay to let the finally block in _start_thread execute
             time.sleep(0.05)
@@ -1077,7 +1077,7 @@ class TestThreadCoordinatorThreadPoolExhaustion:
         # Add threads to pending_start without starting
         for i in range(5):
             t = coord._create_thread(dummy, f"pending_{i}")
-            coord._pending_start.add(t)
+            coord._pending_start.add(t)  # type: ignore[arg-type]
 
         assert len(coord._pending_start) == 5
 

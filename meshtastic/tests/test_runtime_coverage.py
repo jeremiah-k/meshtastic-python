@@ -38,6 +38,7 @@ from meshtastic.protobuf import (
     portnums_pb2,
     telemetry_pb2,
 )
+from google.protobuf.message import DecodeError
 
 
 # =============================================================================
@@ -455,8 +456,6 @@ class TestReceivePipelineParseErrors:
     ) -> None:
         """Test that parsing exceptions log detailed frame info."""
         invalid_bytes = b"invalid protobuf that will definitely cause a decode error"
-
-        from google.protobuf.message import DecodeError
 
         with caplog.at_level(logging.ERROR):
             with pytest.raises(DecodeError):
@@ -1108,7 +1107,9 @@ class TestReceivePipelineInvokeCallbackEdgeCases:
 
     @pytest.mark.unit
     def test_invoke_callback_with_exception(
-        self, receive_pipeline: ReceivePipeline, caplog: pytest.LogCaptureFixture
+        self,
+        receive_pipeline: ReceivePipeline,
+        caplog: pytest.LogCaptureFixture,  # noqa: W0613
     ) -> None:
         """Test that callback exceptions are not suppressed but propagate."""
 
@@ -1171,7 +1172,7 @@ class TestReceivePipelineClassifyPacketEdgeCases:
 
         receive_pipeline._classify_packet_runtime(packet_context, mesh_packet)
 
-        assert packet_context.decoded["payload"] == b"raw payload bytes"  # type: ignore[index]"
+        assert packet_context.decoded["payload"] == b"raw payload bytes"  # type: ignore[index]
 
 
 class TestReceivePipelineQueuePublication:
