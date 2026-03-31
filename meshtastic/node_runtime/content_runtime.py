@@ -25,7 +25,7 @@ class _NodeContentCacheStore:
     def __init__(self, node: "Node") -> None:
         self._node = node
 
-    def get_cached_ringtone(self) -> str | None:
+    def _get_cached_ringtone(self) -> str | None:
         """Return cached full ringtone value when already present.
 
         Locking: Assumes caller holds ringtone operation lock.
@@ -35,7 +35,7 @@ class _NodeContentCacheStore:
             return self._node.ringtone
         return None
 
-    def clear_ringtone_fragment(self) -> None:
+    def _clear_ringtone_fragment(self) -> None:
         """Clear stale ringtone fragment state before issuing a read request.
 
         Locking: Assumes caller holds ringtone operation lock.
@@ -43,7 +43,7 @@ class _NodeContentCacheStore:
         self._node.ringtonePart = None
         logger.debug("ringtone fragment cache cleared")
 
-    def store_ringtone_fragment(self, ringtone_fragment: str) -> None:
+    def _store_ringtone_fragment(self, ringtone_fragment: str) -> None:
         """Store ringtone fragment from the latest response packet.
 
         Locking: Assumes caller holds ringtone operation lock.
@@ -51,7 +51,7 @@ class _NodeContentCacheStore:
         self._node.ringtonePart = ringtone_fragment
         logger.debug("ringtone fragment stored (%d chars)", len(ringtone_fragment))
 
-    def resolve_ringtone_after_read(self) -> str | None:
+    def _resolve_ringtone_after_read(self) -> str | None:
         """Resolve ringtone result after a read wait by preferring full cache, then fragment.
 
         Locking: Assumes caller holds ringtone operation lock.
@@ -71,7 +71,7 @@ class _NodeContentCacheStore:
             return self._node.ringtone
         return None
 
-    def invalidate_ringtone_cache(self) -> None:
+    def _invalidate_ringtone_cache(self) -> None:
         """Invalidate ringtone full/fragment cache after writes.
 
         Locking: Assumes caller holds ringtone operation lock.
@@ -80,7 +80,7 @@ class _NodeContentCacheStore:
         self._node.ringtonePart = None
         logger.debug("ringtone cache invalidated")
 
-    def get_cached_canned_message(self) -> str | None:
+    def _get_cached_canned_message(self) -> str | None:
         """Return cached full canned-message value when already present.
 
         Locking: Assumes caller holds canned-message operation lock.
@@ -93,7 +93,7 @@ class _NodeContentCacheStore:
             return self._node.cannedPluginMessage
         return None
 
-    def clear_canned_message_fragment(self) -> None:
+    def _clear_canned_message_fragment(self) -> None:
         """Clear stale canned-message fragment state before issuing a read request.
 
         Locking: Assumes caller holds canned-message operation lock.
@@ -101,7 +101,7 @@ class _NodeContentCacheStore:
         self._node.cannedPluginMessageMessages = None
         logger.debug("canned message fragment cache cleared")
 
-    def store_canned_message_fragment(self, canned_messages: str) -> None:
+    def _store_canned_message_fragment(self, canned_messages: str) -> None:
         """Store canned-message fragment payload from response packets.
 
         Locking: Assumes caller holds canned-message operation lock.
@@ -109,7 +109,7 @@ class _NodeContentCacheStore:
         self._node.cannedPluginMessageMessages = canned_messages
         logger.debug("canned message fragment stored (%d chars)", len(canned_messages))
 
-    def resolve_canned_message_after_read(self) -> str | None:
+    def _resolve_canned_message_after_read(self) -> str | None:
         """Resolve canned-message result after a read wait.
 
         Locking: Assumes caller holds canned-message operation lock.
@@ -129,7 +129,7 @@ class _NodeContentCacheStore:
             return self._node.cannedPluginMessage
         return None
 
-    def invalidate_canned_message_cache(self) -> None:
+    def _invalidate_canned_message_cache(self) -> None:
         """Invalidate canned-message full/fragment cache after writes.
 
         Locking: Assumes caller holds canned-message operation lock.
@@ -185,7 +185,7 @@ class _NodeContentResponseRuntime:
             return (True, False, None)
         return (False, False, admin_message.get("raw"))
 
-    def handle_ringtone_response(
+    def _handle_ringtone_response(
         self, packet: dict[str, Any]
     ) -> tuple[bool, str | None]:
         """Parse ringtone response packet and return (is_terminal, payload)."""
@@ -202,9 +202,7 @@ class _NodeContentResponseRuntime:
             return (True, None)
         has_field = getattr(raw_admin, "HasField", None)
         try:
-            has_ringtone_response = callable(
-                has_field
-            ) and has_field(  # pylint: disable=not-callable
+            has_ringtone_response = callable(has_field) and has_field(  # pylint: disable=not-callable
                 "get_ringtone_response"
             )
         except (TypeError, ValueError):
@@ -219,7 +217,7 @@ class _NodeContentResponseRuntime:
             logger.warning("Failed to parse ringtone response payload")
             return (True, None)
 
-    def handle_canned_message_response(
+    def _handle_canned_message_response(
         self, packet: dict[str, Any]
     ) -> tuple[bool, str | None]:
         """Parse canned-message response packet and return (is_terminal, payload)."""
@@ -238,9 +236,7 @@ class _NodeContentResponseRuntime:
             return (True, None)
         has_field = getattr(raw_admin, "HasField", None)
         try:
-            has_canned_response = callable(
-                has_field
-            ) and has_field(  # pylint: disable=not-callable
+            has_canned_response = callable(has_field) and has_field(  # pylint: disable=not-callable
                 "get_canned_message_module_messages_response"
             )
         except (TypeError, ValueError):
@@ -392,7 +388,9 @@ class _NodeAdminContentRuntime:
             request_id = request_id_value if isinstance(request_id_value, int) else None
             if not response_event.wait(timeout=self._node._timeout.expireTimeout):
                 logger.warning("%s", timeout_warning_message)
-                request_wait_runtime = getattr(self._node.iface, "_request_wait_runtime", None)
+                request_wait_runtime = getattr(
+                    self._node.iface, "_request_wait_runtime", None
+                )
                 drop_response_handler = (
                     getattr(request_wait_runtime, "drop_response_handler", None)
                     if request_wait_runtime is not None
@@ -426,10 +424,10 @@ class _NodeAdminContentRuntime:
                 "External Notification module not present (excluded by firmware)",
             ):
                 return None
-            cached_ringtone = self._cache_store.get_cached_ringtone()
+            cached_ringtone = self._cache_store._get_cached_ringtone()
             if cached_ringtone is not None:
                 return cached_ringtone
-            self._cache_store.clear_ringtone_fragment()
+            self._cache_store._clear_ringtone_fragment()
             return self._send_content_read_request(
                 begin_read_generation=self._begin_ringtone_read,
                 is_read_generation_active=self._is_ringtone_read_active,
@@ -437,13 +435,13 @@ class _NodeAdminContentRuntime:
                 build_request=lambda message: setattr(
                     message, "get_ringtone_request", True
                 ),
-                handle_response=self._response_runtime.handle_ringtone_response,
-                commit_payload=self._cache_store.store_ringtone_fragment,
+                handle_response=self._response_runtime._handle_ringtone_response,
+                commit_payload=self._cache_store._store_ringtone_fragment,
                 skipped_send_debug_message=(
                     "Skipping ringtone wait because protocol send was not started"
                 ),
                 timeout_warning_message="Timed out waiting for ringtone response",
-                resolve_result=self._cache_store.resolve_ringtone_after_read,
+                resolve_result=self._cache_store._resolve_ringtone_after_read,
             )
 
     def write_ringtone(self, ringtone: str) -> mesh_pb2.MeshPacket | None:
@@ -467,7 +465,7 @@ class _NodeAdminContentRuntime:
                 onResponse=self._select_write_response_handler(),
             )
             if send_result is not None:
-                self._cache_store.invalidate_ringtone_cache()
+                self._cache_store._invalidate_ringtone_cache()
             return send_result
 
     def read_canned_message(self) -> str | None:
@@ -479,10 +477,10 @@ class _NodeAdminContentRuntime:
                 "Canned Message module not present (excluded by firmware)",
             ):
                 return None
-            cached_canned_message = self._cache_store.get_cached_canned_message()
+            cached_canned_message = self._cache_store._get_cached_canned_message()
             if cached_canned_message is not None:
                 return cached_canned_message
-            self._cache_store.clear_canned_message_fragment()
+            self._cache_store._clear_canned_message_fragment()
             return self._send_content_read_request(
                 begin_read_generation=self._begin_canned_message_read,
                 is_read_generation_active=self._is_canned_message_read_active,
@@ -492,13 +490,13 @@ class _NodeAdminContentRuntime:
                     "get_canned_message_module_messages_request",
                     True,
                 ),
-                handle_response=self._response_runtime.handle_canned_message_response,
-                commit_payload=self._cache_store.store_canned_message_fragment,
+                handle_response=self._response_runtime._handle_canned_message_response,
+                commit_payload=self._cache_store._store_canned_message_fragment,
                 skipped_send_debug_message=(
                     "Skipping canned-message wait because protocol send was not started"
                 ),
                 timeout_warning_message="Timed out waiting for canned message response",
-                resolve_result=self._cache_store.resolve_canned_message_after_read,
+                resolve_result=self._cache_store._resolve_canned_message_after_read,
             )
 
     def write_canned_message(self, message: str) -> mesh_pb2.MeshPacket | None:
@@ -524,7 +522,7 @@ class _NodeAdminContentRuntime:
                     onResponse=self._select_write_response_handler(),
                 )
                 if send_result is not None:
-                    self._cache_store.invalidate_canned_message_cache()
+                    self._cache_store._invalidate_canned_message_cache()
                 return send_result
 
             chunks = [
@@ -552,13 +550,13 @@ class _NodeAdminContentRuntime:
                         first_send_result = send_result
                     if send_result is None:
                         if wrote_any_chunk:
-                            self._cache_store.invalidate_canned_message_cache()
+                            self._cache_store._invalidate_canned_message_cache()
                         return None
                     wrote_any_chunk = True
             except Exception:
                 if wrote_any_chunk:
-                    self._cache_store.invalidate_canned_message_cache()
+                    self._cache_store._invalidate_canned_message_cache()
                 raise
 
-            self._cache_store.invalidate_canned_message_cache()
+            self._cache_store._invalidate_canned_message_cache()
             return first_send_result

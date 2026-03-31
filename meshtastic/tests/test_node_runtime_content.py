@@ -74,7 +74,7 @@ class TestNodeContentCacheStore:
         cache_store = _NodeContentCacheStore(mock_node_for_cache)
 
         with caplog.at_level(logging.DEBUG):
-            result = cache_store.get_cached_ringtone()
+            result = cache_store._get_cached_ringtone()
 
         assert result == "RTTTL: melody:d=4,o=5,b=100:c"
         assert "ringtone cached" in caplog.text
@@ -88,7 +88,7 @@ class TestNodeContentCacheStore:
         mock_node_for_cache.ringtone = None
         cache_store = _NodeContentCacheStore(mock_node_for_cache)
 
-        result = cache_store.get_cached_ringtone()
+        result = cache_store._get_cached_ringtone()
 
         assert result is None
 
@@ -101,7 +101,7 @@ class TestNodeContentCacheStore:
         cache_store = _NodeContentCacheStore(mock_node_for_cache)
 
         with caplog.at_level(logging.DEBUG):
-            cache_store.clear_ringtone_fragment()
+            cache_store._clear_ringtone_fragment()
 
         assert mock_node_for_cache.ringtonePart is None
         assert "ringtone fragment cache cleared" in caplog.text
@@ -115,7 +115,7 @@ class TestNodeContentCacheStore:
         fragment = "RTTTL: partial:d=4,o=5,b=100:c,d,e"
 
         with caplog.at_level(logging.DEBUG):
-            cache_store.store_ringtone_fragment(fragment)
+            cache_store._store_ringtone_fragment(fragment)
 
         assert mock_node_for_cache.ringtonePart == fragment
         assert "ringtone fragment stored" in caplog.text
@@ -130,7 +130,7 @@ class TestNodeContentCacheStore:
         cache_store = _NodeContentCacheStore(mock_node_for_cache)
 
         with caplog.at_level(logging.DEBUG):
-            result = cache_store.resolve_ringtone_after_read()
+            result = cache_store._resolve_ringtone_after_read()
 
         assert result == "RTTTL: cached:d=4,o=5,b=100:c"
         assert "ringtone resolved from full cache" in caplog.text
@@ -145,7 +145,7 @@ class TestNodeContentCacheStore:
         cache_store = _NodeContentCacheStore(mock_node_for_cache)
 
         with caplog.at_level(logging.DEBUG):
-            result = cache_store.resolve_ringtone_after_read()
+            result = cache_store._resolve_ringtone_after_read()
 
         assert result == "RTTTL: fragment:d=4,o=5,b=100:c"
         assert mock_node_for_cache.ringtone == "RTTTL: fragment:d=4,o=5,b=100:c"
@@ -160,7 +160,7 @@ class TestNodeContentCacheStore:
         mock_node_for_cache.ringtonePart = None
         cache_store = _NodeContentCacheStore(mock_node_for_cache)
 
-        result = cache_store.resolve_ringtone_after_read()
+        result = cache_store._resolve_ringtone_after_read()
 
         assert result is None
 
@@ -174,7 +174,7 @@ class TestNodeContentCacheStore:
         cache_store = _NodeContentCacheStore(mock_node_for_cache)
 
         with caplog.at_level(logging.DEBUG):
-            cache_store.invalidate_ringtone_cache()
+            cache_store._invalidate_ringtone_cache()
 
         assert mock_node_for_cache.ringtone is None
         assert mock_node_for_cache.ringtonePart is None
@@ -189,7 +189,7 @@ class TestNodeContentCacheStore:
         cache_store = _NodeContentCacheStore(mock_node_for_cache)
 
         with caplog.at_level(logging.DEBUG):
-            result = cache_store.get_cached_canned_message()
+            result = cache_store._get_cached_canned_message()
 
         assert result == "Hello\nWorld\nTest"
         assert "canned message cached" in caplog.text
@@ -203,7 +203,7 @@ class TestNodeContentCacheStore:
         mock_node_for_cache.cannedPluginMessage = None
         cache_store = _NodeContentCacheStore(mock_node_for_cache)
 
-        result = cache_store.get_cached_canned_message()
+        result = cache_store._get_cached_canned_message()
 
         assert result is None
 
@@ -216,7 +216,7 @@ class TestNodeContentCacheStore:
         cache_store = _NodeContentCacheStore(mock_node_for_cache)
 
         with caplog.at_level(logging.DEBUG):
-            cache_store.clear_canned_message_fragment()
+            cache_store._clear_canned_message_fragment()
 
         assert mock_node_for_cache.cannedPluginMessageMessages is None
         assert "canned message fragment cache cleared" in caplog.text
@@ -230,7 +230,7 @@ class TestNodeContentCacheStore:
         fragment = "Hello\nWorld"
 
         with caplog.at_level(logging.DEBUG):
-            cache_store.store_canned_message_fragment(fragment)
+            cache_store._store_canned_message_fragment(fragment)
 
         assert mock_node_for_cache.cannedPluginMessageMessages == fragment
         assert "canned message fragment stored" in caplog.text
@@ -245,7 +245,7 @@ class TestNodeContentCacheStore:
         cache_store = _NodeContentCacheStore(mock_node_for_cache)
 
         with caplog.at_level(logging.DEBUG):
-            result = cache_store.resolve_canned_message_after_read()
+            result = cache_store._resolve_canned_message_after_read()
 
         assert result == "Cached\nMessage"
         assert "canned message resolved from full cache" in caplog.text
@@ -260,7 +260,7 @@ class TestNodeContentCacheStore:
         cache_store = _NodeContentCacheStore(mock_node_for_cache)
 
         with caplog.at_level(logging.DEBUG):
-            result = cache_store.resolve_canned_message_after_read()
+            result = cache_store._resolve_canned_message_after_read()
 
         assert result == "Fragment\nMessage"
         assert mock_node_for_cache.cannedPluginMessage == "Fragment\nMessage"
@@ -275,7 +275,7 @@ class TestNodeContentCacheStore:
         mock_node_for_cache.cannedPluginMessageMessages = None
         cache_store = _NodeContentCacheStore(mock_node_for_cache)
 
-        result = cache_store.resolve_canned_message_after_read()
+        result = cache_store._resolve_canned_message_after_read()
 
         assert result is None
 
@@ -289,7 +289,7 @@ class TestNodeContentCacheStore:
         cache_store = _NodeContentCacheStore(mock_node_for_cache)
 
         with caplog.at_level(logging.DEBUG):
-            cache_store.invalidate_canned_message_cache()
+            cache_store._invalidate_canned_message_cache()
 
         assert mock_node_for_cache.cannedPluginMessage is None
         assert mock_node_for_cache.cannedPluginMessageMessages is None
@@ -387,7 +387,7 @@ class TestNodeContentResponseRuntime:
         }
 
         with caplog.at_level(logging.DEBUG):
-            terminal, payload = runtime.handle_ringtone_response(packet)
+            terminal, payload = runtime._handle_ringtone_response(packet)
 
         assert terminal is True
         assert payload == "RTTTL: test:d=4,o=5,b=100:c"
@@ -412,7 +412,7 @@ class TestNodeContentResponseRuntime:
         }
 
         with caplog.at_level(logging.ERROR):
-            terminal, payload = runtime.handle_ringtone_response(packet)
+            terminal, payload = runtime._handle_ringtone_response(packet)
 
         assert terminal is True
         assert payload is None
@@ -433,7 +433,7 @@ class TestNodeContentResponseRuntime:
         packet: dict[str, Any] = {"decoded": None}
 
         with caplog.at_level(logging.WARNING):
-            terminal, payload = runtime.handle_ringtone_response(packet)
+            terminal, payload = runtime._handle_ringtone_response(packet)
 
         assert terminal is True
         assert payload is None
@@ -454,7 +454,7 @@ class TestNodeContentResponseRuntime:
         packet: dict[str, Any] = {"decoded": {}}
 
         with caplog.at_level(logging.WARNING):
-            terminal, payload = runtime.handle_ringtone_response(packet)
+            terminal, payload = runtime._handle_ringtone_response(packet)
 
         assert terminal is True
         assert payload is None
@@ -475,7 +475,7 @@ class TestNodeContentResponseRuntime:
         packet: dict[str, Any] = {"decoded": {"admin": {}}}
 
         with caplog.at_level(logging.WARNING):
-            terminal, payload = runtime.handle_ringtone_response(packet)
+            terminal, payload = runtime._handle_ringtone_response(packet)
 
         assert terminal is True
         assert payload is None
@@ -503,7 +503,7 @@ class TestNodeContentResponseRuntime:
         }
 
         with caplog.at_level(logging.DEBUG):
-            terminal, payload = runtime.handle_canned_message_response(packet)
+            terminal, payload = runtime._handle_canned_message_response(packet)
 
         assert terminal is True
         assert payload == "Hello\nWorld"
@@ -528,7 +528,7 @@ class TestNodeContentResponseRuntime:
         }
 
         with caplog.at_level(logging.ERROR):
-            terminal, payload = runtime.handle_canned_message_response(packet)
+            terminal, payload = runtime._handle_canned_message_response(packet)
 
         assert terminal is True
         assert payload is None
@@ -549,7 +549,7 @@ class TestNodeContentResponseRuntime:
         packet: dict[str, Any] = {"decoded": None}
 
         with caplog.at_level(logging.WARNING):
-            terminal, payload = runtime.handle_canned_message_response(packet)
+            terminal, payload = runtime._handle_canned_message_response(packet)
 
         assert terminal is True
         assert payload is None
@@ -572,7 +572,7 @@ class TestNodeContentResponseRuntime:
         packet: dict[str, Any] = {"decoded": {}}
 
         with caplog.at_level(logging.WARNING):
-            terminal, payload = runtime.handle_canned_message_response(packet)
+            terminal, payload = runtime._handle_canned_message_response(packet)
 
         assert terminal is True
         assert payload is None
@@ -593,7 +593,7 @@ class TestNodeContentResponseRuntime:
         packet: dict[str, Any] = {"decoded": {"admin": {}}}
 
         with caplog.at_level(logging.WARNING):
-            terminal, payload = runtime.handle_canned_message_response(packet)
+            terminal, payload = runtime._handle_canned_message_response(packet)
 
         assert terminal is True
         assert payload is None
