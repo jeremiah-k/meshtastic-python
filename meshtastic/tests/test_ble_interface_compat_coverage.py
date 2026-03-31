@@ -2,8 +2,38 @@
 
 import builtins
 import sys
+from types import ModuleType
 
 import pytest
+
+_BLE_IMPORT_TEST_MODULE_PREFIXES = (
+    "bleak",
+    "meshtastic.ble_interface",
+    "meshtastic.interfaces",
+    "meshtastic.interfaces.ble",
+)
+
+
+def _module_matches_prefix(name: str, prefixes: tuple[str, ...]) -> bool:
+    """Return True when a module name is in or under one of the prefixes."""
+    return any(name == prefix or name.startswith(f"{prefix}.") for prefix in prefixes)
+
+
+def _snapshot_modules(prefixes: tuple[str, ...]) -> dict[str, ModuleType]:
+    """Capture module objects for the provided prefixes."""
+    return {
+        name: module
+        for name, module in sys.modules.items()
+        if _module_matches_prefix(name, prefixes)
+    }
+
+
+def _restore_modules(snapshot: dict[str, ModuleType], prefixes: tuple[str, ...]) -> None:
+    """Restore captured modules and remove any modules created during the test."""
+    for name in list(sys.modules.keys()):
+        if _module_matches_prefix(name, prefixes):
+            del sys.modules[name]
+    sys.modules.update(snapshot)
 
 
 class TestBleInterfaceImportFailure:
@@ -11,11 +41,7 @@ class TestBleInterfaceImportFailure:
 
     def test_bleak_import_failure_raises_import_error(self):
         """Test that missing bleak raises ImportError with helpful message."""
-        # Remove bleak from sys.modules to simulate it not being installed
-        modules_to_remove = [
-            k for k in sys.modules if k == "bleak" or k.startswith("bleak.")
-        ]
-        saved_modules = {k: sys.modules.pop(k) for k in modules_to_remove}
+        module_snapshot = _snapshot_modules(_BLE_IMPORT_TEST_MODULE_PREFIXES)
 
         # Remove the ble_interface module to force reimport
         if "meshtastic.ble_interface" in sys.modules:
@@ -44,18 +70,13 @@ class TestBleInterfaceImportFailure:
             assert "poetry install" in str(ctx.value)
         finally:
             builtins.__import__ = original_import
-            # Restore modules
-            for k, v in saved_modules.items():
-                sys.modules[k] = v
+            _restore_modules(module_snapshot, _BLE_IMPORT_TEST_MODULE_PREFIXES)
 
     def test_non_bleak_module_not_found_raises_original(self):
         """Test that missing non-bleak modules re-raise the original error."""
         # This tests lines 25-28 where non-bleak ModuleNotFoundError is re-raised
         # Need to simulate a different module failing during the bleak import process
-        modules_to_remove = [
-            k for k in sys.modules if k == "bleak" or k.startswith("bleak.")
-        ]
-        saved_modules = {k: sys.modules.pop(k) for k in modules_to_remove}
+        module_snapshot = _snapshot_modules(_BLE_IMPORT_TEST_MODULE_PREFIXES)
 
         if "meshtastic.ble_interface" in sys.modules:
             del sys.modules["meshtastic.ble_interface"]
@@ -89,8 +110,7 @@ class TestBleInterfaceImportFailure:
             assert "some_other_dep" in str(ctx.value)
         finally:
             builtins.__import__ = original_import
-            for k, v in saved_modules.items():
-                sys.modules[k] = v
+            _restore_modules(module_snapshot, _BLE_IMPORT_TEST_MODULE_PREFIXES)
 
 
 class TestBleInterfaceCompatImports:

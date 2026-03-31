@@ -13,6 +13,35 @@ from unittest.mock import patch
 
 import pytest
 
+_BLE_IMPORT_TEST_MODULE_PREFIXES = (
+    "bleak",
+    "meshtastic.ble_interface",
+    "meshtastic.interfaces",
+    "meshtastic.interfaces.ble",
+)
+
+
+def _module_matches_prefix(name: str, prefixes: tuple[str, ...]) -> bool:
+    """Return True when a module name is in or under one of the prefixes."""
+    return any(name == prefix or name.startswith(f"{prefix}.") for prefix in prefixes)
+
+
+def _snapshot_modules(prefixes: tuple[str, ...]) -> dict[str, ModuleType]:
+    """Capture module objects for the provided prefixes."""
+    return {
+        name: module
+        for name, module in sys.modules.items()
+        if _module_matches_prefix(name, prefixes)
+    }
+
+
+def _restore_modules(snapshot: dict[str, ModuleType], prefixes: tuple[str, ...]) -> None:
+    """Restore captured modules and remove any modules created during the test."""
+    for name in list(sys.modules.keys()):
+        if _module_matches_prefix(name, prefixes):
+            del sys.modules[name]
+    sys.modules.update(snapshot)
+
 
 @pytest.mark.unit
 class TestBLEPackageInit:
@@ -33,8 +62,7 @@ class TestBLEPackageInit:
         Covers lines 14-17 of meshtastic/interfaces/ble/__init__.py:
         the ModuleNotFoundError handler that provides a helpful error message.
         """
-        bleak_module = sys.modules.get("bleak")
-        ble_module = sys.modules.get("meshtastic.interfaces.ble")
+        module_snapshot = _snapshot_modules(_BLE_IMPORT_TEST_MODULE_PREFIXES)
         original_import = builtins.__import__
 
         try:
@@ -65,10 +93,7 @@ class TestBLEPackageInit:
             assert "poetry install" in str(exc_info.value).lower()
 
         finally:
-            if bleak_module is not None:
-                sys.modules["bleak"] = bleak_module
-            if ble_module is not None:
-                sys.modules["meshtastic.interfaces.ble"] = ble_module
+            _restore_modules(module_snapshot, _BLE_IMPORT_TEST_MODULE_PREFIXES)
 
     def test_ble_init_reraises_non_bleak_module_not_found(self) -> None:
         """Test that ModuleNotFoundError for non-bleak modules is re-raised.
@@ -76,7 +101,7 @@ class TestBLEPackageInit:
         Covers line 15-16: the check that only catches ModuleNotFoundError
         when the missing module is specifically 'bleak'.
         """
-        ble_module = sys.modules.get("meshtastic.interfaces.ble")
+        module_snapshot = _snapshot_modules(_BLE_IMPORT_TEST_MODULE_PREFIXES)
         original_import = builtins.__import__
 
         try:
@@ -106,8 +131,7 @@ class TestBLEPackageInit:
                 assert exc_info.value.name == "some_other_module"
 
         finally:
-            if ble_module is not None:
-                sys.modules["meshtastic.interfaces.ble"] = ble_module
+            _restore_modules(module_snapshot, _BLE_IMPORT_TEST_MODULE_PREFIXES)
 
     def test_ble_all_exports(self) -> None:
         """Test that __all__ exports are accessible."""

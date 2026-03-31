@@ -1260,10 +1260,10 @@ class TestBLEReceiveLifecycleCoordinator:
         self, coordinator: BLEReceiveLifecycleCoordinator, mock_iface: MagicMock
     ) -> None:
         """Test _check_receive_start_conditions creates new thread."""
-        mock_iface._receiveThread = None
         mock_thread = MagicMock()
         mock_thread.name = "test_thread"
         mock_thread.ident = 12345
+        mock_iface._receiveThread = mock_thread
 
         def create_thread(**_kwargs: Any) -> MagicMock:  # noqa: W0612
             return mock_thread
