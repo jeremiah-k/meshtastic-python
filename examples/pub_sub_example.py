@@ -1,8 +1,7 @@
 """Simple program to demo how to use meshtastic library.
 
 To run: `python examples/pub_sub_example.py host`.
-"""
-# pylint: disable=duplicate-code
+"""  # pylint: disable=duplicate-code
 
 import sys
 import threading
