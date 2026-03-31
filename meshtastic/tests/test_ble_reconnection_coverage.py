@@ -1437,18 +1437,17 @@ class TestReconnectWorkerGateResults:
         )
 
         # Patch gate to return False
-        original_gate = worker._handle_connected_elsewhere_gate  # type: ignore[arg-type]
+        original_gate: Any = worker._handle_connected_elsewhere_gate
 
         def mock_gate_false(*_args: Any) -> bool:
             return False
 
-        worker._handle_connected_elsewhere_gate = mock_gate_false
-        # type: ignore[arg-type]
+        worker._handle_connected_elsewhere_gate = mock_gate_false  # type: ignore[method-assign,assignment]
         # Should exit when gate returns False
         worker._attempt_reconnect_loop(shutdown_event)
 
         # Restore original
-        worker._handle_connected_elsewhere_gate = original_gate
+        worker._handle_connected_elsewhere_gate = original_gate  # type: ignore[method-assign]
 
     @pytest.mark.unit
     def test_loop_gate_returns_true_continues(self) -> None:
@@ -1468,24 +1467,24 @@ class TestReconnectWorkerGateResults:
         )
 
         # Patch gate to return True once, then None
-        original_gate = worker._handle_connected_elsewhere_gate
+        original_gate: Any = worker._handle_connected_elsewhere_gate
         call_count = 0
 
-        def mock_gate_true_once(*_args: Any) -> bool | None:
+        def mock_gate_true_once(_iface: Any, _attempt: int, _event: Any) -> bool | None:
             nonlocal call_count
-            call_count += 1  # type: ignore[arg-type]
+            call_count += 1
             if call_count == 1:
                 return True  # Continue to next iteration
             return None  # Then proceed normally
 
-        worker._handle_connected_elsewhere_gate = mock_gate_true_once
+        worker._handle_connected_elsewhere_gate = mock_gate_true_once  # type: ignore[method-assign,assignment]
 
         # Should handle True (continue) then proceed
         # Exit quickly by setting max retries low
         worker._attempt_reconnect_loop(shutdown_event)
 
         # Restore original
-        worker._handle_connected_elsewhere_gate = original_gate
+        worker._handle_connected_elsewhere_gate = original_gate  # type: ignore[method-assign,assignment]
 
 
 class TestReconnectWorkerBleakErrors:
