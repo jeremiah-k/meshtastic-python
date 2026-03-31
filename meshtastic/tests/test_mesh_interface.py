@@ -1085,7 +1085,7 @@ def test_sendPacket_with_unsupported_destination_type_without_nodes_raises(
     mesh_packet = mesh_pb2.MeshPacket()
     with pytest.raises(
         MeshInterface.MeshInterfaceError,
-        match=r"NodeId \[\] not found and node DB is unavailable",
+        match=r"Unexpected destinationId type: <class 'list'>",
     ):
         iface._send_packet(mesh_packet, destinationId=[])  # type: ignore[arg-type]
 
@@ -2850,7 +2850,7 @@ def test_send_packet_calls_transport_when_proto_enabled(
         iface.myInfo = MagicMock()
         iface.myInfo.my_node_num = 1
         sent: list[mesh_pb2.ToRadio] = []
-        monkeypatch.setattr(iface, "_send_to_radio", sent.append)
+        monkeypatch.setattr(iface._send_pipeline, "_send_to_radio", sent.append)
         iface._send_packet(mesh_pb2.MeshPacket(), destinationId=1)
         assert sent
 
@@ -3008,7 +3008,7 @@ def test_send_data_rolls_back_wait_state_when_send_packet_raises(
             observed_request_ids.append(packet.id)
             raise _SendFailureError()
 
-        monkeypatch.setattr(iface, "_send_packet", _fail_send)
+        monkeypatch.setattr(iface._send_pipeline, "_send_packet", _fail_send)
 
         with pytest.raises(OSError, match="socket send failed"):
             iface._send_data_with_wait(
@@ -3077,7 +3077,7 @@ def test_send_data_removes_response_handler_when_send_fails_without_wait_attr(
             observed_request_ids.append(packet.id)
             raise _SendFailureError()
 
-        monkeypatch.setattr(iface, "_send_packet", _fail_send)
+        monkeypatch.setattr(iface._send_pipeline, "_send_packet", _fail_send)
 
         with pytest.raises(OSError, match="send failure"):
             iface.sendData(
