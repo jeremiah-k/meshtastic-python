@@ -78,8 +78,8 @@ def _is_breaking_signature_change_for_baseline(
         project_root = Path(__file__).resolve().parents[2]
         sys.path.insert(0, str(project_root / "bin"))
         try:
-            from compare_api_surfaces import (
-                _is_breaking_signature_change,  # type: ignore[import-not-found]; pylint: disable=import-error,import-outside-toplevel
+            from compare_api_surfaces import (  # type: ignore[import-not-found]  # pylint: disable=import-error,import-outside-toplevel
+                _is_breaking_signature_change,
             )
         finally:
             sys.path.pop(0)
