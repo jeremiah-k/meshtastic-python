@@ -1053,7 +1053,7 @@ def test_waitForConfig_success(
 
 @pytest.mark.unit
 def test_start_ota_local_node() -> None:
-    """Test startOTA on local node."""
+    """Test startOTA canonical signature on local node."""
     iface = MagicMock(autospec=MeshInterface)
     anode = Node(iface, 1234567890, noProto=True)
     iface.localNode = anode
@@ -1064,7 +1064,7 @@ def test_start_ota_local_node() -> None:
     )
 
     test_hash = b"\x01\x02\x03" * 8  # 24-byte hash
-    anode.startOTA(ota_mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=test_hash)
+    anode.startOTA(mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=test_hash)
 
     sent_msg = cast(admin_pb2.AdminMessage, captured["msg"])
     assert sent_msg.ota_request.reboot_ota_mode == admin_pb2.OTAMode.OTA_WIFI
@@ -1073,7 +1073,7 @@ def test_start_ota_local_node() -> None:
 
 @pytest.mark.unit
 def test_start_ota_local_node_legacy_alias_keywords() -> None:
-    """Test startOTA legacy aliases mode/ota_hash remain supported."""
+    """Test startOTA legacy aliases ota_mode/ota_hash remain supported."""
     iface = MagicMock(autospec=MeshInterface)
     anode = Node(iface, 1234567890, noProto=True)
     iface.localNode = anode
@@ -1084,7 +1084,7 @@ def test_start_ota_local_node_legacy_alias_keywords() -> None:
     )
 
     test_hash = b"\x11\x22\x33" * 8
-    anode.startOTA(mode=admin_pb2.OTAMode.OTA_WIFI, ota_hash=test_hash)
+    anode.startOTA(ota_mode=admin_pb2.OTAMode.OTA_WIFI, ota_hash=test_hash)
 
     sent_msg = cast(admin_pb2.AdminMessage, captured["msg"])
     assert sent_msg.ota_request.reboot_ota_mode == admin_pb2.OTAMode.OTA_WIFI
@@ -1104,7 +1104,7 @@ def test_start_ota_remote_node_raises_error() -> None:
         MeshInterface.MeshInterfaceError, match="startOTA only possible on local node"
     ):
         remote_node.startOTA(
-            ota_mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=test_hash
+            mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=test_hash
         )
 
 

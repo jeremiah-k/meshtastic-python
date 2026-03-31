@@ -253,10 +253,7 @@ def test_node_writechannel_signature() -> None:
 
 @pytest.mark.unit
 def test_node_startota_signature() -> None:
-    """Verify startOTA accepts both old and new signatures.
-
-    Must support the complex signature with backward compatibility.
-    """
+    """Verify startOTA keeps develop-canonical signature and compatibility aliases."""
     sig = inspect.signature(Node.startOTA)
     params = list(sig.parameters.values())
 
@@ -270,21 +267,29 @@ def test_node_startota_signature() -> None:
     ]
 
     expected_public_params = ["mode", "ota_file_hash", "ota_mode", "ota_hash"]
-
-    # Check that expected public params exist
-    for param in expected_public_params:
-        assert param in public_params, f"startOTA must have '{param}' parameter"
-
-    # Verify ota_mode and ota_file_hash are positional-or-keyword (backward compat)
-    ota_mode_param = sig.parameters["ota_mode"]
     assert (
-        ota_mode_param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
-    ), "ota_mode must be positional-or-keyword for backward compatibility"
+        public_params == expected_public_params
+    ), "startOTA public parameter order must match develop baseline"
+
+    mode_param = sig.parameters["mode"]
+    assert (
+        mode_param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
+    ), "mode must be positional-or-keyword"
 
     ota_file_hash_param = sig.parameters["ota_file_hash"]
     assert (
         ota_file_hash_param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
-    ), "ota_file_hash must be positional-or-keyword for backward compatibility"
+    ), "ota_file_hash must be positional-or-keyword"
+
+    ota_mode_param = sig.parameters["ota_mode"]
+    assert (
+        ota_mode_param.kind == inspect.Parameter.KEYWORD_ONLY
+    ), "ota_mode must be keyword-only alias"
+
+    ota_hash_param = sig.parameters["ota_hash"]
+    assert (
+        ota_hash_param.kind == inspect.Parameter.KEYWORD_ONLY
+    ), "ota_hash must be keyword-only alias"
 
 
 @pytest.mark.unit

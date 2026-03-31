@@ -62,8 +62,6 @@ jobs:
     name: API Baseline vs Develop (py3.13)
     runs-on: ubuntu-latest
     needs: api-baseline-master
-    continue-on-error: true
-    if: always()
     env:
       POETRY_INSTALL_ARGS: --all-extras --with dev,powermon
       API_BASELINE_REF: develop
@@ -101,10 +99,9 @@ jobs:
         run: poetry run python3 bin/extract_api_surface.py base-checkout/meshtastic > base_surface.json
       - name: Extract PR API surface
         run: poetry run python3 bin/extract_api_surface.py meshtastic > pr_surface.json
-      - name: Compare API surfaces vs develop (advisory)
+      - name: Compare API surfaces vs develop
         run: |
           python3 bin/compare_api_surfaces.py \
             base_surface.json \
             pr_surface.json \
-            --base-label "${{ env.API_BASELINE_REF }}" \
-            --warning-only
+            --base-label "${{ env.API_BASELINE_REF }}"

@@ -506,19 +506,32 @@ class TestSignatureAliasComparison:
     """Tests for signature comparison with approved aliases."""
 
     def test_startota_alias_not_breaking(self):
-        """Verify startOTA signature change is not flagged as breaking.
-
-        The PR version has both old names (ota_mode, ota_file_hash) and
-        new keyword-only aliases (mode, ota_hash). This should not be breaking.
-        """
+        """Verify startOTA canonical signature remains non-breaking vs master."""
         base_sig = "(self, ota_mode:admin_pb2.OTAMode.ValueType, ota_file_hash:bytes)"
+        pr_sig = (
+            "(self, mode:admin_pb2.OTAMode.ValueType | None=None, "
+            "ota_file_hash:bytes | None=None, *, ota_mode:admin_pb2.OTAMode.ValueType | None=None, "
+            "ota_hash:bytes | None=None, **kwargs)"
+        )
+
+        assert not _is_breaking_signature_change_for_baseline(
+            base_sig, pr_sig, "Node", "startOTA"
+        )
+
+    def test_startota_drift_from_develop_is_breaking(self):
+        """Verify switching positional order away from develop is breaking."""
+        base_sig = (
+            "(self, mode:admin_pb2.OTAMode.ValueType | None=None, "
+            "ota_file_hash:bytes | None=None, *, ota_mode:admin_pb2.OTAMode.ValueType | None=None, "
+            "ota_hash:bytes | None=None, **kwargs)"
+        )
         pr_sig = (
             "(self, ota_mode:admin_pb2.OTAMode.ValueType | None=None, "
             "ota_file_hash:bytes | None=None, *, mode:admin_pb2.OTAMode.ValueType | None=None, "
             "ota_hash:bytes | None=None, **kwargs)"
         )
 
-        assert not _is_breaking_signature_change_for_baseline(
+        assert _is_breaking_signature_change_for_baseline(
             base_sig, pr_sig, "Node", "startOTA"
         )
 
