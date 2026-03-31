@@ -97,6 +97,16 @@ jobs:
       - *install_local_step
       - name: Run pylint
         run: poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2\.pyi?$"
+  ruff-tests:
+    name: Ruff Tests (py3.13)
+    runs-on: ubuntu-latest
+    steps:
+      - *checkout_step
+      - *setup_python_step
+      - name: Install ruff
+        run: python -m pip install --upgrade "ruff==0.15.1"
+      - name: Run ruff on tests
+        run: ruff check meshtastic/tests
   mypy:
     name: Mypy (py3.13)
     runs-on: ubuntu-latest

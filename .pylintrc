@@ -15,8 +15,9 @@
 # NOTE: CI overrides this with --ignore-patterns ".*_pb2\.pyi?$"
 ignore-patterns=.*_pb2\.pyi?$
 
-# Pylint in CI is intended for production/library code; tests are validated by
-# pytest and ruff with different conventions (fixtures, dynamic imports, etc.).
+# Pylint in CI is intentionally scoped to production/library code. Test modules
+# are linted with ruff (see CI "Ruff Tests" job / `make lint-tests`) and are
+# also exercised by pytest.
 ignore-paths=^meshtastic/tests/.*$
 
 
