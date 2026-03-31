@@ -29,7 +29,6 @@ import meshtastic.node
 from meshtastic import (
     BROADCAST_ADDR,
     BROADCAST_NUM,
-    LOCAL_ADDR,
     NODELESS_WANT_CONFIG_ID,
     ResponseHandler,
     protocols,
@@ -69,9 +68,10 @@ from meshtastic.mesh_interface_runtime.request_wait import (
     _RequestWaitRuntime,
 )
 from meshtastic.mesh_interface_runtime.send_pipeline import (
-    LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM,
     PayloadData,
     SendPipeline,
+    extract_request_id_from_packet as _pipeline_extract_request_id_from_packet,
+    extract_request_id_from_sent_packet as _pipeline_extract_request_id_from_sent_packet,
 )
 from meshtastic.protobuf import (
     channel_pb2,
@@ -930,14 +930,7 @@ class MeshInterface:  # pylint: disable=R0902
         `_send_data_with_wait()` and is not part of the public `sendData()`
         contract.
         """
-        legacy_wait_attr = LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM.get(portNum)
-        if legacy_wait_attr is not None:
-            self._clear_wait_error(
-                legacy_wait_attr,
-                request_id=None,
-                clear_scoped=False,
-            )
-        return self._send_data_with_wait(
+        return self._send_pipeline.sendData(
             data,
             destinationId=destinationId,
             portNum=portNum,
@@ -951,7 +944,6 @@ class MeshInterface:  # pylint: disable=R0902
             publicKey=publicKey,
             priority=priority,
             replyId=replyId,
-            response_wait_attr=None,
         )
 
     def _send_data_with_wait(
@@ -973,70 +965,22 @@ class MeshInterface:  # pylint: disable=R0902
         response_wait_attr: str | None = None,
     ) -> mesh_pb2.MeshPacket:
         """Send payload data while optionally pre-registering scoped wait bookkeeping."""
-        serializer = getattr(data, "SerializeToString", None)
-        payload: bytes | bytearray | memoryview
-        if callable(serializer):
-            logger.debug("Serializing protobuf as data: %s", stripnl(data))
-            payload = cast(bytes, serializer())
-        else:
-            payload = cast(bytes | bytearray | memoryview, data)
-        if isinstance(payload, memoryview):
-            payload = payload.tobytes()
-        elif isinstance(payload, bytearray):
-            payload = bytes(payload)
-
-        logger.debug("len(data): %s", len(payload))
-        logger.debug(
-            "mesh_pb2.Constants.DATA_PAYLOAD_LEN: %s",
-            mesh_pb2.Constants.DATA_PAYLOAD_LEN,
+        return self._send_pipeline._send_data_with_wait(
+            data,
+            destinationId=destinationId,
+            portNum=portNum,
+            wantAck=wantAck,
+            wantResponse=wantResponse,
+            onResponse=onResponse,
+            onResponseAckPermitted=onResponseAckPermitted,
+            channelIndex=channelIndex,
+            hopLimit=hopLimit,
+            pkiEncrypted=pkiEncrypted,
+            publicKey=publicKey,
+            priority=priority,
+            replyId=replyId,
+            response_wait_attr=response_wait_attr,
         )
-        if len(payload) > mesh_pb2.Constants.DATA_PAYLOAD_LEN:
-            raise self.MeshInterfaceError("Data payload too big")
-
-        if portNum == portnums_pb2.PortNum.UNKNOWN_APP:
-            raise self.MeshInterfaceError("A non-zero port number must be specified")
-
-        meshPacket = mesh_pb2.MeshPacket()
-        meshPacket.channel = channelIndex
-        meshPacket.decoded.payload = payload
-        meshPacket.decoded.portnum = portNum
-        meshPacket.decoded.want_response = wantResponse
-        meshPacket.id = self._generate_packet_id()
-        while meshPacket.id == 0:
-            meshPacket.id = self._generate_packet_id()
-        if replyId is not None:
-            meshPacket.decoded.reply_id = replyId
-        if priority is not None:
-            meshPacket.priority = priority
-
-        if response_wait_attr is not None:
-            self._clear_wait_error(response_wait_attr, request_id=meshPacket.id)
-
-        if onResponse is not None:
-            logger.debug("Setting a response handler for requestId %s", meshPacket.id)
-            self._add_response_handler(
-                meshPacket.id,
-                onResponse,
-                ackPermitted=onResponseAckPermitted,
-            )
-        try:
-            return self._send_packet(
-                meshPacket,
-                destinationId,
-                wantAck=wantAck,
-                hopLimit=hopLimit,
-                pkiEncrypted=pkiEncrypted,
-                publicKey=publicKey,
-            )
-        except Exception:
-            if response_wait_attr is not None:
-                self._retire_wait_request(
-                    response_wait_attr,
-                    request_id=meshPacket.id,
-                )
-            elif onResponse is not None:
-                self._request_wait_runtime.drop_response_handler(meshPacket.id)
-            raise
 
     def _add_response_handler(
         self,
@@ -1045,10 +989,10 @@ class MeshInterface:  # pylint: disable=R0902
         ackPermitted: bool = False,
     ) -> None:
         """Register a response callback for a specific request identifier."""
-        self._request_wait_runtime.add_response_handler(
+        self._send_pipeline._add_response_handler(
             requestId,
             callback,
-            ack_permitted=ackPermitted,
+            ackPermitted=ackPermitted,
         )
 
     def _send_packet(
@@ -1061,90 +1005,14 @@ class MeshInterface:  # pylint: disable=R0902
         publicKey: bytes | None = None,
     ) -> mesh_pb2.MeshPacket:
         """Send a MeshPacket to a specific node or broadcast."""
-        with self._node_db_lock:
-            my_node_num = self.myInfo.my_node_num if self.myInfo is not None else None
-
-        if my_node_num is not None and destinationId != my_node_num:
-            self._wait_connected()
-
-        toRadio = mesh_pb2.ToRadio()
-
-        nodeNum: int = 0
-        if destinationId is None:
-            raise self.MeshInterfaceError("destinationId must not be None")
-        elif isinstance(destinationId, int):
-            nodeNum = destinationId
-        elif destinationId == BROADCAST_ADDR:
-            nodeNum = BROADCAST_NUM
-        elif destinationId == LOCAL_ADDR:
-            if my_node_num is not None:
-                nodeNum = my_node_num
-            else:
-                raise self.MeshInterfaceError("No myInfo found.")
-        elif isinstance(destinationId, str):
-            compact_hex_body = _extract_hex_node_id_body(destinationId)
-            if compact_hex_body is not None:
-                nodeNum = int(compact_hex_body, 16)
-            else:
-                with self._node_db_lock:
-                    node = self.nodes.get(destinationId) if self.nodes else None
-                    has_nodes = self.nodes is not None
-                    node_found = node is not None
-                    node_num = node.get("num") if isinstance(node, dict) else None
-                if node_found:
-                    if isinstance(node_num, int):
-                        nodeNum = node_num
-                    else:
-                        raise self.MeshInterfaceError(
-                            _format_missing_node_num_error(destinationId)
-                        )
-                elif has_nodes:
-                    raise self.MeshInterfaceError(
-                        _format_node_not_found_in_db_error(destinationId)
-                    )
-                else:
-                    raise self.MeshInterfaceError(
-                        _format_node_db_unavailable_error(destinationId)
-                    )
-        else:
-            with self._node_db_lock:
-                has_nodes = self.nodes is not None
-            if has_nodes:
-                raise self.MeshInterfaceError(
-                    _format_node_not_found_in_db_error(destinationId)
-                )
-            raise self.MeshInterfaceError(
-                _format_node_db_unavailable_error(destinationId)
-            )
-
-        meshPacket.to = nodeNum
-        meshPacket.want_ack = wantAck
-
-        if hopLimit is not None:
-            meshPacket.hop_limit = hopLimit
-        else:
-            with self._node_db_lock:
-                default_hop_limit = self.localNode.localConfig.lora.hop_limit
-            meshPacket.hop_limit = default_hop_limit
-
-        if pkiEncrypted:
-            meshPacket.pki_encrypted = True
-
-        if publicKey is not None:
-            meshPacket.public_key = publicKey
-
-        if meshPacket.id == 0:
-            meshPacket.id = self._generate_packet_id()
-
-        toRadio.packet.CopyFrom(meshPacket)
-        if self.noProto:
-            logger.warning(
-                "Not sending packet because protocol use is disabled by noProto"
-            )
-        else:
-            logger.debug("Sending packet: %s", stripnl(meshPacket))
-            self._send_to_radio(toRadio)
-        return meshPacket
+        return self._send_pipeline._send_packet(
+            meshPacket=meshPacket,
+            destinationId=destinationId,
+            wantAck=wantAck,
+            hopLimit=hopLimit,
+            pkiEncrypted=pkiEncrypted,
+            publicKey=publicKey,
+        )
 
     def _sendPacket(
         self,
@@ -1156,7 +1024,7 @@ class MeshInterface:  # pylint: disable=R0902
         publicKey: bytes | None = None,
     ) -> mesh_pb2.MeshPacket:
         """COMPAT_STABLE_SHIM: Alias for `_send_packet`."""
-        return self._send_packet(
+        return self._send_pipeline._sendPacket(
             meshPacket=meshPacket,
             destinationId=destinationId,
             wantAck=wantAck,
@@ -1216,30 +1084,15 @@ class MeshInterface:  # pylint: disable=R0902
 
     # These thin wrappers intentionally mirror SendPipeline helper methods to
     # preserve historical MeshInterface compatibility entrypoints.
-    # pylint: disable=duplicate-code
     @staticmethod
     def _extract_request_id_from_packet(packet: dict[str, Any]) -> int | None:
         """Return decoded requestId as an int when present and valid."""
-        decoded = packet.get("decoded")
-        if not isinstance(decoded, dict):
-            return None
-        raw_request_id = decoded.get("requestId")
-        if isinstance(raw_request_id, bool):
-            return None
-        if isinstance(raw_request_id, int):
-            return raw_request_id if raw_request_id > 0 else None
-        if isinstance(raw_request_id, str) and raw_request_id.isdigit():
-            parsed_request_id = int(raw_request_id)
-            return parsed_request_id if parsed_request_id > 0 else None
-        return None
+        return _pipeline_extract_request_id_from_packet(packet)
 
     @staticmethod
     def _extract_request_id_from_sent_packet(packet: object) -> int | None:
         """Return sent packet id when present and positive."""
-        raw_packet_id = getattr(packet, "id", None)
-        if isinstance(raw_packet_id, bool) or not isinstance(raw_packet_id, int):
-            return None
-        return raw_packet_id if raw_packet_id > 0 else None
+        return _pipeline_extract_request_id_from_sent_packet(packet)
 
     def _clear_wait_error(
         self,
@@ -1249,7 +1102,7 @@ class MeshInterface:  # pylint: disable=R0902
         clear_scoped: bool = True,
     ) -> None:
         """Clear wait error state for an attribute and optional request id."""
-        self._request_wait_runtime.clear_wait_error(
+        self._send_pipeline._clear_wait_error(
             acknowledgment_attr,
             request_id=request_id,
             clear_scoped=clear_scoped,
@@ -1264,7 +1117,7 @@ class MeshInterface:  # pylint: disable=R0902
         -----
         Must be called while holding `_response_handlers_lock`.
         """
-        return self._request_wait_runtime.prune_retired_wait_request_ids_locked(
+        return self._send_pipeline._prune_retired_wait_request_ids_locked(
             acknowledgment_attr
         )
 
@@ -1276,7 +1129,7 @@ class MeshInterface:  # pylint: disable=R0902
         request_id: int | None = None,
     ) -> None:
         """Record a wait error and wake the matching waiter."""
-        self._request_wait_runtime.set_wait_error(
+        self._send_pipeline._set_wait_error(
             acknowledgment_attr,
             message,
             request_id=request_id,
@@ -1286,7 +1139,7 @@ class MeshInterface:  # pylint: disable=R0902
         self, acknowledgment_attr: str, *, request_id: int | None = None
     ) -> None:
         """Set acknowledgment flag for the matching request scope."""
-        self._request_wait_runtime.mark_wait_acknowledged(
+        self._send_pipeline._mark_wait_acknowledged(
             acknowledgment_attr,
             request_id=request_id,
         )
@@ -1295,17 +1148,16 @@ class MeshInterface:  # pylint: disable=R0902
         self, acknowledgment_attr: str, request_id: int | None = None
     ) -> None:
         """Raise and clear any pending wait error for the given wait scope."""
-        self._request_wait_runtime.raise_wait_error_if_present(
+        self._send_pipeline._raise_wait_error_if_present(
             acknowledgment_attr,
             request_id=request_id,
-            error_factory=self.MeshInterfaceError,
         )
 
     def _retire_wait_request(
         self, acknowledgment_attr: str, request_id: int | None = None
     ) -> None:
         """Retire response handler and wait bookkeeping for a completed wait."""
-        self._request_wait_runtime.retire_wait_request(
+        self._send_pipeline._retire_wait_request(
             acknowledgment_attr,
             request_id=request_id,
         )
@@ -1334,7 +1186,7 @@ class MeshInterface:  # pylint: disable=R0902
             `True` when the scoped acknowledgment was observed before timeout,
             otherwise `False`.
         """
-        return self._request_wait_runtime.wait_for_request_ack(
+        return self._send_pipeline._wait_for_request_ack(
             acknowledgment_attr,
             request_id,
             timeout_seconds=timeout_seconds,
@@ -1348,12 +1200,11 @@ class MeshInterface:  # pylint: disable=R0902
         request_id: int | None = None,
     ) -> None:
         """Record non-success routing responses into shared wait state."""
-        self._request_wait_runtime.record_routing_wait_error(
+        self._send_pipeline._record_routing_wait_error(
             acknowledgment_attr=acknowledgment_attr,
             routing_error_reason=routing_error_reason,
             request_id=request_id,
         )
-    # pylint: enable=duplicate-code
 
     def onResponsePosition(self, p: dict[str, Any]) -> None:
         """Process a position response packet and emit a concise human-readable summary.

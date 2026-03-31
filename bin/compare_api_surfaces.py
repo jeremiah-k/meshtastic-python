@@ -310,6 +310,14 @@ NOISE_EXPORTS = {
     "threading",
     "time",
     "traceback",
+    # typing helpers that can leak via module implementation details
+    "Any",
+    "Callable",
+    "NamedTuple",
+    "TypeGuard",
+    "cast",
+    "copy",
+    "import_module",
     # third-party imports that leaked into namespace
     "google",
     "serial",
@@ -353,12 +361,21 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         default="base",
         help="Label shown in output for baseline signatures (default: %(default)s)",
     )
+    parser.add_argument(
+        "--warning-only",
+        action="store_true",
+        help=(
+            "Always exit 0 even when breaking changes are detected. "
+            "Useful for advisory checks."
+        ),
+    )
     return parser.parse_args(argv)
 
 
 def main() -> int:
     args = _parse_args(sys.argv[1:])
     base_label = args.base_label
+    warning_only = args.warning_only
 
     with open(args.base_surface, encoding="utf-8") as f:
         base = json.load(f)
@@ -399,6 +416,12 @@ def main() -> int:
 
     if all_blocking:
         print("\n".join(all_blocking))
+        if warning_only:
+            print(
+                f"\nBREAKING API changes detected vs {base_label} "
+                "(warning-only mode; not failing)."
+            )
+            return 0
         print(f"\nBREAKING API changes detected vs {base_label}!")
         return 1
 

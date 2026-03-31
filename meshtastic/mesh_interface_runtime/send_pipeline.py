@@ -1,7 +1,5 @@
 """Send pipeline for transmitting packets to the radio."""
 
-# pylint: disable=R0801
-
 from __future__ import annotations
 
 import logging
@@ -99,6 +97,30 @@ def _extract_hex_node_id_body(destination_id: str) -> str | None:
     if not all(ch in HEX_NODE_ID_TAIL_CHARS for ch in candidate):
         return None
     return candidate
+
+
+def extract_request_id_from_packet(packet: dict[str, Any]) -> int | None:
+    """Return decoded requestId as an int when present and valid."""
+    decoded = packet.get("decoded")
+    if not isinstance(decoded, dict):
+        return None
+    raw_request_id = decoded.get("requestId")
+    if isinstance(raw_request_id, bool):
+        return None
+    if isinstance(raw_request_id, int):
+        return raw_request_id if raw_request_id > 0 else None
+    if isinstance(raw_request_id, str) and raw_request_id.isdigit():
+        parsed_request_id = int(raw_request_id)
+        return parsed_request_id if parsed_request_id > 0 else None
+    return None
+
+
+def extract_request_id_from_sent_packet(packet: object) -> int | None:
+    """Return sent packet id when present and positive."""
+    raw_packet_id = getattr(packet, "id", None)
+    if isinstance(raw_packet_id, bool) or not isinstance(raw_packet_id, int):
+        return None
+    return raw_packet_id if raw_packet_id > 0 else None
 
 
 def _emit_response_summary(message: str) -> None:
@@ -365,25 +387,11 @@ class SendPipeline:
 
     def _extract_request_id_from_packet(self, packet: dict[str, Any]) -> int | None:
         """Return decoded requestId as an int when present and valid."""
-        decoded = packet.get("decoded")
-        if not isinstance(decoded, dict):
-            return None
-        raw_request_id = decoded.get("requestId")
-        if isinstance(raw_request_id, bool):
-            return None
-        if isinstance(raw_request_id, int):
-            return raw_request_id if raw_request_id > 0 else None
-        if isinstance(raw_request_id, str) and raw_request_id.isdigit():
-            parsed_request_id = int(raw_request_id)
-            return parsed_request_id if parsed_request_id > 0 else None
-        return None
+        return extract_request_id_from_packet(packet)
 
     def _extract_request_id_from_sent_packet(self, packet: object) -> int | None:
         """Return sent packet id when present and positive."""
-        raw_packet_id = getattr(packet, "id", None)
-        if isinstance(raw_packet_id, bool) or not isinstance(raw_packet_id, int):
-            return None
-        return raw_packet_id if raw_packet_id > 0 else None
+        return extract_request_id_from_sent_packet(packet)
 
     def _clear_wait_error(
         self,
