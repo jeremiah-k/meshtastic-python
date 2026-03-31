@@ -39,7 +39,7 @@ class _NodeAdminCommandRuntime:
         )
         request = self._node._send_admin(message, onResponse=on_response)
         if on_response is not None and request is not None:
-            self._node.iface.waitForAckNak()
+            self._node.iface.waitForAckNak(request.id)
         return request
 
     def sendOwnerMessage(

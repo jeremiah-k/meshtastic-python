@@ -45,13 +45,23 @@ class _NodeChannelWriteRuntime:
         *,
         admin_index: int | None = None,
     ) -> None:
-        """Send a pre-built channel snapshot to the device."""
+        """Send a pre-built channel snapshot to the device and wait for ACK/NAK.
+
+        Raises an interface error if the device responds with NAK.
+        """
         self._node.ensureSessionKey(adminIndex=admin_index)
         request_message = admin_pb2.AdminMessage()
         request_message.set_channel.CopyFrom(channel_to_write)
+        # Use remote ACK callback for remote nodes to detect NAK
+        on_response = (
+            self._node.onAckNak
+            if self._node is not self._node.iface.localNode
+            else None
+        )
         request = self._node._send_admin(
             request_message,
             adminIndex=admin_index,
+            onResponse=on_response,
         )
         if request is None:
             logger.error(
@@ -61,6 +71,15 @@ class _NodeChannelWriteRuntime:
             self._node._raise_interface_error(
                 f"Channel write for index {channel_to_write.index} was not started"
             )
+        # Wait for ACK/NAK response for remote nodes
+        if on_response is not None and request is not None:
+            self._node.iface.waitForAckNak()
+            # Check if we received a NAK and abort if so
+            ack_state = getattr(self._node.iface, "_acknowledgment", None)
+            if ack_state is not None and getattr(ack_state, "receivedNak", False):
+                self._node._raise_interface_error(
+                    f"Channel write for index {channel_to_write.index} was rejected by device (NAK)"
+                )
         logger.debug("Wrote channel %s", channel_to_write.index)
 
     def _write_channel(
@@ -249,14 +268,12 @@ class _NodeDeleteChannelRuntime:
         """
         with self._node._channels_lock:
             rewrite_plan = self._build_rewrite_plan(channel_index)
-        try:
-            self._execute_rewrite_plan(rewrite_plan)
-        except Exception:
-            with self._node._channels_lock:
+            try:
+                self._execute_rewrite_plan(rewrite_plan)
+            except Exception:
                 self._node.channels = None
                 self._node.partialChannels = []
-            raise
-        with self._node._channels_lock:
+                raise
             current_channels = self._node.channels
             if current_channels is None:
                 logger.warning(

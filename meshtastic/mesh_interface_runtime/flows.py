@@ -176,12 +176,16 @@ def _on_response_traceroute(pipeline: "SendPipeline", p: dict[str, Any]) -> None
     if decoded.get("portnum") == portnums_pb2.PortNum.Name(
         portnums_pb2.PortNum.ROUTING_APP
     ):
-        pipeline._record_routing_wait_error(
-            acknowledgment_attr=WAIT_ATTR_TRACEROUTE,
-            routing_error_reason=decoded.get("routing", {}).get("errorReason"),
-            request_id=request_id,
-        )
-        return
+        error_reason = decoded.get("routing", {}).get("errorReason")
+        # Only treat as error if errorReason exists and is not NONE
+        if error_reason is not None and error_reason != "NONE":
+            pipeline._record_routing_wait_error(
+                acknowledgment_attr=WAIT_ATTR_TRACEROUTE,
+                routing_error_reason=error_reason,
+                request_id=request_id,
+            )
+            return
+        # Otherwise, this is a successful routing ACK, continue to parse payload
 
     routeDiscovery = mesh_pb2.RouteDiscovery()
     try:

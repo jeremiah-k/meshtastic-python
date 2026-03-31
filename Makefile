@@ -2,6 +2,7 @@
 
 POETRY_RUN := poetry run
 API_BASELINE_FILE := meshtastic/tests/api_baselines/api_baseline.json
+API_BASELINE_REF ?= origin/master
 
 all: test
 
@@ -30,7 +31,7 @@ api-baseline:
 
 # generate API baseline from origin/master source snapshot
 api-baseline-master:
-	./bin/generate_master_api_baseline.sh origin/master
+	./bin/generate_master_api_baseline.sh "$(API_BASELINE_REF)"
 
 # run CI checks with strict mypy (for maintainers)
 ci-strict:

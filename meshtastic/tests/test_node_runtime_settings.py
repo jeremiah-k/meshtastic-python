@@ -293,15 +293,18 @@ class TestNodeSettingsRuntime:
         mock_remote_node.iface.waitForAckNak.assert_called_once()
 
     @pytest.mark.unit
-    def test_request_config_remote_node_skips_wait_when_send_is_skipped(
+    def test_request_config_remote_node_raises_error_when_send_returns_none(
         self, mock_remote_node: MagicMock
     ) -> None:
-        """request_config should not wait for ACK/NAK when _send_admin returns None."""
+        """request_config should raise error when _send_admin returns None."""
         mock_remote_node._send_admin.return_value = None
         builder = _NodeSettingsMessageBuilder(mock_remote_node)
         runtime = _NodeSettingsRuntime(mock_remote_node, message_builder=builder)
 
-        runtime.requestConfig(admin_pb2.AdminMessage.ConfigType.DEVICE_CONFIG)
+        with pytest.raises(
+            _TestInterfaceError, match="requestConfig failed: admin message not started"
+        ):
+            runtime.requestConfig(admin_pb2.AdminMessage.ConfigType.DEVICE_CONFIG)
 
         mock_remote_node._send_admin.assert_called_once()
         mock_remote_node.iface.waitForAckNak.assert_not_called()
@@ -417,10 +420,10 @@ class TestNodeSettingsRuntime:
         mock_remote_node.iface.waitForAckNak.assert_called_once()
 
     @pytest.mark.unit
-    def test_write_config_remote_node_no_wait_if_no_request(
+    def test_write_config_remote_node_raises_error_when_send_returns_none(
         self, mock_remote_node: MagicMock
     ) -> None:
-        """write_config on remote node does not wait if _send_admin returns None."""
+        """write_config should raise error when _send_admin returns None."""
         builder = _NodeSettingsMessageBuilder(mock_remote_node)
         runtime = _NodeSettingsRuntime(mock_remote_node, message_builder=builder)
         mock_remote_node.localConfig.device.role = (
@@ -428,7 +431,10 @@ class TestNodeSettingsRuntime:
         )
         mock_remote_node._send_admin = MagicMock(return_value=None)
 
-        runtime.writeConfig("device")
+        with pytest.raises(
+            _TestInterfaceError, match="writeConfig failed: admin message not started"
+        ):
+            runtime.writeConfig("device")
 
         mock_remote_node.iface.waitForAckNak.assert_not_called()
 

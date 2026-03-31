@@ -109,7 +109,11 @@ class _NodeChannelPresentationRuntime:
         local_config_snapshot: Message | None = None
         module_config_snapshot: Message | None = None
         node_db_lock = getattr(self._node, "_node_db_lock", None)
-        if node_db_lock is not None and hasattr(node_db_lock, "__enter__"):
+        if (
+            node_db_lock is not None
+            and hasattr(node_db_lock, "__enter__")
+            and hasattr(node_db_lock, "__exit__")
+        ):
             with node_db_lock:
                 (
                     local_config_snapshot,

@@ -89,7 +89,7 @@ def _format_numeric_value(
 
 
 def _format_timestamp(ts: int | float | None) -> str | None:
-    """Format a Unix timestamp as "YYYY-MM-DD HH:MM:SS" or return None when no timestamp is available.
+    """Format a Unix timestamp as "YYYY-MM-DD HH:MM:SSZ" (UTC) or return None when no timestamp is available.
 
     Parameters
     ----------
@@ -102,7 +102,7 @@ def _format_timestamp(ts: int | float | None) -> str | None:
         Formatted timestamp string, or `None` if `ts` is `None` or `0`.
     """
     return (
-        datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
         if ts is not None and ts != 0
         else None
     )

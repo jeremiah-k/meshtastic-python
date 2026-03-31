@@ -1258,8 +1258,11 @@ class Node:  # pylint: disable=too-many-instance-attributes
         with self._metadata_stdout_event_lock:
             self._metadata_stdout_event = metadata_stdout_event
         try:
-            self._send_admin(p, wantResponse=True, onResponse=self.onRequestGetMetadata)
-            self.iface.waitForAckNak()
+            request = self._send_admin(
+                p, wantResponse=True, onResponse=self.onRequestGetMetadata
+            )
+            if request is not None:
+                self.iface.waitForAckNak(request.id)
             if sys.stdout is not sys.__stdout__:
                 callback_completed = metadata_stdout_event.wait(
                     METADATA_STDOUT_COMPAT_WAIT_SECONDS

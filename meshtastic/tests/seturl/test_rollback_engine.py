@@ -177,7 +177,7 @@ class TestSetUrlRollbackEngine:
         )
         state = _SetUrlAddOnlyExecutionState(
             written_indices=[],
-            lora_write_started=True,
+            lora_write_started=False,
         )
         admin_context = MagicMock()
         admin_context.admin_index_for_write = 0
@@ -191,6 +191,7 @@ class TestSetUrlRollbackEngine:
         )
 
         rollback_engine._cache_manager.restore_lora_snapshot.assert_not_called()
+        mock_local_node._send_admin.assert_not_called()
 
     @pytest.mark.unit
     def test_rollback_replace_all_with_channel_failure_logs_warning(
@@ -327,7 +328,7 @@ class TestSetUrlRollbackEngine:
         )
         state = _SetUrlReplaceExecutionState(
             written_channel_indices=[],
-            lora_write_started=True,
+            lora_write_started=False,
             rollback_admin_indexes_for_write=[0],
         )
         admin_context = MagicMock()
@@ -342,6 +343,7 @@ class TestSetUrlRollbackEngine:
         )
 
         rollback_engine._cache_manager.restore_lora_snapshot.assert_not_called()
+        mock_local_node._send_admin.assert_not_called()
 
     @pytest.mark.unit
     def test_rollback_replace_all_without_snapshot_clears_cache(

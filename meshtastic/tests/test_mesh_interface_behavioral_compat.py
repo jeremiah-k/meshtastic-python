@@ -1376,28 +1376,29 @@ class TestSendWaitEdgeCases:
         """Test that sendTelemetry with invalid type logs a warning and falls back."""
         iface = mock_interface
 
-        with caplog.at_level(logging.WARNING):
-            with patch.object(
-                iface._send_pipeline, "_send_data_with_wait"
-            ) as mock_send:
-                mock_packet = MagicMock()
-                mock_packet.id = 12345
-                mock_send.return_value = mock_packet
+        with pytest.warns(DeprecationWarning, match="invalid_type_xyz"):
+            with caplog.at_level(logging.WARNING):
+                with patch.object(
+                    iface._send_pipeline, "_send_data_with_wait"
+                ) as mock_send:
+                    mock_packet = MagicMock()
+                    mock_packet.id = 12345
+                    mock_send.return_value = mock_packet
 
-                # Call with invalid telemetry type
-                iface.sendTelemetry(
-                    destinationId=BROADCAST_ADDR,
-                    telemetryType="invalid_type_xyz",
-                    wantResponse=False,
-                )
+                    # Call with invalid telemetry type
+                    iface.sendTelemetry(
+                        destinationId=BROADCAST_ADDR,
+                        telemetryType="invalid_type_xyz",
+                        wantResponse=False,
+                    )
 
-                # Verify method was called
-                mock_send.assert_called_once()
+                    # Verify method was called
+                    mock_send.assert_called_once()
 
-                # Verify a Telemetry protobuf was passed (with device_metrics as fallback)
-                call_args = mock_send.call_args
-                telemetry_arg = call_args[0][0]
-                assert isinstance(telemetry_arg, telemetry_pb2.Telemetry)
+                    # Verify a Telemetry protobuf was passed (with device_metrics as fallback)
+                    call_args = mock_send.call_args
+                    telemetry_arg = call_args[0][0]
+                    assert isinstance(telemetry_arg, telemetry_pb2.Telemetry)
 
         # Verify warning was logged
         assert "invalid_type_xyz" in caplog.text
@@ -1443,14 +1444,11 @@ class TestSendWaitEdgeCases:
                 mock_packet.id = 10000 + hash(telemetry_type) % 10000
                 mock_send.return_value = mock_packet
 
-                try:
-                    iface.sendTelemetry(
-                        destinationId=BROADCAST_ADDR,
-                        telemetryType=telemetry_type,
-                        wantResponse=False,
-                    )
-                except Exception as e:
-                    pytest.fail(f"sendTelemetry raised {e} for type {telemetry_type}")
+                iface.sendTelemetry(
+                    destinationId=BROADCAST_ADDR,
+                    telemetryType=telemetry_type,
+                    wantResponse=False,
+                )
 
                 # Verify a Telemetry protobuf was passed
                 call_args = mock_send.call_args

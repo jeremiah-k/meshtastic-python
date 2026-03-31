@@ -66,7 +66,7 @@ class _SetUrlParser:
             b64 += "=" * (4 - missing_padding)
 
         try:
-            decoded_url = base64.urlsafe_b64decode(b64)
+            decoded_url = base64.b64decode(b64, altchars=b"-_", validate=True)
         except (binascii.Error, ValueError) as ex:
             raise_interface_error(f"Invalid URL: {ex}")
 

@@ -181,6 +181,21 @@ def _get_top_level_exports(pkg_dir: Path) -> list[str]:
     if not init_path.exists():
         return []
     tree = ast.parse(init_path.read_text(encoding="utf-8"))
+
+    # Check for __all__ first - if defined, it controls the public API
+    for node in ast.iter_child_nodes(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "__all__":
+                    if isinstance(node.value, (ast.List, ast.Tuple)):
+                        all_exports = []
+                        for elt in node.value.elts:
+                            if isinstance(elt, ast.Constant) and isinstance(
+                                elt.value, str
+                            ):
+                                all_exports.append(elt.value)
+                        return sorted(all_exports)
+
     exports = set()
     for node in ast.iter_child_nodes(tree):
         if isinstance(node, ast.Assign):
@@ -203,7 +218,7 @@ def _get_top_level_exports(pkg_dir: Path) -> list[str]:
                         exports.add(name)
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                name = alias.asname if alias.asname else alias.name
+                name = alias.asname if alias.asname else alias.name.split(".", 1)[0]
                 if not name.startswith("_"):
                     exports.add(name)
 

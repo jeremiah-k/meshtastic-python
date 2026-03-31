@@ -214,11 +214,7 @@ def _is_breaking_signature_change(master_sig: str, pr_sig: str) -> bool:
 
         pr_index = found_index + 1
 
-    for trailing_param in pr_params[pr_index:]:
-        if trailing_param["required"]:
-            return True
-
-    return False
+    return any(trailing_param["required"] for trailing_param in pr_params[pr_index:])
 
 
 def compare_methods(
@@ -345,11 +341,9 @@ def main() -> int:
         print("\n".join(all_blocking))
         print("\nBREAKING API changes detected vs master!")
         return 1
-    else:
-        print(
-            "No breaking API changes detected vs master (informational changes above)."
-        )
-        return 0
+
+    print("No breaking API changes detected vs master (informational changes above).")
+    return 0
 
 
 if __name__ == "__main__":

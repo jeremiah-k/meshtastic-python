@@ -514,10 +514,10 @@ if __name__ == "__main__":
     print("Generating API baseline...")
     baseline = generate_baseline()
 
-    BASELINE_DIR.mkdir(parents=True, exist_ok=True)
+    target = get_baseline_file()
     save_baseline(baseline)
 
-    print(f"Baseline saved to: {BASELINE_FILE}")
+    print(f"Baseline saved to: {target}")
     print(f"Node methods: {len(baseline['node_methods'])}")
     print(f"MeshInterface methods: {len(baseline['mesh_interface_methods'])}")
     print(f"Top-level exports: {len(baseline['top_level_exports'])}")

@@ -338,11 +338,24 @@ class NodeView:
         # Get node data under lock
         with self._node_db_lock:
             nodes_snapshot = list(self.nodesByNum.values()) if self.nodesByNum else []
-            nodes_log_snapshot = dict(self.nodes) if self.nodes else {}
             local_node_num = self.localNode.nodeNum
 
         if nodes_snapshot:
-            logger.debug("self.nodes:%s", nodes_log_snapshot)
+            node_count = len(nodes_snapshot)
+
+            # Log only count and trimmed nodeNum list for privacy/safety
+            def _get_num(n):
+                return getattr(n, "nodeNum", None) or (
+                    n.get("num") if isinstance(n, dict) else None
+                )
+
+            sample_nums = [_get_num(n) for n in nodes_snapshot[:3]]
+            logger.debug(
+                "Node database: %d nodes, sample nodeNums: %s%s",
+                node_count,
+                sample_nums,
+                "..." if node_count > 3 else "",
+            )
 
         # Filter nodes
         filtered_nodes = node_data.filterNodes(

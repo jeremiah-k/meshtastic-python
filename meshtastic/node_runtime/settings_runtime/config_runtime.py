@@ -50,11 +50,13 @@ class _NodeSettingsRuntime:
             onResponse=on_response,
             adminIndex=admin_index,
         )
-        if on_response is not None:
-            if request is None:
-                logger.debug("Admin request returned None; skipping ack/nak wait.")
-            else:
-                self._node.iface.waitForAckNak()
+        # In noProto mode, _send_admin legitimately returns None (no actual sending)
+        if request is None and not getattr(self._node, "noProto", False):
+            self._node._raise_interface_error(
+                f"requestConfig failed: admin message not started (admin_index={admin_index})"
+            )
+        if on_response is not None and request is not None:
+            self._node.iface.waitForAckNak(request.id)
 
     def _validate_write_configs_loaded(self, config_name: str) -> None:
         """Preserve historical writeConfig loaded-state behavior.
@@ -99,6 +101,11 @@ class _NodeSettingsRuntime:
         request = self._node._send_admin(  # noqa: SLF001
             message, onResponse=on_response
         )
+        # In noProto mode, _send_admin legitimately returns None (no actual sending)
+        if request is None and not getattr(self._node, "noProto", False):
+            self._node._raise_interface_error(
+                f"writeConfig failed: admin message not started (config_name={config_name})"
+            )
         if on_response is not None and request is not None:
-            self._node.iface.waitForAckNak()
+            self._node.iface.waitForAckNak(request.id)
         logger.debug("Config write completed: %s", config_name)

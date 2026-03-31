@@ -226,9 +226,18 @@ def test_node_writechannel_signature() -> None:
     sig = inspect.signature(Node.writeChannel)
     params = list(sig.parameters.values())
 
-    # Verify parameter names
+    # Verify parameter kinds (not literal names, which are implementation details)
+    # First parameter should be positional-or-keyword (the receiver)
+    assert params[0].kind == inspect.Parameter.POSITIONAL_OR_KEYWORD, (
+        "First parameter must be positional-or-keyword (receiver)"
+    )
+
+    # Must have **kwargs (VAR_KEYWORD)
+    var_keyword_params = [p for p in params if p.kind == inspect.Parameter.VAR_KEYWORD]
+    assert len(var_keyword_params) >= 1, "writeChannel must have **kwargs parameter"
+
+    # Verify required public parameter names
     param_names = [p.name for p in params]
-    assert "self" in param_names, "writeChannel must have 'self' parameter"
     assert "channelIndex" in param_names, (
         "writeChannel must have 'channelIndex' parameter"
     )
@@ -251,19 +260,20 @@ def test_node_startota_signature() -> None:
     sig = inspect.signature(Node.startOTA)
     params = list(sig.parameters.values())
 
-    param_names = [p.name for p in params]
-    expected_params = {
-        "self",
-        "mode",
-        "ota_file_hash",
-        "ota_mode",
-        "ota_hash",
-        "kwargs",
-    }
+    # Compute actual public parameter names by filtering implementation details
+    public_params = [
+        p.name
+        for p in params
+        if p.kind
+        not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
+        and p.name != "self"
+    ]
 
-    # Check that expected params exist
-    for param in expected_params:
-        assert param in param_names, f"startOTA must have '{param}' parameter"
+    expected_public_params = ["mode", "ota_file_hash", "ota_mode", "ota_hash"]
+
+    # Check that expected public params exist
+    for param in expected_public_params:
+        assert param in public_params, f"startOTA must have '{param}' parameter"
 
     # Verify ota_mode and ota_file_hash are positional-or-keyword (backward compat)
     ota_mode_param = sig.parameters["ota_mode"]

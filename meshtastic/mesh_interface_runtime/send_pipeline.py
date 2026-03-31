@@ -221,7 +221,7 @@ class SendPipeline:
             destinationId,
             portNum=portnums_pb2.PortNum.ALERT_APP,
             wantAck=False,
-            wantResponse=False,
+            wantResponse=onResponse is not None,
             onResponse=onResponse,
             channelIndex=channelIndex,
             priority=mesh_pb2.MeshPacket.Priority.ALERT,
@@ -631,6 +631,10 @@ class SendPipeline:
         nodeNum: int = 0
         if destinationId is None:
             raise self._interface.MeshInterfaceError("destinationId must not be None")
+        elif isinstance(destinationId, bool):
+            raise self._interface.MeshInterfaceError(
+                f"destinationId must not be a bool, got: {destinationId}"
+            )
         elif isinstance(destinationId, int):
             nodeNum = destinationId
         elif destinationId == BROADCAST_ADDR:
@@ -667,7 +671,9 @@ class SendPipeline:
                     )
         else:
             # Defensive: should be unreachable given type hints (int | str)
-            assert False, f"Unexpected destinationId type: {type(destinationId)}"
+            raise self._interface.MeshInterfaceError(
+                f"Unexpected destinationId type: {type(destinationId)}"
+            )
 
         meshPacket.to = nodeNum
         meshPacket.want_ack = wantAck
@@ -733,14 +739,36 @@ class SendPipeline:
                 "Timed out waiting for interface config"
             )
 
-    def waitForAckNak(self) -> None:
-        """Wait until an acknowledgement (ACK) or negative acknowledgement (NAK) is received or the wait times out."""
-        success = self._timeout.waitForAckNak(self._acknowledgment)
-        self._raise_wait_error_if_present(WAIT_ATTR_NAK)
-        if not success:
-            raise self._interface.MeshInterfaceError(
-                "Timed out waiting for an acknowledgment"
-            )
+    def waitForAckNak(self, request_id: int | None = None) -> None:
+        """Wait until an acknowledgement (ACK) or negative acknowledgement (NAK) is received or the wait times out.
+
+        Parameters
+        ----------
+        request_id : int | None
+            The request ID to wait for. When None, uses process-wide (legacy) wait semantics.
+            Callers should pass the packet ID from the sent request for proper request scoping.
+        """
+        try:
+            if request_id is None:
+                # Legacy unscoped wait
+                success = self._timeout.waitForAckNak(self._acknowledgment)
+                self._raise_wait_error_if_present(WAIT_ATTR_NAK)
+            else:
+                # Request-scoped wait
+                self._clear_wait_error(WAIT_ATTR_NAK, request_id=request_id)
+                success = self._wait_for_request_ack(
+                    WAIT_ATTR_NAK,
+                    request_id,
+                    timeout_seconds=self._timeout.expireTimeout,
+                )
+                self._raise_wait_error_if_present(WAIT_ATTR_NAK, request_id=request_id)
+            if not success:
+                raise self._interface.MeshInterfaceError(
+                    "Timed out waiting for an acknowledgment"
+                )
+        finally:
+            if request_id is not None:
+                self._retire_wait_request(WAIT_ATTR_NAK, request_id=request_id)
 
     def waitForTraceRoute(
         self, waitFactor: float, request_id: int | None = None
