@@ -2548,7 +2548,7 @@ class TestLifecyclePrimitivesEdgeCases:
             entered_start.set()
             release_start.wait(timeout=1.0)
 
-        coordinator.start_receive_thread = MagicMock(
+        coordinator.start_receive_thread = MagicMock(  # type: ignore[method-assign]
             side_effect=blocking_start_receive_thread
         )
 
