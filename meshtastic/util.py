@@ -48,6 +48,9 @@ WHITELIST_VIDS: set[int] = {0x239A, 0x303A}
 blacklistVids: set[int] = BLACKLIST_VIDS
 whitelistVids: set[int] = WHITELIST_VIDS
 
+# Interval for polling the deferred execution queue in seconds
+_DEFERRED_QUEUE_POLL_TIMEOUT_SECONDS = 0.1
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_KEY = base64.b64decode("1PG7OiApB1nwvP+rz05pAQ==".encode("utf-8"))
@@ -704,7 +707,7 @@ class DeferredExecution:
         """
         while not self._shutdown:
             try:
-                o = self.queue.get(timeout=0.1)
+                o = self.queue.get(timeout=_DEFERRED_QUEUE_POLL_TIMEOUT_SECONDS)
                 if o is self._SHUTDOWN:
                     break
                 o()

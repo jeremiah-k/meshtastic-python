@@ -9,6 +9,16 @@ JSONValue: TypeAlias = (
 
 _BATTERY_LEVEL_POWERED_SENTINELS = (0, 101)
 
+# Time intervals for human-readable relative time formatting (name, seconds)
+_TIMEAGO_INTERVALS: tuple[tuple[str, int], ...] = (
+    ("year", 60 * 60 * 24 * 365),
+    ("month", 60 * 60 * 24 * 30),
+    ("day", 60 * 60 * 24),
+    ("hour", 60 * 60),
+    ("min", 60),
+    ("sec", 1),
+)
+
 _COLUMN_LABEL_MAP: dict[str, str] = {
     "user.longName": "User",
     "user.id": "ID",
@@ -44,15 +54,7 @@ def _timeago(delta_secs: int) -> str:
     str
         A compact relative time string such as "now", "30 sec ago", "1 hour ago", or "2 days ago".
     """
-    intervals = (
-        ("year", 60 * 60 * 24 * 365),
-        ("month", 60 * 60 * 24 * 30),
-        ("day", 60 * 60 * 24),
-        ("hour", 60 * 60),
-        ("min", 60),
-        ("sec", 1),
-    )
-    for name, interval_duration in intervals:
+    for name, interval_duration in _TIMEAGO_INTERVALS:
         if delta_secs < interval_duration:
             continue
         x = delta_secs // interval_duration

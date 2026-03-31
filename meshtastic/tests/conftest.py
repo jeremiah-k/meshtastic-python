@@ -543,7 +543,14 @@ def _shutdown_publishing_thread() -> Generator[None, None, None]:
 
 @pytest.fixture
 def mock_interface() -> Generator[MeshInterface, None, None]:
-    """Provide a MeshInterface with mocked internals for behavioral testing."""
+    """Provide a MeshInterface with mocked internals for behavioral testing.
+
+    Yields
+    ------
+    MeshInterface
+        Interface instance with mocked `_send_to_radio_impl`, populated nodes,
+        and a mocked `myInfo`.
+    """
     iface = MeshInterface(noProto=True)
     try:
         # Mock critical methods to avoid hardware dependency
@@ -590,6 +597,15 @@ def mock_interface() -> Generator[MeshInterface, None, None]:
 
 @pytest.fixture
 def mock_interface_with_nodes(mock_interface: MeshInterface) -> MeshInterface:
-    """Provide a mock interface pre-configured with nodes."""
+    """Provide a mock interface pre-configured with nodes.
+
+    This is a semantic alias for ``mock_interface`` for tests that explicitly
+    require a node database to be populated.
+
+    Returns
+    -------
+    MeshInterface
+        The same instance as ``mock_interface``, already configured with sample nodes.
+    """
     # Already configured in mock_interface
     return mock_interface
