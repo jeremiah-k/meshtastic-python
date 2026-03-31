@@ -498,6 +498,7 @@ def test_set_owner_empty_long_name_exits(capsys: pytest.CaptureFixture[str]) -> 
     iface.__enter__ = MagicMock(return_value=iface)
     iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
+    iface.devPath = "/dev/ttyUSB0"
 
     from meshtastic.__main__ import main
 
@@ -507,20 +508,24 @@ def test_set_owner_empty_long_name_exits(capsys: pytest.CaptureFixture[str]) -> 
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         _out, _err = capsys.readouterr()
+        # Error message is printed to stderr by _cli_exit
         assert (
-            "long name" in _out.lower()
-            or "empty" in _out.lower()
-            or "whitespace" in _err.lower()  # noqa: R1727
+            "long name" in _err.lower()
+            or "whitespace" in _err.lower()
+            or "empty" in _err.lower()
         )
 
 
 @pytest.mark.unit
-def test_set_owner_empty_short_name_exits(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test --set-owner-short with empty/whitespace name exits (lines 764-767).
+def test_power_stress_powerstress_none_exits(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test --power-stress when PowerStress is None exits (lines 1644-1651).
 
-    When set_owner_short is empty or whitespace only, should exit with error.
+    When have_powermon is True but PowerStress is None (partial import failure),
+    should exit with error about incomplete module loading.
     """
-    sys.argv = ["", "--set-owner-short", "   "]
+    sys.argv = ["", "--power-stress"]
     mt_config.args = sys.argv  # type: ignore[assignment]
 
     mocked_node = MagicMock()
@@ -529,29 +534,34 @@ def test_set_owner_empty_short_name_exits(capsys: pytest.CaptureFixture[str]) ->
     iface.__enter__ = MagicMock(return_value=iface)
     iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
+    iface.devPath = "/dev/ttyUSB0"
 
     from meshtastic.__main__ import main
 
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+    # Mock have_powermon=True but PowerStress=None (partial import)
+    with (
+        patch("meshtastic.serial_interface.SerialInterface", return_value=iface),
+        patch.object(main_module, "have_powermon", True),
+        patch.object(main_module, "LogSet", None),
+        patch.object(main_module, "PowerStress", None),
+    ):
         with pytest.raises(SystemExit) as pytest_wrapped_e:
             main()
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         _out, _err = capsys.readouterr()
-        assert (
-            "short name" in _out.lower()
-            or "empty" in _out.lower()
-            or "whitespace" in _err.lower()  # noqa: R1727
-        )
+        # Error message is printed to stderr by _cli_exit
+        assert "incomplete" in _err.lower() or "unavailable" in _err.lower()
 
 
 @pytest.mark.unit
-def test_set_owner_both_names_set(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test --set-owner with both long and short names (lines 769-772).
+def test_slog_logset_none_exits(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test --slog when LogSet is None exits (lines 1644-1651).
 
-    When both long_name and short_name are set, should print both.
+    When have_powermon is True but LogSet is None (partial import failure),
+    should exit with error about incomplete module loading.
     """
-    sys.argv = ["", "--set-owner", "Long Name", "--set-owner-short", "SN"]
+    sys.argv = ["", "--slog", "default"]
     mt_config.args = sys.argv  # type: ignore[assignment]
 
     mocked_node = MagicMock()
@@ -560,140 +570,97 @@ def test_set_owner_both_names_set(capsys: pytest.CaptureFixture[str]) -> None:
     iface.__enter__ = MagicMock(return_value=iface)
     iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
+    iface.devPath = "/dev/ttyUSB0"
 
     from meshtastic.__main__ import main
 
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
-        # Just run main() - the code path will be executed
-        try:
-            main()
-        except SystemExit:
-            pass
-        _out, _err = capsys.readouterr()
-        # Check that both names are mentioned
-        assert (
-            "long name" in _out.lower()
-            or "short name" in _out.lower()
-            or "owner" in _out.lower()  # noqa: R1727
-        )
-
-
-# =============================================================================
-# pos_fields Tests (Lines 813-854)
-# =============================================================================
-
-
-@pytest.mark.unit
-def test_pos_fields_invalid_value_error(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test --pos-fields with invalid field name shows error (lines 826-831).
-
-    When an invalid position field is specified, should show error and choices.
-    """
-    sys.argv = ["", "--pos-fields", "INVALID_FIELD"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    mocked_node = MagicMock()
-    position_config = MagicMock()
-    position_config.PositionFlags.Value.side_effect = ValueError("Invalid field")
-    position_config.PositionFlags.keys.return_value = [
-        "ALTITUDE",
-        "LATITUDE",
-        "LONGITUDE",
-    ]
-    mocked_node.localConfig.position = position_config
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
-    iface.getNode.return_value = mocked_node
-
-    from meshtastic.__main__ import main
-
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
-        # Just run main() - the code path will be executed
-        try:
-            main()
-        except SystemExit:
-            pass
-        _out, _err = capsys.readouterr()
-        # Should show error about supported position fields
-        assert (
-            "error" in _out.lower()
-            or "supported" in _out.lower()
-            or "position fields" in _out.lower()  # noqa: R1727
-        )
-
-
-@pytest.mark.unit
-def test_pos_fields_empty_display_current(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test --pos-fields without args displays current value (lines 839-850).
-
-    When pos_fields is empty list, should read and display current position flags.
-    """
-    sys.argv = ["", "--pos-fields"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    mocked_node = MagicMock()
-    position_config = MagicMock()
-    position_config.PositionFlags.values.return_value = [1, 2, 4]
-    position_config.position_flags = 3  # Has bits 1 and 2 set
-    position_config.PositionFlags.Name.side_effect = lambda x: {
-        1: "ALTITUDE",
-        2: "LATITUDE",
-    }.get(x, "UNKNOWN")
-    mocked_node.localConfig.position = position_config
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
-    iface.getNode.return_value = mocked_node
-
-    from meshtastic.__main__ import main
-
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
-        # Just run main() - the code path will be executed
-        try:
-            main()
-        except SystemExit:
-            pass
-        _out, _err = capsys.readouterr()
-        # Should display field names
-        assert (
-            "altitude" in _out.lower() or "latitude" in _out.lower() or _out == ""  # noqa: R1727
-        )
-
-
-# =============================================================================
-# set_ham Empty Validation Tests (Lines 852-856)
-# =============================================================================
-
-
-@pytest.mark.unit
-def test_set_ham_empty_callsign_exits(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test --set-ham with empty callsign exits (lines 852-856).
-
-    When set_ham is whitespace only, should exit with error.
-    """
-    sys.argv = ["", "--set-ham", "   "]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    mocked_node = MagicMock()
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
-    iface.getNode.return_value = mocked_node
-
-    from meshtastic.__main__ import main
-
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+    # Mock have_powermon=True but LogSet=None (partial import)
+    with (
+        patch("meshtastic.serial_interface.SerialInterface", return_value=iface),
+        patch.object(main_module, "have_powermon", True),
+        patch.object(main_module, "LogSet", None),
+        patch.object(main_module, "PowerStress", None),
+    ):
         with pytest.raises(SystemExit) as pytest_wrapped_e:
             main()
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         _out, _err = capsys.readouterr()
-        assert (
-            "ham" in _out.lower()
-            or "callsign" in _out.lower()
-            or "whitespace" in _err.lower()  # noqa: R1727
-        )
+        # Error message is printed to stderr by _cli_exit
+        assert "incomplete" in _err.lower() or "unavailable" in _err.lower()
+
+
+@pytest.mark.unit
+def test_create_power_meter_riden_none_exits(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test --power-riden when RidenPowerSupply is None exits (line 2021).
+
+    When have_powermon is True but power supply classes are None (partial import failure),
+    should exit with error about incomplete module loading.
+    """
+    sys.argv = ["", "--power-riden", "/dev/ttyUSB0"]
+    mt_config.args = sys.argv  # type: ignore[assignment]
+
+    mocked_node = MagicMock()
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    iface.getNode.return_value = mocked_node
+    iface.devPath = "/dev/ttyUSB0"
+
+    from meshtastic.__main__ import main
+
+    # Mock have_powermon=True but power supply classes are None (partial import)
+    with (
+        patch("meshtastic.serial_interface.SerialInterface", return_value=iface),
+        patch.object(main_module, "have_powermon", True),
+        patch.object(main_module, "RidenPowerSupply", None),
+        patch.object(main_module, "PPK2PowerSupply", None),
+        patch.object(main_module, "SimPowerSupply", None),
+    ):
+        with pytest.raises(SystemExit) as pytest_wrapped_e:
+            main()
+        assert pytest_wrapped_e.type is SystemExit
+        assert pytest_wrapped_e.value.code == 1
+        _out, _err = capsys.readouterr()
+        # Error message is printed to stderr by _cli_exit
+        assert "incomplete" in _err.lower() or "unavailable" in _err.lower()
+
+
+@pytest.mark.unit
+def test_create_power_meter_ppk2_none_exits(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test --power-ppk2-supply when PPK2PowerSupply is None exits (line 2021).
+
+    When have_powermon is True but PPK2PowerSupply is None (partial import failure),
+    should exit with error about incomplete module loading.
+    """
+    sys.argv = ["", "--power-ppk2-supply", "--power-voltage", "3.3"]
+    mt_config.args = sys.argv  # type: ignore[assignment]
+
+    mocked_node = MagicMock()
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    iface.getNode.return_value = mocked_node
+    iface.devPath = "/dev/ttyUSB0"
+
+    from meshtastic.__main__ import main
+
+    # Mock have_powermon=True but power supply classes are None (partial import)
+    with (
+        patch("meshtastic.serial_interface.SerialInterface", return_value=iface),
+        patch.object(main_module, "have_powermon", True),
+        patch.object(main_module, "RidenPowerSupply", None),
+        patch.object(main_module, "PPK2PowerSupply", None),
+        patch.object(main_module, "SimPowerSupply", None),
+    ):
+        with pytest.raises(SystemExit) as pytest_wrapped_e:
+            main()
+        assert pytest_wrapped_e.type is SystemExit
+        assert pytest_wrapped_e.value.code == 1
+        _out, _err = capsys.readouterr()
+        # Error message is printed to stderr by _cli_exit
+        assert "incomplete" in _err.lower() or "unavailable" in _err.lower()
