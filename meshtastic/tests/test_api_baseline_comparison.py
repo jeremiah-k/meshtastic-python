@@ -474,13 +474,13 @@ class TestSignatureAliasComparison:
         The PR version has both old names (ota_mode, ota_file_hash) and
         new keyword-only aliases (mode, ota_hash). This should not be breaking.
         """
-        import sys
-        from pathlib import Path
+        import sys  # pylint: disable=reimported,import-outside-toplevel
+        from pathlib import Path  # pylint: disable=reimported,import-outside-toplevel
 
         project_root = Path(__file__).resolve().parents[2]
         sys.path.insert(0, str(project_root / "bin"))
         try:
-            from compare_api_surfaces import _is_breaking_signature_change  # type: ignore[import-not-found]
+            from compare_api_surfaces import _is_breaking_signature_change  # type: ignore[import-not-found]  # pylint: disable=import-error,import-outside-toplevel
         finally:
             sys.path.pop(0)
 
@@ -495,13 +495,13 @@ class TestSignatureAliasComparison:
 
     def test_startota_missing_param_is_breaking(self):
         """Verify removing a required param is still breaking."""
-        import sys
-        from pathlib import Path
+        import sys  # pylint: disable=reimported,import-outside-toplevel
+        from pathlib import Path  # pylint: disable=reimported,import-outside-toplevel
 
         project_root = Path(__file__).resolve().parents[2]
         sys.path.insert(0, str(project_root / "bin"))
         try:
-            from compare_api_surfaces import _is_breaking_signature_change  # type: ignore[import-not-found]
+            from compare_api_surfaces import _is_breaking_signature_change  # type: ignore[import-not-found]  # pylint: disable=import-error,import-outside-toplevel
         finally:
             sys.path.pop(0)
 
@@ -512,13 +512,13 @@ class TestSignatureAliasComparison:
 
     def test_startota_new_required_kwonly_is_breaking(self):
         """Verify adding a new required keyword-only param is breaking."""
-        import sys
-        from pathlib import Path
+        import sys  # pylint: disable=reimported,import-outside-toplevel
+        from pathlib import Path  # pylint: disable=reimported,import-outside-toplevel
 
         project_root = Path(__file__).resolve().parents[2]
         sys.path.insert(0, str(project_root / "bin"))
         try:
-            from compare_api_surfaces import _is_breaking_signature_change  # type: ignore[import-not-found]
+            from compare_api_surfaces import _is_breaking_signature_change  # type: ignore[import-not-found]  # pylint: disable=import-error,import-outside-toplevel
         finally:
             sys.path.pop(0)
 

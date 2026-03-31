@@ -171,7 +171,7 @@ class TestTopLevelModuleImports:
 
     def test_import_meshtastic_package(self) -> None:
         """Test that meshtastic package can be imported."""
-        import meshtastic
+        import meshtastic  # pylint: disable=import-outside-toplevel
 
         assert meshtastic is not None
         assert isinstance(meshtastic, ModuleType)

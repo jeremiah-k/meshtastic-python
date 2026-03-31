@@ -60,7 +60,7 @@ class TestModuleLevelConstants:
     @pytest.mark.unit
     def test_from_radio_branches_defined(self) -> None:
         """Test that _FROM_RADIO_BRANCHES constant is defined with correct structure."""
-        from meshtastic.mesh_interface_runtime.receive_pipeline import (
+        from meshtastic.mesh_interface_runtime.receive_pipeline import (  # pylint: disable=import-outside-toplevel
             _FROM_RADIO_BRANCHES,
         )
 
@@ -296,7 +296,7 @@ class TestParseFromRadioBytes:
         """Test that parsing invalid bytes logs an error and raises."""
         invalid_bytes = b"invalid protobuf data"
 
-        from google.protobuf.message import DecodeError
+        from google.protobuf.message import DecodeError  # pylint: disable=import-outside-toplevel
 
         with caplog.at_level(logging.ERROR):
             with pytest.raises(DecodeError):
@@ -816,7 +816,7 @@ class TestGetOrCreateByNum:
         self, receive_pipeline: ReceivePipeline
     ) -> None:
         """Test that creating a broadcast node raises an error."""
-        from meshtastic import BROADCAST_NUM
+        from meshtastic import BROADCAST_NUM  # pylint: disable=import-outside-toplevel
 
         with pytest.raises(MeshInterface.MeshInterfaceError, match="broadcast"):
             receive_pipeline._get_or_create_by_num(BROADCAST_NUM)
@@ -991,7 +991,7 @@ class TestNodeNumToId:
         self, receive_pipeline: ReceivePipeline
     ) -> None:
         """Test mapping broadcast num to broadcast address (dest mode)."""
-        from meshtastic import BROADCAST_ADDR, BROADCAST_NUM
+        from meshtastic import BROADCAST_ADDR, BROADCAST_NUM  # pylint: disable=import-outside-toplevel
 
         result = receive_pipeline._node_num_to_id(BROADCAST_NUM, isDest=True)
 
@@ -1002,7 +1002,7 @@ class TestNodeNumToId:
         self, receive_pipeline: ReceivePipeline
     ) -> None:
         """Test mapping broadcast num to 'Unknown' (source mode)."""
-        from meshtastic import BROADCAST_NUM
+        from meshtastic import BROADCAST_NUM  # pylint: disable=import-outside-toplevel
 
         result = receive_pipeline._node_num_to_id(BROADCAST_NUM, isDest=False)
 
@@ -1109,7 +1109,7 @@ class TestDecodePacketPayloadWithHandler:
         self, receive_pipeline: ReceivePipeline
     ) -> None:
         """Test successful decoding with protobuf factory."""
-        from meshtastic.protobuf import telemetry_pb2
+        from meshtastic.protobuf import telemetry_pb2  # pylint: disable=import-outside-toplevel
 
         packet_context = _PacketRuntimeContext(
             packet_dict={"decoded": {"telemetry": {}}}

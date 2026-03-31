@@ -14,7 +14,7 @@ import pytest
 
 pa = pytest.importorskip("pyarrow")
 
-from meshtastic.slog.slog import (
+from meshtastic.slog.slog import (  # noqa: E402  # pylint: disable=wrong-import-position
     POWER_LOG_SCHEMA_METADATA,
     LogDef,
     LogSet,
@@ -23,7 +23,7 @@ from meshtastic.slog.slog import (
     root_dir,
     rootDir,
 )
-import meshtastic.slog as slog_package  # noqa: E402 - import after importorskip
+import meshtastic.slog as slog_package  # noqa: E402  # pylint: disable=wrong-import-position
 
 try:
     from meshtastic.slog import slog as slog_module
