@@ -94,7 +94,7 @@ class _RequestWaitRuntime:
         self._retired_wait_ttl_seconds = retired_wait_ttl_seconds
         self._ack_nak_handlers: dict[int, bool] = {}
 
-    def mark_ack_nak_handler(self, request_id: int, flag: bool = True) -> None:
+    def mark_ack_nak_handler(self, request_id: int, *, flag: bool = True) -> None:
         """Mark or unmark a request_id as an ACK/NAK handler."""
         with self._lock:
             if flag:
