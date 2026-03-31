@@ -11,6 +11,7 @@ Usage:
 
 import argparse
 import json
+import os
 import re
 import sys
 from typing import Any
@@ -26,6 +27,19 @@ APPROVED_SIGNATURE_ALIASES: dict[str, dict[str, dict[str, str]]] = {
         }
     }
 }
+
+MAX_WARNING_PREVIEW_ITEMS = 6
+
+
+def _escape_github_command_value(value: str) -> str:
+    """Escape text for GitHub workflow command payloads."""
+    return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def _emit_github_annotation(level: str, message: str) -> None:
+    """Emit a GitHub Actions annotation when running in Actions."""
+    if os.getenv("GITHUB_ACTIONS") == "true":
+        print(f"::{level}::{_escape_github_command_value(message)}")
 
 
 def _get_param_aliases(class_name: str, method_name: str) -> dict[str, str]:
@@ -416,12 +430,29 @@ def main() -> int:
 
     if all_blocking:
         print("\n".join(all_blocking))
+        headline_entries = [line for line in all_blocking if not line.startswith("  ")]
+        preview = headline_entries[:MAX_WARNING_PREVIEW_ITEMS]
+        if preview:
+            summary = "; ".join(preview)
+            remaining = len(headline_entries) - len(preview)
+            if remaining > 0:
+                summary = f"{summary}; +{remaining} more"
+        else:
+            summary = "See job logs for details."
         if warning_only:
+            _emit_github_annotation(
+                "warning",
+                f"Advisory API changes detected vs {base_label}: {summary}",
+            )
             print(
                 f"\nBREAKING API changes detected vs {base_label} "
                 "(warning-only mode; not failing)."
             )
             return 0
+        _emit_github_annotation(
+            "error",
+            f"Blocking API changes detected vs {base_label}: {summary}",
+        )
         print(f"\nBREAKING API changes detected vs {base_label}!")
         return 1
 
