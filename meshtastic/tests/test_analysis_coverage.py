@@ -9,7 +9,6 @@ import os
 import sys
 from pathlib import Path
 from typing import Any, NoReturn
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -31,14 +30,11 @@ try:
     from meshtastic.analysis import __main__ as analysis_main
     from meshtastic.analysis.__main__ import (
         _cli_exit,
-        _is_loopback_host,
-        _parse_port,
         create_argparser,
         create_dash,
         get_board_info,
         get_pmon_raises,
         main,
-        read_pandas,
     )
 except ModuleNotFoundError as exc:
     missing = (exc.name or "").split(".", maxsplit=1)[0]
@@ -171,8 +167,6 @@ def test_get_board_info_rejects_invalid_string_board_id() -> None:
 @pytest.mark.unit
 def test_get_board_info_rejects_unknown_board_id() -> None:
     """get_board_info should raise for unknown board_id values (lines 302-303)."""
-    from meshtastic.protobuf import mesh_pb2
-
     # Use an impossibly large board ID that's definitely not in the enum
     unknown_board_id = 999999999
     dslog = pd.DataFrame(
@@ -335,7 +329,6 @@ def test_main_uses_default_slog_path(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """main() should use default slog path when --slog not provided (line 541)."""
-    from meshtastic.slog import rootDir
 
     class _FakeApp:
         def run(self, *, debug: bool, host: str, port: int) -> None:

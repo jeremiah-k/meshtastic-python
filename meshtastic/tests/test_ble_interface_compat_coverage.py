@@ -2,8 +2,6 @@
 
 import builtins
 import sys
-import types
-from unittest import mock
 
 import pytest
 

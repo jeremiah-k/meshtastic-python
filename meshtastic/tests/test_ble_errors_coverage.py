@@ -4,10 +4,7 @@ This module tests exception handling, error formatting, and edge cases
 in the BLE errors module to achieve comprehensive coverage.
 """
 
-import sys
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from types import ModuleType
-from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest

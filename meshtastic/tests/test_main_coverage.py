@@ -33,7 +33,6 @@ from meshtastic.__main__ import (
     tunnelMain,
 )
 from meshtastic.serial_interface import SerialInterface
-from meshtastic.tcp_interface import TCPInterface
 
 
 # =============================================================================

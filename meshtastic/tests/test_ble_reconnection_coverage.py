@@ -5,16 +5,13 @@ maximum retry limits, and concurrent reconnection attempt handling.
 """
 
 import logging
-import math
-from collections.abc import Callable
 from threading import TIMEOUT_MAX, Event, RLock
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from meshtastic.interfaces.ble.constants import BLEConfig
 from meshtastic.interfaces.ble.gating import _clear_all_registries
 from meshtastic.interfaces.ble.policies import ReconnectPolicy
 from meshtastic.interfaces.ble.reconnection import (
@@ -1444,7 +1441,6 @@ class TestReconnectWorkerGateResults:
     def test_loop_gate_returns_true_continues(self) -> None:
         """Loop continues when gate returns True."""
         shutdown_event = Event()
-        calls: list[int] = []
 
         interface = SimpleNamespace(
             _is_connection_closing=False,

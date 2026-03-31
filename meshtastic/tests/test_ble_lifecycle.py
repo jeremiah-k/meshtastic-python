@@ -10,14 +10,12 @@ import threading
 import time
 from collections.abc import Callable
 from typing import Any
-from unittest.mock import DEFAULT, MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from meshtastic.interfaces.ble.coordination import ThreadCoordinator, _InertThread
 from meshtastic.interfaces.ble.lifecycle_primitives import (
     CLIENT_MISSING_CONNECTED_MSG,
-    RECONNECT_SCHEDULER_MISSING_MSG,
     STATE_MANAGER_MISSING_CONNECTED_MSG,
     STATE_MANAGER_MISSING_CURRENT_STATE_MSG,
     STATE_MANAGER_MISSING_RESET_MSG,
@@ -1760,11 +1758,7 @@ class TestBLEReceiveLifecycleCoordinatorDeferredRestart:
         existing_thread = MagicMock()
         existing_thread.is_alive = MagicMock(return_value=True)
 
-        def failing_start(**kwargs: Any) -> MagicMock:
-            raise RuntimeError("start failed")
-
         call_count = 0
-        original_start_receive = coordinator.start_receive_thread
 
         def mock_start_receive(**kwargs: Any) -> None:
             nonlocal call_count
@@ -1773,21 +1767,18 @@ class TestBLEReceiveLifecycleCoordinatorDeferredRestart:
                 raise RuntimeError("start failed")
             # Second call succeeds
 
-        coordinator.start_receive_thread = mock_start_receive
+        with patch.object(coordinator, "start_receive_thread", mock_start_receive):
 
-        def run_restart() -> None:
-            coordinator._schedule_deferred_receive_restart(
-                existing_thread=existing_thread,
-                name="test",
-                reset_recovery=True,
-            )
+            def run_restart() -> None:
+                coordinator._schedule_deferred_receive_restart(
+                    existing_thread=existing_thread,
+                    name="test",
+                    reset_recovery=True,
+                )
 
-        restart_thread = threading.Thread(target=run_restart)
-        restart_thread.start()
-        restart_thread.join(timeout=1.0)
-
-        # Cleanup
-        coordinator.start_receive_thread = original_start_receive
+            restart_thread = threading.Thread(target=run_restart)
+            restart_thread.start()
+            restart_thread.join(timeout=1.0)
 
     def test_schedule_deferred_receive_restart_launch_failure(
         self, coordinator: BLEReceiveLifecycleCoordinator, mock_iface: MagicMock
