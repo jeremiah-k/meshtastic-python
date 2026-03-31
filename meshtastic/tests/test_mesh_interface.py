@@ -400,6 +400,33 @@ def test_handlePacketFromRadio_with_a_portnum(caplog: pytest.LogCaptureFixture) 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_handlePacketFromRadio_text_packet_includes_decoded_text() -> None:
+    """Published TEXT_MESSAGE_APP packets should include decoded.text after onReceive mutation."""
+    with MeshInterface(noProto=True) as iface:
+        sender = 0x13277429
+        iface.nodesByNum = {
+            sender: {"user": {"id": "!13277429"}},
+        }
+        mesh_packet = mesh_pb2.MeshPacket()
+        setattr(mesh_packet, "from", sender)
+        mesh_packet.to = 0xFFFFFFFF
+        mesh_packet.decoded.portnum = portnums_pb2.PortNum.TEXT_MESSAGE_APP
+        mesh_packet.decoded.payload = b"Range test"
+
+        intents = iface._handle_packet_from_radio(
+            mesh_packet,
+            emit_publication=False,
+        )
+
+    assert len(intents) == 1
+    published_decoded = intents[0].payload["packet"]["decoded"]
+    assert published_decoded["portnum"] == "TEXT_MESSAGE_APP"
+    assert published_decoded["payload"] == b"Range test"
+    assert published_decoded["text"] == "Range test"
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_handlePacketFromRadio_no_portnum(caplog: pytest.LogCaptureFixture) -> None:
     """Verify that _handle_packet_from_radio logs a warning about unknown portnum when a MeshPacket has no portnum."""
     with MeshInterface(noProto=True) as iface:
