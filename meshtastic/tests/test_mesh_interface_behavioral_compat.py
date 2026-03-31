@@ -666,9 +666,9 @@ class TestSendTelemetrySemanticDeprecation:
                         wantResponse=False,
                     )
             # Verify no telemetry-type-related warnings were logged
-            assert telemetry_type not in caplog.text, (
-                f"Unexpected warning for supported type {telemetry_type}"
-            )
+            assert (
+                telemetry_type not in caplog.text
+            ), f"Unexpected warning for supported type {telemetry_type}"
 
     def test_sendTelemetry_with_wantResponse(self, mock_interface):
         """Verify sendTelemetry() with wantResponse=True sets up wait."""

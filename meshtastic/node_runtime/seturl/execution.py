@@ -199,9 +199,11 @@ class _SetUrlExecutionEngine:
                 self._safe_channel_role_name(
                     plan.deferred_new_named_admin_channel.role
                 ),
-                plan.deferred_new_named_admin_channel.settings.name
-                if plan.deferred_new_named_admin_channel.settings
-                else None,
+                (
+                    plan.deferred_new_named_admin_channel.settings.name
+                    if plan.deferred_new_named_admin_channel.settings
+                    else None
+                ),
             )
             self._node._write_channel_snapshot(  # noqa: SLF001
                 plan.deferred_new_named_admin_channel,

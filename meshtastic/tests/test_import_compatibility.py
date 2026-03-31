@@ -247,9 +247,9 @@ class TestBackwardCompatAliases:
             new_deprecation_warnings = [
                 x for x in w if issubclass(x.category, DeprecationWarning)
             ]
-            assert len(new_deprecation_warnings) == initial_count, (
-                "Expected warn-once behavior for dotdict deprecation"
-            )
+            assert (
+                len(new_deprecation_warnings) == initial_count
+            ), "Expected warn-once behavior for dotdict deprecation"
 
     def test_mt_config_tunnel_instance_deprecated(self) -> None:
         """Test that tunnelInstance can be accessed from mt_config.
@@ -270,9 +270,9 @@ class TestBackwardCompatAliases:
             deprecation_warnings = [
                 x for x in w if issubclass(x.category, DeprecationWarning)
             ]
-            assert len(deprecation_warnings) >= 1, (
-                "Expected DeprecationWarning for tunnelInstance"
-            )
+            assert (
+                len(deprecation_warnings) >= 1
+            ), "Expected DeprecationWarning for tunnelInstance"
 
     def test_node_snake_case_ringtone_aliases(self) -> None:
         """Test that snake_case ringtone methods exist on Node.

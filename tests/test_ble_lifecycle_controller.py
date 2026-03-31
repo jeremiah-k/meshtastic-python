@@ -594,9 +594,7 @@ class TestBLELifecycleControllerShutdownDelegation:
         """_close should delegate to the _shutdown coordinator with correct params."""
         calls: list[dict[str, float]] = []
         mock_shutdown = SimpleNamespace(
-            close=lambda *,
-            management_shutdown_wait_timeout,
-            management_wait_poll_seconds: calls.append(
+            close=lambda *, management_shutdown_wait_timeout, management_wait_poll_seconds: calls.append(
                 {
                     "timeout": management_shutdown_wait_timeout,
                     "poll": management_wait_poll_seconds,

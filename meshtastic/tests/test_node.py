@@ -1083,7 +1083,9 @@ def test_start_ota_remote_node_raises_error() -> None:
     with pytest.raises(
         MeshInterface.MeshInterfaceError, match="startOTA only possible on local node"
     ):
-        remote_node.startOTA(ota_mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=test_hash)
+        remote_node.startOTA(
+            ota_mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=test_hash
+        )
 
 
 @pytest.mark.unit

@@ -96,7 +96,7 @@ def test_setChannels_with_valid_channels_copies_and_normalizes(
     channel_request_runtime: _NodeChannelRequestRuntime,
     mock_node: MagicMock,
 ) -> None:
-    """setChannels should copy input channels and call fixup_channels_locked.
+    """SetChannels should copy input channels and call fixup_channels_locked.
 
     Note: fixup_channels_locked calls fill_channels_locked which pads the channel
     list to MAX_CHANNELS (8) with DISABLED channels.
@@ -135,7 +135,7 @@ def test_requestChannels_with_starting_index_zero_resets_channels(
     channel_request_runtime: _NodeChannelRequestRuntime,
     mock_node: MagicMock,
 ) -> None:
-    """requestChannels with starting_index=0 should reset channels and partialChannels."""
+    """RequestChannels with starting_index=0 should reset channels and partialChannels."""
     # Set up pre-existing channels
     mock_node.channels = [channel_pb2.Channel()]
     mock_node.partialChannels = [channel_pb2.Channel()]
@@ -154,7 +154,7 @@ def test_requestChannels_with_starting_index_nonzero_preserves_channels(
     channel_request_runtime: _NodeChannelRequestRuntime,
     mock_node: MagicMock,
 ) -> None:
-    """requestChannels with starting_index>0 should not reset channels or partialChannels."""
+    """RequestChannels with starting_index>0 should not reset channels or partialChannels."""
     # Set up pre-existing channels
     existing_channel = channel_pb2.Channel()
     mock_node.channels = [existing_channel]
@@ -173,7 +173,7 @@ def test_requestChannels_with_starting_index_nonzero_preserves_channels(
 def test_requestChannels_calls_canonical_request_channel_method(
     channel_request_runtime: _NodeChannelRequestRuntime,
 ) -> None:
-    """requestChannels should call requestChannel directly, not deprecated alias."""
+    """RequestChannels should call requestChannel directly, not deprecated alias."""
     channel_request_runtime.requestChannel = MagicMock()  # type: ignore[method-assign]
     channel_request_runtime.request_channel = MagicMock()  # type: ignore[method-assign]
 
@@ -188,7 +188,7 @@ def test_waitForConfig_delegates_to_timeout_wait_for_set(
     channel_request_runtime: _NodeChannelRequestRuntime,
     mock_node: MagicMock,
 ) -> None:
-    """waitForConfig should delegate to _timeout.waitForSet with correct attributes."""
+    """WaitForConfig should delegate to _timeout.waitForSet with correct attributes."""
     mock_timeout = MagicMock()
     mock_timeout.waitForSet.return_value = True
     mock_node._timeout = mock_timeout  # noqa: SLF001
@@ -204,7 +204,7 @@ def test_waitForConfig_with_non_channels_attribute(
     channel_request_runtime: _NodeChannelRequestRuntime,
     mock_node: MagicMock,
 ) -> None:
-    """waitForConfig should poll localConfig field presence for nested attributes."""
+    """WaitForConfig should poll localConfig field presence for nested attributes."""
     mock_timeout = MagicMock()
     mock_timeout.waitForSet.return_value = True
     mock_node._timeout = mock_timeout  # noqa: SLF001

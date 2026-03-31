@@ -12,11 +12,11 @@ from meshtastic import BROADCAST_ADDR, BROADCAST_NUM, LOCAL_ADDR
 from meshtastic.mesh_interface_runtime.flows import (
     DEFAULT_TELEMETRY_TYPE,
     TelemetryType,
-    deleteWaypoint,
     _on_response_position,
     _on_response_telemetry,
     _on_response_traceroute,
     _on_response_waypoint,
+    deleteWaypoint,
     sendPosition,
     sendTelemetry,
     sendTraceroute,

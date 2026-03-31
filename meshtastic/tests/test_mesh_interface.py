@@ -4210,7 +4210,7 @@ class TestUnscopedWaitForAckNakOverlappingCommands:
         This demonstrates the fundamental issue: the unscoped approach cannot
         properly attribute a single ACK to multiple overlapping requests.
         """
-        from meshtastic.util import Timeout, Acknowledgment
+        from meshtastic.util import Acknowledgment
 
         # Create shared acknowledgment state (simulating MeshInterface._acknowledgment)
         ack = Acknowledgment()
@@ -4343,7 +4343,7 @@ class TestUnscopedWaitForAckNakOverlappingCommands:
         properly attribute a single NAK to the correct request. The unscoped approach
         creates unpredictable behavior where overlapping commands interfere.
         """
-        from meshtastic.util import Timeout, Acknowledgment
+        from meshtastic.util import Acknowledgment
 
         # Create shared acknowledgment state
         ack = Acknowledgment()

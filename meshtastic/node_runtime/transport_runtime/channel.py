@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 
 from meshtastic.node_runtime.shared import (
     MAX_CHANNELS,
+)
+from meshtastic.node_runtime.shared import (
     isNamedAdminChannelName as _isNamedAdminChannelName,
 )
 from meshtastic.node_runtime.transport_runtime.admin import _NodeAdminTransportRuntime

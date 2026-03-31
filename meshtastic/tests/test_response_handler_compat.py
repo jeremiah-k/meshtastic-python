@@ -15,6 +15,7 @@ the correct patterns for both old and new code.
 """
 
 import pytest
+
 from meshtastic import ResponseHandler
 
 

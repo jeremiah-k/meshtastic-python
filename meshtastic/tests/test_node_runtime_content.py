@@ -665,7 +665,7 @@ class TestNodeAdminContentRuntime:
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
     ) -> None:
-        """readRingtone should return cached value when available."""
+        """ReadRingtone should return cached value when available."""
         mock_node_for_admin.ringtone = "RTTTL: cached:d=4,o=5,b=100:c"
         runtime = _NodeAdminContentRuntime(
             mock_node_for_admin,
@@ -687,7 +687,7 @@ class TestNodeAdminContentRuntime:
         response_runtime: _NodeContentResponseRuntime,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """readRingtone should return None when module is unavailable."""
+        """ReadRingtone should return None when module is unavailable."""
         mock_node_for_admin.module_available = MagicMock(return_value=False)
         runtime = _NodeAdminContentRuntime(
             mock_node_for_admin,
