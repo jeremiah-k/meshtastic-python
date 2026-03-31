@@ -252,6 +252,7 @@ class _QueueSendRuntime:
         self._get_queue_status = get_queue_status
         self._set_queue_status = set_queue_status
         self._queue_wait_delay_seconds = queue_wait_delay_seconds
+        self._awaiting_queue_status_ids: set[int] = set()
 
     def has_free_space(self) -> bool:
         """Return whether queue status indicates free TX slots."""
@@ -356,6 +357,8 @@ class _QueueSendRuntime:
                 # Packet send succeeded and there is no explicit queue-status ack
                 # marker yet. Keep it out of immediate resend rotation to avoid
                 # duplicate floods while queue-status correlation catches up.
+                with self._lock:
+                    self._awaiting_queue_status_ids.add(packet_id)
                 logger.debug(
                     "packet %08x sent and awaiting queue-status correlation",
                     packet_id,
@@ -394,22 +397,32 @@ class _QueueSendRuntime:
 
     def correlate_queue_status_reply(self, queue_status: mesh_pb2.QueueStatus) -> None:
         """Correlate queue status mesh_packet_id replies to pending entries."""
+        packet_id = queue_status.mesh_packet_id
         debug_enabled = logger.isEnabledFor(logging.DEBUG)
         with self._lock:
             queue = self._get_queue()
             queue_snapshot = tuple(queue.keys()) if debug_enabled else ()
-            just_queued = queue.pop(queue_status.mesh_packet_id, None)
+            just_queued = queue.pop(packet_id, None)
+            was_awaiting = packet_id in self._awaiting_queue_status_ids
+            if packet_id != 0:
+                self._awaiting_queue_status_ids.discard(packet_id)
         if debug_enabled:
             logger.debug(
                 "queue: %s",
                 " ".join(f"{key:08x}" for key in queue_snapshot),
             )
-        if just_queued is None and queue_status.mesh_packet_id != 0:
+        if just_queued is None and packet_id != 0:
+            if was_awaiting:
+                logger.debug(
+                    "Correlated queue-status reply for packet awaiting correlation %08x",
+                    packet_id,
+                )
+                return
             with self._lock:
-                self._get_queue()[queue_status.mesh_packet_id] = False
+                self._get_queue()[packet_id] = False
             logger.debug(
                 "Reply for unexpected packet ID %08x",
-                queue_status.mesh_packet_id,
+                packet_id,
             )
 
     def handle_queue_status_from_radio(

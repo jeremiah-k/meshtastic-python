@@ -1128,6 +1128,7 @@ class BLEReceiveRecoveryController:
             return
         now = time.monotonic()
         cooldown = BLEConfig.EMPTY_READ_WARNING_COOLDOWN
+        notify_enabled = bool(getattr(iface, "_fromnum_notify_enabled", False))
         if now - iface._last_empty_read_warning >= cooldown:
             suppressed = iface._suppressed_empty_read_warnings
             message = f"Exceeded max retries for empty BLE read from {FROMRADIO_UUID}"
@@ -1136,7 +1137,13 @@ class BLEReceiveRecoveryController:
                     f"{message} (suppressed {suppressed} repeats in the last "
                     f"{cooldown:.0f}s)"
                 )
-            logger.warning(message)
+            if notify_enabled:
+                logger.warning(message)
+            else:
+                logger.debug(
+                    "%s (polling mode without FROMNUM notifications)",
+                    message,
+                )
             iface._last_empty_read_warning = now
             iface._suppressed_empty_read_warnings = 0
             return
