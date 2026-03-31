@@ -1515,7 +1515,7 @@ class MeshInterface:  # pylint: disable=R0902
             description=description,
             icon=icon,
             expire=expire,
-            waypoint_id=waypoint_id,
+            waypointId=waypoint_id,
             latitude=latitude,
             longitude=longitude,
             destinationId=destinationId,
@@ -1558,7 +1558,7 @@ class MeshInterface:  # pylint: disable=R0902
         """
         return deleteWaypoint(
             self._send_pipeline,
-            waypoint_id=waypoint_id,
+            waypointId=waypoint_id,
             destinationId=destinationId,
             wantAck=wantAck,
             wantResponse=wantResponse,

@@ -567,7 +567,7 @@ class SendPipeline:
             description=description,
             icon=icon,
             expire=expire,
-            waypoint_id=waypoint_id,
+            waypointId=waypoint_id,
             latitude=latitude,
             longitude=longitude,
             destinationId=destinationId,
@@ -589,7 +589,7 @@ class SendPipeline:
         """Delete a waypoint by sending a Waypoint message with expire=0 to a destination."""
         return deleteWaypoint(
             self,
-            waypoint_id=waypoint_id,
+            waypointId=waypoint_id,
             destinationId=destinationId,
             wantAck=wantAck,
             wantResponse=wantResponse,

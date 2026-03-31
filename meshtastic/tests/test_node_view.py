@@ -183,7 +183,6 @@ class TestPrintLogLine:
         self,
         node_view: NodeView,
         mock_interface: MagicMock,
-        capsys: pytest.CaptureFixture,
     ) -> None:
         """Test printing log line to stdout."""
         mock_interface.debugOut = sys.stdout

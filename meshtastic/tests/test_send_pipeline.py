@@ -716,7 +716,7 @@ class TestOnResponsePosition:
         packet = {"decoded": {"position": {"latitude": 37.456}}}
 
         with patch(
-            "meshtastic.mesh_interface_runtime.send_pipeline.on_response_position"
+            "meshtastic.mesh_interface_runtime.send_pipeline._on_response_position"
         ) as mock_flow:
             send_pipeline.onResponsePosition(packet)
 
@@ -758,7 +758,7 @@ class TestOnResponseTraceRoute:
         packet: dict[str, Any] = {"decoded": {"traceroute": {}}}
 
         with patch(
-            "meshtastic.mesh_interface_runtime.send_pipeline.on_response_traceroute"
+            "meshtastic.mesh_interface_runtime.send_pipeline._on_response_traceroute"
         ) as mock_flow:
             send_pipeline.onResponseTraceRoute(packet)
 
@@ -806,7 +806,7 @@ class TestOnResponseTelemetry:
         packet: dict[str, Any] = {"decoded": {"telemetry": {}}}
 
         with patch(
-            "meshtastic.mesh_interface_runtime.send_pipeline.on_response_telemetry"
+            "meshtastic.mesh_interface_runtime.send_pipeline._on_response_telemetry"
         ) as mock_flow:
             send_pipeline.onResponseTelemetry(packet)
 
@@ -822,7 +822,7 @@ class TestOnResponseWaypoint:
         packet: dict[str, Any] = {"decoded": {"waypoint": {}}}
 
         with patch(
-            "meshtastic.mesh_interface_runtime.send_pipeline.on_response_waypoint"
+            "meshtastic.mesh_interface_runtime.send_pipeline._on_response_waypoint"
         ) as mock_flow:
             send_pipeline.onResponseWaypoint(packet)
 

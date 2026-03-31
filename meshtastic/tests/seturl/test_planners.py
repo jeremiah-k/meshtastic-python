@@ -1,7 +1,6 @@
 """Tests for _SetUrlAddOnlyPlanner and _SetUrlReplacePlanner."""
 
 import logging
-from typing import NoReturn
 from unittest.mock import MagicMock
 
 import pytest

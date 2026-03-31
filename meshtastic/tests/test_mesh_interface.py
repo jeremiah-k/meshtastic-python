@@ -3994,7 +3994,7 @@ def test_handle_packet_from_radio_toid_warning_and_response_handler_paths(
         p2.decoded.payload = routing.SerializeToString()
         p2.decoded.request_id = 78
         iface.responseHandlers[78] = ResponseHandler(
-            callback=onAckNak, ackPermitted=False
+            callback=onAckNak, ackPermitted=False, isAckNakHandler=True
         )
         iface._handle_packet_from_radio(p2, hack=True)
 

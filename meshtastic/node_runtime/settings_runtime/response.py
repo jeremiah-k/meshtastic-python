@@ -26,6 +26,7 @@ class _NodeSettingsResponseRuntime:
         response_key: str,
         empty_warning: str,
         descriptor: Any,
+        config_instance: Any,
         unknown_field_warning: str,
         response_type: str,
     ) -> tuple[str, str, Any] | None:
@@ -42,7 +43,7 @@ class _NodeSettingsResponseRuntime:
         if config_type is None:
             logger.warning(unknown_field_warning, field_name)
             return None
-        return (response_type, field_name, getattr(descriptor, config_type.name))
+        return (response_type, field_name, getattr(config_instance, field_name))
 
     def _resolve_local_config_target(
         self, admin_message: dict[str, Any]
@@ -53,6 +54,7 @@ class _NodeSettingsResponseRuntime:
             response_key="getConfigResponse",
             empty_warning="Received empty config response from node.",
             descriptor=self._node.localConfig.DESCRIPTOR,
+            config_instance=self._node.localConfig,
             unknown_field_warning="Ignoring unknown LocalConfig field in getConfigResponse: %s",
             response_type="get_config_response",
         )
@@ -66,6 +68,7 @@ class _NodeSettingsResponseRuntime:
             response_key="getModuleConfigResponse",
             empty_warning="Received empty module config response from node.",
             descriptor=self._node.moduleConfig.DESCRIPTOR,
+            config_instance=self._node.moduleConfig,
             unknown_field_warning="Ignoring unknown ModuleConfig field in getModuleConfigResponse: %s",
             response_type="get_module_config_response",
         )

@@ -131,7 +131,6 @@ class TestSetUrlRollbackEngine:
             _channel: channel_pb2.Channel, *, adminIndex: int | None = None
         ) -> None:
             _ = adminIndex
-            pass
 
         def send_admin_side_effect(
             _msg: admin_pb2.AdminMessage, *, adminIndex: int | None = None

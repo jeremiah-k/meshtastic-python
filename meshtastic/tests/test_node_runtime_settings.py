@@ -376,7 +376,7 @@ class TestNodeSettingsRuntime:
         runtime = _NodeSettingsRuntime(mock_local_node, message_builder=builder)
         # localConfig and moduleConfig are empty
 
-        with pytest.raises(_TestInterfaceError, match="No localConfig has been read"):
+        with pytest.raises(_TestInterfaceError, match="No config has been read"):
             runtime._validate_write_configs_loaded("device")
 
     @pytest.mark.unit

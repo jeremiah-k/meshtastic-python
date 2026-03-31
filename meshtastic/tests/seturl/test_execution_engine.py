@@ -1,6 +1,5 @@
 """Tests for _SetUrlExecutionEngine."""
 
-from typing import NoReturn
 from unittest.mock import MagicMock
 
 import pytest

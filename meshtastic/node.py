@@ -910,7 +910,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             module is not present, the ringtone is unavailable, or the request
             timed out.
         """
-        return self._content_request_runtime.read_ringtone()
+        return self._content_request_runtime.readRingtone()
 
     def _set_ringtone(self, ringtone: str) -> mesh_pb2.MeshPacket | None:
         """Set the node's ringtone.

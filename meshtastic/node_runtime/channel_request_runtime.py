@@ -18,7 +18,9 @@ logger = logging.getLogger(__name__)
 class _HasChannelRequestFailed(Protocol):
     """Protocol for objects providing channel request failure check."""
 
-    def hasChannelRequestFailed(self) -> bool: ...
+    def hasChannelRequestFailed(self) -> bool:
+        """Return True if a channel request has failed."""
+        ...  # pylint: disable=unnecessary-ellipsis
 
 
 def _get_channel_request_failed_fn(
@@ -60,7 +62,7 @@ class _ChannelRequestCompletionProbe:
     """Expose channel-request completion as a boolean wait target."""
 
     def __init__(
-        self, *, node: "Node", channel_response_runtime: _HasChannelRequestFailed
+        self, *, node: "Node", channel_response_runtime: _HasChannelRequestFailed | None
     ) -> None:
         self._node = node
         self._channel_response_runtime = channel_response_runtime

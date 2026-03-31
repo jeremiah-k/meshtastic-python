@@ -313,12 +313,31 @@ def test_get_url_requests_config_when_lora_missing(
             self.DESCRIPTOR = localonly_pb2.LocalConfig.DESCRIPTOR
 
         def HasField(self, field_name: str) -> bool:  # pylint: disable=invalid-name
+            """Return whether the specified field is set in the config.
+
+            Parameters
+            ----------
+            field_name : str
+                The name of the field to check.
+
+            Returns
+            -------
+            bool
+                True if the field is set, False otherwise.
+            """
             if field_name == "lora":
                 call_count["lora"] += 1
                 return call_count["lora"] > 1
             return True
 
         def CopyFrom(self, other):  # pylint: disable=invalid-name
+            """Copy field values from another LocalConfig instance.
+
+            Parameters
+            ----------
+            other : object
+                The source LocalConfig to copy values from.
+            """
             if hasattr(other, "lora"):
                 self.lora = other.lora
 

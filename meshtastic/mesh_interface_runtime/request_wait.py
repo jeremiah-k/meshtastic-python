@@ -497,6 +497,8 @@ class _RequestWaitRuntime:
             f"Failed to decode admin payload: {admin_decode_error}",
             request_id=request_id,
         )
+        # Always set legacy NAK flag for admin decode failures regardless of scope
+        setattr(self._get_acknowledgment(), WAIT_ATTR_NAK, True)
 
     @staticmethod
     def _invoke_response_callback(

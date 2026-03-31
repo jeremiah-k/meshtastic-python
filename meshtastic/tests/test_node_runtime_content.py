@@ -659,13 +659,13 @@ class TestNodeAdminContentRuntime:
         assert "Module not present" in caplog.text
 
     @pytest.mark.unit
-    def test_read_ringtone_returns_cached_value(
+    def test_readRingtone_returns_cached_value(
         self,
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
     ) -> None:
-        """read_ringtone should return cached value when available."""
+        """readRingtone should return cached value when available."""
         mock_node_for_admin.ringtone = "RTTTL: cached:d=4,o=5,b=100:c"
         runtime = _NodeAdminContentRuntime(
             mock_node_for_admin,
@@ -673,21 +673,21 @@ class TestNodeAdminContentRuntime:
             response_runtime=response_runtime,
         )
 
-        result = runtime.read_ringtone()
+        result = runtime.readRingtone()
 
         assert result == "RTTTL: cached:d=4,o=5,b=100:c"
         # Should not call _send_admin since cached
         mock_node_for_admin._send_admin.assert_not_called()
 
     @pytest.mark.unit
-    def test_read_ringtone_module_unavailable_returns_none(
+    def test_readRingtone_module_unavailable_returns_none(
         self,
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """read_ringtone should return None when module is unavailable."""
+        """readRingtone should return None when module is unavailable."""
         mock_node_for_admin.module_available = MagicMock(return_value=False)
         runtime = _NodeAdminContentRuntime(
             mock_node_for_admin,
@@ -696,13 +696,13 @@ class TestNodeAdminContentRuntime:
         )
 
         with caplog.at_level(logging.WARNING):
-            result = runtime.read_ringtone()
+            result = runtime.readRingtone()
 
         assert result is None
         assert "External Notification module not present" in caplog.text
 
     @pytest.mark.unit
-    def test_read_ringtone_ignores_late_callback_after_timeout(
+    def test_readRingtone_ignores_late_callback_after_timeout(
         self,
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
@@ -741,7 +741,7 @@ class TestNodeAdminContentRuntime:
             response_runtime=response_runtime,
         )
 
-        first_result = runtime.read_ringtone()
+        first_result = runtime.readRingtone()
         assert first_result is None
 
         late_raw = admin_pb2.AdminMessage()
@@ -749,7 +749,7 @@ class TestNodeAdminContentRuntime:
         callback_by_call[1]({"decoded": {"admin": {"raw": late_raw}}})
         assert mock_node_for_admin.ringtonePart is None
 
-        second_result = runtime.read_ringtone()
+        second_result = runtime.readRingtone()
         assert second_result is None
         assert mock_node_for_admin.ringtonePart is None
 

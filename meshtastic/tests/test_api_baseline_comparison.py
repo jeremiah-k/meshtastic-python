@@ -15,12 +15,8 @@ The baselines are stored in:
 # Fixture names (current_baseline, stored_baseline) appear to shadow when used as
 # test parameters - this is standard pytest fixture injection pattern.
 
-import ast
-import importlib.util
-import inspect
 import json
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
