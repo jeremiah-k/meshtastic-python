@@ -12,12 +12,19 @@ import google.protobuf.json_format
 from google.protobuf import message as protobuf_message
 from pubsub import pub
 
-from meshtastic import protocols, publishingThread
+from meshtastic import (
+    BROADCAST_ADDR,
+    BROADCAST_NUM,
+    DECODE_ERROR_KEY,
+    protocols,
+    publishingThread,
+)
 from meshtastic.protobuf import (
     channel_pb2,
     config_pb2,
     mesh_pb2,
     module_config_pb2,
+    portnums_pb2,
 )
 from meshtastic.util import stripnl
 
@@ -504,20 +511,16 @@ class ReceivePipeline:
 
     def _get_or_create_by_num(self, nodeNum: int) -> dict[str, Any]:
         """Retrieve the node record for a numeric node ID, creating a minimal placeholder if none exists."""
-        from meshtastic import BROADCAST_NUM
-
         if nodeNum == BROADCAST_NUM:
-            from meshtastic.mesh_interface import MeshInterface
-
-            raise MeshInterface.MeshInterfaceError(
+            raise self._interface.MeshInterfaceError(
                 "Can not create/find nodenum by the broadcast num"
             )
 
         with self._node_db_lock:
             if self.nodesByNum is None:
-                from meshtastic.mesh_interface import MeshInterface
-
-                raise MeshInterface.MeshInterfaceError("Node database not initialized")
+                raise self._interface.MeshInterfaceError(
+                    "Node database not initialized"
+                )
 
             if nodeNum in self.nodesByNum:
                 return self.nodesByNum[nodeNum]
@@ -649,8 +652,6 @@ class ReceivePipeline:
 
     def _node_num_to_id(self, num: int, isDest: bool = True) -> str | None:
         """Map a mesh numeric node number to its node ID string."""
-        from meshtastic import BROADCAST_ADDR, BROADCAST_NUM
-
         if num == BROADCAST_NUM:
             return BROADCAST_ADDR if isDest else "Unknown"
 
@@ -689,8 +690,6 @@ class ReceivePipeline:
         decoded = packet_context.packet_dict["decoded"]
         packet_context.decoded = decoded
         decoded["payload"] = mesh_packet.decoded.payload
-
-        from meshtastic.protobuf import portnums_pb2
 
         portnum = portnums_pb2.PortNum.Name(portnums_pb2.PortNum.UNKNOWN_APP)
         if "portnum" not in decoded:
@@ -737,8 +736,6 @@ class ReceivePipeline:
             packet_context.packet_dict["decoded"][handler.name] = decoded_payload
             packet_context.packet_dict["decoded"][handler.name]["raw"] = pb
         except (protobuf_message.DecodeError, TypeError, ValueError) as exc:
-            from meshtastic import DECODE_ERROR_KEY
-
             decode_error = f"{DECODE_FAILED_PREFIX}{exc}"
             logger.warning(
                 "Failed to decode %s payload for packet id=%s from=%s to=%s: %s",
@@ -752,9 +749,9 @@ class ReceivePipeline:
                 DECODE_ERROR_KEY: decode_error
             }
             if handler.name == "routing":
-                packet_context.packet_dict["decoded"][handler.name][
-                    "errorReason"
-                ] = decode_error
+                packet_context.packet_dict["decoded"][handler.name]["errorReason"] = (
+                    decode_error
+                )
             if handler.name == "admin":
                 packet_context.skip_response_callback_for_decode_failure = True
 

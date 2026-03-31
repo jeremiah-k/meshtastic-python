@@ -17,6 +17,7 @@ import pytest
 
 from meshtastic import BROADCAST_ADDR, LOCAL_ADDR
 from meshtastic.mesh_interface import MeshInterface
+from meshtastic.node import Node
 from meshtastic.protobuf import mesh_pb2, portnums_pb2, telemetry_pb2
 
 # Supported telemetry types for sendTelemetry tests
@@ -531,8 +532,6 @@ class TestGetNodeWorkflow:
         """Verify getNode() returns a Node for string ID."""
         iface = mock_interface
 
-        from meshtastic.node import Node
-
         with patch("meshtastic.node.Node") as MockNode:
             mock_node_instance = MagicMock(spec=Node)
             mock_node_instance.waitForConfig = MagicMock(return_value=True)
@@ -550,8 +549,6 @@ class TestGetNodeWorkflow:
     def test_getNode_by_node_number_returns_node(self, mock_interface):
         """Verify getNode() returns a Node for node number."""
         iface = mock_interface
-
-        from meshtastic.node import Node
 
         with patch("meshtastic.node.Node") as MockNode:
             mock_node_instance = MagicMock(spec=Node)
@@ -576,8 +573,6 @@ class TestGetNodeWorkflow:
         """Verify getNode() respects requestChannels=False (no channel requests)."""
         iface = mock_interface
 
-        from meshtastic.node import Node
-
         with patch("meshtastic.node.Node") as MockNode:
             mock_node_instance = MagicMock(spec=Node)
             mock_node_instance.waitForConfig = MagicMock(return_value=True)
@@ -592,8 +587,6 @@ class TestGetNodeWorkflow:
     def test_getNode_not_found_raises_error(self, mock_interface):
         """Verify getNode() raises error when channel request times out."""
         iface = mock_interface
-
-        from meshtastic.node import Node
 
         with patch("meshtastic.node.Node") as MockNode:
             mock_node_instance = MagicMock(spec=Node)
@@ -666,9 +659,9 @@ class TestSendTelemetrySemanticDeprecation:
                         wantResponse=False,
                     )
             # Verify no telemetry-type-related warnings were logged
-            assert (
-                telemetry_type not in caplog.text
-            ), f"Unexpected warning for supported type {telemetry_type}"
+            assert telemetry_type not in caplog.text, (
+                f"Unexpected warning for supported type {telemetry_type}"
+            )
 
     def test_sendTelemetry_with_wantResponse(self, mock_interface):
         """Verify sendTelemetry() with wantResponse=True sets up wait."""
@@ -830,8 +823,6 @@ class TestEdgeCases:
     def test_getNode_with_hex_string(self, mock_interface):
         """Verify getNode() handles hex string IDs."""
         iface = mock_interface
-
-        from meshtastic.node import Node
 
         with patch("meshtastic.node.Node") as MockNode:
             mock_node_instance = MagicMock(spec=Node)

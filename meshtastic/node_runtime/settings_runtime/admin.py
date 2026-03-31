@@ -5,6 +5,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from meshtastic.protobuf import admin_pb2, mesh_pb2
+from meshtastic.util import toNodeNum
 
 if TYPE_CHECKING:
     from meshtastic.node import Node
@@ -146,9 +147,7 @@ class _NodeAdminCommandRuntime:
     ) -> mesh_pb2.MeshPacket | None:
         """Validate OTA args and send ota_request command."""
         if self._node is not self._node.iface.localNode:
-            self._node._raise_interface_error(
-                "startOTA only possible on local node"
-            )  # noqa: SLF001
+            self._node._raise_interface_error("startOTA only possible on local node")  # noqa: SLF001
 
         # COMPAT_STABLE_SHIM: support legacy keyword aliases used by older callers:
         # `ota_mode` -> `mode`, and `ota_hash`/`hash` -> `ota_file_hash`.
@@ -212,14 +211,10 @@ class _NodeAdminCommandRuntime:
         """Send factory-reset command, preserving full/config split behavior."""
         message = admin_pb2.AdminMessage()
         if full:
-            message.factory_reset_device = (
-                self._node._get_factory_reset_request_value()
-            )  # noqa: SLF001
+            message.factory_reset_device = self._node._get_factory_reset_request_value()  # noqa: SLF001
             logger.info("Telling node to factory reset (full device reset)")
         else:
-            message.factory_reset_config = (
-                self._node._get_factory_reset_request_value()
-            )  # noqa: SLF001
+            message.factory_reset_config = self._node._get_factory_reset_request_value()  # noqa: SLF001
             logger.info("Telling node to factory reset (config reset)")
         return self._send_command(
             message,
@@ -237,8 +232,6 @@ class _NodeAdminCommandRuntime:
         set_field: Callable[[admin_pb2.AdminMessage, int], None],
     ) -> mesh_pb2.MeshPacket | None:
         """Send one node-id command after toNodeNum conversion."""
-        from meshtastic.util import toNodeNum
-
         node_num = toNodeNum(node_id)
         message = admin_pb2.AdminMessage()
         set_field(message, node_num)

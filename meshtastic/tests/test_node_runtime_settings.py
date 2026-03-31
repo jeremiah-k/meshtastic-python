@@ -1025,7 +1025,10 @@ class TestNodeAdminCommandRuntime:
         """set_ignored with int node_id converts to node_num (lines 578-581)."""
         runtime = _NodeAdminCommandRuntime(mock_local_node_for_admin)
 
-        with patch("meshtastic.util.toNodeNum", return_value=12345) as mock_to_node_num:
+        with patch(
+            "meshtastic.node_runtime.settings_runtime.admin.toNodeNum",
+            return_value=12345,
+        ) as mock_to_node_num:
             result = runtime.setIgnored(0x12345)
 
         mock_to_node_num.assert_called_once_with(0x12345)
@@ -1042,7 +1045,7 @@ class TestNodeAdminCommandRuntime:
         runtime = _NodeAdminCommandRuntime(mock_local_node_for_admin)
 
         with patch(
-            "meshtastic.util.toNodeNum",
+            "meshtastic.node_runtime.settings_runtime.admin.toNodeNum",
             return_value=0x9388F81C,
         ) as mock_to_node_num:
             result = runtime.setIgnored("!9388f81c")
@@ -1059,7 +1062,9 @@ class TestNodeAdminCommandRuntime:
 
         set_field = MagicMock()
 
-        with patch("meshtastic.util.toNodeNum", return_value=999) as mock_to_node_num:
+        with patch(
+            "meshtastic.node_runtime.settings_runtime.admin.toNodeNum", return_value=999
+        ) as mock_to_node_num:
             runtime._send_node_id_command(
                 node_id="!abc123",
                 set_field=set_field,

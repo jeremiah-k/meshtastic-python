@@ -44,7 +44,7 @@ from ..protobuf import (
 
 # TODO
 # from ..config import Config
-from ..util import Timeout
+from ..util import Acknowledgment, Timeout
 
 if TYPE_CHECKING:
     from .conftest import FakeTimer
@@ -4210,8 +4210,6 @@ class TestUnscopedWaitForAckNakOverlappingCommands:
         This demonstrates the fundamental issue: the unscoped approach cannot
         properly attribute a single ACK to multiple overlapping requests.
         """
-        from meshtastic.util import Acknowledgment
-
         # Create shared acknowledgment state (simulating MeshInterface._acknowledgment)
         ack = Acknowledgment()
         timeout = Timeout(maxSecs=0.5)
@@ -4343,8 +4341,6 @@ class TestUnscopedWaitForAckNakOverlappingCommands:
         properly attribute a single NAK to the correct request. The unscoped approach
         creates unpredictable behavior where overlapping commands interfere.
         """
-        from meshtastic.util import Acknowledgment
-
         # Create shared acknowledgment state
         ack = Acknowledgment()
         timeout = Timeout(maxSecs=0.5)

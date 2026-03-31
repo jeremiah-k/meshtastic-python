@@ -16,8 +16,9 @@ from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
 
-from meshtastic import mt_config
+from meshtastic import mt_config, publishingThread
 from meshtastic.powermon import power_supply as power_supply_module
+from meshtastic.util import DeferredExecution
 
 from ..mesh_interface import MeshInterface
 from ..serial_interface import SerialInterface
@@ -531,8 +532,6 @@ def _shutdown_publishing_thread() -> Generator[None, None, None]:
     """
     yield
     # After all tests complete, shut down the publishing thread
-    from meshtastic import publishingThread
-    from meshtastic.util import DeferredExecution
 
     # Use cast to satisfy mypy - publishingThread is a DeferredExecution instance
     if publishingThread is not None:

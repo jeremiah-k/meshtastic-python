@@ -22,7 +22,7 @@ class TestCoreModuleImports:
 
     def test_import_node(self) -> None:
         """Test that Node can be imported from meshtastic package."""
-        from meshtastic import Node
+        from meshtastic import Node  # pylint: disable=import-outside-toplevel
 
         assert Node is not None
         assert isinstance(Node, type)
@@ -33,40 +33,40 @@ class TestCoreModuleImports:
         Note: MeshInterface is not exported directly from the meshtastic package.
         Import from meshtastic.mesh_interface instead.
         """
-        from meshtastic.mesh_interface import MeshInterface
+        from meshtastic.mesh_interface import MeshInterface  # pylint: disable=import-outside-toplevel
 
         assert MeshInterface is not None
         assert isinstance(MeshInterface, type)
 
     def test_import_broadcast_addr(self) -> None:
         """Test that BROADCAST_ADDR can be imported from meshtastic package."""
-        from meshtastic import BROADCAST_ADDR
+        from meshtastic import BROADCAST_ADDR  # pylint: disable=import-outside-toplevel
 
         assert BROADCAST_ADDR == "^all"
 
     def test_import_local_addr(self) -> None:
         """Test that LOCAL_ADDR can be imported from meshtastic package."""
-        from meshtastic import LOCAL_ADDR
+        from meshtastic import LOCAL_ADDR  # pylint: disable=import-outside-toplevel
 
         assert LOCAL_ADDR == "^local"
 
     def test_util_message_to_json_import(self) -> None:
         """Test that messageToJson can be imported from meshtastic.util."""
-        from meshtastic.util import messageToJson
+        from meshtastic.util import messageToJson  # pylint: disable=import-outside-toplevel
 
         assert messageToJson is not None
         assert callable(messageToJson)
 
     def test_util_from_psk_import(self) -> None:
         """Test that fromPSK can be imported from meshtastic.util."""
-        from meshtastic.util import fromPSK
+        from meshtastic.util import fromPSK  # pylint: disable=import-outside-toplevel
 
         assert fromPSK is not None
         assert callable(fromPSK)
 
     def test_util_to_node_num_import(self) -> None:
         """Test that toNodeNum can be imported from meshtastic.util."""
-        from meshtastic.util import toNodeNum
+        from meshtastic.util import toNodeNum  # pylint: disable=import-outside-toplevel
 
         assert toNodeNum is not None
         assert callable(toNodeNum)
@@ -79,7 +79,7 @@ class TestBLEImports:
     def test_ble_interface_import(self) -> None:
         """Test that BLEInterface can be imported from meshtastic.ble_interface."""
         # BLEInterface is a re-export from meshtastic.interfaces.ble
-        from meshtastic.ble_interface import BLEInterface  # type: ignore[attr-defined]
+        from meshtastic.ble_interface import BLEInterface  # type: ignore[attr-defined]  # pylint: disable=import-outside-toplevel
 
         assert BLEInterface is not None
         assert isinstance(BLEInterface, type)
@@ -92,7 +92,7 @@ class TestBLEImports:
         COMPAT_STABLE_SHIM
         """
         # Re-export of BleakClient for backwards compatibility
-        from meshtastic.ble_interface import BleakClient  # type: ignore[attr-defined]
+        from meshtastic.ble_interface import BleakClient  # type: ignore[attr-defined]  # pylint: disable=import-outside-toplevel
 
         assert BleakClient is not None
 
@@ -104,13 +104,13 @@ class TestBLEImports:
         COMPAT_STABLE_SHIM
         """
         # Re-export of BleakScanner for backwards compatibility
-        from meshtastic.ble_interface import BleakScanner  # type: ignore[attr-defined]
+        from meshtastic.ble_interface import BleakScanner  # type: ignore[attr-defined]  # pylint: disable=import-outside-toplevel
 
         assert BleakScanner is not None
 
     def test_ble_interface_import_from_interfaces(self) -> None:
         """Test that BLEInterface can be imported from meshtastic.interfaces.ble."""
-        from meshtastic.interfaces.ble import BLEInterface
+        from meshtastic.interfaces.ble import BLEInterface  # pylint: disable=import-outside-toplevel
 
         assert BLEInterface is not None
         assert isinstance(BLEInterface, type)
@@ -133,7 +133,7 @@ class TestNodeRuntimeImports:
         This is a COMPAT_STABLE_SHIM explicitly maintained for test ecosystem
         compatibility. Documented in COMPATIBILITY.md.
         """
-        from meshtastic.node_runtime.settings_runtime import toNodeNum
+        from meshtastic.node_runtime.settings_runtime import toNodeNum  # pylint: disable=import-outside-toplevel
 
         assert toNodeNum is not None
         assert callable(toNodeNum)
@@ -145,14 +145,14 @@ class TestProtobufImports:
 
     def test_import_mesh_pb2(self) -> None:
         """Test that mesh_pb2 can be imported from meshtastic.protobuf."""
-        from meshtastic.protobuf import mesh_pb2
+        from meshtastic.protobuf import mesh_pb2  # pylint: disable=import-outside-toplevel
 
         assert mesh_pb2 is not None
         assert isinstance(mesh_pb2, ModuleType)
 
     def test_import_channel_pb2(self) -> None:
         """Test that channel_pb2 can be imported from meshtastic.protobuf."""
-        from meshtastic.protobuf import channel_pb2
+        from meshtastic.protobuf import channel_pb2  # pylint: disable=import-outside-toplevel
 
         assert channel_pb2 is not None
         assert isinstance(channel_pb2, ModuleType)
@@ -160,7 +160,7 @@ class TestProtobufImports:
     def test_import_mesh_packet_from_mesh_pb2(self) -> None:
         """Test that MeshPacket can be imported from mesh_pb2."""
         # MeshPacket is a protobuf message class, pylint has trouble with protobuf imports
-        from meshtastic.protobuf.mesh_pb2 import MeshPacket
+        from meshtastic.protobuf.mesh_pb2 import MeshPacket  # pylint: disable=import-outside-toplevel
 
         assert MeshPacket is not None
 
@@ -178,7 +178,7 @@ class TestTopLevelModuleImports:
 
     def test_import_node_module(self) -> None:
         """Test that meshtastic.node module can be imported."""
-        import meshtastic.node
+        import meshtastic.node  # pylint: disable=import-outside-toplevel
 
         assert meshtastic.node is not None
         assert isinstance(meshtastic.node, ModuleType)
@@ -186,7 +186,7 @@ class TestTopLevelModuleImports:
 
     def test_import_mesh_interface_module(self) -> None:
         """Test that meshtastic.mesh_interface module can be imported."""
-        import meshtastic.mesh_interface
+        import meshtastic.mesh_interface  # pylint: disable=import-outside-toplevel
 
         assert meshtastic.mesh_interface is not None
         assert isinstance(meshtastic.mesh_interface, ModuleType)
@@ -194,7 +194,7 @@ class TestTopLevelModuleImports:
 
     def test_meshtastic_key_attributes(self) -> None:
         """Test that key attributes exist on the meshtastic module."""
-        import meshtastic
+        import meshtastic  # pylint: disable=import-outside-toplevel
 
         # Key constants
         assert hasattr(meshtastic, "BROADCAST_ADDR")
@@ -222,11 +222,11 @@ class TestBackwardCompatAliases:
         This is a COMPAT_DEPRECATE alias that emits a warn-once DeprecationWarning.
         The canonical name is DotDict.
         """
-        import warnings
+        import warnings  # pylint: disable=import-outside-toplevel
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            from meshtastic.util import dotdict
+            from meshtastic.util import dotdict  # pylint: disable=import-outside-toplevel  # pylint: disable=import-outside-toplevel
 
             # Verify the class is importable
             assert dotdict is not None
@@ -247,9 +247,9 @@ class TestBackwardCompatAliases:
             new_deprecation_warnings = [
                 x for x in w if issubclass(x.category, DeprecationWarning)
             ]
-            assert (
-                len(new_deprecation_warnings) == initial_count
-            ), "Expected warn-once behavior for dotdict deprecation"
+            assert len(new_deprecation_warnings) == initial_count, (
+                "Expected warn-once behavior for dotdict deprecation"
+            )
 
     def test_mt_config_tunnel_instance_deprecated(self) -> None:
         """Test that tunnelInstance can be accessed from mt_config.
@@ -257,9 +257,9 @@ class TestBackwardCompatAliases:
         This is a COMPAT_DEPRECATE alias for tunnel_instance that emits
         a warn-once DeprecationWarning on read/write/delete.
         """
-        import warnings
+        import warnings  # pylint: disable=import-outside-toplevel
 
-        from meshtastic import mt_config
+        from meshtastic import mt_config  # pylint: disable=import-outside-toplevel
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
@@ -270,9 +270,9 @@ class TestBackwardCompatAliases:
             deprecation_warnings = [
                 x for x in w if issubclass(x.category, DeprecationWarning)
             ]
-            assert (
-                len(deprecation_warnings) >= 1
-            ), "Expected DeprecationWarning for tunnelInstance"
+            assert len(deprecation_warnings) >= 1, (
+                "Expected DeprecationWarning for tunnelInstance"
+            )
 
     def test_node_snake_case_ringtone_aliases(self) -> None:
         """Test that snake_case ringtone methods exist on Node.
@@ -281,7 +281,7 @@ class TestBackwardCompatAliases:
         - get_ringtone -> getRingtone
         - set_ringtone -> setRingtone
         """
-        from meshtastic.node import Node
+        from meshtastic.node import Node  # pylint: disable=import-outside-toplevel
 
         # Verify the snake_case aliases exist
         assert hasattr(Node, "get_ringtone")
@@ -298,7 +298,7 @@ class TestBackwardCompatAliases:
         - get_canned_message -> getCannedMessage
         - set_canned_message -> setCannedMessage
         """
-        from meshtastic.node import Node
+        from meshtastic.node import Node  # pylint: disable=import-outside-toplevel
 
         # Verify the snake_case aliases exist
         assert hasattr(Node, "get_canned_message")
@@ -319,7 +319,7 @@ class TestUtilityCompatAliases:
         This is a COMPAT_STABLE_SHIM that provides snake_case naming.
         Note: This is a separate function, not an alias of messageToJson().
         """
-        from meshtastic.util import message_to_json, messageToJson
+        from meshtastic.util import message_to_json, messageToJson  # pylint: disable=import-outside-toplevel
 
         # Both should exist and be callable
         assert message_to_json is not None
@@ -336,7 +336,7 @@ class TestUtilityCompatAliases:
         This is a COMPAT_STABLE_SHIM that provides snake_case naming.
         Note: This is a separate function, not an alias of toNodeNum().
         """
-        from meshtastic.util import to_node_num, toNodeNum
+        from meshtastic.util import to_node_num, toNodeNum  # pylint: disable=import-outside-toplevel
 
         # Both should exist and be callable
         assert to_node_num is not None
@@ -358,7 +358,7 @@ class TestSerialModuleLazyImport:
         This is a COMPAT_STABLE_SHIM that provides lazy access to the
         third-party pyserial module via __getattr__.
         """
-        import meshtastic
+        import meshtastic  # pylint: disable=import-outside-toplevel
 
         # Accessing meshtastic.serial should load the pyserial module
         serial_module = meshtastic.serial
@@ -375,7 +375,7 @@ class TestModuleReimport:
 
     def test_reimport_meshtastic(self) -> None:
         """Test that meshtastic module can be reimported cleanly."""
-        import meshtastic
+        import meshtastic  # pylint: disable=import-outside-toplevel
 
         importlib.reload(meshtastic)
 
