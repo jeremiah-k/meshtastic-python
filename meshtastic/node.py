@@ -941,7 +941,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         MeshInterfaceError
             If `ringtone` length exceeds 230 characters.
         """
-        return self._content_request_runtime.write_ringtone(ringtone)
+        return self._content_request_runtime.writeRingtone(ringtone)
 
     def onResponseRequestCannedMessagePluginMessageMessages(
         self, p: dict[str, Any]
@@ -972,7 +972,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         str | None
             str or None: The assembled canned message if available, or None if the module is unavailable or no response was received.
         """
-        return self._content_request_runtime.read_canned_message()
+        return self._content_request_runtime.readCannedMessage()
 
     def _set_canned_message(self, message: str) -> mesh_pb2.MeshPacket | None:
         """Set the device's canned message.
@@ -997,7 +997,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         MeshInterfaceError
             If `message` length is greater than 200 characters.
         """
-        return self._content_request_runtime.write_canned_message(message)
+        return self._content_request_runtime.writeCannedMessage(message)
 
     # COMPAT_STABLE_SHIM: alias for getRingtone
     def get_ringtone(self) -> str | None:

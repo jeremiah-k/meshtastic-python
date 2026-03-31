@@ -30,7 +30,7 @@ class _SetUrlRollbackEngine:
 
     def __init__(
         self,
-        node: "Node",
+        node: Node,
         *,
         cache_manager: _SetUrlCacheManager,
     ) -> None:
@@ -119,64 +119,115 @@ class _SetUrlRollbackEngine:
         if rollback_failed:
             self._cache_manager.invalidate_channel_cache(cache_invalidate_message)
 
-        # Rollback LoRa config if needed
-        if lora_write_started and original_lora_config is not None:
-            rollback_lora = admin_pb2.AdminMessage()
-            rollback_lora.set_config.lora.CopyFrom(original_lora_config)
-            rollback_lora_succeeded = False
-            last_rollback_lora_error: Exception | None = None
-            for rollback_admin_index in rollback_admin_indexes:
-                try:
-                    self._node.ensureSessionKey(adminIndex=rollback_admin_index)
-                    is_remote_node = self._node is not self._node.iface.localNode
-                    on_response = (
-                        self._node.onAckNak
-                        if is_remote_node
-                        and callable(getattr(self._node, "onAckNak", None))
-                        else None
-                    )
-                    request = self._node._send_admin(  # noqa: SLF001
-                        rollback_lora,
-                        adminIndex=rollback_admin_index,
-                        onResponse=on_response,
-                    )
-                    if request is None:
-                        logger.debug(
-                            "LoRa rollback _send_admin returned None for admin index %s; trying next.",
-                            rollback_admin_index,
-                        )
-                        continue
-                    if is_remote_node and on_response is not None:
-                        wait_for_ack_nak = getattr(self._node.iface, "waitForAckNak", None)
-                        if callable(wait_for_ack_nak):
-                            wait_for_ack_nak()
-                    self._cache_manager.restore_lora_snapshot(original_lora_config)
-                    rollback_lora_succeeded = True
-                    break
-                # Best-effort rollback path; keep original failure semantics.
-                except Exception as rollback_lora_error:  # noqa: BLE001
-                    last_rollback_lora_error = rollback_lora_error
-            if not rollback_lora_succeeded:
-                rollback_failed = True
-                logger.warning(
-                    lora_warning_message,
-                    exc_info=(
-                        None
-                        if last_rollback_lora_error is None
-                        else (
-                            type(last_rollback_lora_error),
-                            last_rollback_lora_error,
-                            last_rollback_lora_error.__traceback__,
-                        )
-                    ),
-                )
-                self._cache_manager.clear_lora_cache_with_warning(
-                    "LoRa config cache cleared after rollback failure; reload config before using localConfig.lora."
-                )
-        elif lora_write_started:
-            self._cache_manager.clear_lora_cache_with_warning(lora_no_snapshot_message)
+        # Rollback LoRa config using the helper method
+        _, lora_rollback_failed = self._rollback_lora_config(
+            rollback_admin_indexes=rollback_admin_indexes,
+            lora_write_started=lora_write_started,
+            original_lora_config=original_lora_config,
+            lora_warning_message=lora_warning_message,
+            lora_no_snapshot_message=lora_no_snapshot_message,
+        )
+        rollback_failed = rollback_failed or lora_rollback_failed
 
         return rollback_failed
+
+    def _rollback_lora_config(
+        self,
+        *,
+        rollback_admin_indexes: list[int],
+        lora_write_started: bool,
+        original_lora_config: Any | None,
+        lora_warning_message: str,
+        lora_no_snapshot_message: str,
+    ) -> tuple[bool, bool]:
+        """Rollback LoRa configuration if needed.
+
+        Parameters
+        ----------
+        rollback_admin_indexes : list[int]
+            Ordered list of admin indexes to attempt for rollback.
+        lora_write_started : bool
+            Whether LoRa config was modified in the transaction.
+        original_lora_config : Any | None
+            Pre-transaction LoRa config snapshot, if any.
+        lora_warning_message : str
+            Message for logging LoRa rollback warnings.
+        lora_no_snapshot_message : str
+            Message when LoRa was modified but no snapshot exists.
+
+        Returns
+        -------
+        tuple[bool, bool]
+            (rollback_lora_succeeded, rollback_failed) - whether LoRa rollback
+            succeeded and whether any failure occurred.
+        """
+        if not lora_write_started:
+            return (True, False)
+
+        if original_lora_config is None:
+            self._cache_manager.clear_lora_cache_with_warning(lora_no_snapshot_message)
+            return (True, False)
+
+        rollback_lora = admin_pb2.AdminMessage()
+        rollback_lora.set_config.lora.CopyFrom(original_lora_config)
+        rollback_lora_succeeded = False
+        last_rollback_lora_error: Exception | None = None
+
+        for rollback_admin_index in rollback_admin_indexes:
+            try:
+                self._node.ensureSessionKey(adminIndex=rollback_admin_index)
+                is_remote_node = self._node is not self._node.iface.localNode
+                on_response = (
+                    self._node.onAckNak
+                    if is_remote_node
+                    and callable(getattr(self._node, "onAckNak", None))
+                    else None
+                )
+                request = self._node._send_admin(  # noqa: SLF001
+                    rollback_lora,
+                    adminIndex=rollback_admin_index,
+                    onResponse=on_response,
+                )
+                if request is None:
+                    logger.debug(
+                        "LoRa rollback _send_admin returned None for admin index %s; trying next.",
+                        rollback_admin_index,
+                    )
+                    continue
+                if is_remote_node and on_response is not None:
+                    wait_for_ack_nak = getattr(self._node.iface, "waitForAckNak", None)
+                    if callable(wait_for_ack_nak):
+                        ack_nak_result = wait_for_ack_nak()
+                        # Check if waitForAckNak returned an exception (NAK/timeout)
+                        if isinstance(ack_nak_result, Exception):
+                            raise ack_nak_result  # type: ignore[misc]  # noqa: TRY301
+                # Only restore snapshot on ACK/success
+                self._cache_manager.restore_lora_snapshot(original_lora_config)
+                rollback_lora_succeeded = True
+                break
+            # Best-effort rollback path; keep original failure semantics.
+            except Exception as rollback_lora_error:  # noqa: BLE001
+                last_rollback_lora_error = rollback_lora_error
+
+        if not rollback_lora_succeeded:
+            logger.warning(
+                lora_warning_message,
+                exc_info=(
+                    None
+                    if last_rollback_lora_error is None
+                    else (
+                        type(last_rollback_lora_error),
+                        last_rollback_lora_error,
+                        last_rollback_lora_error.__traceback__,
+                    )
+                ),
+            )
+            self._cache_manager.clear_lora_cache_with_warning(
+                "LoRa config cache cleared after rollback failure; reload config before using localConfig.lora."
+            )
+            return (False, True)
+
+        return (True, False)
 
     def _rollback_add_only(
         self,
@@ -184,12 +235,13 @@ class _SetUrlRollbackEngine:
         admin_context: _SetUrlAdminContext,
         plan: _SetUrlAddOnlyPlan,
         state: _SetUrlAddOnlyExecutionState,
+        exc: Exception | None = None,
     ) -> None:
         """Run best-effort rollback for addOnly transactions."""
         logger.warning(
             "Failed while applying addOnly channel updates; attempting rollback "
             "for written channels and LoRa config.",
-            exc_info=True,
+            exc_info=exc,
         )
 
         # Compute rollback admin indexes
@@ -249,12 +301,13 @@ class _SetUrlRollbackEngine:
         admin_context: _SetUrlAdminContext,
         plan: _SetUrlReplacePlan,
         state: _SetUrlReplaceExecutionState,
+        exc: Exception | None = None,
     ) -> None:
         """Run best-effort rollback for replace-all transactions."""
         logger.warning(
             "Failed while applying replace-all channel updates; attempting rollback "
             "for written channels and LoRa config.",
-            exc_info=True,
+            exc_info=exc,
         )
         written_index_set = set(state.written_channel_indices)
         if plan.deferred_new_named_admin_index in written_index_set:

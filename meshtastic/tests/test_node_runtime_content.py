@@ -754,14 +754,14 @@ class TestNodeAdminContentRuntime:
         assert mock_node_for_admin.ringtonePart is None
 
     @pytest.mark.unit
-    def test_write_ringtone_valid_ringtone_calls_send_admin(
+    def test_writeRingtone_valid_ringtone_calls_send_admin(
         self,
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """write_ringtone with valid ringtone should call _send_admin."""
+        """writeRingtone with valid ringtone should call _send_admin."""
         runtime = _NodeAdminContentRuntime(
             mock_node_for_admin,
             cache_store=cache_store,
@@ -770,7 +770,7 @@ class TestNodeAdminContentRuntime:
         ringtone = "RTTTL: test:d=4,o=5,b=100:c"
 
         with caplog.at_level(logging.DEBUG):
-            result = runtime.write_ringtone(ringtone)
+            result = runtime.writeRingtone(ringtone)
 
         assert result is not None
         mock_node_for_admin._send_admin.assert_called_once()
@@ -778,13 +778,13 @@ class TestNodeAdminContentRuntime:
         assert "Setting ringtone" in caplog.text
 
     @pytest.mark.unit
-    def test_write_ringtone_too_long_raises_error(
+    def test_writeRingtone_too_long_raises_error(
         self,
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
     ) -> None:
-        """write_ringtone with too-long ringtone should raise error."""
+        """writeRingtone with too-long ringtone should raise error."""
         runtime = _NodeAdminContentRuntime(
             mock_node_for_admin,
             cache_store=cache_store,
@@ -795,21 +795,21 @@ class TestNodeAdminContentRuntime:
         with pytest.raises(
             MeshInterface.MeshInterfaceError, match="interface error raised"
         ):
-            runtime.write_ringtone(long_ringtone)
+            runtime.writeRingtone(long_ringtone)
 
         mock_node_for_admin._raise_interface_error.assert_called_once()
         error_msg = mock_node_for_admin._raise_interface_error.call_args[0][0]
         assert f"{MAX_RINGTONE_LENGTH} characters" in error_msg
 
     @pytest.mark.unit
-    def test_write_ringtone_module_unavailable_returns_none(
+    def test_writeRingtone_module_unavailable_returns_none(
         self,
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """write_ringtone should return None when module is unavailable."""
+        """writeRingtone should return None when module is unavailable."""
         mock_node_for_admin.module_available = MagicMock(return_value=False)
         runtime = _NodeAdminContentRuntime(
             mock_node_for_admin,
@@ -818,19 +818,19 @@ class TestNodeAdminContentRuntime:
         )
 
         with caplog.at_level(logging.WARNING):
-            result = runtime.write_ringtone("RTTTL: test:d=4,o=5,b=100:c")
+            result = runtime.writeRingtone("RTTTL: test:d=4,o=5,b=100:c")
 
         assert result is None
         assert "External Notification module not present" in caplog.text
 
     @pytest.mark.unit
-    def test_write_ringtone_invalidates_cache(
+    def test_writeRingtone_invalidates_cache(
         self,
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
     ) -> None:
-        """write_ringtone should invalidate ringtone cache on success."""
+        """writeRingtone should invalidate ringtone cache on success."""
         mock_node_for_admin.ringtone = "old_ringtone"
         mock_node_for_admin.ringtonePart = "old_fragment"
         runtime = _NodeAdminContentRuntime(
@@ -839,19 +839,19 @@ class TestNodeAdminContentRuntime:
             response_runtime=response_runtime,
         )
 
-        runtime.write_ringtone("RTTTL: new:d=4,o=5,b=100:c")
+        runtime.writeRingtone("RTTTL: new:d=4,o=5,b=100:c")
 
         assert mock_node_for_admin.ringtone is None
         assert mock_node_for_admin.ringtonePart is None
 
     @pytest.mark.unit
-    def test_write_ringtone_send_returns_none_skips_invalidation(
+    def test_writeRingtone_send_returns_none_skips_invalidation(
         self,
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
     ) -> None:
-        """write_ringtone should not invalidate cache when _send_admin returns None."""
+        """writeRingtone should not invalidate cache when _send_admin returns None."""
         mock_node_for_admin._send_admin = MagicMock(return_value=None)
         mock_node_for_admin.ringtone = "old_ringtone"
         runtime = _NodeAdminContentRuntime(
@@ -860,19 +860,19 @@ class TestNodeAdminContentRuntime:
             response_runtime=response_runtime,
         )
 
-        runtime.write_ringtone("RTTTL: new:d=4,o=5,b=100:c")
+        runtime.writeRingtone("RTTTL: new:d=4,o=5,b=100:c")
 
         # Cache should not be invalidated
         assert mock_node_for_admin.ringtone == "old_ringtone"
 
     @pytest.mark.unit
-    def test_read_canned_message_returns_cached_value(
+    def test_readCannedMessage_returns_cached_value(
         self,
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
     ) -> None:
-        """read_canned_message should return cached value when available."""
+        """readCannedMessage should return cached value when available."""
         mock_node_for_admin.cannedPluginMessage = "Hello\nWorld"
         runtime = _NodeAdminContentRuntime(
             mock_node_for_admin,
@@ -880,21 +880,21 @@ class TestNodeAdminContentRuntime:
             response_runtime=response_runtime,
         )
 
-        result = runtime.read_canned_message()
+        result = runtime.readCannedMessage()
 
         assert result == "Hello\nWorld"
         # Should not call _send_admin since cached
         mock_node_for_admin._send_admin.assert_not_called()
 
     @pytest.mark.unit
-    def test_read_canned_message_module_unavailable_returns_none(
+    def test_readCannedMessage_module_unavailable_returns_none(
         self,
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """read_canned_message should return None when module is unavailable."""
+        """readCannedMessage should return None when module is unavailable."""
         mock_node_for_admin.module_available = MagicMock(return_value=False)
         runtime = _NodeAdminContentRuntime(
             mock_node_for_admin,
@@ -903,20 +903,20 @@ class TestNodeAdminContentRuntime:
         )
 
         with caplog.at_level(logging.WARNING):
-            result = runtime.read_canned_message()
+            result = runtime.readCannedMessage()
 
         assert result is None
         assert "Canned Message module not present" in caplog.text
 
     @pytest.mark.unit
-    def test_write_canned_message_valid_message_calls_send_admin(
+    def test_writeCannedMessage_valid_message_calls_send_admin(
         self,
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """write_canned_message with valid message should call _send_admin."""
+        """writeCannedMessage with valid message should call _send_admin."""
         runtime = _NodeAdminContentRuntime(
             mock_node_for_admin,
             cache_store=cache_store,
@@ -925,7 +925,7 @@ class TestNodeAdminContentRuntime:
         message = "Hello\nWorld"
 
         with caplog.at_level(logging.DEBUG):
-            result = runtime.write_canned_message(message)
+            result = runtime.writeCannedMessage(message)
 
         assert result is not None
         mock_node_for_admin._send_admin.assert_called_once()
@@ -933,13 +933,13 @@ class TestNodeAdminContentRuntime:
         assert "Setting canned message" in caplog.text
 
     @pytest.mark.unit
-    def test_write_canned_message_too_long_raises_error(
+    def test_writeCannedMessage_too_long_raises_error(
         self,
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
     ) -> None:
-        """write_canned_message with too-long message should raise error."""
+        """writeCannedMessage with too-long message should raise error."""
         runtime = _NodeAdminContentRuntime(
             mock_node_for_admin,
             cache_store=cache_store,
@@ -950,21 +950,21 @@ class TestNodeAdminContentRuntime:
         with pytest.raises(
             MeshInterface.MeshInterfaceError, match="interface error raised"
         ):
-            runtime.write_canned_message(long_message)
+            runtime.writeCannedMessage(long_message)
 
         mock_node_for_admin._raise_interface_error.assert_called_once()
         error_msg = mock_node_for_admin._raise_interface_error.call_args[0][0]
         assert f"{MAX_CANNED_MESSAGE_LENGTH} characters" in error_msg
 
     @pytest.mark.unit
-    def test_write_canned_message_module_unavailable_returns_none(
+    def test_writeCannedMessage_module_unavailable_returns_none(
         self,
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """write_canned_message should return None when module is unavailable."""
+        """writeCannedMessage should return None when module is unavailable."""
         mock_node_for_admin.module_available = MagicMock(return_value=False)
         runtime = _NodeAdminContentRuntime(
             mock_node_for_admin,
@@ -973,19 +973,19 @@ class TestNodeAdminContentRuntime:
         )
 
         with caplog.at_level(logging.WARNING):
-            result = runtime.write_canned_message("Hello\nWorld")
+            result = runtime.writeCannedMessage("Hello\nWorld")
 
         assert result is None
         assert "Canned Message module not present" in caplog.text
 
     @pytest.mark.unit
-    def test_write_canned_message_invalidates_cache(
+    def test_writeCannedMessage_invalidates_cache(
         self,
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
     ) -> None:
-        """write_canned_message should invalidate canned message cache on success."""
+        """writeCannedMessage should invalidate canned message cache on success."""
         mock_node_for_admin.cannedPluginMessage = "old_message"
         mock_node_for_admin.cannedPluginMessageMessages = "old_fragment"
         runtime = _NodeAdminContentRuntime(
@@ -994,19 +994,19 @@ class TestNodeAdminContentRuntime:
             response_runtime=response_runtime,
         )
 
-        runtime.write_canned_message("New message")
+        runtime.writeCannedMessage("New message")
 
         assert mock_node_for_admin.cannedPluginMessage is None
         assert mock_node_for_admin.cannedPluginMessageMessages is None
 
     @pytest.mark.unit
-    def test_write_canned_message_send_returns_none_skips_invalidation(
+    def test_writeCannedMessage_send_returns_none_skips_invalidation(
         self,
         mock_node_for_admin: MagicMock,
         cache_store: _NodeContentCacheStore,
         response_runtime: _NodeContentResponseRuntime,
     ) -> None:
-        """write_canned_message should not invalidate cache when _send_admin returns None."""
+        """writeCannedMessage should not invalidate cache when _send_admin returns None."""
         mock_node_for_admin._send_admin = MagicMock(return_value=None)
         mock_node_for_admin.cannedPluginMessage = "old_message"
         runtime = _NodeAdminContentRuntime(
@@ -1015,7 +1015,7 @@ class TestNodeAdminContentRuntime:
             response_runtime=response_runtime,
         )
 
-        runtime.write_canned_message("New message")
+        runtime.writeCannedMessage("New message")
 
         # Cache should not be invalidated
         assert mock_node_for_admin.cannedPluginMessage == "old_message"

@@ -298,10 +298,10 @@ class TestSelectWriteResponseHandler:
 
 
 class TestWriteCannedMessageChunking:
-    """Tests for write_canned_message chunking (lines 498-532)."""
+    """Tests for writeCannedMessage chunking (lines 498-532)."""
 
     @pytest.mark.unit
-    def test_write_canned_message_single_chunk_short_message(
+    def test_writeCannedMessage_single_chunk_short_message(
         self, mock_node_for_read_gen: MagicMock
     ) -> None:
         """Test short message is sent as single chunk."""
@@ -315,13 +315,13 @@ class TestWriteCannedMessageChunking:
         # Message shorter than chunk size
         short_message = "x" * (CANNED_MESSAGE_CHUNK_SIZE - 1)
 
-        runtime.write_canned_message(short_message)
+        runtime.writeCannedMessage(short_message)
 
         # Should be sent as single message, not chunked
         assert mock_node_for_read_gen._send_admin.call_count == 1
 
     @pytest.mark.unit
-    def test_write_canned_message_multi_chunk_long_message(
+    def test_writeCannedMessage_multi_chunk_long_message(
         self, mock_node_for_read_gen: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Test long message is split into multiple chunks."""
@@ -336,7 +336,7 @@ class TestWriteCannedMessageChunking:
         long_message = "x" * (CANNED_MESSAGE_CHUNK_SIZE * 3 + 10)
 
         with caplog.at_level(logging.DEBUG):
-            runtime.write_canned_message(long_message)
+            runtime.writeCannedMessage(long_message)
 
         # Should be split into multiple sends
         assert (
@@ -345,7 +345,7 @@ class TestWriteCannedMessageChunking:
         assert "Setting canned message in 4 chunks" in caplog.text
 
     @pytest.mark.unit
-    def test_write_canned_message_chunk_send_failure_invalidation(
+    def test_writeCannedMessage_chunk_send_failure_invalidation(
         self, mock_node_for_read_gen: MagicMock
     ) -> None:
         """Test that cache is invalidated if chunk send fails after previous chunks sent."""
@@ -374,7 +374,7 @@ class TestWriteCannedMessageChunking:
         # Set up cache to verify invalidation
         mock_node_for_read_gen.cannedPluginMessage = "old_message"
 
-        result = runtime.write_canned_message(long_message)
+        result = runtime.writeCannedMessage(long_message)
 
         # Result should be None because second chunk failed
         assert result is None
@@ -382,7 +382,7 @@ class TestWriteCannedMessageChunking:
         assert mock_node_for_read_gen.cannedPluginMessage is None
 
     @pytest.mark.unit
-    def test_write_canned_message_first_chunk_failure_no_invalidation(
+    def test_writeCannedMessage_first_chunk_failure_no_invalidation(
         self, mock_node_for_read_gen: MagicMock
     ) -> None:
         """Test that cache is NOT invalidated if first chunk send fails."""
@@ -402,7 +402,7 @@ class TestWriteCannedMessageChunking:
         # Set up cache to verify it's NOT invalidated
         mock_node_for_read_gen.cannedPluginMessage = "old_message"
 
-        result = runtime.write_canned_message(long_message)
+        result = runtime.writeCannedMessage(long_message)
 
         # Result should be None because first chunk failed
         assert result is None
@@ -410,7 +410,7 @@ class TestWriteCannedMessageChunking:
         assert mock_node_for_read_gen.cannedPluginMessage == "old_message"
 
     @pytest.mark.unit
-    def test_write_canned_message_exception_during_chunks(
+    def test_writeCannedMessage_exception_during_chunks(
         self, mock_node_for_read_gen: MagicMock
     ) -> None:
         """Test that exception during chunking invalidates cache and re-raises."""
@@ -440,13 +440,13 @@ class TestWriteCannedMessageChunking:
         mock_node_for_read_gen.cannedPluginMessage = "old_message"
 
         with pytest.raises(RuntimeError, match="Send failed"):
-            runtime.write_canned_message(long_message)
+            runtime.writeCannedMessage(long_message)
 
         # Cache should be invalidated because at least one chunk was written
         assert mock_node_for_read_gen.cannedPluginMessage is None
 
     @pytest.mark.unit
-    def test_write_canned_message_success_returns_first_result(
+    def test_writeCannedMessage_success_returns_first_result(
         self, mock_node_for_read_gen: MagicMock
     ) -> None:
         """Test that successful multi-chunk write returns first chunk's result."""
@@ -473,13 +473,13 @@ class TestWriteCannedMessageChunking:
 
         mock_node_for_read_gen._send_admin.side_effect = send_admin_side_effect
 
-        result = runtime.write_canned_message(long_message)
+        result = runtime.writeCannedMessage(long_message)
 
         # Should return the first chunk's result
         assert result is first_result
 
     @pytest.mark.unit
-    def test_write_canned_message_invalidation_on_success(
+    def test_writeCannedMessage_invalidation_on_success(
         self, mock_node_for_read_gen: MagicMock
     ) -> None:
         """Test that cache is invalidated after successful multi-chunk write."""
@@ -500,7 +500,7 @@ class TestWriteCannedMessageChunking:
         mock_node_for_read_gen.cannedPluginMessage = "old_message"
         mock_node_for_read_gen.cannedPluginMessageMessages = "old_fragment"
 
-        runtime.write_canned_message(long_message)
+        runtime.writeCannedMessage(long_message)
 
         # Cache should be invalidated
         assert mock_node_for_read_gen.cannedPluginMessage is None

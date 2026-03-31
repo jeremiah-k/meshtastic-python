@@ -48,7 +48,7 @@ class _SetUrlExecutionEngine:
 
     def __init__(
         self,
-        node: "Node",
+        node: Node,
         *,
         cache_manager: _SetUrlCacheManager,
     ) -> None:
