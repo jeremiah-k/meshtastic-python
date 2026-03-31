@@ -1272,7 +1272,7 @@ def test_sendPacket_alias_with_no_destination() -> None:
     with MeshInterface(noProto=True) as iface:
         with pytest.raises(
             MeshInterface.MeshInterfaceError,
-            match="destinationId must not be None",
+            match="Invalid destinationId:",
         ):
             mesh_packet = mesh_pb2.MeshPacket()
             iface._sendPacket(mesh_packet, destinationId=None)  # type: ignore[arg-type]
@@ -2496,6 +2496,9 @@ def test_send_telemetry_supported_and_fallback_paths(
         wait_for_telemetry = MagicMock()
         monkeypatch.setattr(
             iface._send_pipeline, "waitForTelemetry", wait_for_telemetry
+        )
+        monkeypatch.setattr(
+            iface._send_pipeline, "_wait_for_request_ack", lambda *args, **kwargs: True
         )
 
         iface.sendTelemetry(telemetryType="environment_metrics")
