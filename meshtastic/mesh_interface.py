@@ -61,7 +61,6 @@ from meshtastic.mesh_interface_runtime.receive_pipeline import (
 from meshtastic.mesh_interface_runtime.request_wait import (
     DECODE_ERROR_KEY,
     DECODE_FAILED_PREFIX,
-    LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM,
     RETIRED_WAIT_REQUEST_ID_TTL_SECONDS,
     WAIT_ATTR_POSITION,
     WAIT_ATTR_TELEMETRY,
@@ -70,6 +69,7 @@ from meshtastic.mesh_interface_runtime.request_wait import (
     _RequestWaitRuntime,
 )
 from meshtastic.mesh_interface_runtime.send_pipeline import (
+    LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM,
     PayloadData,
     SendPipeline,
 )

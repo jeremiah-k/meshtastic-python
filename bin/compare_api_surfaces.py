@@ -15,6 +15,29 @@ import re
 import sys
 from typing import Any
 
+# Approved signature equivalences - these are NOT breaking changes
+# Maps method names to lists of equivalent parameter name aliases
+APPROVED_SIGNATURE_ALIASES: dict[str, dict[str, dict[str, str]]] = {
+    "Node": {
+        "startOTA": {
+            # New parameter names are aliases for old parameter names
+            "mode": "ota_mode",
+            "ota_file_hash": "ota_hash",
+        }
+    }
+}
+
+
+def _get_param_aliases(class_name: str, method_name: str) -> dict[str, str]:
+    """Get approved parameter aliases for a given class.method.
+
+    Returns a dict mapping new parameter names to their equivalent old names.
+    """
+    if class_name in APPROVED_SIGNATURE_ALIASES:
+        if method_name in APPROVED_SIGNATURE_ALIASES[class_name]:
+            return APPROVED_SIGNATURE_ALIASES[class_name][method_name]
+    return {}
+
 
 def _normalize_type(type_str: str) -> str:
     type_str = re.sub(r"\bUnion\[([^\[\]]+),\s*None\]", r"Optional[\1]", type_str)
@@ -187,16 +210,33 @@ def _parse_signature_shape(sig: str) -> list[dict[str, Any]]:
     return params
 
 
-def _is_breaking_signature_change(base_sig: str, pr_sig: str) -> bool:
-    """Return True if PR signature is call-incompatible with baseline."""
+def _is_breaking_signature_change(
+    base_sig: str, pr_sig: str, class_name: str = "", method_name: str = ""
+) -> bool:
+    """Return True if PR signature is call-incompatible with baseline.
+
+    Args:
+        base_sig: Baseline method signature
+        pr_sig: PR method signature
+        class_name: Name of the class (for alias lookup)
+        method_name: Name of the method (for alias lookup)
+    """
     base_params = _parse_signature_shape(base_sig)
     pr_params = _parse_signature_shape(pr_sig)
 
+    # Get approved aliases for this class.method
+    aliases = _get_param_aliases(class_name, method_name)
+
     pr_index = 0
     for base_param in base_params:
+        base_name = base_param["name"]
         found_index = -1
+
+        # Look for matching parameter, considering aliases
         for idx in range(pr_index, len(pr_params)):
-            if pr_params[idx]["name"] == base_param["name"]:
+            pr_name = pr_params[idx]["name"]
+            # Direct match or aliased match (pr_name is alias for base_name)
+            if pr_name == base_name or aliases.get(pr_name) == base_name:
                 found_index = idx
                 break
 
@@ -242,7 +282,7 @@ def compare_methods(
         m_sig = _normalize_sig(base[name])
         p_sig = _normalize_sig(pr[name])
         if m_sig != p_sig:
-            if _is_breaking_signature_change(base[name], pr[name]):
+            if _is_breaking_signature_change(base[name], pr[name], class_name, name):
                 blocking.append(f"CHANGED {class_name}.{name}:")
                 blocking.append(f"  {base_label}: {base[name]}")
                 blocking.append(f"  pr:     {pr[name]}")

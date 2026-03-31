@@ -11,9 +11,16 @@ from typing import Any
 from meshtastic import ResponseHandler
 from meshtastic.util import Acknowledgment, Timeout
 
-# Re-export to maintain backward compatibility for importers
-# Primary definition is in send_pipeline.py
-LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM: dict[int, str] = {}
+
+# Re-export from canonical location in send_pipeline.py for backward compatibility
+# Uses delayed import to avoid circular dependency (send_pipeline imports from this module)
+def __getattr__(name: str) -> Any:
+    if name == "LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM":
+        from .send_pipeline import LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM
+
+        return LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+
 
 logger = logging.getLogger(__name__)
 

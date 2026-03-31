@@ -663,8 +663,14 @@ class Node:  # pylint: disable=too-many-instance-attributes
         ------
         AssertionError
             If channels have not been loaded (no channels to write).
+        TypeError
+            If unexpected keyword arguments are provided.
         """
-        _ = kwargs
+        if kwargs:
+            unexpected = ", ".join(sorted(kwargs.keys()))
+            raise TypeError(
+                f"writeChannel() got unexpected keyword argument(s): {unexpected}"
+            )
         self._channel_write_runtime._write_channel(
             channelIndex,
             admin_index=adminIndex,
