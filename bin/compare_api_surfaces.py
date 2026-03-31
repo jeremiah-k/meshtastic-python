@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Compare two API surface JSON files and report differences.
 
-Used by CI to detect breaking API changes between master and PR branches.
+Used by CI to detect breaking API changes between a baseline ref and PR branch.
 Exits 0 if no removed methods/exports, exits 1 if breaking changes found.
 
 Usage:
-    python3 bin/compare_api_surfaces.py master_surface.json pr_surface.json
+    python3 bin/compare_api_surfaces.py base_surface.json pr_surface.json
+    python3 bin/compare_api_surfaces.py base_surface.json pr_surface.json --base-label master
 """
 
+import argparse
 import json
 import re
 import sys
@@ -185,16 +187,16 @@ def _parse_signature_shape(sig: str) -> list[dict[str, Any]]:
     return params
 
 
-def _is_breaking_signature_change(master_sig: str, pr_sig: str) -> bool:
-    """Return True if PR signature is call-incompatible with master."""
-    master_params = _parse_signature_shape(master_sig)
+def _is_breaking_signature_change(base_sig: str, pr_sig: str) -> bool:
+    """Return True if PR signature is call-incompatible with baseline."""
+    base_params = _parse_signature_shape(base_sig)
     pr_params = _parse_signature_shape(pr_sig)
 
     pr_index = 0
-    for master_param in master_params:
+    for base_param in base_params:
         found_index = -1
         for idx in range(pr_index, len(pr_params)):
-            if pr_params[idx]["name"] == master_param["name"]:
+            if pr_params[idx]["name"] == base_param["name"]:
                 found_index = idx
                 break
 
@@ -206,10 +208,10 @@ def _is_breaking_signature_change(master_sig: str, pr_sig: str) -> bool:
                 return True
 
         pr_param = pr_params[found_index]
-        if pr_param["kind"] != master_param["kind"]:
+        if pr_param["kind"] != base_param["kind"]:
             return True
 
-        if not master_param["required"] and pr_param["required"]:
+        if not base_param["required"] and pr_param["required"]:
             return True
 
         pr_index = found_index + 1
@@ -218,36 +220,37 @@ def _is_breaking_signature_change(master_sig: str, pr_sig: str) -> bool:
 
 
 def compare_methods(
-    master: dict[str, str],
+    base: dict[str, str],
     pr: dict[str, str],
     class_name: str,
+    base_label: str,
 ) -> tuple[list[str], list[str]]:
     blocking = []
     informational = []
-    master_methods = set(master.keys())
+    base_methods = set(base.keys())
     pr_methods = set(pr.keys())
 
-    removed = master_methods - pr_methods
+    removed = base_methods - pr_methods
     if removed:
         blocking.append(f"REMOVED {class_name} methods: {sorted(removed)}")
 
-    added = pr_methods - master_methods
+    added = pr_methods - base_methods
     if added:
         informational.append(f"ADDED {class_name} methods: {sorted(added)}")
 
-    for name in sorted(master_methods & pr_methods):
-        m_sig = _normalize_sig(master[name])
+    for name in sorted(base_methods & pr_methods):
+        m_sig = _normalize_sig(base[name])
         p_sig = _normalize_sig(pr[name])
         if m_sig != p_sig:
-            if _is_breaking_signature_change(master[name], pr[name]):
+            if _is_breaking_signature_change(base[name], pr[name]):
                 blocking.append(f"CHANGED {class_name}.{name}:")
-                blocking.append(f"  master: {master[name]}")
+                blocking.append(f"  {base_label}: {base[name]}")
                 blocking.append(f"  pr:     {pr[name]}")
             else:
                 informational.append(
                     f"CHANGED (non-blocking, annotation-only) {class_name}.{name}:"
                 )
-                informational.append(f"  master: {master[name]}")
+                informational.append(f"  {base_label}: {base[name]}")
                 informational.append(f"  pr:     {pr[name]}")
 
     return blocking, informational
@@ -268,6 +271,7 @@ NOISE_EXPORTS = {
     "time",
     "traceback",
     # third-party imports that leaked into namespace
+    "google",
     "serial",
     "tabulate",
     "google.protobuf.json_format",
@@ -278,12 +282,12 @@ NOISE_EXPORTS = {
 
 
 def compare_exports(
-    master: list[str],
+    base: list[str],
     pr: list[str],
 ) -> tuple[list[str], list[str]]:
     blocking = []
     informational = []
-    removed = set(master) - set(pr)
+    removed = set(base) - set(pr)
     real_removed = {r for r in removed if r not in NOISE_EXPORTS}
     noise_removed = removed - real_removed
     if real_removed:
@@ -292,20 +296,33 @@ def compare_exports(
         informational.append(
             f"REMOVED (noise/implementation detail): {sorted(noise_removed)}"
         )
-    added = set(pr) - set(master)
+    added = set(pr) - set(base)
     if added:
         informational.append(f"ADDED exports: {sorted(added)}")
     return blocking, informational
 
 
-def main() -> int:
-    if len(sys.argv) != 3:
-        print(f"Usage: {sys.argv[0]} <master.json> <pr.json>", file=sys.stderr)
-        return 1
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Compare API surfaces and detect breaking compatibility changes."
+    )
+    parser.add_argument("base_surface", help="Path to baseline API surface JSON file")
+    parser.add_argument("pr_surface", help="Path to PR API surface JSON file")
+    parser.add_argument(
+        "--base-label",
+        default="base",
+        help="Label shown in output for baseline signatures (default: %(default)s)",
+    )
+    return parser.parse_args(argv)
 
-    with open(sys.argv[1], encoding="utf-8") as f:
-        master = json.load(f)
-    with open(sys.argv[2], encoding="utf-8") as f:
+
+def main() -> int:
+    args = _parse_args(sys.argv[1:])
+    base_label = args.base_label
+
+    with open(args.base_surface, encoding="utf-8") as f:
+        base = json.load(f)
+    with open(args.pr_surface, encoding="utf-8") as f:
         pr = json.load(f)
 
     all_informational = []
@@ -316,7 +333,10 @@ def main() -> int:
         ("mesh_interface_methods", "MeshInterface"),
     ]:
         blocking, informational = compare_methods(
-            master.get(cls_key, {}), pr.get(cls_key, {}), cls_name
+            base.get(cls_key, {}),
+            pr.get(cls_key, {}),
+            cls_name,
+            base_label,
         )
         if informational:
             all_informational.append(f"{cls_name} API changes (informational):")
@@ -325,7 +345,7 @@ def main() -> int:
             all_blocking.extend(blocking)
 
     export_blocking, export_informational = compare_exports(
-        master.get("top_level_exports", []), pr.get("top_level_exports", [])
+        base.get("top_level_exports", []), pr.get("top_level_exports", [])
     )
     if export_informational:
         all_informational.append("Top-level export changes (informational):")
@@ -339,10 +359,13 @@ def main() -> int:
 
     if all_blocking:
         print("\n".join(all_blocking))
-        print("\nBREAKING API changes detected vs master!")
+        print(f"\nBREAKING API changes detected vs {base_label}!")
         return 1
 
-    print("No breaking API changes detected vs master (informational changes above).")
+    print(
+        f"No breaking API changes detected vs {base_label} "
+        "(informational changes above)."
+    )
     return 0
 
 

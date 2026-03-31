@@ -125,6 +125,7 @@ jobs:
     env:
       PYTHON_VERSION: "3.13"
       POETRY_INSTALL_ARGS: --all-extras --with dev,powermon
+      API_BASELINE_REF: "master"
     steps:
       - name: Checkout PR branch (current)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -141,17 +142,17 @@ jobs:
         run: |
           poetry install ${{ env.POETRY_INSTALL_ARGS }}
           poetry run meshtastic --version
-      - name: Checkout base branch
+      - name: Checkout API baseline branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ github.event.pull_request.base.ref }}
+          ref: ${{ env.API_BASELINE_REF }}
           path: base-checkout
       - name: Extract base API surface
         run: poetry run python3 bin/extract_api_surface.py base-checkout/meshtastic > base_surface.json
       - name: Extract PR API surface
         run: poetry run python3 bin/extract_api_surface.py meshtastic > pr_surface.json
       - name: Compare API surfaces
-        run: python3 bin/compare_api_surfaces.py base_surface.json pr_surface.json
+        run: python3 bin/compare_api_surfaces.py base_surface.json pr_surface.json --base-label "${{ env.API_BASELINE_REF }}"
 
   compatibility:
     name: Compatibility Inventory (py3.13)
