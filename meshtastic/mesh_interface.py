@@ -2383,9 +2383,9 @@ class MeshInterface:  # pylint: disable=R0902
         self._enrich_packet_identity(packet_context.packet_dict)
         self._classify_packet_runtime(packet_context, meshPacket)
         self._apply_packet_runtime_mutations(packet_context, meshPacket)
-        published_packet = copy.deepcopy(packet_context.packet_dict)
         self._invoke_packet_on_receive(packet_context)
         self._correlate_packet_response_handler(packet_context)
+        published_packet = copy.deepcopy(packet_context.packet_dict)
 
         publication_intents = [
             self._publication_intent(

@@ -988,7 +988,9 @@ class TestLifecycleErrorAccess:
     ) -> None:
         """Test _try_safe_execute_variants with error_msg as keyword."""
 
-        def safe_exec(func: Callable[[], Any], *, error_msg: str) -> Any:  # noqa: ARG001
+        def safe_exec(
+            func: Callable[[], Any], *, error_msg: str
+        ) -> Any:  # noqa: ARG001
             return func()
 
         def tracked() -> str:

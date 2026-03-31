@@ -898,9 +898,7 @@ def onConnected(interface: MeshInterface) -> None:
             print(f"Triggering OTA update on {interface.hostname}...")
             interface.getNode(
                 ota_dest, requestChannels=False, **getNode_kwargs
-            ).startOTA(
-                mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=ota.hash_bytes()
-            )
+            ).startOTA(mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=ota.hash_bytes())
 
             print("Waiting for device to reboot into OTA mode...")
             time.sleep(OTA_REBOOT_WAIT_SECONDS)

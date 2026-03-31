@@ -443,9 +443,7 @@ def test_set_canned_message_module_unavailable(
             pass  # Expected, but not required for the test
         _out, _err = capsys.readouterr()
         # Check if skip message was printed
-        assert (
-            "canned message" in _out.lower() or "excluded" in _out.lower()
-        )  # noqa
+        assert "canned message" in _out.lower() or "excluded" in _out.lower()  # noqa
 
 
 @pytest.mark.unit
