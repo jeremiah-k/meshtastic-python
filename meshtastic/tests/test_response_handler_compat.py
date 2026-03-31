@@ -1,91 +1,71 @@
 """Test ResponseHandler backward compatibility for tuple unpacking.
 
-This file documents the backward compatibility implications of adding the
-isAckNakHandler field to the ResponseHandler NamedTuple.
+This file documents that ResponseHandler maintains backward compatibility
+for 2-element tuple unpacking.
 
-IMPORTANT: The addition of isAckNakHandler field BREAKS backward compatibility
-for code doing tuple unpacking like:
+IMPORTANT: ResponseHandler has 2 fields (callback, ackPermitted) and
+2-element tuple unpacking is supported:
     callback, ack_permitted = handler
 
-Such code will now raise:
-    ValueError: too many values to unpack (expected 2)
-
-This test serves as documentation of the breaking change and demonstrates
-the correct patterns for both old and new code.
+This pattern works correctly and is the expected behavior.
 """
-
-import pytest
 
 from meshtastic import ResponseHandler
 
 
-def test_response_handler_tuple_unpacking_breaking_change() -> None:
-    """Document that ResponseHandler now has 3 fields, breaking 2-tuple unpacking.
+def test_response_handler_two_element_unpacking_works() -> None:
+    """Verify that ResponseHandler supports 2-element tuple unpacking.
 
-    Historical code may have done:
+    Historical code doing:
         callback, ack_permitted = handler
 
-    This will now FAIL with ValueError. Code must be updated to either:
-        1. Use 3-element unpacking: callback, ack_permitted, is_ack_nak = handler
-        2. Use named access: handler.callback, handler.ackPermitted
+    Should work correctly with the 2-field ResponseHandler.
     """
 
     def dummy_callback(_response: dict) -> None:
         pass
 
-    # Create handler with default isAckNakHandler=False
     handler = ResponseHandler(callback=dummy_callback, ackPermitted=True)
 
-    # Demonstrate that 2-element unpacking FAILS (documenting breaking change)
-    with pytest.raises(ValueError, match="too many values to unpack"):
-        callback, ack_permitted = handler  # type: ignore # This is expected to fail
-
-    # Show the correct 3-element unpacking pattern for new code
-    callback, ack_permitted, is_ack_nak = handler
+    # 2-element unpacking works correctly
+    callback, ack_permitted = handler
     assert callback is dummy_callback
     assert ack_permitted is True
-    assert is_ack_nak is False
 
 
-def test_response_handler_named_access() -> None:
-    """Verify ResponseHandler fields can be accessed by name (recommended pattern)."""
+def test_response_handler_fields_can_be_accessed_by_name() -> None:
+    """Verify ResponseHandler fields can be accessed by name."""
 
     def dummy_callback(_response: dict) -> None:
         pass
 
-    handler = ResponseHandler(
-        callback=dummy_callback, ackPermitted=False, isAckNakHandler=True
-    )
+    handler = ResponseHandler(callback=dummy_callback, ackPermitted=False)
 
-    # Named access is the safest pattern and works regardless of field additions
+    # Named access works correctly
     assert handler.callback is dummy_callback
     assert handler.ackPermitted is False
-    assert handler.isAckNakHandler is True
 
 
-def test_response_handler_iteration_yields_three_values() -> None:
-    """Verify that iterating over ResponseHandler yields all 3 field values."""
-
-    def dummy_callback(_response: dict) -> None:
-        pass
-
-    handler = ResponseHandler(
-        callback=dummy_callback, ackPermitted=True, isAckNakHandler=False
-    )
-
-    # Iterating yields all 3 values
-    values = list(handler)
-    assert len(values) == 3
-    assert values[0] is dummy_callback
-    assert values[1] is True
-    assert values[2] is False
-
-
-def test_response_handler_length_is_three() -> None:
-    """Verify len() returns 3 (all fields including defaults)."""
+def test_response_handler_iteration_yields_all_field_values() -> None:
+    """Verify that iterating over ResponseHandler yields all 2 field values."""
 
     def dummy_callback(_response: dict) -> None:
         pass
 
     handler = ResponseHandler(callback=dummy_callback, ackPermitted=True)
-    assert len(handler) == 3
+
+    # Iterating yields all 2 values
+    values = list(handler)
+    assert len(values) == 2
+    assert values[0] is dummy_callback
+    assert values[1] is True
+
+
+def test_response_handler_length_is_two() -> None:
+    """Verify len() returns 2 (all fields including defaults)."""
+
+    def dummy_callback(_response: dict) -> None:
+        pass
+
+    handler = ResponseHandler(callback=dummy_callback, ackPermitted=True)
+    assert len(handler) == 2

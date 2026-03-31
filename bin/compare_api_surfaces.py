@@ -20,9 +20,9 @@ from typing import Any
 APPROVED_SIGNATURE_ALIASES: dict[str, dict[str, dict[str, str]]] = {
     "Node": {
         "startOTA": {
-            # New parameter names are aliases for old parameter names
+            # PR name -> baseline name (new keyword-only aliases for positional params)
             "mode": "ota_mode",
-            "ota_file_hash": "ota_hash",
+            "ota_hash": "ota_file_hash",
         }
     }
 }

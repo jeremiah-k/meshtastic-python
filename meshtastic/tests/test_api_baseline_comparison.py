@@ -465,6 +465,65 @@ class TestLegacyImportPathsAgainstBaseline:
             pytest.fail(msg)
 
 
+class TestSignatureAliasComparison:
+    """Tests for signature comparison with approved aliases."""
+
+    def test_startota_alias_not_breaking(self):
+        """Verify startOTA signature change is not flagged as breaking.
+
+        The PR version has both old names (ota_mode, ota_file_hash) and
+        new keyword-only aliases (mode, ota_hash). This should not be breaking.
+        """
+        import sys
+        from pathlib import Path
+
+        project_root = Path(__file__).resolve().parents[2]
+        sys.path.insert(0, str(project_root / "bin"))
+        try:
+            from compare_api_surfaces import _is_breaking_signature_change
+        finally:
+            sys.path.pop(0)
+
+        base_sig = "(self, ota_mode:admin_pb2.OTAMode.ValueType, ota_file_hash:bytes)"
+        pr_sig = "(self, ota_mode:admin_pb2.OTAMode.ValueType | None=None, ota_file_hash:bytes | None=None, *, mode:admin_pb2.OTAMode.ValueType | None=None, ota_hash:bytes | None=None, **kwargs)"
+
+        assert not _is_breaking_signature_change(base_sig, pr_sig, "Node", "startOTA")
+
+    def test_startota_missing_param_is_breaking(self):
+        """Verify removing a required param is still breaking."""
+        import sys
+        from pathlib import Path
+
+        project_root = Path(__file__).resolve().parents[2]
+        sys.path.insert(0, str(project_root / "bin"))
+        try:
+            from compare_api_surfaces import _is_breaking_signature_change
+        finally:
+            sys.path.pop(0)
+
+        base_sig = "(self, ota_mode:admin_pb2.OTAMode.ValueType, ota_file_hash:bytes)"
+        pr_sig = "(self, ota_mode:admin_pb2.OTAMode.ValueType | None=None)"
+
+        assert _is_breaking_signature_change(base_sig, pr_sig, "Node", "startOTA")
+
+    def test_startota_new_required_kwonly_is_breaking(self):
+        """Verify adding a new required keyword-only param is breaking."""
+        import sys
+        from pathlib import Path
+
+        project_root = Path(__file__).resolve().parents[2]
+        sys.path.insert(0, str(project_root / "bin"))
+        try:
+            from compare_api_surfaces import _is_breaking_signature_change
+        finally:
+            sys.path.pop(0)
+
+        base_sig = "(self, ota_mode:admin_pb2.OTAMode.ValueType, ota_file_hash:bytes)"
+        pr_sig = "(self, ota_mode:admin_pb2.OTAMode.ValueType, ota_file_hash:bytes, *, new_required:int)"
+
+        assert _is_breaking_signature_change(base_sig, pr_sig, "Node", "startOTA")
+
+
 class TestBaselineGeneration:
     """Tests for baseline generation utilities."""
 

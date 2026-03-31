@@ -31,9 +31,7 @@ WAIT_ATTR_TRACEROUTE: str = "receivedTraceRoute"
 WAIT_ATTR_WAYPOINT: str = "receivedWaypoint"
 WAIT_ATTR_NAK: str = "receivedNak"
 
-NO_RESPONSE_FIRMWARE_ERROR: str = (
-    "No response from node. At least firmware 2.1.22 is required on the destination node."
-)
+NO_RESPONSE_FIRMWARE_ERROR: str = "No response from node. At least firmware 2.1.22 is required on the destination node."
 RESPONSE_WAIT_REQID_ERROR: str = (
     "Internal error: response wait requires a positive packet id."
 )
@@ -97,6 +95,15 @@ class _RequestWaitRuntime:
         self._get_acknowledgment = get_acknowledgment
         self._get_timeout = get_timeout
         self._retired_wait_ttl_seconds = retired_wait_ttl_seconds
+        self._ack_nak_handlers: dict[int, bool] = {}
+
+    def mark_ack_nak_handler(self, request_id: int, flag: bool = True) -> None:
+        """Mark or unmark a request_id as an ACK/NAK handler."""
+        with self._lock:
+            if flag:
+                self._ack_nak_handlers[request_id] = True
+            else:
+                self._ack_nak_handlers.pop(request_id, None)
 
     def add_response_handler(
         self,
@@ -104,6 +111,7 @@ class _RequestWaitRuntime:
         callback: Callable[[dict[str, Any]], Any],
         *,
         ack_permitted: bool,
+        is_ack_nak_handler: bool = False,
     ) -> None:
         """Register a response callback for a request id."""
         with self._lock:
@@ -111,11 +119,14 @@ class _RequestWaitRuntime:
                 callback=callback,
                 ackPermitted=ack_permitted,
             )
+            if is_ack_nak_handler:
+                self._ack_nak_handlers[request_id] = True
 
     def drop_response_handler(self, request_id: int) -> None:
         """Remove a response callback registration if present."""
         with self._lock:
             self._get_response_handlers().pop(request_id, None)
+            self._ack_nak_handlers.pop(request_id, None)
 
     def clear_wait_error(
         self,
@@ -471,12 +482,17 @@ class _RequestWaitRuntime:
             response_handlers = self._get_response_handlers()
             candidate = response_handlers.get(request_id, None)
             if candidate is not None:
-                is_ack_nak_handler = getattr(candidate, "isAckNakHandler", False)
+                is_ack_nak_handler = (
+                    self._ack_nak_handlers.get(request_id, False)
+                    or not candidate.ackPermitted
+                )
                 if skip_response_callback_for_decode_failure and not is_ack_nak_handler:
                     response_handlers.pop(request_id, None)
+                    self._ack_nak_handlers.pop(request_id, None)
                     dropped_due_to_decode_failure = True
                 elif (not is_ack) or is_ack_nak_handler or candidate.ackPermitted:
                     response_handler = response_handlers.pop(request_id, None)
+                    self._ack_nak_handlers.pop(request_id, None)
         return response_handler, dropped_due_to_decode_failure
 
     def _apply_admin_decode_failure_wait_state(
