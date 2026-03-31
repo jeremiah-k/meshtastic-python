@@ -345,7 +345,7 @@ class TestBLEManagementCommandsServiceOperations:
         handler.execute_with_client = configured_mock(return_value=expected_result)
         iface._management_command_handler = handler
 
-        def test_command(client):  # noqa: W0613
+        def test_command(_client):
             return expected_result
 
         result = BLEManagementCommandsService._execute_with_client(
@@ -368,13 +368,13 @@ class TestBLEManagementCommandsServiceOperations:
         )
         iface._management_command_handler = handler
 
-        def test_command(client):  # noqa: W0613
+        def test_command(_client):
             return expected_result
 
-        def client_factory(addr):  # noqa: W0613
+        def client_factory(_addr):
             return mock_client
 
-        def connected_elsewhere(key, owner=None):  # noqa: W0613
+        def connected_elsewhere(_key, _owner=None):
             return False
 
         result = BLEManagementCommandsService._execute_management_command(

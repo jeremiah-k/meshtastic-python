@@ -33,7 +33,9 @@ def _snapshot_modules(prefixes: tuple[str, ...]) -> dict[str, ModuleType]:
     }
 
 
-def _restore_modules(snapshot: dict[str, ModuleType], prefixes: tuple[str, ...]) -> None:
+def _restore_modules(
+    snapshot: dict[str, ModuleType], prefixes: tuple[str, ...]
+) -> None:
     """Restore captured modules and remove any modules created during the test."""
     for name in list(sys.modules.keys()):
         if _module_matches_prefix(name, prefixes):
@@ -124,7 +126,7 @@ class TestBleInterfaceCompatImports:
     def test_bleak_imports_available(self):
         """Test that bleak imports are available when bleak is installed."""
         # Import should succeed when bleak is available
-        import meshtastic.ble_interface as ble_iface  # noqa: C0415
+        import meshtastic.ble_interface as ble_iface 
 
         # Verify all expected bleak symbols are exported
         assert hasattr(ble_iface, "BleakClient")
@@ -139,7 +141,7 @@ class TestBleInterfaceExports:
 
     def test_all_exports_present(self):
         """Test that all expected symbols are in __all__."""
-        import meshtastic.ble_interface as ble_iface  # noqa: C0415
+        import meshtastic.ble_interface as ble_iface 
 
         expected_exports = [
             "BleakClient",
@@ -158,7 +160,7 @@ class TestBleInterfaceExports:
 
     def test_uuid_constants_exported(self):
         """Test that UUID constants are exported."""
-        import meshtastic.ble_interface as ble_iface  # noqa: C0415
+        import meshtastic.ble_interface as ble_iface 
 
         uuid_constants = [
             "SERVICE_UUID",
@@ -175,7 +177,7 @@ class TestBleInterfaceExports:
 
     def test_error_constants_exported(self):
         """Test that error constants are exported."""
-        import meshtastic.ble_interface as ble_iface  # noqa: C0415
+        import meshtastic.ble_interface as ble_iface 
 
         error_constants = [
             "ERROR_CONNECTION_FAILED",
@@ -194,7 +196,7 @@ class TestBleInterfaceExports:
 
     def test_ble_classes_exported(self):
         """Test that BLE classes are properly exported."""
-        import meshtastic.ble_interface as ble_iface  # noqa: C0415
+        import meshtastic.ble_interface as ble_iface 
 
         assert hasattr(ble_iface, "BLEInterface")
         assert hasattr(ble_iface, "BLEClient")
@@ -202,7 +204,7 @@ class TestBleInterfaceExports:
 
     def test_logger_exported(self):
         """Test that logger is exported."""
-        import meshtastic.ble_interface as ble_iface  # noqa: C0415
+        import meshtastic.ble_interface as ble_iface 
 
         assert hasattr(ble_iface, "logger")
         assert "logger" in ble_iface.__all__
@@ -213,22 +215,22 @@ class TestBleInterfaceShimBehavior:
 
     def test_ble_symbols_same_as_interfaces_ble(self):
         """Test that ble_interface exports match meshtastic.interfaces.ble exports."""
-        import meshtastic.ble_interface as ble_iface  # noqa: C0415
-        from meshtastic.interfaces import ble as _ble  # noqa: C0415
+        import meshtastic.ble_interface as ble_iface
+        from meshtastic.interfaces import ble as _ble
 
         # Check that key symbols are the same object
         ble_all = getattr(_ble, "__all__", ())
         for symbol in ble_all:
-            assert hasattr(
-                ble_iface, symbol
-            ), f"{symbol} must be exported by ble_interface"
+            assert hasattr(ble_iface, symbol), (
+                f"{symbol} must be exported by ble_interface"
+            )
             iface_obj = getattr(_ble, symbol)
             compat_obj = getattr(ble_iface, symbol)
             assert iface_obj is compat_obj, f"{symbol} should be same object"
 
     def test_compat_bleak_exports_in_all(self):
         """Test that compatibility bleak exports are in __all__."""
-        import meshtastic.ble_interface as ble_iface  # noqa: C0415
+        import meshtastic.ble_interface as ble_iface 
 
         compat_exports = [
             "BleakClient",
@@ -249,7 +251,7 @@ class TestBleInterfaceEdgeCases:
 
     def test_all_unique_no_duplicates(self):
         """Test that __all__ has no duplicates."""
-        import meshtastic.ble_interface as ble_iface  # noqa: C0415
+        import meshtastic.ble_interface as ble_iface 
 
         # Check for duplicates by comparing length to set
         assert len(ble_iface.__all__) == len(set(ble_iface.__all__)), (
@@ -264,7 +266,7 @@ class TestBleInterfaceEdgeCases:
             del sys.modules[module_name]
 
         # This should work without error
-        import meshtastic.ble_interface as ble_iface  # noqa: C0415
+        import meshtastic.ble_interface as ble_iface 
 
         assert ble_iface is not None
 
