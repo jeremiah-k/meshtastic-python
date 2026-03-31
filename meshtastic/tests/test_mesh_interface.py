@@ -2355,15 +2355,11 @@ def test_send_traceroute_and_response_rendering(
         send_data = MagicMock(return_value=response_packet)
         wait_for_traceroute = MagicMock()
         real_wait_for_traceroute = iface._send_pipeline.waitForTraceRoute
-        monkeypatch.setattr(iface._send_pipeline, "_send_data_with_wait", send_data)
-        monkeypatch.setattr(
-            iface._send_pipeline, "waitForTraceRoute", wait_for_traceroute
-        )
+        monkeypatch.setattr(iface, "_send_data_with_wait", send_data)
+        monkeypatch.setattr(iface, "waitForTraceRoute", wait_for_traceroute)
         iface.sendTraceRoute(dest=123, hopLimit=3, channelIndex=1)
         wait_for_traceroute.assert_called_once_with(2, request_id=88)
-        monkeypatch.setattr(
-            iface._send_pipeline, "waitForTraceRoute", real_wait_for_traceroute
-        )
+        monkeypatch.setattr(iface, "waitForTraceRoute", real_wait_for_traceroute)
 
         route = mesh_pb2.RouteDiscovery()
         route.route.extend([11])
@@ -2788,7 +2784,7 @@ def test_send_and_delete_waypoint_response_paths(
     sent_payloads: list[mesh_pb2.Waypoint] = []
     with MeshInterface(noProto=True) as iface:
         wait_for_waypoint = MagicMock()
-        monkeypatch.setattr(iface._send_pipeline, "waitForWaypoint", wait_for_waypoint)
+        monkeypatch.setattr(iface, "waitForWaypoint", wait_for_waypoint)
 
         def _capture_send_data(
             payload: mesh_pb2.Waypoint, *_args: Any, **_kwargs: Any
@@ -2796,9 +2792,7 @@ def test_send_and_delete_waypoint_response_paths(
             sent_payloads.append(payload)
             return mesh_pb2.MeshPacket(id=len(sent_payloads))
 
-        monkeypatch.setattr(
-            iface._send_pipeline, "_send_data_with_wait", _capture_send_data
-        )
+        monkeypatch.setattr(iface, "_send_data_with_wait", _capture_send_data)
         monkeypatch.setattr(
             flows_module.secrets,  # type: ignore[attr-defined]
             "randbits",
@@ -3119,7 +3113,7 @@ def test_send_methods_pass_request_id_to_wait_helpers(
         wait_for_telemetry = MagicMock()
         wait_for_waypoint = MagicMock()
         monkeypatch.setattr(
-            iface._send_pipeline,
+            iface,
             "_send_data_with_wait",
             MagicMock(
                 side_effect=[
@@ -3131,14 +3125,10 @@ def test_send_methods_pass_request_id_to_wait_helpers(
                 ]
             ),
         )
-        monkeypatch.setattr(iface._send_pipeline, "waitForPosition", wait_for_position)
-        monkeypatch.setattr(
-            iface._send_pipeline, "waitForTraceRoute", wait_for_traceroute
-        )
-        monkeypatch.setattr(
-            iface._send_pipeline, "waitForTelemetry", wait_for_telemetry
-        )
-        monkeypatch.setattr(iface._send_pipeline, "waitForWaypoint", wait_for_waypoint)
+        monkeypatch.setattr(iface, "waitForPosition", wait_for_position)
+        monkeypatch.setattr(iface, "waitForTraceRoute", wait_for_traceroute)
+        monkeypatch.setattr(iface, "waitForTelemetry", wait_for_telemetry)
+        monkeypatch.setattr(iface, "waitForWaypoint", wait_for_waypoint)
 
         iface.sendPosition(wantResponse=True)
         iface.sendTraceRoute(dest=123, hopLimit=3)
