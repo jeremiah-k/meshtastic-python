@@ -1258,13 +1258,8 @@ class Node:  # pylint: disable=too-many-instance-attributes
         with self._metadata_stdout_event_lock:
             self._metadata_stdout_event = metadata_stdout_event
         try:
-            request = self._send_admin(
-                p, wantResponse=True, onResponse=self.onRequestGetMetadata
-            )
-            if request is not None:
-                # Metadata callbacks currently publish ACK/NAK via legacy shared
-                # acknowledgment flags, so this wait must remain unscoped.
-                self.iface.waitForAckNak()
+            self._send_admin(p, wantResponse=True, onResponse=self.onRequestGetMetadata)
+            self.iface.waitForAckNak()
             if sys.stdout is not sys.__stdout__:
                 callback_completed = metadata_stdout_event.wait(
                     METADATA_STDOUT_COMPAT_WAIT_SECONDS

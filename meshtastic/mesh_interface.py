@@ -1576,22 +1576,15 @@ class MeshInterface:  # pylint: disable=R0902
         """
         self._send_pipeline.waitForConfig()
 
-    def waitForAckNak(self, request_id: int | None = None) -> None:
+    def waitForAckNak(self) -> None:
         """Wait until an acknowledgement (ACK) or negative acknowledgement (NAK) is received or the wait times out.
-
-        Parameters
-        ----------
-        request_id : int | None
-            Optional request id used to scope wait/error handling to a specific
-            request. When provided, waits only for ACK/NAK responses for that
-            specific request.
 
         Raises
         ------
         MeshInterface.MeshInterfaceError
             If waiting times out before an ACK/NAK is received.
         """
-        self._send_pipeline.waitForAckNak(request_id=request_id)
+        self._send_pipeline.waitForAckNak()
 
     def waitForTraceRoute(
         self, waitFactor: float, request_id: int | None = None

@@ -739,36 +739,14 @@ class SendPipeline:
                 "Timed out waiting for interface config"
             )
 
-    def waitForAckNak(self, request_id: int | None = None) -> None:
-        """Wait until an acknowledgement (ACK) or negative acknowledgement (NAK) is received or the wait times out.
-
-        Parameters
-        ----------
-        request_id : int | None
-            The request ID to wait for. When None, uses process-wide (legacy) wait semantics.
-            Callers should pass the packet ID from the sent request for proper request scoping.
-        """
-        try:
-            if request_id is None:
-                # Legacy unscoped wait
-                success = self._timeout.waitForAckNak(self._acknowledgment)
-                self._raise_wait_error_if_present(WAIT_ATTR_NAK)
-            else:
-                # Request-scoped wait
-                self._clear_wait_error(WAIT_ATTR_NAK, request_id=request_id)
-                success = self._wait_for_request_ack(
-                    WAIT_ATTR_NAK,
-                    request_id,
-                    timeout_seconds=self._timeout.expireTimeout,
-                )
-                self._raise_wait_error_if_present(WAIT_ATTR_NAK, request_id=request_id)
-            if not success:
-                raise self._interface.MeshInterfaceError(
-                    "Timed out waiting for an acknowledgment"
-                )
-        finally:
-            if request_id is not None:
-                self._retire_wait_request(WAIT_ATTR_NAK, request_id=request_id)
+    def waitForAckNak(self) -> None:
+        """Wait until an acknowledgement (ACK) or negative acknowledgement (NAK) is received or the wait times out."""
+        success = self._timeout.waitForAckNak(self._acknowledgment)
+        self._raise_wait_error_if_present(WAIT_ATTR_NAK)
+        if not success:
+            raise self._interface.MeshInterfaceError(
+                "Timed out waiting for an acknowledgment"
+            )
 
     def waitForTraceRoute(
         self, waitFactor: float, request_id: int | None = None
