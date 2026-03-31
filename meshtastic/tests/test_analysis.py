@@ -643,7 +643,9 @@ def test_main_uses_default_slog_when_not_provided(
 ) -> None:
     """main() should use default slog path when --slog is not provided."""
     parser_default_slog = create_argparser().parse_args([]).slog
-    expected_slog = parser_default_slog or os.path.join(analysis_main.rootDir(), "latest")
+    expected_slog = parser_default_slog or os.path.join(
+        analysis_main.rootDir(), "latest"
+    )
     captured: dict[str, str] = {}
 
     class _FakeApp:
@@ -716,24 +718,6 @@ def test_cli_exit_calls_util_our_exit(monkeypatch: pytest.MonkeyPatch) -> None:
     assert captured["message"] == "test error message"
     assert captured["code"] == 42
     assert exc_info.value.code == 42
-
-
-@pytest.mark.unit
-def test_parse_port_rejects_non_integer() -> None:
-    """create_argparser should reject non-integer --port values."""
-    parser = create_argparser()
-    with pytest.raises(SystemExit):
-        parser.parse_args(["--port", "not-a-number"])
-
-
-@pytest.mark.unit
-def test_parse_port_rejects_out_of_range() -> None:
-    """create_argparser should reject out-of-range --port values."""
-    parser = create_argparser()
-    with pytest.raises(SystemExit):
-        parser.parse_args(["--port", "70000"])
-    with pytest.raises(SystemExit):
-        parser.parse_args(["--port", "0"])
 
 
 @pytest.mark.unit

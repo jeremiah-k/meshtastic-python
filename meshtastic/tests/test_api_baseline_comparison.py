@@ -63,9 +63,7 @@ def get_baseline_file() -> Path:
 
 
 _EXTRACTED_SURFACE_CACHE: dict[str, Any] | None = None
-_IS_BREAKING_SIGNATURE_CHANGE_FN: (
-    Callable[[str, str, str, str], bool] | None
-) = None
+_IS_BREAKING_SIGNATURE_CHANGE_FN: Callable[[str, str, str, str], bool] | None = None
 
 
 def _is_breaking_signature_change_for_baseline(
@@ -169,7 +167,7 @@ def load_baseline() -> dict[str, Any] | None:
     if not baseline_file.exists():
         return None
 
-    with open(baseline_file, "r", encoding="utf-8") as f:
+    with open(baseline_file, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -511,16 +509,6 @@ class TestSignatureAliasComparison:
         The PR version has both old names (ota_mode, ota_file_hash) and
         new keyword-only aliases (mode, ota_hash). This should not be breaking.
         """
-        import sys  # pylint: disable=reimported,import-outside-toplevel
-        from pathlib import Path  # pylint: disable=reimported,import-outside-toplevel
-
-        project_root = Path(__file__).resolve().parents[2]
-        sys.path.insert(0, str(project_root / "bin"))
-        try:
-            from compare_api_surfaces import _is_breaking_signature_change  # type: ignore[import-not-found]  # pylint: disable=import-error,import-outside-toplevel
-        finally:
-            sys.path.pop(0)
-
         base_sig = "(self, ota_mode:admin_pb2.OTAMode.ValueType, ota_file_hash:bytes)"
         pr_sig = (
             "(self, ota_mode:admin_pb2.OTAMode.ValueType | None=None, "
@@ -528,41 +516,27 @@ class TestSignatureAliasComparison:
             "ota_hash:bytes | None=None, **kwargs)"
         )
 
-        assert not _is_breaking_signature_change(base_sig, pr_sig, "Node", "startOTA")
+        assert not _is_breaking_signature_change_for_baseline(
+            base_sig, pr_sig, "Node", "startOTA"
+        )
 
     def test_startota_missing_param_is_breaking(self):
         """Verify removing a required param is still breaking."""
-        import sys  # pylint: disable=reimported,import-outside-toplevel
-        from pathlib import Path  # pylint: disable=reimported,import-outside-toplevel
-
-        project_root = Path(__file__).resolve().parents[2]
-        sys.path.insert(0, str(project_root / "bin"))
-        try:
-            from compare_api_surfaces import _is_breaking_signature_change  # type: ignore[import-not-found]  # pylint: disable=import-error,import-outside-toplevel
-        finally:
-            sys.path.pop(0)
-
         base_sig = "(self, ota_mode:admin_pb2.OTAMode.ValueType, ota_file_hash:bytes)"
         pr_sig = "(self, ota_mode:admin_pb2.OTAMode.ValueType | None=None)"
 
-        assert _is_breaking_signature_change(base_sig, pr_sig, "Node", "startOTA")
+        assert _is_breaking_signature_change_for_baseline(
+            base_sig, pr_sig, "Node", "startOTA"
+        )
 
     def test_startota_new_required_kwonly_is_breaking(self):
         """Verify adding a new required keyword-only param is breaking."""
-        import sys  # pylint: disable=reimported,import-outside-toplevel
-        from pathlib import Path  # pylint: disable=reimported,import-outside-toplevel
-
-        project_root = Path(__file__).resolve().parents[2]
-        sys.path.insert(0, str(project_root / "bin"))
-        try:
-            from compare_api_surfaces import _is_breaking_signature_change  # type: ignore[import-not-found]  # pylint: disable=import-error,import-outside-toplevel
-        finally:
-            sys.path.pop(0)
-
         base_sig = "(self, ota_mode:admin_pb2.OTAMode.ValueType, ota_file_hash:bytes)"
         pr_sig = "(self, ota_mode:admin_pb2.OTAMode.ValueType, ota_file_hash:bytes, *, new_required:int)"
 
-        assert _is_breaking_signature_change(base_sig, pr_sig, "Node", "startOTA")
+        assert _is_breaking_signature_change_for_baseline(
+            base_sig, pr_sig, "Node", "startOTA"
+        )
 
 
 class TestBaselineGeneration:

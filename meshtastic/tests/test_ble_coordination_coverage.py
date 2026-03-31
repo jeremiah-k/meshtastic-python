@@ -419,14 +419,14 @@ class TestThreadCoordinatorThreadStarting:
         thread = coord._create_thread(slow_target, "cleanup_race_thread")
 
         # Track when thread.start() returns and trigger cleanup
-        def patched_start():
+        def patched_start() -> None:
             # Start the actual thread
             threading.Thread.start(thread)  # type: ignore[arg-type]
             entered_start.set()
             # Small delay to let the finally block in _start_thread execute
             time.sleep(0.05)
 
-        def cleanup_trigger():
+        def cleanup_trigger() -> None:
             # Wait for start to complete
             entered_start.wait(timeout=2.0)
             # Trigger cleanup
