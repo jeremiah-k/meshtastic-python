@@ -10,17 +10,13 @@ particularly error handling paths, timeout scenarios, and edge cases in:
 """
 
 import asyncio
-import contextlib
 import logging
-import math
 import re
-import subprocess
-import sys
 import threading
 import time
 from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock
 
 import pytest
 from bleak.backends.device import BLEDevice
@@ -28,18 +24,10 @@ from bleak.exc import BleakDBusError, BleakError
 
 from meshtastic.interfaces.ble import BLEClient, BLEInterface
 from meshtastic.interfaces.ble.constants import (
-    ERROR_CONNECTION_FAILED,
     ERROR_INTERFACE_CLOSING,
     ERROR_NO_PERIPHERALS_FOUND,
     ERROR_TIMEOUT,
     ERROR_WRITING_BLE,
-    GATT_IO_TIMEOUT,
-    TORADIO_UUID,
-)
-from meshtastic.interfaces.ble.discovery import (
-    DiscoveryManager,
-    _looks_like_ble_address,
-    _parse_scan_response,
 )
 from meshtastic.interfaces.ble.notifications import (
     BLENotificationDispatcher,
@@ -149,7 +137,13 @@ def _build_minimal_interface() -> BLEInterface:
     iface._management_inflight = 0
     iface._disconnect_lock = threading.Lock()
     iface._closed = False
-    iface._closed = False
+    iface._want_receive = False
+    iface._shutdown_event = threading.Event()
+    iface._connection_session_epoch = 0
+    iface._receiveThread = None
+    iface._receive_start_pending = False
+    iface._receive_start_pending_since = None
+    iface._exit_handler = None
     iface.address = None
     iface.client = None
     iface._disconnect_notified = False
@@ -723,8 +717,12 @@ def test_finalize_connection_gates_handles_stale_client(
         assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
         assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
 
-    # The method should not raise and should handle the stale client gracefully
-    # It delegates to lifecycle controller, which we've mocked
+    finalize_calls = MagicMock()
+    iface._lifecycle_controller = SimpleNamespace(
+        _finalize_connection_gates=finalize_calls
+    )
+
+    # The method should not raise and should handle the stale client gracefully.
     with caplog.at_level(logging.DEBUG):
         iface._finalize_connection_gates(
             cast(BLEClient, client),
@@ -732,8 +730,7 @@ def test_finalize_connection_gates_handles_stale_client(
             None,
         )
 
-    # The mock lifecycle controller should have been called
-    iface._lifecycle_controller._finalize_connection_gates.assert_called_once()
+    finalize_calls.assert_called_once_with(cast(BLEClient, client), "aabbccddeeff", None)
 
 
 def test_verify_and_publish_connected_handles_lost_ownership(
@@ -786,11 +783,8 @@ def test_notification_dispatcher_handles_handler_error(
         trigger_read_event=lambda: None,
     )
 
-    # Test malformed notification handling
-    with caplog.at_level(logging.WARNING):
-        dispatcher.handle_malformed_fromnum("Test reason", exc_info=False)
-
-    assert "Malformed FROMNUM notification" in caplog.text
+    dispatcher.handle_malformed_fromnum("Test reason", exc_info=False)
+    assert dispatcher.malformed_notification_count == 1
 
 
 def test_notification_dispatcher_reports_handler_error(
@@ -798,16 +792,21 @@ def test_notification_dispatcher_reports_handler_error(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Notification dispatcher should report handler errors."""
+    reported: list[str] = []
+
+    def _report_exception(error_msg: str) -> None:
+        reported.append(error_msg)
+
     dispatcher = BLENotificationDispatcher(
         notification_manager=NotificationManager(),
-        error_handler_provider=lambda: MagicMock(),
+        error_handler_provider=lambda: SimpleNamespace(
+            handle_unhandled_exception=_report_exception
+        ),
         trigger_read_event=lambda: None,
     )
 
-    with caplog.at_level(logging.ERROR):
-        dispatcher.report_notification_handler_error("Test handler error")
-
-    assert "Test handler error" in caplog.text
+    dispatcher.report_notification_handler_error("Test handler error")
+    assert reported == ["Test handler error"]
 
 
 # ============================================================================
@@ -838,15 +837,9 @@ def test_should_run_receive_loop_handles_unconfigured_mock(
     """_should_run_receive_loop should handle unconfigured mock lifecycle controller."""
     iface = _build_minimal_interface()
 
-    # Create a mock controller that returns unconfigured callables
-    mock_controller = MagicMock()
-    mock_controller.should_run_receive_loop = MagicMock(return_value=False)
-
-    iface._lifecycle_controller = mock_controller
-
-    # Should handle unconfigured mock gracefully
+    iface._lifecycle_controller = SimpleNamespace(should_run_receive_loop=lambda: False)
     result = iface._should_run_receive_loop()
-    assert isinstance(result, bool)
+    assert result is False
 
 
 def test_start_receive_thread_handles_unconfigured_mock(
@@ -855,14 +848,15 @@ def test_start_receive_thread_handles_unconfigured_mock(
     """_start_receive_thread should handle unconfigured mock lifecycle controller."""
     iface = _build_minimal_interface()
 
-    # Create a mock controller
-    mock_controller = MagicMock()
-    mock_controller.start_receive_thread = MagicMock()
+    start_receive_thread = MagicMock(side_effect=lambda **kwargs: None)
+    iface._lifecycle_controller = SimpleNamespace(
+        start_receive_thread=start_receive_thread
+    )
 
-    iface._lifecycle_controller = mock_controller
-
-    # Should not raise when dealing with unconfigured mocks
     iface._start_receive_thread(name="TestThread")
+    start_receive_thread.assert_called_once_with(
+        name="TestThread", reset_recovery=True
+    )
 
 
 def test_handle_disconnect_delegates_to_lifecycle_controller(
@@ -886,15 +880,13 @@ def test_on_ble_disconnect_delegates_to_lifecycle_controller(
     """_on_ble_disconnect should delegate to lifecycle controller."""
     iface = _build_minimal_interface()
 
-    mock_controller = MagicMock()
-    mock_controller._on_ble_disconnect = MagicMock()
-
-    iface._lifecycle_controller = mock_controller
+    on_ble_disconnect = MagicMock()
+    iface._lifecycle_controller = SimpleNamespace(_on_ble_disconnect=on_ble_disconnect)
 
     mock_client = MagicMock()
     iface._on_ble_disconnect(mock_client)
 
-    mock_controller._on_ble_disconnect.assert_called_once_with(mock_client)
+    on_ble_disconnect.assert_called_once_with(mock_client)
 
 
 def test_schedule_auto_reconnect_delegates_to_lifecycle_controller(
@@ -903,15 +895,15 @@ def test_schedule_auto_reconnect_delegates_to_lifecycle_controller(
     """_schedule_auto_reconnect should delegate to lifecycle controller."""
     iface = _build_minimal_interface()
 
-    mock_controller = MagicMock()
-    mock_controller._schedule_auto_reconnect = MagicMock()
-
-    iface._lifecycle_controller = mock_controller
+    schedule_auto_reconnect = MagicMock()
+    iface._lifecycle_controller = SimpleNamespace(
+        _schedule_auto_reconnect=schedule_auto_reconnect
+    )
     iface.auto_reconnect = True
 
     iface._schedule_auto_reconnect()
 
-    mock_controller._schedule_auto_reconnect.assert_called_once()
+    schedule_auto_reconnect.assert_called_once()
 
 
 # ============================================================================
@@ -972,7 +964,7 @@ def test_get_or_create_error_handler_creates_new_handler() -> None:
 def test_get_or_create_error_handler_returns_existing() -> None:
     """_get_or_create_error_handler should return existing handler."""
     iface = _build_minimal_interface()
-    existing_handler = MagicMock()
+    existing_handler = object()
     iface.error_handler = existing_handler
 
     handler = iface._get_or_create_error_handler()
@@ -1003,7 +995,7 @@ def test_get_or_create_collaborator_uses_double_checked_locking() -> None:
 
     def _factory() -> object:
         factory_calls.append(True)
-        return MagicMock()
+        return object()
 
     # First call creates
     result1 = iface._get_or_create_collaborator("_test_collaborator2", _factory)
@@ -1200,7 +1192,7 @@ def test_validate_management_preconditions_raises_when_connecting() -> None:
         iface._state_manager._reset_to_disconnected()
         assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
 
-    with pytest.raises(BLEInterface.BLEError, match="currently connecting"):
+    with pytest.raises(BLEInterface.BLEError, match="connection is in progress"):
         iface._validate_management_preconditions()
 
 
@@ -1226,7 +1218,7 @@ def test_raise_if_duplicate_connect_raises_when_suppressed(
         lambda key: True,
     )
 
-    with pytest.raises(BLEInterface.BLEError, match="duplicate"):
+    with pytest.raises(BLEInterface.BLEError, match="Connection suppressed"):
         iface._raise_if_duplicate_connect("test-key")
 
 
@@ -1428,6 +1420,7 @@ def test_set_thread_event_handles_exception(
         "_resolve_thread_event_dispatcher",
         lambda coordinator: _failing_dispatch,
     )
+    iface.thread_coordinator = SimpleNamespace(set_event=lambda event_name: None)
 
     with caplog.at_level(logging.DEBUG):
         iface._set_thread_event("test-event")
@@ -1437,29 +1430,50 @@ def test_set_thread_event_handles_exception(
 
 def test_resolve_thread_event_dispatcher_returns_instance_override() -> None:
     """_resolve_thread_event_dispatcher should return instance override when available."""
-    coordinator = MagicMock()
-    coordinator.__dict__["set_event"] = MagicMock()
+    calls: list[str] = []
+
+    class Coordinator:
+        pass
+
+    coordinator = Coordinator()
+    coordinator.__dict__["set_event"] = lambda event_name: calls.append(event_name)
 
     result = BLEInterface._resolve_thread_event_dispatcher(coordinator)
     assert result is not None
+    result("instance")
+    assert calls == ["instance"]
 
 
 def test_resolve_thread_event_dispatcher_returns_class_method() -> None:
     """_resolve_thread_event_dispatcher should return class method when available."""
-    coordinator = MagicMock()
-    type(coordinator).set_event = MagicMock()
+    calls: list[str] = []
+
+    class Coordinator:
+        def set_event(self, event_name: str) -> None:
+            calls.append(event_name)
+
+    coordinator = Coordinator()
 
     result = BLEInterface._resolve_thread_event_dispatcher(coordinator)
     assert result is not None
+    result("class")
+    assert calls == ["class"]
 
 
 def test_resolve_thread_event_dispatcher_returns_legacy() -> None:
     """_resolve_thread_event_dispatcher should return legacy method when available."""
-    coordinator = MagicMock()
-    coordinator._set_event = MagicMock()
+    calls: list[str] = []
+
+    class Coordinator:
+        def _set_event(self, event_name: str) -> None:
+            calls.append(event_name)
+
+    coordinator = Coordinator()
 
     result = BLEInterface._resolve_thread_event_dispatcher(coordinator)
     assert result is not None
+    result("legacy")
+    assert calls == ["legacy"]
 
 
 def test_resolve_thread_event_dispatcher_returns_none_when_unavailable() -> None:
@@ -1729,19 +1743,22 @@ def test_get_management_client_if_available_uses_locked_version(
 
     expected_client = DummyClient()
 
-    # Make state_lock report that it's owned
-    lock_mock = MagicMock()
-    lock_mock._is_owned = MagicMock(return_value=True)
-    iface._state_lock = lock_mock
+    class OwnedStateLock:
+        def _is_owned(self) -> bool:
+            return True
 
-    handler = MagicMock()
-    handler.get_management_client_if_available_locked = MagicMock(
-        return_value=expected_client
+    iface._state_lock = OwnedStateLock()
+
+    get_management_client_if_available_locked = MagicMock(return_value=expected_client)
+    handler = SimpleNamespace(
+        get_management_client_if_available_locked=get_management_client_if_available_locked,
+        get_management_client_if_available=MagicMock(return_value=None),
     )
     iface._management_command_handler = handler
 
     result = iface._get_management_client_if_available("test-address")
     assert result is expected_client
+    get_management_client_if_available_locked.assert_called_once_with("test-address")
 
 
 def test_get_management_client_for_target_handles_unconfigured_mock_lock(
@@ -1773,14 +1790,16 @@ def test_get_management_client_for_target_uses_locked_version(
 
     expected_client = DummyClient()
 
-    # Make state_lock report that it's owned
-    lock_mock = MagicMock()
-    lock_mock._is_owned = MagicMock(return_value=True)
-    iface._state_lock = lock_mock
+    class OwnedStateLock:
+        def _is_owned(self) -> bool:
+            return True
 
-    handler = MagicMock()
-    handler.get_management_client_for_target_locked = MagicMock(
-        return_value=expected_client
+    iface._state_lock = OwnedStateLock()
+
+    get_management_client_for_target_locked = MagicMock(return_value=expected_client)
+    handler = SimpleNamespace(
+        get_management_client_for_target_locked=get_management_client_for_target_locked,
+        get_management_client_for_target=MagicMock(return_value=None),
     )
     iface._management_command_handler = handler
 
@@ -1789,6 +1808,10 @@ def test_get_management_client_for_target_uses_locked_version(
         prefer_current_client=True,
     )
     assert result is expected_client
+    get_management_client_for_target_locked.assert_called_once_with(
+        "test-address",
+        prefer_current_client=True,
+    )
 
 
 # ============================================================================
@@ -1801,14 +1824,14 @@ def test_emit_verified_connection_side_effects_delegates() -> None:
     iface = _build_minimal_interface()
     client = DummyClient()
 
-    mock_controller = MagicMock()
-    mock_controller._emit_verified_connection_side_effects = MagicMock()
-
-    iface._lifecycle_controller = mock_controller
+    emit_verified_connection_side_effects = MagicMock()
+    iface._lifecycle_controller = SimpleNamespace(
+        _emit_verified_connection_side_effects=emit_verified_connection_side_effects
+    )
 
     iface._emit_verified_connection_side_effects(cast(BLEClient, client))
 
-    mock_controller._emit_verified_connection_side_effects.assert_called_once_with(
+    emit_verified_connection_side_effects.assert_called_once_with(
         cast(BLEClient, client)
     )
 
@@ -1833,10 +1856,10 @@ def test_discard_invalidated_connected_client_delegates() -> None:
     iface = _build_minimal_interface()
     client = DummyClient()
 
-    mock_controller = MagicMock()
-    mock_controller._discard_invalidated_connected_client = MagicMock()
-
-    iface._lifecycle_controller = mock_controller
+    discard_invalidated_connected_client = MagicMock()
+    iface._lifecycle_controller = SimpleNamespace(
+        _discard_invalidated_connected_client=discard_invalidated_connected_client
+    )
 
     iface._discard_invalidated_connected_client(
         cast(BLEClient, client),
@@ -1844,7 +1867,7 @@ def test_discard_invalidated_connected_client_delegates() -> None:
         restore_last_connection_request="test-request",
     )
 
-    mock_controller._discard_invalidated_connected_client.assert_called_once()
+    discard_invalidated_connected_client.assert_called_once()
 
 
 def test_is_owned_connected_client_delegates() -> None:
@@ -1852,10 +1875,9 @@ def test_is_owned_connected_client_delegates() -> None:
     iface = _build_minimal_interface()
     client = DummyClient()
 
-    mock_controller = MagicMock()
-    mock_controller._is_owned_connected_client = MagicMock(return_value=True)
-
-    iface._lifecycle_controller = mock_controller
+    iface._lifecycle_controller = SimpleNamespace(
+        _is_owned_connected_client=MagicMock(return_value=True)
+    )
 
     result = iface._is_owned_connected_client(cast(BLEClient, client))
     assert result is True
@@ -1884,10 +1906,10 @@ def test_run_bluetoothctl_trust_command_delegates() -> None:
     """_run_bluetoothctl_trust_command should delegate to management handler."""
     iface = _build_minimal_interface()
 
-    mock_handler = MagicMock()
-    mock_handler.run_bluetoothctl_trust_command = MagicMock()
-
-    iface._management_command_handler = mock_handler
+    run_bluetoothctl_trust_command = MagicMock()
+    iface._management_command_handler = SimpleNamespace(
+        run_bluetoothctl_trust_command=run_bluetoothctl_trust_command
+    )
 
     iface._run_bluetoothctl_trust_command(
         "/usr/bin/bluetoothctl",
@@ -1895,7 +1917,7 @@ def test_run_bluetoothctl_trust_command_delegates() -> None:
         5.0,
     )
 
-    mock_handler.run_bluetoothctl_trust_command.assert_called_once()
+    run_bluetoothctl_trust_command.assert_called_once()
 
 
 # ============================================================================
@@ -1905,8 +1927,6 @@ def test_run_bluetoothctl_trust_command_delegates() -> None:
 
 def test_format_bluetoothctl_address_validates_length() -> None:
     """_format_bluetoothctl_address should validate address length."""
-    iface = _build_minimal_interface()
-
     # Valid 12-character sanitized address
     result = BLEInterface._format_bluetoothctl_address("aabbccddeeff")
     assert result == "AA:BB:CC:DD:EE:FF"
@@ -1914,8 +1934,6 @@ def test_format_bluetoothctl_address_validates_length() -> None:
 
 def test_format_bluetoothctl_address_rejects_short_address() -> None:
     """_format_bluetoothctl_address should reject addresses that are too short."""
-    iface = _build_minimal_interface()
-
     with pytest.raises(BLEInterface.BLEError, match="address"):
         BLEInterface._format_bluetoothctl_address("aabbcc")
 
@@ -1979,7 +1997,7 @@ def test_connected_with_epoch_calls_super_when_epoch_matches(
 
     super_calls: list[bool] = []
 
-    def _mock_super_connected() -> None:
+    def _mock_super_connected(_self: Any) -> None:
         super_calls.append(True)
 
     monkeypatch.setattr(
@@ -2057,14 +2075,14 @@ def test_wait_for_disconnect_notifications_delegates() -> None:
     """_wait_for_disconnect_notifications should delegate to compatibility publisher."""
     iface = _build_minimal_interface()
 
-    mock_publisher = MagicMock()
-    mock_publisher.wait_for_disconnect_notifications = MagicMock()
-
-    iface._compatibility_publisher = mock_publisher
+    wait_for_disconnect_notifications = MagicMock()
+    iface._compatibility_publisher = SimpleNamespace(
+        wait_for_disconnect_notifications=wait_for_disconnect_notifications
+    )
 
     iface._wait_for_disconnect_notifications(timeout=5.0)
 
-    mock_publisher.wait_for_disconnect_notifications.assert_called_once_with(5.0)
+    wait_for_disconnect_notifications.assert_called_once_with(5.0)
 
 
 # ============================================================================
@@ -2077,14 +2095,14 @@ def test_disconnect_and_close_client_delegates() -> None:
     iface = _build_minimal_interface()
     client = DummyClient()
 
-    mock_controller = MagicMock()
-    mock_controller._disconnect_and_close_client = MagicMock()
-
-    iface._lifecycle_controller = mock_controller
+    disconnect_and_close_client = MagicMock()
+    iface._lifecycle_controller = SimpleNamespace(
+        _disconnect_and_close_client=disconnect_and_close_client
+    )
 
     iface._disconnect_and_close_client(cast(BLEClient, client))
 
-    mock_controller._disconnect_and_close_client.assert_called_once_with(
+    disconnect_and_close_client.assert_called_once_with(
         cast(BLEClient, client)
     )
 
@@ -2098,15 +2116,15 @@ def test_drain_publish_queue_delegates() -> None:
     """_drain_publish_queue should delegate to compatibility publisher."""
     iface = _build_minimal_interface()
 
-    mock_publisher = MagicMock()
-    mock_publisher.drain_publish_queue = MagicMock()
-
-    iface._compatibility_publisher = mock_publisher
+    drain_publish_queue = MagicMock()
+    iface._compatibility_publisher = SimpleNamespace(
+        drain_publish_queue=drain_publish_queue
+    )
 
     flush_event = threading.Event()
     iface._drain_publish_queue(flush_event)
 
-    mock_publisher.drain_publish_queue.assert_called_once_with(flush_event)
+    drain_publish_queue.assert_called_once_with(flush_event)
 
 
 # ============================================================================
@@ -2118,14 +2136,14 @@ def test_publish_connection_status_delegates() -> None:
     """_publish_connection_status should delegate to compatibility publisher."""
     iface = _build_minimal_interface()
 
-    mock_publisher = MagicMock()
-    mock_publisher.publish_connection_status = MagicMock()
-
-    iface._compatibility_publisher = mock_publisher
+    publish_connection_status = MagicMock()
+    iface._compatibility_publisher = SimpleNamespace(
+        publish_connection_status=publish_connection_status
+    )
 
     iface._publish_connection_status(connected=True)
 
-    mock_publisher.publish_connection_status.assert_called_once_with(connected=True)
+    publish_connection_status.assert_called_once_with(connected=True)
 
 
 # ============================================================================
