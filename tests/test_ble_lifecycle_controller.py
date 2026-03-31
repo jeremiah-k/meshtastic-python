@@ -463,7 +463,7 @@ class TestBLELifecycleControllerHookResolution:
             ) as state_manager_transition_to,
             patch(
                 "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._error_handler_safe_cleanup",
-                side_effect=lambda _iface, cleanup, _name: (cleanup(), None)[1],
+                side_effect=lambda _iface, cleanup, _name: cleanup() or None,
             ) as safe_cleanup_handler,
         ):
             mock_client = SimpleNamespace(address="test-addr")
@@ -516,7 +516,7 @@ class TestBLELifecycleControllerHookResolution:
             ) as state_manager_current_state,
             patch(
                 "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._error_handler_safe_cleanup",
-                side_effect=lambda _iface, cleanup, _name: (cleanup(), None)[1],
+                side_effect=lambda _iface, cleanup, _name: cleanup() or None,
             ) as safe_cleanup_handler,
         ):
             mock_client = SimpleNamespace(address="test-addr")
@@ -594,7 +594,9 @@ class TestBLELifecycleControllerShutdownDelegation:
         """_close should delegate to the _shutdown coordinator with correct params."""
         calls: list[dict[str, float]] = []
         mock_shutdown = SimpleNamespace(
-            close=lambda *, management_shutdown_wait_timeout, management_wait_poll_seconds: calls.append(
+            close=lambda *,
+            management_shutdown_wait_timeout,
+            management_wait_poll_seconds: calls.append(
                 {
                     "timeout": management_shutdown_wait_timeout,
                     "poll": management_wait_poll_seconds,
