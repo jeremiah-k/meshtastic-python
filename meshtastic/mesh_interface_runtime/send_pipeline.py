@@ -645,12 +645,12 @@ class SendPipeline:
 
         nodeNum: int = 0
         if destinationId is None:
-            raise self._interface.MeshInterfaceError("destinationId must not be None")
-        elif isinstance(destinationId, bool):
             raise self._interface.MeshInterfaceError(
-                f"destinationId must not be a bool, got: {destinationId}"
+                f"Invalid destinationId: {destinationId}"
             )
         elif isinstance(destinationId, int):
+            # Note: bool is a subclass of int in Python, so True/False are
+            # handled here as node numbers 1/0 for compatibility.
             nodeNum = destinationId
         elif destinationId == BROADCAST_ADDR:
             nodeNum = BROADCAST_NUM
