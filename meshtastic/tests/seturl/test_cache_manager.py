@@ -251,3 +251,24 @@ class TestSetUrlCacheManager:
         assert mock_local_node.channels[0].settings.name == "primary"
         assert mock_local_node.channels[1].settings.name == "secondary"
         assert mock_local_node.partialChannels == []
+
+    @pytest.mark.unit
+    def test_restore_replace_channels_snapshot_with_none_live_channels_invalidates(
+        self,
+        cache_manager: _SetUrlCacheManager,
+        mock_local_node: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """restore_replace_channels_snapshot should keep cache invalidated when live channels are missing."""
+        mock_local_node.channels = None
+        snapshot = [_make_channel(0, channel_pb2.Channel.Role.PRIMARY, "primary")]
+
+        with caplog.at_level(logging.WARNING):
+            cache_manager.restore_replace_channels_snapshot(
+                snapshot,
+                expected_channels_ref=[_make_channel(0, channel_pb2.Channel.Role.PRIMARY)],
+            )
+
+        assert mock_local_node.channels is None
+        assert mock_local_node.partialChannels == []
+        assert "replace-all rollback restore" in caplog.text

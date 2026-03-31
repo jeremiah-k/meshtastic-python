@@ -1072,6 +1072,26 @@ def test_start_ota_local_node() -> None:
 
 
 @pytest.mark.unit
+def test_start_ota_local_node_legacy_alias_keywords() -> None:
+    """Test startOTA legacy aliases mode/ota_hash remain supported."""
+    iface = MagicMock(autospec=MeshInterface)
+    anode = Node(iface, 1234567890, noProto=True)
+    iface.localNode = anode
+
+    captured: dict[str, object] = {}
+    anode._send_admin = _make_fake_send_admin(  # type: ignore[method-assign,assignment]
+        captured=captured
+    )
+
+    test_hash = b"\x11\x22\x33" * 8
+    anode.startOTA(mode=admin_pb2.OTAMode.OTA_WIFI, ota_hash=test_hash)
+
+    sent_msg = cast(admin_pb2.AdminMessage, captured["msg"])
+    assert sent_msg.ota_request.reboot_ota_mode == admin_pb2.OTAMode.OTA_WIFI
+    assert sent_msg.ota_request.ota_hash == test_hash
+
+
+@pytest.mark.unit
 def test_start_ota_remote_node_raises_error() -> None:
     """Test startOTA on remote node raises MeshInterfaceError."""
     iface = MagicMock(autospec=MeshInterface)

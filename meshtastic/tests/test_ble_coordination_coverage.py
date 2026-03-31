@@ -357,34 +357,49 @@ class TestThreadCoordinatorThreadStarting:
         causes the thread to be joined after cleanup occurs during start.
         """
         coord = ThreadCoordinator()
-        join_called = threading.Event()
+        release_worker = threading.Event()
+        join_called_from_start = threading.Event()
+        in_cleanup = False
 
-        def noop() -> None:
-            pass
+        def slow_worker() -> None:
+            release_worker.wait(timeout=5.0)
 
-        thread = coord._create_thread(noop, "race_test")
-
-        # Directly test the condition by manipulating state
-        # Simulate the state that would exist if cleanup raced
-        with coord._lock:
-            # Manually set up the conditions that would trigger line 258
-            pass  # Lock released here
-
-        # Use a wrapper to intercept the join call
+        thread = coord._create_thread(slow_worker, "race_test")
+        original_start = thread.start
         original_join = thread.join
+        original_cleanup = coord._cleanup
 
-        def tracking_join(timeout=None):
-            join_called.set()
-            return original_join(timeout)
+        def tracking_start() -> None:
+            original_start()
+            # Trigger cleanup before _start_thread enters finally.
+            coord._cleanup()
 
+        def tracking_join(timeout: float | None = None) -> None:
+            if not in_cleanup:
+                join_called_from_start.set()
+            return original_join(timeout=timeout)
+
+        def tracking_cleanup() -> None:
+            nonlocal in_cleanup
+            in_cleanup = True
+            try:
+                original_cleanup()
+            finally:
+                in_cleanup = False
+
+        thread.start = tracking_start  # type: ignore[method-assign]
         thread.join = tracking_join  # type: ignore[method-assign]
+        coord._cleanup = tracking_cleanup  # type: ignore[method-assign]
 
-        # Start normally - thread completes quickly
-        coord._start_thread(thread)
+        with patch(
+            "meshtastic.interfaces.ble.coordination.EVENT_THREAD_JOIN_TIMEOUT", 0.05
+        ):
+            coord._start_thread(thread)
+
+        assert join_called_from_start.is_set()
+
+        release_worker.set()
         thread.join(timeout=1.0)
-
-        # If cleanup happened, join would have been called from _start_thread
-        # Either way, the thread should not be alive
         assert not thread.is_alive()
 
     def test_start_thread_cleanup_during_start_race(self) -> None:
@@ -820,19 +835,21 @@ class TestThreadCoordinatorCleanup:
     def test_cleanup_uses_correct_timeout(self) -> None:
         """Test cleanup uses EVENT_THREAD_JOIN_TIMEOUT for joins."""
         coord = ThreadCoordinator()
+        release_worker = threading.Event()
 
         def dummy() -> None:
-            time.sleep(0.5)
+            release_worker.wait(timeout=5.0)
 
         thread = coord._create_thread(dummy, "timeout_test")
         thread.start()
 
-        start = time.time()
-        coord._cleanup()
-        elapsed = time.time() - start
+        with patch.object(thread, "join", wraps=thread.join) as mock_join:
+            coord._cleanup()
 
-        # Should use EVENT_THREAD_JOIN_TIMEOUT (2.0 seconds)
-        assert elapsed < EVENT_THREAD_JOIN_TIMEOUT + 0.5
+        mock_join.assert_called_once_with(timeout=EVENT_THREAD_JOIN_TIMEOUT)
+
+        release_worker.set()
+        thread.join(timeout=1.0)
 
     def test_cleanup_excludes_current_thread(self) -> None:
         """Test cleanup excludes the calling thread from joining."""

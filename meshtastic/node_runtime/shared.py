@@ -24,6 +24,7 @@ FACTORY_RESET_REQUEST_VALUE: int = 1
 # historical callers that parse printed metadata lines.
 METADATA_STDOUT_COMPAT_WAIT_SECONDS: float = 1.0
 NAMED_ADMIN_CHANNEL_NAME: str = "admin"
+ERROR_REASON_NONE: str = "NONE"
 
 
 def _is_named_admin_channel_name(channel_name: str) -> bool:

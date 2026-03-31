@@ -487,9 +487,7 @@ class BLECoroutineRunner:
             if self._stop_requested:
                 logger.debug("Runner stop requested; rejecting coroutine submission.")
                 self._close_coroutine_safely(coro)
-                future: Future[T] = Future()
-                future.cancel()
-                return future
+                raise RuntimeError(BLECLIENT_ERROR_LOOP_NOT_AVAILABLE)
             loop = self._loop
 
         if loop is None or not loop.is_running():

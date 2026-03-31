@@ -1,4 +1,3 @@
-# pylint: disable=duplicate-code
 """Simple program to demo how to use meshtastic library.
 
 To run: `python examples/pub_sub_example.py host`.

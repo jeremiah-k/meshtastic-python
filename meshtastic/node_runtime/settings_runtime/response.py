@@ -3,6 +3,7 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
+from meshtastic.node_runtime.shared import ERROR_REASON_NONE
 from meshtastic.protobuf import admin_pb2
 from meshtastic.util import camel_to_snake
 
@@ -10,8 +11,6 @@ if TYPE_CHECKING:
     from meshtastic.node import Node
 
 logger = logging.getLogger(__name__)
-
-ERROR_REASON_NONE = "NONE"
 
 
 class _NodeSettingsResponseRuntime:

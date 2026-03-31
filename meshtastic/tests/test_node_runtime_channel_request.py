@@ -296,6 +296,27 @@ def test_request_channel_for_local_node_logs_debug(
 
 
 @pytest.mark.unit
+def test_request_channel_send_exception_marks_request_failed(
+    channel_request_runtime: _NodeChannelRequestRuntime,
+    mock_node: MagicMock,
+) -> None:
+    """requestChannel should clear in-flight state when _send_admin raises."""
+    mock_iface = MagicMock()
+    mock_iface.localNode = mock_node
+    mock_node.iface = mock_iface
+
+    channel_response_runtime = MagicMock()
+    mock_node._channel_response_runtime = channel_response_runtime  # type: ignore[attr-defined]
+    mock_node._send_admin.side_effect = RuntimeError("send failed")  # noqa: SLF001
+
+    with pytest.raises(RuntimeError, match="send failed"):
+        channel_request_runtime.requestChannel(channel_num=1)
+
+    channel_response_runtime.markChannelRequestSent.assert_called_once_with(1)
+    channel_response_runtime.markChannelRequestSendFailed.assert_called_once_with(1)
+
+
+@pytest.mark.unit
 def test_request_channel_is_silent_compatibility_shim(
     channel_request_runtime: _NodeChannelRequestRuntime,
     mock_node: MagicMock,

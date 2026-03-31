@@ -342,6 +342,8 @@ class _NodeAdminContentRuntime:
         """Send content read request, wait for callback, and resolve cached result."""
         read_generation = begin_read_generation()
         response_event = threading.Event()
+        callback_state_lock = threading.Lock()
+        buffered_payloads: list[str] = []
 
         def _on_response(packet: dict[str, Any]) -> None:
             if not is_read_generation_active(read_generation):
@@ -350,6 +352,9 @@ class _NodeAdminContentRuntime:
                     read_generation,
                 )
                 return
+            with callback_state_lock:
+                if response_event.is_set():
+                    return
             terminal, payload = handle_response(packet)
             if not is_read_generation_active(read_generation):
                 logger.debug(
@@ -357,10 +362,13 @@ class _NodeAdminContentRuntime:
                     read_generation,
                 )
                 return
-            if payload is not None:
-                commit_payload(payload)
-            if terminal:
-                response_event.set()
+            with callback_state_lock:
+                if response_event.is_set():
+                    return
+                if payload is not None:
+                    buffered_payloads.append(payload)
+                if terminal:
+                    response_event.set()
 
         try:
             request_message = admin_pb2.AdminMessage()
@@ -373,9 +381,30 @@ class _NodeAdminContentRuntime:
             if request is None:
                 logger.debug("%s", skipped_send_debug_message)
                 return None
+            extract_request_id = getattr(
+                self._node.iface, "_extract_request_id_from_sent_packet", None
+            )
+            request_id_value = (
+                extract_request_id(request)
+                if callable(extract_request_id)
+                else getattr(request, "id", None)
+            )
+            request_id = request_id_value if isinstance(request_id_value, int) else None
             if not response_event.wait(timeout=self._node._timeout.expireTimeout):
                 logger.warning("%s", timeout_warning_message)
+                request_wait_runtime = getattr(self._node.iface, "_request_wait_runtime", None)
+                drop_response_handler = (
+                    getattr(request_wait_runtime, "drop_response_handler", None)
+                    if request_wait_runtime is not None
+                    else None
+                )
+                if request_id is not None and callable(drop_response_handler):
+                    drop_response_handler(request_id)
                 return None
+            with callback_state_lock:
+                payloads_to_commit = list(buffered_payloads)
+            for payload in payloads_to_commit:
+                commit_payload(payload)
             return resolve_result()
         finally:
             retire_read_generation(read_generation)

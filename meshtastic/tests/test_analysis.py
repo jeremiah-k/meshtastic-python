@@ -244,6 +244,14 @@ def test_read_pandas_preserves_nullable_dtypes(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
+def test_get_pmon_raises_requires_time_column() -> None:
+    """get_pmon_raises should fail clearly when the time column is missing."""
+    dslog = pd.DataFrame({"pm_mask": [1, 2, 3]})
+    with pytest.raises(ValueError, match="No time column found in slog"):
+        get_pmon_raises(dslog)
+
+
+@pytest.mark.unit
 def test_get_pmon_raises_rejects_uint64_overflow() -> None:
     """get_pmon_raises should reject values beyond representable range.
 
@@ -467,24 +475,6 @@ def test_get_pmon_raises_rejects_non_numeric_masks() -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.unit
-def test_get_pmon_raises_rejects_uint64_overflow_as_float() -> None:
-    """get_pmon_raises should reject large integer values via float64 exactness check."""
-    overflow_val = int(np.iinfo(np.uint64).max) + 1
-    dslog = pd.DataFrame(
-        {
-            "time": [1.0, 2.0],
-            "pm_mask": [0, overflow_val],
-        }
-    )
-    with pytest.raises(
-        ValueError,
-        match="pm_mask contains values that cannot be exactly represented in float64",
-    ):
-        get_pmon_raises(dslog)
-
-
-@pytest.mark.unit
 def test_get_board_info_requires_sw_version_column() -> None:
     """get_board_info should fail clearly when sw_version column is missing."""
     frame = pd.DataFrame({"board_id": [1]})
@@ -519,6 +509,14 @@ def test_get_board_info_accepts_string_board_id() -> None:
 
 
 @pytest.mark.unit
+def test_get_board_info_rejects_invalid_string_board_id() -> None:
+    """get_board_info should reject board_id values that are non-integer strings."""
+    frame = pd.DataFrame({"sw_version": ["2.5.0"], "board_id": ["not_a_number"]})
+    with pytest.raises(ValueError, match="Invalid board_id value in dslog"):
+        get_board_info(frame)
+
+
+@pytest.mark.unit
 def test_get_board_info_rejects_unknown_board_id() -> None:
     """get_board_info should reject board_id values that don't map to known HardwareModel."""
     frame = pd.DataFrame({"sw_version": ["2.5.0"], "board_id": [999999999]})
@@ -540,18 +538,131 @@ def test_create_dash_returns_dash_app() -> None:
 
 
 @pytest.mark.unit
+def test_create_dash_with_pmon_raises(tmp_path: Path) -> None:
+    """create_dash should render when slog includes power-monitor raise bits."""
+    single_bit, _ = _single_bit_power_states()
+    slog_dir = tmp_path / "test_slog"
+    slog_dir.mkdir()
+
+    power_data = pd.DataFrame(
+        {
+            "time": pd.array([1, 2, 3], dtype=pd.Int64Dtype()),
+            "average_mA": pd.array([100, 150, 200], dtype=pd.Float64Dtype()),
+            "max_mA": pd.array([110, 160, 210], dtype=pd.Float64Dtype()),
+            "min_mA": pd.array([90, 140, 190], dtype=pd.Float64Dtype()),
+        }
+    )
+    feather.write_feather(power_data, str(slog_dir / "power.feather"))
+
+    slog_data = pd.DataFrame(
+        {
+            "time": pd.array([1.0, 2.0, 3.0]),
+            "pm_mask": pd.array([0, single_bit, single_bit], dtype="object"),
+        }
+    )
+    feather.write_feather(slog_data, str(slog_dir / "slog.feather"))
+
+    app = create_dash(str(slog_dir))
+    assert app is not None
+    assert hasattr(app, "layout")
+    assert app.layout is not None
+
+
+@pytest.mark.unit
+def test_create_dash_with_legacy_mw_columns(tmp_path: Path) -> None:
+    """create_dash should support historical mW column names."""
+    slog_dir = tmp_path / "test_slog"
+    slog_dir.mkdir()
+
+    power_data = pd.DataFrame(
+        {
+            "time": pd.array([1, 2, 3], dtype=pd.Int64Dtype()),
+            "average_mW": pd.array([1000, 1500, 2000], dtype=pd.Float64Dtype()),
+            "max_mW": pd.array([1100, 1600, 2100], dtype=pd.Float64Dtype()),
+            "min_mW": pd.array([900, 1400, 1900], dtype=pd.Float64Dtype()),
+        }
+    )
+    feather.write_feather(power_data, str(slog_dir / "power.feather"))
+
+    slog_data = pd.DataFrame(
+        {
+            "time": pd.array([1, 2, 3], dtype=pd.Int64Dtype()),
+            "pm_mask": pd.array([0, 0, 0], dtype=pd.Int64Dtype()),
+        }
+    )
+    feather.write_feather(slog_data, str(slog_dir / "slog.feather"))
+
+    app = create_dash(str(slog_dir))
+    assert app is not None
+    assert hasattr(app, "layout")
+    assert app.layout is not None
+
+
+@pytest.mark.unit
+def test_create_dash_fails_when_power_file_missing(tmp_path: Path) -> None:
+    """create_dash should raise when power.feather is absent."""
+    slog_dir = tmp_path / "test_slog"
+    slog_dir.mkdir()
+
+    slog_data = pd.DataFrame(
+        {
+            "time": pd.array([1, 2, 3], dtype=pd.Int64Dtype()),
+            "pm_mask": pd.array([0, 0, 0], dtype=pd.Int64Dtype()),
+        }
+    )
+    feather.write_feather(slog_data, str(slog_dir / "slog.feather"))
+
+    with pytest.raises((FileNotFoundError, OSError)):
+        create_dash(str(slog_dir))
+
+
+@pytest.mark.unit
+def test_create_dash_fails_when_slog_file_missing(tmp_path: Path) -> None:
+    """create_dash should raise when slog.feather is absent."""
+    slog_dir = tmp_path / "test_slog"
+    slog_dir.mkdir()
+
+    power_data = pd.DataFrame(
+        {
+            "time": pd.array([1, 2, 3], dtype=pd.Int64Dtype()),
+            "average_mA": pd.array([100, 150, 200], dtype=pd.Float64Dtype()),
+            "max_mA": pd.array([110, 160, 210], dtype=pd.Float64Dtype()),
+            "min_mA": pd.array([90, 140, 190], dtype=pd.Float64Dtype()),
+        }
+    )
+    feather.write_feather(power_data, str(slog_dir / "power.feather"))
+
+    with pytest.raises((FileNotFoundError, OSError)):
+        create_dash(str(slog_dir))
+
+
+@pytest.mark.unit
 def test_main_uses_default_slog_when_not_provided(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """main() should use default slog path when --slog is not provided."""
-    monkeypatch.setattr(sys, "argv", ["fakescriptname", "--no-server"])
+    parser_default_slog = create_argparser().parse_args([]).slog
+    expected_slog = parser_default_slog or os.path.join(analysis_main.rootDir(), "latest")
+    captured: dict[str, str] = {}
+
+    class _FakeApp:
+        def run(self, *, debug: bool, host: str, port: int) -> None:
+            _ = (debug, host, port)
+
+    def _fake_create_dash(*, slog_path: str) -> _FakeApp:
+        captured["slog_path"] = slog_path
+        return _FakeApp()
+
+    monkeypatch.setattr(analysis_main, "create_dash", _fake_create_dash)
+    monkeypatch.setattr(sys, "argv", ["fakescriptname"])
     monkeypatch.setattr(logging.getLogger(), "propagate", True)
 
-    with caplog.at_level(logging.DEBUG):
+    with caplog.at_level(logging.INFO):
         main()
 
-    assert "Exiting without running visualization server" in caplog.text
+    assert "Running Dash visualization" in caplog.text
+    assert captured["slog_path"] == expected_slog
 
 
 @pytest.mark.unit
@@ -560,11 +671,12 @@ def test_main_disables_debug_for_non_loopback_host(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """main() should disable debug mode when host is not loopback."""
+    run_kwargs: dict[str, Any] = {}
 
     class _FakeApp:
         def run(self, *, debug: bool, host: str, port: int) -> None:
             """Simulate Dash app run method."""
-            _ = (debug, host, port)
+            run_kwargs.update({"debug": debug, "host": host, "port": port})
 
     def _fake_create_dash(*, slog_path: str) -> _FakeApp:
         _ = slog_path
@@ -582,6 +694,8 @@ def test_main_disables_debug_for_non_loopback_host(
         main()
 
     assert "Ignoring --debug because host 0.0.0.0 is not localhost" in caplog.text
+    assert run_kwargs["debug"] is False
+    assert run_kwargs["host"] == "0.0.0.0"
 
 
 @pytest.mark.unit
@@ -602,3 +716,30 @@ def test_cli_exit_calls_util_our_exit(monkeypatch: pytest.MonkeyPatch) -> None:
     assert captured["message"] == "test error message"
     assert captured["code"] == 42
     assert exc_info.value.code == 42
+
+
+@pytest.mark.unit
+def test_parse_port_rejects_non_integer() -> None:
+    """create_argparser should reject non-integer --port values."""
+    parser = create_argparser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--port", "not-a-number"])
+
+
+@pytest.mark.unit
+def test_parse_port_rejects_out_of_range() -> None:
+    """create_argparser should reject out-of-range --port values."""
+    parser = create_argparser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--port", "70000"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--port", "0"])
+
+
+@pytest.mark.unit
+def test_parse_port_accepts_valid_ports() -> None:
+    """create_argparser should accept valid --port values."""
+    parser = create_argparser()
+    assert parser.parse_args(["--port", "1"]).port == 1
+    assert parser.parse_args(["--port", "8051"]).port == 8051
+    assert parser.parse_args(["--port", "65535"]).port == 65535

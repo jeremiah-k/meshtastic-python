@@ -119,6 +119,11 @@ class _SetUrlCacheManager:
         with self._node._channels_lock:  # noqa: SLF001
             channels = self._node.channels
             channels_changed = False
+            if channels is None and (
+                expected_channels_ref is not None
+                or expected_channels_fingerprint is not None
+            ):
+                channels_changed = True
             if (
                 expected_channels_ref is not None
                 and channels is not None

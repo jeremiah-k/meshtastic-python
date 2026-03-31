@@ -608,19 +608,17 @@ class TestGetNodeWorkflow:
 class TestSendTelemetrySemanticDeprecation:
     """Test sendTelemetry() semantic deprecation warnings."""
 
-    def test_sendTelemetry_unsupported_type_emits_warning(self, mock_interface, caplog):
+    def test_sendTelemetry_unsupported_type_emits_warning(self, mock_interface):
         """Verify unsupported telemetryType values emit deprecation warning."""
         iface = mock_interface
 
-        with caplog.at_level(logging.WARNING):
-            # Send telemetry with unsupported type
-            with patch.object(iface, "_send_to_radio_impl"):
+        with patch.object(iface, "_send_to_radio_impl"):
+            with pytest.warns(DeprecationWarning) as warnings:
                 iface.sendTelemetry(
                     destinationId=BROADCAST_ADDR, telemetryType="unsupported_type"
                 )
 
-        # Verify warning was logged
-        assert "unsupported_type" in caplog.text
+        assert any("unsupported_type" in str(warning.message) for warning in warnings)
 
     def test_sendTelemetry_unsupported_type_falls_back_to_device_metrics(
         self, mock_interface
@@ -1057,7 +1055,7 @@ class TestSendWaitEdgeCases:
 
         # Add a response handler
         iface._request_wait_runtime.add_response_handler(
-            request_id, lambda p: None, ack_permitted=True
+            request_id, lambda _: None, ack_permitted=True
         )
 
         # Simulate timeout cleanup

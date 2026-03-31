@@ -2049,12 +2049,24 @@ def _create_power_meter() -> None:
         logger.info("Setting power supply to %s volts", v)
         meter.setVoltage(v)
         meter.powerOn()
-
         if args.power_wait:
             input("Powered on, press enter to continue...")
         else:
             logger.info("Powered-on, waiting for device to boot")
             time.sleep(POWER_ON_BOOT_DELAY_SECONDS)
+
+
+def _power_meter_requested(args: argparse.Namespace) -> bool:
+    """Return whether parsed CLI arguments require powermon meter setup."""
+    return any(
+        (
+            args.power_riden,
+            args.power_ppk2_meter,
+            args.power_ppk2_supply,
+            args.power_sim,
+            args.power_voltage is not None,
+        )
+    )
 
 
 # COMPAT_STABLE_SHIM: legacy snake_case helper for callers importing this module.
@@ -2160,7 +2172,7 @@ def common() -> None:
                     "ERROR: Ham radio callsign cannot be empty or contain only whitespace characters"
                 )
 
-        if have_powermon:
+        if _power_meter_requested(args):
             _create_power_meter()
 
         if args.ch_index is not None:

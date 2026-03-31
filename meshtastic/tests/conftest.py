@@ -533,11 +533,10 @@ def _shutdown_publishing_thread() -> Generator[None, None, None]:
     yield
     # After all tests complete, shut down the publishing thread
 
-    # Use cast to satisfy mypy - publishingThread is a DeferredExecution instance
     if publishingThread is not None:
-        _thread = cast(DeferredExecution, publishingThread)
-        _thread.stop()
-        _thread.join(timeout=5.0)
+        if isinstance(publishingThread, DeferredExecution):
+            publishingThread.stop()
+            publishingThread.join(timeout=5.0)
 
 
 @pytest.fixture

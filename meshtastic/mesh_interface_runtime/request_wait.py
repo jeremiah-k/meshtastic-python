@@ -74,7 +74,7 @@ class _RequestWaitRuntime:
         self,
         *,
         lock: threading.RLock,
-        get_response_handlers: Callable[[], dict[int, "ResponseHandler"]],
+        get_response_handlers: Callable[[], dict[int, ResponseHandler]],
         get_wait_errors: Callable[[], dict[tuple[str, int], str]],
         get_wait_acks: Callable[[], set[tuple[str, int]]],
         get_active_wait_request_ids: Callable[[], dict[str, set[int]]],

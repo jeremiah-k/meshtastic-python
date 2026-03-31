@@ -128,9 +128,17 @@ class _SetUrlRollbackEngine:
             for rollback_admin_index in rollback_admin_indexes:
                 try:
                     self._node.ensureSessionKey(adminIndex=rollback_admin_index)
+                    is_remote_node = self._node is not self._node.iface.localNode
+                    on_response = (
+                        self._node.onAckNak
+                        if is_remote_node
+                        and callable(getattr(self._node, "onAckNak", None))
+                        else None
+                    )
                     request = self._node._send_admin(  # noqa: SLF001
                         rollback_lora,
                         adminIndex=rollback_admin_index,
+                        onResponse=on_response,
                     )
                     if request is None:
                         logger.debug(
@@ -138,6 +146,10 @@ class _SetUrlRollbackEngine:
                             rollback_admin_index,
                         )
                         continue
+                    if is_remote_node and on_response is not None:
+                        wait_for_ack_nak = getattr(self._node.iface, "waitForAckNak", None)
+                        if callable(wait_for_ack_nak):
+                            wait_for_ack_nak()
                     self._cache_manager.restore_lora_snapshot(original_lora_config)
                     rollback_lora_succeeded = True
                     break

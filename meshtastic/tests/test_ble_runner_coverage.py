@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from bleak.exc import BleakDBusError
 
+from meshtastic.interfaces.ble.constants import BLECLIENT_ERROR_LOOP_NOT_AVAILABLE
 from meshtastic.interfaces.ble.runner import (
     BLECoroutineRunner,
     get_zombie_runner_count,
@@ -524,11 +525,11 @@ class TestBLECoroutineRunnerRunCoroutineThreadsafe:
         # Future should be in pending set
         assert future in fresh_runner._pending_futures
 
-    def test_run_coroutine_stop_requested_cancels(
+    def test_run_coroutine_stop_requested_raises(
         self,
         fresh_runner: BLECoroutineRunner,  # noqa: F811
     ) -> None:
-        """Test _run_coroutine_threadsafe cancels future when stop requested."""
+        """Test _run_coroutine_threadsafe raises when stop requested."""
 
         async def slow_coro() -> str:
             await asyncio.sleep(10.0)
@@ -546,10 +547,8 @@ class TestBLECoroutineRunnerRunCoroutineThreadsafe:
             fresh_runner._stop_requested = True
 
         # Submit new coroutine
-        future = fresh_runner._run_coroutine_threadsafe(slow_coro())
-
-        # Future should be cancelled
-        assert future.cancelled()
+        with pytest.raises(RuntimeError, match=BLECLIENT_ERROR_LOOP_NOT_AVAILABLE):
+            fresh_runner._run_coroutine_threadsafe(slow_coro())
 
 
 @pytest.mark.unit
@@ -1079,10 +1078,8 @@ class TestBLECoroutineRunnerConcurrency:
         async def late_coro() -> str:
             return "late"
 
-        future = fresh_runner._run_coroutine_threadsafe(late_coro())
-
-        # Future should be cancelled
-        assert future.cancelled()
+        with pytest.raises(RuntimeError, match=BLECLIENT_ERROR_LOOP_NOT_AVAILABLE):
+            fresh_runner._run_coroutine_threadsafe(late_coro())
 
 
 @pytest.mark.unit

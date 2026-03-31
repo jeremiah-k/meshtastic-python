@@ -186,8 +186,6 @@ class _SetUrlExecutionEngine:
                 expected_channels_ref=plan.replace_original_channels_ref,
             )
 
-        self._node.partialChannels = []
-
         self._write_lora_config(parsed_input, admin_context, state)
         if parsed_input.has_lora_update:
             self._cache_manager.apply_lora_success(parsed_input.channel_set.lora_config)

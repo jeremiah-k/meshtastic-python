@@ -188,12 +188,12 @@ def _get_top_level_exports(pkg_dir: Path) -> list[str]:
             for target in node.targets:
                 if isinstance(target, ast.Name) and target.id == "__all__":
                     if isinstance(node.value, (ast.List, ast.Tuple)):
-                        all_exports = []
-                        for elt in node.value.elts:
-                            if isinstance(elt, ast.Constant) and isinstance(
-                                elt.value, str
-                            ):
-                                all_exports.append(elt.value)
+                        all_exports = [
+                            elt.value
+                            for elt in node.value.elts
+                            if isinstance(elt, ast.Constant)
+                            and isinstance(elt.value, str)
+                        ]
                         return sorted(all_exports)
 
     exports = set()

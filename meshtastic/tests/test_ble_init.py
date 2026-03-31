@@ -13,6 +13,8 @@ from unittest.mock import patch
 
 import pytest
 
+# pylint: disable=import-outside-toplevel
+
 _BLE_IMPORT_TEST_MODULE_PREFIXES = (
     "bleak",
     "meshtastic.ble_interface",
@@ -49,7 +51,7 @@ class TestBLEPackageInit:
 
     def test_ble_init_imports_successfully(self) -> None:
         """Test that ble package imports successfully when bleak is available."""
-        from meshtastic.interfaces import ble  # noqa: C0415
+        from meshtastic.interfaces import ble
 
         assert ble is not None
         assert hasattr(ble, "BLEInterface")
@@ -135,7 +137,7 @@ class TestBLEPackageInit:
 
     def test_ble_all_exports(self) -> None:
         """Test that __all__ exports are accessible."""
-        from meshtastic.interfaces import ble  # noqa: C0415
+        from meshtastic.interfaces import ble
 
         for name in ble.__all__:
             assert hasattr(ble, name), f"Missing export: {name}"
@@ -147,7 +149,7 @@ class TestBLEPackageConstants:
 
     def test_uuid_constants_exported(self) -> None:
         """Test that UUID constants are exported."""
-        from meshtastic.interfaces.ble import (  # noqa: C0415
+        from meshtastic.interfaces.ble import (
             FROMNUM_UUID,
             FROMRADIO_UUID,
             LEGACY_LOGRADIO_UUID,
@@ -165,7 +167,7 @@ class TestBLEPackageConstants:
 
     def test_error_constants_exported(self) -> None:
         """Test that error message constants are exported."""
-        from meshtastic.interfaces.ble import (  # noqa: C0415
+        from meshtastic.interfaces.ble import (
             BLECLIENT_ERROR_ASYNC_TIMEOUT,
             ERROR_CONNECTION_FAILED,
             ERROR_MULTIPLE_DEVICES,
@@ -187,7 +189,7 @@ class TestBLEPackageConstants:
 
     def test_classes_exported(self) -> None:
         """Test that main classes are exported."""
-        from meshtastic.interfaces.ble import BLEClient, BLEConfig, BLEInterface  # noqa: C0415
+        from meshtastic.interfaces.ble import BLEClient, BLEConfig, BLEInterface
 
         assert BLEInterface is not None
         assert BLEClient is not None
@@ -195,6 +197,6 @@ class TestBLEPackageConstants:
 
     def test_logger_exported(self) -> None:
         """Test that logger is exported for backward compatibility."""
-        from meshtastic.interfaces.ble import logger  # noqa: C0415
+        from meshtastic.interfaces.ble import logger
 
         assert logger is not None

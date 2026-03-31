@@ -202,6 +202,20 @@ class _NodeChannelRequestRuntime:
             if channel_response_runtime is not None
             else None
         )
+        mark_channel_request_send_failed = (
+            getattr(
+                channel_response_runtime,
+                "markChannelRequestSendFailed",
+                None,
+            )
+            or getattr(
+                channel_response_runtime,
+                "mark_channel_request_send_failed",
+                None,
+            )
+            if channel_response_runtime is not None
+            else None
+        )
         if callable(mark_channel_request_sent):
             mark_channel_request_sent(channel_num)
 
@@ -217,26 +231,17 @@ class _NodeChannelRequestRuntime:
         else:
             logger.debug("Requesting channel %s", channel_num)
 
-        request = self._node._send_admin(
-            message,
-            wantResponse=True,
-            onResponse=self._node.onResponseRequestChannel,
-        )
-        if request is None:
-            mark_channel_request_send_failed = (
-                getattr(
-                    channel_response_runtime,
-                    "markChannelRequestSendFailed",
-                    None,
-                )
-                or getattr(
-                    channel_response_runtime,
-                    "mark_channel_request_send_failed",
-                    None,
-                )
-                if channel_response_runtime is not None
-                else None
+        try:
+            request = self._node._send_admin(
+                message,
+                wantResponse=True,
+                onResponse=self._node.onResponseRequestChannel,
             )
+        except Exception:
+            if callable(mark_channel_request_send_failed):
+                mark_channel_request_send_failed(channel_num)
+            raise
+        if request is None:
             if callable(mark_channel_request_send_failed):
                 mark_channel_request_send_failed(channel_num)
         return request

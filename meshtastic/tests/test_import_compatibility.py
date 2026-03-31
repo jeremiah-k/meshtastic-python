@@ -226,7 +226,7 @@ class TestBackwardCompatAliases:
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            from meshtastic.util import dotdict  # pylint: disable=import-outside-toplevel  # pylint: disable=import-outside-toplevel
+            from meshtastic.util import dotdict  # pylint: disable=import-outside-toplevel
 
             # Verify the class is importable
             assert dotdict is not None

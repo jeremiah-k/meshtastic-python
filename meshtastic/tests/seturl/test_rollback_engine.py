@@ -133,7 +133,10 @@ class TestSetUrlRollbackEngine:
             _ = adminIndex
 
         def send_admin_side_effect(
-            _msg: admin_pb2.AdminMessage, *, adminIndex: int | None = None
+            _msg: admin_pb2.AdminMessage,
+            *,
+            adminIndex: int | None = None,
+            **_kwargs: object,
         ) -> None:
             _ = adminIndex
             raise _LoRaRollbackFailure()

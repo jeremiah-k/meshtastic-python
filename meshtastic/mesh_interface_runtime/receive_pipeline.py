@@ -759,7 +759,17 @@ class ReceivePipeline:
         """Run protocol onReceive callback if one was selected during mutation."""
         if packet_context.on_receive_callback is None:
             return
-        packet_context.on_receive_callback(self._interface, packet_context.packet_dict)
+        try:
+            packet_context.on_receive_callback(
+                self._interface, packet_context.packet_dict
+            )
+        except Exception:
+            logger.exception(
+                "Protocol onReceive callback failed: callback=%s topic=%s packet_id=%s",
+                packet_context.on_receive_callback,
+                packet_context.topic,
+                getattr(packet_context.packet_dict.get("raw"), "id", 0),
+            )
 
     def _correlate_packet_response_handler(
         self, packet_context: _PacketRuntimeContext

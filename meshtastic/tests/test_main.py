@@ -4918,6 +4918,25 @@ def test_create_power_meter_sleeps_after_power_on_when_not_waiting(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_main_exits_when_power_flag_requested_without_powermon(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """main should fail fast when a power meter flag is used without powermon."""
+    monkeypatch.setattr(main_module, "have_powermon", False)
+    monkeypatch.setattr(main_module, "powermon_exception", ImportError("boom"))
+    monkeypatch.setattr(sys, "argv", ["", "--power-sim"])
+
+    with pytest.raises(SystemExit) as excinfo:
+        main()
+
+    _out, err = capsys.readouterr()
+    assert excinfo.value.code == 1
+    assert "The powermon module could not be loaded." in err
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_main_serial_oserror_includes_original_error_message(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

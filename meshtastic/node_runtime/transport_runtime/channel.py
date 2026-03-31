@@ -75,12 +75,11 @@ class _NodeChannelWriteRuntime:
             )
         # Wait for ACK/NAK response for remote nodes
         if on_response is not None and request is not None:
-            self._node.iface.waitForAckNak()
-            # Check if we received a NAK and abort if so
-            ack_state = getattr(self._node.iface, "_acknowledgment", None)
-            if ack_state is not None and getattr(ack_state, "receivedNak", False):
+            try:
+                self._node.iface.waitForAckNak()
+            except Exception as exc:
                 self._node._raise_interface_error(
-                    f"Channel write for index {channel_to_write.index} was rejected by device (NAK)"
+                    f"Channel write for index {channel_to_write.index} failed: {exc}"
                 )
         logger.debug("Wrote channel %s", channel_to_write.index)
 

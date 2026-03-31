@@ -13,6 +13,8 @@ from meshtastic.mesh_interface import MeshInterface
 from meshtastic.node_runtime.channel_export_runtime import _NodeChannelExportRuntime
 from meshtastic.protobuf import apponly_pb2, channel_pb2, localonly_pb2
 
+EXPORT_URL_PREFIX = "https://meshtastic.org/e/#"
+
 
 @pytest.fixture
 def mock_node() -> MagicMock:
@@ -184,7 +186,7 @@ def test_get_url_with_channels(
 
     url = export_runtime.get_url()
 
-    assert url.startswith("https://meshtastic.org/e/#")
+    assert url.startswith(EXPORT_URL_PREFIX)
 
 
 @pytest.mark.unit
@@ -204,7 +206,7 @@ def test_get_url_include_all_false(
     url_primary_only = export_runtime.get_url(include_all=False)
     url_all = export_runtime.get_url(include_all=True)
 
-    assert url_primary_only.startswith("https://meshtastic.org/e/#")
+    assert url_primary_only.startswith(EXPORT_URL_PREFIX)
     assert len(url_primary_only) < len(url_all)
 
 
@@ -224,7 +226,7 @@ def test_get_url_include_all_true(
 
     url = export_runtime.get_url(include_all=True)
 
-    assert url.startswith("https://meshtastic.org/e/#")
+    assert url.startswith(EXPORT_URL_PREFIX)
 
 
 @pytest.mark.unit
@@ -308,7 +310,7 @@ def test_get_url_requests_config_when_lora_missing(
     class MockLocalConfigSnapshot:
         """Mock LocalConfig that tracks HasField calls for lora."""
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.lora = localonly_pb2.LocalConfig().lora
             self.DESCRIPTOR = localonly_pb2.LocalConfig.DESCRIPTOR
 
@@ -330,7 +332,7 @@ def test_get_url_requests_config_when_lora_missing(
                 return call_count["lora"] > 1
             return True
 
-        def CopyFrom(self, other):  # pylint: disable=invalid-name
+        def CopyFrom(self, other: object) -> None:  # pylint: disable=invalid-name
             """Copy field values from another LocalConfig instance.
 
             Parameters
@@ -349,7 +351,7 @@ def test_get_url_requests_config_when_lora_missing(
 
         assert mock_node.requestConfig.called
         mock_node.waitForConfig.assert_called_once_with(attribute="lora")
-        assert url.startswith("https://meshtastic.org/e/#")
+        assert url.startswith(EXPORT_URL_PREFIX)
 
 
 @pytest.mark.unit

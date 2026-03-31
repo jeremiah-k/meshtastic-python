@@ -364,6 +364,22 @@ def compare_exports(
     return blocking, informational
 
 
+def compare_legacy_import_paths(
+    base: list[str],
+    pr: list[str],
+) -> tuple[list[str], list[str]]:
+    """Compare legacy import compatibility paths."""
+    blocking = []
+    informational = []
+    removed = set(base) - set(pr)
+    added = set(pr) - set(base)
+    if removed:
+        blocking.append(f"REMOVED legacy import paths: {sorted(removed)}")
+    if added:
+        informational.append(f"ADDED legacy import paths: {sorted(added)}")
+    return blocking, informational
+
+
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Compare API surfaces and detect breaking compatibility changes."
@@ -423,6 +439,15 @@ def main() -> int:
         all_informational.extend(export_informational)
     if export_blocking:
         all_blocking.extend(export_blocking)
+
+    import_blocking, import_informational = compare_legacy_import_paths(
+        base.get("legacy_import_paths", []), pr.get("legacy_import_paths", [])
+    )
+    if import_informational:
+        all_informational.append("Legacy import path changes (informational):")
+        all_informational.extend(import_informational)
+    if import_blocking:
+        all_blocking.extend(import_blocking)
 
     if all_informational:
         print("\n".join(all_informational))

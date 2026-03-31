@@ -9,7 +9,11 @@ from unittest.mock import Mock, patch
 
 import pytest
 from bleak.exc import BleakError
+from google.protobuf.message import DecodeError as ProtobufDecodeError
 
+pytestmark = pytest.mark.unit
+
+from meshtastic.interfaces.ble import errors as ble_errors_module
 from meshtastic.interfaces.ble.constants import logger
 from meshtastic.interfaces.ble.errors import BLEErrorHandler, DecodeError
 
@@ -19,8 +23,6 @@ class TestDecodeErrorImport:
 
     def test_decodeerror_is_protobuf_by_default(self):
         """DecodeError should be protobuf's DecodeError when available."""
-        from google.protobuf.message import DecodeError as ProtobufDecodeError  # noqa: C0415
-
         assert DecodeError is ProtobufDecodeError
 
     def test_fallback_decodeerror_instantiation(self):
@@ -511,11 +513,9 @@ class TestModuleExports:
 
     def test_all_exports_defined(self):
         """Test __all__ is properly defined."""
-        from meshtastic.interfaces.ble import errors  # noqa: C0415
-
-        assert hasattr(errors, "__all__")
-        assert "BLEErrorHandler" in errors.__all__
-        assert "DecodeError" in errors.__all__
+        assert hasattr(ble_errors_module, "__all__")
+        assert "BLEErrorHandler" in ble_errors_module.__all__
+        assert "DecodeError" in ble_errors_module.__all__
 
     def test_ble_error_handler_callable(self):
         """Test BLEErrorHandler class is accessible."""

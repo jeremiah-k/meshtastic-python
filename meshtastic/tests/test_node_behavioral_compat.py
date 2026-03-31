@@ -9,7 +9,8 @@ not just that methods exist, but that they work as expected end-to-end.
 from __future__ import annotations
 
 import base64
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 from unittest.mock import MagicMock, create_autospec
 
 import pytest

@@ -19,6 +19,7 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
@@ -62,6 +63,38 @@ def get_baseline_file() -> Path:
 
 
 _EXTRACTED_SURFACE_CACHE: dict[str, Any] | None = None
+_IS_BREAKING_SIGNATURE_CHANGE_FN: (
+    Callable[[str, str, str, str], bool] | None
+) = None
+
+
+def _is_breaking_signature_change_for_baseline(
+    stored_signature: str,
+    current_signature: str,
+    class_name: str,
+    method_name: str,
+) -> bool:
+    """Load compare_api_surfaces helper and classify signature deltas."""
+    global _IS_BREAKING_SIGNATURE_CHANGE_FN  # pylint: disable=global-statement
+    if _IS_BREAKING_SIGNATURE_CHANGE_FN is None:
+        project_root = Path(__file__).resolve().parents[2]
+        sys.path.insert(0, str(project_root / "bin"))
+        try:
+            from compare_api_surfaces import _is_breaking_signature_change  # type: ignore[import-not-found]  # pylint: disable=import-error,import-outside-toplevel
+        finally:
+            sys.path.pop(0)
+        _IS_BREAKING_SIGNATURE_CHANGE_FN = cast(
+            Callable[[str, str, str, str], bool],
+            _is_breaking_signature_change,
+        )
+    return bool(
+        _IS_BREAKING_SIGNATURE_CHANGE_FN(
+            stored_signature,
+            current_signature,
+            class_name,
+            method_name,
+        )
+    )
 
 
 def _extract_api_surface() -> dict[str, Any]:
@@ -182,6 +215,10 @@ def compare_method_baselines(
     changed = []
     for key in sorted(common):
         if current[key] != stored[key]:
+            if not _is_breaking_signature_change_for_baseline(
+                stored[key], current[key], _class_name, key
+            ):
+                continue
             changed.append(f"  {key}:")
             changed.append(f"    stored: {stored[key]}")
             changed.append(f"    current:  {current[key]}")

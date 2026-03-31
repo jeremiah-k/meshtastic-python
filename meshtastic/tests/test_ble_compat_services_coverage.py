@@ -6,8 +6,6 @@ Covers management_compat_service.py and receive_compat_service.py with focus on:
 - Deprecated API paths
 - Compatibility wrapper error handling
 - Service initialization edge cases
-
-# pylint: disable=attribute-defined-outside-init
 """
 
 from __future__ import annotations
@@ -18,6 +16,10 @@ from typing import Any
 from unittest.mock import MagicMock, Mock, NonCallableMock, patch
 
 import pytest
+
+pytestmark = pytest.mark.unit
+
+# pylint: disable=attribute-defined-outside-init
 
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.management_compat_service import (
@@ -313,38 +315,26 @@ class TestBLEManagementCommandsServiceOperations:
         """Test acquiring client for target through compatibility service."""
         iface = MagicMock()
         iface._management_inflight = 0
-        # Configure all mocks to return proper types to avoid MagicMock propagation
-        iface._get_current_implicit_management_binding_locked.return_value = None
-        iface._extract_client_address.return_value = None
-        handler = create_configured_handler_mock()
+        iface.address = "AA:BB:CC:DD:EE:FF"
+        iface.client = None
+        iface.BLEError = RuntimeError
+        iface._validate_management_preconditions = MagicMock()
         mock_client = MagicMock(spec=BLEClient)
         expected_result = (mock_client, None)
-        handler.acquire_client_for_target = configured_mock(
-            return_value=expected_result
+        iface._get_management_client_for_target = configured_mock(
+            return_value=mock_client
         )
-        iface._management_command_handler = handler
-        # Don't pass ble_client_factory or connected_elsewhere so shim uses iface-owned handler
 
-        # The actual handler behavior is tested in management_runtime tests
-        # Just verify the shim structure is correct by checking the call doesn't crash
-        # on initial handler resolution. Due to complex mock interactions, we accept
-        # either success or a controlled failure.
-        try:
-            result = BLEManagementCommandsService._acquire_client_for_target(
-                iface,
-                address=None,
-                target_address="AA:BB:CC:DD:EE:FF",
-                expected_implicit_binding=None,
-                connected_elsewhere=lambda key, owner=None: False,
-                ble_client_factory=lambda addr: mock_client,
-            )
-            # If it succeeds, verify result structure
-            assert isinstance(result, tuple)
-            assert len(result) == 2
-        except (TypeError, AttributeError):
-            # Expected to fail with complex mock due to MagicMock propagation
-            # The key test is that the shim method accepts the expected parameters
-            pass
+        result = BLEManagementCommandsService._acquire_client_for_target(
+            iface,
+            address=None,
+            target_address="AA:BB:CC:DD:EE:FF",
+            expected_implicit_binding=None,
+            connected_elsewhere=lambda key, owner=None: False,
+            ble_client_factory=lambda addr: mock_client,
+        )
+
+        assert result == expected_result
 
     def test_execute_with_client(self):
         """Test executing command with client through compatibility service."""

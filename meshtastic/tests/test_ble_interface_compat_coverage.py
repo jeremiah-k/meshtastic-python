@@ -1,10 +1,15 @@
 """Test coverage for meshtastic/ble_interface.py compatibility layer."""
 
 import builtins
+import importlib
 import sys
 from types import ModuleType
 
 import pytest
+
+pytestmark = pytest.mark.unit
+
+# pylint: disable=import-outside-toplevel
 
 _BLE_IMPORT_TEST_MODULE_PREFIXES = (
     "bleak",
@@ -64,7 +69,7 @@ class TestBleInterfaceImportFailure:
         try:
             builtins.__import__ = mock_import
             with pytest.raises(ImportError) as ctx:
-                import meshtastic.ble_interface  # noqa: F401, C0415
+                importlib.import_module("meshtastic.ble_interface")
 
             assert "BLE support requires the 'bleak' package" in str(ctx.value)
             assert "poetry install" in str(ctx.value)
@@ -105,7 +110,7 @@ class TestBleInterfaceImportFailure:
             builtins.__import__ = mock_import
             # This should raise the original ModuleNotFoundError, not an ImportError
             with pytest.raises(ModuleNotFoundError) as ctx:
-                import meshtastic.ble_interface  # noqa: F401, C0415
+                importlib.import_module("meshtastic.ble_interface")
 
             assert "some_other_dep" in str(ctx.value)
         finally:
@@ -214,10 +219,12 @@ class TestBleInterfaceShimBehavior:
         # Check that key symbols are the same object
         ble_all = getattr(_ble, "__all__", ())
         for symbol in ble_all:
-            if hasattr(ble_iface, symbol):
-                iface_obj = getattr(_ble, symbol)
-                compat_obj = getattr(ble_iface, symbol)
-                assert iface_obj is compat_obj, f"{symbol} should be same object"
+            assert hasattr(
+                ble_iface, symbol
+            ), f"{symbol} must be exported by ble_interface"
+            iface_obj = getattr(_ble, symbol)
+            compat_obj = getattr(ble_iface, symbol)
+            assert iface_obj is compat_obj, f"{symbol} should be same object"
 
     def test_compat_bleak_exports_in_all(self):
         """Test that compatibility bleak exports are in __all__."""

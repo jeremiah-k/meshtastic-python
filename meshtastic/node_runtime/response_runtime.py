@@ -3,7 +3,7 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
-from meshtastic.node_runtime.shared import MAX_CHANNELS
+from meshtastic.node_runtime.shared import ERROR_REASON_NONE, MAX_CHANNELS
 from meshtastic.protobuf import channel_pb2, config_pb2, mesh_pb2, portnums_pb2
 from meshtastic.util import stripnl
 
@@ -53,7 +53,7 @@ class _NodeMetadataResponseRuntime:
             )
             self._node._signal_metadata_stdout_event()
             return True
-        if error_reason != "NONE":
+        if error_reason != ERROR_REASON_NONE:
             logger.warning(
                 "Metadata request failed, error reason: %s",
                 error_reason,
@@ -79,7 +79,7 @@ class _NodeMetadataResponseRuntime:
             )
             self._node._signal_metadata_stdout_event()
             return True
-        if error_reason != "NONE":
+        if error_reason != ERROR_REASON_NONE:
             logger.error("Error on response: %s", error_reason)
             self._node.iface._acknowledgment.receivedNak = True
             self._node._signal_metadata_stdout_event()
@@ -94,10 +94,7 @@ class _NodeMetadataResponseRuntime:
         enum_type: Any,
     ) -> None:
         """Emit enum metadata field using enum name when valid and raw value otherwise."""
-        if value in enum_type.values():
-            formatted = enum_type.Name(value)
-        else:
-            formatted = value
+        formatted = enum_type.Name(value) if value in enum_type.values() else value
         self._node._emit_metadata_line(f"{field_name}: {formatted}")
 
     def _emit_metadata_lines(self, metadata: mesh_pb2.DeviceMetadata) -> None:
@@ -280,7 +277,7 @@ class _NodeChannelResponseRuntime:
                 )
                 self._channel_request_failed = True
                 self._node._timeout.reset()  # noqa: SLF001
-            elif error_reason != "NONE":
+            elif error_reason != ERROR_REASON_NONE:
                 self._retry_pending_channel_request(error_reason)
             else:
                 logger.debug(

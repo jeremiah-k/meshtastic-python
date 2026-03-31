@@ -1,4 +1,3 @@
-# pylint: disable=duplicate-code
 """Simple program to show serial ports."""
 
 import logging
