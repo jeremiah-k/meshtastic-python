@@ -196,7 +196,7 @@ class TestWaitForPositionWorkflow:
 
         # Send a position request first to get a request_id
         # Mock waitForPosition to avoid actual waiting
-        with patch.object(iface._send_pipeline, "waitForPosition"):
+        with patch.object(iface, "waitForPosition"):
             packet = iface.sendPosition(
                 latitude=40.7128,
                 longitude=-74.0060,
@@ -628,7 +628,7 @@ class TestSendTelemetrySemanticDeprecation:
         """Verify unsupported telemetryType falls back to device_metrics."""
         iface = mock_interface
 
-        with patch.object(iface._send_pipeline, "_send_data_with_wait") as mock_send:
+        with patch.object(iface, "_send_data_with_wait") as mock_send:
             mock_send.return_value = MagicMock()
             mock_send.return_value.id = 12345
 
@@ -672,12 +672,12 @@ class TestSendTelemetrySemanticDeprecation:
             "voltage": 3.7,
         }
 
-        with patch.object(iface._send_pipeline, "_send_data_with_wait") as mock_send:
+        with patch.object(iface, "_send_data_with_wait") as mock_send:
             mock_packet = MagicMock()
             mock_packet.id = 55555
             mock_send.return_value = mock_packet
 
-            with patch.object(iface._send_pipeline, "waitForTelemetry"):
+            with patch.object(iface, "waitForTelemetry"):
                 iface.sendTelemetry(
                     destinationId=BROADCAST_ADDR,
                     telemetryType="device_metrics",
@@ -760,12 +760,12 @@ class TestIntegrationWorkflows:
         iface = mock_interface
 
         # Mock internal methods to avoid actual sending
-        with patch.object(iface._send_pipeline, "_send_data_with_wait") as mock_send:
+        with patch.object(iface, "_send_data_with_wait") as mock_send:
             mock_packet = MagicMock()
             mock_packet.id = 99999
             mock_send.return_value = mock_packet
 
-            with patch.object(iface._send_pipeline, "waitForTraceRoute"):
+            with patch.object(iface, "waitForTraceRoute"):
                 iface.sendTraceRoute(dest="!testnode1", hopLimit=3, channelIndex=0)
 
                 mock_send.assert_called_once()
@@ -1369,9 +1369,7 @@ class TestSendWaitEdgeCases:
 
         with pytest.warns(DeprecationWarning, match="invalid_type_xyz"):
             with caplog.at_level(logging.WARNING):
-                with patch.object(
-                    iface._send_pipeline, "_send_data_with_wait"
-                ) as mock_send:
+                with patch.object(iface, "_send_data_with_wait") as mock_send:
                     mock_packet = MagicMock()
                     mock_packet.id = 12345
                     mock_send.return_value = mock_packet
@@ -1405,12 +1403,12 @@ class TestSendWaitEdgeCases:
             "voltage": 3.7,
         }
 
-        with patch.object(iface._send_pipeline, "_send_data_with_wait") as mock_send:
+        with patch.object(iface, "_send_data_with_wait") as mock_send:
             mock_packet = MagicMock()
             mock_packet.id = 99999
             mock_send.return_value = mock_packet
 
-            with patch.object(iface._send_pipeline, "waitForTelemetry"):
+            with patch.object(iface, "waitForTelemetry"):
                 iface.sendTelemetry(
                     destinationId=BROADCAST_ADDR,
                     telemetryType="device_metrics",
@@ -1428,9 +1426,7 @@ class TestSendWaitEdgeCases:
         iface = mock_interface
 
         for telemetry_type in SUPPORTED_TELEMETRY_TYPES:
-            with patch.object(
-                iface._send_pipeline, "_send_data_with_wait"
-            ) as mock_send:
+            with patch.object(iface, "_send_data_with_wait") as mock_send:
                 mock_packet = MagicMock()
                 mock_packet.id = 10000 + hash(telemetry_type) % 10000
                 mock_send.return_value = mock_packet
@@ -1462,7 +1458,7 @@ class TestSendWaitEdgeCases:
             "uptimeSeconds": 7200,
         }
 
-        with patch.object(iface._send_pipeline, "_send_data_with_wait") as mock_send:
+        with patch.object(iface, "_send_data_with_wait") as mock_send:
             mock_packet = MagicMock()
             mock_packet.id = 77777
             mock_send.return_value = mock_packet
@@ -1550,12 +1546,12 @@ class TestSendWaitEdgeCases:
         """Test that sendWaypoint with wantResponse=True sets up wait properly."""
         iface = mock_interface
 
-        with patch.object(iface._send_pipeline, "_send_data_with_wait") as mock_send:
+        with patch.object(iface, "_send_data_with_wait") as mock_send:
             mock_packet = MagicMock()
             mock_packet.id = 44444
             mock_send.return_value = mock_packet
 
-            with patch.object(iface._send_pipeline, "waitForWaypoint"):
+            with patch.object(iface, "waitForWaypoint"):
                 iface.sendWaypoint(
                     name="Response Test",
                     description="Testing wantResponse",
@@ -1668,12 +1664,12 @@ class TestSendWaitEdgeCases:
         # Current node count in fixture: 2 nodes
         # Expected waitFactor = max(1, min(2-1=1, hopLimit+1))
 
-        with patch.object(iface._send_pipeline, "_send_data_with_wait") as mock_send:
+        with patch.object(iface, "_send_data_with_wait") as mock_send:
             mock_packet = MagicMock()
             mock_packet.id = 33333
             mock_send.return_value = mock_packet
 
-            with patch.object(iface._send_pipeline, "waitForTraceRoute") as mock_wait:
+            with patch.object(iface, "waitForTraceRoute") as mock_wait:
                 iface.sendTraceRoute(dest="!testnode1", hopLimit=5, channelIndex=0)
 
                 # Verify waitForTraceRoute was called with calculated waitFactor

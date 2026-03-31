@@ -2354,7 +2354,7 @@ def test_send_traceroute_and_response_rendering(
         response_packet.id = 88
         send_data = MagicMock(return_value=response_packet)
         wait_for_traceroute = MagicMock()
-        real_wait_for_traceroute = iface._send_pipeline.waitForTraceRoute
+        real_wait_for_traceroute = iface.waitForTraceRoute
         monkeypatch.setattr(iface, "_send_data_with_wait", send_data)
         monkeypatch.setattr(iface, "waitForTraceRoute", wait_for_traceroute)
         iface.sendTraceRoute(dest=123, hopLimit=3, channelIndex=1)
