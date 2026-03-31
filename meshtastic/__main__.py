@@ -1651,11 +1651,15 @@ def onConnected(interface: MeshInterface) -> None:
                         "PowerStress is required for --power-stress but not available. "
                         "The powermon module loaded incompletely."
                     )
+                # Help mypy understand these are not None after the checks above
+                assert LogSet is not None  # type: ignore[union-attr]
+                assert PowerStress is not None  # type: ignore[union-attr]
                 # Setup loggers
                 global meter  # pylint: disable=global-variable-not-assigned
-                log_set = LogSet(
-                    interface, args.slog if args.slog != "default" else None, meter
-                )
+                if args.slog:
+                    log_set = LogSet(
+                        interface, args.slog if args.slog != "default" else None, meter
+                    )
 
                 if args.power_stress:
                     stress = PowerStress(interface)

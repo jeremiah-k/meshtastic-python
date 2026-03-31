@@ -899,7 +899,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             a "decoded" dict with optional "routing" (containing "errorReason") and
             "admin" -> "raw" -> get_ringtone_response payload.
         """
-        self._content_response_runtime.handle_ringtone_response(p)
+        self._content_response_runtime._handle_ringtone_response(p)
 
     def _get_ringtone(self) -> str | None:
         """Retrieve the node's ringtone as a single concatenated string.
@@ -958,7 +958,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             Decoded packet dictionary containing response fields, expected to include
             keys like `"decoded"`, `"decoded"]["routing"]`, and `"decoded"]["admin"]["raw"]`.
         """
-        self._content_response_runtime.handle_canned_message_response(p)
+        self._content_response_runtime._handle_canned_message_response(p)
 
     def _get_canned_message(self) -> str | None:
         """Retrieve the device's canned message, requesting parts from the node if not already cached.
