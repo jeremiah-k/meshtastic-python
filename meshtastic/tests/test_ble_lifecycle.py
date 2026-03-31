@@ -2538,6 +2538,19 @@ class TestLifecyclePrimitivesEdgeCases:
 
         existing_thread = MagicMock()
         existing_thread.is_alive = MagicMock(return_value=True)
+        entered_start = threading.Event()
+        release_start = threading.Event()
+        start_calls = 0
+
+        def blocking_start_receive_thread(**_kwargs: Any) -> None:
+            nonlocal start_calls
+            start_calls += 1
+            entered_start.set()
+            release_start.wait(timeout=1.0)
+
+        coordinator.start_receive_thread = MagicMock(
+            side_effect=blocking_start_receive_thread
+        )
 
         # Test that only one restart proceeds due to _deferred_restart_inflight flag
         # First call should set inflight=True
@@ -2546,6 +2559,7 @@ class TestLifecyclePrimitivesEdgeCases:
             name="restart_0",
             reset_recovery=True,
         )
+        assert entered_start.wait(timeout=0.5)
 
         # Second call should return immediately (inflight=True)
         coordinator._schedule_deferred_receive_restart(
@@ -2556,10 +2570,16 @@ class TestLifecyclePrimitivesEdgeCases:
 
         # inflight flag should be True (first call is still running)
         assert coordinator._deferred_restart_inflight is True
+        assert start_calls == 1
 
-        # Reset by hand to avoid waiting for threads
-        with coordinator._deferred_restart_lock:
-            coordinator._deferred_restart_inflight = False
+        release_start.set()
+        deadline = time.monotonic() + 0.5
+        while time.monotonic() < deadline:
+            with coordinator._deferred_restart_lock:
+                if coordinator._deferred_restart_inflight is False:
+                    break
+            time.sleep(0.01)
+        assert coordinator._deferred_restart_inflight is False
 
     def test_create_and_start_receive_thread_nested_exception(
         self, mock_iface: MagicMock
