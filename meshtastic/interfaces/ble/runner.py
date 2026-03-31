@@ -353,9 +353,7 @@ class BLECoroutineRunner:
             # Run forever until stopped
             loop.run_forever()
 
-        except (
-            Exception
-        ) as e:  # noqa: BLE001 - runner loop must not crash caller threads
+        except Exception as e:  # noqa: BLE001 - runner loop must not crash caller threads
             logger.error("Error in BLECoroutineRunner loop: %s", e, exc_info=True)
         finally:
             # Clean shutdown: cancel all pending tasks
@@ -486,6 +484,12 @@ class BLECoroutineRunner:
             raise
 
         with self._instance_lock:
+            if self._stop_requested:
+                logger.debug("Runner stop requested; rejecting coroutine submission.")
+                self._close_coroutine_safely(coro)
+                future: Future[T] = Future()
+                future.cancel()
+                return future
             loop = self._loop
 
         if loop is None or not loop.is_running():
@@ -499,12 +503,6 @@ class BLECoroutineRunner:
             raise
         # Protect concurrent access to _pending_futures WeakSet
         with self._instance_lock:
-            if self._stop_requested:
-                logger.debug(
-                    "Runner stop requested while submitting coroutine; cancelling submitted future."
-                )
-                future.cancel()
-                return future
             self._pending_futures.add(future)
         # Remove completed futures promptly instead of waiting for GC.
         future.add_done_callback(self._discard_tracked_future)
@@ -568,9 +566,7 @@ class BLECoroutineRunner:
         # Use default handler for additional processing
         try:
             loop.default_exception_handler(context)
-        except (
-            Exception
-        ) as e:  # noqa: BLE001 - loop default handler failures are non-fatal
+        except Exception as e:  # noqa: BLE001 - loop default handler failures are non-fatal
             logger.debug("Exception in default exception handler: %s", e)
 
     def _cancel_pending_futures(self) -> None:
