@@ -422,9 +422,7 @@ class BLEDisconnectLifecycleCoordinator:
                             client_at_start=plan.client_at_start,
                         )
                     )
-                    close_stale_client = (
-                        active_client_differs and plan.previous_client is not active_client
-                    )
+                    close_stale_client = active_client_differs
             if still_stale:
                 if stale_disconnect_keys:
                     iface._mark_address_keys_disconnected(*stale_disconnect_keys)

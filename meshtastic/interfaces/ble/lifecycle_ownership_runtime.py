@@ -93,7 +93,11 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 is_closing_result if isinstance(is_closing_result, bool) else False
             )
         else:
-            is_closing = self._probe_bool_member(state_manager, "is_closing", "_is_closing")
+            is_closing = self._probe_bool_member(
+                state_manager,
+                "is_closing",
+                "_is_closing",
+            )
         is_closing = is_closing or iface._closed
         if iface._closed or iface.client is not client:
             return False, is_closing

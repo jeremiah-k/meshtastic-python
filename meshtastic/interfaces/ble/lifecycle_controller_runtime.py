@@ -1,7 +1,7 @@
 """Top-level lifecycle controller runtime ownership for BLE."""
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar, cast
 
 from bleak import BleakClient as BleakRootClient
 
@@ -31,6 +31,8 @@ from meshtastic.interfaces.ble.utils import _is_unconfigured_mock_callable
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
     from meshtastic.interfaces.ble.interface import BLEInterface
+
+_HookT = TypeVar("_HookT", bound=Callable[..., object])
 
 
 class BLELifecycleController:
@@ -111,7 +113,7 @@ class BLELifecycleController:
         """Verify ownership and publish connected side effects."""
         if self._uses_compat_connection_status_overrides():
             from meshtastic.interfaces.ble import (
-                lifecycle_service as lifecycle_service_mod,
+                lifecycle_service as lifecycle_service_mod,  # pylint: disable=import-outside-toplevel
             )
 
             if (
@@ -169,12 +171,22 @@ class BLELifecycleController:
         restore_last_connection_request: str | None = None,
     ) -> None:
         """Discard stale connect result for the bound interface."""
-        from meshtastic.interfaces.ble import lifecycle_service as lifecycle_service_mod
+        from meshtastic.interfaces.ble import (
+            lifecycle_service as lifecycle_service_mod,  # pylint: disable=import-outside-toplevel
+        )
 
         iface = self._iface
-        is_closing = getattr(iface, "_state_manager_is_closing", None)
-        if not callable(is_closing) or _is_unconfigured_mock_callable(is_closing):
 
+        def _resolve_hook(
+            attr_name: str,
+            fallback_factory: Callable[[], _HookT],
+        ) -> _HookT:
+            raw_hook = getattr(iface, attr_name, None)
+            if not callable(raw_hook) or _is_unconfigured_mock_callable(raw_hook):
+                return fallback_factory()
+            return cast(_HookT, raw_hook)
+
+        def _fallback_is_closing() -> Callable[[], bool]:
             def is_closing() -> bool:
                 return (
                     lifecycle_service_mod.BLELifecycleService._state_manager_is_closing(
@@ -182,40 +194,34 @@ class BLELifecycleController:
                     )
                 )
 
-        reset_to_disconnected = getattr(
-            iface, "_state_manager_reset_to_disconnected", None
-        )
-        if not callable(reset_to_disconnected) or _is_unconfigured_mock_callable(
-            reset_to_disconnected
-        ):
+            return is_closing
 
+        def _fallback_reset_to_disconnected() -> Callable[[], bool]:
             def reset_to_disconnected() -> bool:
                 return lifecycle_service_mod.BLELifecycleService._state_manager_reset_to_disconnected(  # noqa: E501
                     iface
                 )
 
-        current_state = getattr(iface, "_state_manager_current_state", None)
-        if not callable(current_state) or _is_unconfigured_mock_callable(current_state):
+            return reset_to_disconnected
 
+        def _fallback_current_state() -> Callable[[], ConnectionState]:
             def current_state() -> ConnectionState:
                 return lifecycle_service_mod.BLELifecycleService._state_manager_current_state(  # noqa: E501
                     iface
                 )
 
-        transition_to_state = getattr(iface, "_state_manager_transition_to", None)
-        if not callable(transition_to_state) or _is_unconfigured_mock_callable(
-            transition_to_state
-        ):
+            return current_state
 
+        def _fallback_transition_to_state() -> Callable[[ConnectionState], bool]:
             def transition_to_state(state: ConnectionState) -> bool:
                 return lifecycle_service_mod.BLELifecycleService._state_manager_transition_to(  # noqa: E501
                     iface,
                     state,
                 )
 
-        safe_cleanup = getattr(iface, "_error_handler_safe_cleanup", None)
-        if not callable(safe_cleanup) or _is_unconfigured_mock_callable(safe_cleanup):
+            return transition_to_state
 
+        def _fallback_safe_cleanup() -> Callable[[Callable[[], object], str], None]:
             def safe_cleanup(
                 cleanup: Callable[[], object], operation_name: str
             ) -> None:
@@ -224,6 +230,26 @@ class BLELifecycleController:
                     cleanup,
                     operation_name,
                 )
+
+            return safe_cleanup
+
+        is_closing = _resolve_hook("_state_manager_is_closing", _fallback_is_closing)
+        reset_to_disconnected = _resolve_hook(
+            "_state_manager_reset_to_disconnected",
+            _fallback_reset_to_disconnected,
+        )
+        current_state = _resolve_hook(
+            "_state_manager_current_state",
+            _fallback_current_state,
+        )
+        transition_to_state = _resolve_hook(
+            "_state_manager_transition_to",
+            _fallback_transition_to_state,
+        )
+        safe_cleanup = _resolve_hook(
+            "_error_handler_safe_cleanup",
+            _fallback_safe_cleanup,
+        )
 
         self._connection_ownership._discard_invalidated_connected_client(
             client,
@@ -240,7 +266,9 @@ class BLELifecycleController:
 
     def _uses_compat_connection_status_overrides(self) -> bool:
         """Return whether lifecycle service status helpers were monkeypatched."""
-        from meshtastic.interfaces.ble import lifecycle_service as lifecycle_service_mod
+        from meshtastic.interfaces.ble import (
+            lifecycle_service as lifecycle_service_mod,  # pylint: disable=import-outside-toplevel
+        )
 
         service_get_status = (
             lifecycle_service_mod.BLELifecycleService._get_connected_client_status
@@ -277,7 +305,7 @@ class BLELifecycleController:
         """Finalize gate ownership after successful connect."""
         if self._uses_compat_connection_status_overrides():
             from meshtastic.interfaces.ble import (
-                lifecycle_service as lifecycle_service_mod,
+                lifecycle_service as lifecycle_service_mod,  # pylint: disable=import-outside-toplevel
             )
 
             lifecycle_service_mod.BLELifecycleService._finalize_connection_gates(
@@ -297,7 +325,7 @@ class BLELifecycleController:
         """Return whether the bound interface still owns the provided client."""
         if self._uses_compat_connection_status_overrides():
             from meshtastic.interfaces.ble import (
-                lifecycle_service as lifecycle_service_mod,
+                lifecycle_service as lifecycle_service_mod,  # pylint: disable=import-outside-toplevel
             )
 
             return lifecycle_service_mod.BLELifecycleService._is_owned_connected_client(

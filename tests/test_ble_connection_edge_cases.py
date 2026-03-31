@@ -32,6 +32,19 @@ from meshtastic.interfaces.ble.reconnection import ReconnectWorker
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 
 
+@pytest.fixture(autouse=True)
+def _refresh_connection_symbols() -> None:
+    """Refresh connection symbols to avoid stale class identity after reload tests."""
+    connection_module = importlib.import_module("meshtastic.interfaces.ble.connection")
+
+    globals()["ClientManager"] = connection_module.ClientManager
+    globals()["ConnectionOrchestrator"] = connection_module.ConnectionOrchestrator
+    globals()["ConnectionValidator"] = connection_module.ConnectionValidator
+    globals()[
+        "_is_device_not_found_error"
+    ] = connection_module._is_device_not_found_error
+
+
 class MockBLEError(Exception):
     """Mock BLE error for connection validator tests."""
 
@@ -326,10 +339,19 @@ def test_connection_orchestrator_get_connect_timeout_sanitizes_invalid_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Config-derived timeouts should fall back to safe finite positive values."""
+    connection_module = importlib.import_module("meshtastic.interfaces.ble.connection")
+    fallback_timeout = float(connection_module._CONNECT_TIMEOUT_FALLBACK_SECONDS)
+
     monkeypatch.setattr(BLEConfig, "CONNECTION_TIMEOUT", float("nan"))
     monkeypatch.setattr(BLEConfig, "DIRECT_CONNECT_TIMEOUT_SECONDS", -1.0)
-    assert ConnectionOrchestrator._get_connect_timeout(pair_on_connect=True) == 10.0
-    assert ConnectionOrchestrator._get_connect_timeout(pair_on_connect=False) == 10.0
+    assert (
+        ConnectionOrchestrator._get_connect_timeout(pair_on_connect=True)
+        == fallback_timeout
+    )
+    assert (
+        ConnectionOrchestrator._get_connect_timeout(pair_on_connect=False)
+        == fallback_timeout
+    )
 
     monkeypatch.setattr(BLEConfig, "CONNECTION_TIMEOUT", 30.0)
     monkeypatch.setattr(BLEConfig, "DIRECT_CONNECT_TIMEOUT_SECONDS", 0.0)

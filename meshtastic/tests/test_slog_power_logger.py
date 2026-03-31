@@ -10,22 +10,23 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
-import pyarrow as pa
 import pytest
 
-import meshtastic.slog as slog_package
+pa = pytest.importorskip("pyarrow")
+
+import meshtastic.slog as slog_package  # noqa: E402  # pylint: disable=wrong-import-position
+from meshtastic.slog.slog import (  # noqa: E402  # pylint: disable=wrong-import-position
+    POWER_LOG_SCHEMA_METADATA,
+    LogDef,
+    LogSet,
+    PowerLogger,
+    StructuredLogger,
+    root_dir,
+    rootDir,
+)
 
 try:
     from meshtastic.slog import slog as slog_module
-    from meshtastic.slog.slog import (
-        POWER_LOG_SCHEMA_METADATA,
-        LogDef,
-        LogSet,
-        PowerLogger,
-        StructuredLogger,
-        root_dir,
-        rootDir,
-    )
 except ImportError:
     pytest.skip("Can't import meshtastic.slog", allow_module_level=True)
 

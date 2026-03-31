@@ -1,6 +1,8 @@
-.PHONY: all clean test ci ci-strict ci-base lint docs cov open-coverage virt virt-meshtasticd virt-smokevirt-meshtasticd virt-multinode-meshtasticd smoke1 smoke1-destructive slow install examples protobufs protobufs-update FORCE
+.PHONY: all clean test ci ci-strict ci-base lint lint-tests docs cov open-coverage virt virt-meshtasticd virt-smokevirt-meshtasticd virt-multinode-meshtasticd smoke1 smoke1-destructive slow install examples protobufs protobufs-update api-baseline api-baseline-master FORCE
 
 POETRY_RUN := poetry run
+API_BASELINE_FILE := meshtastic/tests/api_baselines/api_baseline.json
+API_BASELINE_REF ?= origin/master
 
 all: test
 
@@ -14,14 +16,23 @@ test:
 
 # run baseline CI checks locally
 # Runs the first CI stages in order:
-# pytest (with coverage) -> pylint
+# pytest (with coverage) -> pylint -> ruff (tests)
 ci-base:
 	$(POETRY_RUN) pytest --cov=meshtastic --cov-report=xml
 	$(MAKE) lint
+	$(MAKE) lint-tests
 
 ci:
 	$(MAKE) ci-base
 	$(POETRY_RUN) mypy meshtastic/
+
+# generate API baseline from current working tree
+api-baseline:
+	$(POETRY_RUN) python bin/extract_api_surface.py meshtastic > $(API_BASELINE_FILE)
+
+# generate API baseline from origin/master source snapshot
+api-baseline-master:
+	./bin/generate_master_api_baseline.sh "$(API_BASELINE_REF)"
 
 # run CI checks with strict mypy (for maintainers)
 ci-strict:
@@ -65,6 +76,10 @@ docs:
 # lint the codebase (same command as CI)
 lint:
 	PYLINTHOME=$${TMPDIR:-/tmp}/pylint-cache $(POETRY_RUN) pylint meshtastic examples/ --ignore-patterns ".*_pb2\\.pyi?$$"
+
+# lint tests with ruff (same command as CI)
+lint-tests:
+	ruff check meshtastic/tests
 
 # show the slowest unit tests
 slow:

@@ -4746,7 +4746,10 @@ def test_main_ota_update_succeeds_and_prints_completion(
         or call_args.kwargs.get("dest") == MAIN_LOCAL_ADDR
         for call_args in get_node.call_args_list
     )
-    node.startOTA.assert_called_once()
+    node.startOTA.assert_called_once_with(
+        mode=main_module.admin_pb2.OTAMode.OTA_WIFI,
+        ota_file_hash=ota.hash_bytes.return_value,
+    )
     assert sleep_mock.call_args_list == [call(main_module.OTA_REBOOT_WAIT_SECONDS)]
 
 
@@ -4832,7 +4835,10 @@ def test_main_ota_update_allows_explicit_local_dest(
     out, err = capsys.readouterr()
     assert "OTA update completed successfully!" in out
     assert err == ""
-    local_node.startOTA.assert_called_once()
+    local_node.startOTA.assert_called_once_with(
+        mode=main_module.admin_pb2.OTAMode.OTA_WIFI,
+        ota_file_hash=ota.hash_bytes.return_value,
+    )
     other_node.startOTA.assert_not_called()
     ota.update.assert_called_once()
     assert any(
@@ -4861,6 +4867,34 @@ def test_create_power_meter_requires_initialized_args(
 
 
 @pytest.mark.unit
+def test_create_power_meter_exits_when_powermon_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """_create_power_meter should exit with a clear error when powermon is unavailable."""
+    args = SimpleNamespace(
+        power_voltage=None,
+        power_riden=None,
+        power_ppk2_supply=False,
+        power_ppk2_meter=False,
+        power_sim=True,
+        power_wait=False,
+    )
+
+    monkeypatch.setattr(main_module, "meter", None)
+    monkeypatch.setattr(main_module, "have_powermon", False)
+    monkeypatch.setattr(main_module, "powermon_exception", ImportError("boom"))
+    monkeypatch.setattr(mt_config, "args", args)
+
+    with pytest.raises(SystemExit) as excinfo:
+        _create_power_meter()
+
+    _out, err = capsys.readouterr()
+    assert excinfo.value.code == 1
+    assert "The powermon module could not be loaded." in err
+
+
+@pytest.mark.unit
 def test_create_power_meter_sleeps_after_power_on_when_not_waiting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -4886,6 +4920,25 @@ def test_create_power_meter_sleeps_after_power_on_when_not_waiting(
     fake_meter.setVoltage.assert_called_once_with(3.3)
     fake_meter.powerOn.assert_called_once_with()
     sleep_mock.assert_called_once_with(main_module.POWER_ON_BOOT_DELAY_SECONDS)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_exits_when_power_flag_requested_without_powermon(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Main should fail fast when a power meter flag is used without powermon."""
+    monkeypatch.setattr(main_module, "have_powermon", False)
+    monkeypatch.setattr(main_module, "powermon_exception", ImportError("boom"))
+    monkeypatch.setattr(sys, "argv", ["", "--power-sim"])
+
+    with pytest.raises(SystemExit) as excinfo:
+        main()
+
+    _out, err = capsys.readouterr()
+    assert excinfo.value.code == 1
+    assert "The powermon module could not be loaded." in err
 
 
 @pytest.mark.unit

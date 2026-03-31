@@ -73,7 +73,7 @@ Use this pinned baseline for BLE compatibility decisions:
 Historical required BLE wrappers and warning policy are tracked in
 `COMPATIBILITY.md` under **BLE Historical Baseline (2.7.7)**.
 
-## How to check your code (pytest/pylint/mypy) before a PR
+## How to check your code (pytest/pylint/ruff/mypy) before a PR
 
 - [Pre-requisites](https://meshtastic.org/docs/development/python/building/#pre-requisites)
 - also execute `poetry install --all-extras --with dev,powermon` for all optional dependencies
@@ -86,7 +86,7 @@ Run all CI checks locally with a single command:
 make ci
 ```
 
-This runs the same checks as CI (pylint, mypy, pytest with coverage).
+This runs the same checks as CI (pylint for library code, ruff for tests, mypy, pytest with coverage).
 
 ### Unified lint/type check via Trunk
 
@@ -105,6 +105,7 @@ Alternatively, run each check individually:
 ```bash
 poetry run pytest --cov=meshtastic --cov-report=xml
 poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2\.pyi?$"
+ruff check meshtastic/tests
 poetry run mypy meshtastic/
 ```
 

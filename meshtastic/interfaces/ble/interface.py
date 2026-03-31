@@ -90,6 +90,7 @@ from meshtastic.interfaces.ble.gating import (
     _addr_key,
     _addr_lock_context,
     _clear_connecting,
+    _clear_connecting_for_owner,
     _is_currently_connected_elsewhere,
     _mark_connected,
     _mark_connecting,
@@ -951,8 +952,8 @@ class BLEInterface(MeshInterface):
                 logger.warning("Device scan failed: %s", e, exc_info=True)
                 return []
             except (
-                Exception  # noqa: BLE001
-            ) as e:  # pragma: no cover - defensive last resort
+                Exception
+            ) as e:  # noqa: BLE001 # pragma: no cover - defensive last resort
                 logger.warning(
                     "Unexpected error during device scan: %s", e, exc_info=True
                 )
@@ -2268,17 +2269,14 @@ class BLEInterface(MeshInterface):
             except Exception:  # noqa: BLE001 - rollback snapshot is best effort
                 raw_current_legacy_log_handler = None
             if callable(raw_current_legacy_log_handler):
-                current_legacy_log_handler = cast(
-                    _NotificationCallback,
-                    raw_current_legacy_log_handler,
-                )
+                current_legacy_log_handler = raw_current_legacy_log_handler
             current_log_handler: _NotificationCallback | None = None
             try:
                 raw_current_log_handler = resolved_dispatcher._current_log_handler
             except Exception:  # noqa: BLE001 - rollback snapshot is best effort
                 raw_current_log_handler = None
             if callable(raw_current_log_handler):
-                current_log_handler = cast(_NotificationCallback, raw_current_log_handler)
+                current_log_handler = raw_current_log_handler
             current_from_num_handler: _NotificationCallback | None = None
             try:
                 raw_current_from_num_handler = (
@@ -2287,10 +2285,7 @@ class BLEInterface(MeshInterface):
             except Exception:  # noqa: BLE001 - rollback snapshot is best effort
                 raw_current_from_num_handler = None
             if callable(raw_current_from_num_handler):
-                current_from_num_handler = cast(
-                    _NotificationCallback,
-                    raw_current_from_num_handler,
-                )
+                current_from_num_handler = raw_current_from_num_handler
             notification_manager_active_subscriptions: (
                 dict[int, tuple[str, _NotificationCallback]] | None
             ) = None
@@ -2334,9 +2329,10 @@ class BLEInterface(MeshInterface):
                         characteristic_to_callback_snapshot: dict[
                             str, _NotificationCallback
                         ] = {}
-                        for characteristic, callback in (
-                            characteristic_to_callback.items()
-                        ):
+                        for (
+                            characteristic,
+                            callback,
+                        ) in characteristic_to_callback.items():
                             if isinstance(characteristic, str) and callable(callback):
                                 characteristic_to_callback_snapshot[characteristic] = (
                                     cast(_NotificationCallback, callback)
@@ -2379,10 +2375,13 @@ class BLEInterface(MeshInterface):
                             characteristic_to_callback_snapshot_locked: dict[
                                 str, _NotificationCallback
                             ] = {}
-                            for characteristic, callback in (
-                                characteristic_to_callback.items()
-                            ):
-                                if isinstance(characteristic, str) and callable(callback):
+                            for (
+                                characteristic,
+                                callback,
+                            ) in characteristic_to_callback.items():
+                                if isinstance(characteristic, str) and callable(
+                                    callback
+                                ):
                                     characteristic_to_callback_snapshot_locked[
                                         characteristic
                                     ] = cast(_NotificationCallback, callback)
@@ -3183,6 +3182,25 @@ class BLEInterface(MeshInterface):
 
     def close(self) -> None:
         """Shut down the BLE interface and release associated resources."""
+        # Clear any provisional connecting state before shutdown to prevent
+        # orphaned gate claims when connection threads are forcibly terminated.
+        # This clears all provisional keys owned by this interface, not just
+        # the current self.address value.
+        try:
+            _clear_connecting_for_owner(self)
+        except Exception:  # noqa: BLE001
+            # Best-effort cleanup; don't let gate cleanup errors prevent shutdown
+            logger.debug(
+                "Failed to clear connecting gates for owner during shutdown",
+                exc_info=True,
+            )
+            try:
+                self._clear_address_keys_connecting(self.address)
+            except Exception:  # noqa: BLE001
+                logger.debug(
+                    "Failed to clear address connecting keys during shutdown",
+                    exc_info=True,
+                )
         lifecycle_controller = self._get_lifecycle_controller()
         close = getattr(
             lifecycle_controller, "_close", getattr(lifecycle_controller, "close", None)

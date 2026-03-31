@@ -4,17 +4,25 @@ import logging
 import os
 import threading
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
-import pyarrow as pa
 import pytest
-from pyarrow import feather
 
-import meshtastic.slog.arrow as arrow_module
-from meshtastic.slog.arrow import FeatherWriter
+if TYPE_CHECKING:
+    import pyarrow as pa
+    from pyarrow import feather
+else:
+    pa = pytest.importorskip("pyarrow")
+    feather = pytest.importorskip("pyarrow.feather")
+
+import meshtastic.slog.arrow as arrow_module  # noqa: E402  # pylint: disable=wrong-import-position
+from meshtastic.slog.arrow import (  # noqa: E402  # pylint: disable=wrong-import-position
+    FeatherWriter,
+)
 
 
-def _test_schema() -> pa.Schema:
+def _test_schema() -> "pa.Schema":
     """Return a compact deterministic schema for FeatherWriter tests."""
     return pa.schema([pa.field("value", pa.int64())])
 

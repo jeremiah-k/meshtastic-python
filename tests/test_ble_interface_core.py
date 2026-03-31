@@ -1,5 +1,7 @@
 """Tests for the BLE interface module - Core functionality."""
 
+# pylint: disable=redefined-outer-name
+
 import asyncio
 import contextlib
 import logging
@@ -132,6 +134,7 @@ def _clear_management_handler(iface: BLEInterface) -> None:
 
 
 if TYPE_CHECKING:
+    # pylint: disable=unnecessary-ellipsis
 
     class _PubProtocol(Protocol):
         """Protocol for pubsub test doubles.
@@ -5627,7 +5630,9 @@ def test_report_notification_handler_error_covers_hook_and_fallback_paths(
     assert "hook-error" in debug_calls
 
 
-def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure() -> None:
+def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure() -> (
+    None
+):
     """Positional safe_execute failures should not trigger a second handler invocation."""
 
     calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
@@ -5661,7 +5666,9 @@ def test_invoke_safe_execute_compat_skips_callable_only_after_positional_failure
     assert len(calls) == 2
 
 
-def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signature_error() -> None:
+def test_invoke_safe_execute_compat_tries_callable_only_after_positional_signature_error() -> (
+    None
+):
     """Positional signature mismatch should continue to callable-only compatibility probe."""
 
     calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
@@ -5734,7 +5741,9 @@ def test_invoke_safe_execute_compat_reports_handler_failure_after_execution() ->
     assert isinstance(reported_errors[0], RuntimeError)
 
 
-def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_paths() -> None:
+def test_invoke_safe_execute_compat_covers_keyword_positional_and_callable_only_paths() -> (
+    None
+):
     """safe_execute compatibility helper should cover success/fallback branches."""
 
     def _run_scenario(
@@ -6274,7 +6283,9 @@ def test_discovery_manager_accepts_discover_underscore_only_factory() -> None:
     assert devices == [filtered_device]
 
 
-def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> None:
+def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> (
+    None
+):
     """Verify discovery prefers configured ``_discover`` over unconfigured ``discover``.
 
     Returns
@@ -6896,6 +6907,30 @@ def test_close_handles_errors(
 
     assert client.disconnect_calls == 1
     assert client.close_calls == 1
+
+
+@pytest.mark.usefixtures("clear_registry")
+def test_close_clears_connecting_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """close() should clear provisional connecting state to prevent orphaned gate claims."""
+    from meshtastic.interfaces.ble.gating import (
+        _CONNECTING_ADDRS,
+        _addr_key,
+    )
+
+    client = DummyClient()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+
+    key = _addr_key(iface.address)
+    assert key is not None
+
+    iface._mark_address_keys_connecting(iface.address)
+    assert key in _CONNECTING_ADDRS, "Connecting claim should be registered"
+
+    iface.close()
+
+    assert key not in _CONNECTING_ADDRS, "close() should clear connecting claim"
 
 
 def test_close_skips_disconnect_when_interpreter_finalizing(

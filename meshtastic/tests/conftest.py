@@ -1,5 +1,8 @@
 """Common pytest code (place for fixtures)."""
 
+# pylint: disable=redefined-outer-name
+# Pytest fixtures use parameter injection which pylint sees as redefinition.
+
 import argparse
 import copy
 import importlib
@@ -7,14 +10,15 @@ import math
 import shutil
 import threading
 import time
-from collections.abc import Generator
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, NoReturn, cast
+from collections.abc import Callable, Generator
+from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, cast
 from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
 
-from meshtastic import mt_config
+from meshtastic import mt_config, publishingThread
 from meshtastic.powermon import power_supply as power_supply_module
+from meshtastic.util import DeferredExecution
 
 from ..mesh_interface import MeshInterface
 from ..serial_interface import SerialInterface
@@ -24,6 +28,27 @@ if TYPE_CHECKING:
     from meshtastic.powermon.ppk2 import PPK2PowerSupply
     from meshtastic.powermon.riden import RidenPowerSupply
     from meshtastic.powermon.stress import PowerStressClient
+
+
+def pytest_addoption(  # pylint: disable=unused-argument
+    parser: pytest.Parser, pluginmanager: pytest.PytestPluginManager
+) -> None:
+    """Add custom command line options for baseline tests.
+
+    Parameters
+    ----------
+    parser : pytest.Parser
+        The pytest argument parser to add options to.
+    pluginmanager : pytest.PytestPluginManager
+        The pytest plugin manager (unused but required by hook signature).
+    """
+    parser.addoption(
+        "--update-baselines",
+        action="store_true",
+        default=False,
+        help="Update stored API baselines to match current code",
+    )
+
 
 _MT_CONFIG_SENTINEL = object()
 _OPTIONAL_ANALYSIS_DEPS = {
@@ -495,3 +520,90 @@ def _platform_socket_mocks() -> Generator[tuple[MagicMock, MagicMock], None, Non
         patch("socket.socket") as socket_mock,
     ):
         yield platform_mock, socket_mock
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _shutdown_publishing_thread() -> Generator[None, None, None]:
+    """Ensure the global publishing thread is shut down after all tests complete.
+
+    The publishingThread is a global DeferredExecution instance that creates a
+    daemon worker thread. While daemon threads should exit when the main thread
+    exits, pytest can hang waiting for them. This fixture ensures clean shutdown.
+    """
+    yield
+    # After all tests complete, shut down the publishing thread
+
+    if publishingThread is not None:
+        if isinstance(publishingThread, DeferredExecution):
+            publishingThread.stop()
+            publishingThread.join(timeout=5.0)
+
+
+@pytest.fixture
+def mock_interface() -> Generator[MeshInterface, None, None]:
+    """Provide a MeshInterface with mocked internals for behavioral testing.
+
+    Yields
+    ------
+    MeshInterface
+        Interface instance with mocked `_send_to_radio_impl`, populated nodes,
+        and a mocked `myInfo`.
+    """
+    iface = MeshInterface(noProto=True)
+    try:
+        # Mock critical methods to avoid hardware dependency
+        iface._send_to_radio_impl = MagicMock()  # type: ignore[method-assign]
+        iface.myInfo = MagicMock()
+        iface.myInfo.my_node_num = 2475227164
+
+        # Set up sample nodes - use non-hex IDs to ensure DB lookup path
+        iface.nodes = {
+            "!9388f81c": {
+                "num": 2475227164,
+                "user": {
+                    "id": "!9388f81c",
+                    "longName": "Test Node",
+                    "shortName": "TN",
+                    "macaddr": "RBeTiPgc",
+                    "hwModel": "TBEAM",
+                },
+                "position": {"time": 1640206266},
+                "lastHeard": 1640204888,
+            },
+            "!testnode1": {
+                "num": 11259375,
+                "user": {
+                    "id": "!testnode1",
+                    "longName": "Remote Node",
+                    "shortName": "RN",
+                    "macaddr": "Test1234",
+                    "hwModel": "RAK4631",
+                },
+                "position": {},
+                "lastHeard": 1640205000,
+            },
+        }
+        iface.nodesByNum = {
+            2475227164: iface.nodes["!9388f81c"],
+            11259375: iface.nodes["!testnode1"],
+        }
+
+        yield iface
+    finally:
+        iface.close()
+
+
+@pytest.fixture
+def mock_interface_with_nodes(mock_interface: MeshInterface) -> MeshInterface:
+    """Provide a mock interface pre-configured with nodes.
+
+    This is a semantic alias for ``mock_interface`` for tests that explicitly
+    require a node database to be populated.
+
+    Returns
+    -------
+    MeshInterface
+        The same instance as ``mock_interface``, already configured with sample nodes.
+    """
+    # Already configured in mock_interface
+    return mock_interface

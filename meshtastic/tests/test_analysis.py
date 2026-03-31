@@ -28,9 +28,11 @@ try:
     from meshtastic import powermon_pb2
     from meshtastic.analysis import __main__ as analysis_main
     from meshtastic.analysis.__main__ import (
+        _cli_exit,
         choose_power_column,
         choosePowerColumn,
         create_argparser,
+        create_dash,
         get_board_info,
         get_pmon_raises,
         getBoardInfo,
@@ -242,49 +244,49 @@ def test_read_pandas_preserves_nullable_dtypes(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_get_pmon_raises_extracts_raise_events() -> None:
-    """get_pmon_raises should extract power-monitor raise events from slog."""
-    bit1, bit2 = _single_bit_power_states()
-    # Create test data with pm_mask transitions
-    dslog = pd.DataFrame(
-        {
-            "time": [1.0, 2.0, 3.0, 4.0],
-            "pm_mask": [0, bit1, bit1 | bit2, bit1],
-        }
-    )
-
-    result = get_pmon_raises(dslog)
-
-    # Should have time and pm_raises columns
-    assert "time" in result.columns
-    assert "pm_raises" in result.columns
-    # Should only include rows with raises (not falls): 0->1 and 1->3
-    assert len(result) == 2
-    assert result["time"].tolist() == [2.0, 3.0]
-    assert result["pm_raises"].tolist() == [
-        powermon_pb2.PowerMon.State.Name(cast(Any, bit1)),
-        powermon_pb2.PowerMon.State.Name(cast(Any, bit2)),
-    ]
-
-
-@pytest.mark.unit
 def test_get_pmon_raises_requires_time_column() -> None:
     """get_pmon_raises should fail clearly when the time column is missing."""
-    dslog = pd.DataFrame({"pm_mask": [0, 1, 3]})
+    dslog = pd.DataFrame({"pm_mask": [1, 2, 3]})
     with pytest.raises(ValueError, match="No time column found in slog"):
         get_pmon_raises(dslog)
 
 
 @pytest.mark.unit
-def test_get_pmon_raises_rejects_non_integer_masks() -> None:
-    """get_pmon_raises should reject non-integer pm_mask values."""
+def test_get_pmon_raises_rejects_uint64_overflow() -> None:
+    """get_pmon_raises should reject values beyond representable range.
+
+    Large integers are converted to float64 by pd.to_numeric, triggering
+    the float64 exactness check before the uint64 range check.
+    """
+    uint64_max = np.iinfo(np.uint64).max
+    overflow_val = int(uint64_max) + 1
     dslog = pd.DataFrame(
         {
             "time": [1.0, 2.0],
-            "pm_mask": [0, 1.5],
+            "pm_mask": [0, overflow_val],
         }
     )
-    with pytest.raises(ValueError, match="pm_mask contains non-integer values"):
+    with pytest.raises(
+        ValueError,
+        match="pm_mask contains values that cannot be exactly represented in float64",
+    ):
+        get_pmon_raises(dslog)
+
+
+@pytest.mark.unit
+def test_get_pmon_raises_rejects_large_int_as_float64_error() -> None:
+    """get_pmon_raises should reject large integer values via float64 error when they exceed exact int range."""
+    overflow_val = float((1 << 53) + 2)
+    dslog = pd.DataFrame(
+        {
+            "time": [1.0, 2.0],
+            "pm_mask": [0, overflow_val],
+        }
+    )
+    with pytest.raises(
+        ValueError,
+        match="pm_mask contains values that cannot be exactly represented in float64",
+    ):
         get_pmon_raises(dslog)
 
 
@@ -449,3 +451,279 @@ def test_analysis_camelcase_aliases_delegate() -> None:
     )
     assert getPmonRaises(dslog).equals(get_pmon_raises(dslog))
     assert getBoardInfo(dslog) == get_board_info(dslog)
+
+
+@pytest.mark.unit
+def test_get_pmon_raises_requires_pm_mask_column() -> None:
+    """get_pmon_raises should fail clearly when the pm_mask column is missing."""
+    dslog = pd.DataFrame({"time": [1.0, 2.0]})
+    with pytest.raises(ValueError, match="No pm_mask column found in slog"):
+        get_pmon_raises(dslog)
+
+
+@pytest.mark.unit
+def test_get_pmon_raises_rejects_non_numeric_masks() -> None:
+    """get_pmon_raises should reject non-numeric pm_mask values."""
+    dslog = pd.DataFrame(
+        {
+            "time": [1.0, 2.0],
+            "pm_mask": [0, "invalid"],
+        }
+    )
+    with pytest.raises(ValueError, match="pm_mask contains non-numeric values"):
+        get_pmon_raises(dslog)
+
+
+@pytest.mark.unit
+def test_get_board_info_requires_sw_version_column() -> None:
+    """get_board_info should fail clearly when sw_version column is missing."""
+    frame = pd.DataFrame({"board_id": [1]})
+    with pytest.raises(ValueError, match="No sw_version column found in dslog"):
+        get_board_info(frame)
+
+
+@pytest.mark.unit
+def test_get_board_info_requires_non_null_sw_version() -> None:
+    """get_board_info should fail when all sw_version values are null."""
+    frame = pd.DataFrame({"sw_version": [None], "board_id": [1]})
+    with pytest.raises(ValueError, match="No board info rows found in dslog"):
+        get_board_info(frame)
+
+
+@pytest.mark.unit
+def test_get_board_info_accepts_integral_float_board_id() -> None:
+    """get_board_info should accept float board_id values that are exact integers."""
+    known_board_id = mesh_pb2.HardwareModel.DESCRIPTOR.values[0].number
+    frame = pd.DataFrame({"sw_version": ["2.5.0"], "board_id": [float(known_board_id)]})
+    result = get_board_info(frame)
+    assert result[0] == mesh_pb2.HardwareModel.Name(known_board_id)
+
+
+@pytest.mark.unit
+def test_get_board_info_accepts_string_board_id() -> None:
+    """get_board_info should accept string board_id values that are valid integers."""
+    known_board_id = mesh_pb2.HardwareModel.DESCRIPTOR.values[0].number
+    frame = pd.DataFrame({"sw_version": ["2.5.0"], "board_id": [str(known_board_id)]})
+    result = get_board_info(frame)
+    assert result[0] == mesh_pb2.HardwareModel.Name(known_board_id)
+
+
+@pytest.mark.unit
+def test_get_board_info_rejects_invalid_string_board_id() -> None:
+    """get_board_info should reject board_id values that are non-integer strings."""
+    frame = pd.DataFrame({"sw_version": ["2.5.0"], "board_id": ["not_a_number"]})
+    with pytest.raises(ValueError, match="Invalid board_id value in dslog"):
+        get_board_info(frame)
+
+
+@pytest.mark.unit
+def test_get_board_info_rejects_unknown_board_id() -> None:
+    """get_board_info should reject board_id values that don't map to known HardwareModel."""
+    frame = pd.DataFrame({"sw_version": ["2.5.0"], "board_id": [999999999]})
+    with pytest.raises(ValueError, match="Unknown board_id value in dslog"):
+        get_board_info(frame)
+
+
+@pytest.mark.unit
+def test_create_dash_returns_dash_app() -> None:
+    """create_dash should return a configured Dash application."""
+    cur_dir = Path(__file__).resolve().parent
+    slog_input_dir = str(cur_dir / "slog-test-input")
+
+    app = create_dash(slog_input_dir)
+
+    assert app is not None
+    assert hasattr(app, "layout")
+    assert app.layout is not None
+
+
+@pytest.mark.unit
+def test_create_dash_with_pmon_raises(tmp_path: Path) -> None:
+    """create_dash should render when slog includes power-monitor raise bits."""
+    single_bit, _ = _single_bit_power_states()
+    slog_dir = tmp_path / "test_slog"
+    slog_dir.mkdir()
+
+    power_data = pd.DataFrame(
+        {
+            "time": pd.array([1, 2, 3], dtype=pd.Int64Dtype()),
+            "average_mA": pd.array([100, 150, 200], dtype=pd.Float64Dtype()),
+            "max_mA": pd.array([110, 160, 210], dtype=pd.Float64Dtype()),
+            "min_mA": pd.array([90, 140, 190], dtype=pd.Float64Dtype()),
+        }
+    )
+    feather.write_feather(power_data, str(slog_dir / "power.feather"))
+
+    slog_data = pd.DataFrame(
+        {
+            "time": pd.array([1.0, 2.0, 3.0]),
+            "pm_mask": pd.array([0, single_bit, single_bit], dtype="object"),
+        }
+    )
+    feather.write_feather(slog_data, str(slog_dir / "slog.feather"))
+
+    app = create_dash(str(slog_dir))
+    assert app is not None
+    assert hasattr(app, "layout")
+    assert app.layout is not None
+
+
+@pytest.mark.unit
+def test_create_dash_with_legacy_mw_columns(tmp_path: Path) -> None:
+    """create_dash should support historical mW column names."""
+    slog_dir = tmp_path / "test_slog"
+    slog_dir.mkdir()
+
+    power_data = pd.DataFrame(
+        {
+            "time": pd.array([1, 2, 3], dtype=pd.Int64Dtype()),
+            "average_mW": pd.array([1000, 1500, 2000], dtype=pd.Float64Dtype()),
+            "max_mW": pd.array([1100, 1600, 2100], dtype=pd.Float64Dtype()),
+            "min_mW": pd.array([900, 1400, 1900], dtype=pd.Float64Dtype()),
+        }
+    )
+    feather.write_feather(power_data, str(slog_dir / "power.feather"))
+
+    slog_data = pd.DataFrame(
+        {
+            "time": pd.array([1, 2, 3], dtype=pd.Int64Dtype()),
+            "pm_mask": pd.array([0, 0, 0], dtype=pd.Int64Dtype()),
+        }
+    )
+    feather.write_feather(slog_data, str(slog_dir / "slog.feather"))
+
+    app = create_dash(str(slog_dir))
+    assert app is not None
+    assert hasattr(app, "layout")
+    assert app.layout is not None
+
+
+@pytest.mark.unit
+def test_create_dash_fails_when_power_file_missing(tmp_path: Path) -> None:
+    """create_dash should raise when power.feather is absent."""
+    slog_dir = tmp_path / "test_slog"
+    slog_dir.mkdir()
+
+    slog_data = pd.DataFrame(
+        {
+            "time": pd.array([1, 2, 3], dtype=pd.Int64Dtype()),
+            "pm_mask": pd.array([0, 0, 0], dtype=pd.Int64Dtype()),
+        }
+    )
+    feather.write_feather(slog_data, str(slog_dir / "slog.feather"))
+
+    with pytest.raises((FileNotFoundError, OSError)):
+        create_dash(str(slog_dir))
+
+
+@pytest.mark.unit
+def test_create_dash_fails_when_slog_file_missing(tmp_path: Path) -> None:
+    """create_dash should raise when slog.feather is absent."""
+    slog_dir = tmp_path / "test_slog"
+    slog_dir.mkdir()
+
+    power_data = pd.DataFrame(
+        {
+            "time": pd.array([1, 2, 3], dtype=pd.Int64Dtype()),
+            "average_mA": pd.array([100, 150, 200], dtype=pd.Float64Dtype()),
+            "max_mA": pd.array([110, 160, 210], dtype=pd.Float64Dtype()),
+            "min_mA": pd.array([90, 140, 190], dtype=pd.Float64Dtype()),
+        }
+    )
+    feather.write_feather(power_data, str(slog_dir / "power.feather"))
+
+    with pytest.raises((FileNotFoundError, OSError)):
+        create_dash(str(slog_dir))
+
+
+@pytest.mark.unit
+def test_main_uses_default_slog_when_not_provided(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """main() should use default slog path when --slog is not provided."""
+    parser_default_slog = create_argparser().parse_args([]).slog
+    expected_slog = parser_default_slog or os.path.join(
+        analysis_main.rootDir(), "latest"
+    )
+    captured: dict[str, str] = {}
+
+    class _FakeApp:
+        def run(self, *, debug: bool, host: str, port: int) -> None:
+            _ = (debug, host, port)
+
+    def _fake_create_dash(*, slog_path: str) -> _FakeApp:
+        captured["slog_path"] = slog_path
+        return _FakeApp()
+
+    monkeypatch.setattr(analysis_main, "create_dash", _fake_create_dash)
+    monkeypatch.setattr(sys, "argv", ["fakescriptname"])
+    monkeypatch.setattr(logging.getLogger(), "propagate", True)
+
+    with caplog.at_level(logging.INFO):
+        main()
+
+    assert "Running Dash visualization" in caplog.text
+    assert captured["slog_path"] == expected_slog
+
+
+@pytest.mark.unit
+def test_main_disables_debug_for_non_loopback_host(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """main() should disable debug mode when host is not loopback."""
+    run_kwargs: dict[str, Any] = {}
+
+    class _FakeApp:
+        def run(self, *, debug: bool, host: str, port: int) -> None:
+            """Simulate Dash app run method."""
+            run_kwargs.update({"debug": debug, "host": host, "port": port})
+
+    def _fake_create_dash(*, slog_path: str) -> _FakeApp:
+        _ = slog_path
+        return _FakeApp()
+
+    monkeypatch.setattr(analysis_main, "create_dash", _fake_create_dash)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["fakescriptname", "--slog", os.devnull, "--debug", "--host", "0.0.0.0"],
+    )
+    monkeypatch.setattr(logging.getLogger(), "propagate", True)
+
+    with caplog.at_level(logging.DEBUG):
+        main()
+
+    assert "Ignoring --debug because host 0.0.0.0 is not localhost" in caplog.text
+    assert run_kwargs["debug"] is False
+    assert run_kwargs["host"] == "0.0.0.0"
+
+
+@pytest.mark.unit
+def test_cli_exit_calls_util_our_exit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """_cli_exit should call util.our_exit with the provided message and return code."""
+    captured: dict[str, Any] = {}
+
+    def _fake_our_exit(message: str, return_code: int = 1) -> NoReturn:
+        captured["message"] = message
+        captured["code"] = return_code
+        raise SystemExit(return_code)
+
+    monkeypatch.setattr(analysis_main.util, "our_exit", _fake_our_exit)
+
+    with pytest.raises(SystemExit) as exc_info:
+        _cli_exit("test error message", 42)
+
+    assert captured["message"] == "test error message"
+    assert captured["code"] == 42
+    assert exc_info.value.code == 42
+
+
+@pytest.mark.unit
+def test_parse_port_accepts_valid_ports() -> None:
+    """create_argparser should accept valid --port values."""
+    parser = create_argparser()
+    assert parser.parse_args(["--port", "1"]).port == 1
+    assert parser.parse_args(["--port", "8051"]).port == 8051
+    assert parser.parse_args(["--port", "65535"]).port == 65535

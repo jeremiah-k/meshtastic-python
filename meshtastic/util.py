@@ -12,7 +12,7 @@ import threading
 import time
 import warnings
 from collections.abc import Iterable
-from queue import Queue
+from queue import Empty, Queue
 from typing import (
     Any,
     Callable,
@@ -47,6 +47,9 @@ WHITELIST_VIDS: set[int] = {0x239A, 0x303A}
 # constants; blacklistVids/whitelistVids are legacy compatibility aliases.
 blacklistVids: set[int] = BLACKLIST_VIDS
 whitelistVids: set[int] = WHITELIST_VIDS
+
+# Interval for polling the deferred execution queue in seconds
+_DEFERRED_QUEUE_POLL_TIMEOUT_SECONDS = 0.1
 
 logger = logging.getLogger(__name__)
 
@@ -628,6 +631,10 @@ class Acknowledgment:
 class DeferredExecution:
     """A thread that accepts closures to run, and runs them as they are received."""
 
+    # Sentinel object to signal shutdown of the worker thread
+    _SHUTDOWN = object()
+    _stop_lock: threading.Lock
+
     def __init__(self, name: str) -> None:
         """Create a DeferredExecution instance and start its daemon worker thread.
 
@@ -640,6 +647,8 @@ class DeferredExecution:
             Name assigned to the worker thread.
         """
         self.queue: Queue[Any] = Queue()
+        self._shutdown: bool = False
+        self._stop_lock = threading.Lock()
         # this thread must be marked as daemon, otherwise it will prevent clients from exiting
         self.thread = threading.Thread(
             target=self._run, args=(), name=name, daemon=True
@@ -656,16 +665,54 @@ class DeferredExecution:
         """
         self.queue.put(runnable)
 
+    def stop(self) -> None:
+        """Signal the worker thread to shut down gracefully.
+
+        Enqueues a sentinel value that causes the worker loop to exit. After calling
+        stop(), the worker will finish processing pending items and exits. This method
+        is safe to call multiple times and is a no-op if already stopped.
+        """
+        with self._stop_lock:
+            if not self._shutdown:
+                self._shutdown = True
+                self.queue.put(self._SHUTDOWN)
+
+    def join(self, timeout: float | None = None) -> bool:
+        """Wait for the worker thread to finish.
+
+        Note: Call `stop()` before `join()` to signal the worker to exit;
+        otherwise this method may block indefinitely (or until timeout).
+
+        Parameters
+        ----------
+        timeout : float | None, optional
+            Maximum time to wait in seconds. If None, waits indefinitely.
+
+        Returns
+        -------
+        bool
+            True if the thread finished within the timeout, False otherwise.
+        """
+        if self.thread is not None:
+            self.thread.join(timeout)
+            return not self.thread.is_alive()
+        return True
+
     def _run(self) -> None:
         """Continuously executes callables retrieved from the internal work queue.
 
         Runs an infinite loop that takes callables from self.queue and invokes them; any
-        exception raised by a callable is logged and processing continues.
+        exception raised by a callable is logged and processing continues. The loop exits
+        when the _SHUTDOWN sentinel is received or when stop() is called.
         """
-        while True:
+        while not self._shutdown:
             try:
-                o = self.queue.get()
+                o = self.queue.get(timeout=_DEFERRED_QUEUE_POLL_TIMEOUT_SECONDS)
+                if o is self._SHUTDOWN:
+                    break
                 o()
+            except Empty:
+                continue
             except Exception:
                 logger.exception("Unexpected error in deferred execution")
 

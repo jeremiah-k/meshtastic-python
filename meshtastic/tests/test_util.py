@@ -1349,10 +1349,14 @@ def test_deferred_execution_runs_closure() -> None:
     second = threading.Event()
     de = DeferredExecution(name="test_thread")
 
-    de.queueWork(first.set)
-    de.queueWork(second.set)
-    assert first.wait(timeout=1.0)
-    assert second.wait(timeout=1.0)
+    try:
+        de.queueWork(first.set)
+        de.queueWork(second.set)
+        assert first.wait(timeout=1.0)
+        assert second.wait(timeout=1.0)
+    finally:
+        de.stop()
+        de.join(timeout=1.0)
 
 
 @pytest.mark.unit
@@ -1364,20 +1368,24 @@ def test_deferred_execution_handles_exceptions(
     completion = threading.Event()
     de = DeferredExecution(name="test_exception_thread")
 
-    # Queue work that raises exception
-    def bad_closure() -> None:
-        raise ValueError("Test exception")
+    try:
+        # Queue work that raises exception
+        def bad_closure() -> None:
+            raise ValueError("Test exception")
 
-    def signal_completion() -> None:
-        completion.set()
+        def signal_completion() -> None:
+            completion.set()
 
-    with caplog.at_level(logging.DEBUG):
-        de.queueWork(bad_closure)
-        de.queueWork(signal_completion)
-        assert completion.wait(timeout=1.0)
+        with caplog.at_level(logging.DEBUG):
+            de.queueWork(bad_closure)
+            de.queueWork(signal_completion)
+            assert completion.wait(timeout=1.0)
 
-    # Should have logged the exception
-    assert "Unexpected error in deferred execution" in caplog.text
+        # Should have logged the exception
+        assert "Unexpected error in deferred execution" in caplog.text
+    finally:
+        de.stop()
+        de.join(timeout=1.0)
 
 
 # Tests for Timeout.waitForAckNak
@@ -1556,6 +1564,14 @@ def test_dotdict_missing_attr_returns_none() -> None:
 @pytest.mark.unit
 def test_dotdict_deprecated_warns() -> None:
     """Test dotdict deprecated alias warns once per process."""
+    # Clear warn-once state to ensure we get a warning
+    from meshtastic.util import (  # pylint: disable=import-outside-toplevel
+        _warned_deprecations,
+        _warned_deprecations_lock,
+    )
+
+    with _warned_deprecations_lock:
+        _warned_deprecations.discard("dotdict")
 
     with warnings.catch_warnings(record=True) as captured:
         warnings.simplefilter("always", DeprecationWarning)

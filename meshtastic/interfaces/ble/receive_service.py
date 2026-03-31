@@ -4,6 +4,7 @@ import math
 import threading
 import time
 from collections.abc import Callable
+from functools import wraps
 from typing import TYPE_CHECKING, cast
 
 from bleak.exc import BleakDBusError, BleakError
@@ -594,7 +595,9 @@ class BLEReceiveRecoveryController:
         iface = self._iface
         with iface._state_lock:
             notify_enabled: object = getattr(iface, "_fromnum_notify_enabled", False)
-            is_unconfigured_member = getattr(iface, "_is_unconfigured_mock_member", None)
+            is_unconfigured_member = getattr(
+                iface, "_is_unconfigured_mock_member", None
+            )
             if callable(is_unconfigured_member) and not _is_unconfigured_mock_callable(
                 is_unconfigured_member
             ):
@@ -606,6 +609,63 @@ class BLEReceiveRecoveryController:
             if _is_unconfigured_mock_member(notify_enabled):
                 notify_enabled = False
             return not bool(notify_enabled)
+
+    def _resolve_wait_for_runtime_event(
+        self,
+        wait_for_event: Callable[["ThreadCoordinator", str, float | None], bool] | None,
+    ) -> Callable[["ThreadCoordinator", str, float | None], bool]:
+        """Resolve injected wait function or use coordinator fallback.
+
+        Parameters
+        ----------
+        wait_for_event : Callable[[ThreadCoordinator, str, float | None], bool] | None
+            Optional runtime-injected wait function override.
+
+        Returns
+        -------
+        Callable[[ThreadCoordinator, str, float | None], bool]
+            The injected wait function when provided and configured; otherwise
+            a wrapper that delegates to ``_coordinator_wait_for_event``.
+        """
+        if callable(wait_for_event) and not _is_unconfigured_mock_callable(
+            wait_for_event
+        ):
+            injected_wait_for_event = cast(
+                Callable[["ThreadCoordinator", str, float | None], object],
+                wait_for_event,
+            )
+
+            @wraps(injected_wait_for_event)
+            def _validated_wait_for_runtime_event(
+                target_coordinator: "ThreadCoordinator",
+                event_name: str,
+                timeout: float | None,
+            ) -> bool:
+                try:
+                    result = injected_wait_for_event(
+                        target_coordinator,
+                        event_name,
+                        timeout,
+                    )
+                except Exception:  # noqa: BLE001 - wait probe remains best effort
+                    return False
+                return result if isinstance(result, bool) else False
+
+            return _validated_wait_for_runtime_event
+
+        def _wait_for_runtime_event(
+            target_coordinator: "ThreadCoordinator",
+            event_name: str,
+            timeout: float | None,
+        ) -> bool:
+            """Delegate runtime wait checks to the coordinator helper."""
+            return self._coordinator_wait_for_event(
+                target_coordinator,
+                event_name,
+                timeout=timeout,
+            )
+
+        return _wait_for_runtime_event
 
     def _wait_for_read_trigger(
         self,
@@ -619,20 +679,7 @@ class BLEReceiveRecoveryController:
         clear_event: Callable[["ThreadCoordinator", str], None] | None = None,
     ) -> tuple[bool, bool]:
         """Wait for read trigger and compute fallback poll mode."""
-        if wait_for_event is not None:
-            wait_for_runtime_event = wait_for_event
-        else:
-
-            def wait_for_runtime_event(
-                target_coordinator: "ThreadCoordinator",
-                event_name: str,
-                timeout: float | None,
-            ) -> bool:
-                return self._coordinator_wait_for_event(
-                    target_coordinator,
-                    event_name,
-                    timeout=timeout,
-                )
+        wait_for_runtime_event = self._resolve_wait_for_runtime_event(wait_for_event)
 
         check_and_clear_runtime_event = check_and_clear_event or (
             self._coordinator_check_and_clear_event
@@ -735,20 +782,7 @@ class BLEReceiveRecoveryController:
     ) -> bool:
         """Process current client state and decide whether to break loop."""
         iface = self._iface
-        if wait_for_event is not None:
-            wait_for_runtime_event = wait_for_event
-        else:
-
-            def wait_for_runtime_event(
-                target_coordinator: "ThreadCoordinator",
-                event_name: str,
-                timeout: float | None,
-            ) -> bool:
-                return self._coordinator_wait_for_event(
-                    target_coordinator,
-                    event_name,
-                    timeout=timeout,
-                )
+        wait_for_runtime_event = self._resolve_wait_for_runtime_event(wait_for_event)
 
         if client is None and is_closing:
             logger.debug("BLE client is None, shutting down")

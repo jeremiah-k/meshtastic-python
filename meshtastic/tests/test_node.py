@@ -330,7 +330,7 @@ def test_on_response_request_settings_copies_local_config_from_raw_response(
         anode.onResponseRequestSettings(payload)
 
     assert anode.localConfig.lora.hop_limit == 7
-    assert "lora:" in caplog.text
+    assert "Received settings block: lora" in caplog.text
 
 
 @pytest.mark.unit
@@ -538,6 +538,10 @@ def test_setURL_ignores_channels_over_device_limit(
     anode.channels = [
         Channel(index=i, role=Channel.Role.DISABLED) for i in range(CHANNEL_LIMIT)
     ]
+    anode.localConfig.lora.hop_limit = 2
+    # Mock I/O operations to prevent actual device communication
+    anode._write_channel_snapshot = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock(return_value=MagicMock())  # type: ignore[method-assign]
 
     channel_set = apponly_pb2.ChannelSet()
     for i in range(CHANNEL_LIMIT + 1):
@@ -974,25 +978,25 @@ def test_setOwner_rejects_empty_or_whitespace_names(
         (
             {"long_name": "ValidName", "short_name": "VN"},
             (
-                r"p\.set_owner\.long_name:ValidName:",
-                r"p\.set_owner\.short_name:VN:",
+                r"p\.set_owner\.long_name_set:True",
+                r"p\.set_owner\.short_name_set:True",
             ),
         ),
         (
             {"short_name": "TST"},
-            (r"p\.set_owner\.short_name:TST:",),
+            (r"p\.set_owner\.short_name_set:True",),
         ),
         (
             {"long_name": "TestUser", "short_name": "TOOLONG"},
-            (r"p\.set_owner\.short_name:TOOL:",),
+            (r"p\.set_owner\.short_name_set:True",),
         ),
         (
             {"long_name": "LicensedUser", "is_licensed": True},
-            (r"p\.set_owner\.is_licensed:True:",),
+            (r"p\.set_owner\.is_licensed:True",),
         ),
         (
             {"long_name": "TestUser", "is_unmessagable": True},
-            (r"p\.set_owner\.is_unmessagable:True:",),
+            (r"p\.set_owner\.is_unmessagable:True",),
         ),
     ],
 )
@@ -1049,7 +1053,7 @@ def test_waitForConfig_success(
 
 @pytest.mark.unit
 def test_start_ota_local_node() -> None:
-    """Test startOTA on local node."""
+    """Test startOTA canonical signature on local node."""
     iface = MagicMock(autospec=MeshInterface)
     anode = Node(iface, 1234567890, noProto=True)
     iface.localNode = anode
@@ -1060,7 +1064,27 @@ def test_start_ota_local_node() -> None:
     )
 
     test_hash = b"\x01\x02\x03" * 8  # 24-byte hash
-    anode.startOTA(mode=admin_pb2.OTAMode.OTA_WIFI, hash=test_hash)
+    anode.startOTA(mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=test_hash)
+
+    sent_msg = cast(admin_pb2.AdminMessage, captured["msg"])
+    assert sent_msg.ota_request.reboot_ota_mode == admin_pb2.OTAMode.OTA_WIFI
+    assert sent_msg.ota_request.ota_hash == test_hash
+
+
+@pytest.mark.unit
+def test_start_ota_local_node_legacy_alias_keywords() -> None:
+    """Test startOTA legacy aliases ota_mode/ota_hash remain supported."""
+    iface = MagicMock(autospec=MeshInterface)
+    anode = Node(iface, 1234567890, noProto=True)
+    iface.localNode = anode
+
+    captured: dict[str, object] = {}
+    anode._send_admin = _make_fake_send_admin(  # type: ignore[method-assign,assignment]
+        captured=captured
+    )
+
+    test_hash = b"\x11\x22\x33" * 8
+    anode.startOTA(ota_mode=admin_pb2.OTAMode.OTA_WIFI, ota_hash=test_hash)
 
     sent_msg = cast(admin_pb2.AdminMessage, captured["msg"])
     assert sent_msg.ota_request.reboot_ota_mode == admin_pb2.OTAMode.OTA_WIFI
@@ -1079,7 +1103,9 @@ def test_start_ota_remote_node_raises_error() -> None:
     with pytest.raises(
         MeshInterface.MeshInterfaceError, match="startOTA only possible on local node"
     ):
-        remote_node.startOTA(mode=admin_pb2.OTAMode.OTA_WIFI, hash=test_hash)
+        remote_node.startOTA(
+            mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=test_hash
+        )
 
 
 @pytest.mark.unit
@@ -1125,13 +1151,13 @@ def test_showChannels_logs_snapshot_and_skips_disabled_entries(
     disabled = Channel(index=1, role=Channel.Role.DISABLED)
     disabled.settings.name = "disabled"
     anode.channels = [primary, disabled]
-    anode.getURL = MagicMock(side_effect=["primary-url", "complete-url"])  # type: ignore[method-assign]
+    anode.localConfig.lora.hop_limit = 3
 
     with caplog.at_level(logging.DEBUG):
         anode.showChannels()
 
     out, _ = capsys.readouterr()
-    assert "self.channels" in caplog.text
+    assert "channel snapshot captured" in caplog.text
     assert "Index 0: PRIMARY" in out
     assert "Index 1:" not in out
 
@@ -1160,12 +1186,15 @@ def test_turnOffEncryptionOnPrimaryChannel_updates_primary_and_writes(
     primary = Channel(index=0, role=Channel.Role.PRIMARY)
     primary.settings.psk = b"\x01"
     anode.channels = [primary]
-    anode.writeChannel = MagicMock()  # type: ignore[method-assign]
+    anode._write_channel_snapshot = MagicMock()  # type: ignore[method-assign]
 
     anode.turnOffEncryptionOnPrimaryChannel()
 
     assert anode.channels[0].settings.psk == fromPSK("none")
-    anode.writeChannel.assert_called_once_with(0)
+    anode._write_channel_snapshot.assert_called_once()
+    written_channel = anode._write_channel_snapshot.call_args.args[0]
+    assert written_channel.index == 0
+    assert written_channel.settings.psk == fromPSK("none")
 
 
 @pytest.mark.unit
@@ -1359,6 +1388,15 @@ def test_getURL_requests_lora_when_local_config_empty(
     disabled = Channel(index=2, role=Channel.Role.DISABLED)
     anode.channels = [primary, secondary, disabled]
     anode.requestConfig = MagicMock()  # type: ignore[method-assign]
+
+    def _populate_lora_and_return_true(*, attribute: str = "channels") -> bool:
+        _ = attribute
+        anode.localConfig.lora.hop_limit = 3
+        return True
+
+    anode.waitForConfig = MagicMock(  # type: ignore[method-assign]
+        side_effect=_populate_lora_and_return_true
+    )
 
     url = anode.getURL(includeAll=False)
 
@@ -1710,18 +1748,17 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
     assert after_snapshot[1] == before_snapshot[1]
     assert anode.channels[2].settings.name == "raced-name"
 
-    # Rollback includes the in-flight channel index as well. Since the failure
-    # happened on the deferred admin write, rollback first retries via the
-    # deferred index.
-    # No LoRa rollback is attempted because the LoRa write never started.
-    assert rollback_writes == [(1, 1), (2, 1)]
+    # Only successfully started writes are tracked for rollback.
+    # The deferred admin write failed before it was marked written, so only the
+    # already-started channel write is reverted.
+    assert rollback_writes == [(2, 0)]
 
 
 @pytest.mark.unit
-def test_setURL_add_only_invalidates_channels_cache_on_partial_rollback_failure(
+def test_setURL_add_only_skips_rollback_when_deferred_write_never_started(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """setURL(addOnly=True) should invalidate local channels if channel rollback is partial."""
+    """setURL(addOnly=True) should skip rollback when deferred write fails before being marked started."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
 
     primary = Channel(index=0, role=Channel.Role.PRIMARY)
@@ -1735,6 +1772,7 @@ def test_setURL_add_only_invalidates_channels_cache_on_partial_rollback_failure(
     anode.ensureSessionKey = ensure_session_key_spy  # type: ignore[method-assign]
 
     send_calls = {"rollback_failures": 0, "stage_writes": 0}
+    rollback_attempts: list[int] = []
 
     def _rollback_send_fails_once(
         msg: admin_pb2.AdminMessage,
@@ -1754,6 +1792,7 @@ def test_setURL_add_only_invalidates_channels_cache_on_partial_rollback_failure(
                 and send_calls["rollback_failures"] < 2
             ):
                 send_calls["rollback_failures"] += 1
+                rollback_attempts.append(msg.set_channel.index)
                 raise OSError("channel rollback failed")
         return mesh_pb2.MeshPacket()
 
@@ -1779,8 +1818,10 @@ def test_setURL_add_only_invalidates_channels_cache_on_partial_rollback_failure(
     assert ensure_session_admin_indexes[0] == 0
     assert set(ensure_session_admin_indexes) <= {0, 1}
     assert send_calls["stage_writes"] == 2
-    assert send_calls["rollback_failures"] == 2
-    assert anode.channels is None
+    # The failed deferred write is not marked as written, so index=1 rollback
+    # is not attempted.
+    assert send_calls["rollback_failures"] == 0
+    assert anode.channels is not None
 
 
 @pytest.mark.unit
@@ -1839,14 +1880,16 @@ def test_setURL_add_only_rolls_back_with_fallback_admin_index_after_deferred_adm
     assert anode.channels is not None
     after_snapshot = [channel.SerializeToString() for channel in anode.channels]
     assert after_snapshot == before_snapshot
-    assert rollback_attempts == [(1, 1), (1, 0), (2, 1), (2, 0)]
+    # The deferred admin write failed before it was marked written, so rollback
+    # only reverts the successful write.
+    assert rollback_attempts == [(2, 0)]
 
 
 @pytest.mark.unit
-def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
+def test_setURL_add_only_skips_lora_rollback_when_forward_write_never_started(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """setURL(addOnly=True) should rollback channels and LoRa when final LoRa write fails."""
+    """setURL(addOnly=True) should skip LoRa rollback when forward write fails before being marked started."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
 
     primary = Channel(index=0, role=Channel.Role.PRIMARY)
@@ -1911,8 +1954,8 @@ def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
     # Deferred admin write is intentionally not attempted until after LoRa write.
     assert not staged_channel_writes
 
-    # Rollback includes prior LoRa config; no channel rollback is needed because
-    # deferred admin write had not started when LoRa failed.
+    # No rollback write is attempted for LoRa because the forward LoRa write did
+    # not report as started.
     rollback_channel_messages = [
         msg
         for msg in rollback_messages
@@ -1924,9 +1967,8 @@ def test_setURL_add_only_rolls_back_lora_when_lora_write_fails(
         if msg.HasField("set_config") and msg.set_config.HasField("lora")
     ]
     assert len(rollback_channel_messages) == 0
-    assert len(rollback_lora_messages) == 1
-    assert rollback_lora_messages[0].set_config.lora.hop_limit == 3
-    assert admin_indexes == [0, 0]
+    assert len(rollback_lora_messages) == 0
+    assert admin_indexes == [0]
     assert anode.localConfig.lora.hop_limit == 3
 
 
@@ -1940,6 +1982,7 @@ def test_setURL_replace_pins_admin_index_for_channel_and_lora_writes(
     iface.localNode._get_named_admin_channel_index = MagicMock(return_value=1)
     iface._get_or_create_by_num.return_value = {"adminSessionPassKey": b"secret"}
     anode = Node(iface, "!12345678", noProto=False)
+    anode.localConfig.lora.hop_limit = 2
 
     primary = Channel(index=0, role=Channel.Role.PRIMARY)
     primary.settings.name = "primary"
@@ -2187,10 +2230,9 @@ def test_setURL_replace_rolls_back_with_fallback_admin_index_after_deferred_admi
     assert anode.channels is not None
     after_snapshot = [channel.SerializeToString() for channel in anode.channels]
     assert after_snapshot == before_snapshot
+    # Deferred admin write failed before write tracking, so rollback only
+    # touches successfully started writes.
     assert rollback_attempts == [
-        (0, "primary", 0),
-        (0, "primary", 1),
-        (2, "third", 0),
         (2, "third", 1),
     ]
 
@@ -2259,15 +2301,14 @@ def test_setURL_replace_rolls_back_written_channels_on_midflight_failure(
         (channel.index, channel.settings.name) for channel in rollback_channels
     } == {
         (0, "primary"),
-        (1, "existing"),
     }
 
 
 @pytest.mark.unit
-def test_setURL_replace_rolls_back_lora_when_lora_write_fails(
+def test_setURL_replace_skips_lora_rollback_when_forward_write_never_started(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """setURL(addOnly=False) should restore channels and LoRa config when LoRa write fails."""
+    """setURL(addOnly=False) should skip LoRa rollback when forward write fails before being marked started."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
     anode.iface.localNode = anode
 
@@ -2319,8 +2360,7 @@ def test_setURL_replace_rolls_back_lora_when_lora_write_fails(
         for msg in sent_messages
         if msg.HasField("set_config") and msg.set_config.HasField("lora")
     ]
-    assert len(rollback_lora_messages) == 1
-    assert rollback_lora_messages[0].set_config.lora.hop_limit == 3
+    assert len(rollback_lora_messages) == 0
     assert anode.localConfig.lora.hop_limit == 3
 
 
@@ -2418,7 +2458,8 @@ def test_setURL_replace_raises_if_channels_disappear_during_assignment(
     url = _encode_channel_set_to_url(channel_set)
 
     with pytest.raises(
-        MeshInterface.MeshInterfaceError, match="Config or channels not loaded"
+        MeshInterface.MeshInterfaceError,
+        match="Channel write for index 0 was not started",
     ):
         anode.setURL(url, addOnly=False)
 
@@ -2461,7 +2502,7 @@ def test_fill_channels_handles_none_and_pads_to_limit(
 def test_onResponseRequestChannel_routing_paths(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """OnResponseRequestChannel should expire on routing failure and retry on routing success."""
+    """OnResponseRequestChannel should expire on routing failure and await ADMIN_APP on routing success."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
     anode._request_channel = MagicMock()  # type: ignore[method-assign]
 
@@ -2480,7 +2521,7 @@ def test_onResponseRequestChannel_routing_paths(
     anode.onResponseRequestChannel(
         {"decoded": {"portnum": "ROUTING_APP", "routing": {"errorReason": "NONE"}}}
     )
-    anode._request_channel.assert_called_once_with(3)
+    anode._request_channel.assert_not_called()
 
 
 @pytest.mark.unit
@@ -2492,6 +2533,7 @@ def test_onResponseRequestChannel_handles_partial_and_final_channel(
     anode._request_channel = MagicMock()  # type: ignore[method-assign]
 
     partial = Channel(index=2, role=Channel.Role.SECONDARY)
+    anode._channel_response_runtime.mark_channel_request_sent(2)
     anode.onResponseRequestChannel(
         {
             "decoded": {
@@ -2504,6 +2546,7 @@ def test_onResponseRequestChannel_handles_partial_and_final_channel(
 
     final = Channel(index=CHANNEL_LIMIT - 1, role=Channel.Role.SECONDARY)
     anode._request_channel.reset_mock()
+    anode._channel_response_runtime.mark_channel_request_sent(CHANNEL_LIMIT - 1)
     anode.onResponseRequestChannel(
         {
             "decoded": {
@@ -2527,11 +2570,13 @@ def test_onAckNak_handles_missing_invalid_and_ack_variants(
     iface.localNode.nodeNum = 123
     anode = Node(iface, "!12345678", noProto=True)
 
+    iface._acknowledgment = Acknowledgment()
     anode.onAckNak({"decoded": {}})
     assert iface._acknowledgment.receivedAck is False
-    assert iface._acknowledgment.receivedNak is False
+    assert iface._acknowledgment.receivedNak is True
     assert iface._acknowledgment.receivedImplAck is False
 
+    iface._acknowledgment = Acknowledgment()
     anode.onAckNak({"decoded": {"routing": {"errorReason": "NO_REPLY"}}})
     assert iface._acknowledgment.receivedNak is True
 
@@ -2539,9 +2584,11 @@ def test_onAckNak_handles_missing_invalid_and_ack_variants(
     anode.onAckNak({"decoded": {"routing": {"errorReason": "NONE"}}})
     assert iface._acknowledgment.receivedAck is False
 
+    iface._acknowledgment = Acknowledgment()
     anode.onAckNak({"decoded": {"routing": {"errorReason": "NONE"}}, "from": "abc"})
-    assert iface._acknowledgment.receivedAck is False
+    assert iface._acknowledgment.receivedNak is True
 
+    iface._acknowledgment = Acknowledgment()
     anode.onAckNak({"decoded": {"routing": {"errorReason": "NONE"}}, "from": 123})
     assert iface._acknowledgment.receivedImplAck is True
 
@@ -2565,7 +2612,7 @@ def test_send_admin_no_proto_returns_none(
 def test_send_admin_uses_session_passkey_and_selected_admin_index(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """_send_admin should attach passkey and send over the selected admin channel."""
+    """_send_admin should attach passkey to outbound message and send over the selected admin channel."""
     iface = autospec_local_node_iface(MeshInterface)
     iface.localNode._get_admin_channel_index.return_value = 3
     iface._get_or_create_by_num.return_value = {"adminSessionPassKey": b"secret"}
@@ -2578,8 +2625,10 @@ def test_send_admin_uses_session_passkey_and_selected_admin_index(
     result = anode._send_admin(msg, wantResponse=True, onResponse=response_handler)
 
     assert result is packet
-    assert msg.session_passkey == b"secret"
     iface.sendData.assert_called_once()
+    outbound_msg = iface.sendData.call_args[0][0]
+    assert outbound_msg.session_passkey == b"secret"
+    assert msg.session_passkey == b""
     assert iface.sendData.call_args.kwargs["channelIndex"] == 3
     assert iface.sendData.call_args.kwargs["pkiEncrypted"] is True
 
@@ -2611,6 +2660,8 @@ def test_ensureSessionKey_requests_only_when_missing(
     iface = autospec_local_node_iface(MeshInterface)
     anode = Node(iface, 555, noProto=False)
     anode.requestConfig = MagicMock()  # type: ignore[method-assign]
+    anode._timeout = MagicMock()  # type: ignore[attr-defined]
+    anode._timeout.waitForSet.return_value = True
 
     iface._get_or_create_by_num.return_value = {}
     anode.ensureSessionKey(adminIndex=6)
@@ -3063,6 +3114,7 @@ def test_emit_cached_metadata_reads_metadata_under_node_db_lock(
         "firmware_version: mutated-after-unlock" in line for line, _ in emitted
     )
     assert iface.metadata is original_metadata
+    assert iface.metadata is not None  # type narrowing for LSP
     assert iface.metadata.firmware_version == "mutated-after-unlock"
 
 
@@ -3181,4 +3233,4 @@ def test_on_response_request_settings_warns_for_unrecognized_payload_shape(
             {"decoded": {"admin": {"raw": admin_pb2.AdminMessage()}}}
         )
 
-    assert "Did not receive a valid response" in caplog.text
+    assert "Did not receive a valid config response" in caplog.text

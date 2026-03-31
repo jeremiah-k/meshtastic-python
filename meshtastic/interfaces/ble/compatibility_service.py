@@ -572,7 +572,9 @@ class BLECompatibilityEventService:
             def _async_publish() -> None:
                 try:
                     _publish_status()
-                except Exception:  # noqa: BLE001 - async fallback must remain best effort
+                except (
+                    Exception
+                ):  # noqa: BLE001 - async fallback must remain best effort
                     logger.debug(
                         "Error in async fallback connection status publish.",
                         exc_info=True,

@@ -5,92 +5,97 @@ This module provides the Node class which represents a (local or remote) node
 in the mesh, including methods for localConfig, moduleConfig, and channels management.
 """
 
-import base64
-import binascii
 import logging
 import sys
 import threading
-import time
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    NoReturn,
-    Sequence,
-    TypeVar,
-    cast,
-)
+from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, TypeVar
 
 from google.protobuf.descriptor import FieldDescriptor
-from google.protobuf.message import DecodeError
 
+from meshtastic.node_runtime.channel_export_runtime import _NodeChannelExportRuntime
+from meshtastic.node_runtime.channel_lookup_runtime import _NodeChannelLookupRuntime
+from meshtastic.node_runtime.channel_normalization_runtime import (
+    _NodeChannelNormalizationRuntime,
+)
+from meshtastic.node_runtime.channel_presentation_runtime import (
+    _NodeChannelPresentationRuntime,
+)
+from meshtastic.node_runtime.channel_request_runtime import _NodeChannelRequestRuntime
+from meshtastic.node_runtime.settings_runtime import (
+    _NodeAdminCommandRuntime,
+    _NodeOwnerProfileRuntime,
+    _NodeSettingsMessageBuilder,
+    _NodeSettingsResponseRuntime,
+    _NodeSettingsRuntime,
+)
+from meshtastic.node_runtime.seturl_runtime import (
+    _SetUrlParser,
+    _SetUrlTransactionCoordinator,
+)
+from meshtastic.node_runtime.shared import EMPTY_LONG_NAME_MSG as _EMPTY_LONG_NAME_MSG
+from meshtastic.node_runtime.shared import EMPTY_SHORT_NAME_MSG as _EMPTY_SHORT_NAME_MSG
+from meshtastic.node_runtime.shared import (
+    FACTORY_RESET_REQUEST_VALUE as _FACTORY_RESET_REQUEST_VALUE,
+)
+from meshtastic.node_runtime.shared import (
+    MAX_CANNED_MESSAGE_LENGTH as _MAX_CANNED_MESSAGE_LENGTH,
+)
+from meshtastic.node_runtime.shared import MAX_CHANNELS as _MAX_CHANNELS
+from meshtastic.node_runtime.shared import MAX_LONG_NAME_LEN as _MAX_LONG_NAME_LEN
+from meshtastic.node_runtime.shared import MAX_RINGTONE_LENGTH as _MAX_RINGTONE_LENGTH
+from meshtastic.node_runtime.shared import MAX_SHORT_NAME_LEN as _MAX_SHORT_NAME_LEN
+from meshtastic.node_runtime.shared import (
+    METADATA_STDOUT_COMPAT_WAIT_SECONDS,
+)
+from meshtastic.node_runtime.transport_runtime import (
+    _NodeAckNakRuntime,
+    _NodeAdminSessionRuntime,
+    _NodeAdminTransportRuntime,
+    _NodeChannelWriteRuntime,
+    _NodeDeleteChannelRuntime,
+)
 from meshtastic.protobuf import (
     admin_pb2,
-    apponly_pb2,
     channel_pb2,
     config_pb2,
     localonly_pb2,
     mesh_pb2,
-    portnums_pb2,
 )
 from meshtastic.util import (
     Timeout,
-    camel_to_snake,
     flagsToList,
-    fromPSK,
-    generate_channel_hash,
-    messageToJson,
-    pskToString,
-    stripnl,
     toNodeNum,
 )
 
 if TYPE_CHECKING:
     from meshtastic.mesh_interface import MeshInterface
+    from meshtastic.node_runtime.content_runtime import (
+        _NodeAdminContentRuntime,
+        _NodeContentCacheStore,
+        _NodeContentResponseRuntime,
+    )
+    from meshtastic.node_runtime.response_runtime import (
+        _NodeChannelResponseRuntime,
+        _NodeMetadataResponseRuntime,
+    )
+    from meshtastic.node_runtime.transport_runtime import (
+        _NodePositionTimeCommandRuntime,
+    )
 
 logger = logging.getLogger(__name__)
-
-# Validation error messages for setOwner
-EMPTY_LONG_NAME_MSG = "Long Name cannot be empty or contain only whitespace characters"
-EMPTY_SHORT_NAME_MSG = (
-    "Short Name cannot be empty or contain only whitespace characters"
-)
-# Maximum length for long_name (per protobuf definition in mesh.options)
-MAX_LONG_NAME_LEN = 40
-# Maximum length for owner short_name.
-MAX_SHORT_NAME_LEN = 4
-# Maximum text length for ringtone messages.
-MAX_RINGTONE_LENGTH = 230
-# Maximum text length for canned-message payloads.
-MAX_CANNED_MESSAGE_LENGTH = 200
-# Maximum number of channels a node can hold.
-MAX_CHANNELS = 8
-# Protobuf factory-reset fields are integer-typed; use the explicit sentinel
-# value instead of boolean assignment to avoid firmware-side coercion issues.
-FACTORY_RESET_REQUEST_VALUE: int = 1
-# Extra wait used only when getMetadata() runs under redirected stdout for
-# historical callers that parse printed metadata lines.
-METADATA_STDOUT_COMPAT_WAIT_SECONDS = 1.0
-NAMED_ADMIN_CHANNEL_NAME = "admin"
 _ResultT = TypeVar("_ResultT")
+# COMPAT_STABLE_SHIM: Compatibility re-exports preserved for callers/tests importing constants from meshtastic.node.
+EMPTY_LONG_NAME_MSG = _EMPTY_LONG_NAME_MSG
+EMPTY_SHORT_NAME_MSG = _EMPTY_SHORT_NAME_MSG
+MAX_CANNED_MESSAGE_LENGTH = _MAX_CANNED_MESSAGE_LENGTH
+FACTORY_RESET_REQUEST_VALUE = _FACTORY_RESET_REQUEST_VALUE
+MAX_CHANNELS = _MAX_CHANNELS
+MAX_LONG_NAME_LEN = _MAX_LONG_NAME_LEN
+MAX_RINGTONE_LENGTH = _MAX_RINGTONE_LENGTH
+MAX_SHORT_NAME_LEN = _MAX_SHORT_NAME_LEN
 
 
-def _is_named_admin_channel_name(channel_name: str) -> bool:
-    """Return whether a channel name designates the special named admin channel."""
-    return channel_name.lower() == NAMED_ADMIN_CHANNEL_NAME
-
-
-def _ordered_admin_indexes(*indexes: int | None) -> list[int]:
-    """Return unique non-None admin channel indexes, preserving input order."""
-    ordered: list[int] = []
-    for index in indexes:
-        if index is None or index in ordered:
-            continue
-        ordered.append(index)
-    return ordered
-
-
-class Node:
+class Node:  # pylint: disable=too-many-instance-attributes
     """A model of a (local or remote) node in the mesh.
 
     Includes methods for localConfig, moduleConfig and channels
@@ -133,6 +138,146 @@ class Node:
         self._canned_message_lock = threading.Lock()
         self._metadata_stdout_event_lock = threading.Lock()
         self._metadata_stdout_event: threading.Event | None = None
+        self._admin_session_runtime = _NodeAdminSessionRuntime(self)
+        self._admin_transport_runtime = _NodeAdminTransportRuntime(self)
+        self._channel_lookup_runtime = _NodeChannelLookupRuntime(self)
+        self._channel_normalization_runtime = _NodeChannelNormalizationRuntime(self)
+        self._channel_export_runtime = _NodeChannelExportRuntime(self)
+        self._channel_request_runtime = _NodeChannelRequestRuntime(
+            self,
+            normalization_runtime=self._channel_normalization_runtime,
+        )
+        self._channel_presentation_runtime = _NodeChannelPresentationRuntime(
+            self,
+            export_runtime=self._channel_export_runtime,
+        )
+        self._channel_write_runtime = _NodeChannelWriteRuntime(
+            self,
+            admin_session_runtime=self._admin_session_runtime,
+            admin_transport_runtime=self._admin_transport_runtime,
+        )
+        self._delete_channel_runtime = _NodeDeleteChannelRuntime(
+            self,
+            channel_write_runtime=self._channel_write_runtime,
+        )
+        self._ack_nak_runtime = _NodeAckNakRuntime(self)
+        self._settings_message_builder = _NodeSettingsMessageBuilder(self)
+        self._settings_runtime = _NodeSettingsRuntime(
+            self,
+            message_builder=self._settings_message_builder,
+        )
+        self._settings_response_runtime = _NodeSettingsResponseRuntime(self)
+        self._admin_command_runtime = _NodeAdminCommandRuntime(self)
+        self._owner_profile_runtime = _NodeOwnerProfileRuntime(
+            self,
+            admin_command_runtime=self._admin_command_runtime,
+        )
+        self._content_cache_store_cache: "_NodeContentCacheStore | None" = None
+        self._content_response_runtime_cache: "_NodeContentResponseRuntime | None" = (
+            None
+        )
+        self._content_request_runtime_cache: "_NodeAdminContentRuntime | None" = None
+        self._metadata_response_runtime_cache: "_NodeMetadataResponseRuntime | None" = (
+            None
+        )
+        self._channel_response_runtime_cache: "_NodeChannelResponseRuntime | None" = (
+            None
+        )
+        self._position_time_runtime_cache: "_NodePositionTimeCommandRuntime | None" = (
+            None
+        )
+        self._lazy_init_lock = threading.RLock()
+
+    @property
+    def _content_cache_store(self) -> "_NodeContentCacheStore":
+        """Lazy-init for content cache store (thread-safe)."""
+        if self._content_cache_store_cache is None:
+            with self._lazy_init_lock:
+                if self._content_cache_store_cache is None:
+                    from meshtastic.node_runtime.content_runtime import (  # pylint: disable=import-outside-toplevel
+                        _NodeContentCacheStore,
+                    )
+
+                    self._content_cache_store_cache = _NodeContentCacheStore(self)
+        return self._content_cache_store_cache
+
+    @property
+    def _content_response_runtime(self) -> "_NodeContentResponseRuntime":
+        """Lazy-init for content response runtime (thread-safe)."""
+        if self._content_response_runtime_cache is None:
+            with self._lazy_init_lock:
+                if self._content_response_runtime_cache is None:
+                    from meshtastic.node_runtime.content_runtime import (  # pylint: disable=import-outside-toplevel
+                        _NodeContentResponseRuntime,
+                    )
+
+                    self._content_response_runtime_cache = _NodeContentResponseRuntime(
+                        self,
+                        cache_store=self._content_cache_store,
+                    )
+        return self._content_response_runtime_cache
+
+    @property
+    def _content_request_runtime(self) -> "_NodeAdminContentRuntime":
+        """Lazy-init for content request runtime (thread-safe)."""
+        if self._content_request_runtime_cache is None:
+            with self._lazy_init_lock:
+                if self._content_request_runtime_cache is None:
+                    from meshtastic.node_runtime.content_runtime import (  # pylint: disable=import-outside-toplevel
+                        _NodeAdminContentRuntime,
+                    )
+
+                    self._content_request_runtime_cache = _NodeAdminContentRuntime(
+                        self,
+                        cache_store=self._content_cache_store,
+                        response_runtime=self._content_response_runtime,
+                    )
+        return self._content_request_runtime_cache
+
+    @property
+    def _metadata_response_runtime(self) -> "_NodeMetadataResponseRuntime":
+        """Lazy-init for metadata response runtime (thread-safe)."""
+        if self._metadata_response_runtime_cache is None:
+            with self._lazy_init_lock:
+                if self._metadata_response_runtime_cache is None:
+                    from meshtastic.node_runtime.response_runtime import (  # pylint: disable=import-outside-toplevel
+                        _NodeMetadataResponseRuntime,
+                    )
+
+                    self._metadata_response_runtime_cache = (
+                        _NodeMetadataResponseRuntime(self)
+                    )
+        return self._metadata_response_runtime_cache
+
+    @property
+    def _channel_response_runtime(self) -> "_NodeChannelResponseRuntime":
+        """Lazy-init for channel response runtime (thread-safe)."""
+        if self._channel_response_runtime_cache is None:
+            with self._lazy_init_lock:
+                if self._channel_response_runtime_cache is None:
+                    from meshtastic.node_runtime.response_runtime import (  # pylint: disable=import-outside-toplevel
+                        _NodeChannelResponseRuntime,
+                    )
+
+                    self._channel_response_runtime_cache = _NodeChannelResponseRuntime(
+                        self
+                    )
+        return self._channel_response_runtime_cache
+
+    @property
+    def _position_time_runtime(self) -> "_NodePositionTimeCommandRuntime":
+        """Lazy-init for position/time command runtime (thread-safe)."""
+        if self._position_time_runtime_cache is None:
+            with self._lazy_init_lock:
+                if self._position_time_runtime_cache is None:
+                    from meshtastic.node_runtime.transport_runtime import (  # pylint: disable=import-outside-toplevel
+                        _NodePositionTimeCommandRuntime,
+                    )
+
+                    self._position_time_runtime_cache = _NodePositionTimeCommandRuntime(
+                        self
+                    )
+        return self._position_time_runtime_cache
 
     def __repr__(self) -> str:
         """Return a developer-oriented string identifying the Node.
@@ -263,9 +408,8 @@ class Node:
         )
         role = getattr(metadata, "role", 0)
         if role in config_pb2.Config.DeviceConfig.Role.values():
-            role_value = cast(config_pb2.Config.DeviceConfig.Role.ValueType, role)
             self._emit_metadata_line(
-                f"role: {config_pb2.Config.DeviceConfig.Role.Name(role_value)}"
+                f"role: {config_pb2.Config.DeviceConfig.Role.Name(role)}"  # type: ignore[arg-type]
             )
         else:
             self._emit_metadata_line(f"role: {role}")
@@ -274,9 +418,8 @@ class Node:
         )
         hw_model = getattr(metadata, "hw_model", 0)
         if hw_model in mesh_pb2.HardwareModel.values():
-            hw_model_value = cast(mesh_pb2.HardwareModel.ValueType, hw_model)
             self._emit_metadata_line(
-                f"hw_model: {mesh_pb2.HardwareModel.Name(hw_model_value)}"
+                f"hw_model: {mesh_pb2.HardwareModel.Name(hw_model)}"  # type: ignore[arg-type]
             )
         else:
             self._emit_metadata_line(f"hw_model: {hw_model}")
@@ -323,23 +466,7 @@ class Node:
         After listing channels, the primary channel URL is printed; if the full URL that includes
         all channels differs, it is printed as the "Complete URL".
         """
-        print("Channels:")
-        with self._channels_lock:
-            channels_snapshot = list(self.channels) if self.channels else []
-        if channels_snapshot:
-            logger.debug("self.channels:%s", channels_snapshot)
-            for c in channels_snapshot:
-                cStr = messageToJson(c.settings)
-                # don't show disabled channels
-                if channel_pb2.Channel.Role.Name(c.role) != "DISABLED":
-                    print(
-                        f"  Index {c.index}: {channel_pb2.Channel.Role.Name(c.role)} psk={pskToString(c.settings.psk)} {cStr}"
-                    )
-        publicURL = self.getURL(includeAll=False)
-        adminURL = self.getURL(includeAll=True)
-        print(f"\nPrimary channel URL: {publicURL}")
-        if adminURL != publicURL:
-            print(f"Complete URL (includes all channels): {adminURL}")
+        self._channel_presentation_runtime._show_channels()  # noqa: SLF001
 
     def showInfo(self) -> None:
         """Print the node's local and module configurations (as JSON when available) followed by its configured channels.
@@ -347,15 +474,7 @@ class Node:
         If a configuration is not present, an empty placeholder is printed for that
         section. Channels are displayed using the node's channel listing format.
         """
-        prefs = ""
-        if self.localConfig:
-            prefs = messageToJson(self.localConfig, multiline=True)
-        print(f"Preferences: {prefs}\n")
-        prefs = ""
-        if self.moduleConfig:
-            prefs = messageToJson(self.moduleConfig, multiline=True)
-        print(f"Module preferences: {prefs}\n")
-        self.showChannels()
+        self._channel_presentation_runtime._show_info()  # noqa: SLF001
 
     def setChannels(self, channels: Sequence[channel_pb2.Channel]) -> None:
         """Set the node's channel list and normalize channel entries.
@@ -367,14 +486,7 @@ class Node:
             list will be normalized (indices fixed) and padded as needed to meet expected
             channel count.
         """
-        with self._channels_lock:
-            copied_channels: list[channel_pb2.Channel] = []
-            for source_channel in channels:
-                copied_channel = channel_pb2.Channel()
-                copied_channel.CopyFrom(source_channel)
-                copied_channels.append(copied_channel)
-            self.channels = copied_channels
-            self._fixup_channels_locked()
+        self._channel_request_runtime.setChannels(channels)
 
     def requestChannels(self, startingIndex: int = 0) -> None:
         """Request channel definitions from the node, starting at the given channel index.
@@ -388,14 +500,7 @@ class Node:
         startingIndex : int
             Zero-based channel index to start fetching from (typically 0-7). (Default value = 0)
         """
-        logger.debug("requestChannels for nodeNum:%s", self.nodeNum)
-        # only initialize if we're starting out fresh
-        if startingIndex == 0:
-            with self._channels_lock:
-                self.channels = None
-                # We keep our channels in a temp array until finished
-                self.partialChannels = []
-        self._request_channel(startingIndex)
+        self._channel_request_runtime.requestChannels(starting_index=startingIndex)
 
     def onResponseRequestSettings(self, p: dict[str, Any]) -> None:
         """Process an admin response for a settings request and update the node's config objects.
@@ -413,63 +518,7 @@ class Node:
             contain either `getConfigResponse` or `getModuleConfigResponse` and accompanying
             `raw` bytes for the returned field.
         """
-        logger.debug("onResponseRequestSetting() p:%s", p)
-        config_values = None
-        if "routing" in p["decoded"]:
-            if p["decoded"]["routing"]["errorReason"] != "NONE":
-                logger.error(
-                    "Error on response: %s",
-                    p["decoded"]["routing"]["errorReason"],
-                )
-                self.iface._acknowledgment.receivedNak = True
-        else:
-            self.iface._acknowledgment.receivedAck = True
-            adminMessage = p["decoded"]["admin"]
-            if "getConfigResponse" in adminMessage:
-                oneof = "get_config_response"
-                resp = adminMessage["getConfigResponse"]
-                if not resp:
-                    logger.warning("Received empty config response from node.")
-                    return
-                field = next(iter(resp.keys()))
-                field_name = camel_to_snake(field)
-                config_type = self.localConfig.DESCRIPTOR.fields_by_name.get(field_name)
-                if config_type is None:
-                    logger.warning(
-                        "Ignoring unknown LocalConfig field in getConfigResponse: %s",
-                        field_name,
-                    )
-                    return
-                config_values = getattr(self.localConfig, config_type.name)
-            elif "getModuleConfigResponse" in adminMessage:
-                oneof = "get_module_config_response"
-                resp = adminMessage["getModuleConfigResponse"]
-                if not resp:
-                    logger.warning("Received empty module config response from node.")
-                    return
-                field = next(iter(resp.keys()))
-                field_name = camel_to_snake(field)
-                config_type = self.moduleConfig.DESCRIPTOR.fields_by_name.get(
-                    field_name
-                )
-                if config_type is None:
-                    logger.warning(
-                        "Ignoring unknown ModuleConfig field in getModuleConfigResponse: %s",
-                        field_name,
-                    )
-                    return
-                config_values = getattr(self.moduleConfig, config_type.name)
-            else:
-                logger.warning(
-                    "Did not receive a valid response. Make sure to have a shared channel named 'admin'."
-                )
-                return
-            if config_values is not None:
-                raw_config = getattr(
-                    getattr(adminMessage["raw"], oneof), camel_to_snake(field)
-                )
-                config_values.CopyFrom(raw_config)
-                logger.info("%s:\n%s", camel_to_snake(field), config_values)
+        self._settings_response_runtime.handleSettingsResponse(p)
 
     def requestConfig(
         self, configType: int | FieldDescriptor, adminIndex: int | None = None
@@ -493,33 +542,10 @@ class Node:
             configured admin channel is used. Pass 0 to force channel 0.
             (Default value = None)
         """
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onResponseRequestSettings
-            logger.info(
-                "Requesting current config from remote node (this can take a while)."
-            )
-        p = admin_pb2.AdminMessage()
-        if isinstance(configType, int):
-            p.get_config_request = configType  # type: ignore[assignment] # pyright: ignore[reportAttributeAccessIssue]
-
-        else:
-            msg_index = configType.index
-            if configType.containing_type.name == "LocalConfig":
-                p.get_config_request = admin_pb2.AdminMessage.ConfigType.Value(
-                    f"{configType.name.upper()}_CONFIG"
-                )
-            else:
-                p.get_module_config_request = (
-                    msg_index  # pyright: ignore[reportAttributeAccessIssue]
-                )
-
-        self._send_admin(
-            p, wantResponse=True, onResponse=onResponse, adminIndex=adminIndex
+        self._settings_runtime.requestConfig(
+            configType,
+            admin_index=adminIndex,
         )
-        if onResponse:
-            self.iface.waitForAckNak()
 
     def turnOffEncryptionOnPrimaryChannel(self) -> None:
         """Disable encryption on the primary channel and write the updated channel to the device.
@@ -529,28 +555,23 @@ class Node:
         MeshInterfaceError
             if channel data has not been loaded.
         """
-        with self._channels_lock:
-            channels = self.channels
-            if not channels:
-                self._raise_interface_error("Error: No channels have been read")
-            channels[0].settings.psk = fromPSK("none")
-        logger.info("Writing modified channels to device")
-        self.writeChannel(0)
+        self._channel_export_runtime._turn_off_encryption_on_primary_channel()
 
     def waitForConfig(self, attribute: str = "channels") -> bool:
-        """Wait until a given attribute on the node's localConfig is populated or the timeout elapses.
+        """Wait until a node config/channel attribute is populated or timeout elapses.
 
         Parameters
         ----------
         attribute : str
-            Name of the attribute on `localConfig` to wait for (default: "channels").
+            Attribute to wait for. ``"channels"`` waits on ``self.channels`` and
+            other values wait on ``self.localConfig.<attribute>``.
 
         Returns
         -------
         bool
             True if the attribute was set before the timeout expired, False otherwise.
         """
-        return self._timeout.waitForSet(self, attrs=("localConfig", attribute))
+        return self._channel_request_runtime.waitForConfig(attribute=attribute)
 
     def _raise_interface_error(self, message: str) -> NoReturn:
         """Raise a MeshInterface-style error with the provided message.
@@ -583,9 +604,12 @@ class Node:
         config_name : str
             Configuration section to write. Valid values:
             "device", "position", "power", "network", "display", "lora", "bluetooth",
-            "security", "mqtt", "serial", "external_notification", "store_forward",
-            "range_test", "telemetry", "canned_message", "audio", "remote_hardware",
-            "neighbor_info", "detection_sensor", "ambient_lighting", "paxcounter".
+            "security", "sessionkey"* , "device_ui"* , "mqtt", "serial",
+            "external_notification", "store_forward", "range_test", "telemetry",
+            "canned_message", "audio", "remote_hardware", "neighbor_info",
+            "detection_sensor", "ambient_lighting", "paxcounter",
+            "statusmessage", "traffic_management".
+            * Available only when present in the active protobuf schema.
 
         Raises
         ------
@@ -593,67 +617,7 @@ class Node:
             If `config_name` is not one of the supported names, or if
             localConfig/moduleConfig has not been loaded.
         """
-        p = admin_pb2.AdminMessage()
-
-        config_dispatch: dict[str, tuple[str, Any]] = {
-            "device": ("set_config", self.localConfig.device),
-            "position": ("set_config", self.localConfig.position),
-            "power": ("set_config", self.localConfig.power),
-            "network": ("set_config", self.localConfig.network),
-            "display": ("set_config", self.localConfig.display),
-            "lora": ("set_config", self.localConfig.lora),
-            "bluetooth": ("set_config", self.localConfig.bluetooth),
-            "security": ("set_config", self.localConfig.security),
-            "mqtt": ("set_module_config", self.moduleConfig.mqtt),
-            "serial": ("set_module_config", self.moduleConfig.serial),
-            "external_notification": (
-                "set_module_config",
-                self.moduleConfig.external_notification,
-            ),
-            "store_forward": ("set_module_config", self.moduleConfig.store_forward),
-            "range_test": ("set_module_config", self.moduleConfig.range_test),
-            "telemetry": ("set_module_config", self.moduleConfig.telemetry),
-            "canned_message": ("set_module_config", self.moduleConfig.canned_message),
-            "audio": ("set_module_config", self.moduleConfig.audio),
-            "remote_hardware": (
-                "set_module_config",
-                self.moduleConfig.remote_hardware,
-            ),
-            "neighbor_info": ("set_module_config", self.moduleConfig.neighbor_info),
-            "detection_sensor": (
-                "set_module_config",
-                self.moduleConfig.detection_sensor,
-            ),
-            "ambient_lighting": (
-                "set_module_config",
-                self.moduleConfig.ambient_lighting,
-            ),
-            "paxcounter": ("set_module_config", self.moduleConfig.paxcounter),
-            "traffic_management": (
-                "set_module_config",
-                self.moduleConfig.traffic_management,
-            ),
-        }
-        config_entry = config_dispatch.get(config_name)
-        if config_entry is None:
-            self._raise_interface_error(
-                f"Error: No valid config with name {config_name}"
-            )
-        if (
-            len(self.localConfig.ListFields()) == 0
-            and len(self.moduleConfig.ListFields()) == 0
-        ):
-            self._raise_interface_error(
-                "Error: No localConfig has been read. "
-                "Request config from the device before writing."
-            )
-        setter_name, source_config = config_entry
-        config_setter = getattr(p, setter_name)
-        getattr(config_setter, config_name).CopyFrom(source_config)
-
-        logger.debug("Wrote: %s", config_name)
-        onResponse = None if self == self.iface.localNode else self.onAckNak
-        self._send_admin(p, onResponse=onResponse)
+        self._settings_runtime.writeConfig(config_name)
 
     def _write_channel_snapshot(
         self,
@@ -671,16 +635,21 @@ class Node:
             configured admin channel is used. Pass 0 to force channel 0.
             (Default value = None)
         """
-        self.ensureSessionKey(adminIndex=adminIndex)
-        p = admin_pb2.AdminMessage()
-        p.set_channel.CopyFrom(channel_to_write)
-        self._send_admin(p, adminIndex=adminIndex)
-        logger.debug("Wrote channel %s", channel_to_write.index)
+        self._channel_write_runtime._write_channel_snapshot(
+            channel_to_write,
+            admin_index=adminIndex,
+        )
 
-    def writeChannel(self, channelIndex: int, adminIndex: int | None = None) -> None:
-        """Write the channel at the given index to the device.
+    def writeChannel(
+        self,
+        channelIndex: int,
+        adminIndex: int | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Write the current local channel settings to the device.
 
-        Sends the specified channel configuration to the node and ensures an admin session key is present before sending.
+        An admin session key is requested if one is not already present,
+        ensuring that an admin session key is present before sending.
 
         Parameters
         ----------
@@ -692,20 +661,20 @@ class Node:
 
         Raises
         ------
-        MeshInterfaceError
+        AssertionError
             If channels have not been loaded (no channels to write).
+        TypeError
+            If unexpected keyword arguments are provided.
         """
-        with self._channels_lock:
-            channels = self.channels
-            if channels is None:
-                self._raise_interface_error("Error: No channels have been read")
-            if channelIndex < 0 or channelIndex >= len(channels):
-                self._raise_interface_error(
-                    f"Channel index {channelIndex} out of range (0-{len(channels) - 1})"
-                )
-            channel_to_write = channel_pb2.Channel()
-            channel_to_write.CopyFrom(channels[channelIndex])
-        self._write_channel_snapshot(channel_to_write, adminIndex=adminIndex)
+        if kwargs:
+            unexpected = ", ".join(sorted(kwargs.keys()))
+            raise TypeError(
+                f"writeChannel() got unexpected keyword argument(s): {unexpected}"
+            )
+        self._channel_write_runtime._write_channel(
+            channelIndex,
+            admin_index=adminIndex,
+        )
 
     # COMPAT_STABLE_SHIM: historical channel lookup helpers return live Channel
     # objects for mutate-then-write workflows (get*() -> edit -> writeChannel()).
@@ -729,24 +698,13 @@ class Node:
         existing callers that mutate a selected channel and then persist via
         `writeChannel()`.
         """
-        with self._channels_lock:
-            channels = self.channels
-            if channels and 0 <= channelIndex < len(channels):
-                # Compatibility: return the live object, not a defensive copy.
-                return channels[channelIndex]
-            return None
+        return self._channel_lookup_runtime._get_channel_by_index(channelIndex)
 
     def getChannelCopyByChannelIndex(
         self, channelIndex: int
     ) -> channel_pb2.Channel | None:
         """Retrieve a defensive copy of the channel at the given zero-based index."""
-        with self._channels_lock:
-            channels = self.channels
-            if channels and 0 <= channelIndex < len(channels):
-                copied = channel_pb2.Channel()
-                copied.CopyFrom(channels[channelIndex])
-                return copied
-            return None
+        return self._channel_lookup_runtime._get_channel_copy_by_index(channelIndex)
 
     def deleteChannel(self, channelIndex: int) -> None:
         """Delete the channel at the given zero-based index and rewrite subsequent channels to normalize device channel state.
@@ -769,69 +727,7 @@ class Node:
         MeshInterfaceError
             If the channel at channelIndex is not Role.SECONDARY or Role.DISABLED.
         """
-        with self._channels_lock:
-            channels = self.channels
-            if channels is None:
-                self._raise_interface_error("Error: No channels have been read")
-            if channelIndex < 0 or channelIndex >= len(channels):
-                self._raise_interface_error(
-                    f"Channel index {channelIndex} out of range (0-{len(channels) - 1})"
-                )
-            ch = channels[channelIndex]
-            if ch.role not in (
-                channel_pb2.Channel.Role.SECONDARY,
-                channel_pb2.Channel.Role.DISABLED,
-            ):
-                self._raise_interface_error(
-                    "Only SECONDARY or DISABLED channels can be deleted"
-                )
-            is_local_node = self.iface.localNode == self
-
-            def _named_admin_index_from_channels(
-                channel_list: list[channel_pb2.Channel],
-            ) -> int:
-                for channel in channel_list:
-                    if (
-                        channel.role != channel_pb2.Channel.Role.DISABLED
-                        and channel.settings
-                        and _is_named_admin_channel_name(channel.settings.name)
-                    ):
-                        return channel.index
-                return 0
-
-            if is_local_node:
-                pre_delete_admin_index = _named_admin_index_from_channels(channels)
-            else:
-                pre_delete_admin_index = self.iface.localNode.getAdminChannelIndex()
-
-            # If we move the "admin" channel, the index used for admin writes
-            # will need to be recomputed as writes progress.
-            channels.pop(channelIndex)
-            self._fixup_channels_locked()
-            channels_to_rewrite: list[tuple[int, channel_pb2.Channel]] = []
-            for index in range(channelIndex, MAX_CHANNELS):
-                channel_snapshot = channel_pb2.Channel()
-                channel_snapshot.CopyFrom(channels[index])
-                channels_to_rewrite.append((index, channel_snapshot))
-
-            if is_local_node:
-                post_delete_admin_index = _named_admin_index_from_channels(channels)
-            else:
-                post_delete_admin_index = self.iface.localNode.getAdminChannelIndex()
-
-        admin_index_for_write = pre_delete_admin_index
-        switch_after_admin_slot_rewrite = pre_delete_admin_index >= channelIndex
-
-        for _index, channel_snapshot in channels_to_rewrite:
-            self._write_channel_snapshot(
-                channel_snapshot,
-                adminIndex=admin_index_for_write,
-            )
-            if (
-                switch_after_admin_slot_rewrite
-                and channel_snapshot.index == pre_delete_admin_index
-            ):
-                admin_index_for_write = post_delete_admin_index
+        self._delete_channel_runtime._delete_channel(channelIndex)
 
     def getChannelByName(self, name: str) -> channel_pb2.Channel | None:
         """Find a channel whose settings.name exactly matches the provided name.
@@ -852,22 +748,11 @@ class Node:
         existing callers that mutate a selected channel and then persist via
         `writeChannel()`.
         """
-        with self._channels_lock:
-            for c in self.channels or []:
-                if c.settings and c.settings.name == name:
-                    # Compatibility: return the live object, not a defensive copy.
-                    return c
-            return None
+        return self._channel_lookup_runtime._get_channel_by_name(name)
 
     def getChannelCopyByName(self, name: str) -> channel_pb2.Channel | None:
         """Find a channel by name and return a defensive copy for read-only use."""
-        with self._channels_lock:
-            for channel in self.channels or []:
-                if channel.settings and channel.settings.name == name:
-                    copied = channel_pb2.Channel()
-                    copied.CopyFrom(channel)
-                    return copied
-            return None
+        return self._channel_lookup_runtime._get_channel_copy_by_name(name)
 
     def getDisabledChannel(self) -> channel_pb2.Channel | None:
         """Find the first channel whose role is DISABLED.
@@ -883,28 +768,11 @@ class Node:
         existing callers that mutate a selected channel and then persist via
         `writeChannel()`.
         """
-        with self._channels_lock:
-            channels = self.channels
-            if channels is None:
-                return None
-            for c in channels:
-                if c.role == channel_pb2.Channel.Role.DISABLED:
-                    # Compatibility: return the live object, not a defensive copy.
-                    return c
-            return None
+        return self._channel_lookup_runtime._get_disabled_channel()
 
     def getDisabledChannelCopy(self) -> channel_pb2.Channel | None:
         """Find the first disabled channel and return a defensive copy for read-only use."""
-        with self._channels_lock:
-            channels = self.channels
-            if channels is None:
-                return None
-            for channel in channels:
-                if channel.role == channel_pb2.Channel.Role.DISABLED:
-                    copied = channel_pb2.Channel()
-                    copied.CopyFrom(channel)
-                    return copied
-            return None
+        return self._channel_lookup_runtime._get_disabled_channel_copy()
 
     def getAdminChannelIndex(self) -> int:
         """Public accessor for the admin channel index on this node."""
@@ -912,15 +780,7 @@ class Node:
 
     def _get_named_admin_channel_index(self) -> int | None:
         """Return the index of a channel explicitly named ``admin``, if present."""
-        with self._channels_lock:
-            for channel in self.channels or []:
-                if (
-                    channel.role != channel_pb2.Channel.Role.DISABLED
-                    and channel.settings
-                    and _is_named_admin_channel_name(channel.settings.name)
-                ):
-                    return channel.index
-            return None
+        return self._channel_lookup_runtime._get_named_admin_channel_index()
 
     def _get_admin_channel_index(self) -> int:
         """Get the index of the channel named "admin", or 0 if no such channel exists.
@@ -930,8 +790,7 @@ class Node:
         int
             Index of the admin channel, or 0 if no channel with name "admin" is present.
         """
-        named_admin_index = self._get_named_admin_channel_index()
-        return 0 if named_admin_index is None else named_admin_index
+        return self._channel_lookup_runtime._get_admin_channel_index()
 
     def setOwner(
         self,
@@ -965,51 +824,12 @@ class Node:
         MeshInterfaceError
             If `long_name` or `short_name` is provided but empty or whitespace-only after trimming.
         """
-        logger.debug("in setOwner nodeNum:%s", self.nodeNum)
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-
-        if long_name is not None:
-            long_name = long_name.strip()
-            # Validate that long_name is not empty or whitespace-only
-            if not long_name:
-                self._raise_interface_error(EMPTY_LONG_NAME_MSG)
-            if len(long_name) > MAX_LONG_NAME_LEN:
-                long_name = long_name[:MAX_LONG_NAME_LEN]
-                logger.warning(
-                    "Long name is longer than %s characters, truncating to '%s'",
-                    MAX_LONG_NAME_LEN,
-                    long_name,
-                )
-            p.set_owner.long_name = long_name
-            p.set_owner.is_licensed = is_licensed
-        if short_name is not None:
-            short_name = short_name.strip()
-            # Validate that short_name is not empty or whitespace-only
-            if not short_name:
-                self._raise_interface_error(EMPTY_SHORT_NAME_MSG)
-            if len(short_name) > MAX_SHORT_NAME_LEN:
-                short_name = short_name[:MAX_SHORT_NAME_LEN]
-                logger.warning(
-                    "Short name is longer than %s characters, truncating to '%s'",
-                    MAX_SHORT_NAME_LEN,
-                    short_name,
-                )
-            p.set_owner.short_name = short_name
-        if is_unmessagable is not None:
-            p.set_owner.is_unmessagable = is_unmessagable
-
-        # Note: These debug lines are used in unit tests
-        logger.debug("p.set_owner.long_name:%s:", p.set_owner.long_name)
-        logger.debug("p.set_owner.short_name:%s:", p.set_owner.short_name)
-        logger.debug("p.set_owner.is_licensed:%s:", p.set_owner.is_licensed)
-        logger.debug("p.set_owner.is_unmessagable:%s:", p.set_owner.is_unmessagable)
-        # If sending to a remote node, wait for ACK/NAK
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._owner_profile_runtime.setOwner(
+            long_name=long_name,
+            short_name=short_name,
+            is_licensed=is_licensed,
+            is_unmessagable=is_unmessagable,
+        )
 
     def getURL(self, includeAll: bool = True) -> str:
         """Build a sharable meshtastic URL encoding the node's primary channel and LoRa configuration.
@@ -1026,24 +846,7 @@ class Node:
         share_url : str
             A meshtastic.org URL containing the encoded channel set and LoRa configuration.
         """
-        # Only keep the primary/secondary channels, assume primary is first
-        channelSet = apponly_pb2.ChannelSet()
-        with self._channels_lock:
-            channels_snapshot = list(self.channels) if self.channels else []
-        if channels_snapshot:
-            for c in channels_snapshot:
-                if c.role == channel_pb2.Channel.Role.PRIMARY or (
-                    includeAll and c.role == channel_pb2.Channel.Role.SECONDARY
-                ):
-                    channelSet.settings.append(c.settings)
-
-        if len(self.localConfig.ListFields()) == 0:
-            self.requestConfig(self.localConfig.DESCRIPTOR.fields_by_name["lora"])
-        channelSet.lora_config.CopyFrom(self.localConfig.lora)
-        some_bytes = channelSet.SerializeToString()
-        s = base64.urlsafe_b64encode(some_bytes).decode("ascii")
-        s = s.replace("=", "").replace("+", "-").replace("/", "_")
-        return f"https://meshtastic.org/e/#{s}"
+        return self._channel_export_runtime.get_url(include_all=includeAll)
 
     def setURL(self, url: str, addOnly: bool = False) -> None:
         """Parse a Mesh URL and apply its channel and LoRa configuration to this node.
@@ -1069,582 +872,18 @@ class Node:
         with self._channels_lock:
             if self.channels is None:
                 self._raise_interface_error("Config or channels not loaded")
-
-        # URLs are of the form https://meshtastic.org/d/#{base64_channel_set}
-        # Parse from '#' to support optional query parameters before the fragment.
-        if "#" not in url:
-            self._raise_interface_error(f"Invalid URL '{url}'")
-        b64 = url.split("#")[-1]
-        if not b64:
-            self._raise_interface_error(f"Invalid URL '{url}': no channel data found")
-
-        # We normally strip padding to make for a shorter URL, but the python parser doesn't like
-        # that.  So add back any missing padding
-        # per https://stackoverflow.com/a/9807138
-        missing_padding = len(b64) % 4
-        if missing_padding:
-            b64 += "=" * (4 - missing_padding)
-
-        try:
-            decodedURL = base64.urlsafe_b64decode(b64)
-        except (binascii.Error, ValueError) as ex:
-            self._raise_interface_error(f"Invalid URL '{url}': {ex}")
-        channelSet = apponly_pb2.ChannelSet()
-        try:
-            channelSet.ParseFromString(decodedURL)
-        except (DecodeError, ValueError) as ex:
-            self._raise_interface_error(
-                f"Unable to parse channel settings from URL '{url}': {ex}"
-            )
-
-        if len(channelSet.settings) == 0:
-            self._raise_interface_error("There were no settings.")
-        has_lora_update = channelSet.HasField("lora_config")
-
-        admin_write_node = self.iface.localNode
-        admin_index_for_write = admin_write_node._get_admin_channel_index()
-        named_admin_index_for_write = admin_write_node._get_named_admin_channel_index()
-        has_admin_write_node_named_admin = named_admin_index_for_write is not None
-
+        parsed_input = _SetUrlParser._parse(
+            url,
+            raise_interface_error=self._raise_interface_error,
+        )
+        transaction = _SetUrlTransactionCoordinator(
+            self,
+            parsed_input=parsed_input,
+        )
         if addOnly:
-            # Add new channels with names not already present
-            # Don't change existing channels
-            ignored_channel_names: list[str] = []
-            channels_to_write: list[tuple[channel_pb2.Channel, str]] = []
-            deferred_add_only_admin_channel: tuple[channel_pb2.Channel, str] | None = (
-                None
-            )
-            deferred_add_only_admin_index: int | None = None
-            original_channels_by_index: dict[int, channel_pb2.Channel] = {}
-            original_lora_config: config_pb2.Config.LoRaConfig | None = None
-            # Rollback needs a local LoRa snapshot only when this URL updates LoRa.
-            if has_lora_update:
-                if not self.localConfig.HasField("lora"):
-                    self._raise_interface_error(
-                        "LoRa config must be loaded before setURL(addOnly=True)"
-                    )
-                original_lora_config = config_pb2.Config.LoRaConfig()
-                original_lora_config.CopyFrom(self.localConfig.lora)
-            # Bootstrap admin session using the snapshotted path before staging.
-            self.ensureSessionKey(adminIndex=admin_index_for_write)
-            with self._channels_lock:
-                channels = self.channels
-                if channels is None:
-                    self._raise_interface_error("Config or channels not loaded")
-                existing_names_normalized = {
-                    c.settings.name.lower()
-                    for c in channels
-                    if (
-                        c.role != channel_pb2.Channel.Role.DISABLED
-                        and c.settings
-                        and c.settings.name
-                    )
-                }
-                disabled_channels = [
-                    c for c in channels if c.role == channel_pb2.Channel.Role.DISABLED
-                ]
-                pending_new_settings: list[channel_pb2.ChannelSettings] = []
-                for chs in channelSet.settings:
-                    channel_name = chs.name
-                    normalized_name = channel_name.lower()
-                    if (
-                        channel_name == ""
-                        or normalized_name in existing_names_normalized
-                    ):
-                        ignored_channel_names.append(channel_name)
-                        continue
-                    pending_new_settings.append(chs)
-                    existing_names_normalized.add(normalized_name)
-                if len(pending_new_settings) > len(disabled_channels):
-                    self._raise_interface_error(
-                        "No free channels were found for all additions "
-                        f"(need {len(pending_new_settings)}, available {len(disabled_channels)})"
-                    )
-                for disabled_channel, new_settings in zip(
-                    disabled_channels, pending_new_settings, strict=False
-                ):
-                    previous_channel = channel_pb2.Channel()
-                    previous_channel.CopyFrom(disabled_channel)
-                    original_channels_by_index[disabled_channel.index] = (
-                        previous_channel
-                    )
-                    staged_channel = channel_pb2.Channel()
-                    staged_channel.CopyFrom(disabled_channel)
-                    staged_channel.settings.CopyFrom(new_settings)
-                    staged_channel.role = channel_pb2.Channel.Role.SECONDARY
-                    channels_to_write.append((staged_channel, new_settings.name))
-
-            if not has_admin_write_node_named_admin:
-                deferred_add_only_admin_channel = next(
-                    (
-                        candidate
-                        for candidate in channels_to_write
-                        if _is_named_admin_channel_name(candidate[1])
-                    ),
-                    None,
-                )
-            if deferred_add_only_admin_channel is not None:
-                deferred_add_only_admin_index = deferred_add_only_admin_channel[0].index
-
-            for ignored_name in ignored_channel_names:
-                logger.info(
-                    'Ignoring existing or empty channel "%s" from add URL',
-                    ignored_name,
-                )
-            written_indices: list[int] = []
-            lora_write_started = False
-            try:
-                for staged_channel, channel_name in channels_to_write:
-                    if (
-                        deferred_add_only_admin_channel is not None
-                        and staged_channel.index
-                        == deferred_add_only_admin_channel[0].index
-                    ):
-                        continue
-                    logger.info("Adding new channel '%s' to device", channel_name)
-                    written_indices.append(staged_channel.index)
-                    self._write_channel_snapshot(
-                        staged_channel,
-                        adminIndex=admin_index_for_write,
-                    )
-                if has_lora_update:
-                    set_lora = admin_pb2.AdminMessage()
-                    set_lora.set_config.lora.CopyFrom(channelSet.lora_config)
-                    self.ensureSessionKey(adminIndex=admin_index_for_write)
-                    lora_write_started = True
-                    self._send_admin(set_lora, adminIndex=admin_index_for_write)
-                if deferred_add_only_admin_channel is not None:
-                    staged_channel, channel_name = deferred_add_only_admin_channel
-                    logger.info("Adding new channel '%s' to device", channel_name)
-                    written_indices.append(staged_channel.index)
-                    self._write_channel_snapshot(
-                        staged_channel,
-                        adminIndex=admin_index_for_write,
-                    )
-            # Intentionally broad: rollback should run for any send failure in this
-            # transactional block. The original exception is re-raised.
-            except Exception:
-                logger.warning(
-                    "Failed while applying addOnly channel updates; attempting rollback "
-                    "for written channels and LoRa config.",
-                    exc_info=True,
-                )
-                rollback_failed = False
-                written_index_set = set(written_indices)
-                if deferred_add_only_admin_index in written_index_set:
-                    rollback_admin_indexes = _ordered_admin_indexes(
-                        deferred_add_only_admin_index,
-                        admin_index_for_write,
-                    )
-                else:
-                    rollback_admin_indexes = _ordered_admin_indexes(
-                        admin_index_for_write,
-                        deferred_add_only_admin_index,
-                    )
-                channel_rollback_order: list[int] = []
-                if (
-                    deferred_add_only_admin_index is not None
-                    and deferred_add_only_admin_index in written_index_set
-                ):
-                    channel_rollback_order.append(deferred_add_only_admin_index)
-                for index in reversed(written_indices):
-                    if index not in channel_rollback_order:
-                        channel_rollback_order.append(index)
-                for index in channel_rollback_order:
-                    rollback_channel = original_channels_by_index.get(index)
-                    if rollback_channel is None:
-                        continue
-                    rollback_succeeded = False
-                    last_rollback_error: Exception | None = None
-                    for rollback_admin_index in rollback_admin_indexes:
-                        try:
-                            self._write_channel_snapshot(
-                                rollback_channel,
-                                adminIndex=rollback_admin_index,
-                            )
-                            rollback_succeeded = True
-                            break
-                        # Best-effort rollback path; keep attempting remaining steps.
-                        except (
-                            Exception
-                        ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
-                            last_rollback_error = rollback_error
-                    if not rollback_succeeded:
-                        rollback_failed = True
-                        logger.warning(
-                            "Rollback of channel index %s failed after addOnly partial failure.",
-                            index,
-                            exc_info=(
-                                None
-                                if last_rollback_error is None
-                                else (
-                                    type(last_rollback_error),
-                                    last_rollback_error,
-                                    last_rollback_error.__traceback__,
-                                )
-                            ),
-                        )
-                if rollback_failed:
-                    with self._channels_lock:
-                        self.channels = None
-                        self.partialChannels = []
-                    logger.warning(
-                        "Channel rollback incomplete after addOnly failure; invalidated local channel cache."
-                    )
-                if lora_write_started and original_lora_config is not None:
-                    rollback_lora = admin_pb2.AdminMessage()
-                    rollback_lora.set_config.lora.CopyFrom(original_lora_config)
-                    rollback_lora_succeeded = False
-                    last_rollback_lora_error: Exception | None = None
-                    for rollback_admin_index in rollback_admin_indexes:
-                        try:
-                            self.ensureSessionKey(adminIndex=rollback_admin_index)
-                            self._send_admin(
-                                rollback_lora,
-                                adminIndex=rollback_admin_index,
-                            )
-                            self.localConfig.lora.CopyFrom(original_lora_config)
-                            rollback_lora_succeeded = True
-                            break
-                        # Best-effort rollback path; keep original failure semantics.
-                        # Preserve original failure while attempting best-effort LoRa rollback.
-                        except Exception as rollback_lora_error:  # noqa: BLE001
-                            last_rollback_lora_error = rollback_lora_error
-                    if not rollback_lora_succeeded:
-                        logger.warning(
-                            "Rollback of LoRa config failed after addOnly partial failure.",
-                            exc_info=(
-                                None
-                                if last_rollback_lora_error is None
-                                else (
-                                    type(last_rollback_lora_error),
-                                    last_rollback_lora_error,
-                                    last_rollback_lora_error.__traceback__,
-                                )
-                            ),
-                        )
-                        self.localConfig.ClearField("lora")
-                        logger.warning(
-                            "LoRa config cache cleared after rollback failure; reload config before using localConfig.lora."
-                        )
-                raise
-            with self._channels_lock:
-                channels = self.channels
-                if channels is None:
-                    logger.warning(
-                        "Channel cache unavailable after successful addOnly apply; reload channels to refresh local state."
-                    )
-                else:
-                    for staged_channel, _ in channels_to_write:
-                        if 0 <= staged_channel.index < len(channels):
-                            channels[staged_channel.index].CopyFrom(staged_channel)
-                        else:
-                            logger.warning(
-                                "Channel index %s out of range during addOnly cache update; invalidating local channel cache.",
-                                staged_channel.index,
-                            )
-                            self.channels = None
-                            self.partialChannels = []
-                            break
-            if has_lora_update:
-                self.localConfig.lora.CopyFrom(channelSet.lora_config)
-        else:
-            with self._channels_lock:
-                channels = self.channels
-                if channels is None:
-                    self._raise_interface_error("Config or channels not loaded")
-                max_channels = len(channels)
-                replace_original_channels_snapshot: list[channel_pb2.Channel] = []
-                replace_original_channels_by_index: dict[int, channel_pb2.Channel] = {}
-                for existing_channel in channels:
-                    channel_snapshot = channel_pb2.Channel()
-                    channel_snapshot.CopyFrom(existing_channel)
-                    replace_original_channels_snapshot.append(channel_snapshot)
-                    replace_original_channels_by_index[existing_channel.index] = (
-                        channel_snapshot
-                    )
-            replace_original_lora_config: config_pb2.Config.LoRaConfig | None = None
-            if has_lora_update and self.localConfig.HasField("lora"):
-                replace_original_lora_config = config_pb2.Config.LoRaConfig()
-                replace_original_lora_config.CopyFrom(self.localConfig.lora)
-            staged_channels: list[channel_pb2.Channel] = []
-            for i, chs in enumerate(channelSet.settings):
-                if i >= max_channels:
-                    logger.warning(
-                        "URL contains more than %d channels; extra channels are ignored.",
-                        max_channels,
-                    )
-                    break
-                ch = channel_pb2.Channel()
-                ch.role = (
-                    channel_pb2.Channel.Role.PRIMARY
-                    if i == 0
-                    else channel_pb2.Channel.Role.SECONDARY
-                )
-                ch.index = i
-                ch.settings.CopyFrom(chs)
-                staged_channels.append(ch)
-            # Full-replace semantics: any channels not present in the URL should be
-            # explicitly disabled so stale secondaries/admin channels do not persist.
-            for i in range(len(staged_channels), max_channels):
-                disabled_channel = channel_pb2.Channel()
-                disabled_channel.index = i
-                disabled_channel.role = channel_pb2.Channel.Role.DISABLED
-                staged_channels.append(disabled_channel)
-
-            staged_named_admin_channels = [
-                staged_channel
-                for staged_channel in staged_channels
-                if staged_channel.settings
-                and staged_channel.settings.name
-                and _is_named_admin_channel_name(staged_channel.settings.name)
-            ]
-            if len(staged_named_admin_channels) > 1:
-                self._raise_interface_error(
-                    "URL contains multiple channels named 'admin'; only one is allowed"
-                )
-            staged_named_admin_channel = (
-                staged_named_admin_channels[0] if staged_named_admin_channels else None
-            )
-            staged_channels_by_index = {
-                staged_channel.index: staged_channel
-                for staged_channel in staged_channels
-            }
-            deferred_new_named_admin_channel = staged_named_admin_channel
-            deferred_new_named_admin_index = (
-                deferred_new_named_admin_channel.index
-                if deferred_new_named_admin_channel is not None
-                else None
-            )
-            deferred_previous_admin_slot_channel: channel_pb2.Channel | None = None
-            if named_admin_index_for_write is not None:
-                previous_admin_slot_channel = staged_channels_by_index.get(
-                    named_admin_index_for_write
-                )
-                if previous_admin_slot_channel is not None and (
-                    deferred_new_named_admin_channel is None
-                    or previous_admin_slot_channel.index
-                    != deferred_new_named_admin_channel.index
-                ):
-                    deferred_previous_admin_slot_channel = previous_admin_slot_channel
-            deferred_channel_indexes = {
-                channel.index
-                for channel in (
-                    deferred_new_named_admin_channel,
-                    deferred_previous_admin_slot_channel,
-                )
-                if channel is not None
-            }
-            written_channel_indices: list[int] = []
-            lora_write_started = False
-            rollback_admin_index_for_write = admin_index_for_write
-
-            try:
-                for staged_channel in staged_channels:
-                    if staged_channel.index in deferred_channel_indexes:
-                        continue
-                    logger.debug(
-                        "Channel i:%s ch:%s",
-                        staged_channel.index,
-                        staged_channel,
-                    )
-                    written_channel_indices.append(staged_channel.index)
-                    self._write_channel_snapshot(
-                        staged_channel,
-                        adminIndex=admin_index_for_write,
-                    )
-                    with self._channels_lock:
-                        channels = self.channels
-                        if channels is None:
-                            self._raise_interface_error("Config or channels not loaded")
-                        channels[staged_channel.index].CopyFrom(staged_channel)
-
-                if has_lora_update:
-                    p = admin_pb2.AdminMessage()
-                    p.set_config.lora.CopyFrom(channelSet.lora_config)
-                    self.ensureSessionKey(adminIndex=admin_index_for_write)
-                    lora_write_started = True
-                    self._send_admin(p, adminIndex=admin_index_for_write)
-                    self.localConfig.lora.CopyFrom(channelSet.lora_config)
-
-                if deferred_new_named_admin_channel is not None:
-                    logger.debug(
-                        "Channel i:%s ch:%s",
-                        deferred_new_named_admin_channel.index,
-                        deferred_new_named_admin_channel,
-                    )
-                    written_channel_indices.append(
-                        deferred_new_named_admin_channel.index
-                    )
-                    self._write_channel_snapshot(
-                        deferred_new_named_admin_channel,
-                        adminIndex=admin_index_for_write,
-                    )
-                    with self._channels_lock:
-                        channels = self.channels
-                        if channels is None:
-                            self._raise_interface_error("Config or channels not loaded")
-                        channels[deferred_new_named_admin_channel.index].CopyFrom(
-                            deferred_new_named_admin_channel
-                        )
-                    rollback_admin_index_for_write = (
-                        deferred_new_named_admin_channel.index
-                    )
-                if deferred_previous_admin_slot_channel is not None:
-                    updated_admin_index_for_write = admin_index_for_write
-                    if deferred_new_named_admin_channel is not None:
-                        updated_admin_index_for_write = (
-                            admin_write_node._get_admin_channel_index()
-                        )
-                    logger.debug(
-                        "Rewriting deferred admin slot i:%s via admin index %s",
-                        deferred_previous_admin_slot_channel.index,
-                        updated_admin_index_for_write,
-                    )
-                    written_channel_indices.append(
-                        deferred_previous_admin_slot_channel.index
-                    )
-                    self._write_channel_snapshot(
-                        deferred_previous_admin_slot_channel,
-                        adminIndex=updated_admin_index_for_write,
-                    )
-                    with self._channels_lock:
-                        channels = self.channels
-                        if channels is None:
-                            self._raise_interface_error("Config or channels not loaded")
-                        channels[deferred_previous_admin_slot_channel.index].CopyFrom(
-                            deferred_previous_admin_slot_channel
-                        )
-            except Exception:
-                logger.warning(
-                    "Failed while applying replace-all channel updates; attempting rollback "
-                    "for written channels and LoRa config.",
-                    exc_info=True,
-                )
-                rollback_failed = False
-                written_index_set = set(written_channel_indices)
-                if deferred_new_named_admin_index in written_index_set:
-                    rollback_admin_indexes = _ordered_admin_indexes(
-                        deferred_new_named_admin_index,
-                        rollback_admin_index_for_write,
-                        admin_index_for_write,
-                    )
-                else:
-                    rollback_admin_indexes = _ordered_admin_indexes(
-                        rollback_admin_index_for_write,
-                        admin_index_for_write,
-                        deferred_new_named_admin_index,
-                    )
-                replace_channel_rollback_order: list[int] = []
-                if (
-                    deferred_new_named_admin_index is not None
-                    and deferred_new_named_admin_index in written_index_set
-                ):
-                    replace_channel_rollback_order.append(
-                        deferred_new_named_admin_index
-                    )
-                for index in reversed(written_channel_indices):
-                    if index not in replace_channel_rollback_order:
-                        replace_channel_rollback_order.append(index)
-                for index in replace_channel_rollback_order:
-                    replace_rollback_channel: channel_pb2.Channel | None = (
-                        replace_original_channels_by_index.get(index)
-                    )
-                    if replace_rollback_channel is None:
-                        continue
-                    rollback_succeeded = False
-                    replace_last_rollback_error: Exception | None = None
-                    for rollback_admin_index in rollback_admin_indexes:
-                        try:
-                            self._write_channel_snapshot(
-                                replace_rollback_channel,
-                                adminIndex=rollback_admin_index,
-                            )
-                            rollback_succeeded = True
-                            break
-                        except (
-                            Exception
-                        ) as rollback_error:  # noqa: BLE001 - best-effort rollback must continue on any rollback send failure
-                            replace_last_rollback_error = rollback_error
-                    if not rollback_succeeded:
-                        rollback_failed = True
-                        logger.warning(
-                            "Rollback of channel index %s failed after replace-all partial failure.",
-                            index,
-                            exc_info=(
-                                None
-                                if replace_last_rollback_error is None
-                                else (
-                                    type(replace_last_rollback_error),
-                                    replace_last_rollback_error,
-                                    replace_last_rollback_error.__traceback__,
-                                )
-                            ),
-                        )
-                if lora_write_started:
-                    if replace_original_lora_config is not None:
-                        rollback_lora = admin_pb2.AdminMessage()
-                        rollback_lora.set_config.lora.CopyFrom(
-                            replace_original_lora_config
-                        )
-                        rollback_lora_succeeded = False
-                        replace_last_rollback_lora_error: Exception | None = None
-                        for rollback_admin_index in rollback_admin_indexes:
-                            try:
-                                self.ensureSessionKey(adminIndex=rollback_admin_index)
-                                self._send_admin(
-                                    rollback_lora,
-                                    adminIndex=rollback_admin_index,
-                                )
-                                self.localConfig.lora.CopyFrom(
-                                    replace_original_lora_config
-                                )
-                                rollback_lora_succeeded = True
-                                break
-                            # Preserve original failure while attempting best-effort LoRa rollback.
-                            except Exception as rollback_lora_error:  # noqa: BLE001
-                                replace_last_rollback_lora_error = rollback_lora_error
-                        if not rollback_lora_succeeded:
-                            rollback_failed = True
-                            logger.warning(
-                                "Rollback of LoRa config failed after replace-all partial failure.",
-                                exc_info=(
-                                    None
-                                    if replace_last_rollback_lora_error is None
-                                    else (
-                                        type(replace_last_rollback_lora_error),
-                                        replace_last_rollback_lora_error,
-                                        replace_last_rollback_lora_error.__traceback__,
-                                    )
-                                ),
-                            )
-                            self.localConfig.ClearField("lora")
-                            logger.warning(
-                                "LoRa config cache cleared after rollback failure; reload config before using localConfig.lora."
-                            )
-                    else:
-                        self.localConfig.ClearField("lora")
-                        logger.warning(
-                            "LoRa config cache cleared after replace-all failure without "
-                            "rollback snapshot; reload config before using localConfig.lora."
-                        )
-                if rollback_failed:
-                    with self._channels_lock:
-                        self.channels = None
-                        self.partialChannels = []
-                    logger.warning(
-                        "Replace-all rollback incomplete after failure; invalidated local channel cache."
-                    )
-                else:
-                    with self._channels_lock:
-                        restored_channels: list[channel_pb2.Channel] = []
-                        for original_channel in replace_original_channels_snapshot:
-                            restored_channel = channel_pb2.Channel()
-                            restored_channel.CopyFrom(original_channel)
-                            restored_channels.append(restored_channel)
-                        self.channels = restored_channels
-                        self.partialChannels = []
-                raise
+            transaction._apply_add_only()  # noqa: SLF001
+            return
+        transaction._apply_replace_all()  # noqa: SLF001
 
     def onResponseRequestRingtone(self, p: dict[str, Any]) -> None:
         """Process an admin response containing a ringtone fragment and cache it on the Node.
@@ -1660,20 +899,7 @@ class Node:
             a "decoded" dict with optional "routing" (containing "errorReason") and
             "admin" -> "raw" -> get_ringtone_response payload.
         """
-        logger.debug("onResponseRequestRingtone() p:%s", p)
-        errorFound = False
-        if "routing" in p["decoded"]:
-            if p["decoded"]["routing"]["errorReason"] != "NONE":
-                errorFound = True
-                logger.error(
-                    "Error on response: %s", p["decoded"]["routing"]["errorReason"]
-                )
-        if errorFound is False:
-            if "admin" in p["decoded"] and "raw" in p["decoded"]["admin"]:
-                ringtone_part = p["decoded"]["admin"]["raw"].get_ringtone_response
-                with self._ringtone_lock:
-                    self.ringtonePart = ringtone_part
-                logger.debug("self.ringtonePart:%s", ringtone_part)
+        self._content_response_runtime._handle_ringtone_response(p)
 
     def _get_ringtone(self) -> str | None:
         """Retrieve the node's ringtone as a single concatenated string.
@@ -1690,63 +916,7 @@ class Node:
             module is not present, the ringtone is unavailable, or the request
             timed out.
         """
-        logger.debug("in get_ringtone()")
-        if not self.module_available(mesh_pb2.EXTNOTIF_CONFIG):
-            logger.warning(
-                "External Notification module not present (excluded by firmware)"
-            )
-            return None
-
-        with self._ringtone_lock:
-            if self.ringtone:
-                logger.debug("ringtone:%s", self.ringtone)
-                return self.ringtone
-            # Clear stale partial state before issuing a new request.
-            self.ringtonePart = None
-
-        response_event = threading.Event()
-
-        def _on_ringtone_response(packet: dict[str, Any]) -> None:
-            """Forward a ringtone response packet to the instance handler and signal completion.
-
-            Calls self.onResponseRequestRingtone(packet) to process the response and
-            ensures the threading Event response_event is set whether the handler
-            succeeds or raises an exception, allowing any waiters to continue.
-
-            Parameters
-            ----------
-            packet : dict[str, Any]
-                Admin response packet containing ringtone data and routing information.
-            """
-            try:
-                self.onResponseRequestRingtone(packet)
-            finally:
-                response_event.set()
-
-        p1 = admin_pb2.AdminMessage()
-        p1.get_ringtone_request = True
-        request = self._send_admin(
-            p1, wantResponse=True, onResponse=_on_ringtone_response
-        )
-        if request is None:
-            logger.debug("Skipping ringtone wait because protocol send was not started")
-            return None
-        if not response_event.wait(timeout=self._timeout.expireTimeout):
-            logger.warning("Timed out waiting for ringtone response")
-            return None
-
-        with self._ringtone_lock:
-            # Another caller may have already populated the cache while we waited.
-            if self.ringtone:
-                logger.debug("ringtone:%s", self.ringtone)
-                result = self.ringtone
-            elif self.ringtonePart:
-                self.ringtone = self.ringtonePart
-                logger.debug("ringtone:%s", self.ringtone)
-                result = self.ringtone
-            else:
-                result = None
-        return result
+        return self._content_request_runtime.readRingtone()
 
     def _set_ringtone(self, ringtone: str) -> mesh_pb2.MeshPacket | None:
         """Set the node's ringtone.
@@ -1771,32 +941,7 @@ class Node:
         MeshInterfaceError
             If `ringtone` length exceeds 230 characters.
         """
-        if not self.module_available(mesh_pb2.EXTNOTIF_CONFIG):
-            logger.warning(
-                "External Notification module not present (excluded by firmware)"
-            )
-            return None
-
-        if len(ringtone) > MAX_RINGTONE_LENGTH:
-            self._raise_interface_error(
-                f"The ringtone must be {MAX_RINGTONE_LENGTH} characters or fewer."
-            )
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.set_ringtone_message = ringtone
-
-        logger.debug("Setting ringtone '%s'", ringtone)
-        # If sending to a remote node, wait for ACK/NAK
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        send_result = self._send_admin(p, onResponse=onResponse)
-        with self._ringtone_lock:
-            # Invalidate cache after send so future reads refresh.
-            self.ringtone = None
-            self.ringtonePart = None
-        return send_result
+        return self._content_request_runtime.writeRingtone(ringtone)
 
     def onResponseRequestCannedMessagePluginMessageMessages(
         self, p: dict[str, Any]
@@ -1813,25 +958,7 @@ class Node:
             Decoded packet dictionary containing response fields, expected to include
             keys like `"decoded"`, `"decoded"]["routing"]`, and `"decoded"]["admin"]["raw"]`.
         """
-        logger.debug("onResponseRequestCannedMessagePluginMessageMessages() p:%s", p)
-        errorFound = False
-        if "routing" in p["decoded"]:
-            if p["decoded"]["routing"]["errorReason"] != "NONE":
-                errorFound = True
-                logger.error(
-                    "Error on response: %s", p["decoded"]["routing"]["errorReason"]
-                )
-        if errorFound is False:
-            if "admin" in p["decoded"] and "raw" in p["decoded"]["admin"]:
-                canned_messages = p["decoded"]["admin"][
-                    "raw"
-                ].get_canned_message_module_messages_response
-                with self._canned_message_lock:
-                    self.cannedPluginMessageMessages = canned_messages
-                logger.debug(
-                    "self.cannedPluginMessageMessages:%s",
-                    canned_messages,
-                )
+        self._content_response_runtime._handle_canned_message_response(p)
 
     def _get_canned_message(self) -> str | None:
         """Retrieve the device's canned message, requesting parts from the node if not already cached.
@@ -1845,70 +972,7 @@ class Node:
         str | None
             str or None: The assembled canned message if available, or None if the module is unavailable or no response was received.
         """
-        logger.debug("in get_canned_message()")
-        if not self.module_available(mesh_pb2.CANNEDMSG_CONFIG):
-            logger.warning("Canned Message module not present (excluded by firmware)")
-            return None
-        with self._canned_message_lock:
-            if self.cannedPluginMessage:
-                logger.debug("canned_plugin_message:%s", self.cannedPluginMessage)
-                return self.cannedPluginMessage
-            # Clear stale partial state before issuing a new request.
-            self.cannedPluginMessageMessages = None
-
-        response_event = threading.Event()
-
-        def _on_canned_message_response(packet: dict[str, Any]) -> None:
-            """Handle an incoming canned-message admin response and notify the waiting event.
-
-            Forwards the received admin response packet to
-            self.onResponseRequestCannedMessagePluginMessageMessages, then sets the
-            response_event to signal completion. The event is set regardless of handler
-            success to ensure waiters are released.
-
-            Parameters
-            ----------
-            packet : dict[str, Any]
-                The received admin response payload for the canned-message plugin.
-            """
-            try:
-                self.onResponseRequestCannedMessagePluginMessageMessages(packet)
-            finally:
-                response_event.set()
-
-        p1 = admin_pb2.AdminMessage()
-        p1.get_canned_message_module_messages_request = True
-        request = self._send_admin(
-            p1,
-            wantResponse=True,
-            onResponse=_on_canned_message_response,
-        )
-        if request is None:
-            logger.debug(
-                "Skipping canned-message wait because protocol send was not started"
-            )
-            return None
-        if not response_event.wait(timeout=self._timeout.expireTimeout):
-            logger.warning("Timed out waiting for canned message response")
-            return None
-
-        with self._canned_message_lock:
-            # Another caller may have already populated the cache while we waited.
-            if self.cannedPluginMessage:
-                logger.debug("canned_plugin_message:%s", self.cannedPluginMessage)
-                result = self.cannedPluginMessage
-            else:
-                logger.debug(
-                    "self.cannedPluginMessageMessages:%s",
-                    self.cannedPluginMessageMessages,
-                )
-                if self.cannedPluginMessageMessages:
-                    self.cannedPluginMessage = self.cannedPluginMessageMessages
-                    logger.debug("canned_plugin_message:%s", self.cannedPluginMessage)
-                    result = self.cannedPluginMessage
-                else:
-                    result = None
-        return result
+        return self._content_request_runtime.readCannedMessage()
 
     def _set_canned_message(self, message: str) -> mesh_pb2.MeshPacket | None:
         """Set the device's canned message.
@@ -1933,30 +997,7 @@ class Node:
         MeshInterfaceError
             If `message` length is greater than 200 characters.
         """
-        if not self.module_available(mesh_pb2.CANNEDMSG_CONFIG):
-            logger.warning("Canned Message module not present (excluded by firmware)")
-            return None
-
-        if len(message) > MAX_CANNED_MESSAGE_LENGTH:
-            self._raise_interface_error(
-                f"The canned message must be {MAX_CANNED_MESSAGE_LENGTH} characters or fewer."
-            )
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.set_canned_message_module_messages = message
-
-        logger.debug("Setting canned message '%s'", message)
-        # If sending to a remote node, wait for ACK/NAK
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        send_result = self._send_admin(p, onResponse=onResponse)
-        with self._canned_message_lock:
-            # Invalidate cache after send so future reads refresh.
-            self.cannedPluginMessage = None
-            self.cannedPluginMessageMessages = None
-        return send_result
+        return self._content_request_runtime.writeCannedMessage(message)
 
     # COMPAT_STABLE_SHIM: alias for getRingtone
     def get_ringtone(self) -> str | None:
@@ -2084,12 +1125,7 @@ class Node:
         mesh_pb2.MeshPacket | None
             A MeshPacket for the sent admin request, or `None` if the admin message was not sent.
         """
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.exit_simulator = True
-        logger.debug("in exitSimulator()")
-
-        return self._send_admin(p)
+        return self._admin_command_runtime.exitSimulator()
 
     def reboot(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
         """Request the node to reboot after a delay.
@@ -2104,17 +1140,7 @@ class Node:
         mesh_pb2.MeshPacket | None
             The AdminMessage packet sent to the node, or `None` if no packet was sent.
         """
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.reboot_seconds = secs
-        logger.info("Telling node to reboot in %s seconds", secs)
-
-        # If sending to a remote node, wait for ACK/NAK
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.reboot(secs)
 
     def beginSettingsTransaction(self) -> mesh_pb2.MeshPacket | None:
         """Request the node to open a settings edit transaction.
@@ -2128,17 +1154,7 @@ class Node:
         mesh_pb2.MeshPacket | None
             The sent admin packet if available, or `None` otherwise.
         """
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.begin_edit_settings = True
-        logger.info("Telling node to open a transaction to edit settings")
-
-        # If sending to a remote node, wait for ACK/NAK
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.beginSettingsTransaction()
 
     def commitSettingsTransaction(self) -> mesh_pb2.MeshPacket | None:
         """Commit the node's open settings edit transaction.
@@ -2150,17 +1166,7 @@ class Node:
         mesh_pb2.MeshPacket | None
             The sent Admin `MeshPacket` when available, or `None`.
         """
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.commit_edit_settings = True
-        logger.info("Telling node to commit open transaction for editing settings")
-
-        # If sending to a remote node, wait for ACK/NAK
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.commitSettingsTransaction()
 
     def rebootOTA(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
         """Request the node to perform an OTA reboot after a given delay.
@@ -2175,17 +1181,7 @@ class Node:
         mesh_pb2.MeshPacket | None
             The sent Admin message packet, or `None` if no packet was produced.
         """
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.reboot_ota_seconds = secs
-        logger.info("Telling node to reboot to OTA in %s seconds", secs)
-
-        # If sending to a remote node, wait for ACK/NAK
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.rebootOta(secs)
 
     def startOTA(
         self,
@@ -2202,8 +1198,10 @@ class Node:
         ----------
         mode : admin_pb2.OTAMode.ValueType | None
             OTA transport mode to use after reboot (for example, ``admin_pb2.OTA_WIFI``).
+            Can also be passed as positional first argument for backward compatibility.
         ota_file_hash : bytes | None
             Firmware hash bytes used by the node to validate OTA payload consistency.
+            Can also be passed as positional second argument for backward compatibility.
         ota_mode : admin_pb2.OTAMode.ValueType | None
             Backward-compatible keyword alias for ``mode``.
         ota_hash : bytes | None
@@ -2219,42 +1217,13 @@ class Node:
         MeshInterfaceError
             If called for a non-local node.
         """
-        if self != self.iface.localNode:
-            self._raise_interface_error("startOTA only possible on local node")
-
-        # COMPAT_STABLE_SHIM: support legacy keyword aliases used by older callers:
-        # `ota_mode` -> `mode`, and `ota_hash`/`hash` -> `ota_file_hash`.
-        legacy_hash = kwargs.pop("hash", None)
-        if kwargs:
-            unexpected = ", ".join(sorted(kwargs))
-            raise TypeError(
-                f"startOTA() got unexpected keyword argument(s): {unexpected}"
-            )
-
-        if mode is not None and ota_mode is not None and mode != ota_mode:
-            raise ValueError("Conflicting OTA mode arguments provided")
-        resolved_mode = mode if mode is not None else ota_mode
-        if resolved_mode is None:
-            raise TypeError("startOTA() missing required argument: 'mode'")
-
-        hash_values = {
-            value
-            for value in (ota_file_hash, ota_hash, legacy_hash)
-            if value is not None
-        }
-        if not hash_values:
-            raise TypeError("startOTA() missing required argument: 'ota_file_hash'")
-        if len(hash_values) > 1:
-            raise ValueError("Conflicting OTA hash arguments provided")
-        resolved_hash = hash_values.pop()
-        if not isinstance(resolved_hash, bytes):
-            raise TypeError("ota_file_hash must be bytes")
-
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.ota_request.reboot_ota_mode = resolved_mode
-        p.ota_request.ota_hash = resolved_hash
-        return self._send_admin(p)
+        return self._admin_command_runtime.startOta(
+            mode=mode,
+            ota_file_hash=ota_file_hash,
+            ota_mode=ota_mode,
+            ota_hash=ota_hash,
+            **kwargs,
+        )
 
     def enterDFUMode(self) -> mesh_pb2.MeshPacket | None:
         """Request the node to enter DFU (NRF52) mode.
@@ -2267,17 +1236,7 @@ class Node:
         mesh_pb2.MeshPacket | None
             The sent Admin message packet, or `None` if no packet was sent.
         """
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.enter_dfu_mode_request = True
-        logger.info("Telling node to enable DFU mode")
-
-        # If sending to a remote node, wait for ACK/NAK
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.enterDfuMode()
 
     def shutdown(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
         """Request the node to shut down after a given number of seconds.
@@ -2292,17 +1251,7 @@ class Node:
         mesh_pb2.MeshPacket | None
             The AdminMessage packet that was sent, or `None` if no packet was sent.
         """
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.shutdown_seconds = secs
-        logger.info("Telling node to shutdown in %s seconds", secs)
-
-        # If sending to a remote node, wait for ACK/NAK
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.shutdown(secs)
 
     def getMetadata(self) -> None:
         """Request the node's device metadata and wait for an acknowledgement.
@@ -2345,21 +1294,11 @@ class Node:
         mesh_pb2.MeshPacket | None
             The sent admin packet if sending succeeded, or None otherwise.
         """
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        if full:
-            p.factory_reset_device = FACTORY_RESET_REQUEST_VALUE
-            logger.info("Telling node to factory reset (full device reset)")
-        else:
-            p.factory_reset_config = FACTORY_RESET_REQUEST_VALUE
-            logger.info("Telling node to factory reset (config reset)")
+        return self._admin_command_runtime.factoryReset(full=full)
 
-        # If sending to a remote node, wait for ACK/NAK
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+    def _get_factory_reset_request_value(self) -> int:
+        """Return factory-reset sentinel value used for admin reset requests."""
+        return FACTORY_RESET_REQUEST_VALUE
 
     def removeNode(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Request removal of the mesh node identified by nodeId.
@@ -2378,17 +1317,7 @@ class Node:
         mesh_pb2.MeshPacket | None
             The admin packet returned by the send operation if available, `None` otherwise.
         """
-        self.ensureSessionKey()
-        nodeId = toNodeNum(nodeId)
-
-        p = admin_pb2.AdminMessage()
-        p.remove_by_nodenum = nodeId
-
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.removeNode(nodeId)
 
     def setFavorite(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Mark a node as a favorite in the target device's NodeDB.
@@ -2403,17 +1332,7 @@ class Node:
         mesh_pb2.MeshPacket | None
             The response packet if one was received, `None` otherwise.
         """
-        self.ensureSessionKey()
-        nodeId = toNodeNum(nodeId)
-
-        p = admin_pb2.AdminMessage()
-        p.set_favorite_node = nodeId
-
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.setFavorite(nodeId)
 
     def removeFavorite(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Unmark a node as a favorite in the device's NodeDB.
@@ -2428,17 +1347,7 @@ class Node:
         mesh_pb2.MeshPacket | None
             The Admin packet sent to the device, or `None` if no packet was sent.
         """
-        self.ensureSessionKey()
-        nodeId = toNodeNum(nodeId)
-
-        p = admin_pb2.AdminMessage()
-        p.remove_favorite_node = nodeId
-
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.removeFavorite(nodeId)
 
     def setIgnored(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Mark a node in the device NodeDB as ignored.
@@ -2453,17 +1362,7 @@ class Node:
         mesh_pb2.MeshPacket | None
             The AdminMessage/packet sent to request the change, or `None` if no packet was sent.
         """
-        self.ensureSessionKey()
-        nodeId = toNodeNum(nodeId)
-
-        p = admin_pb2.AdminMessage()
-        p.set_ignored_node = nodeId
-
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.setIgnored(nodeId)
 
     def removeIgnored(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Unmark a node as ignored in the device's NodeDB.
@@ -2478,17 +1377,7 @@ class Node:
         mesh_pb2.MeshPacket | None
             `mesh_pb2.MeshPacket` if an AdminMessage was sent, `None` otherwise.
         """
-        self.ensureSessionKey()
-        nodeId = toNodeNum(nodeId)
-
-        p = admin_pb2.AdminMessage()
-        p.remove_ignored_node = nodeId
-
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.removeIgnored(nodeId)
 
     def resetNodeDb(self) -> mesh_pb2.MeshPacket | None:
         """Request that the node clear its stored NodeDB (node database).
@@ -2501,61 +1390,34 @@ class Node:
         mesh_pb2.MeshPacket | None
             The AdminMessage packet sent, or `None` if no packet was sent.
         """
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.nodedb_reset = True
-        logger.info("Telling node to reset the NodeDB")
-
-        # If sending to a remote node, wait for ACK/NAK
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._admin_command_runtime.resetNodeDb()
 
     def setFixedPosition(
-        self, lat: int | float, lon: int | float, alt: int
+        self, lat: int | float | None, lon: int | float | None, alt: int | None
     ) -> mesh_pb2.MeshPacket | None:
         """Set the node's fixed position and enable the fixed-position setting on the device.
 
         Parameters
         ----------
-        lat : int | float
+        lat : int | float | None
             Latitude specified either as an integer in 1e-7 degrees units or as a float in decimal degrees.
-        lon : int | float
+            Pass ``None`` to leave latitude unset.
+        lon : int | float | None
             Longitude specified either as an integer in 1e-7 degrees units or as a float in decimal degrees.
-        alt : int
-            Altitude in meters (0 leaves altitude unset).
+            Pass ``None`` to leave longitude unset.
+        alt : int | None
+            Altitude in meters. Pass ``None`` to leave altitude unset.
 
         Returns
         -------
         mesh_packet : mesh_pb2.MeshPacket | None
             The result from sending the AdminMessage, or `None` if no packet was sent.
         """
-        self.ensureSessionKey()
-
-        p = mesh_pb2.Position()
-        if isinstance(lat, float) and lat != 0.0:
-            p.latitude_i = int(lat * 1e7)
-        elif isinstance(lat, int) and lat != 0:
-            p.latitude_i = lat
-
-        if isinstance(lon, float) and lon != 0.0:
-            p.longitude_i = int(lon * 1e7)
-        elif isinstance(lon, int) and lon != 0:
-            p.longitude_i = lon
-
-        if alt != 0:
-            p.altitude = alt
-
-        a = admin_pb2.AdminMessage()
-        a.set_fixed_position.CopyFrom(p)
-
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(a, onResponse=onResponse)
+        return self._position_time_runtime._set_fixed_position(
+            lat=lat,
+            lon=lon,
+            alt=alt,
+        )
 
     def removeFixedPosition(self) -> mesh_pb2.MeshPacket | None:
         """Clear the node's fixed position setting.
@@ -2567,16 +1429,7 @@ class Node:
         mesh_pb2.MeshPacket | None
             The sent AdminMessage (`mesh_pb2.MeshPacket`) if a packet was transmitted, or `None` if sending was skipped.
         """
-        self.ensureSessionKey()
-        p = admin_pb2.AdminMessage()
-        p.remove_fixed_position = True
-        logger.info("Telling node to remove fixed position")
-
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._position_time_runtime._remove_fixed_position()
 
     def setTime(self, timeSec: int = 0) -> mesh_pb2.MeshPacket | None:
         """Set the node's clock to the specified Unix timestamp.
@@ -2595,18 +1448,7 @@ class Node:
         mesh_pb2.MeshPacket | None
             mesh_pb2.MeshPacket or None: The sent AdminMessage packet when available, or `None` if no packet is produced.
         """
-        self.ensureSessionKey()
-        if timeSec == 0:
-            timeSec = int(time.time())
-        p = admin_pb2.AdminMessage()
-        p.set_time_only = timeSec
-        logger.info("Setting node time to %s", timeSec)
-
-        if self == self.iface.localNode:
-            onResponse = None
-        else:
-            onResponse = self.onAckNak
-        return self._send_admin(p, onResponse=onResponse)
+        return self._position_time_runtime._set_time(time_sec=timeSec)
 
     def _fixup_channels(self) -> None:
         """Normalize the node's channel list by assigning sequential index values and ensuring the list contains the expected number of channels.
@@ -2615,29 +1457,11 @@ class Node:
         field to its position in the list (starting at 0) and then appends disabled channels as
         needed so the channel list reaches the required length.
         """
-        with self._channels_lock:
-            self._fixup_channels_locked()
+        self._channel_normalization_runtime._fixup_channels()
 
     def _fixup_channels_locked(self) -> None:
         """Normalize channel indices and size while holding ``self._channels_lock``."""
-        channels = self.channels
-        if channels is None:
-            return
-
-        if len(channels) > MAX_CHANNELS:
-            logger.warning(
-                "Truncating channel list from %d to %d entries",
-                len(channels),
-                MAX_CHANNELS,
-            )
-            del channels[MAX_CHANNELS:]
-
-        # Add extra disabled channels as needed
-        # This is needed because the protobufs will have index **missing** if the channel number is zero
-        for index, ch in enumerate(channels):
-            ch.index = index  # fixup indexes
-
-        self._fill_channels_locked()
+        self._channel_normalization_runtime._fixup_channels_locked()
 
     def _fill_channels(self) -> None:
         """Ensure the node has exactly eight channels by appending DISABLED channels as needed.
@@ -2646,23 +1470,11 @@ class Node:
         role `DISABLED` and sequential `index` values until the list length reaches
         ``MAX_CHANNELS``.
         """
-        with self._channels_lock:
-            self._fill_channels_locked()
+        self._channel_normalization_runtime._fill_channels()
 
     def _fill_channels_locked(self) -> None:
         """Append disabled channels up to ``MAX_CHANNELS`` while holding ``self._channels_lock``."""
-        channels = self.channels
-        if channels is None:
-            return
-
-        # Add extra disabled channels as needed
-        index = len(channels)
-        while index < MAX_CHANNELS:
-            ch = channel_pb2.Channel()
-            ch.role = channel_pb2.Channel.Role.DISABLED
-            ch.index = index
-            channels.append(ch)
-            index += 1
+        self._channel_normalization_runtime._fill_channels_locked()
 
     def onRequestGetMetadata(self, p: dict[str, Any]) -> None:
         """Handle an incoming device metadata response packet and display the parsed metadata.
@@ -2678,72 +1490,16 @@ class Node:
             Decoded packet containing at minimum a 'decoded' key with routing and
             admin/raw get_device_metadata_response fields.
         """
-        logger.debug("onRequestGetMetadata() p:%s", p)
-
-        decoded = p["decoded"]
-
-        if decoded["portnum"] == portnums_pb2.PortNum.Name(
-            portnums_pb2.PortNum.ROUTING_APP
-        ):
-            if decoded["routing"]["errorReason"] != "NONE":
-                logger.warning(
-                    "Metadata request failed, error reason: %s",
-                    decoded["routing"]["errorReason"],
-                )
-                self.iface._acknowledgment.receivedNak = True
-                self._timeout.expireTime = time.time()  # Do not wait any longer
-                self._signal_metadata_stdout_event()
-                return  # Don't try to parse this routing message
-            logger.debug(
-                "Metadata request routed successfully; waiting for ADMIN_APP payload."
-            )
-            return
-
-        if "routing" in decoded and decoded["routing"]["errorReason"] != "NONE":
-            logger.error("Error on response: %s", decoded["routing"]["errorReason"])
-            self.iface._acknowledgment.receivedNak = True
-            self._signal_metadata_stdout_event()
-            return
-
-        self.iface._acknowledgment.receivedAck = True
-        c = decoded["admin"]["raw"].get_device_metadata_response
-        metadata_snapshot = mesh_pb2.DeviceMetadata()
-        metadata_snapshot.CopyFrom(c)
-        self._set_metadata_snapshot(metadata_snapshot)
-        self._timeout.reset()  # We made forward progress
-        logger.debug("Received metadata %s", stripnl(c))
-        self._emit_metadata_line(f"\nfirmware_version: {c.firmware_version}")
-        self._emit_metadata_line(f"device_state_version: {c.device_state_version}")
-        if c.role in config_pb2.Config.DeviceConfig.Role.values():
-            self._emit_metadata_line(
-                f"role: {config_pb2.Config.DeviceConfig.Role.Name(c.role)}"
-            )
-        else:
-            self._emit_metadata_line(f"role: {c.role}")
-        self._emit_metadata_line(
-            f"position_flags: {self.position_flags_list(c.position_flags)}"
-        )
-        if c.hw_model in mesh_pb2.HardwareModel.values():
-            self._emit_metadata_line(
-                f"hw_model: {mesh_pb2.HardwareModel.Name(c.hw_model)}"
-            )
-        else:
-            self._emit_metadata_line(f"hw_model: {c.hw_model}")
-        self._emit_metadata_line(f"hasPKC: {c.hasPKC}")
-        if c.excluded_modules > 0:
-            self._emit_metadata_line(
-                f"excluded_modules: {self.excluded_modules_list(c.excluded_modules)}"
-            )
-        self._signal_metadata_stdout_event()
+        self._metadata_response_runtime.handleMetadataResponse(p)
 
     def onResponseRequestChannel(self, p: dict[str, Any]) -> None:
         """Process a response packet for a previously requested channel and update the Node's channel state.
 
-        If the packet is a routing message with an error, expire the request timeout and retry the
-        last requested channel. If the packet contains an admin get_channel_response, append that
-        channel to the node's partial channel list, reset the request timeout, and either continue
-        requesting the next channel or, when the final channel is received, replace the node's
-        channels with the collected channels and normalize them.
+        If the packet is a routing message with a retryable error, retry the in-flight channel
+        request index. If the packet contains an admin get_channel_response, append that channel to
+        the node's partial channel list, reset the request timeout, and either continue requesting
+        the next channel or, when the final channel is received, replace the node's channels with
+        the collected channels and normalize them.
 
         Parameters
         ----------
@@ -2752,42 +1508,7 @@ class Node:
             - a routing message with 'routing.errorReason', or
             - an admin message with 'admin.raw.get_channel_response' (a Channel protobuf-like object with an `index` field).
         """
-        logger.debug("onResponseRequestChannel() p:%s", p)
-
-        if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
-            portnums_pb2.PortNum.ROUTING_APP
-        ):
-            if p["decoded"]["routing"]["errorReason"] != "NONE":
-                logger.warning(
-                    "Channel request failed, error reason: %s",
-                    p["decoded"]["routing"]["errorReason"],
-                )
-                self._timeout.expireTime = time.time()  # Do not wait any longer
-                return  # Don't try to parse this routing message
-            lastTried = 0
-            with self._channels_lock:
-                if self.partialChannels:
-                    lastTried = self.partialChannels[-1].index
-            logger.debug("Retrying previous channel request.")
-            self._request_channel(lastTried)
-            return
-
-        c = p["decoded"]["admin"]["raw"].get_channel_response
-        channel_response = channel_pb2.Channel()
-        channel_response.CopyFrom(c)
-        with self._channels_lock:
-            self.partialChannels.append(channel_response)
-        self._timeout.reset()  # We made forward progress
-        logger.debug("Received channel %s", stripnl(channel_response))
-        index = channel_response.index
-
-        if index >= MAX_CHANNELS - 1:
-            logger.debug("Finished downloading channels")
-            with self._channels_lock:
-                self.channels = list(self.partialChannels)
-                self._fixup_channels_locked()
-        else:
-            self._request_channel(index + 1)
+        self._channel_response_runtime.handleChannelResponse(p)
 
     def onAckNak(self, p: dict[str, Any]) -> None:
         """Handle an incoming ACK/NAK admin response and update interface acknowledgment state.
@@ -2806,36 +1527,7 @@ class Node:
             - p["decoded"]["routing"]["errorReason"]: routing error reason string.
             - p["from"]: numeric origin node identifier (string or int convertible).
         """
-        decoded = p.get("decoded", {})
-        routing = decoded.get("routing")
-        if not isinstance(routing, dict):
-            logger.warning("Received ACK/NAK response without routing details: %s", p)
-            return
-        error_reason = routing.get("errorReason", "NONE")
-        if error_reason != "NONE":
-            logger.warning(
-                "Received a NAK, error reason: %s",
-                error_reason,
-            )
-            self.iface._acknowledgment.receivedNak = True
-        else:
-            from_value = p.get("from")
-            if from_value is None:
-                logger.warning("Received ACK/NAK response without sender: %s", p)
-                return
-            try:
-                from_num = int(from_value)
-            except (TypeError, ValueError):
-                logger.warning("Received ACK/NAK response with invalid sender: %s", p)
-                return
-            if from_num == self.iface.localNode.nodeNum:
-                logger.info(
-                    "Received an implicit ACK. Packet will likely arrive, but cannot be guaranteed."
-                )
-                self.iface._acknowledgment.receivedImplAck = True
-            else:
-                logger.info("Received an ACK.")
-                self.iface._acknowledgment.receivedAck = True
+        self._ack_nak_runtime._handle_ack_nak(p)
 
     def _request_channel(self, channelNum: int) -> mesh_pb2.MeshPacket | None:
         """Request settings for a single channel from this node.
@@ -2852,21 +1544,7 @@ class Node:
         mesh_pb2.MeshPacket | None
             The AdminMessage packet sent to the interface, or `None` if sending was skipped (e.g., protocol disabled).
         """
-        p = admin_pb2.AdminMessage()
-        p.get_channel_request = channelNum + 1
-
-        # Show progress message for super slow operations
-        if self != self.iface.localNode:
-            logger.info(
-                "Requesting channel %s info from remote node (this could take a while)",
-                channelNum,
-            )
-        else:
-            logger.debug("Requesting channel %s", channelNum)
-
-        return self._send_admin(
-            p, wantResponse=True, onResponse=self.onResponseRequestChannel
-        )
+        return self._channel_request_runtime.requestChannel(channelNum)
 
     # pylint: disable=R1710
     def _send_admin(
@@ -2897,30 +1575,11 @@ class Node:
             The MeshPacket returned by the send operation,
             or `None` if sending was skipped because protocol use is disabled.
         """
-
-        if self.noProto:
-            logger.warning(
-                "Not sending packet because protocol use is disabled by noProto"
-            )
-            return None
-        if (
-            adminIndex is None
-        ):  # None means auto-detect; channel 0 remains an explicit valid index.
-            adminIndex = self.iface.localNode._get_admin_channel_index()
-        logger.debug("adminIndex:%s", adminIndex)
-        node_info = self.iface._get_or_create_by_num(self.nodeNum)
-        passkey = node_info.get("adminSessionPassKey")
-        if isinstance(passkey, bytes):
-            p.session_passkey = passkey
-        return self.iface.sendData(
+        return self._admin_transport_runtime._send_admin(
             p,
-            self.nodeNum,
-            portNum=portnums_pb2.PortNum.ADMIN_APP,
-            wantAck=True,
-            wantResponse=wantResponse,
-            onResponse=onResponse,
-            channelIndex=adminIndex,
-            pkiEncrypted=True,
+            want_response=wantResponse,
+            on_response=onResponse,
+            admin_index=adminIndex,
         )
 
     def ensureSessionKey(self, adminIndex: int | None = None) -> None:
@@ -2936,21 +1595,7 @@ class Node:
             the node's configured admin channel is used. Pass 0 to force
             channel 0. (Default value = None)
         """
-        if self.noProto:
-            logger.warning(
-                "Not ensuring session key, because protocol use is disabled by noProto"
-            )
-        else:
-            if (
-                self.iface._get_or_create_by_num(self.nodeNum).get(
-                    "adminSessionPassKey"
-                )
-                is None
-            ):
-                self.requestConfig(
-                    admin_pb2.AdminMessage.SESSIONKEY_CONFIG,
-                    adminIndex=adminIndex,
-                )
+        self._admin_session_runtime._ensure_session_key(admin_index=adminIndex)
 
     def _get_channels_with_hash(self) -> list[dict[str, Any]]:
         """Return a list of channel descriptors containing index, role, name, and an optional hash.
@@ -2964,28 +1609,7 @@ class Node:
             - "name" (str): The channel settings name, or an empty string if missing.
             - "hash" (int or None): Computed channel hash when both name and PSK are present, otherwise None.
         """
-        result: list[dict[str, Any]] = []
-        with self._channels_lock:
-            channels_snapshot = list(self.channels) if self.channels else []
-        if channels_snapshot:
-            for c in channels_snapshot:
-                settings = getattr(c, "settings", None)
-                name = getattr(settings, "name", "")
-                psk = getattr(settings, "psk", b"")
-                has_name = bool(name)
-                has_psk = bool(psk)
-                hash_val = (
-                    generate_channel_hash(name, psk) if has_name and has_psk else None
-                )
-                result.append(
-                    {
-                        "index": c.index,
-                        "role": channel_pb2.Channel.Role.Name(c.role),
-                        "name": name if has_name else "",
-                        "hash": hash_val,
-                    }
-                )
-        return result
+        return self._channel_export_runtime.get_channels_with_hash()
 
     # COMPAT_STABLE_SHIM: alias for getChannelsWithHash
     def get_channels_with_hash(self) -> list[dict[str, Any]]:

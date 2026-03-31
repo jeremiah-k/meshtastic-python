@@ -60,6 +60,13 @@ try:
 except ImportError:
     pass
 
+PowerMeter: Any | None = None
+PowerStress: Any | None = None
+PPK2PowerSupply: Any | None = None
+RidenPowerSupply: Any | None = None
+SimPowerSupply: Any | None = None
+LogSet: Any | None = None
+
 try:
     powermon_module = importlib.import_module("meshtastic.powermon")
     slog_module = importlib.import_module("meshtastic.slog")
@@ -77,6 +84,12 @@ try:
     powermon_exception = None
     meter = None
 except (ImportError, AttributeError) as exc:
+    PowerMeter = None
+    PowerStress = None
+    PPK2PowerSupply = None
+    RidenPowerSupply = None
+    SimPowerSupply = None
+    LogSet = None
     have_powermon = False
     powermon_exception = exc
     meter = None
@@ -886,7 +899,7 @@ def onConnected(interface: MeshInterface) -> None:
             interface.getNode(
                 ota_dest, requestChannels=False, **getNode_kwargs
             ).startOTA(
-                ota_mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=ota.hash_bytes()
+                mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=ota.hash_bytes()
             )
 
             print("Waiting for device to reboot into OTA mode...")
@@ -1628,13 +1641,23 @@ def onConnected(interface: MeshInterface) -> None:
 
         if args.slog or args.power_stress:
             if have_powermon:
-                # Setup loggers
                 global meter  # pylint: disable=global-variable-not-assigned
-                log_set = LogSet(
-                    interface, args.slog if args.slog != "default" else None, meter
-                )
+                if args.slog:
+                    if LogSet is None:
+                        _cli_exit(
+                            "LogSet is required for --slog but not available. "
+                            "The powermon module loaded incompletely."
+                        )
+                    log_set = LogSet(
+                        interface, args.slog if args.slog != "default" else None, meter
+                    )
 
                 if args.power_stress:
+                    if PowerStress is None:
+                        _cli_exit(
+                            "PowerStress is required for --power-stress but not available. "
+                            "The powermon module loaded incompletely."
+                        )
                     stress = PowerStress(interface)
                     stress.run()
                     closeNow = True  # exit immediately after stress test
@@ -1989,6 +2012,43 @@ def _create_power_meter() -> None:
             "mt_config.args must be initialized before calling _create_power_meter()"
         )
 
+    if not have_powermon:
+        _cli_exit(
+            "The powermon module could not be loaded. "
+            "You may need to run `poetry install --with powermon`. "
+            f"Import Error was: {powermon_exception}"
+        )
+    if RidenPowerSupply is None or PPK2PowerSupply is None or SimPowerSupply is None:
+        _cli_exit(
+            "The powermon module loaded incompletely and required meter classes are "
+            "unavailable."
+        )
+
+    # If the user specified a voltage, make sure it is valid AND a backend is selected
+    v = 0.0
+    if args.power_voltage is not None:
+        if not any(
+            (
+                args.power_riden,
+                args.power_ppk2_meter,
+                args.power_ppk2_supply,
+                args.power_sim,
+            )
+        ):
+            _cli_exit(
+                "--power-voltage requires one of --power-riden, --power-ppk2-meter, --power-ppk2-supply, or --power-sim"
+            )
+        v = float(args.power_voltage)
+        if v < MIN_SUPPLY_VOLTAGE_V or v > MAX_SUPPLY_VOLTAGE_V:
+            _cli_exit(
+                f"Voltage must be between {MIN_SUPPLY_VOLTAGE_V}V and {MAX_SUPPLY_VOLTAGE_V}V"
+            )
+    if RidenPowerSupply is None or PPK2PowerSupply is None or SimPowerSupply is None:
+        _cli_exit(
+            "The powermon module loaded incompletely and required meter classes are "
+            "unavailable."
+        )
+
     # If the user specified a voltage, make sure it is valid
     v = 0.0
     if args.power_voltage:
@@ -2015,12 +2075,24 @@ def _create_power_meter() -> None:
         logger.info("Setting power supply to %s volts", v)
         meter.setVoltage(v)
         meter.powerOn()
-
         if args.power_wait:
             input("Powered on, press enter to continue...")
         else:
             logger.info("Powered-on, waiting for device to boot")
             time.sleep(POWER_ON_BOOT_DELAY_SECONDS)
+
+
+def _power_meter_requested(args: argparse.Namespace) -> bool:
+    """Return whether parsed CLI arguments require powermon meter setup."""
+    return any(
+        (
+            args.power_riden,
+            args.power_ppk2_meter,
+            args.power_ppk2_supply,
+            args.power_sim,
+            args.power_voltage is not None,
+        )
+    )
 
 
 # COMPAT_STABLE_SHIM: legacy snake_case helper for callers importing this module.
@@ -2126,7 +2198,7 @@ def common() -> None:
                     "ERROR: Ham radio callsign cannot be empty or contain only whitespace characters"
                 )
 
-        if have_powermon:
+        if _power_meter_requested(args):
             _create_power_meter()
 
         if args.ch_index is not None:

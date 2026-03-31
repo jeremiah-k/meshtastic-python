@@ -354,8 +354,8 @@ class BLECoroutineRunner:
             loop.run_forever()
 
         except (
-            Exception  # noqa: BLE001 - runner loop must not crash caller threads
-        ) as e:
+            Exception
+        ) as e:  # noqa: BLE001 - runner loop must not crash caller threads
             logger.error("Error in BLECoroutineRunner loop: %s", e, exc_info=True)
         finally:
             # Clean shutdown: cancel all pending tasks
@@ -486,6 +486,10 @@ class BLECoroutineRunner:
             raise
 
         with self._instance_lock:
+            if self._stop_requested:
+                logger.debug("Runner stop requested; rejecting coroutine submission.")
+                self._close_coroutine_safely(coro)
+                raise RuntimeError(BLECLIENT_ERROR_LOOP_NOT_AVAILABLE)
             loop = self._loop
 
         if loop is None or not loop.is_running():
@@ -499,12 +503,6 @@ class BLECoroutineRunner:
             raise
         # Protect concurrent access to _pending_futures WeakSet
         with self._instance_lock:
-            if self._stop_requested:
-                logger.debug(
-                    "Runner stop requested while submitting coroutine; cancelling submitted future."
-                )
-                future.cancel()
-                return future
             self._pending_futures.add(future)
         # Remove completed futures promptly instead of waiting for GC.
         future.add_done_callback(self._discard_tracked_future)
@@ -569,8 +567,8 @@ class BLECoroutineRunner:
         try:
             loop.default_exception_handler(context)
         except (
-            Exception  # noqa: BLE001 - loop default handler failures are non-fatal
-        ) as e:
+            Exception
+        ) as e:  # noqa: BLE001 - loop default handler failures are non-fatal
             logger.debug("Exception in default exception handler: %s", e)
 
     def _cancel_pending_futures(self) -> None:
