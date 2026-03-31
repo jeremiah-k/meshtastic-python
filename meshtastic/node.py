@@ -866,7 +866,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         with self._channels_lock:
             if self.channels is None:
                 self._raise_interface_error("Config or channels not loaded")
-        parsed_input = _SetUrlParser.parse(
+        parsed_input = _SetUrlParser._parse(
             url,
             raise_interface_error=self._raise_interface_error,
         )

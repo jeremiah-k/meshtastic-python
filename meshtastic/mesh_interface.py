@@ -39,10 +39,10 @@ from meshtastic.mesh_interface_runtime.flows import (
     DEFAULT_TELEMETRY_TYPE,
     TelemetryType,
     deleteWaypoint,
-    on_response_position,
-    on_response_telemetry,
-    on_response_traceroute,
-    on_response_waypoint,
+    _on_response_position,
+    _on_response_telemetry,
+    _on_response_traceroute,
+    _on_response_waypoint,
     sendPosition,
     sendTelemetry,
     sendTraceroute,
@@ -109,6 +109,77 @@ NO_RESPONSE_FIRMWARE_ERROR: str = "No response from node. At least firmware 2.1.
 JSONValue: TypeAlias = (
     None | bool | int | float | str | list["JSONValue"] | dict[str, "JSONValue"]
 )
+
+
+# Module-level cached predicates for _select_from_radio_branch to avoid
+# recreating lambdas on every call. Each predicate follows the signature
+# Callable[[mesh_pb2.FromRadio, _FromRadioContext], bool].
+def _fr_has_my_info(fr: mesh_pb2.FromRadio, _ctx: Any) -> bool:
+    return fr.HasField("my_info")
+
+
+def _fr_has_metadata(fr: mesh_pb2.FromRadio, _ctx: Any) -> bool:
+    return fr.HasField("metadata")
+
+
+def _fr_has_node_info(fr: mesh_pb2.FromRadio, _ctx: Any) -> bool:
+    return fr.HasField("node_info")
+
+
+def _fr_is_config_complete_id(fr: mesh_pb2.FromRadio, ctx: Any) -> bool:
+    return fr.config_complete_id != 0 and fr.config_complete_id == ctx.config_id
+
+
+def _fr_has_channel(fr: mesh_pb2.FromRadio, _ctx: Any) -> bool:
+    return fr.HasField("channel")
+
+
+def _fr_has_packet(fr: mesh_pb2.FromRadio, _ctx: Any) -> bool:
+    return fr.HasField("packet")
+
+
+def _fr_has_log_record(fr: mesh_pb2.FromRadio, _ctx: Any) -> bool:
+    return fr.HasField("log_record")
+
+
+def _fr_has_queue_status(fr: mesh_pb2.FromRadio, _ctx: Any) -> bool:
+    return fr.HasField("queueStatus")
+
+
+def _fr_has_client_notification(fr: mesh_pb2.FromRadio, _ctx: Any) -> bool:
+    return fr.HasField("clientNotification")
+
+
+def _fr_has_mqtt_client_proxy_message(fr: mesh_pb2.FromRadio, _ctx: Any) -> bool:
+    return fr.HasField("mqttClientProxyMessage")
+
+
+def _fr_has_xmodem_packet(fr: mesh_pb2.FromRadio, _ctx: Any) -> bool:
+    return fr.HasField("xmodemPacket")
+
+
+def _fr_is_rebooted(fr: mesh_pb2.FromRadio, _ctx: Any) -> bool:
+    return fr.HasField("rebooted") and fr.rebooted
+
+
+def _fr_has_config_or_module_config(fr: mesh_pb2.FromRadio, _ctx: Any) -> bool:
+    return fr.HasField("config") or fr.HasField("moduleConfig")
+
+
+# Exported references for _select_from_radio_branch
+_FR_HAS_MY_INFO = _fr_has_my_info
+_FR_HAS_METADATA = _fr_has_metadata
+_FR_HAS_NODE_INFO = _fr_has_node_info
+_FR_IS_CONFIG_COMPLETE_ID = _fr_is_config_complete_id
+_FR_HAS_CHANNEL = _fr_has_channel
+_FR_HAS_PACKET = _fr_has_packet
+_FR_HAS_LOG_RECORD = _fr_has_log_record
+_FR_HAS_QUEUE_STATUS = _fr_has_queue_status
+_FR_HAS_CLIENT_NOTIFICATION = _fr_has_client_notification
+_FR_HAS_MQTT_CLIENT_PROXY_MESSAGE = _fr_has_mqtt_client_proxy_message
+_FR_HAS_XMODEM_PACKET = _fr_has_xmodem_packet
+_FR_IS_REBOOTED = _fr_is_rebooted
+_FR_HAS_CONFIG_OR_MODULE_CONFIG = _fr_has_config_or_module_config
 
 
 def _normalize_json_serializable(value: object) -> JSONValue:
@@ -352,16 +423,19 @@ def _logger_has_visible_info_handler(target_logger: logging.Logger) -> bool:
     if target_logger.getEffectiveLevel() > logging.INFO:
         return False
 
-    for handler in target_logger.handlers:
-        if handler.level > logging.INFO:
-            continue
-        stream = getattr(handler, "stream", None)
-        if stream is sys.stdout:
-            return True
-        console = getattr(handler, "console", None)
-        console_file = getattr(console, "file", None)
-        if console_file is sys.stdout:
-            return True
+    logger_to_check: logging.Logger | None = target_logger
+    while logger_to_check:
+        for handler in logger_to_check.handlers:
+            if handler.level > logging.INFO:
+                continue
+            stream = getattr(handler, "stream", None)
+            if stream is sys.stdout:
+                return True
+            console = getattr(handler, "console", None)
+            console_file = getattr(console, "file", None)
+            if console_file is sys.stdout:
+                return True
+        logger_to_check = logger_to_check.parent
     return False
 
 
@@ -1293,7 +1367,7 @@ class MeshInterface:  # pylint: disable=R0902
             the nested `decoded["routing"]["errorReason"]` may be present.
 
         """
-        on_response_position(self._send_pipeline, p)
+        _on_response_position(self._send_pipeline, p)
 
     def sendTraceRoute(
         self, dest: int | str, hopLimit: int, channelIndex: int = 0
@@ -1330,7 +1404,7 @@ class MeshInterface:  # pylint: disable=R0902
         p : dict[str, Any]
             The traceroute response packet.
         """
-        on_response_traceroute(self._send_pipeline, p)
+        _on_response_traceroute(self._send_pipeline, p)
 
     def sendTelemetry(
         self,
@@ -1374,7 +1448,7 @@ class MeshInterface:  # pylint: disable=R0902
         p : dict[str, Any]
             Decoded packet dictionary produced by _handle_packet_from_radio.
         """
-        on_response_telemetry(self._send_pipeline, p)
+        _on_response_telemetry(self._send_pipeline, p)
 
     def onResponseWaypoint(self, p: dict[str, Any]) -> None:
         """Handle a waypoint response or routing error contained in a received packet.
@@ -1384,7 +1458,7 @@ class MeshInterface:  # pylint: disable=R0902
         p : dict[str, Any]
             Packet dictionary containing a 'decoded' mapping.
         """
-        on_response_waypoint(self._send_pipeline, p)
+        _on_response_waypoint(self._send_pipeline, p)
 
     def sendWaypoint(  # pylint: disable=R0913
         self,
@@ -2049,29 +2123,19 @@ class MeshInterface:  # pylint: disable=R0902
                 str,
             ]
         ] = [
-            (lambda fr, _ctx: fr.HasField("my_info"), "my_info"),
-            (lambda fr, _ctx: fr.HasField("metadata"), "metadata"),
-            (lambda fr, _ctx: fr.HasField("node_info"), "node_info"),
-            (
-                lambda fr, ctx: fr.config_complete_id != 0
-                and fr.config_complete_id == ctx.config_id,
-                "config_complete_id",
-            ),
-            (lambda fr, _ctx: fr.HasField("channel"), "channel"),
-            (lambda fr, _ctx: fr.HasField("packet"), "packet"),
-            (lambda fr, _ctx: fr.HasField("log_record"), "log_record"),
-            (lambda fr, _ctx: fr.HasField("queueStatus"), "queueStatus"),
-            (lambda fr, _ctx: fr.HasField("clientNotification"), "clientNotification"),
-            (
-                lambda fr, _ctx: fr.HasField("mqttClientProxyMessage"),
-                "mqttClientProxyMessage",
-            ),
-            (lambda fr, _ctx: fr.HasField("xmodemPacket"), "xmodemPacket"),
-            (lambda fr, _ctx: fr.HasField("rebooted") and fr.rebooted, "rebooted"),
-            (
-                lambda fr, _ctx: fr.HasField("config") or fr.HasField("moduleConfig"),
-                "config_or_moduleConfig",
-            ),
+            (_FR_HAS_MY_INFO, "my_info"),
+            (_FR_HAS_METADATA, "metadata"),
+            (_FR_HAS_NODE_INFO, "node_info"),
+            (_FR_IS_CONFIG_COMPLETE_ID, "config_complete_id"),
+            (_FR_HAS_CHANNEL, "channel"),
+            (_FR_HAS_PACKET, "packet"),
+            (_FR_HAS_LOG_RECORD, "log_record"),
+            (_FR_HAS_QUEUE_STATUS, "queueStatus"),
+            (_FR_HAS_CLIENT_NOTIFICATION, "clientNotification"),
+            (_FR_HAS_MQTT_CLIENT_PROXY_MESSAGE, "mqttClientProxyMessage"),
+            (_FR_HAS_XMODEM_PACKET, "xmodemPacket"),
+            (_FR_IS_REBOOTED, "rebooted"),
+            (_FR_HAS_CONFIG_OR_MODULE_CONFIG, "config_or_moduleConfig"),
         ]
         for predicate, branch_name in branches:
             if predicate(from_radio, context):

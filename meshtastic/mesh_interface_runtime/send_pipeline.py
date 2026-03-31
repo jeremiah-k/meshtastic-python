@@ -13,10 +13,10 @@ from meshtastic.mesh_interface_runtime.flows import (
     DEFAULT_TELEMETRY_TYPE,
     TelemetryType,
     deleteWaypoint,
-    on_response_position,
-    on_response_telemetry,
-    on_response_traceroute,
-    on_response_waypoint,
+    _on_response_position,
+    _on_response_telemetry,
+    _on_response_traceroute,
+    _on_response_waypoint,
     sendPosition,
     sendTelemetry,
     sendTraceroute,
@@ -483,7 +483,7 @@ class SendPipeline:
 
     def onResponsePosition(self, p: dict[str, Any]) -> None:
         """Process a position response packet and emit a concise human-readable summary."""
-        on_response_position(self, p)
+        _on_response_position(self, p)
 
     def sendPosition(
         self,
@@ -511,7 +511,7 @@ class SendPipeline:
 
     def onResponseTraceRoute(self, p: dict[str, Any]) -> None:
         """Emit human-readable traceroute results from a RouteDiscovery payload."""
-        on_response_traceroute(self, p)
+        _on_response_traceroute(self, p)
 
     def sendTraceRoute(
         self, dest: int | str, hopLimit: int, channelIndex: int = 0
@@ -539,11 +539,11 @@ class SendPipeline:
 
     def onResponseTelemetry(self, p: dict[str, Any]) -> None:
         """Handle an incoming telemetry response."""
-        on_response_telemetry(self, p)
+        _on_response_telemetry(self, p)
 
     def onResponseWaypoint(self, p: dict[str, Any]) -> None:
         """Handle a waypoint response or routing error contained in a received packet."""
-        on_response_waypoint(self, p)
+        _on_response_waypoint(self, p)
 
     def sendWaypoint(
         self,

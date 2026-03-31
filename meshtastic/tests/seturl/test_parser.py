@@ -40,7 +40,7 @@ class TestSetUrlParser:
         """parse() with valid URL returns parsed config."""
         url = _make_valid_channel_set_url("testchannel")
 
-        result = _SetUrlParser.parse(
+        result = _SetUrlParser._parse(
             url, raise_interface_error=_raise_error_for_valid_parse
         )
 
@@ -59,7 +59,7 @@ class TestSetUrlParser:
         )
         url = f"https://meshtastic.org/d/#{encoded}"
 
-        result = _SetUrlParser.parse(
+        result = _SetUrlParser._parse(
             url, raise_interface_error=_raise_error_for_valid_parse
         )
 
@@ -74,7 +74,7 @@ class TestSetUrlParser:
         captured_msg: list[str] = []
 
         with pytest.raises(ValueError, match="Invalid URL"):
-            _SetUrlParser.parse(
+            _SetUrlParser._parse(
                 url, raise_interface_error=_make_capturing_raise_error(captured_msg)
             )
 
@@ -89,7 +89,7 @@ class TestSetUrlParser:
         captured_msg: list[str] = []
 
         with pytest.raises(ValueError, match="Invalid URL"):
-            _SetUrlParser.parse(
+            _SetUrlParser._parse(
                 url, raise_interface_error=_make_capturing_raise_error(captured_msg)
             )
 
@@ -104,7 +104,7 @@ class TestSetUrlParser:
         captured_msg: list[str] = []
 
         with pytest.raises(ValueError, match="Invalid URL"):
-            _SetUrlParser.parse(
+            _SetUrlParser._parse(
                 url, raise_interface_error=_make_capturing_raise_error(captured_msg)
             )
 
@@ -123,7 +123,7 @@ class TestSetUrlParser:
         captured_msg: list[str] = []
 
         with pytest.raises(ValueError, match="Invalid URL"):
-            _SetUrlParser.parse(
+            _SetUrlParser._parse(
                 url, raise_interface_error=_make_capturing_raise_error(captured_msg)
             )
 
@@ -144,7 +144,7 @@ class TestSetUrlParser:
         encoded_unpadded = encoded.rstrip("=")
         url = f"https://meshtastic.org/d/#{encoded_unpadded}"
 
-        result = _SetUrlParser.parse(
+        result = _SetUrlParser._parse(
             url, raise_interface_error=_raise_error_for_valid_parse
         )
 

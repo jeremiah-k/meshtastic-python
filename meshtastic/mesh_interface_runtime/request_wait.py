@@ -11,6 +11,10 @@ from typing import Any
 from meshtastic import ResponseHandler
 from meshtastic.util import Acknowledgment, Timeout
 
+# Re-export to maintain backward compatibility for importers
+# Primary definition is in send_pipeline.py
+LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM: dict[int, str] = {}
+
 logger = logging.getLogger(__name__)
 
 UNSCOPED_WAIT_REQUEST_ID: int = -1
@@ -27,7 +31,7 @@ RESPONSE_WAIT_REQID_ERROR: str = (
 
 DECODE_ERROR_KEY: str = "error"
 DECODE_FAILED_PREFIX: str = "decode-failed: "
-LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM: dict[int, str] = {}
+# Placeholder for legacy unscoped wait attribute mapping (currently unused)
 RETIRED_WAIT_REQUEST_ID_TTL_SECONDS: float = 60.0
 
 
@@ -458,18 +462,11 @@ class _RequestWaitRuntime:
             response_handlers = self._get_response_handlers()
             candidate = response_handlers.get(request_id, None)
             if candidate is not None:
-                callback_name = getattr(candidate.callback, "__name__", "")
-                if (
-                    skip_response_callback_for_decode_failure
-                    and callback_name != "onAckNak"
-                ):
+                is_ack_nak_handler = getattr(candidate, "isAckNakHandler", False)
+                if skip_response_callback_for_decode_failure and not is_ack_nak_handler:
                     response_handlers.pop(request_id, None)
                     dropped_due_to_decode_failure = True
-                elif (
-                    (not is_ack)
-                    or callback_name == "onAckNak"
-                    or candidate.ackPermitted
-                ):
+                elif (not is_ack) or is_ack_nak_handler or candidate.ackPermitted:
                     response_handler = response_handlers.pop(request_id, None)
         return response_handler, dropped_due_to_decode_failure
 
@@ -500,7 +497,6 @@ class _RequestWaitRuntime:
             f"Failed to decode admin payload: {admin_decode_error}",
             request_id=request_id,
         )
-        self._get_acknowledgment().receivedNak = True
 
     @staticmethod
     def _invoke_response_callback(

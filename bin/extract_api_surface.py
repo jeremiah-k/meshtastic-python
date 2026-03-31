@@ -228,8 +228,6 @@ def _get_top_level_exports(pkg_dir: Path) -> list[str]:
             "stream_interface",
             "supported_device",
             "tcp_interface",
-            "test",
-            "tests",
             "tunnel",
             "util",
             "version",

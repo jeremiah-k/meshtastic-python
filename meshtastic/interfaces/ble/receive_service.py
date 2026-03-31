@@ -236,9 +236,7 @@ class BLEReceiveRecoveryController:
                     result = raw_is_closing()
                     if isinstance(result, bool):
                         state_is_closing = result
-                except (
-                    Exception
-                ):  # noqa: BLE001 - closing probe must remain best effort
+                except Exception:  # noqa: BLE001 - closing probe must remain best effort
                     state_is_closing = None
             elif not _is_unconfigured_mock_member(raw_is_closing) and isinstance(
                 raw_is_closing, bool
@@ -641,11 +639,14 @@ class BLEReceiveRecoveryController:
                 event_name: str,
                 timeout: float | None,
             ) -> bool:
-                result = injected_wait_for_event(
-                    target_coordinator,
-                    event_name,
-                    timeout,
-                )
+                try:
+                    result = injected_wait_for_event(
+                        target_coordinator,
+                        event_name,
+                        timeout,
+                    )
+                except Exception:  # noqa: BLE001 - wait probe remains best effort
+                    return False
                 return result if isinstance(result, bool) else False
 
             return _validated_wait_for_runtime_event
@@ -713,9 +714,7 @@ class BLEReceiveRecoveryController:
             ):
                 try:
                     connecting_result = state_is_connecting()
-                except (
-                    Exception
-                ):  # noqa: BLE001 - snapshot probe must remain best effort
+                except Exception:  # noqa: BLE001 - snapshot probe must remain best effort
                     logger.debug(
                         "Error probing state manager is_connecting()",
                         exc_info=True,
@@ -740,9 +739,7 @@ class BLEReceiveRecoveryController:
                 ) and not _is_unconfigured_mock_callable(legacy_is_connecting):
                     try:
                         connecting_result = legacy_is_connecting()
-                    except (
-                        Exception
-                    ):  # noqa: BLE001 - snapshot probe must remain best effort
+                    except Exception:  # noqa: BLE001 - snapshot probe must remain best effort
                         logger.debug(
                             "Error probing state manager _is_connecting()",
                             exc_info=True,

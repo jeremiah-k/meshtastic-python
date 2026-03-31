@@ -186,6 +186,8 @@ class ResponseHandler(NamedTuple):
     callback: ResponseCallback
     #: Whether ACKs and NAKs should be passed to this handler
     ackPermitted: bool = False
+    #: Marker to identify onAckNak handlers for decode failure handling
+    isAckNakHandler: bool = False
     # FIXME, add timestamp and age out old requests
 
 

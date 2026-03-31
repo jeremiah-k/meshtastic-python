@@ -31,7 +31,7 @@ class _SetUrlParser:
     """Owns URL fragment decoding and ChannelSet parse/validation."""
 
     @staticmethod
-    def parse(
+    def _parse(
         url: str,
         *,
         raise_interface_error: Callable[[str], NoReturn],

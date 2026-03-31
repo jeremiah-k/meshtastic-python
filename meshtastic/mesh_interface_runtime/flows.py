@@ -64,7 +64,7 @@ def _format_snr(snr_value: int | None) -> str:
     )
 
 
-def on_response_position(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
+def _on_response_position(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
     """Process a position response packet and emit a concise human-readable summary."""
     request_id = pipeline._extract_request_id_from_packet(p)
     if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
@@ -142,7 +142,7 @@ def sendPosition(
     if wantResponse:
 
         def _on_response(packet: dict[str, Any]) -> None:
-            on_response_position(pipeline, packet)
+            _on_response_position(pipeline, packet)
 
         onResponse = _on_response
         response_wait_attr = WAIT_ATTR_POSITION
@@ -169,7 +169,7 @@ def sendPosition(
     return d
 
 
-def on_response_traceroute(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
+def _on_response_traceroute(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
     """Emit human-readable traceroute results from a RouteDiscovery payload."""
     decoded = p["decoded"]
     request_id = pipeline._extract_request_id_from_packet(p)
@@ -243,7 +243,7 @@ def sendTraceroute(
         destinationId=dest,
         portNum=portnums_pb2.PortNum.TRACEROUTE_APP,
         wantResponse=True,
-        onResponse=lambda packet: on_response_traceroute(pipeline, packet),
+        onResponse=lambda packet: _on_response_traceroute(pipeline, packet),
         channelIndex=channelIndex,
         hopLimit=hopLimit,
         response_wait_attr=WAIT_ATTR_TRACEROUTE,
@@ -258,7 +258,7 @@ def sendTraceroute(
     pipeline.waitForTraceRoute(waitFactor, request_id=request_id)
 
 
-def on_response_telemetry(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
+def _on_response_telemetry(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
     """Handle an incoming telemetry response."""
     request_id = pipeline._extract_request_id_from_packet(p)
     if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
@@ -401,7 +401,7 @@ def sendTelemetry(
     if wantResponse:
 
         def _on_response(packet: dict[str, Any]) -> None:
-            on_response_telemetry(pipeline, packet)
+            _on_response_telemetry(pipeline, packet)
 
         onResponse = _on_response
         response_wait_attr = WAIT_ATTR_TELEMETRY
@@ -426,7 +426,7 @@ def sendTelemetry(
         pipeline.waitForTelemetry(request_id=request_id)
 
 
-def on_response_waypoint(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
+def _on_response_waypoint(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
     """Handle a waypoint response or routing error contained in a received packet."""
     request_id = pipeline._extract_request_id_from_packet(p)
     if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
@@ -463,7 +463,7 @@ def sendWaypoint(
     description: str,
     icon: int | str,
     expire: int,
-    waypoint_id: int | None = None,
+    waypointId: int | None = None,
     latitude: float = 0.0,
     longitude: float = 0.0,
     destinationId: int | str = BROADCAST_ADDR,
@@ -483,11 +483,11 @@ def sendWaypoint(
             f"Invalid icon value '{icon}': must be an integer or numeric string"
         ) from exc
     w.expire = expire
-    if waypoint_id is None:
+    if waypointId is None:
         w.id = secrets.randbelow(1_000_000_000)
         logger.debug("w.id:%s", w.id)
     else:
-        w.id = waypoint_id
+        w.id = waypointId
     if latitude != 0.0:
         w.latitude_i = int(latitude * 1e7)
         logger.debug("w.latitude_i:%s", w.latitude_i)
@@ -500,7 +500,7 @@ def sendWaypoint(
     if wantResponse:
 
         def _on_response(packet: dict[str, Any]) -> None:
-            on_response_waypoint(pipeline, packet)
+            _on_response_waypoint(pipeline, packet)
 
         onResponse = _on_response
         response_wait_attr = WAIT_ATTR_WAYPOINT
@@ -529,7 +529,7 @@ def sendWaypoint(
 
 def deleteWaypoint(
     pipeline: "SendPipeline",
-    waypoint_id: int,
+    waypointId: int,
     destinationId: int | str = BROADCAST_ADDR,
     wantAck: bool = True,
     wantResponse: bool = False,
@@ -538,7 +538,7 @@ def deleteWaypoint(
 ) -> mesh_pb2.MeshPacket:
     """Delete a waypoint by sending a Waypoint message with expire=0 to a destination."""
     p = mesh_pb2.Waypoint()
-    p.id = waypoint_id
+    p.id = waypointId
     p.expire = 0
 
     if wantResponse:
@@ -546,7 +546,7 @@ def deleteWaypoint(
         response_wait_attr: str | None
 
         def _on_response(packet: dict[str, Any]) -> None:
-            on_response_waypoint(pipeline, packet)
+            _on_response_waypoint(pipeline, packet)
 
         onResponse = _on_response
         response_wait_attr = WAIT_ATTR_WAYPOINT

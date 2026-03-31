@@ -202,9 +202,7 @@ class _NodeContentResponseRuntime:
             return (True, None)
         has_field = getattr(raw_admin, "HasField", None)
         try:
-            has_ringtone_response = callable(
-                has_field
-            ) and has_field(  # pylint: disable=not-callable
+            has_ringtone_response = callable(has_field) and has_field(  # pylint: disable=not-callable
                 "get_ringtone_response"
             )
         except (TypeError, ValueError):
@@ -238,9 +236,7 @@ class _NodeContentResponseRuntime:
             return (True, None)
         has_field = getattr(raw_admin, "HasField", None)
         try:
-            has_canned_response = callable(
-                has_field
-            ) and has_field(  # pylint: disable=not-callable
+            has_canned_response = callable(has_field) and has_field(  # pylint: disable=not-callable
                 "get_canned_message_module_messages_response"
             )
         except (TypeError, ValueError):
@@ -365,7 +361,7 @@ class _NodeAdminContentRuntime:
         try:
             request_message = admin_pb2.AdminMessage()
             build_request(request_message)
-            request = self._node._send_admin(
+            request = self._node._send_admin(  # noqa: SLF001
                 request_message,
                 wantResponse=True,
                 onResponse=_on_response,
@@ -388,7 +384,7 @@ class _NodeAdminContentRuntime:
             return None
         return self._node.onAckNak
 
-    def read_ringtone(self) -> str | None:
+    def readRingtone(self) -> str | None:
         """Read ringtone using cached-short-circuit + request/wait orchestration."""
         with self._ringtone_operation_lock:
             logger.debug("in get_ringtone()")

@@ -169,8 +169,6 @@
     "supported_device",
     "tcp_interface",
     "telemetry_pb2",
-    "test",
-    "tests",
     "tunnel",
     "util",
     "version"

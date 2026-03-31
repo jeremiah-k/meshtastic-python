@@ -2,7 +2,7 @@
 
 import logging
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from meshtastic.protobuf import admin_pb2, channel_pb2, mesh_pb2
 
@@ -13,6 +13,30 @@ if TYPE_CHECKING:
     from meshtastic.node import Node
 
 logger = logging.getLogger(__name__)
+
+
+class _HasChannelRequestFailed(Protocol):
+    """Protocol for objects providing channel request failure check."""
+
+    def hasChannelRequestFailed(self) -> bool: ...
+
+
+def _get_channel_request_failed_fn(
+    channel_response_runtime: object,
+) -> Callable[[], bool] | None:
+    """Extract hasChannelRequestFailed or has_channel_request_failed as callable."""
+    fn = getattr(
+        channel_response_runtime,
+        "hasChannelRequestFailed",
+        None,
+    ) or getattr(
+        channel_response_runtime,
+        "has_channel_request_failed",
+        None,
+    )
+    if callable(fn):
+        return fn
+    return None
 
 
 class _LocalConfigFieldProbe:
@@ -35,7 +59,9 @@ class _LocalConfigFieldProbe:
 class _ChannelRequestCompletionProbe:
     """Expose channel-request completion as a boolean wait target."""
 
-    def __init__(self, *, node: "Node", channel_response_runtime: object) -> None:
+    def __init__(
+        self, *, node: "Node", channel_response_runtime: _HasChannelRequestFailed
+    ) -> None:
         self._node = node
         self._channel_response_runtime = channel_response_runtime
 
@@ -45,17 +71,11 @@ class _ChannelRequestCompletionProbe:
         with self._node._channels_lock:  # noqa: SLF001
             if self._node.channels is not None:
                 return True
-        has_channel_request_failed = getattr(
-            self._channel_response_runtime,
-            "hasChannelRequestFailed",
-            None,
-        ) or getattr(
-            self._channel_response_runtime,
-            "has_channel_request_failed",
-            None,
+        has_channel_request_failed = _get_channel_request_failed_fn(
+            self._channel_response_runtime
         )
         return bool(
-            callable(has_channel_request_failed) and has_channel_request_failed()
+            has_channel_request_failed is not None and has_channel_request_failed()
         )
 
 
