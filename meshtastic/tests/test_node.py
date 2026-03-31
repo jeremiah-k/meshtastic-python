@@ -1064,7 +1064,7 @@ def test_start_ota_local_node() -> None:
     )
 
     test_hash = b"\x01\x02\x03" * 8  # 24-byte hash
-    anode.startOTA(mode=admin_pb2.OTAMode.OTA_WIFI, hash=test_hash)
+    anode.startOTA(ota_mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=test_hash)
 
     sent_msg = cast(admin_pb2.AdminMessage, captured["msg"])
     assert sent_msg.ota_request.reboot_ota_mode == admin_pb2.OTAMode.OTA_WIFI
@@ -1083,7 +1083,7 @@ def test_start_ota_remote_node_raises_error() -> None:
     with pytest.raises(
         MeshInterface.MeshInterfaceError, match="startOTA only possible on local node"
     ):
-        remote_node.startOTA(mode=admin_pb2.OTAMode.OTA_WIFI, hash=test_hash)
+        remote_node.startOTA(ota_mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=test_hash)
 
 
 @pytest.mark.unit
