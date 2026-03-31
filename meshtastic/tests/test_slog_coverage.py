@@ -2,37 +2,28 @@
 
 import io
 import logging
-import os
-import stat
 import threading
 import time
 import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 pa = pytest.importorskip("pyarrow")
 
 from meshtastic.slog.slog import (  # noqa: E402  # pylint: disable=wrong-import-position
-    INTERVAL_REQUIRED_MESSAGE,
-    LOG_DIR_COLLISION_MAX_RETRIES,
     DIR_NAME_REQUIRED_MESSAGE,
-    POWER_LOGGER_JOIN_TIMEOUT,
     SAMPLE_FAILURE_WARNING_COOLDOWN_SECONDS,
     SAMPLE_FAILURE_WARNING_BURST_COUNT,
-    LogDef,
     LogSet,
     PowerLogger,
-    SlogDirectoryCollisionError,
     StructuredLogger,
     rootDir,
-    root_dir,
 )
 import meshtastic.slog.slog as slog_module  # noqa: E402  # pylint: disable=wrong-import-position
-from meshtastic.slog import slog  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 # ============================================================================
@@ -621,7 +612,6 @@ def test_power_logger_close_from_logging_thread(
     logger = PowerLogger(meter, "unused-path")
 
     # Mock to make current thread look like the logging thread
-    original_current_thread = threading.current_thread
     monkeypatch.setattr(threading, "current_thread", lambda: logger.thread)
 
     with caplog.at_level(logging.DEBUG):
@@ -786,7 +776,7 @@ def test_logdef_empty_last_string_field(
     # Should parse but remove empty field
     call_args = logger_obj.writer.addRow.call_args
     if call_args:
-        row = call_args[0][0] if call_args[0] else call_args[1].get("row", {})
+        _ = call_args[0][0] if call_args[0] else call_args[1].get("row", {})
         # pm_reason might be absent or empty
 
 
@@ -978,9 +968,6 @@ def test_structured_logger_raw_file_setup_failure_cleanup(
         return mock_writer
 
     monkeypatch.setattr(slog_module, "FeatherWriter", mock_writer_factory)
-
-    # Create actual file that will be opened
-    raw_path = tmp_path / "raw.txt"
 
     with caplog.at_level(logging.WARNING):
         with pytest.raises(RuntimeError, match="schema failed"):

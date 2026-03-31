@@ -11,9 +11,8 @@ This module provides targeted tests for specific uncovered code paths:
 # pylint: disable=C0302,W0613,R0917,C0415
 
 import sys
-from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -276,7 +275,7 @@ def test_get_pref_remote_node_config_request() -> None:
     node.requestConfig = MagicMock()
 
     # Try to get a field that doesn't exist locally
-    result = getPref(node, "wifi")
+    getPref(node, "wifi")
 
     # requestConfig should be called for remote config request
     node.requestConfig.assert_called_once()
@@ -359,7 +358,7 @@ def test_set_pref_repeated_field_clear(capsys: pytest.CaptureFixture[str]) -> No
 
     # Set a repeated field with a value first
     # mqtt.address is a repeated string field
-    result1 = setPref(config, "mqtt.address", "test.mqtt.com")
+    setPref(config, "mqtt.address", "test.mqtt.com")
 
     # Now clear it with 0
     result2 = setPref(config, "mqtt.address", 0)

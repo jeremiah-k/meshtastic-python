@@ -6,7 +6,6 @@ This module demonstrates the inconsistency in:
 3. Timeout handling semantics
 """
 
-from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -114,9 +113,7 @@ class TestWriteBytesInconsistency:
             mock_stream = MagicMock()
             mock_stream.is_open = True
             # Simulate timeout by making write block forever
-            import time
 
-            original_monotonic = time.monotonic
             call_count = [0]
 
             def fake_monotonic():

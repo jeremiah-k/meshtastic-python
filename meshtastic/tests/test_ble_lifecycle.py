@@ -1061,6 +1061,13 @@ class TestBLEReceiveLifecycleCoordinator:
         iface._receive_start_pending_since = None
         iface._receive_recovery_attempts = 0
         iface._receive_from_radio_impl = MagicMock()
+        # Configure thread_coordinator with required methods
+        thread_coordinator = MagicMock()
+        thread_coordinator.create_thread = MagicMock(return_value=MagicMock())
+        thread_coordinator._create_thread = MagicMock(return_value=MagicMock())
+        thread_coordinator.start_thread = MagicMock(return_value=None)
+        thread_coordinator._start_thread = MagicMock(return_value=None)
+        iface.thread_coordinator = thread_coordinator
         return iface
 
     @pytest.fixture
@@ -1642,6 +1649,13 @@ class TestBLEReceiveLifecycleCoordinatorDeferredRestart:
         iface._receive_start_pending_since = None
         iface._receive_recovery_attempts = 0
         iface._receive_from_radio_impl = MagicMock()
+        # Configure thread_coordinator with required methods
+        thread_coordinator = MagicMock()
+        thread_coordinator.create_thread = MagicMock(return_value=MagicMock())
+        thread_coordinator._create_thread = MagicMock(return_value=MagicMock())
+        thread_coordinator.start_thread = MagicMock(return_value=None)
+        thread_coordinator._start_thread = MagicMock(return_value=None)
+        iface.thread_coordinator = thread_coordinator
         return iface
 
     @pytest.fixture
@@ -1841,6 +1855,13 @@ class TestBLEReceiveLifecycleCoordinatorCurrentThread:
         iface._receive_start_pending_since = None
         iface._receive_recovery_attempts = 0
         iface._receive_from_radio_impl = MagicMock()
+        # Configure thread_coordinator with required methods
+        thread_coordinator = MagicMock()
+        thread_coordinator.create_thread = MagicMock(return_value=MagicMock())
+        thread_coordinator._create_thread = MagicMock(return_value=MagicMock())
+        thread_coordinator.start_thread = MagicMock(return_value=None)
+        thread_coordinator._start_thread = MagicMock(return_value=None)
+        iface.thread_coordinator = thread_coordinator
         return iface
 
     @pytest.fixture
@@ -1908,6 +1929,13 @@ class TestBLEReceiveLifecycleCoordinatorConcurrent:
         iface._receive_start_pending_since = None
         iface._receive_recovery_attempts = 0
         iface._receive_from_radio_impl = MagicMock()
+        # Configure thread_coordinator with required methods
+        thread_coordinator = MagicMock()
+        thread_coordinator.create_thread = MagicMock(return_value=MagicMock())
+        thread_coordinator._create_thread = MagicMock(return_value=MagicMock())
+        thread_coordinator.start_thread = MagicMock(return_value=None)
+        thread_coordinator._start_thread = MagicMock(return_value=None)
+        iface.thread_coordinator = thread_coordinator
         return iface
 
     @pytest.fixture
@@ -2201,7 +2229,7 @@ class TestLifecyclePrimitivesEdgeCases:
 
     @pytest.fixture
     def mock_iface(self) -> MagicMock:
-        """Create a mock BLEInterface."""
+        """Create a mock BLEInterface with required attributes."""
         iface = MagicMock()
         iface._state_lock = threading.Lock()
         iface._closed = False
@@ -2211,6 +2239,13 @@ class TestLifecyclePrimitivesEdgeCases:
         iface._receive_start_pending_since = None
         iface._receive_recovery_attempts = 0
         iface._receive_from_radio_impl = MagicMock()
+        # Configure thread_coordinator with required methods
+        thread_coordinator = MagicMock()
+        thread_coordinator.create_thread = MagicMock(return_value=MagicMock())
+        thread_coordinator._create_thread = MagicMock(return_value=MagicMock())
+        thread_coordinator.start_thread = MagicMock(return_value=None)
+        thread_coordinator._start_thread = MagicMock(return_value=None)
+        iface.thread_coordinator = thread_coordinator
         return iface
 
     @pytest.fixture

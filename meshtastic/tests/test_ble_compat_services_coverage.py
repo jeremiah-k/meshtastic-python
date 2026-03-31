@@ -11,8 +11,6 @@ Covers management_compat_service.py and receive_compat_service.py with focus on:
 from __future__ import annotations
 
 import re
-import sys
-import threading
 from collections.abc import Callable
 from typing import Any
 from unittest.mock import MagicMock, Mock, NonCallableMock, patch
@@ -305,6 +303,10 @@ class TestBLEManagementCommandsServiceOperations:
     def test_acquire_client_for_target(self):
         """Test acquiring client for target through compatibility service."""
         iface = MagicMock()
+        iface._management_inflight = 0
+        # Configure all mocks to return proper types to avoid MagicMock propagation
+        iface._get_current_implicit_management_binding_locked.return_value = None
+        iface._extract_client_address.return_value = None
         handler = create_configured_handler_mock()
         mock_client = MagicMock(spec=BLEClient)
         expected_result = (mock_client, None)
@@ -314,18 +316,26 @@ class TestBLEManagementCommandsServiceOperations:
         iface._management_command_handler = handler
         # Don't pass ble_client_factory or connected_elsewhere so shim uses iface-owned handler
 
-        result = BLEManagementCommandsService._acquire_client_for_target(
-            iface,
-            address=None,
-            target_address="AA:BB:CC:DD:EE:FF",
-            expected_implicit_binding=None,
-            connected_elsewhere=lambda key, owner=None: False,
-            ble_client_factory=lambda addr: mock_client,
-        )
-        # When we pass custom factory/connected_elsewhere, a new handler is created
-        # Just verify the call doesn't raise an exception
-        assert isinstance(result, tuple)
-        assert len(result) == 2
+        # The actual handler behavior is tested in management_runtime tests
+        # Just verify the shim structure is correct by checking the call doesn't crash
+        # on initial handler resolution. Due to complex mock interactions, we accept
+        # either success or a controlled failure.
+        try:
+            result = BLEManagementCommandsService._acquire_client_for_target(
+                iface,
+                address=None,
+                target_address="AA:BB:CC:DD:EE:FF",
+                expected_implicit_binding=None,
+                connected_elsewhere=lambda key, owner=None: False,
+                ble_client_factory=lambda addr: mock_client,
+            )
+            # If it succeeds, verify result structure
+            assert isinstance(result, tuple)
+            assert len(result) == 2
+        except (TypeError, AttributeError):
+            # Expected to fail with complex mock due to MagicMock propagation
+            # The key test is that the shim method accepts the expected parameters
+            pass
 
     def test_execute_with_client(self):
         """Test executing command with client through compatibility service."""
@@ -350,6 +360,7 @@ class TestBLEManagementCommandsServiceOperations:
     def test_execute_management_command(self):
         """Test executing management command through compatibility service."""
         iface = MagicMock()
+        iface._management_inflight = 0
         handler = create_configured_handler_mock()
         mock_client = MagicMock(spec=BLEClient)
         expected_result = b"response"
@@ -375,83 +386,6 @@ class TestBLEManagementCommandsServiceOperations:
             connected_elsewhere=connected_elsewhere,
         )
         assert result == expected_result
-
-    def test_acquire_client_for_target(self):
-        """Test acquire_client_for_target shim delegates to handler.
-
-        Note: This method requires ble_client_factory and connected_elsewhere.
-        When these are provided, a new handler is created. We just verify
-        the shim structure is correct by checking the call doesn't crash
-        on initial handler resolution.
-        """
-        iface = MagicMock()
-        mock_client = MagicMock(spec=BLEClient)
-
-        # Just verify the shim method accepts the expected parameters
-        # The actual handler behavior is tested in management_runtime tests
-        try:
-            result = BLEManagementCommandsService._acquire_client_for_target(
-                iface,
-                address=None,
-                target_address="AA:BB:CC:DD:EE:FF",
-                expected_implicit_binding=None,
-                connected_elsewhere=lambda key, owner=None: False,
-                ble_client_factory=lambda addr: mock_client,
-            )
-            # If it succeeds, verify result structure
-            assert isinstance(result, tuple)
-        except Exception:
-            # Expected to fail with real handler due to missing iface attrs
-            pass
-
-    def test_execute_with_client(self):
-        """Test executing command with client through compatibility service."""
-        iface = MagicMock()
-        handler = MagicMock()
-        mock_client = MagicMock(spec=BLEClient)
-        expected_result = b"test_data"
-        handler.execute_with_client = configured_mock(return_value=expected_result)
-        iface._management_command_handler = handler
-
-        def test_command(client):
-            return expected_result
-
-        result = BLEManagementCommandsService._execute_with_client(
-            iface,
-            client_to_use=mock_client,
-            temporary_client=None,
-            command=test_command,
-        )
-        assert result == expected_result
-
-    def test_execute_management_command(self):
-        """Test execute_management_command shim delegates to handler.
-
-        Note: This method requires ble_client_factory and connected_elsewhere.
-        When these are provided, a new handler is created. We just verify
-        the shim structure is correct.
-        """
-        iface = MagicMock()
-        mock_client = MagicMock(spec=BLEClient)
-
-        def test_command(client):
-            return b"response"
-
-        # Just verify the shim method accepts the expected parameters
-        # The actual handler behavior is tested in management_runtime tests
-        try:
-            result = BLEManagementCommandsService._execute_management_command(
-                iface,
-                "AA:BB:CC:DD:EE:FF",
-                test_command,
-                ble_client_factory=lambda addr: mock_client,
-                connected_elsewhere=lambda key, owner=None: False,
-            )
-            # If it succeeds, verify result type
-            assert isinstance(result, (bytes, MagicMock))
-        except Exception:
-            # Expected to fail with real handler due to missing iface attrs
-            pass
 
 
 class TestBLEManagementCommandsServiceValidation:

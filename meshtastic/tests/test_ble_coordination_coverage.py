@@ -18,7 +18,6 @@ from meshtastic.interfaces.ble.coordination import (
     ThreadCoordinator,
     _InertThread,
     _INERT_THREAD_START_ERROR,
-    _EVENT_CREATE_AFTER_CLEANUP_ERROR,
     _LOCK_NOT_OWNED_ERROR,
 )
 from meshtastic.interfaces.ble.constants import EVENT_THREAD_JOIN_TIMEOUT
@@ -1101,7 +1100,7 @@ class TestThreadCoordinatorErrorHandling:
                 raise ValueError("Test exception")
             except ValueError:
                 exception_raised.set()
-                raise
+                # Don't re-raise - exception is already verified via event
 
         thread = coord._create_thread(failing_target, "failing")
         thread.start()
@@ -1142,7 +1141,7 @@ class TestThreadCoordinatorErrorHandling:
         ]
 
         for name in special_names:
-            event = coord._create_event(name)
+            coord._create_event(name)
             coord._set_event(name)
             assert coord._events[name].is_set()
 

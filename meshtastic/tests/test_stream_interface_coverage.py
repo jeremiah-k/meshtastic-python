@@ -7,7 +7,6 @@ import pytest
 import serial  # type: ignore[import-untyped]
 
 from meshtastic.stream_interface import (
-    HEADER_LEN,
     MAX_TO_FROM_RADIO_SIZE,
     START1,
     START2,

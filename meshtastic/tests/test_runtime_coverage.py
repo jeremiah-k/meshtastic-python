@@ -24,7 +24,6 @@ from meshtastic.mesh_interface_runtime.receive_pipeline import (
     _FromRadioContext,
     _LazyMessageDict,
     _PacketRuntimeContext,
-    _PublicationIntent,
 )
 from meshtastic.node import Node
 from meshtastic.node_runtime.transport_runtime.ack import (
@@ -33,24 +32,11 @@ from meshtastic.node_runtime.transport_runtime.ack import (
 )
 from meshtastic.protobuf import (
     admin_pb2,
-    channel_pb2,
     config_pb2,
     mesh_pb2,
     module_config_pb2,
     portnums_pb2,
     telemetry_pb2,
-)
-from meshtastic.node import Node
-from meshtastic.node_runtime.transport_runtime.ack import (
-    ERROR_REASON_NONE,
-    _NodeAckNakRuntime,
-)
-from meshtastic.protobuf import (
-    channel_pb2,
-    config_pb2,
-    mesh_pb2,
-    module_config_pb2,
-    portnums_pb2,
 )
 
 
@@ -587,7 +573,7 @@ class TestReceivePipelineNodeInfoEdgeCases:
         ):
             with patch.object(
                 receive_pipeline, "_fixup_position", side_effect=KeyError("position")
-            ) as mock_fixup:
+            ):
                 result = receive_pipeline._handle_from_radio_node_info(context)
 
         # Should still complete despite KeyError in position fixup
@@ -926,8 +912,6 @@ class TestReceivePipelineApplyMutationsEdgeCases:
         self, receive_pipeline: ReceivePipeline
     ) -> None:
         """Test applying mutations when handler exists but has no onReceive."""
-        from meshtastic import protocols
-
         packet_context = _PacketRuntimeContext(
             packet_dict={"decoded": {"portnum": "TEXT_MESSAGE_APP"}}
         )
@@ -954,7 +938,6 @@ class TestReceivePipelineConfigUpdateEdgeCases:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Test that local config skips fields not in target."""
-        from_radio = mesh_pb2.FromRadio()
         # Try to set a field that doesn't exist in target
         # This tests the "not in target_fields" branch
 
@@ -1046,7 +1029,7 @@ class TestReceivePipelineHandlePacketFromRadioEdgeCases:
         mesh_packet.decoded.payload = b"test"
 
         with patch.object(receive_pipeline, "_emit_publication_intents") as mock_emit:
-            result = receive_pipeline._handle_packet_from_radio(
+            receive_pipeline._handle_packet_from_radio(
                 mesh_packet, allow_zero_source=False, emit_publication=True
             )
 

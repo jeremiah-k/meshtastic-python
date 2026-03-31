@@ -7,7 +7,6 @@ and partial read/write handling.
 
 import socket
 import threading
-import time
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
@@ -836,7 +835,7 @@ def test_TCPInterface_attempt_reconnect_non_reader_thread_no_queue_clear() -> No
 
             with (
                 patch.object(iface, "myConnect") as mock_connect,
-                patch.object(iface, "_start_config") as mock_config,
+                patch.object(iface, "_start_config"),
             ):
 
                 def connect_side_effect() -> None:
@@ -870,7 +869,7 @@ def test_TCPInterface_attempt_reconnect_queue_clear_notifies_pending() -> None:
 
             with (
                 patch.object(iface, "myConnect") as mock_connect,
-                patch.object(iface, "_start_config") as mock_config,
+                patch.object(iface, "_start_config"),
             ):
 
                 def connect_side_effect() -> None:
@@ -906,7 +905,7 @@ def test_TCPInterface_attempt_reconnect_queue_clear_handles_notification_failure
 
             with (
                 patch.object(iface, "myConnect") as mock_connect,
-                patch.object(iface, "_start_config") as mock_config,
+                patch.object(iface, "_start_config"),
             ):
 
                 def connect_side_effect() -> None:

@@ -7,8 +7,6 @@ and hardware state transitions.
 
 import math
 import threading
-import time
-from contextlib import suppress
 from typing import Any, Generator
 from unittest.mock import MagicMock, patch
 
@@ -17,7 +15,6 @@ import pytest
 try:
     from meshtastic.powermon.constants import (
         MICROAMPS_PER_MILLIAMP,
-        MIN_SUPPLY_VOLTAGE_V,
     )
     from meshtastic.powermon.power_supply import PowerError
     from meshtastic.powermon.ppk2 import (
@@ -25,7 +22,6 @@ try:
         READ_ERROR_RETRY_DELAY_S,
         STABILIZATION_DELAY_S,
         SUBSEQUENT_POLL_TIMEOUT_S,
-        THREAD_JOIN_TIMEOUT_S,
         PPK2PowerSupply,
     )
 except ImportError:
@@ -805,8 +801,6 @@ def test_measurement_loop_uses_initial_timeout_on_first_read(
     ppk.r.get_data.side_effect = get_data_side_effect
     ppk.r.get_samples.return_value = ([1000], 0)
 
-    original_wait = threading.Condition.wait
-
     def mock_wait(self, timeout: float | None = None) -> bool:
         timeouts_used.append(timeout if timeout is not None else 0)
         return True
@@ -1376,7 +1370,6 @@ def test_measurement_loop_breaks_after_wait_when_measuring_false(
     ppk.r = MagicMock()
 
     # Set measuring to False during wait
-    original_wait = threading.Condition.wait
 
     def mock_wait(self, timeout: float | None = None) -> bool:
         ppk.measuring = False
