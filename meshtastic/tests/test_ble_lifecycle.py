@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -1087,7 +1087,9 @@ class TestBLEReceiveLifecycleCoordinator:
         return iface
 
     @pytest.fixture
-    def coordinator(self, mock_iface: MagicMock) -> BLEReceiveLifecycleCoordinator:
+    def coordinator(
+        self, mock_iface: MagicMock
+    ) -> Generator[BLEReceiveLifecycleCoordinator, None, None]:
         """Create BLEReceiveLifecycleCoordinator instance."""
         coordinator = BLEReceiveLifecycleCoordinator(mock_iface)
         yield coordinator
@@ -1616,7 +1618,9 @@ class TestBLEReceiveLifecycleCoordinatorDeferredRestart:
         return iface
 
     @pytest.fixture
-    def coordinator(self, mock_iface: MagicMock) -> BLEReceiveLifecycleCoordinator:
+    def coordinator(
+        self, mock_iface: MagicMock
+    ) -> Generator[BLEReceiveLifecycleCoordinator, None, None]:
         """Create BLEReceiveLifecycleCoordinator instance."""
         coordinator = BLEReceiveLifecycleCoordinator(mock_iface)
         yield coordinator
@@ -1840,7 +1844,9 @@ class TestBLEReceiveLifecycleCoordinatorCurrentThread:
         return iface
 
     @pytest.fixture
-    def coordinator(self, mock_iface: MagicMock) -> BLEReceiveLifecycleCoordinator:
+    def coordinator(
+        self, mock_iface: MagicMock
+    ) -> Generator[BLEReceiveLifecycleCoordinator, None, None]:
         """Create BLEReceiveLifecycleCoordinator instance."""
         coordinator = BLEReceiveLifecycleCoordinator(mock_iface)
         yield coordinator
@@ -1862,7 +1868,7 @@ class TestBLEReceiveLifecycleCoordinatorCurrentThread:
         current = threading.current_thread()
         mock_iface._receiveThread = current
         mock_iface._receive_start_pending = False
-        coordinator._schedule_deferred_receive_restart = MagicMock()
+        coordinator._schedule_deferred_receive_restart = MagicMock()  # type: ignore[method-assign]
 
         def create_thread(**_kwargs: Any) -> MagicMock:
             return MagicMock()
@@ -1890,7 +1896,7 @@ class TestBLEReceiveLifecycleCoordinatorCurrentThread:
         mock_iface._receiveThread = current
         mock_iface._receive_start_pending = True
         mock_iface._receive_start_pending_since = time.monotonic() - 10.0  # Expired
-        coordinator._schedule_deferred_receive_restart = MagicMock()
+        coordinator._schedule_deferred_receive_restart = MagicMock()  # type: ignore[method-assign]
 
         def create_thread(**_kwargs: Any) -> MagicMock:
             return MagicMock()
@@ -1936,7 +1942,9 @@ class TestBLEReceiveLifecycleCoordinatorConcurrent:
         return iface
 
     @pytest.fixture
-    def coordinator(self, mock_iface: MagicMock) -> BLEReceiveLifecycleCoordinator:
+    def coordinator(
+        self, mock_iface: MagicMock
+    ) -> Generator[BLEReceiveLifecycleCoordinator, None, None]:
         """Create BLEReceiveLifecycleCoordinator instance."""
         coordinator = BLEReceiveLifecycleCoordinator(mock_iface)
         yield coordinator
@@ -2027,7 +2035,7 @@ class TestLifecyclePrimitivesIntegration:
     """Integration tests for lifecycle primitives."""
 
     @pytest.fixture
-    def full_mock_iface(self) -> MagicMock:
+    def full_mock_iface(self) -> Generator[MagicMock, None, None]:
         """Create a fully mocked BLEInterface."""
         iface = MagicMock()
         iface._state_lock = threading.Lock()
@@ -2239,7 +2247,7 @@ class TestLifecyclePrimitivesEdgeCases:
     """Test edge cases and boundary conditions."""
 
     @pytest.fixture
-    def mock_iface(self) -> MagicMock:
+    def mock_iface(self) -> Generator[MagicMock, None, None]:
         """Create a mock BLEInterface with required attributes."""
         iface = MagicMock()
         iface._state_lock = threading.Lock()
@@ -2263,7 +2271,9 @@ class TestLifecyclePrimitivesEdgeCases:
             iface._want_receive = False
 
     @pytest.fixture
-    def coordinator(self, mock_iface: MagicMock) -> BLEReceiveLifecycleCoordinator:
+    def coordinator(
+        self, mock_iface: MagicMock
+    ) -> Generator[BLEReceiveLifecycleCoordinator, None, None]:
         """Create BLEReceiveLifecycleCoordinator instance."""
         coordinator = BLEReceiveLifecycleCoordinator(mock_iface)
         yield coordinator
@@ -2436,7 +2446,7 @@ class TestLifecyclePrimitivesEdgeCases:
         mock_iface._receive_from_radio_impl = MagicMock()
 
         coordinator = BLEReceiveLifecycleCoordinator(mock_iface)
-        coordinator.start_receive_thread = MagicMock()
+        coordinator.start_receive_thread = MagicMock()  # type: ignore[method-assign]
         monkeypatch.setattr(
             "meshtastic.interfaces.ble.lifecycle_receive_runtime.RECEIVE_START_PENDING_TIMEOUT_SECONDS",
             0.01,
