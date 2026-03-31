@@ -449,7 +449,7 @@ class TestSendDataWithWait:
                 """Serialize the protobuf message."""
                 return b"serialized protobuf"
 
-        with patch.object(send_pipeline, "_send_packet") as mock_send_packet:
+        with patch.object(send_pipeline._interface, "_send_packet") as mock_send_packet:
             mock_send_packet.return_value = MagicMock()
             send_pipeline._send_data_with_wait(
                 MockProtobuf(),
@@ -494,7 +494,7 @@ class TestSendDataWithWait:
         """Test that _send_data_with_wait registers response handler."""
         callback = MagicMock()
 
-        with patch.object(send_pipeline, "_send_packet") as mock_send_packet:
+        with patch.object(send_pipeline._interface, "_send_packet") as mock_send_packet:
             with patch.object(
                 send_pipeline, "_add_response_handler"
             ) as mock_add_handler:
@@ -720,7 +720,7 @@ class TestOnResponsePosition:
         ) as mock_flow:
             send_pipeline.onResponsePosition(packet)
 
-        mock_flow.assert_called_once_with(send_pipeline, packet)
+        mock_flow.assert_called_once_with(send_pipeline._interface, packet)
 
 
 class TestSendPosition:
@@ -762,7 +762,7 @@ class TestOnResponseTraceRoute:
         ) as mock_flow:
             send_pipeline.onResponseTraceRoute(packet)
 
-        mock_flow.assert_called_once_with(send_pipeline, packet)
+        mock_flow.assert_called_once_with(send_pipeline._interface, packet)
 
 
 class TestSendTraceRoute:
@@ -776,7 +776,9 @@ class TestSendTraceRoute:
         ) as mock_flow:
             send_pipeline.sendTraceRoute("!1234abcd", hopLimit=3, channelIndex=0)
 
-        mock_flow.assert_called_once_with(send_pipeline, "!1234abcd", 3, channelIndex=0)
+        mock_flow.assert_called_once_with(
+            send_pipeline._interface, "!1234abcd", 3, channelIndex=0
+        )
 
 
 class TestSendTelemetry:
@@ -810,7 +812,7 @@ class TestOnResponseTelemetry:
         ) as mock_flow:
             send_pipeline.onResponseTelemetry(packet)
 
-        mock_flow.assert_called_once_with(send_pipeline, packet)
+        mock_flow.assert_called_once_with(send_pipeline._interface, packet)
 
 
 class TestOnResponseWaypoint:
@@ -826,7 +828,7 @@ class TestOnResponseWaypoint:
         ) as mock_flow:
             send_pipeline.onResponseWaypoint(packet)
 
-        mock_flow.assert_called_once_with(send_pipeline, packet)
+        mock_flow.assert_called_once_with(send_pipeline._interface, packet)
 
 
 class TestSendWaypoint:
@@ -978,7 +980,7 @@ class TestSendPacket:
         """Test that None destination raises error."""
         mesh_packet = mesh_pb2.MeshPacket()
 
-        with pytest.raises(Exception, match="must not be None"):
+        with pytest.raises(Exception, match="Invalid destinationId:"):
             send_pipeline._send_packet(mesh_packet, destinationId=None)  # type: ignore[arg-type]
 
     @pytest.mark.unit
