@@ -1075,7 +1075,7 @@ class MeshInterface:  # pylint: disable=R0902
             The sent packet with its `id` populated.
         """
         return sendPosition(
-            self._send_pipeline,
+            self,
             latitude=latitude,
             longitude=longitude,
             altitude=altitude,
@@ -1228,7 +1228,7 @@ class MeshInterface:  # pylint: disable=R0902
             the nested `decoded["routing"]["errorReason"]` may be present.
 
         """
-        _on_response_position(self._send_pipeline, p)
+        _on_response_position(self, p)
 
     def sendTraceRoute(
         self, dest: int | str, hopLimit: int, channelIndex: int = 0
@@ -1253,9 +1253,7 @@ class MeshInterface:  # pylint: disable=R0902
         MeshInterfaceError
             If waiting for traceroute responses times out or the operation fails.
         """
-        return sendTraceroute(
-            self._send_pipeline, dest, hopLimit, channelIndex=channelIndex
-        )
+        return sendTraceroute(self, dest, hopLimit, channelIndex=channelIndex)
 
     def onResponseTraceRoute(self, p: dict[str, Any]) -> None:
         """Emit human-readable traceroute results from a RouteDiscovery payload.
@@ -1265,7 +1263,7 @@ class MeshInterface:  # pylint: disable=R0902
         p : dict[str, Any]
             The traceroute response packet.
         """
-        _on_response_traceroute(self._send_pipeline, p)
+        _on_response_traceroute(self, p)
 
     # pylint: disable=too-many-positional-arguments
     def sendTelemetry(
@@ -1294,7 +1292,7 @@ class MeshInterface:  # pylint: disable=R0902
             Optional hop limit override for the outgoing packet. (Default value = None)
         """
         return sendTelemetry(
-            self._send_pipeline,
+            self,
             destinationId=destinationId,
             wantResponse=wantResponse,
             channelIndex=channelIndex,
@@ -1310,7 +1308,7 @@ class MeshInterface:  # pylint: disable=R0902
         p : dict[str, Any]
             Decoded packet dictionary produced by _handle_packet_from_radio.
         """
-        _on_response_telemetry(self._send_pipeline, p)
+        _on_response_telemetry(self, p)
 
     def onResponseWaypoint(self, p: dict[str, Any]) -> None:
         """Handle a waypoint response or routing error contained in a received packet.
@@ -1320,7 +1318,7 @@ class MeshInterface:  # pylint: disable=R0902
         p : dict[str, Any]
             Packet dictionary containing a 'decoded' mapping.
         """
-        _on_response_waypoint(self._send_pipeline, p)
+        _on_response_waypoint(self, p)
 
     def sendWaypoint(  # pylint: disable=R0913,too-many-positional-arguments
         self,
@@ -1372,7 +1370,7 @@ class MeshInterface:  # pylint: disable=R0902
             The MeshPacket that was sent; its `id` is populated for tracking.
         """
         return sendWaypoint(
-            self._send_pipeline,
+            self,
             name=name,
             description=description,
             icon=icon,
@@ -1420,7 +1418,7 @@ class MeshInterface:  # pylint: disable=R0902
             The MeshPacket that was sent; its `id` field is populated and can be used to track acknowledgements.
         """
         return deleteWaypoint(
-            self._send_pipeline,
+            self,
             waypointId=waypoint_id,
             destinationId=destinationId,
             wantAck=wantAck,

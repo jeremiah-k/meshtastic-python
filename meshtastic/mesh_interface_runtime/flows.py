@@ -22,7 +22,7 @@ from meshtastic.mesh_interface_runtime.request_wait import (
 from meshtastic.protobuf import mesh_pb2, portnums_pb2, telemetry_pb2
 
 if TYPE_CHECKING:
-    from meshtastic.mesh_interface_runtime.send_pipeline import SendPipeline
+    from meshtastic.mesh_interface import MeshInterface
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +50,9 @@ def _emit_response_summary(message: str) -> None:
     logger.info("%s", message)
 
 
-def _node_label(pipeline: "SendPipeline", node_num: int) -> str:
+def _node_label(interface: "MeshInterface", node_num: int) -> str:
     """Return a human-readable identifier for a numeric node."""
-    return pipeline._interface._node_num_to_id(node_num, False) or f"{node_num:08x}"
+    return interface._node_num_to_id(node_num, False) or f"{node_num:08x}"
 
 
 def _format_snr(snr_value: int | None) -> str:
@@ -64,9 +64,9 @@ def _format_snr(snr_value: int | None) -> str:
     )
 
 
-def _on_response_position(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
+def _on_response_position(interface: "MeshInterface", p: dict[str, Any]) -> None:
     """Process a position response packet and emit a concise human-readable summary."""
-    request_id = pipeline._extract_request_id_from_packet(p)
+    request_id = interface._extract_request_id_from_packet(p)
     if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
         portnums_pb2.PortNum.POSITION_APP
     ):
@@ -74,7 +74,7 @@ def _on_response_position(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
         try:
             position.ParseFromString(p["decoded"]["payload"])
         except (KeyError, TypeError, protobuf_message.DecodeError) as exc:
-            pipeline._set_wait_error(
+            interface._set_wait_error(
                 WAIT_ATTR_POSITION,
                 f"Failed to parse position response payload: {exc}",
                 request_id=request_id,
@@ -97,7 +97,7 @@ def _on_response_position(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
             ret += " position disabled"
 
         _emit_response_summary(ret)
-        pipeline._mark_wait_acknowledged(
+        interface._mark_wait_acknowledged(
             WAIT_ATTR_POSITION,
             request_id=request_id,
         )
@@ -105,7 +105,7 @@ def _on_response_position(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
     elif p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
         portnums_pb2.PortNum.ROUTING_APP
     ):
-        pipeline._record_routing_wait_error(
+        interface._record_routing_wait_error(
             acknowledgment_attr=WAIT_ATTR_POSITION,
             routing_error_reason=p["decoded"].get("routing", {}).get("errorReason"),
             request_id=request_id,
@@ -114,7 +114,7 @@ def _on_response_position(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
 
 # pylint: disable=too-many-positional-arguments
 def sendPosition(
-    pipeline: "SendPipeline",
+    interface: "MeshInterface",
     latitude: float = 0.0,
     longitude: float = 0.0,
     altitude: int = 0,
@@ -143,7 +143,7 @@ def sendPosition(
     if wantResponse:
 
         def _on_response(packet: dict[str, Any]) -> None:
-            _on_response_position(pipeline, packet)
+            _on_response_position(interface, packet)
 
         onResponse = _on_response
         response_wait_attr = WAIT_ATTR_POSITION
@@ -151,7 +151,7 @@ def sendPosition(
         onResponse = None
         response_wait_attr = None
 
-    d = pipeline._send_data_with_wait(
+    d = interface._send_data_with_wait(
         p,
         destinationId,
         portNum=portnums_pb2.PortNum.POSITION_APP,
@@ -163,24 +163,24 @@ def sendPosition(
         response_wait_attr=response_wait_attr,
     )
     if wantResponse:
-        request_id = pipeline._extract_request_id_from_sent_packet(d)
+        request_id = interface._extract_request_id_from_sent_packet(d)
         if request_id is None:
-            raise pipeline._interface.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
-        pipeline.waitForPosition(request_id=request_id)
+            raise interface.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
+        interface.waitForPosition(request_id=request_id)
     return d
 
 
-def _on_response_traceroute(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
+def _on_response_traceroute(interface: "MeshInterface", p: dict[str, Any]) -> None:
     """Emit human-readable traceroute results from a RouteDiscovery payload."""
     decoded = p["decoded"]
-    request_id = pipeline._extract_request_id_from_packet(p)
+    request_id = interface._extract_request_id_from_packet(p)
     if decoded.get("portnum") == portnums_pb2.PortNum.Name(
         portnums_pb2.PortNum.ROUTING_APP
     ):
         error_reason = decoded.get("routing", {}).get("errorReason")
         # Only treat as error if errorReason exists and is not NONE
         if error_reason is not None and error_reason != "NONE":
-            pipeline._record_routing_wait_error(
+            interface._record_routing_wait_error(
                 acknowledgment_attr=WAIT_ATTR_TRACEROUTE,
                 routing_error_reason=error_reason,
                 request_id=request_id,
@@ -193,7 +193,7 @@ def _on_response_traceroute(pipeline: "SendPipeline", p: dict[str, Any]) -> None
         routeDiscovery.ParseFromString(decoded["payload"])
         asDict = google.protobuf.json_format.MessageToDict(routeDiscovery)
     except (protobuf_message.DecodeError, KeyError, TypeError) as exc:
-        pipeline._set_wait_error(
+        interface._set_wait_error(
             WAIT_ATTR_TRACEROUTE,
             f"Failed to parse traceroute response payload: {exc}",
             request_id=request_id,
@@ -202,14 +202,14 @@ def _on_response_traceroute(pipeline: "SendPipeline", p: dict[str, Any]) -> None
 
     def _append_hop(route_text: str, node_num: int, snr_text: str) -> str:
         """Append a hop description to an existing route string."""
-        return f"{route_text} --> {_node_label(pipeline, node_num)} ({snr_text}dB)"
+        return f"{route_text} --> {_node_label(interface, node_num)} ({snr_text}dB)"
 
     route_towards = asDict.get("route", [])
     snr_towards = asDict.get("snrTowards", [])
     snr_towards_valid = len(snr_towards) == len(route_towards) + 1
 
     _emit_response_summary("Route traced towards destination:")
-    routeStr = _node_label(pipeline, p["to"])
+    routeStr = _node_label(interface, p["to"])
     for idx, nodeNum in enumerate(route_towards):
         hop_snr = _format_snr(snr_towards[idx]) if snr_towards_valid else "?"
         routeStr = _append_hop(routeStr, nodeNum, hop_snr)
@@ -223,49 +223,49 @@ def _on_response_traceroute(pipeline: "SendPipeline", p: dict[str, Any]) -> None
     backValid = "hopStart" in p and len(snr_back) == len(route_back) + 1
     if backValid:
         _emit_response_summary("Route traced back to us:")
-        routeStr = _node_label(pipeline, p["from"])
+        routeStr = _node_label(interface, p["from"])
         for idx, nodeNum in enumerate(route_back):
             routeStr = _append_hop(routeStr, nodeNum, _format_snr(snr_back[idx]))
         routeStr = _append_hop(routeStr, p["to"], _format_snr(snr_back[-1]))
         _emit_response_summary(routeStr)
 
-    pipeline._mark_wait_acknowledged(
+    interface._mark_wait_acknowledged(
         WAIT_ATTR_TRACEROUTE,
         request_id=request_id,
     )
 
 
 def sendTraceroute(
-    pipeline: "SendPipeline",
+    interface: "MeshInterface",
     dest: int | str,
     hopLimit: int,
     channelIndex: int = 0,
 ) -> None:
     """Initiate a traceroute request toward a destination node and wait for responses."""
     r = mesh_pb2.RouteDiscovery()
-    packet = pipeline._send_data_with_wait(
+    packet = interface._send_data_with_wait(
         r,
         destinationId=dest,
         portNum=portnums_pb2.PortNum.TRACEROUTE_APP,
         wantResponse=True,
-        onResponse=lambda packet: _on_response_traceroute(pipeline, packet),
+        onResponse=lambda packet: _on_response_traceroute(interface, packet),
         channelIndex=channelIndex,
         hopLimit=hopLimit,
         response_wait_attr=WAIT_ATTR_TRACEROUTE,
     )
-    with pipeline._node_db_lock:
-        node_count = len(pipeline.nodes) if pipeline.nodes else 0
+    with interface._node_db_lock:
+        node_count = len(interface.nodes) if interface.nodes else 0
     nodes_based_factor = (node_count - 1) if node_count else (hopLimit + 1)
     waitFactor = max(1, min(nodes_based_factor, hopLimit + 1))
-    request_id = pipeline._extract_request_id_from_sent_packet(packet)
+    request_id = interface._extract_request_id_from_sent_packet(packet)
     if request_id is None:
-        raise pipeline._interface.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
-    pipeline.waitForTraceRoute(waitFactor, request_id=request_id)
+        raise interface.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
+    interface.waitForTraceRoute(waitFactor, request_id=request_id)
 
 
-def _on_response_telemetry(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
+def _on_response_telemetry(interface: "MeshInterface", p: dict[str, Any]) -> None:
     """Handle an incoming telemetry response."""
-    request_id = pipeline._extract_request_id_from_packet(p)
+    request_id = interface._extract_request_id_from_packet(p)
     if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
         portnums_pb2.PortNum.TELEMETRY_APP
     ):
@@ -273,7 +273,7 @@ def _on_response_telemetry(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
         try:
             telemetry.ParseFromString(p["decoded"]["payload"])
         except (KeyError, TypeError, protobuf_message.DecodeError) as exc:
-            pipeline._set_wait_error(
+            interface._set_wait_error(
                 WAIT_ATTR_TELEMETRY,
                 f"Failed to parse telemetry response payload: {exc}",
                 request_id=request_id,
@@ -317,13 +317,13 @@ def _on_response_telemetry(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
                         else:
                             _emit_response_summary(f"{key}: {value}")
         except (ValueError, KeyError, AttributeError) as exc:
-            pipeline._set_wait_error(
+            interface._set_wait_error(
                 WAIT_ATTR_TELEMETRY,
                 f"Failed to format telemetry response: {exc}",
                 request_id=request_id,
             )
             return
-        pipeline._mark_wait_acknowledged(
+        interface._mark_wait_acknowledged(
             WAIT_ATTR_TELEMETRY,
             request_id=request_id,
         )
@@ -331,7 +331,7 @@ def _on_response_telemetry(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
     elif p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
         portnums_pb2.PortNum.ROUTING_APP
     ):
-        pipeline._record_routing_wait_error(
+        interface._record_routing_wait_error(
             acknowledgment_attr=WAIT_ATTR_TELEMETRY,
             routing_error_reason=p["decoded"].get("routing", {}).get("errorReason"),
             request_id=request_id,
@@ -340,7 +340,7 @@ def _on_response_telemetry(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
 
 # pylint: disable=too-many-positional-arguments
 def sendTelemetry(
-    pipeline: "SendPipeline",
+    interface: "MeshInterface",
     destinationId: int | str = BROADCAST_ADDR,
     wantResponse: bool = False,
     channelIndex: int = 0,
@@ -376,11 +376,11 @@ def sendTelemetry(
     elif telemetry_type == "local_stats":
         r.local_stats.CopyFrom(telemetry_pb2.LocalStats())
     elif telemetry_type == DEFAULT_TELEMETRY_TYPE:
-        local_node = pipeline.localNode
-        with pipeline._node_db_lock:
+        local_node = interface.localNode
+        with interface._node_db_lock:
             node = (
-                pipeline.nodesByNum.get(local_node.nodeNum)
-                if pipeline.nodesByNum is not None and local_node is not None
+                interface.nodesByNum.get(local_node.nodeNum)
+                if interface.nodesByNum is not None and local_node is not None
                 else None
             )
             if node is not None:
@@ -407,7 +407,7 @@ def sendTelemetry(
     if wantResponse:
 
         def _on_response(packet: dict[str, Any]) -> None:
-            _on_response_telemetry(pipeline, packet)
+            _on_response_telemetry(interface, packet)
 
         onResponse = _on_response
         response_wait_attr = WAIT_ATTR_TELEMETRY
@@ -415,7 +415,7 @@ def sendTelemetry(
         onResponse = None
         response_wait_attr = None
 
-    packet = pipeline._send_data_with_wait(
+    packet = interface._send_data_with_wait(
         r,
         destinationId=destinationId,
         portNum=portnums_pb2.PortNum.TELEMETRY_APP,
@@ -426,15 +426,15 @@ def sendTelemetry(
         response_wait_attr=response_wait_attr,
     )
     if wantResponse:
-        request_id = pipeline._extract_request_id_from_sent_packet(packet)
+        request_id = interface._extract_request_id_from_sent_packet(packet)
         if request_id is None:
-            raise pipeline._interface.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
-        pipeline.waitForTelemetry(request_id=request_id)
+            raise interface.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
+        interface.waitForTelemetry(request_id=request_id)
 
 
-def _on_response_waypoint(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
+def _on_response_waypoint(interface: "MeshInterface", p: dict[str, Any]) -> None:
     """Handle a waypoint response or routing error contained in a received packet."""
-    request_id = pipeline._extract_request_id_from_packet(p)
+    request_id = interface._extract_request_id_from_packet(p)
     if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
         portnums_pb2.PortNum.WAYPOINT_APP
     ):
@@ -442,21 +442,21 @@ def _on_response_waypoint(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
         try:
             w.ParseFromString(p["decoded"]["payload"])
         except (KeyError, TypeError, protobuf_message.DecodeError) as exc:
-            pipeline._set_wait_error(
+            interface._set_wait_error(
                 WAIT_ATTR_WAYPOINT,
                 f"Failed to parse waypoint response payload: {exc}",
                 request_id=request_id,
             )
             return
         _emit_response_summary(f"Waypoint received: {w}")
-        pipeline._mark_wait_acknowledged(
+        interface._mark_wait_acknowledged(
             WAIT_ATTR_WAYPOINT,
             request_id=request_id,
         )
     elif p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
         portnums_pb2.PortNum.ROUTING_APP
     ):
-        pipeline._record_routing_wait_error(
+        interface._record_routing_wait_error(
             acknowledgment_attr=WAIT_ATTR_WAYPOINT,
             routing_error_reason=p["decoded"].get("routing", {}).get("errorReason"),
             request_id=request_id,
@@ -465,7 +465,7 @@ def _on_response_waypoint(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments
 def sendWaypoint(
-    pipeline: "SendPipeline",
+    interface: "MeshInterface",
     name: str,
     description: str,
     icon: int | str,
@@ -486,7 +486,7 @@ def sendWaypoint(
     try:
         w.icon = int(icon)
     except (ValueError, TypeError) as exc:
-        raise pipeline._interface.MeshInterfaceError(
+        raise interface.MeshInterfaceError(
             f"Invalid icon value '{icon}': must be an integer or numeric string"
         ) from exc
     w.expire = expire
@@ -507,7 +507,7 @@ def sendWaypoint(
     if wantResponse:
 
         def _on_response(packet: dict[str, Any]) -> None:
-            _on_response_waypoint(pipeline, packet)
+            _on_response_waypoint(interface, packet)
 
         onResponse = _on_response
         response_wait_attr = WAIT_ATTR_WAYPOINT
@@ -515,7 +515,7 @@ def sendWaypoint(
         onResponse = None
         response_wait_attr = None
 
-    d = pipeline._send_data_with_wait(
+    d = interface._send_data_with_wait(
         w,
         destinationId,
         portNum=portnums_pb2.PortNum.WAYPOINT_APP,
@@ -527,16 +527,16 @@ def sendWaypoint(
         response_wait_attr=response_wait_attr,
     )
     if wantResponse:
-        request_id = pipeline._extract_request_id_from_sent_packet(d)
+        request_id = interface._extract_request_id_from_sent_packet(d)
         if request_id is None:
-            raise pipeline._interface.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
-        pipeline.waitForWaypoint(request_id=request_id)
+            raise interface.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
+        interface.waitForWaypoint(request_id=request_id)
     return d
 
 
 # pylint: disable=too-many-positional-arguments
 def deleteWaypoint(
-    pipeline: "SendPipeline",
+    interface: "MeshInterface",
     waypointId: int,
     destinationId: int | str = BROADCAST_ADDR,
     wantAck: bool = True,
@@ -554,7 +554,7 @@ def deleteWaypoint(
         response_wait_attr: str | None
 
         def _on_response(packet: dict[str, Any]) -> None:
-            _on_response_waypoint(pipeline, packet)
+            _on_response_waypoint(interface, packet)
 
         onResponse = _on_response
         response_wait_attr = WAIT_ATTR_WAYPOINT
@@ -562,7 +562,7 @@ def deleteWaypoint(
         onResponse = None
         response_wait_attr = None
 
-    d = pipeline._send_data_with_wait(
+    d = interface._send_data_with_wait(
         p,
         destinationId,
         portNum=portnums_pb2.PortNum.WAYPOINT_APP,
@@ -574,8 +574,8 @@ def deleteWaypoint(
         response_wait_attr=response_wait_attr,
     )
     if wantResponse:
-        request_id = pipeline._extract_request_id_from_sent_packet(d)
+        request_id = interface._extract_request_id_from_sent_packet(d)
         if request_id is None:
-            raise pipeline._interface.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
-        pipeline.waitForWaypoint(request_id=request_id)
+            raise interface.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
+        interface.waitForWaypoint(request_id=request_id)
     return d

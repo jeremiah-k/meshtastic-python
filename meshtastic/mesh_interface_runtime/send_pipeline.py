@@ -491,7 +491,7 @@ class SendPipeline:
 
     def onResponsePosition(self, p: dict[str, Any]) -> None:
         """Process a position response packet and emit a concise human-readable summary."""
-        _on_response_position(self, p)
+        _on_response_position(self._interface, p)
 
     # pylint: disable=too-many-positional-arguments
     def sendPosition(
@@ -507,7 +507,7 @@ class SendPipeline:
     ) -> mesh_pb2.MeshPacket:
         """Send the device's position to a specific node or to broadcast."""
         return sendPosition(
-            self,
+            self._interface,
             latitude=latitude,
             longitude=longitude,
             altitude=altitude,
@@ -520,14 +520,16 @@ class SendPipeline:
 
     def onResponseTraceRoute(self, p: dict[str, Any]) -> None:
         """Emit human-readable traceroute results from a RouteDiscovery payload."""
-        _on_response_traceroute(self, p)
+        _on_response_traceroute(self._interface, p)
 
     # pylint: disable=too-many-positional-arguments
     def sendTraceRoute(
         self, dest: int | str, hopLimit: int, channelIndex: int = 0
     ) -> None:
         """Initiate a traceroute request toward a destination node and wait for responses."""
-        return sendTraceroute(self, dest, hopLimit, channelIndex=channelIndex)
+        return sendTraceroute(
+            self._interface, dest, hopLimit, channelIndex=channelIndex
+        )
 
     def sendTelemetry(
         self,
@@ -539,7 +541,7 @@ class SendPipeline:
     ) -> None:
         """Send a telemetry message to a node or broadcast and optionally wait for a telemetry response."""
         return sendTelemetry(
-            self,
+            self._interface,
             destinationId=destinationId,
             wantResponse=wantResponse,
             channelIndex=channelIndex,
@@ -549,11 +551,11 @@ class SendPipeline:
 
     def onResponseTelemetry(self, p: dict[str, Any]) -> None:
         """Handle an incoming telemetry response."""
-        _on_response_telemetry(self, p)
+        _on_response_telemetry(self._interface, p)
 
     def onResponseWaypoint(self, p: dict[str, Any]) -> None:
         """Handle a waypoint response or routing error contained in a received packet."""
-        _on_response_waypoint(self, p)
+        _on_response_waypoint(self._interface, p)
 
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     def sendWaypoint(
@@ -573,7 +575,7 @@ class SendPipeline:
     ) -> mesh_pb2.MeshPacket:
         """Send a waypoint to a node or broadcast."""
         return sendWaypoint(
-            self,
+            self._interface,
             name=name,
             description=description,
             icon=icon,
@@ -600,7 +602,7 @@ class SendPipeline:
     ) -> mesh_pb2.MeshPacket:
         """Delete a waypoint by sending a Waypoint message with expire=0 to a destination."""
         return deleteWaypoint(
-            self,
+            self._interface,
             waypointId=waypoint_id,
             destinationId=destinationId,
             wantAck=wantAck,
