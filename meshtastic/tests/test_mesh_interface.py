@@ -2494,12 +2494,7 @@ def test_send_telemetry_supported_and_fallback_paths(
             iface._send_pipeline, "_send_data_with_wait", _capture_telemetry_send
         )
         wait_for_telemetry = MagicMock()
-        monkeypatch.setattr(
-            iface._send_pipeline, "waitForTelemetry", wait_for_telemetry
-        )
-        monkeypatch.setattr(
-            iface._send_pipeline, "_wait_for_request_ack", lambda *args, **kwargs: True
-        )
+        monkeypatch.setattr(iface, "waitForTelemetry", wait_for_telemetry)
 
         iface.sendTelemetry(telemetryType="environment_metrics")
         iface.sendTelemetry(telemetryType="air_quality_metrics")
