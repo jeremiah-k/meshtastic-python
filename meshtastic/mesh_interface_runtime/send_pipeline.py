@@ -718,7 +718,7 @@ class SendPipeline:
             )
         else:
             logger.debug("Sending packet: %s", stripnl(meshPacket))
-            self._send_to_radio(toRadio)
+            self._interface._send_to_radio(toRadio)
         return meshPacket
 
     # pylint: disable=too-many-positional-arguments
