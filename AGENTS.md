@@ -97,6 +97,9 @@ Quick inventory command:
   implementation inventory for intentionally maintained aliases.
 - If a symbol is not listed in `COMPATIBILITY.md` and is not marked with a
   `COMPAT_*` marker in code, do not add compatibility aliases by default.
+- For `Node.startOTA`, canonical first-party usage is
+  `startOTA(mode=..., ota_file_hash=...)`; legacy aliases (`ota_mode`,
+  `ota_hash`, legacy `hash`) remain silently accepted for compatibility.
 - `meshtastic.interfaces.ble.runner.get_zombie_runner_count()` is internal diagnostics and intentionally remains snake_case-only unless explicitly approved to expand public surface.
 
 Current `COMPAT_DEPRECATE` methods:
@@ -216,6 +219,13 @@ Current `COMPAT_DEPRECATE` methods:
   `mypy meshtastic/ --strict` locally to catch regressions.
 - `make ci` runs the same checks as CI (no `--strict`).
 - `make ci-strict` runs CI checks with strict mypy (for maintainers).
+
+## Lint Scope
+
+- CI `pylint` intentionally targets production/library paths (`meshtastic`,
+  `examples`) and excludes `meshtastic/tests/**`.
+- Test linting is enforced by `ruff check meshtastic/tests` (CI `Ruff Tests`
+  job and local `make lint-tests` / `make ci`).
 
 ## Baseline Generation
 

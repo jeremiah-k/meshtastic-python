@@ -259,6 +259,10 @@ considered stable API and may change without deprecation warnings.
 | `meshtastic.tunnel`         | `_nodeNumToIp()`                                       | `_node_num_to_ip()`                     |
 | `meshtastic.tunnel`         | `sendPacket()`                                         | `_send_packet()`                        |
 
+For `Node.startOTA`, use canonical call style in first-party code and docs:
+`startOTA(mode=..., ota_file_hash=...)`. Legacy aliases (`ota_mode`, `ota_hash`,
+and legacy `hash`) remain accepted silently for compatibility.
+
 ### BLE and Related Exports
 
 `meshtastic.interfaces.ble.management_service` remains a facade/re-export path,

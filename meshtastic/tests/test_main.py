@@ -4746,7 +4746,10 @@ def test_main_ota_update_succeeds_and_prints_completion(
         or call_args.kwargs.get("dest") == MAIN_LOCAL_ADDR
         for call_args in get_node.call_args_list
     )
-    node.startOTA.assert_called_once()
+    node.startOTA.assert_called_once_with(
+        mode=main_module.admin_pb2.OTAMode.OTA_WIFI,
+        ota_file_hash=ota.hash_bytes.return_value,
+    )
     assert sleep_mock.call_args_list == [call(main_module.OTA_REBOOT_WAIT_SECONDS)]
 
 
@@ -4832,7 +4835,10 @@ def test_main_ota_update_allows_explicit_local_dest(
     out, err = capsys.readouterr()
     assert "OTA update completed successfully!" in out
     assert err == ""
-    local_node.startOTA.assert_called_once()
+    local_node.startOTA.assert_called_once_with(
+        mode=main_module.admin_pb2.OTAMode.OTA_WIFI,
+        ota_file_hash=ota.hash_bytes.return_value,
+    )
     other_node.startOTA.assert_not_called()
     ota.update.assert_called_once()
     assert any(
