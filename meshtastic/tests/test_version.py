@@ -20,7 +20,7 @@ class ResponseLike(Protocol):
 
     def json(self) -> dict[str, dict[str, str]]:
         """Return a mapping containing the PyPI version payload."""
-        ...  # pylint: disable=unnecessary-ellipsis
+        pass
 
 
 def _make_fake_response(version: str) -> ResponseLike:

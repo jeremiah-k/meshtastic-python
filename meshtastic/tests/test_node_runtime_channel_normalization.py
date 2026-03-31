@@ -2,6 +2,7 @@
 
 # pylint: disable=redefined-outer-name
 
+import logging
 import threading
 from unittest.mock import MagicMock
 
@@ -61,7 +62,7 @@ class TestFixupChannelsLocked:
 
         runtime = _NodeChannelNormalizationRuntime(mock_node)
 
-        with caplog.at_level("WARNING"):
+        with caplog.at_level(logging.WARNING):
             runtime._fixup_channels_locked()
 
         # Should have truncated to MAX_CHANNELS
@@ -266,7 +267,7 @@ class TestIntegration:
 
         runtime = _NodeChannelNormalizationRuntime(mock_node)
 
-        with caplog.at_level("WARNING"):
+        with caplog.at_level(logging.WARNING):
             runtime._fixup_channels()
 
         # Should be truncated to MAX_CHANNELS

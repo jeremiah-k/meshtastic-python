@@ -466,7 +466,9 @@ class TestSendDataWithWait:
         """Test that _send_data_with_wait raises error for oversized payload."""
         big_data = b"x" * (mesh_pb2.Constants.DATA_PAYLOAD_LEN + 1)
 
-        with pytest.raises(Exception, match="too big"):
+        with pytest.raises(
+            send_pipeline._interface.MeshInterfaceError, match="too big"
+        ):
             send_pipeline._send_data_with_wait(
                 big_data,
                 destinationId=BROADCAST_ADDR,

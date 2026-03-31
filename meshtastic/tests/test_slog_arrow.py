@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from pyarrow import feather
 else:
     pa = pytest.importorskip("pyarrow")
-    from pyarrow import feather  # noqa: E402
+    feather = pytest.importorskip("pyarrow.feather")
 
 import meshtastic.slog.arrow as arrow_module
 from meshtastic.slog.arrow import FeatherWriter

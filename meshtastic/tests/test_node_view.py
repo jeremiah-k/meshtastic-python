@@ -79,7 +79,7 @@ class TestTimeAgo:
 
 
 class TestNormalizeJsonSerializableNodeView:
-    """Tests for _normalize_json_serializable function in node_view (lines 74-87)."""
+    """Tests for _normalize_json_serializable function in node_view."""
 
     @pytest.mark.unit
     def test_normalize_bytes_node_view(self) -> None:
@@ -111,7 +111,7 @@ class TestNormalizeJsonSerializableNodeView:
 
 
 class TestNodeViewInit:
-    """Tests for NodeView initialization (lines 90-106)."""
+    """Tests for NodeView initialization."""
 
     @pytest.mark.unit
     def test_node_view_init(self, mock_interface: MagicMock) -> None:
@@ -122,7 +122,7 @@ class TestNodeViewInit:
 
 
 class TestNodeViewProperties:
-    """Tests for NodeView properties (lines 108-135)."""
+    """Tests for NodeView properties."""
 
     @pytest.mark.unit
     def test_node_db_lock_property(
@@ -176,7 +176,7 @@ class TestNodeViewProperties:
 
 
 class TestPrintLogLine:
-    """Tests for _print_log_line method (lines 137-165)."""
+    """Tests for _print_log_line method."""
 
     @pytest.mark.unit
     def test_print_log_line_stdout(
@@ -188,12 +188,11 @@ class TestPrintLogLine:
         """Test printing log line to stdout."""
         mock_interface.debugOut = sys.stdout
 
-        # Since print_color may or may not be available, just ensure no error
-        node_view._print_log_line("Test message")
-
-        captured = capsys.readouterr()
-        # Output depends on whether print_color is available
-        assert "Test message" in captured.out or captured.out == ""
+        with patch(
+            "meshtastic.mesh_interface_runtime.node_view.print_color"
+        ) as mock_print_color:
+            node_view._print_log_line("Test message")
+            mock_print_color.print.assert_called_once_with("Test message")
 
     @pytest.mark.unit
     def test_print_log_line_callable(
@@ -221,7 +220,7 @@ class TestPrintLogLine:
 
 
 class TestHandleLogLine:
-    """Tests for _handle_log_line method (lines 166-177)."""
+    """Tests for _handle_log_line method."""
 
     @pytest.mark.unit
     def test_handle_log_line_publishes(
@@ -247,7 +246,7 @@ class TestHandleLogLine:
 
 
 class TestHandleLogRecord:
-    """Tests for _handle_log_record method (lines 179-187)."""
+    """Tests for _handle_log_record method."""
 
     @pytest.mark.unit
     def test_handle_log_record(self, node_view: NodeView) -> None:
@@ -262,7 +261,7 @@ class TestHandleLogRecord:
 
 
 class TestShowInfo:
-    """Tests for showInfo method (lines 189-254)."""
+    """Tests for showInfo method."""
 
     @pytest.mark.unit
     def test_show_info_basic(
@@ -304,7 +303,7 @@ class TestShowInfo:
 
 
 class TestBuildTableData:
-    """Tests for _build_table_data method (lines 256-298)."""
+    """Tests for _build_table_data method."""
 
     @pytest.mark.unit
     def test_build_table_data_simple(self, node_view: NodeView) -> None:
@@ -334,7 +333,7 @@ class TestBuildTableData:
 
 
 class TestRenderNodeTable:
-    """Tests for _render_node_table method (lines 300-316)."""
+    """Tests for _render_node_table method."""
 
     @pytest.mark.unit
     def test_render_node_table(self, node_view: NodeView) -> None:
@@ -355,7 +354,7 @@ class TestRenderNodeTable:
 
 
 class TestShowNodes:
-    """Tests for showNodes method (lines 318-373)."""
+    """Tests for showNodes method."""
 
     @pytest.mark.unit
     def test_show_nodes_empty(
@@ -400,7 +399,7 @@ class TestShowNodes:
 
 
 class TestGetNode:
-    """Tests for getNode method (lines 375-436)."""
+    """Tests for getNode method."""
 
     @pytest.mark.unit
     def test_get_node_local_addr(
@@ -436,7 +435,7 @@ class TestGetNode:
 
 
 class TestGetMyNodeInfo:
-    """Tests for getMyNodeInfo method (lines 438-450)."""
+    """Tests for getMyNodeInfo method."""
 
     @pytest.mark.unit
     def test_get_my_node_info_success(
@@ -466,7 +465,7 @@ class TestGetMyNodeInfo:
 
 
 class TestGetMyUser:
-    """Tests for getMyUser method (lines 452-463)."""
+    """Tests for getMyUser method."""
 
     @pytest.mark.unit
     def test_get_my_user_success(
@@ -497,7 +496,7 @@ class TestGetMyUser:
 
 
 class TestGetLongName:
-    """Tests for getLongName method (lines 465-476)."""
+    """Tests for getLongName method."""
 
     @pytest.mark.unit
     def test_get_long_name_success(
@@ -530,7 +529,7 @@ class TestGetLongName:
 
 
 class TestGetShortName:
-    """Tests for getShortName method (lines 478-489)."""
+    """Tests for getShortName method."""
 
     @pytest.mark.unit
     def test_get_short_name_success(
@@ -560,7 +559,7 @@ class TestGetShortName:
 
 
 class TestGetPublicKey:
-    """Tests for getPublicKey method (lines 491-502)."""
+    """Tests for getPublicKey method."""
 
     @pytest.mark.unit
     def test_get_public_key_success(
@@ -591,7 +590,7 @@ class TestGetPublicKey:
 
 
 class TestGetCannedMessage:
-    """Tests for getCannedMessage method (lines 504-515)."""
+    """Tests for getCannedMessage method."""
 
     @pytest.mark.unit
     def test_get_canned_message_delegates(
@@ -607,7 +606,7 @@ class TestGetCannedMessage:
 
 
 class TestGetRingtone:
-    """Tests for getRingtone method (lines 517-528)."""
+    """Tests for getRingtone method."""
 
     @pytest.mark.unit
     def test_get_ringtone_delegates(
@@ -623,7 +622,7 @@ class TestGetRingtone:
 
 
 class TestFixupPosition:
-    """Tests for _fixup_position method (lines 530-550)."""
+    """Tests for _fixup_position method."""
 
     @pytest.mark.unit
     def test_fixup_position_converts_integer_coords(self, node_view: NodeView) -> None:
@@ -649,7 +648,7 @@ class TestFixupPosition:
 
 
 class TestNodeNumToId:
-    """Tests for _node_num_to_id method (lines 552-595)."""
+    """Tests for _node_num_to_id method."""
 
     @pytest.mark.unit
     def test_node_num_to_id_broadcast_dest(self, node_view: NodeView) -> None:
@@ -702,7 +701,7 @@ class TestNodeNumToId:
 
 
 class TestGetOrCreateByNum:
-    """Tests for _get_or_create_by_num method (lines 597-638)."""
+    """Tests for _get_or_create_by_num method."""
 
     @pytest.mark.unit
     def test_get_existing_node(

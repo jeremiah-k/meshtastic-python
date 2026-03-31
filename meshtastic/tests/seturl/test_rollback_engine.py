@@ -127,13 +127,11 @@ class TestSetUrlRollbackEngine:
         admin_context = MagicMock()
         admin_context.admin_index_for_write = 0
 
-        write_call_count = [0]
-
         def write_side_effect(
             _channel: channel_pb2.Channel, *, adminIndex: int | None = None
         ) -> None:
             _ = adminIndex
-            write_call_count[0] += 1
+            pass
 
         def send_admin_side_effect(
             _msg: admin_pb2.AdminMessage, *, adminIndex: int | None = None
