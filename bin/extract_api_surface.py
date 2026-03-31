@@ -224,31 +224,56 @@ def _get_top_level_exports(pkg_dir: Path) -> list[str]:
 
     # Historically importable top-level meshtastic modules/subpackages.
     # Keep this compatibility surface explicit and stable for baseline checks.
-    exports.update(
-        {
-            "analysis",
-            "host_port",
-            "interfaces",
-            "mesh_interface",
-            "mesh_interface_runtime",
-            "mt_config",
-            "node",
-            "node_runtime",
-            "ota",
-            "powermon",
-            "protobuf",
-            "remote_hardware",
-            "serial_interface",
-            "slog",
-            "stream_interface",
-            "supported_device",
-            "tcp_interface",
-            "tunnel",
-            "util",
-            "version",
-        }
-    )
+    # Only add names that are present on disk.
+    historical_exports = {
+        "analysis",
+        "host_port",
+        "interfaces",
+        "mesh_interface",
+        "mesh_interface_runtime",
+        "mt_config",
+        "node",
+        "node_runtime",
+        "ota",
+        "powermon",
+        "protobuf",
+        "remote_hardware",
+        "serial_interface",
+        "slog",
+        "stream_interface",
+        "supported_device",
+        "tcp_interface",
+        "tunnel",
+        "util",
+        "version",
+    }
+    for name in historical_exports:
+        # Check if module file exists on disk
+        if _find_source_file(pkg_dir, name) is not None:
+            exports.add(name)
+
     return sorted(exports)
+
+
+def _camel_to_snake(name: str) -> str:
+    """Convert camelCase or PascalCase to snake_case.
+
+    Examples:
+        "BLEInterface" -> "ble_interface"
+        "SerialInterface" -> "serial_interface"
+        "MeshInterface" -> "mesh_interface"
+    """
+    result = []
+    for i, char in enumerate(name):
+        if char.isupper():
+            if i > 0 and (
+                name[i - 1].islower() or (i + 1 < len(name) and name[i + 1].islower())
+            ):
+                result.append("_")
+            result.append(char.lower())
+        else:
+            result.append(char)
+    return "".join(result)
 
 
 def _module_path_exists(pkg_dir: Path, dotted_path: str) -> bool:
@@ -280,7 +305,7 @@ def extract_api_surface(
     module_map = {}
     for cls in classes:
         # Derive module name from class name using snake_case convention
-        module_name = cls.lower().replace("meshinterface", "mesh_interface")
+        module_name = _camel_to_snake(cls)
         src = _find_source_file(pkg_dir, module_name)
         if src is None:
             continue
@@ -304,7 +329,7 @@ def extract_api_surface(
         elif cls == "Node":
             key = "node_methods"
         else:
-            module_name = cls.lower().replace("meshinterface", "mesh_interface")
+            module_name = _camel_to_snake(cls)
             key = f"{module_name}_methods"
         for tree, _mod in module_map.values():
             methods = _extract_class_methods(tree, cls)

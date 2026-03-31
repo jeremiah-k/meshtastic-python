@@ -260,6 +260,8 @@ def _is_breaking_signature_change(
         for inserted_param in pr_params[pr_index:found_index]:
             if inserted_param["required"]:
                 return True
+            if inserted_param["kind"] in ("positional_only", "positional_or_keyword"):
+                return True
 
         pr_param = pr_params[found_index]
         if pr_param["kind"] != base_param["kind"]:
