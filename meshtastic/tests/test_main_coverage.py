@@ -9,6 +9,7 @@ This module provides focused tests for uncovered paths in the CLI:
 
 # pylint: disable=C0302,W0613,R0917
 
+import argparse
 import sys
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
@@ -196,7 +197,7 @@ def test_main_deprecated_arg_prints_error_and_exits(
         assert pytest_wrapped_e.type is SystemExit
         # Argparse exits with code 2 for unrecognized arguments
         assert pytest_wrapped_e.value.code == 2
-        out, err = capsys.readouterr()
+        _out, err = capsys.readouterr()
         assert "unrecognized arguments" in err.lower() or "--deprecated" in err
 
 
@@ -224,7 +225,7 @@ def test_main_ch_longslow_success(capsys: pytest.CaptureFixture[str]) -> None:
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
-        out, err = capsys.readouterr()
+        out, _err = capsys.readouterr()
         assert "Connected to radio" in out
         mocked_node.writeConfig.assert_called_once_with("lora")
         mo.assert_called()
@@ -247,7 +248,7 @@ def test_main_ch_vlongslow_success(capsys: pytest.CaptureFixture[str]) -> None:
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         main()
-        out, err = capsys.readouterr()
+        out, _err = capsys.readouterr()
         assert "Connected to radio" in out
         mocked_node.writeConfig.assert_called_once_with("lora")
 
@@ -269,7 +270,7 @@ def test_main_ch_longfast_success(capsys: pytest.CaptureFixture[str]) -> None:
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         main()
-        out, err = capsys.readouterr()
+        out, _err = capsys.readouterr()
         assert "Connected to radio" in out
         mocked_node.writeConfig.assert_called_once_with("lora")
 
@@ -291,7 +292,7 @@ def test_main_ch_medslow_success(capsys: pytest.CaptureFixture[str]) -> None:
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         main()
-        out, err = capsys.readouterr()
+        out, _err = capsys.readouterr()
         assert "Connected to radio" in out
         mocked_node.writeConfig.assert_called_once_with("lora")
 
@@ -313,7 +314,7 @@ def test_main_ch_medfast_success(capsys: pytest.CaptureFixture[str]) -> None:
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         main()
-        out, err = capsys.readouterr()
+        out, _err = capsys.readouterr()
         assert "Connected to radio" in out
         mocked_node.writeConfig.assert_called_once_with("lora")
 
@@ -335,7 +336,7 @@ def test_main_ch_shortslow_success(capsys: pytest.CaptureFixture[str]) -> None:
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         main()
-        out, err = capsys.readouterr()
+        out, _err = capsys.readouterr()
         assert "Connected to radio" in out
         mocked_node.writeConfig.assert_called_once_with("lora")
 
@@ -357,7 +358,7 @@ def test_main_ch_shortfast_success(capsys: pytest.CaptureFixture[str]) -> None:
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         main()
-        out, err = capsys.readouterr()
+        out, _err = capsys.readouterr()
         assert "Connected to radio" in out
         mocked_node.writeConfig.assert_called_once_with("lora")
 
@@ -388,7 +389,7 @@ def test_main_enter_dfu(capsys: pytest.CaptureFixture[str]) -> None:
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
-        out, err = capsys.readouterr()
+        out, _err = capsys.readouterr()
         assert "Connected to radio" in out
         assert "inside mocked enterDFU" in out
         mocked_node.enterDFUMode.assert_called_once()
@@ -416,7 +417,7 @@ def test_main_device_metadata(capsys: pytest.CaptureFixture[str]) -> None:
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
-        out, err = capsys.readouterr()
+        out, _err = capsys.readouterr()
         assert "Connected to radio" in out
         assert "inside mocked getMetadata" in out
         mocked_node.getMetadata.assert_called_once()
@@ -444,7 +445,7 @@ def test_main_reset_nodedb(capsys: pytest.CaptureFixture[str]) -> None:
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
-        out, err = capsys.readouterr()
+        out, _err = capsys.readouterr()
         assert "Connected to radio" in out
         assert "inside mocked resetNodeDb" in out
         mocked_node.resetNodeDb.assert_called_once()
@@ -472,7 +473,7 @@ def test_main_begin_edit(capsys: pytest.CaptureFixture[str]) -> None:
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
-        out, err = capsys.readouterr()
+        out, _err = capsys.readouterr()
         assert "Connected to radio" in out
         assert "inside mocked beginSettingsTransaction" in out
         mocked_node.beginSettingsTransaction.assert_called_once()
@@ -500,7 +501,7 @@ def test_main_commit_edit(capsys: pytest.CaptureFixture[str]) -> None:
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
-        out, err = capsys.readouterr()
+        out, _err = capsys.readouterr()
         assert "Connected to radio" in out
         assert "inside mocked commitSettingsTransaction" in out
         mocked_node.commitSettingsTransaction.assert_called_once()
@@ -533,7 +534,7 @@ def test_main_factory_reset(capsys: pytest.CaptureFixture[str]) -> None:
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
-        out, err = capsys.readouterr()
+        out, _err = capsys.readouterr()
         assert "Connected to radio" in out
         assert "inside mocked factoryReset full=False" in out
         mocked_node.factoryReset.assert_called_once_with(full=False)
@@ -561,7 +562,7 @@ def test_main_factory_reset_device(capsys: pytest.CaptureFixture[str]) -> None:
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
-        out, err = capsys.readouterr()
+        out, _err = capsys.readouterr()
         assert "Connected to radio" in out
         assert "inside mocked factoryReset full=True" in out
         mocked_node.factoryReset.assert_called_once_with(full=True)
@@ -595,7 +596,7 @@ def test_main_wait_to_disconnect(
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
-        out, err = capsys.readouterr()
+        out, _err = capsys.readouterr()
         assert "Connected to radio" in out
         assert "inside mocked showInfo" in out
         mock_sleep.assert_any_call(3)
@@ -632,7 +633,7 @@ def test_main_export_config_to_file(
         with patch("meshtastic.__main__.exportConfig") as mock_export:
             mock_export.return_value = "test config content"
             main()
-            out, err = capsys.readouterr()
+            out, _err = capsys.readouterr()
             assert f"Exported configuration to {output_file}" in out
             assert output_file.exists()
             assert output_file.read_text() == "test config content"
@@ -667,7 +668,7 @@ def test_main_export_config_to_file_error(
                 main()
             assert pytest_wrapped_e.type is SystemExit
             assert pytest_wrapped_e.value.code == 1
-            out, err = capsys.readouterr()
+            _out, err = capsys.readouterr()
             assert "ERROR: Failed to write config file" in err
 
 
@@ -692,7 +693,7 @@ def test_main_ch_set_url(capsys: pytest.CaptureFixture[str]) -> None:
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
-        out, err = capsys.readouterr()
+        out, _err = capsys.readouterr()
         assert "Connected to radio" in out
         mocked_node.setURL.assert_called_once_with(
             "https://www.meshtastic.org/d/#CgUYAyIBAQ", addOnly=False
@@ -716,7 +717,7 @@ def test_main_ch_add_url(capsys: pytest.CaptureFixture[str]) -> None:
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
-        out, err = capsys.readouterr()
+        out, _err = capsys.readouterr()
         assert "Connected to radio" in out
         mocked_node.setURL.assert_called_once_with(
             "https://www.meshtastic.org/d/#CgUYAyIBAQ", addOnly=True
@@ -750,7 +751,7 @@ def test_main_remove_node(capsys: pytest.CaptureFixture[str]) -> None:
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
-        out, err = capsys.readouterr()
+        out, _err = capsys.readouterr()
         assert "Connected to radio" in out
         assert "inside mocked removeNode !12345678" in out
         mocked_node.removeNode.assert_called_once_with("!12345678")
@@ -785,7 +786,7 @@ def test_main_listen_mode(
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
-        out, err = capsys.readouterr()
+        out, _err = capsys.readouterr()
         assert "Connected to radio" in out
         mock_sleep.assert_called()
         mo.assert_called()
@@ -821,7 +822,7 @@ def test_main_power_stress_without_powermon_exits(
             main()
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
-        out, err = capsys.readouterr()
+        _out, err = capsys.readouterr()
         assert "powermon module could not be loaded" in err.lower()
 
 
@@ -850,7 +851,7 @@ def test_main_slog_without_powermon_exits(
             main()
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
-        out, err = capsys.readouterr()
+        _out, err = capsys.readouterr()
         assert "powermon module could not be loaded" in err.lower()
 
 
@@ -876,7 +877,7 @@ def test_main_file_not_found_error(
             main()
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
-        out, err = capsys.readouterr()
+        _out, err = capsys.readouterr()
         assert "File Not Found Error" in err
         assert "power-only USB cable" in err
 
@@ -901,7 +902,7 @@ def test_main_permission_error_with_getlogin(
             main()
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
-        out, err = capsys.readouterr()
+        _out, err = capsys.readouterr()
         assert "Permission Error" in err
         assert "dialout" in err
 
@@ -929,7 +930,7 @@ def test_main_permission_error_getlogin_fails(
             main()
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
-        out, err = capsys.readouterr()
+        _out, err = capsys.readouterr()
         assert "Permission Error" in err
         assert "fallbackuser" in err
 
@@ -951,7 +952,7 @@ def test_main_oserror_serial(
             main()
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
-        out, err = capsys.readouterr()
+        _out, err = capsys.readouterr()
         assert "OS Error" in err
         assert "in use by another process" in err
 
@@ -979,7 +980,7 @@ def test_main_ble_scan(capsys: pytest.CaptureFixture[str]) -> None:
             main()
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 0
-        out, err = capsys.readouterr()
+        out, _err = capsys.readouterr()
         assert "Found: name='TestDevice'" in out
         assert "address='AA:BB:CC:DD:EE:FF'" in out
 
@@ -1017,8 +1018,6 @@ def test_tunnel_main_sets_tunnel_flag() -> None:
         # tunnelMain requires valid parser/args setup
         # We test that the function tries to set tunnel=True
         # by checking the error occurs after initParser would run
-        import argparse
-
         test_parser = argparse.ArgumentParser(add_help=False)
         mt_config.parser = test_parser
         mt_config.args = None
@@ -1059,7 +1058,7 @@ def test_main_traceroute(capsys: pytest.CaptureFixture[str]) -> None:
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         with patch.object(iface, "sendTraceRoute") as mock_send_traceroute:
             main()
-            out, err = capsys.readouterr()
+            out, _err = capsys.readouterr()
             assert "Connected to radio" in out
             assert "Sending traceroute request" in out
             mock_send_traceroute.assert_called_once()
@@ -1094,7 +1093,7 @@ def test_main_traceroute_with_broadcast_succeeds(
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         with patch.object(iface, "sendTraceRoute") as mock_send_traceroute:
             main()
-            out, err = capsys.readouterr()
+            out, _err = capsys.readouterr()
             assert "Connected to radio" in out
             assert "Sending traceroute request to ^all" in out
             mock_send_traceroute.assert_called_once()
@@ -1145,7 +1144,7 @@ def test_main_request_telemetry_types(
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         with patch.object(iface, "sendTelemetry") as mock_send_telemetry:
             main()
-            out, err = capsys.readouterr()
+            out, _err = capsys.readouterr()
             assert "Connected to radio" in out
             mock_send_telemetry.assert_called_once()
             mo.assert_called()
@@ -1169,7 +1168,7 @@ def test_main_request_telemetry_broadcast_exits(
             main()
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
-        out, err = capsys.readouterr()
+        _out, err = capsys.readouterr()
         assert "Must use a destination node ID" in err
 
 
@@ -1202,7 +1201,7 @@ def test_main_request_position(capsys: pytest.CaptureFixture[str]) -> None:
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         with patch.object(iface, "sendPosition") as mock_send_position:
             main()
-            out, err = capsys.readouterr()
+            out, _err = capsys.readouterr()
             assert "Connected to radio" in out
             assert "Sending position request" in out
             mock_send_position.assert_called_once()
@@ -1227,7 +1226,7 @@ def test_main_request_position_broadcast_exits(
             main()
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
-        out, err = capsys.readouterr()
+        _out, err = capsys.readouterr()
         assert "Must use a destination node ID" in err
 
 
@@ -1258,7 +1257,7 @@ def test_main_onconnected_exception_handling(
             main()
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
-        out, err = capsys.readouterr()
+        _out, err = capsys.readouterr()
         assert "Aborting due to:" in err
 
 
@@ -1280,7 +1279,7 @@ def test_main_set_owner_whitespace_only_in_common(
         main()
     assert pytest_wrapped_e.type is SystemExit
     assert pytest_wrapped_e.value.code == 1
-    out, err = capsys.readouterr()
+    _out, err = capsys.readouterr()
     assert "cannot be empty or contain only whitespace" in err
 
 
@@ -1297,7 +1296,7 @@ def test_main_set_owner_short_whitespace_only_in_common(
         main()
     assert pytest_wrapped_e.type is SystemExit
     assert pytest_wrapped_e.value.code == 1
-    out, err = capsys.readouterr()
+    _out, err = capsys.readouterr()
     assert "cannot be empty or contain only whitespace" in err
 
 
@@ -1314,5 +1313,5 @@ def test_main_set_ham_whitespace_only_in_common(
         main()
     assert pytest_wrapped_e.type is SystemExit
     assert pytest_wrapped_e.value.code == 1
-    out, err = capsys.readouterr()
+    _out, err = capsys.readouterr()
     assert "cannot be empty or contain only whitespace" in err

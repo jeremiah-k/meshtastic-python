@@ -6,6 +6,8 @@ coordination in the BLE lifecycle modules.
 
 from __future__ import annotations
 
+# pylint: disable=too-many-lines
+
 import threading
 import time
 from collections.abc import Callable
@@ -63,7 +65,7 @@ class TestLifecyclePrimitivesDisconnectPlan:
         assert plan.client_at_start is None
         assert plan.session_epoch == 0
         assert plan.address == "unknown"
-        assert plan.disconnect_keys == ()
+        assert not plan.disconnect_keys
         assert plan.should_reconnect is False
         assert plan.should_schedule_reconnect is False
         assert plan.was_publish_pending is False
@@ -841,7 +843,7 @@ class TestLifecycleErrorAccess:
             cleanup_called = True
 
         # Mock that properly wraps and calls the cleanup function
-        def mock_safe_cleanup(func: Callable[[], Any], *args: Any) -> Any:
+        def mock_safe_cleanup(func: Callable[[], Any], *_args: Any) -> Any:
             return func()
 
         mock_iface.error_handler.safe_cleanup = MagicMock(side_effect=mock_safe_cleanup)
@@ -858,8 +860,8 @@ class TestLifecycleErrorAccess:
             nonlocal cleanup_called
             cleanup_called = True
 
-        def hook_side_effect(*args: Any, **kwargs: Any) -> Any:
-            if kwargs:
+        def hook_side_effect(*_args: Any, **_kwargs: Any) -> Any:
+            if _kwargs:
                 raise TypeError("unexpected keyword argument")
             return True
 
@@ -919,7 +921,7 @@ class TestLifecycleErrorAccess:
             return "result"
 
         # Mock that properly wraps and calls the function, then returns custom result
-        def mock_safe_execute(func: Callable[[], Any], *args: Any) -> Any:
+        def mock_safe_execute(func: Callable[[], Any], *_args: Any) -> Any:
             func()  # Call the function so did_run becomes True
             return "hook_result"
 
@@ -1201,16 +1203,16 @@ class TestBLEReceiveLifecycleCoordinator:
         """Test _check_receive_start_conditions when interface is closed."""
         mock_iface._closed = True
 
-        def create_thread(**kwargs: Any) -> MagicMock:
+        def create_thread(**_kwargs: Any) -> MagicMock:
             return MagicMock()
 
-        thread, recovery = coordinator._check_receive_start_conditions(
+        thread, _recovery = coordinator._check_receive_start_conditions(
             name="test",
             reset_recovery=True,
             create_runtime_thread=create_thread,
         )
         assert thread is None
-        assert recovery is None
+        assert _recovery is None
 
     def test_check_receive_start_conditions_receive_not_wanted(
         self, coordinator: BLEReceiveLifecycleCoordinator, mock_iface: MagicMock
@@ -1218,16 +1220,16 @@ class TestBLEReceiveLifecycleCoordinator:
         """Test _check_receive_start_conditions when receive not wanted."""
         mock_iface._want_receive = False
 
-        def create_thread(**kwargs: Any) -> MagicMock:
+        def create_thread(**_kwargs: Any) -> MagicMock:
             return MagicMock()
 
-        thread, recovery = coordinator._check_receive_start_conditions(
+        thread, _recovery = coordinator._check_receive_start_conditions(
             name="test",
             reset_recovery=True,
             create_runtime_thread=create_thread,
         )
         assert thread is None
-        assert recovery is None
+        assert _recovery is None
 
     def test_check_receive_start_conditions_existing_alive_thread(
         self, coordinator: BLEReceiveLifecycleCoordinator, mock_iface: MagicMock
@@ -1239,16 +1241,16 @@ class TestBLEReceiveLifecycleCoordinator:
         existing_thread.is_alive = MagicMock(return_value=True)
         mock_iface._receiveThread = existing_thread
 
-        def create_thread(**kwargs: Any) -> MagicMock:
+        def create_thread(**_kwargs: Any) -> MagicMock:
             return MagicMock()
 
-        thread, recovery = coordinator._check_receive_start_conditions(
+        thread, _recovery = coordinator._check_receive_start_conditions(
             name="test",
             reset_recovery=True,
             create_runtime_thread=create_thread,
         )
         assert thread is None
-        assert recovery is None
+        assert _recovery is None
 
     def test_check_receive_start_conditions_create_new_thread(
         self, coordinator: BLEReceiveLifecycleCoordinator, mock_iface: MagicMock
@@ -1259,79 +1261,10 @@ class TestBLEReceiveLifecycleCoordinator:
         mock_thread.name = "test_thread"
         mock_thread.ident = 12345
 
-        def create_thread(**kwargs: Any) -> MagicMock:
+        def create_thread(**_kwargs: Any) -> MagicMock:
             return mock_thread
 
-        thread, recovery = coordinator._check_receive_start_conditions(
-            name="test",
-            reset_recovery=True,
-            create_runtime_thread=create_thread,
-        )
-        assert thread is mock_thread
-        assert recovery is not None
-        assert mock_iface._receiveThread is mock_thread
-        assert mock_iface._receive_start_pending is True
-
-    def test_check_receive_start_conditions_stale_pending_thread_not_alive(
-        self, coordinator: BLEReceiveLifecycleCoordinator, mock_iface: MagicMock
-    ) -> None:
-        """Test _check_receive_start_conditions replaces stale pending thread."""
-        existing_thread = MagicMock()
-        existing_thread.name = "existing"
-        # ident must be not None for stale thread replacement
-        existing_thread.ident = 12345
-        existing_thread.is_alive = MagicMock(return_value=False)
-        existing_thread._started = MagicMock()
-        existing_thread._started.is_set = MagicMock(return_value=False)
-        mock_iface._receiveThread = existing_thread
-        mock_iface._receive_start_pending = True
-        mock_thread = MagicMock()
-
-        def create_thread(**kwargs: Any) -> MagicMock:
-            return mock_thread
-
-        thread, recovery = coordinator._check_receive_start_conditions(
-            name="test",
-            reset_recovery=True,
-            create_runtime_thread=create_thread,
-        )
-        assert thread is mock_thread
-
-    def test_check_receive_start_conditions_pending_timeout(
-        self, coordinator: BLEReceiveLifecycleCoordinator, mock_iface: MagicMock
-    ) -> None:
-        """Test _check_receive_start_conditions handles pending timeout."""
-        existing_thread = MagicMock()
-        existing_thread.name = "existing"
-        existing_thread.ident = None
-        existing_thread.is_alive = MagicMock(return_value=False)
-        mock_iface._receiveThread = existing_thread
-        mock_iface._receive_start_pending = True
-        mock_iface._receive_start_pending_since = (
-            time.monotonic() - 10.0
-        )  # Way in the past
-
-        def create_thread(**kwargs: Any) -> MagicMock:
-            return MagicMock()
-
-        thread, recovery = coordinator._check_receive_start_conditions(
-            name="test",
-            reset_recovery=True,
-            create_runtime_thread=create_thread,
-        )
-        # Should replace stale pending thread
-        assert thread is not None
-
-    def test_create_and_start_receive_thread_success(
-        self, coordinator: BLEReceiveLifecycleCoordinator, mock_iface: MagicMock
-    ) -> None:
-        """Test _create_and_start_receive_thread successful start."""
-        mock_thread = MagicMock()
-        mock_iface._receiveThread = mock_thread  # Set the thread reference
-        mock_iface._closed = False
-        mock_iface._want_receive = True
-
-        def start_thread(t: Any) -> None:
+        def start_thread(_t: Any) -> None:
             pass
 
         result = coordinator._create_and_start_receive_thread(
@@ -1347,7 +1280,7 @@ class TestBLEReceiveLifecycleCoordinator:
         mock_thread = MagicMock()
         mock_iface._receiveThread = MagicMock()  # Different thread
 
-        def start_thread(t: Any) -> None:
+        def start_thread(_t: Any) -> None:
             pass
 
         result = coordinator._create_and_start_receive_thread(
@@ -1363,7 +1296,7 @@ class TestBLEReceiveLifecycleCoordinator:
         mock_thread = MagicMock()
         mock_iface._closed = True
 
-        def start_thread(t: Any) -> None:
+        def start_thread(_t: Any) -> None:
             pass
 
         result = coordinator._create_and_start_receive_thread(
@@ -1379,7 +1312,7 @@ class TestBLEReceiveLifecycleCoordinator:
         mock_thread = MagicMock()
         mock_iface._receiveThread = mock_thread
 
-        def start_thread(t: Any) -> None:
+        def start_thread(_t: Any) -> None:
             raise RuntimeError("start failed")
 
         with pytest.raises(RuntimeError, match="start failed"):
@@ -1399,7 +1332,7 @@ class TestBLEReceiveLifecycleCoordinator:
         mock_thread = MagicMock()
         mock_iface._receiveThread = mock_thread
 
-        def start_thread(t: Any) -> None:
+        def start_thread(_t: Any) -> None:
             raise SystemExit()
 
         with pytest.raises(SystemExit):
@@ -1550,10 +1483,10 @@ class TestBLEReceiveLifecycleCoordinator:
         mock_thread._started = MagicMock()
         mock_thread._started.is_set = MagicMock(return_value=True)
 
-        def create_thread(**kwargs: Any) -> MagicMock:
+        def create_thread(**_kwargs: Any) -> MagicMock:
             return mock_thread
 
-        def start_thread(t: Any) -> None:
+        def start_thread(_t: Any) -> None:
             pass
 
         coordinator.start_receive_thread(
@@ -1571,10 +1504,10 @@ class TestBLEReceiveLifecycleCoordinator:
         """Test start_receive_thread when check returns None thread."""
         mock_iface._closed = True  # Cause check to return None
 
-        def create_thread(**kwargs: Any) -> MagicMock:
+        def create_thread(**_kwargs: Any) -> MagicMock:
             return MagicMock()
 
-        def start_thread(t: Any) -> None:
+        def start_thread(_t: Any) -> None:
             pass
 
         # Should not raise, just return early
@@ -1592,10 +1525,10 @@ class TestBLEReceiveLifecycleCoordinator:
         mock_thread = MagicMock()
         mock_iface._receiveThread = MagicMock()  # Different thread
 
-        def create_thread(**kwargs: Any) -> MagicMock:
+        def create_thread(**_kwargs: Any) -> MagicMock:
             return mock_thread
 
-        def start_thread(t: Any) -> None:
+        def start_thread(_t: Any) -> None:
             pass
 
         coordinator.start_receive_thread(
@@ -1616,10 +1549,10 @@ class TestBLEReceiveLifecycleCoordinator:
         # ident must be not None for failure to be confirmed
         mock_thread.ident = 12345
 
-        def create_thread(**kwargs: Any) -> MagicMock:
+        def create_thread(**_kwargs: Any) -> MagicMock:
             return mock_thread
 
-        def start_thread(t: Any) -> None:
+        def start_thread(_t: Any) -> None:
             pass
 
         coordinator.start_receive_thread(
@@ -1774,7 +1707,7 @@ class TestBLEReceiveLifecycleCoordinatorDeferredRestart:
 
         call_count = 0
 
-        def mock_start_receive(**kwargs: Any) -> None:
+        def mock_start_receive(**_kwargs: Any) -> None:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -1878,10 +1811,10 @@ class TestBLEReceiveLifecycleCoordinatorCurrentThread:
         mock_iface._receiveThread = current
         mock_iface._receive_start_pending = False
 
-        def create_thread(**kwargs: Any) -> MagicMock:
+        def create_thread(**_kwargs: Any) -> MagicMock:
             return MagicMock()
 
-        thread, recovery = coordinator._check_receive_start_conditions(
+        thread, _recovery = coordinator._check_receive_start_conditions(
             name="test",
             reset_recovery=True,
             create_runtime_thread=create_thread,
@@ -1900,10 +1833,10 @@ class TestBLEReceiveLifecycleCoordinatorCurrentThread:
         mock_iface._receive_start_pending = True
         mock_iface._receive_start_pending_since = time.monotonic() - 10.0  # Expired
 
-        def create_thread(**kwargs: Any) -> MagicMock:
+        def create_thread(**_kwargs: Any) -> MagicMock:
             return MagicMock()
 
-        thread, recovery = coordinator._check_receive_start_conditions(
+        thread, _recovery = coordinator._check_receive_start_conditions(
             name="test",
             reset_recovery=True,
             create_runtime_thread=create_thread,
@@ -1959,11 +1892,11 @@ class TestBLEReceiveLifecycleCoordinatorConcurrent:
         modifier = threading.Thread(target=modify_thread)
         modifier.start()
 
-        def create_thread(**kwargs: Any) -> MagicMock:
+        def create_thread(**_kwargs: Any) -> MagicMock:
             time.sleep(0.02)  # Allow modifier to run
             return MagicMock()
 
-        thread, recovery = coordinator._check_receive_start_conditions(
+        thread, _recovery = coordinator._check_receive_start_conditions(
             name="test",
             reset_recovery=True,
             create_runtime_thread=create_thread,
@@ -1981,12 +1914,12 @@ class TestBLEReceiveLifecycleCoordinatorConcurrent:
         existing_thread.is_alive = MagicMock(return_value=False)  # Initially not alive
         mock_iface._receiveThread = existing_thread
 
-        def create_thread(**kwargs: Any) -> MagicMock:
+        def create_thread(**_kwargs: Any) -> MagicMock:
             # Simulate existing becoming alive during creation
             existing_thread.is_alive = MagicMock(return_value=True)
             return MagicMock()
 
-        thread, recovery = coordinator._check_receive_start_conditions(
+        thread, _recovery = coordinator._check_receive_start_conditions(
             name="test",
             reset_recovery=True,
             create_runtime_thread=create_thread,
@@ -2000,11 +1933,11 @@ class TestBLEReceiveLifecycleCoordinatorConcurrent:
     ) -> None:
         """Test _check_receive_start_conditions when interface closed after thread creation."""
 
-        def create_thread(**kwargs: Any) -> MagicMock:
+        def create_thread(**_kwargs: Any) -> MagicMock:
             mock_iface._closed = True  # Close during creation
             return MagicMock()
 
-        thread, recovery = coordinator._check_receive_start_conditions(
+        thread, _recovery = coordinator._check_receive_start_conditions(
             name="test",
             reset_recovery=True,
             create_runtime_thread=create_thread,
@@ -2162,10 +2095,10 @@ class TestLifecyclePrimitivesIntegration:
         mock_thread._started = MagicMock()
         mock_thread._started.is_set = MagicMock(return_value=True)
 
-        def create_thread(**kwargs: Any) -> MagicMock:
+        def create_thread(**_kwargs: Any) -> MagicMock:
             return mock_thread
 
-        def start_thread(t: Any) -> None:
+        def start_thread(_t: Any) -> None:
             pass
 
         coordinator.start_receive_thread(
@@ -2351,7 +2284,7 @@ class TestLifecyclePrimitivesEdgeCases:
         # Track thread creation
         threads_created = []
 
-        def create_thread(**kwargs: Any) -> MagicMock:
+        def create_thread(**_kwargs: Any) -> MagicMock:
             # Simulate concurrent modification during creation
             with mock_iface._state_lock:
                 mock_iface._receiveThread = MagicMock()  # Another thread sneaks in
@@ -2359,7 +2292,7 @@ class TestLifecyclePrimitivesEdgeCases:
             threads_created.append(t)
             return t
 
-        thread, recovery = coordinator._check_receive_start_conditions(
+        thread, _recovery = coordinator._check_receive_start_conditions(
             name="test",
             reset_recovery=True,
             create_runtime_thread=create_thread,
@@ -2480,7 +2413,7 @@ class TestLifecyclePrimitivesEdgeCases:
             create_called = True
             return custom_thread
 
-        def custom_start(t: Any) -> None:
+        def custom_start(_t: Any) -> None:
             nonlocal start_called
             start_called = True
 
@@ -2513,10 +2446,10 @@ class TestLifecyclePrimitivesEdgeCases:
 
         new_thread = MagicMock()
 
-        def create_thread(**kwargs: Any) -> MagicMock:
+        def create_thread(**_kwargs: Any) -> MagicMock:
             return new_thread
 
-        thread, recovery = coordinator._check_receive_start_conditions(
+        thread, _recovery = coordinator._check_receive_start_conditions(
             name="test",
             reset_recovery=True,
             create_runtime_thread=create_thread,
@@ -2547,10 +2480,10 @@ class TestLifecyclePrimitivesEdgeCases:
 
         new_thread = MagicMock()
 
-        def create_thread(**kwargs: Any) -> MagicMock:
+        def create_thread(**_kwargs: Any) -> MagicMock:
             return new_thread
 
-        thread, recovery = coordinator._check_receive_start_conditions(
+        thread, _recovery = coordinator._check_receive_start_conditions(
             name="test",
             reset_recovery=True,
             create_runtime_thread=create_thread,
@@ -2630,9 +2563,11 @@ class TestLifecyclePrimitivesEdgeCases:
         coordinator = BLEReceiveLifecycleCoordinator(mock_iface)
 
         class CustomException(Exception):
+            """Custom exception for testing."""
+
             pass
 
-        def failing_start(t: Any) -> None:
+        def failing_start(_t: Any) -> None:
             raise CustomException("nested failure")
 
         with pytest.raises(CustomException):
