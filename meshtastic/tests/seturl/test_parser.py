@@ -1,7 +1,8 @@
 """Tests for _SetUrlParser."""
 
 import base64
-from typing import Callable, NoReturn
+from collections.abc import Callable
+from typing import NoReturn
 
 import pytest
 

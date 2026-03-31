@@ -126,7 +126,7 @@ class _NodeAdminCommandRuntime:
                     raise TypeError(f"{name} must be bytes")
                 provided_hashes.append(value)
         if not provided_hashes:
-            raise TypeError("startOTA() missing required argument: 'ota_file_hash'")
+            raise TypeError("startOta() missing required argument: 'ota_file_hash'")
         # Deduplicate after validation
         hash_values = set(provided_hashes)
         if len(hash_values) > 1:
@@ -159,7 +159,7 @@ class _NodeAdminCommandRuntime:
             raise ValueError("Conflicting OTA mode arguments provided")
         resolved_mode = mode if mode is not None else ota_mode
         if resolved_mode is None:
-            raise TypeError("startOTA() missing required argument: 'mode'")
+            raise TypeError("startOta() missing required argument: 'mode'")
 
         resolved_hash = self._resolve_ota_hash(
             ota_file_hash=ota_file_hash,

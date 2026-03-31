@@ -15,6 +15,7 @@ from meshtastic.protobuf import apponly_pb2, channel_pb2, localonly_pb2
 from meshtastic.tests.seturl.conftest import (
     _make_channel,
     _make_channel_set_with_lora,
+    _make_raise_error_side_effect,
 )
 
 
@@ -79,10 +80,9 @@ class TestSetUrlAddOnlyPlanner:
         """capture_original_lora_snapshot raises error when LoRa not loaded."""
         mock_local_node.localConfig = localonly_pb2.LocalConfig()
 
-        def raise_error(msg: str) -> NoReturn:
-            raise ValueError(msg)
-
-        mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
+        mock_local_node._raise_interface_error = MagicMock(
+            side_effect=_make_raise_error_side_effect()
+        )
 
         channel_set = _make_channel_set_with_lora("test")
 
@@ -149,10 +149,9 @@ class TestSetUrlReplacePlanner:
         ]
         mock_local_node.localConfig = localonly_pb2.LocalConfig()
 
-        def raise_error(msg: str) -> NoReturn:
-            raise ValueError(msg)
-
-        mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
+        mock_local_node._raise_interface_error = MagicMock(
+            side_effect=_make_raise_error_side_effect()
+        )
 
         channel_set = _make_channel_set_with_lora("test")
 
@@ -220,10 +219,9 @@ class TestSetUrlReplacePlanner:
             _make_channel(1, channel_pb2.Channel.Role.DISABLED),
         ]
 
-        def raise_error(msg: str) -> NoReturn:
-            raise ValueError(msg)
-
-        mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
+        mock_local_node._raise_interface_error = MagicMock(
+            side_effect=_make_raise_error_side_effect()
+        )
 
         channel_set = apponly_pb2.ChannelSet()
         for _i in range(2):

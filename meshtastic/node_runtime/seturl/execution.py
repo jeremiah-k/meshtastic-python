@@ -76,6 +76,28 @@ class _SetUrlExecutionEngine:
                 return channel.index
         return 0
 
+    def _write_lora_config(
+        self,
+        parsed_input: _SetUrlParsedInput,
+        admin_context: _SetUrlAdminContext,
+        state: _SetUrlAddOnlyExecutionState | _SetUrlReplaceExecutionState,
+    ) -> None:
+        """Write LoRa configuration to the device."""
+        if not parsed_input.has_lora_update:
+            return
+        set_lora = admin_pb2.AdminMessage()
+        set_lora.set_config.lora.CopyFrom(parsed_input.channel_set.lora_config)
+        self._node.ensureSessionKey(adminIndex=admin_context.admin_index_for_write)
+        request = self._node._send_admin(  # noqa: SLF001
+            set_lora,
+            adminIndex=admin_context.admin_index_for_write,
+        )
+        if request is None:
+            self._node._raise_interface_error(  # noqa: SLF001
+                "LoRa config update was not started"
+            )
+        state.lora_write_started = True
+
     def executeAddOnly(
         self,
         *,
@@ -99,19 +121,7 @@ class _SetUrlExecutionEngine:
             )
             state.written_indices.append(staged_channel.index)
 
-        if parsed_input.has_lora_update:
-            set_lora = admin_pb2.AdminMessage()
-            set_lora.set_config.lora.CopyFrom(parsed_input.channel_set.lora_config)
-            self._node.ensureSessionKey(adminIndex=admin_context.admin_index_for_write)
-            request = self._node._send_admin(  # noqa: SLF001
-                set_lora,
-                adminIndex=admin_context.admin_index_for_write,
-            )
-            if request is None:
-                self._node._raise_interface_error(  # noqa: SLF001
-                    "LoRa config update was not started"
-                )
-            state.lora_write_started = True
+        self._write_lora_config(parsed_input, admin_context, state)
 
         if plan.deferred_add_only_admin_channel is not None:
             staged_channel, channel_name = plan.deferred_add_only_admin_channel
@@ -178,19 +188,8 @@ class _SetUrlExecutionEngine:
 
         self._node.partialChannels = []
 
+        self._write_lora_config(parsed_input, admin_context, state)
         if parsed_input.has_lora_update:
-            set_lora = admin_pb2.AdminMessage()
-            set_lora.set_config.lora.CopyFrom(parsed_input.channel_set.lora_config)
-            self._node.ensureSessionKey(adminIndex=admin_context.admin_index_for_write)
-            request = self._node._send_admin(  # noqa: SLF001
-                set_lora,
-                adminIndex=admin_context.admin_index_for_write,
-            )
-            if request is None:
-                self._node._raise_interface_error(  # noqa: SLF001
-                    "LoRa config update was not started"
-                )
-            state.lora_write_started = True
             self._cache_manager.apply_lora_success(parsed_input.channel_set.lora_config)
 
         if plan.deferred_new_named_admin_channel is not None:

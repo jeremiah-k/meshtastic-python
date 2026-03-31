@@ -115,16 +115,17 @@ def test_node_exports_constants() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_no_unexpected_positional_only_in_node() -> None:
-    """Node public methods should not have positional-only parameters.
+@pytest.mark.parametrize("cls", [Node, MeshInterface], ids=["Node", "MeshInterface"])
+def test_no_unexpected_positional_only(cls: type) -> None:
+    """Public methods should not have positional-only parameters.
 
     Positional-only params break callers that pass keyword arguments,
     which is the common pattern in user code (e.g. writeChannel(channelIndex=3)).
     """
-    for name in dir(Node):
+    for name in dir(cls):
         if name.startswith("_"):
             continue
-        attr = getattr(Node, name, None)
+        attr = getattr(cls, name, None)
         if not callable(attr):
             continue
         try:
@@ -135,27 +136,6 @@ def test_no_unexpected_positional_only_in_node() -> None:
             if pname == "self":
                 continue
             assert param.kind != inspect.Parameter.POSITIONAL_ONLY, (
-                f"Node.{name}() has positional-only param '{pname}' — "
-                "this breaks keyword-arg callers"
-            )
-
-
-def test_no_unexpected_positional_only_in_meshinterface() -> None:
-    """MeshInterface public methods should not have positional-only parameters."""
-    for name in dir(MeshInterface):
-        if name.startswith("_"):
-            continue
-        attr = getattr(MeshInterface, name, None)
-        if not callable(attr):
-            continue
-        try:
-            sig = inspect.signature(attr)
-        except (ValueError, TypeError):
-            continue
-        for pname, param in sig.parameters.items():
-            if pname == "self":
-                continue
-            assert param.kind != inspect.Parameter.POSITIONAL_ONLY, (
-                f"MeshInterface.{name}() has positional-only param '{pname}' — "
+                f"{cls.__name__}.{name}() has positional-only param '{pname}' — "
                 "this breaks keyword-arg callers"
             )

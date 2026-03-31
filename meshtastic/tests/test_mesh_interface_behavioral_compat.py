@@ -19,6 +19,15 @@ from meshtastic import BROADCAST_ADDR, LOCAL_ADDR
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import mesh_pb2, portnums_pb2, telemetry_pb2
 
+# Supported telemetry types for sendTelemetry tests
+SUPPORTED_TELEMETRY_TYPES = [
+    "device_metrics",
+    "environment_metrics",
+    "air_quality_metrics",
+    "power_metrics",
+    "local_stats",
+]
+
 # -----------------------------------------------------------------------------
 # Fixtures
 # -----------------------------------------------------------------------------
@@ -647,15 +656,7 @@ class TestSendTelemetrySemanticDeprecation:
         """Verify supported telemetryType values don't emit warnings."""
         iface = mock_interface
 
-        supported_types = [
-            "device_metrics",
-            "environment_metrics",
-            "air_quality_metrics",
-            "power_metrics",
-            "local_stats",
-        ]
-
-        for telemetry_type in supported_types:
+        for telemetry_type in SUPPORTED_TELEMETRY_TYPES:
             caplog.clear()
             with caplog.at_level(logging.WARNING):
                 with patch.object(iface, "_send_to_radio_impl"):
@@ -1434,15 +1435,7 @@ class TestSendWaitEdgeCases:
         """Test that all valid telemetry types work without errors."""
         iface = mock_interface
 
-        valid_types = [
-            "device_metrics",
-            "environment_metrics",
-            "air_quality_metrics",
-            "power_metrics",
-            "local_stats",
-        ]
-
-        for telemetry_type in valid_types:
+        for telemetry_type in SUPPORTED_TELEMETRY_TYPES:
             with patch.object(
                 iface._send_pipeline, "_send_data_with_wait"
             ) as mock_send:

@@ -18,6 +18,7 @@ from meshtastic.protobuf import apponly_pb2, channel_pb2, config_pb2, mesh_pb2
 from meshtastic.tests.seturl.conftest import (
     _make_channel,
     _make_channel_set_with_lora,
+    _make_raise_error_side_effect,
 )
 
 
@@ -134,10 +135,9 @@ class TestSetUrlExecutionEngine:
         state = _SetUrlAddOnlyExecutionState()
         mock_local_node._send_admin.return_value = None
 
-        def raise_error(msg: str) -> NoReturn:
-            raise ValueError(msg)
-
-        mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
+        mock_local_node._raise_interface_error = MagicMock(
+            side_effect=_make_raise_error_side_effect()
+        )
 
         with pytest.raises(ValueError, match="LoRa config update was not started"):
             execution_engine.executeAddOnly(
@@ -240,10 +240,9 @@ class TestSetUrlExecutionEngine:
         state = _SetUrlReplaceExecutionState(rollback_admin_indexes_for_write=[0])
         mock_local_node._send_admin.return_value = None
 
-        def raise_error(msg: str) -> NoReturn:
-            raise ValueError(msg)
-
-        mock_local_node._raise_interface_error = MagicMock(side_effect=raise_error)
+        mock_local_node._raise_interface_error = MagicMock(
+            side_effect=_make_raise_error_side_effect()
+        )
 
         with pytest.raises(ValueError, match="LoRa config update was not started"):
             execution_engine.executeReplaceAll(

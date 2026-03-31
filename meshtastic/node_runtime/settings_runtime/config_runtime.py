@@ -50,8 +50,11 @@ class _NodeSettingsRuntime:
             onResponse=on_response,
             adminIndex=admin_index,
         )
-        if on_response is not None and request is not None:
-            self._node.iface.waitForAckNak()
+        if on_response is not None:
+            if request is None:
+                logger.debug("Admin request returned None; skipping ack/nak wait.")
+            else:
+                self._node.iface.waitForAckNak()
 
     def _validate_write_configs_loaded(self, config_name: str) -> None:
         """Preserve historical writeConfig loaded-state behavior.
@@ -79,7 +82,7 @@ class _NodeSettingsRuntime:
             )
             return
         self._node._raise_interface_error(  # noqa: SLF001
-            "Error: No localConfig has been read. "
+            "Error: No config has been read. "
             "Request config from the device before writing."
         )
 

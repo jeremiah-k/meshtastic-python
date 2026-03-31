@@ -20,54 +20,54 @@ class _NodeSettingsResponseRuntime:
     def __init__(self, node: "Node") -> None:
         self._node = node
 
+    def _resolve_config_response(
+        self,
+        admin_message: dict[str, Any],
+        response_key: str,
+        empty_warning: str,
+        descriptor: Any,
+        unknown_field_warning: str,
+        response_type: str,
+    ) -> tuple[str, str, Any] | None:
+        """Resolve config response payload target, if present and valid."""
+        response = admin_message.get(response_key)
+        if response is None:
+            return None
+        if not response:
+            logger.warning(empty_warning)
+            return None
+        response_field = next(iter(response))
+        field_name = camel_to_snake(response_field)
+        config_type = descriptor.fields_by_name.get(field_name)
+        if config_type is None:
+            logger.warning(unknown_field_warning, field_name)
+            return None
+        return (response_type, field_name, getattr(descriptor, config_type.name))
+
     def _resolve_local_config_target(
         self, admin_message: dict[str, Any]
     ) -> tuple[str, str, Any] | None:
         """Resolve getConfigResponse payload target, if present and valid."""
-        response = admin_message.get("getConfigResponse")
-        if response is None:
-            return None
-        if not response:
-            logger.warning("Received empty config response from node.")
-            return None
-        response_field = next(iter(response))
-        field_name = camel_to_snake(response_field)
-        config_type = self._node.localConfig.DESCRIPTOR.fields_by_name.get(field_name)
-        if config_type is None:
-            logger.warning(
-                "Ignoring unknown LocalConfig field in getConfigResponse: %s",
-                field_name,
-            )
-            return None
-        return (
-            "get_config_response",
-            field_name,
-            getattr(self._node.localConfig, config_type.name),
+        return self._resolve_config_response(
+            admin_message,
+            response_key="getConfigResponse",
+            empty_warning="Received empty config response from node.",
+            descriptor=self._node.localConfig.DESCRIPTOR,
+            unknown_field_warning="Ignoring unknown LocalConfig field in getConfigResponse: %s",
+            response_type="get_config_response",
         )
 
     def _resolve_module_config_target(
         self, admin_message: dict[str, Any]
     ) -> tuple[str, str, Any] | None:
         """Resolve getModuleConfigResponse payload target, if present and valid."""
-        response = admin_message.get("getModuleConfigResponse")
-        if response is None:
-            return None
-        if not response:
-            logger.warning("Received empty module config response from node.")
-            return None
-        response_field = next(iter(response))
-        field_name = camel_to_snake(response_field)
-        config_type = self._node.moduleConfig.DESCRIPTOR.fields_by_name.get(field_name)
-        if config_type is None:
-            logger.warning(
-                "Ignoring unknown ModuleConfig field in getModuleConfigResponse: %s",
-                field_name,
-            )
-            return None
-        return (
-            "get_module_config_response",
-            field_name,
-            getattr(self._node.moduleConfig, config_type.name),
+        return self._resolve_config_response(
+            admin_message,
+            response_key="getModuleConfigResponse",
+            empty_warning="Received empty module config response from node.",
+            descriptor=self._node.moduleConfig.DESCRIPTOR,
+            unknown_field_warning="Ignoring unknown ModuleConfig field in getModuleConfigResponse: %s",
+            response_type="get_module_config_response",
         )
 
     def _resolve_config_target(

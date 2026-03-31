@@ -60,9 +60,7 @@ class TestSetUrlTransactionCoordinator:
         assert coordinator._rollback_engine is not None
 
     @pytest.mark.unit
-    def test_resolve_admin_context_returns_context(
-        self, mock_local_node: MagicMock
-    ) -> None:
+    def test_init_resolves_admin_context(self, mock_local_node: MagicMock) -> None:
         """_resolve_admin_context returns admin context with correct values."""
         mock_local_node._get_admin_channel_index.return_value = 1
         mock_local_node._get_named_admin_channel_index.return_value = 2

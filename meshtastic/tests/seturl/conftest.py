@@ -3,6 +3,8 @@
 
 import base64
 import threading
+from collections.abc import Callable
+from typing import NoReturn
 from unittest.mock import MagicMock
 
 import pytest
@@ -17,6 +19,15 @@ from meshtastic.protobuf import (
     channel_pb2,
     localonly_pb2,
 )
+
+
+def _make_raise_error_side_effect() -> Callable[[str], NoReturn]:
+    """Create a side_effect callable that raises ValueError."""
+
+    def raise_error(msg: str) -> NoReturn:
+        raise ValueError(msg)
+
+    return raise_error
 
 
 def _make_channel(

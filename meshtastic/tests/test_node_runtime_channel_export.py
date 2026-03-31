@@ -300,25 +300,32 @@ def test_get_url_requests_config_when_lora_missing(
         0, channel_pb2.Channel.Role.PRIMARY, name="primary", psk=b"\x01"
     )
     mock_node.channels = [primary]
-    # Simulate HasField("lora") returning False initially
-    # After requestConfig, localConfig will have lora populated
     mock_node.localConfig = localonly_pb2.LocalConfig()
 
     call_count = {"lora": 0}
 
-    def _has_field_side_effect(field_name: str) -> bool:
-        if field_name == "lora":
-            call_count["lora"] += 1
-            return call_count["lora"] > 1
-        return True
+    # Create a mock snapshot object that behaves like LocalConfig
+    class MockLocalConfigSnapshot:
+        """Mock LocalConfig that tracks HasField calls for lora."""
 
+        def __init__(self):
+            self.lora = localonly_pb2.LocalConfig().lora
+            self.DESCRIPTOR = localonly_pb2.LocalConfig.DESCRIPTOR
+
+        def HasField(self, field_name: str) -> bool:  # pylint: disable=invalid-name
+            if field_name == "lora":
+                call_count["lora"] += 1
+                return call_count["lora"] > 1
+            return True
+
+        def CopyFrom(self, other):  # pylint: disable=invalid-name
+            if hasattr(other, "lora"):
+                self.lora = other.lora
+
+    # Patch _snapshot_local_config to return our mock
     with patch.object(
-        localonly_pb2.LocalConfig,
-        "HasField",
-        side_effect=_has_field_side_effect,
+        export_runtime, "_snapshot_local_config", return_value=MockLocalConfigSnapshot()
     ):
-        # The method will call requestConfig, then snapshot again
-        # For the test to complete, we need to make the second snapshot work
         url = export_runtime.get_url()
 
         assert mock_node.requestConfig.called

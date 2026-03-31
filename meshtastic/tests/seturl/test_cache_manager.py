@@ -83,6 +83,7 @@ class TestSetUrlCacheManager:
         cache_manager.apply_add_only_success(channels_to_write)
 
         assert mock_local_node.channels[1].role == channel_pb2.Channel.Role.SECONDARY
+        assert mock_local_node.channels[1].settings.name == "new"
 
     @pytest.mark.unit
     def test_apply_replace_channel_write_with_none_channels_raises_error(

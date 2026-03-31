@@ -84,6 +84,13 @@ def _decode_channel_set_from_url(url: str) -> apponly_pb2.ChannelSet:
     return channel_set
 
 
+def _setup_lock_mock(iface: MagicMock) -> None:
+    """Set up lock mocking for an interface."""
+    iface._node_db_lock = MagicMock()
+    iface._node_db_lock.__enter__ = MagicMock(return_value=iface._node_db_lock)
+    iface._node_db_lock.__exit__ = MagicMock(return_value=False)
+
+
 @pytest.fixture
 def mock_interface() -> MagicMock:
     """Create a fully mocked interface suitable for local node tests."""
@@ -94,9 +101,7 @@ def mock_interface() -> MagicMock:
     # Setup localNode attribute that will be set later
     iface.localNode = None
     # Setup locks
-    iface._node_db_lock = MagicMock()
-    iface._node_db_lock.__enter__ = MagicMock(return_value=iface._node_db_lock)
-    iface._node_db_lock.__exit__ = MagicMock(return_value=False)
+    _setup_lock_mock(iface)
     return iface
 
 
@@ -108,9 +113,7 @@ def mock_interface_with_local_node() -> tuple[MagicMock, Node]:
     iface.myInfo.my_node_num = 1234567890
     iface.metadata = None
     # Setup locks
-    iface._node_db_lock = MagicMock()
-    iface._node_db_lock.__enter__ = MagicMock(return_value=iface._node_db_lock)
-    iface._node_db_lock.__exit__ = MagicMock(return_value=False)
+    _setup_lock_mock(iface)
     # Setup _get_or_create_by_num
     iface._get_or_create_by_num = MagicMock(return_value={})
     # Create and set localNode with noProto=False to enable protocol operations
@@ -130,9 +133,7 @@ def mock_remote_interface() -> MagicMock:
     local_node = Node(iface, iface.myInfo.my_node_num, noProto=True)
     iface.localNode = local_node
     # Setup locks
-    iface._node_db_lock = MagicMock()
-    iface._node_db_lock.__enter__ = MagicMock(return_value=iface._node_db_lock)
-    iface._node_db_lock.__exit__ = MagicMock(return_value=False)
+    _setup_lock_mock(iface)
     return iface
 
 
@@ -153,9 +154,7 @@ def mock_interface_with_metadata() -> MagicMock:
     metadata.excluded_modules = 0
     iface.metadata = metadata
     # Setup locks
-    iface._node_db_lock = MagicMock()
-    iface._node_db_lock.__enter__ = MagicMock(return_value=iface._node_db_lock)
-    iface._node_db_lock.__exit__ = MagicMock(return_value=False)
+    _setup_lock_mock(iface)
     return iface
 
 
