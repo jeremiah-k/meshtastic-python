@@ -112,6 +112,7 @@ def _on_response_position(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
         )
 
 
+# pylint: disable=too-many-positional-arguments
 def sendPosition(
     pipeline: "SendPipeline",
     latitude: float = 0.0,
@@ -337,6 +338,7 @@ def _on_response_telemetry(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
         )
 
 
+# pylint: disable=too-many-positional-arguments
 def sendTelemetry(
     pipeline: "SendPipeline",
     destinationId: int | str = BROADCAST_ADDR,
@@ -461,6 +463,7 @@ def _on_response_waypoint(pipeline: "SendPipeline", p: dict[str, Any]) -> None:
         )
 
 
+# pylint: disable=too-many-arguments,too-many-positional-arguments
 def sendWaypoint(
     pipeline: "SendPipeline",
     name: str,
@@ -528,9 +531,10 @@ def sendWaypoint(
         if request_id is None:
             raise pipeline._interface.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
         pipeline.waitForWaypoint(request_id=request_id)
-    return d
+        return d
 
 
+# pylint: disable=too-many-positional-arguments
 def deleteWaypoint(
     pipeline: "SendPipeline",
     waypointId: int,

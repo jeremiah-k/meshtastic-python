@@ -37,6 +37,7 @@ class _SetUrlRollbackEngine:
         self._node = node
         self._cache_manager = cache_manager
 
+    # pylint: disable=too-many-arguments
     def _best_effort_rollback(
         self,
         *,

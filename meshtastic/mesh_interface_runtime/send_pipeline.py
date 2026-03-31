@@ -200,6 +200,7 @@ class SendPipeline:
         """Return the timeout from the parent interface."""
         return self._interface._timeout
 
+    # pylint: disable=too-many-positional-arguments
     def sendText(
         self,
         text: str,
@@ -225,6 +226,7 @@ class SendPipeline:
             hopLimit=hopLimit,
         )
 
+    # pylint: disable=too-many-positional-arguments
     def sendAlert(
         self,
         text: str,
@@ -255,6 +257,7 @@ class SendPipeline:
         toRadio.mqttClientProxyMessage.CopyFrom(prox)
         self._send_to_radio(toRadio)
 
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
     def sendData(
         self,
         data: PayloadData,
@@ -296,6 +299,7 @@ class SendPipeline:
             response_wait_attr=None,
         )
 
+    # pylint: disable=too-many-arguments
     def _send_data_with_wait(
         self,
         data: PayloadData,
@@ -489,6 +493,7 @@ class SendPipeline:
         """Process a position response packet and emit a concise human-readable summary."""
         _on_response_position(self, p)
 
+    # pylint: disable=too-many-positional-arguments
     def sendPosition(
         self,
         latitude: float = 0.0,
@@ -517,6 +522,7 @@ class SendPipeline:
         """Emit human-readable traceroute results from a RouteDiscovery payload."""
         _on_response_traceroute(self, p)
 
+    # pylint: disable=too-many-positional-arguments
     def sendTraceRoute(
         self, dest: int | str, hopLimit: int, channelIndex: int = 0
     ) -> None:
@@ -549,6 +555,7 @@ class SendPipeline:
         """Handle a waypoint response or routing error contained in a received packet."""
         _on_response_waypoint(self, p)
 
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
     def sendWaypoint(
         self,
         name: str,
@@ -581,6 +588,7 @@ class SendPipeline:
             hopLimit=hopLimit,
         )
 
+    # pylint: disable=too-many-positional-arguments
     def deleteWaypoint(
         self,
         waypoint_id: int,
@@ -614,6 +622,7 @@ class SendPipeline:
             ack_permitted=ackPermitted,
         )
 
+    # pylint: disable=too-many-positional-arguments
     def _send_packet(
         self,
         meshPacket: mesh_pb2.MeshPacket,
@@ -712,6 +721,7 @@ class SendPipeline:
             self._send_to_radio(toRadio)
         return meshPacket
 
+    # pylint: disable=too-many-positional-arguments
     def _sendPacket(
         self,
         meshPacket: mesh_pb2.MeshPacket,

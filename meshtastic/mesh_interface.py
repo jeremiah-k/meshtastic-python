@@ -104,9 +104,7 @@ NODE_NOT_FOUND_DB_UNAVAILABLE_ERROR_TEMPLATE = (
     "NodeId {destination_id} not found and node DB is unavailable"
 )
 HEX_NODE_ID_TAIL_CHARS = frozenset("0123456789abcdefABCDEF")
-NO_RESPONSE_FIRMWARE_ERROR: str = (
-    "No response from node. At least firmware 2.1.22 is required on the destination node."
-)
+NO_RESPONSE_FIRMWARE_ERROR: str = "No response from node. At least firmware 2.1.22 is required on the destination node."
 
 JSONValue: TypeAlias = (
     None | bool | int | float | str | list["JSONValue"] | dict[str, "JSONValue"]
@@ -533,9 +531,9 @@ class MeshInterface:  # pylint: disable=R0902
         # _handle_packet_from_radio (receive thread). Use this lock to serialize
         # responseHandlers access across those call sites.
         self._response_handlers_lock = threading.RLock()
-        self.responseHandlers: dict[int, ResponseHandler] = (
-            {}
-        )  # A map from request ID to the handler
+        self.responseHandlers: dict[
+            int, ResponseHandler
+        ] = {}  # A map from request ID to the handler
         self._response_wait_errors: dict[tuple[str, int], str] = {}
         self._response_wait_acks: set[tuple[str, int]] = set()
         self._active_wait_request_ids: dict[str, set[int]] = {}
@@ -761,6 +759,7 @@ class MeshInterface:  # pylint: disable=R0902
             nodeId, requestChannels, requestChannelAttempts, timeout
         )
 
+    # pylint: disable=too-many-positional-arguments
     def sendText(
         self,
         text: str,
@@ -814,6 +813,7 @@ class MeshInterface:  # pylint: disable=R0902
             hopLimit=hopLimit,
         )
 
+    # pylint: disable=too-many-positional-arguments
     def sendAlert(
         self,
         text: str,
@@ -871,7 +871,7 @@ class MeshInterface:  # pylint: disable=R0902
         toRadio.mqttClientProxyMessage.CopyFrom(prox)
         self._send_to_radio(toRadio)
 
-    def sendData(  # pylint: disable=R0913
+    def sendData(  # pylint: disable=R0913,too-many-positional-arguments
         self,
         data: "PayloadData",
         destinationId: int | str = BROADCAST_ADDR,
@@ -946,6 +946,7 @@ class MeshInterface:  # pylint: disable=R0902
             replyId=replyId,
         )
 
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
     def _send_data_with_wait(
         self,
         data: "PayloadData",
@@ -995,6 +996,7 @@ class MeshInterface:  # pylint: disable=R0902
             ackPermitted=ackPermitted,
         )
 
+    # pylint: disable=too-many-positional-arguments
     def _send_packet(
         self,
         meshPacket: mesh_pb2.MeshPacket,
@@ -1014,6 +1016,7 @@ class MeshInterface:  # pylint: disable=R0902
             publicKey=publicKey,
         )
 
+    # pylint: disable=too-many-positional-arguments
     def _sendPacket(
         self,
         meshPacket: mesh_pb2.MeshPacket,
@@ -1033,6 +1036,7 @@ class MeshInterface:  # pylint: disable=R0902
             publicKey=publicKey,
         )
 
+    # pylint: disable=too-many-positional-arguments
     def sendPosition(
         self,
         latitude: float = 0.0,
@@ -1263,6 +1267,7 @@ class MeshInterface:  # pylint: disable=R0902
         """
         _on_response_traceroute(self._send_pipeline, p)
 
+    # pylint: disable=too-many-positional-arguments
     def sendTelemetry(
         self,
         destinationId: int | str = BROADCAST_ADDR,
@@ -1317,7 +1322,7 @@ class MeshInterface:  # pylint: disable=R0902
         """
         _on_response_waypoint(self._send_pipeline, p)
 
-    def sendWaypoint(  # pylint: disable=R0913
+    def sendWaypoint(  # pylint: disable=R0913,too-many-positional-arguments
         self,
         name: str,
         description: str,
@@ -1382,6 +1387,7 @@ class MeshInterface:  # pylint: disable=R0902
             hopLimit=hopLimit,
         )
 
+    # pylint: disable=too-many-positional-arguments
     def deleteWaypoint(
         self,
         waypoint_id: int,
@@ -1670,8 +1676,7 @@ class MeshInterface:  # pylint: disable=R0902
                 next_packet_id & PACKET_ID_COUNTER_MASK
             )  # Keep only low 10-bit counter (clear upper 22 bits)
             random_part = (
-                random.randint(0, PACKET_ID_RANDOM_MAX)
-                << PACKET_ID_RANDOM_SHIFT_BITS  # noqa: S311
+                random.randint(0, PACKET_ID_RANDOM_MAX) << PACKET_ID_RANDOM_SHIFT_BITS  # noqa: S311
             ) & PACKET_ID_MASK  # generate number with 10 zeros at end
             self.currentPacketId = next_packet_id | random_part  # combine
             return self.currentPacketId
@@ -1789,9 +1794,7 @@ class MeshInterface:  # pylint: disable=R0902
             self.myInfo = None
             self.nodes = {}  # nodes keyed by ID
             self.nodesByNum = {}  # nodes keyed by nodenum
-            self._localChannels = (
-                []
-            )  # empty until we start getting channels pushed from the device (during config)
+            self._localChannels = []  # empty until we start getting channels pushed from the device (during config)
             config_id = self.configId
             if config_id is None or not self.noNodes:
                 # Keep config_complete_id zero reserved as an unset sentinel.
@@ -2523,9 +2526,9 @@ class MeshInterface:  # pylint: disable=R0902
                 DECODE_ERROR_KEY: decode_error
             }
             if handler.name == "routing":
-                packet_context.packet_dict["decoded"][handler.name][
-                    "errorReason"
-                ] = decode_error
+                packet_context.packet_dict["decoded"][handler.name]["errorReason"] = (
+                    decode_error
+                )
             if handler.name == "admin":
                 # Admin callbacks frequently expect decoded.admin.raw.
                 # Avoid dispatching malformed payloads through that path.

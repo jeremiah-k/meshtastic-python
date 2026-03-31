@@ -20,6 +20,7 @@ class _NodeSettingsResponseRuntime:
     def __init__(self, node: "Node") -> None:
         self._node = node
 
+    # pylint: disable=too-many-positional-arguments
     def _resolve_config_response(
         self,
         admin_message: dict[str, Any],
