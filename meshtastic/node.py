@@ -1262,7 +1262,9 @@ class Node:  # pylint: disable=too-many-instance-attributes
                 p, wantResponse=True, onResponse=self.onRequestGetMetadata
             )
             if request is not None:
-                self.iface.waitForAckNak(request.id)
+                # Metadata callbacks currently publish ACK/NAK via legacy shared
+                # acknowledgment flags, so this wait must remain unscoped.
+                self.iface.waitForAckNak()
             if sys.stdout is not sys.__stdout__:
                 callback_completed = metadata_stdout_event.wait(
                     METADATA_STDOUT_COMPAT_WAIT_SECONDS

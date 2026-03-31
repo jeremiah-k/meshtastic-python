@@ -56,7 +56,7 @@ class _NodeSettingsRuntime:
                 f"requestConfig failed: admin message not started (admin_index={admin_index})"
             )
         if on_response is not None and request is not None:
-            self._node.iface.waitForAckNak(request.id)
+            self._node.iface.waitForAckNak()
 
     def _validate_write_configs_loaded(self, config_name: str) -> None:
         """Preserve historical writeConfig loaded-state behavior.
@@ -107,5 +107,5 @@ class _NodeSettingsRuntime:
                 f"writeConfig failed: admin message not started (config_name={config_name})"
             )
         if on_response is not None and request is not None:
-            self._node.iface.waitForAckNak(request.id)
+            self._node.iface.waitForAckNak()
         logger.debug("Config write completed: %s", config_name)

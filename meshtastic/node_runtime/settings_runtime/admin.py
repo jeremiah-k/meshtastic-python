@@ -39,7 +39,9 @@ class _NodeAdminCommandRuntime:
         )
         request = self._node._send_admin(message, onResponse=on_response)
         if on_response is not None and request is not None:
-            self._node.iface.waitForAckNak(request.id)
+            # Remote admin command callbacks still signal ACK/NAK via legacy
+            # shared acknowledgment flags.
+            self._node.iface.waitForAckNak()
         return request
 
     def sendOwnerMessage(

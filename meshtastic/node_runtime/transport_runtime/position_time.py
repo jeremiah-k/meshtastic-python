@@ -40,12 +40,7 @@ class _NodePositionTimeCommandRuntime:
             wantResponse=True,
         )
         if on_response is not None and request is not None:
-            # Extract packet id for scoped ACK/NAK wait
-            request_id = getattr(request, "id", None)
-            if isinstance(request_id, int) and request_id > 0:
-                self._node.iface.waitForAckNak(request_id=request_id)
-            else:
-                self._node.iface.waitForAckNak()
+            self._node.iface.waitForAckNak()
         return request
 
     def _set_fixed_position(
