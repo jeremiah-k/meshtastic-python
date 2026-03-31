@@ -485,7 +485,11 @@ class TestSignatureAliasComparison:
             sys.path.pop(0)
 
         base_sig = "(self, ota_mode:admin_pb2.OTAMode.ValueType, ota_file_hash:bytes)"
-        pr_sig = "(self, ota_mode:admin_pb2.OTAMode.ValueType | None=None, ota_file_hash:bytes | None=None, *, mode:admin_pb2.OTAMode.ValueType | None=None, ota_hash:bytes | None=None, **kwargs)"
+        pr_sig = (
+            "(self, ota_mode:admin_pb2.OTAMode.ValueType | None=None, "
+            "ota_file_hash:bytes | None=None, *, mode:admin_pb2.OTAMode.ValueType | None=None, "
+            "ota_hash:bytes | None=None, **kwargs)"
+        )
 
         assert not _is_breaking_signature_change(base_sig, pr_sig, "Node", "startOTA")
 
