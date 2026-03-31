@@ -1641,27 +1641,23 @@ def onConnected(interface: MeshInterface) -> None:
 
         if args.slog or args.power_stress:
             if have_powermon:
-                if args.slog and LogSet is None:
-                    _cli_exit(
-                        "LogSet is required for --slog but not available. "
-                        "The powermon module loaded incompletely."
-                    )
-                if args.power_stress and PowerStress is None:
-                    _cli_exit(
-                        "PowerStress is required for --power-stress but not available. "
-                        "The powermon module loaded incompletely."
-                    )
-                # Help mypy understand these are not None after the checks above
-                assert LogSet is not None  # type: ignore[union-attr]
-                assert PowerStress is not None  # type: ignore[union-attr]
-                # Setup loggers
                 global meter  # pylint: disable=global-variable-not-assigned
                 if args.slog:
+                    if LogSet is None:
+                        _cli_exit(
+                            "LogSet is required for --slog but not available. "
+                            "The powermon module loaded incompletely."
+                        )
                     log_set = LogSet(
                         interface, args.slog if args.slog != "default" else None, meter
                     )
 
                 if args.power_stress:
+                    if PowerStress is None:
+                        _cli_exit(
+                            "PowerStress is required for --power-stress but not available. "
+                            "The powermon module loaded incompletely."
+                        )
                     stress = PowerStress(interface)
                     stress.run()
                     closeNow = True  # exit immediately after stress test
