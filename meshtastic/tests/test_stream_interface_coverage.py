@@ -111,17 +111,21 @@ def test_write_bytes_raises_on_invalid_written_count() -> None:
     try:
         # Use a class instead of MagicMock to ensure proper behavior
         class MockStream:
+            """Mock stream that returns invalid write result."""
+
             def __init__(self):
                 self.is_open = True
 
-            def write(self, data):
-                # Return an object that cannot be converted to int
+            def write(self, _data):
+                """Return an object that cannot be converted to int."""
                 return object()
 
             def flush(self):
+                """Mock flush method."""
                 pass
 
             def close(self):
+                """Mock close method."""
                 pass
 
         stream = MockStream()
@@ -145,17 +149,21 @@ def test_write_bytes_raises_on_value_error_from_string() -> None:
     try:
 
         class MockStream:
+            """Mock stream that returns string causing ValueError."""
+
             def __init__(self):
                 self.is_open = True
 
-            def write(self, data):
-                # Return a string that causes ValueError on int conversion
+            def write(self, _data):
+                """Return a string that causes ValueError on int conversion."""
                 return "not_a_number"
 
             def flush(self):
+                """Mock flush method."""
                 pass
 
             def close(self):
+                """Mock close method."""
                 pass
 
         stream = MockStream()
@@ -648,7 +656,7 @@ def test_join_reader_thread_skips_when_thread_none() -> None:
         # Test passes if no exception raised
     finally:
         # Restore for cleanup
-        iface._rxThread = None
+        iface._rxThread = None  # type: ignore[assignment]
         iface.close()
 
 

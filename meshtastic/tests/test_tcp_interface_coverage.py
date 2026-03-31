@@ -207,6 +207,7 @@ def test_TCPInterface_myConnect_settimeout_failure_cleanup(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Test myConnect closes socket when settimeout fails (lines 276-278)."""
+    _ = caplog  # Unused but required for potential future log assertions
     with patch("socket.socket"):
         with patch("meshtastic.tcp_interface.socket.create_connection") as mock_connect:
             mock_socket = MagicMock()
@@ -448,7 +449,7 @@ def test_TCPInterface_connect_socket_if_needed_concurrent_reconnect() -> None:
 
             sleep_count = [0]
 
-            def side_effect_sleep(delay: float) -> None:
+            def side_effect_sleep(_delay: float) -> None:
                 sleep_count[0] += 1
                 if sleep_count[0] >= 2:
                     # Clear reconnect flag after a couple sleeps
@@ -826,12 +827,14 @@ def test_TCPInterface_attempt_reconnect_non_reader_thread_no_queue_clear() -> No
         try:
             mock_socket = MagicMock()
             # Add items to queue
-            iface.queue[1] = "item1"
-            iface.queue[2] = "item2"
+            mock_item1 = MagicMock()
+            mock_item2 = MagicMock()
+            iface.queue[1] = mock_item1
+            iface.queue[2] = mock_item2
             original_queue_len = len(iface.queue)
 
             # Ensure we're not on the reader thread
-            iface._rxThread = None
+            iface._rxThread = None  # type: ignore[assignment]
 
             with (
                 patch.object(iface, "myConnect") as mock_connect,
@@ -1016,6 +1019,8 @@ def test_TCPInterface_notify_pending_sender_failure_not_callable() -> None:
         try:
             # Use a real object instead of MagicMock to avoid auto-callable attributes
             class NonCallableObj:
+                """A non-callable object for testing failure notification."""
+
                 set_exception = "not callable"
 
             obj = NonCallableObj()

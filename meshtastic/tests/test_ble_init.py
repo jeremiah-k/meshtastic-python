@@ -20,7 +20,7 @@ class TestBLEPackageInit:
 
     def test_ble_init_imports_successfully(self) -> None:
         """Test that ble package imports successfully when bleak is available."""
-        from meshtastic.interfaces import ble
+        from meshtastic.interfaces import ble  # noqa: C0415
 
         assert ble is not None
         assert hasattr(ble, "BLEInterface")
@@ -48,14 +48,14 @@ class TestBLEPackageInit:
 
             def raise_bleak_not_found(
                 name: str,
-                globals: dict[str, object] | None = None,
-                locals: dict[str, object] | None = None,
+                _globals: dict[str, object] | None = None,
+                _locals: dict[str, object] | None = None,
                 fromlist: tuple[str, ...] | None = None,
                 level: int = 0,
             ) -> ModuleType:
                 if name == "bleak":
                     raise ModuleNotFoundError("No module named 'bleak'", name="bleak")
-                return original_import(name, globals, locals, fromlist, level)
+                return original_import(name, _globals, _locals, fromlist, level)
 
             with patch("builtins.__import__", side_effect=raise_bleak_not_found):
                 with pytest.raises(ImportError) as exc_info:
@@ -88,8 +88,8 @@ class TestBLEPackageInit:
 
             def raise_other_not_found(
                 name: str,
-                globals: dict[str, object] | None = None,
-                locals: dict[str, object] | None = None,
+                _globals: dict[str, object] | None = None,
+                _locals: dict[str, object] | None = None,
                 fromlist: tuple[str, ...] | None = None,
                 level: int = 0,
             ) -> ModuleType:
@@ -97,7 +97,7 @@ class TestBLEPackageInit:
                     raise ModuleNotFoundError(
                         "No module named 'some_other_module'", name="some_other_module"
                     )
-                return original_import(name, globals, locals, fromlist, level)
+                return original_import(name, _globals, _locals, fromlist, level)
 
             with patch("builtins.__import__", side_effect=raise_other_not_found):
                 with pytest.raises(ModuleNotFoundError) as exc_info:
@@ -111,7 +111,7 @@ class TestBLEPackageInit:
 
     def test_ble_all_exports(self) -> None:
         """Test that __all__ exports are accessible."""
-        from meshtastic.interfaces import ble
+        from meshtastic.interfaces import ble  # noqa: C0415
 
         for name in ble.__all__:
             assert hasattr(ble, name), f"Missing export: {name}"
@@ -123,7 +123,7 @@ class TestBLEPackageConstants:
 
     def test_uuid_constants_exported(self) -> None:
         """Test that UUID constants are exported."""
-        from meshtastic.interfaces.ble import (
+        from meshtastic.interfaces.ble import (  # noqa: C0415
             FROMNUM_UUID,
             FROMRADIO_UUID,
             LEGACY_LOGRADIO_UUID,
@@ -141,7 +141,7 @@ class TestBLEPackageConstants:
 
     def test_error_constants_exported(self) -> None:
         """Test that error message constants are exported."""
-        from meshtastic.interfaces.ble import (
+        from meshtastic.interfaces.ble import (  # noqa: C0415
             BLECLIENT_ERROR_ASYNC_TIMEOUT,
             ERROR_CONNECTION_FAILED,
             ERROR_MULTIPLE_DEVICES,
@@ -163,7 +163,7 @@ class TestBLEPackageConstants:
 
     def test_classes_exported(self) -> None:
         """Test that main classes are exported."""
-        from meshtastic.interfaces.ble import BLEClient, BLEConfig, BLEInterface
+        from meshtastic.interfaces.ble import BLEClient, BLEConfig, BLEInterface  # noqa: C0415
 
         assert BLEInterface is not None
         assert BLEClient is not None
@@ -171,6 +171,6 @@ class TestBLEPackageConstants:
 
     def test_logger_exported(self) -> None:
         """Test that logger is exported for backward compatibility."""
-        from meshtastic.interfaces.ble import logger
+        from meshtastic.interfaces.ble import logger  # noqa: C0415
 
         assert logger is not None

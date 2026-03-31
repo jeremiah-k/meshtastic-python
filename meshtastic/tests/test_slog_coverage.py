@@ -7,7 +7,7 @@ import time
 import warnings
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from unittest.mock import MagicMock
 
 import pytest
@@ -41,12 +41,15 @@ class _FakeThread:
         self._is_alive = True
 
     def start(self) -> None:
+        """Start the fake thread."""
         self.started = True
 
-    def join(self, timeout: float | None = None) -> None:
+    def join(self, _timeout: float | None = None) -> None:
+        """Join the fake thread immediately."""
         self._is_alive = False
 
     def is_alive(self) -> bool:
+        """Return whether thread is alive."""
         return self._is_alive
 
 
@@ -58,13 +61,16 @@ class _FakeWriter:
         self.schema: Any = None
         self.rows: list[dict] = []
 
-    def setSchema(self, schema: Any) -> None:
-        self.schema = schema
+    def setSchema(self, _schema: Any) -> None:
+        """Set the schema for the writer."""
+        self.schema = _schema
 
-    def addRow(self, row: dict) -> None:
-        self.rows.append(row)
+    def addRow(self, _row: dict) -> None:
+        """Add a row to the writer."""
+        self.rows.append(_row)
 
     def close(self) -> None:
+        """Close the writer."""
         pass
 
 
@@ -75,18 +81,21 @@ class _SlowStopThread:
         self._target = kwargs.get("target")
         self.started = False
         self._is_alive = True
-        self._thread_id = None
+        self._thread_id: Optional[int] = None
 
     def start(self) -> None:
+        """Start the slow thread, simulating thread running."""
         self.started = True
         # Simulate thread running
         self._thread_id = threading.current_thread().ident
 
-    def join(self, timeout: float | None = None) -> None:
+    def join(self, _timeout: float | None = None) -> None:
+        """Join the slow thread - never completes."""
         # Never completes - simulates hung thread
         pass
 
     def is_alive(self) -> bool:
+        """Return True always - simulates hung thread."""
         return True
 
 
@@ -331,7 +340,7 @@ def test_structured_logger_raw_file_concurrent_writes(
 
     # Use a real StringIO to capture writes
     raw_buffer = io.StringIO()
-    logger.raw_file = raw_buffer
+    logger.raw_file = raw_buffer  # type: ignore[assignment]
 
     errors: list[Exception] = []
 
@@ -464,7 +473,7 @@ def test_power_logger_sample_error_suppression(
 
     with caplog.at_level(logging.WARNING):
         # Simulate exception handling path from _logging_thread
-        for i in range(SAMPLE_FAILURE_WARNING_BURST_COUNT + 2):
+        for _ in range(SAMPLE_FAILURE_WARNING_BURST_COUNT + 2):
             try:
                 logger._store_current_reading()
             except Exception as exc:

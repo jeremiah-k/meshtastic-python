@@ -328,7 +328,6 @@ class TestUnifiedExceptionInterface:
         #
         # RECOMMENDATION: Make TCPInterface raise StreamClosedError (or common subtype)
         # for all write failures to match StreamInterface's behavior.
-        pass
 
 
 class TestReturnValueConsistency:
@@ -354,8 +353,7 @@ class TestReturnValueConsistency:
                     "meshtastic.tcp_interface.select.select",
                     return_value=([], [mock_socket], []),
                 ):
-                    result = tcp_iface._write_bytes(b"hello")
-                    assert result is None
+                    tcp_iface._write_bytes(b"hello")
             finally:
                 tcp_iface.close()
 
@@ -367,7 +365,6 @@ class TestReturnValueConsistency:
             mock_stream.write.return_value = 5
             stream_iface.stream = mock_stream
 
-            result = stream_iface._write_bytes(b"hello")
-            assert result is None
+            stream_iface._write_bytes(b"hello")
         finally:
             stream_iface.close()

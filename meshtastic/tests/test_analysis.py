@@ -31,6 +31,7 @@ try:
         choose_power_column,
         choosePowerColumn,
         create_argparser,
+        create_dash,
         get_board_info,
         get_pmon_raises,
         getBoardInfo,
@@ -38,6 +39,7 @@ try:
         main,
         read_pandas,
         to_pmon_names,
+        _cli_exit,
     )
     from meshtastic.protobuf import mesh_pb2
 
@@ -527,8 +529,6 @@ def test_get_board_info_rejects_unknown_board_id() -> None:
 @pytest.mark.unit
 def test_create_dash_returns_dash_app() -> None:
     """create_dash should return a configured Dash application."""
-    from meshtastic.analysis.__main__ import create_dash
-
     cur_dir = Path(__file__).resolve().parent
     slog_input_dir = str(cur_dir / "slog-test-input")
 
@@ -545,8 +545,6 @@ def test_main_uses_default_slog_when_not_provided(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """main() should use default slog path when --slog is not provided."""
-    import os
-
     monkeypatch.setattr(sys, "argv", ["fakescriptname", "--no-server"])
     monkeypatch.setattr(logging.getLogger(), "propagate", True)
 
@@ -560,12 +558,13 @@ def test_main_uses_default_slog_when_not_provided(
 def test_main_disables_debug_for_non_loopback_host(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
-    cli_exit_capture: dict[str, Any],
+    _cli_exit_capture: dict[str, Any],
 ) -> None:
     """main() should disable debug mode when host is not loopback."""
 
     class _FakeApp:
         def run(self, *, debug: bool, host: str, port: int) -> None:
+            """Simulate Dash app run method."""
             _ = (debug, host, port)
 
     def _fake_create_dash(*, slog_path: str) -> _FakeApp:
@@ -589,8 +588,6 @@ def test_main_disables_debug_for_non_loopback_host(
 @pytest.mark.unit
 def test_cli_exit_calls_util_our_exit(monkeypatch: pytest.MonkeyPatch) -> None:
     """_cli_exit should call util.our_exit with the provided message and return code."""
-    from meshtastic.analysis.__main__ import _cli_exit
-
     captured: dict[str, Any] = {}
 
     def _fake_our_exit(message: str, return_code: int = 1) -> NoReturn:

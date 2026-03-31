@@ -27,6 +27,7 @@ try:
     import pandas as pd
     from pyarrow import feather
 
+    from meshtastic import powermon_pb2
     from meshtastic.analysis import __main__ as analysis_main
     from meshtastic.analysis.__main__ import (
         _cli_exit,
@@ -224,8 +225,6 @@ def test_create_dash_returns_configured_app(tmp_path: Path) -> None:
 @pytest.mark.unit
 def test_create_dash_with_pmon_raises(tmp_path: Path) -> None:
     """create_dash should handle power monitor raise events (lines 446-510)."""
-    from meshtastic import powermon_pb2
-
     # Find a valid power monitor state
     single_bits = sorted(
         state.number
@@ -325,13 +324,14 @@ def test_create_dash_fails_when_power_file_missing(tmp_path: Path) -> None:
 @pytest.mark.unit
 def test_main_uses_default_slog_path(
     monkeypatch: pytest.MonkeyPatch,
-    cli_exit_capture: dict[str, Any],
+    _cli_exit_capture: dict[str, Any],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """main() should use default slog path when --slog not provided (line 541)."""
 
     class _FakeApp:
         def run(self, *, debug: bool, host: str, port: int) -> None:
+            """Simulate Dash app run method."""
             _ = (debug, host, port)
 
     def _fake_create_dash(*, slog_path: str) -> _FakeApp:
@@ -351,13 +351,14 @@ def test_main_uses_default_slog_path(
 @pytest.mark.unit
 def test_main_disables_debug_for_non_loopback_host(
     monkeypatch: pytest.MonkeyPatch,
-    cli_exit_capture: dict[str, Any],
+    _cli_exit_capture: dict[str, Any],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """main() should disable debug mode when host is not loopback (lines 557-561)."""
 
     class _FakeApp:
         def run(self, *, debug: bool, host: str, port: int) -> None:
+            """Simulate Dash app run method."""
             _ = (debug, host, port)
 
     def _fake_create_dash(*, slog_path: str) -> _FakeApp:

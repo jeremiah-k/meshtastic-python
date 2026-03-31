@@ -365,7 +365,7 @@ class TestAckNakRuntimeLocalNodeEdgeCases:
         self, ack_runtime: _NodeAckNakRuntime, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Test handling ACK when localNode is None."""
-        ack_runtime._node.iface.localNode = None
+        ack_runtime._node.iface.localNode = None  # type: ignore[assignment]
         packet = {
             "id": 12345,
             "from": 67890,
@@ -944,7 +944,7 @@ class TestReceivePipelineConfigUpdateEdgeCases:
         # Create a config with a field that won't exist in target
         config = config_pb2.Config()
         # Set a field that we know exists
-        config.lora.region = 1
+        config.lora.region = 1  # type: ignore[assignment]
 
         with caplog.at_level(logging.DEBUG):
             result = receive_pipeline._apply_local_config_from_radio(config)
@@ -1171,7 +1171,7 @@ class TestReceivePipelineClassifyPacketEdgeCases:
 
         receive_pipeline._classify_packet_runtime(packet_context, mesh_packet)
 
-        assert packet_context.decoded["payload"] == b"raw payload bytes"
+        assert packet_context.decoded["payload"] == b"raw payload bytes"  # type: ignore[index]"
 
 
 class TestReceivePipelineQueuePublication:
@@ -1205,7 +1205,7 @@ class TestReceivePipelineConfigOrModuleConfig:
     ) -> None:
         """Test handling FromRadio with config field."""
         from_radio = mesh_pb2.FromRadio()
-        from_radio.config.lora.region = 1
+        from_radio.config.lora.region = 1  # type: ignore[assignment]
 
         context = _FromRadioContext(
             message=from_radio,
