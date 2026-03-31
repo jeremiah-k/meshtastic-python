@@ -1109,9 +1109,9 @@ class TestReceivePipelineInvokeCallbackEdgeCases:
     def test_invoke_callback_with_exception(
         self,
         receive_pipeline: ReceivePipeline,
-        caplog: pytest.LogCaptureFixture,  # noqa: W0613
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Test that callback exceptions are not suppressed but propagate."""
+        """Test that callback exceptions are suppressed and logged."""
 
         def failing_callback(iface, packet):
             raise ValueError("Callback failed!")
@@ -1121,8 +1121,10 @@ class TestReceivePipelineInvokeCallbackEdgeCases:
             on_receive_callback=failing_callback,
         )
 
-        with pytest.raises(ValueError, match="Callback failed!"):
+        with caplog.at_level(logging.ERROR):
             receive_pipeline._invoke_packet_on_receive(packet_context)
+        assert "Protocol onReceive callback failed" in caplog.text
+        assert "Callback failed!" in caplog.text
 
     @pytest.mark.unit
     def test_invoke_callback_none_no_error(
