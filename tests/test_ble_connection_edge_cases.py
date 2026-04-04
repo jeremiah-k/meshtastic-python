@@ -40,9 +40,9 @@ def _refresh_connection_symbols() -> None:
     globals()["ClientManager"] = connection_module.ClientManager
     globals()["ConnectionOrchestrator"] = connection_module.ConnectionOrchestrator
     globals()["ConnectionValidator"] = connection_module.ConnectionValidator
-    globals()[
-        "_is_device_not_found_error"
-    ] = connection_module._is_device_not_found_error
+    globals()["_is_device_not_found_error"] = (
+        connection_module._is_device_not_found_error
+    )
 
 
 class MockBLEError(Exception):
@@ -458,6 +458,7 @@ def test_client_manager_safe_close_client_prefers_public_safe_cleanup() -> None:
     mock_client = MagicMock()
     mock_client._closed = False
     mock_client.bleak_client = object()
+    mock_client.is_connected.return_value = True
 
     manager._safe_close_client(mock_client)
 

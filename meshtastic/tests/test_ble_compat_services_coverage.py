@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, Mock, NonCallableMock, patch
 
 import pytest
@@ -902,7 +902,7 @@ class TestBLEReceiveRecoveryControllerEmptyReadWarnings:
     ) -> None:
         """Polling mode without FROMNUM notifications should avoid warning-level noise."""
         iface = self._Iface(fromnum_notify_enabled=False)
-        controller = BLEReceiveRecoveryController(iface)
+        controller = BLEReceiveRecoveryController(cast(Any, iface))
 
         with patch(
             "meshtastic.interfaces.ble.receive_service.time.monotonic",
@@ -920,7 +920,7 @@ class TestBLEReceiveRecoveryControllerEmptyReadWarnings:
     ) -> None:
         """When FROMNUM notifications are enabled, empty-read exhaustion remains warning-level."""
         iface = self._Iface(fromnum_notify_enabled=True)
-        controller = BLEReceiveRecoveryController(iface)
+        controller = BLEReceiveRecoveryController(cast(Any, iface))
 
         with patch(
             "meshtastic.interfaces.ble.receive_service.time.monotonic",

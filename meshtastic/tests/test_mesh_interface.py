@@ -3754,7 +3754,9 @@ def test_handle_queue_status_awaiting_correlation_not_marked_unexpected(
         packet_id = 0x01020304
         packet = mesh_pb2.ToRadio()
         packet.packet.id = packet_id
-        resent_queue = OrderedDict([(packet_id, packet)])
+        resent_queue: OrderedDict[int, mesh_pb2.ToRadio | bool] = OrderedDict(
+            [(packet_id, packet)]
+        )
         iface._queue_send_runtime.reconcile_resent_queue(
             resent_queue=resent_queue,
             sent_packet_ids={packet_id},
@@ -3767,7 +3769,9 @@ def test_handle_queue_status_awaiting_correlation_not_marked_unexpected(
 
     assert packet_id not in iface.queue
     assert "Reply for unexpected packet ID" not in caplog.text
-    assert "Correlated queue-status reply for packet awaiting correlation" in caplog.text
+    assert (
+        "Correlated queue-status reply for packet awaiting correlation" in caplog.text
+    )
 
 
 @pytest.mark.unit

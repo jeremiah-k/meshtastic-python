@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from threading import Event, RLock
+from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
 
+from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.connection import ClientManager
+from meshtastic.interfaces.ble.errors import BLEErrorHandler
 
 pytestmark = pytest.mark.unit
 
@@ -47,7 +50,7 @@ def _make_client_manager() -> ClientManager:
         state_manager=MagicMock(),
         state_lock=RLock(),
         thread_coordinator=MagicMock(),
-        error_handler=_ErrorHandler(),
+        error_handler=cast(BLEErrorHandler, _ErrorHandler()),
     )
 
 
@@ -57,7 +60,7 @@ def test_safe_close_client_skips_disconnect_for_disconnected_client() -> None:
     client = _DummyClient(connected=False)
     done = Event()
 
-    manager._safe_close_client(client, event=done)
+    manager._safe_close_client(cast(BLEClient, client), event=done)
 
     assert done.is_set()
     assert client.disconnect_calls == 0
@@ -70,7 +73,7 @@ def test_safe_close_client_disconnects_connected_client_before_close() -> None:
     client = _DummyClient(connected=True)
     done = Event()
 
-    manager._safe_close_client(client, event=done)
+    manager._safe_close_client(cast(BLEClient, client), event=done)
 
     assert done.is_set()
     assert client.disconnect_calls == 1
