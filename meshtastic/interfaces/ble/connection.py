@@ -682,11 +682,40 @@ class ClientManager:
             and not getattr(client, "_closed", False)
             and getattr(client, "bleak_client", None)
         ):
-            _run_safe_cleanup(
-                lambda: client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS),
-                "client disconnect",
-                safe_cleanup_hook,
-            )
+            is_connected = False
+            for probe_name in ("is_connected", "isConnected", "_is_connected"):
+                is_connected_probe = getattr(client, probe_name, None)
+                if callable(is_connected_probe) and not _is_unconfigured_mock_callable(
+                    is_connected_probe
+                ):
+                    try:
+                        is_connected = bool(is_connected_probe())
+                    except (
+                        Exception
+                    ):  # noqa: BLE001 - shutdown must remain best effort
+                        logger.debug(
+                            "Failed to read BLE client connected state via %s during shutdown.",
+                            probe_name,
+                            exc_info=True,
+                        )
+                    if is_connected:
+                        break
+                elif isinstance(is_connected_probe, bool) and not _is_unconfigured_mock_member(
+                    is_connected_probe
+                ):
+                    is_connected = is_connected_probe
+                    if is_connected:
+                        break
+            if is_connected:
+                _run_safe_cleanup(
+                    lambda: client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS),
+                    "client disconnect",
+                    safe_cleanup_hook,
+                )
+            else:
+                logger.debug(
+                    "Skipping BLE client disconnect during shutdown: client is not connected."
+                )
         elif skip_disconnect:
             logger.debug(
                 "Skipping BLE client disconnect during interpreter finalization."

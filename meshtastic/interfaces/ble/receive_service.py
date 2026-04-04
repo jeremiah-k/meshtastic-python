@@ -236,9 +236,7 @@ class BLEReceiveRecoveryController:
                     result = raw_is_closing()
                     if isinstance(result, bool):
                         state_is_closing = result
-                except (
-                    Exception
-                ):  # noqa: BLE001 - closing probe must remain best effort
+                except Exception:  # noqa: BLE001 - closing probe must remain best effort
                     state_is_closing = None
             elif not _is_unconfigured_mock_member(raw_is_closing) and isinstance(
                 raw_is_closing, bool
@@ -716,9 +714,7 @@ class BLEReceiveRecoveryController:
             ):
                 try:
                     connecting_result = state_is_connecting()
-                except (
-                    Exception
-                ):  # noqa: BLE001 - snapshot probe must remain best effort
+                except Exception:  # noqa: BLE001 - snapshot probe must remain best effort
                     logger.debug(
                         "Error probing state manager is_connecting()",
                         exc_info=True,
@@ -743,9 +739,7 @@ class BLEReceiveRecoveryController:
                 ) and not _is_unconfigured_mock_callable(legacy_is_connecting):
                     try:
                         connecting_result = legacy_is_connecting()
-                    except (
-                        Exception
-                    ):  # noqa: BLE001 - snapshot probe must remain best effort
+                    except Exception:  # noqa: BLE001 - snapshot probe must remain best effort
                         logger.debug(
                             "Error probing state manager _is_connecting()",
                             exc_info=True,
@@ -1128,6 +1122,12 @@ class BLEReceiveRecoveryController:
             return
         now = time.monotonic()
         cooldown = BLEConfig.EMPTY_READ_WARNING_COOLDOWN
+        raw_notify_enabled: object = getattr(iface, "_fromnum_notify_enabled", False)
+        notify_enabled = (
+            False
+            if _is_unconfigured_mock_member(raw_notify_enabled)
+            else bool(raw_notify_enabled)
+        )
         if now - iface._last_empty_read_warning >= cooldown:
             suppressed = iface._suppressed_empty_read_warnings
             message = f"Exceeded max retries for empty BLE read from {FROMRADIO_UUID}"
@@ -1136,7 +1136,13 @@ class BLEReceiveRecoveryController:
                     f"{message} (suppressed {suppressed} repeats in the last "
                     f"{cooldown:.0f}s)"
                 )
-            logger.warning(message)
+            if notify_enabled:
+                logger.warning(message)
+            else:
+                logger.debug(
+                    "%s (polling mode without FROMNUM notifications)",
+                    message,
+                )
             iface._last_empty_read_warning = now
             iface._suppressed_empty_read_warnings = 0
             return

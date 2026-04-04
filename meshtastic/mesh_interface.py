@@ -108,9 +108,7 @@ NODE_NOT_FOUND_DB_UNAVAILABLE_ERROR_TEMPLATE = (
     "NodeId {destination_id} not found and node DB is unavailable"
 )
 HEX_NODE_ID_TAIL_CHARS = frozenset("0123456789abcdefABCDEF")
-NO_RESPONSE_FIRMWARE_ERROR: str = (
-    "No response from node. At least firmware 2.1.22 is required on the destination node."
-)
+NO_RESPONSE_FIRMWARE_ERROR: str = "No response from node. At least firmware 2.1.22 is required on the destination node."
 
 JSONValue: TypeAlias = (
     None | bool | int | float | str | list["JSONValue"] | dict[str, "JSONValue"]
@@ -252,6 +250,7 @@ class _QueueSendRuntime:
         self._get_queue_status = get_queue_status
         self._set_queue_status = set_queue_status
         self._queue_wait_delay_seconds = queue_wait_delay_seconds
+        self._awaiting_queue_status_ids: set[int] = set()
 
     def has_free_space(self) -> bool:
         """Return whether queue status indicates free TX slots."""
@@ -356,6 +355,8 @@ class _QueueSendRuntime:
                 # Packet send succeeded and there is no explicit queue-status ack
                 # marker yet. Keep it out of immediate resend rotation to avoid
                 # duplicate floods while queue-status correlation catches up.
+                with self._lock:
+                    self._awaiting_queue_status_ids.add(packet_id)
                 logger.debug(
                     "packet %08x sent and awaiting queue-status correlation",
                     packet_id,
@@ -394,22 +395,32 @@ class _QueueSendRuntime:
 
     def correlate_queue_status_reply(self, queue_status: mesh_pb2.QueueStatus) -> None:
         """Correlate queue status mesh_packet_id replies to pending entries."""
+        packet_id = queue_status.mesh_packet_id
         debug_enabled = logger.isEnabledFor(logging.DEBUG)
         with self._lock:
             queue = self._get_queue()
             queue_snapshot = tuple(queue.keys()) if debug_enabled else ()
-            just_queued = queue.pop(queue_status.mesh_packet_id, None)
+            just_queued = queue.pop(packet_id, None)
+            was_awaiting = packet_id in self._awaiting_queue_status_ids
+            if packet_id != 0:
+                self._awaiting_queue_status_ids.discard(packet_id)
         if debug_enabled:
             logger.debug(
                 "queue: %s",
                 " ".join(f"{key:08x}" for key in queue_snapshot),
             )
-        if just_queued is None and queue_status.mesh_packet_id != 0:
+        if just_queued is None and packet_id != 0:
+            if was_awaiting:
+                logger.debug(
+                    "Correlated queue-status reply for packet awaiting correlation %08x",
+                    packet_id,
+                )
+                return
             with self._lock:
-                self._get_queue()[queue_status.mesh_packet_id] = False
+                self._get_queue()[packet_id] = False
             logger.debug(
                 "Reply for unexpected packet ID %08x",
-                queue_status.mesh_packet_id,
+                packet_id,
             )
 
     def handle_queue_status_from_radio(
@@ -418,6 +429,10 @@ class _QueueSendRuntime:
         """Apply queue status updates and queue reply correlation."""
         self.record_queue_status(queue_status)
         if queue_status.res:
+            packet_id = queue_status.mesh_packet_id
+            if packet_id != 0:
+                with self._lock:
+                    self._awaiting_queue_status_ids.discard(packet_id)
             return
         self.correlate_queue_status_reply(queue_status)
 
@@ -537,9 +552,9 @@ class MeshInterface:  # pylint: disable=R0902
         # _handle_packet_from_radio (receive thread). Use this lock to serialize
         # responseHandlers access across those call sites.
         self._response_handlers_lock = threading.RLock()
-        self.responseHandlers: dict[int, ResponseHandler] = (
-            {}
-        )  # A map from request ID to the handler
+        self.responseHandlers: dict[
+            int, ResponseHandler
+        ] = {}  # A map from request ID to the handler
         self._response_wait_errors: dict[tuple[str, int], str] = {}
         self._response_wait_acks: set[tuple[str, int]] = set()
         self._active_wait_request_ids: dict[str, set[int]] = {}
@@ -1680,8 +1695,7 @@ class MeshInterface:  # pylint: disable=R0902
                 next_packet_id & PACKET_ID_COUNTER_MASK
             )  # Keep only low 10-bit counter (clear upper 22 bits)
             random_part = (
-                random.randint(0, PACKET_ID_RANDOM_MAX)
-                << PACKET_ID_RANDOM_SHIFT_BITS  # noqa: S311
+                random.randint(0, PACKET_ID_RANDOM_MAX) << PACKET_ID_RANDOM_SHIFT_BITS  # noqa: S311
             ) & PACKET_ID_MASK  # generate number with 10 zeros at end
             self.currentPacketId = next_packet_id | random_part  # combine
             return self.currentPacketId
@@ -1799,9 +1813,7 @@ class MeshInterface:  # pylint: disable=R0902
             self.myInfo = None
             self.nodes = {}  # nodes keyed by ID
             self.nodesByNum = {}  # nodes keyed by nodenum
-            self._localChannels = (
-                []
-            )  # empty until we start getting channels pushed from the device (during config)
+            self._localChannels = []  # empty until we start getting channels pushed from the device (during config)
             config_id = self.configId
             if config_id is None or not self.noNodes:
                 # Keep config_complete_id zero reserved as an unset sentinel.
@@ -2533,9 +2545,9 @@ class MeshInterface:  # pylint: disable=R0902
                 DECODE_ERROR_KEY: decode_error
             }
             if handler.name == "routing":
-                packet_context.packet_dict["decoded"][handler.name][
-                    "errorReason"
-                ] = decode_error
+                packet_context.packet_dict["decoded"][handler.name]["errorReason"] = (
+                    decode_error
+                )
             if handler.name == "admin":
                 # Admin callbacks frequently expect decoded.admin.raw.
                 # Avoid dispatching malformed payloads through that path.

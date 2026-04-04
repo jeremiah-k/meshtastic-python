@@ -3746,6 +3746,36 @@ def test_handle_config_complete_and_queue_status_branches() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_handle_queue_status_awaiting_correlation_not_marked_unexpected(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Queue status for recently sent packets should not be logged as unexpected replies."""
+    with MeshInterface(noProto=True) as iface:
+        packet_id = 0x01020304
+        packet = mesh_pb2.ToRadio()
+        packet.packet.id = packet_id
+        resent_queue: OrderedDict[int, mesh_pb2.ToRadio | bool] = OrderedDict(
+            [(packet_id, packet)]
+        )
+        iface._queue_send_runtime.reconcile_resent_queue(
+            resent_queue=resent_queue,
+            sent_packet_ids={packet_id},
+        )
+
+        with caplog.at_level(logging.DEBUG):
+            iface._handle_queue_status_from_radio(
+                mesh_pb2.QueueStatus(free=3, maxlen=4, res=0, mesh_packet_id=packet_id)
+            )
+
+    assert packet_id not in iface.queue
+    assert "Reply for unexpected packet ID" not in caplog.text
+    assert (
+        "Correlated queue-status reply for packet awaiting correlation" in caplog.text
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_handle_from_radio_branch_matrix(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
