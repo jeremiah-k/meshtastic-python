@@ -3162,6 +3162,8 @@ class BLEInterface(MeshInterface):
             _sleep(BLEConfig.SEND_PROPAGATION_DELAY)
             self._set_thread_event(READ_TRIGGER_EVENT)
 
+    # COMPAT_STABLE_SHIM: historical public BLEInterface API alias.
+    # Keep callable without deprecation warning.
     def disconnect(self) -> None:
         """Compatibility alias for callers that expect an explicit disconnect API."""
         self.close()

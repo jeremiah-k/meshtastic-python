@@ -10,6 +10,7 @@ import pytest
 
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.connection import ClientManager
+from meshtastic.interfaces.ble.constants import DISCONNECT_TIMEOUT_SECONDS
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 
 pytestmark = pytest.mark.unit
@@ -77,4 +78,5 @@ def test_safe_close_client_disconnects_connected_client_before_close() -> None:
 
     assert done.is_set()
     assert client.disconnect_calls == 1
+    assert client.last_disconnect_timeout == DISCONNECT_TIMEOUT_SECONDS
     assert client.close_calls == 1
