@@ -7,7 +7,8 @@ It is intended to be a drop-in, backward-compatible replacement for upstream:
 - CLI command remains `meshtastic`
 - existing API compatibility is intentionally preserved
 
-This is a temporary fork used to ship and validate changes while we upstream improvements.
+`mtjk` is a maintained fork, published separately while changes are validated and selectively upstreamed.
+Work on this fork began in September 2025; early BLE-focused details are in [BLE.md](BLE.md).
 
 ## Install the CLI (recommended: pipx)
 
@@ -42,6 +43,9 @@ meshtastic --version
 To install the latest unreleased version from this repository (clean install):
 
 ```bash
+# If you previously installed upstream via pipx, remove it first:
+pipx uninstall meshtastic || true
+
 pipx uninstall mtjk || true
 pipx install "git+https://github.com/jeremiah-k/meshtastic-python.git@develop"
 ```
