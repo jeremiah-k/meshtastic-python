@@ -168,7 +168,7 @@ def supportInfo() -> None:
     print("")
     print("If having issues with meshtastic cli or python library")
     print("or wish to make feature requests, visit:")
-    print("https://github.com/meshtastic/python/issues")
+    print("https://github.com/jeremiah-k/meshtastic-python/issues")
     print("When adding an issue, be sure to include the following info:")
     print(f" System: {platform.system()}")
     print(f"   Platform: {platform.platform()}")

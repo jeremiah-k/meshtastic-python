@@ -3,9 +3,12 @@
 name = "mtjk"
 version = "2.7.8.post1"
 description = "Python API & client shell for talking to Meshtastic devices"
-authors = ["Meshtastic Developers <contact@meshtastic.org>"]
+authors = ["Meshtastic Developers (upstream project authors)"]
+maintainers = ["Jeremiah K. <17190268+jeremiah-k@users.noreply.github.com>"]
 license = "GPL-3.0-only"
 readme = "README.md"
+homepage = "https://github.com/jeremiah-k/meshtastic-python"
+repository = "https://github.com/jeremiah-k/meshtastic-python"
 packages = [{ include = "meshtastic" }]
 include = [{ path = "meshtastic/py.typed", format = ["sdist", "wheel"] }]
 
