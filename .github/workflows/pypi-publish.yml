@@ -20,13 +20,68 @@ jobs:
       contents: read
       packages: read
     steps:
-      - name: Checkout
+      - name: Resolve release tag
+        id: release_tag
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "${GITHUB_REF}" != refs/tags/* ]]; then
+              echo "::error::workflow_dispatch must be triggered from a tag, not '${GITHUB_REF}'."
+              exit 1
+            fi
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="${{ github.event.release.tag_name }}"
+          fi
+          if [[ -z "${TAG}" ]]; then
+            echo "::error::Unable to resolve release tag."
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          if [[ -z "${VERSION}" ]]; then
+            echo "::error::Resolved empty version from tag '${TAG}'."
+            exit 1
+          fi
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+
+      - name: Checkout tag
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ steps.release_tag.outputs.tag }}
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.13"
+
+      - name: Read package metadata
+        id: package_metadata
+        run: |
+          python - <<'PY' >> "${GITHUB_OUTPUT}"
+          from pathlib import Path
+          import tomllib
+
+          pyproject = tomllib.loads(Path("pyproject.toml").read_text())
+          poetry_data = pyproject["tool"]["poetry"]
+          print(f"name={poetry_data['name']}")
+          print(f"version={poetry_data['version']}")
+          PY
+
+      - name: Validate package name and tag/version match
+        run: |
+          PACKAGE_NAME="${{ steps.package_metadata.outputs.name }}"
+          PACKAGE_VERSION="${{ steps.package_metadata.outputs.version }}"
+          TAG_VERSION="${{ steps.release_tag.outputs.version }}"
+
+          if [[ "${PACKAGE_NAME}" != "mtjk" ]]; then
+            echo "::error::Expected tool.poetry.name to be 'mtjk', got '${PACKAGE_NAME}'."
+            exit 1
+          fi
+
+          if [[ "${PACKAGE_VERSION}" != "${TAG_VERSION}" ]]; then
+            echo "::error::Version mismatch: tag '${{ steps.release_tag.outputs.tag }}' -> '${TAG_VERSION}', pyproject -> '${PACKAGE_VERSION}'."
+            exit 1
+          fi
 
       - name: Install build dependencies
         run: |

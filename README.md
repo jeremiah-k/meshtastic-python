@@ -9,7 +9,7 @@
   <p style="font-size:15px;" align="center">A Python library and client for use with Meshtastic devices. </p>
 
 [![codecov](https://codecov.io/gh/meshtastic/python/branch/master/graph/badge.svg?token=TIWPJL73KV)](https://codecov.io/gh/meshtastic/python)
-![PyPI - Downloads](https://img.shields.io/pypi/dm/meshtastic)
+![PyPI - Downloads](https://img.shields.io/pypi/dm/mtjk)
 [![CI](https://img.shields.io/github/actions/workflow/status/meshtastic/python/ci.yml?branch=master&label=actions&logo=github&color=yellow)](https://github.com/meshtastic/python/actions/workflows/ci.yml)
 [![CLA assistant](https://cla-assistant.io/readme/badge/meshtastic/python)](https://cla-assistant.io/meshtastic/python)
 [![Fiscal Contributors](https://opencollective.com/meshtastic/tiers/badge.svg?label=Fiscal%20Contributors&color=deeppink)](https://opencollective.com/meshtastic/)
