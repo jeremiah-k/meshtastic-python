@@ -10,6 +10,18 @@ It is intended to be a drop-in, backward-compatible replacement for upstream:
 `mtjk` is a maintained fork, published separately while changes are validated and selectively upstreamed.
 Work on this fork began in September 2025; early BLE-focused details are in [BLE.md](BLE.md).
 
+## What Changed in This Fork
+
+- major BLE and interface internals were refactored for maintainability while keeping compatibility shims in place
+- concurrency and lifecycle paths were tightened to reduce race-condition and shutdown edge cases
+- CI and release workflows were modernized, including Trusted Publisher-based PyPI release flow
+
+For technical details, see:
+- [COMPATIBILITY.md](COMPATIBILITY.md): canonical inventory of compatibility shims, deprecations, and migration mapping.
+- [BLE.md](BLE.md): BLE architecture notes, lifecycle behavior, and BLE-specific implementation guidance.
+- [REFACTOR_PROGRAM.md](REFACTOR_PROGRAM.md): rationale and change log for the major refactor work in this fork.
+- [CONTRIBUTING.md](CONTRIBUTING.md): local setup, CI-equivalent checks, and contributor workflow conventions.
+
 ## Install the CLI (recommended: pipx)
 
 `pipx` is recommended for CLI tools so each app gets an isolated environment.
@@ -129,18 +141,6 @@ interface = meshtastic.serial_interface.SerialInterface()
 interface.sendText("hello mesh")
 interface.close()
 ```
-
-## What Changed in This Fork
-
-- major BLE and interface internals were refactored for maintainability while keeping compatibility shims in place
-- concurrency and lifecycle paths were tightened to reduce race-condition and shutdown edge cases
-- CI and release workflows were modernized, including Trusted Publisher-based PyPI release flow
-
-For technical details, see:
-- [COMPATIBILITY.md](COMPATIBILITY.md): canonical inventory of compatibility shims, deprecations, and migration mapping.
-- [BLE.md](BLE.md): BLE architecture notes, lifecycle behavior, and BLE-specific implementation guidance.
-- [REFACTOR_PROGRAM.md](REFACTOR_PROGRAM.md): rationale and change log for the major refactor work in this fork.
-- [CONTRIBUTING.md](CONTRIBUTING.md): local setup, CI-equivalent checks, and contributor workflow conventions.
 
 ## Support
 
