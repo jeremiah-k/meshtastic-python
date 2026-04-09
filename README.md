@@ -20,10 +20,9 @@ If you previously installed upstream `meshtastic`, remove it before installing t
 ```bash
 # If installed with pipx:
 pipx uninstall meshtastic || true
-pipx uninstall mtjk || true
 
 # If installed with pip in a Python environment:
-python3 -m pip uninstall -y meshtastic mtjk
+python3 -m pip uninstall -y meshtastic
 ```
 
 ### 2) Install this fork
@@ -38,6 +37,14 @@ pipx install mtjk
 meshtastic --version
 ```
 
+### Install latest from Git (`develop`)
+
+To install the latest unreleased version from this repository:
+
+```bash
+pipx install --force "git+https://github.com/jeremiah-k/meshtastic-python.git@develop"
+```
+
 ## Upgrade / Uninstall
 
 ```bash
@@ -46,6 +53,68 @@ pipx uninstall mtjk
 ```
 
 ## Developer Usage (existing Meshtastic API)
+
+Dependency name is `mtjk`, but import namespace remains `meshtastic`.
+
+Important:
+- If your dependency spec says `meshtastic`, you will install upstream.
+- Use `mtjk` in dependency specs to install this fork.
+- This fork does not provide `import mtjk`.
+
+### requirements.txt
+
+```text
+mtjk
+```
+
+Unreleased from Git:
+
+```text
+mtjk @ git+https://github.com/jeremiah-k/meshtastic-python.git@develop
+```
+
+If you need optional CLI extras in a dependency spec:
+
+```text
+mtjk[cli]
+mtjk[cli] @ git+https://github.com/jeremiah-k/meshtastic-python.git@develop
+```
+
+### pyproject.toml (PEP 621)
+
+```toml
+[project]
+dependencies = [
+  "mtjk",
+]
+```
+
+Unreleased from Git:
+
+```toml
+[project]
+dependencies = [
+  "mtjk @ git+https://github.com/jeremiah-k/meshtastic-python.git@develop",
+]
+```
+
+### setup.cfg
+
+```ini
+[options]
+install_requires =
+    mtjk
+```
+
+Unreleased from Git:
+
+```ini
+[options]
+install_requires =
+    mtjk @ git+https://github.com/jeremiah-k/meshtastic-python.git@develop
+```
+
+### Python import (unchanged)
 
 ```python
 import meshtastic
