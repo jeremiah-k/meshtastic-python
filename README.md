@@ -1,13 +1,13 @@
 # mtjk (Meshtastic Python Fork)
 
-`mtjk` is a work-in-progress fork of the Meshtastic Python project.
+`mtjk` is a fork of the Meshtastic Python project, published as `mtjk`.
 
 It is intended to be a drop-in, backward-compatible replacement for upstream:
 - package import namespace remains `meshtastic`
 - CLI command remains `meshtastic`
 - existing API compatibility is intentionally preserved
 
-This fork is temporary. The goal is to upstream what proves valuable after hardening and validation.
+This is a temporary fork used to ship and validate changes while we upstream improvements.
 
 ## Install the CLI (recommended: pipx)
 
@@ -144,3 +144,10 @@ Report issues for this fork here:
 - <https://github.com/jeremiah-k/meshtastic-python/issues>
 
 Please do not file fork-specific issues with upstream maintainers.
+
+## Release Notes (Maintainers)
+
+- Trusted Publisher workflow expects the git tag version to match `pyproject.toml` exactly.
+- Supported tag formats are `vX.Y.Z...` or `X.Y.Z...` (both map to the same package version check).
+- PyPI Trusted Publisher must match this repo/workflow/environment tuple:
+  `jeremiah-k/meshtastic-python` + `.github/workflows/pypi-publish.yml` + `pypi-release`.

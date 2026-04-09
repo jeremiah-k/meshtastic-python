@@ -166,7 +166,7 @@ def supportInfo() -> None:
     `meshtastic --info` when filing an issue.
     """
     print("")
-    print("If having issues with meshtastic cli or python library")
+    print("If having issues with meshtastic CLI / python library (mtjk fork)")
     print("or wish to make feature requests, visit:")
     print("https://github.com/jeremiah-k/meshtastic-python/issues")
     print("When adding an issue, be sure to include the following info:")
@@ -180,10 +180,10 @@ def supportInfo() -> None:
     pypi_version = meshtastic.util.check_if_newer_version()
     if pypi_version:
         print(
-            f" meshtastic: v{the_version} (*** newer version v{pypi_version} available ***)"
+            f" meshtastic (mtjk fork): v{the_version} (*** newer version v{pypi_version} available ***)"
         )
     else:
-        print(f" meshtastic: v{the_version}")
+        print(f" meshtastic (mtjk fork): v{the_version}")
     print(f" Executable: {sys.argv[0]}")
     print(
         f" Python: {platform.python_version()} {platform.python_implementation()} {platform.python_compiler()}"

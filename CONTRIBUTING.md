@@ -1,7 +1,10 @@
-# Contributing to Meshtastic Python
+# Contributing to mtjk (Meshtastic Python Fork)
 
 ## Development resources
 
+- Fork repository: <https://github.com/jeremiah-k/meshtastic-python>
+- Fork issue tracker: <https://github.com/jeremiah-k/meshtastic-python/issues>
+- Upstream technical docs (still useful reference):
 - [API Documentation](https://python.meshtastic.org/)
 - [Meshtastic Python Development](https://meshtastic.org/docs/development/python/)
 - [Building Meshtastic Python](https://meshtastic.org/docs/development/python/building/)
