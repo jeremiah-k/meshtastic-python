@@ -17,9 +17,8 @@ Work on this fork began in September 2025; early BLE-focused details are in [BLE
 - CI and release workflows were modernized, including Trusted Publisher-based PyPI release flow
 
 For technical details, see:
+- [REFACTOR_PROGRAM.md](REFACTOR_PROGRAM.md): rationale and early change log for the major refactor work in this fork.
 - [COMPATIBILITY.md](COMPATIBILITY.md): canonical inventory of compatibility shims, deprecations, and migration mapping.
-- [BLE.md](BLE.md): BLE architecture notes, lifecycle behavior, and BLE-specific implementation guidance.
-- [REFACTOR_PROGRAM.md](REFACTOR_PROGRAM.md): rationale and change log for the major refactor work in this fork.
 - [CONTRIBUTING.md](CONTRIBUTING.md): local setup, CI-equivalent checks, and contributor workflow conventions.
 
 ## Install the CLI (recommended: pipx)
