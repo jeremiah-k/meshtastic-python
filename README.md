@@ -8,7 +8,7 @@ It is intended to be a drop-in, backward-compatible replacement for upstream:
 - existing API compatibility is intentionally preserved
 
 `mtjk` is a maintained fork, published separately while changes are validated and selectively upstreamed.
-Work on this fork began in September 2025; early BLE-focused details are in [BLE.md](BLE.md).
+Work on this fork began in September 2025
 
 ## What Changed in This Fork
 
