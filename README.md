@@ -151,6 +151,8 @@ Please do not file fork-specific issues with upstream maintainers.
 
 ## Release Notes (Maintainers)
 
+- Versions match upstream releases with a `.postN` suffix (e.g., `2.7.8.post1` is the first fork release based on upstream `2.7.8`).
+- Create a GitHub release with tag `vX.Y.Z[.postN]` (or push the tag manually). This triggers the PyPI publish workflow via Trusted Publisher.
 - Trusted Publisher workflow expects the git tag version to match `pyproject.toml` exactly.
 - Supported tag formats are `vX.Y.Z...` or `X.Y.Z...` (both map to the same package version check).
 - PyPI Trusted Publisher must match this repo/workflow/environment tuple:
