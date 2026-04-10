@@ -2,9 +2,9 @@
 
 Primary interfaces: SerialInterface, TCPInterface, BLEInterface
 
-Install with pip: "[pip3 install meshtastic](https://pypi.org/project/meshtastic/)"
+Install with pip: "[pip3 install mtjk](https://pypi.org/project/mtjk/)"
 
-Source code on [github](https://github.com/meshtastic/python)
+Source code on [github](https://github.com/jeremiah-k/meshtastic-python)
 
 notable properties of interface classes:
 

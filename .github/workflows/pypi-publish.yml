@@ -1,7 +1,12 @@
 name: Publish to PyPI
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to publish (for example v2.7.8.post1)
+        required: false
+        type: string
   release:
     types: [published]
 
@@ -12,21 +17,88 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  build-and-publish:
+  build:
     runs-on: ubuntu-latest
-    environment: pypi-release
+    outputs:
+      tag: ${{ steps.release_tag.outputs.tag }}
+      version: ${{ steps.release_tag.outputs.version }}
     permissions:
-      id-token: write
       contents: read
-      packages: read
     steps:
-      - name: Checkout
+      - name: Resolve release tag
+        id: release_tag
+        run: |
+          TAG_INPUT="${{ github.event.inputs.tag || '' }}"
+
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            TAG="${{ github.event.release.tag_name }}"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ -n "${TAG_INPUT}" ]]; then
+              TAG="${TAG_INPUT}"
+            elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+              TAG="${GITHUB_REF_NAME}"
+            else
+              echo "::error::workflow_dispatch must be triggered from a tag ref or include the 'tag' input."
+              exit 1
+            fi
+          else
+            echo "::error::Unsupported event '${{ github.event_name }}'."
+            exit 1
+          fi
+          if [[ -z "${TAG}" ]]; then
+            echo "::error::Unable to resolve release tag."
+            exit 1
+          fi
+          if [[ ! "${TAG}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z]+)*$ ]]; then
+            echo "::error::Resolved tag '${TAG}' does not look like a release tag/version."
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          if [[ -z "${VERSION}" ]]; then
+            echo "::error::Resolved empty version from tag '${TAG}'."
+            exit 1
+          fi
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+
+      - name: Checkout tag
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ steps.release_tag.outputs.tag }}
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.13"
+
+      - name: Read package metadata
+        id: package_metadata
+        run: |
+          python - <<'PY' >> "${GITHUB_OUTPUT}"
+          from pathlib import Path
+          import tomllib
+
+          pyproject = tomllib.loads(Path("pyproject.toml").read_text())
+          poetry_data = pyproject["tool"]["poetry"]
+          print(f"name={poetry_data['name']}")
+          print(f"version={poetry_data['version']}")
+          PY
+
+      - name: Validate package name and tag/version match
+        run: |
+          PACKAGE_NAME="${{ steps.package_metadata.outputs.name }}"
+          PACKAGE_VERSION="${{ steps.package_metadata.outputs.version }}"
+          TAG_VERSION="${{ steps.release_tag.outputs.version }}"
+
+          if [[ "${PACKAGE_NAME}" != "mtjk" ]]; then
+            echo "::error::Expected tool.poetry.name to be 'mtjk', got '${PACKAGE_NAME}'."
+            exit 1
+          fi
+
+          if [[ "${PACKAGE_VERSION}" != "${TAG_VERSION}" ]]; then
+            echo "::error::Version mismatch: tag '${{ steps.release_tag.outputs.tag }}' -> '${TAG_VERSION}', pyproject -> '${PACKAGE_VERSION}'."
+            exit 1
+          fi
 
       - name: Install build dependencies
         run: |
@@ -39,5 +111,29 @@ jobs:
       - name: Check distributions
         run: python -m twine check dist/*
 
+      - name: Upload built distributions
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        with:
+          name: pypi-dist-${{ steps.release_tag.outputs.tag }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi-release
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Download built distributions
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: pypi-dist-${{ needs.build.outputs.tag }}
+          path: dist
+
       - name: Publish to PyPI (Trusted Publisher)
         uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0
+        with:
+          packages-dir: dist

@@ -1,73 +1,158 @@
-# Meshtastic Python
+# mtjk (Meshtastic Python Fork)
 
-<div align="center" markdown="1">
+`mtjk` is a fork of the Meshtastic Python project, published as `mtjk`.
 
-<img src=".github/meshtastic_logo.png" alt="Meshtastic Logo" width="80"/>
+It is intended to be a drop-in, backward-compatible replacement for upstream:
+- package import namespace remains `meshtastic`
+- CLI command remains `meshtastic`
+- existing API compatibility is intentionally preserved
 
-  <h1 align="center"> Meshtastic Python
-</h1>
-  <p style="font-size:15px;" align="center">A Python library and client for use with Meshtastic devices. </p>
+`mtjk` is a maintained fork, published separately while changes are validated and selectively upstreamed.
+Work on this fork began in September 2025; early BLE-focused details are in [BLE.md](BLE.md).
 
-[![codecov](https://codecov.io/gh/meshtastic/python/branch/master/graph/badge.svg?token=TIWPJL73KV)](https://codecov.io/gh/meshtastic/python)
-![PyPI - Downloads](https://img.shields.io/pypi/dm/meshtastic)
-[![CI](https://img.shields.io/github/actions/workflow/status/meshtastic/python/ci.yml?branch=master&label=actions&logo=github&color=yellow)](https://github.com/meshtastic/python/actions/workflows/ci.yml)
-[![CLA assistant](https://cla-assistant.io/readme/badge/meshtastic/python)](https://cla-assistant.io/meshtastic/python)
-[![Fiscal Contributors](https://opencollective.com/meshtastic/tiers/badge.svg?label=Fiscal%20Contributors&color=deeppink)](https://opencollective.com/meshtastic/)
-![GPL-3.0](https://img.shields.io/badge/License-GPL%20v3-blue.svg)
+## What Changed in This Fork
 
-</div>
+- major BLE and interface internals were refactored for maintainability while keeping compatibility shims in place
+- concurrency and lifecycle paths were tightened to reduce race-condition and shutdown edge cases
+- CI and release workflows were modernized, including Trusted Publisher-based PyPI release flow
 
-<div align="center">
-	<a href="https://meshtastic.org/docs/software/python/cli/installation">Getting Started Guide</a>
-	-
-	<a href="https://python.meshtastic.org">API Documentation</a>
-</div>
+For technical details, see:
+- [REFACTOR_PROGRAM.md](REFACTOR_PROGRAM.md): rationale and early change log for the major refactor work in this fork.
+- [COMPATIBILITY.md](COMPATIBILITY.md): canonical inventory of compatibility shims, deprecations, and migration mapping.
+- [CONTRIBUTING.md](CONTRIBUTING.md): local setup, CI-equivalent checks, and contributor workflow conventions.
 
-## Overview
+## Install the CLI (recommended: pipx)
 
-This small library (and example application) provides an easy API for sending and receiving messages over mesh radios.
-It also provides access to any of the operations/data available in the device user interface or the Android application.
-Events are delivered using a publish-subscribe model, and you can subscribe to only the message types you are interested in.
+`pipx` is recommended for CLI tools so each app gets an isolated environment.
 
-## Local Development Setup
+### 1) Remove prior installs first (recommended)
 
-For full setup, local checks, and CI-equivalent commands, see
-[CONTRIBUTING.md](CONTRIBUTING.md).
+If you previously installed upstream `meshtastic`, remove it before installing this fork.
 
-## Call for Contributors
+```bash
+# If installed with pipx:
+pipx uninstall meshtastic || true
 
-This library and CLI has gone without a consistent maintainer for a while, and there's many improvements that could be made. We're all volunteers here and help is extremely appreciated, whether in implementing your own needs or helping maintain the library and CLI in general.
+# If installed with pip in a Python environment:
+python3 -m pip uninstall -y meshtastic
+```
 
-If you're interested in contributing but don't have specific things you'd like to work on, look at the roadmap below!
+### 2) Install this fork
 
-## Roadmap
+```bash
+pipx install mtjk
+```
 
-This should always be considered a list in progress and flux -- inclusion doesn't guarantee implementation, and exclusion doesn't mean something's not wanted. GitHub issues are a great place to discuss ideas.
+### 3) Verify
 
-- ✅ Types
-  - Codebase is `mypy --strict` compatible.
-  - CI still runs `mypy meshtastic/` (non-strict); strict is available via `make ci-strict`.
-- 🟡 Async-friendliness
-  - BLE lifecycle/reconnect internals were substantially refactored and race-hardened.
-  - Additional async-friendly API improvements are still open.
-- 🟡 API consistency and compatibility
-  - Broad camelCase normalization with explicit compatibility shims is in place across key modules.
-  - Historical BLE compatibility surface from 2.7.7 is preserved.
-- ✅ Example readability
-  - Examples were updated and simplified to emphasize library usage patterns
-- ⏳ CLI completeness and consistency
-  - Support full firmware feature coverage in the CLI.
-  - Provide stable, script-friendly output formats.
-- ⏳ CLI input validation and documentation
-  - Clarify compatible/incompatible argument combinations.
-  - Document pubsub events and common workflows.
-- ⏳ Helpers for third-party code
-  - Provide reusable helpers so external tools can share CLI-style connection options.
-- ⏳ Data storage and processing
-  - Standardize packet recording for post-analysis/debugging.
-  - Evaluate persistence beyond nodedb (for example sqlite-backed tooling).
-  - Expand maps/charts/visualization support.
+```bash
+meshtastic --version
+```
 
-## Stats
+### Install latest from Git (`develop`)
 
-![Alt](https://repobeats.axiom.co/api/embed/c71ee8fc4a79690402e5d2807a41eec5e96d9039.svg "Repobeats analytics image")
+To install the latest unreleased version from this repository (clean install):
+
+```bash
+# If you previously installed upstream via pipx, remove it first:
+pipx uninstall meshtastic || true
+
+pipx uninstall mtjk || true
+pipx install "git+https://github.com/jeremiah-k/meshtastic-python.git@develop"
+```
+
+## Upgrade / Uninstall
+
+```bash
+pipx upgrade mtjk
+pipx uninstall mtjk
+```
+
+## Developer Usage (existing Meshtastic API)
+
+Dependency name is `mtjk`, but import namespace remains `meshtastic`.
+
+Important:
+- If your dependency spec says `meshtastic`, you will install upstream.
+- Use `mtjk` in dependency specs to install this fork.
+- This fork does not provide `import mtjk`.
+
+### requirements.txt
+
+```text
+mtjk
+```
+
+Unreleased from Git:
+
+```text
+mtjk @ git+https://github.com/jeremiah-k/meshtastic-python.git@develop
+```
+
+If you need optional CLI extras in a dependency spec:
+
+```text
+mtjk[cli]
+mtjk[cli] @ git+https://github.com/jeremiah-k/meshtastic-python.git@develop
+```
+
+### pyproject.toml (PEP 621)
+
+```toml
+[project]
+dependencies = [
+  "mtjk",
+]
+```
+
+Unreleased from Git:
+
+```toml
+[project]
+dependencies = [
+  "mtjk @ git+https://github.com/jeremiah-k/meshtastic-python.git@develop",
+]
+```
+
+### setup.cfg
+
+```ini
+[options]
+install_requires =
+    mtjk
+```
+
+Unreleased from Git:
+
+```ini
+[options]
+install_requires =
+    mtjk @ git+https://github.com/jeremiah-k/meshtastic-python.git@develop
+```
+
+### Python import (unchanged)
+
+```python
+import meshtastic
+import meshtastic.serial_interface
+
+interface = meshtastic.serial_interface.SerialInterface()
+interface.sendText("hello mesh")
+interface.close()
+```
+
+## Support
+
+Report issues for this fork here:
+- <https://github.com/jeremiah-k/meshtastic-python/issues>
+
+Please do not file fork-specific issues with upstream maintainers.
+
+## Release Notes (Maintainers)
+
+- Versions match upstream releases with a `.postN` suffix (e.g., `2.7.8.post1` is the first fork release based on upstream `2.7.8`).
+- Create a GitHub release with tag `vX.Y.Z[.postN]` (or push the tag manually). This triggers the PyPI publish workflow via Trusted Publisher.
+- Trusted Publisher workflow expects the git tag version to match `pyproject.toml` exactly.
+- Supported tag formats are `vX.Y.Z...` or `X.Y.Z...` (both map to the same package version check).
+- PyPI Trusted Publisher must match this repo/workflow/environment tuple:
+  `jeremiah-k/meshtastic-python` + `.github/workflows/pypi-publish.yml` + `pypi-release`.
