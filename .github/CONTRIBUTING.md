@@ -1,4 +1,4 @@
-# Contributing Guide
+# Development Guide
 
-The canonical contributing guide lives at the repository root:
-[`CONTRIBUTING.md`](../CONTRIBUTING.md).
+The canonical development guide and pull-request policy live at the repository
+root: [`CONTRIBUTING.md`](../CONTRIBUTING.md).

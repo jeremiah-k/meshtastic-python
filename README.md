@@ -1,23 +1,39 @@
-# mtjk (Meshtastic Python Fork)
+# mtjk
 
-`mtjk` is a fork of the Meshtastic Python project, published as `mtjk`.
+`mtjk` is a separately published distribution of the Meshtastic Python
+library, maintained while changes are validated and selectively upstreamed.
 
-It is intended to be a drop-in, backward-compatible replacement for upstream:
+Work began in September 2025 to stabilize connection interfaces and message
+delivery for [mmrelay](https://github.com/jeremiah-k/meshtastic-matrix-relay).
+The modernization work keeps existing Meshtastic Python usage compatible:
+
 - package import namespace remains `meshtastic`
 - CLI command remains `meshtastic`
 - existing API compatibility is intentionally preserved
 
-`mtjk` is a maintained fork, published separately while changes are validated and selectively upstreamed.
-Work on this fork began in September 2025
+It is intended to be a drop-in, backward-compatible replacement for upstream.
 
-## What Changed in This Fork
+## Project Status
+
+This is a **temporary fork** of
+[meshtastic/python](https://github.com/meshtastic/python). It exists to ship
+fixes and improvements while they are validated and upstreamed selectively.
+
+**This repository does not accept pull requests.** Community development efforts should be directed to the upstream project:
+
+- Upstream repo: <https://github.com/meshtastic/python>
+- Upstream contributing guide: <https://github.com/meshtastic/python/blob/master/CONTRIBUTING.md>
+
+If you find a fix or improvement here that you would like to carry upstream, please do so.
+
+## Notable Changes
 
 - major BLE and interface internals were refactored for maintainability while keeping compatibility shims in place
 - concurrency and lifecycle paths were tightened to reduce race-condition and shutdown edge cases
 - CI and release workflows were modernized, including Trusted Publisher-based PyPI release flow
 
 For technical details, see:
-- [REFACTOR_PROGRAM.md](REFACTOR_PROGRAM.md): rationale and early change log for the major refactor work in this fork.
+- [REFACTOR_PROGRAM.md](REFACTOR_PROGRAM.md): rationale and early change log for the major refactor work maintained here.
 - [COMPATIBILITY.md](COMPATIBILITY.md): canonical inventory of compatibility shims, deprecations, and migration mapping.
 - [CONTRIBUTING.md](CONTRIBUTING.md): local setup, CI-equivalent checks, and contributor workflow conventions.
 
@@ -27,7 +43,7 @@ For technical details, see:
 
 ### 1) Remove prior installs first (recommended)
 
-If you previously installed upstream `meshtastic`, remove it before installing this fork.
+If you previously installed upstream `meshtastic`, remove it before installing `mtjk`.
 
 ```bash
 # If installed with pipx:
@@ -37,7 +53,7 @@ pipx uninstall meshtastic || true
 python3 -m pip uninstall -y meshtastic
 ```
 
-### 2) Install this fork
+### 2) Install `mtjk`
 
 ```bash
 pipx install mtjk
@@ -74,8 +90,8 @@ Dependency name is `mtjk`, but import namespace remains `meshtastic`.
 
 Important:
 - If your dependency spec says `meshtastic`, you will install upstream.
-- Use `mtjk` in dependency specs to install this fork.
-- This fork does not provide `import mtjk`.
+- Use `mtjk` in dependency specs for this package.
+- The package does not provide `import mtjk`.
 
 ### requirements.txt
 
@@ -143,14 +159,14 @@ interface.close()
 
 ## Support
 
-Report issues for this fork here:
+Report `mtjk`-specific issues here:
 - <https://github.com/jeremiah-k/meshtastic-python/issues>
 
-Please do not file fork-specific issues with upstream maintainers.
+Please do not file `mtjk`-specific issues with upstream maintainers.
 
 ## Release Notes (Maintainers)
 
-- Versions match upstream releases with a `.postN` suffix (e.g., `2.7.8.post1` is the first fork release based on upstream `2.7.8`).
+- Versions match upstream releases with a `.postN` suffix (e.g., `2.7.8.post1` is the first `mtjk` release based on upstream `2.7.8`).
 - Create a GitHub release with tag `vX.Y.Z[.postN]` (or push the tag manually). This triggers the PyPI publish workflow via Trusted Publisher.
 - Trusted Publisher workflow expects the git tag version to match `pyproject.toml` exactly.
 - Supported tag formats are `vX.Y.Z...` or `X.Y.Z...` (both map to the same package version check).

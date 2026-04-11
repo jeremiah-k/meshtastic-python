@@ -1,9 +1,18 @@
-# Contributing to mtjk (Meshtastic Python Fork)
+# mtjk Development Guide
+
+> **This repository does not accept pull requests.** `mtjk` is maintained
+> separately on a temporary basis. Community contributions should be directed to
+> the upstream project at
+> [meshtastic/python](https://github.com/meshtastic/python).
+>
+> This document is retained as **developer documentation** for anyone who needs
+> to understand or maintain this repository: codebase structure, local checks,
+> and CI flow.
 
 ## Development resources
 
-- Fork repository: <https://github.com/jeremiah-k/meshtastic-python>
-- Fork issue tracker: <https://github.com/jeremiah-k/meshtastic-python/issues>
+- `mtjk` repository: <https://github.com/jeremiah-k/meshtastic-python>
+- `mtjk` issue tracker: <https://github.com/jeremiah-k/meshtastic-python/issues>
 - Upstream technical docs (still useful reference):
   - [API Documentation](https://python.meshtastic.org/)
   - [Meshtastic Python Development](https://meshtastic.org/docs/development/python/)
