@@ -3,26 +3,26 @@
 isort:skip_file
 trunk-ignore(buf-lint/PACKAGE_DIRECTORY_MATCH)"""
 
-import builtins
-import google.protobuf.descriptor
-import google.protobuf.internal.enum_type_wrapper
-import google.protobuf.message
+from google.protobuf import descriptor as _descriptor
+from google.protobuf import message as _message
+from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
+import builtins as _builtins
 import sys
-import typing
+import typing as _typing
 
 if sys.version_info >= (3, 10):
-    import typing as typing_extensions
+    from typing import TypeAlias as _TypeAlias
 else:
-    import typing_extensions
+    from typing_extensions import TypeAlias as _TypeAlias
 
-DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
+DESCRIPTOR: _descriptor.FileDescriptor
 
 class _Team:
-    ValueType = typing.NewType("ValueType", builtins.int)
-    V: typing_extensions.TypeAlias = ValueType
+    ValueType = _typing.NewType("ValueType", _builtins.int)
+    V: _TypeAlias = ValueType  # noqa: Y015
 
-class _TeamEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_Team.ValueType], builtins.type):
-    DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
+class _TeamEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_Team.ValueType], _builtins.type):
+    DESCRIPTOR: _descriptor.EnumDescriptor
     Unspecifed_Color: _Team.ValueType  # 0
     """
     Unspecifed
@@ -146,14 +146,14 @@ Brown: Team.ValueType  # 14
 """
 Brown
 """
-global___Team = Team
+Global___Team: _TypeAlias = Team  # noqa: Y015
 
 class _MemberRole:
-    ValueType = typing.NewType("ValueType", builtins.int)
-    V: typing_extensions.TypeAlias = ValueType
+    ValueType = _typing.NewType("ValueType", _builtins.int)
+    V: _TypeAlias = ValueType  # noqa: Y015
 
-class _MemberRoleEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_MemberRole.ValueType], builtins.type):
-    DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
+class _MemberRoleEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_MemberRole.ValueType], _builtins.type):
+    DESCRIPTOR: _descriptor.EnumDescriptor
     Unspecifed: _MemberRole.ValueType  # 0
     """
     Unspecifed
@@ -232,58 +232,875 @@ K9: MemberRole.ValueType  # 8
 """
 Doggo
 """
-global___MemberRole = MemberRole
+Global___MemberRole: _TypeAlias = MemberRole  # noqa: Y015
 
-@typing.final
-class TAKPacket(google.protobuf.message.Message):
+class _CotHow:
+    ValueType = _typing.NewType("ValueType", _builtins.int)
+    V: _TypeAlias = ValueType  # noqa: Y015
+
+class _CotHowEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_CotHow.ValueType], _builtins.type):
+    DESCRIPTOR: _descriptor.EnumDescriptor
+    CotHow_Unspecified: _CotHow.ValueType  # 0
+    """
+    Unspecified
+    """
+    CotHow_h_e: _CotHow.ValueType  # 1
+    """
+    Human entered
+    """
+    CotHow_m_g: _CotHow.ValueType  # 2
+    """
+    Machine generated
+    """
+    CotHow_h_g_i_g_o: _CotHow.ValueType  # 3
+    """
+    Human GPS/INS derived
+    """
+    CotHow_m_r: _CotHow.ValueType  # 4
+    """
+    Machine relayed (imported from another system/gateway)
+    """
+    CotHow_m_f: _CotHow.ValueType  # 5
+    """
+    Machine fused (corroborated from multiple sources)
+    """
+    CotHow_m_p: _CotHow.ValueType  # 6
+    """
+    Machine predicted
+    """
+    CotHow_m_s: _CotHow.ValueType  # 7
+    """
+    Machine simulated
+    """
+
+class CotHow(_CotHow, metaclass=_CotHowEnumTypeWrapper):
+    """
+    CoT how field values.
+    Represents how the coordinates were generated.
+    """
+
+CotHow_Unspecified: CotHow.ValueType  # 0
+"""
+Unspecified
+"""
+CotHow_h_e: CotHow.ValueType  # 1
+"""
+Human entered
+"""
+CotHow_m_g: CotHow.ValueType  # 2
+"""
+Machine generated
+"""
+CotHow_h_g_i_g_o: CotHow.ValueType  # 3
+"""
+Human GPS/INS derived
+"""
+CotHow_m_r: CotHow.ValueType  # 4
+"""
+Machine relayed (imported from another system/gateway)
+"""
+CotHow_m_f: CotHow.ValueType  # 5
+"""
+Machine fused (corroborated from multiple sources)
+"""
+CotHow_m_p: CotHow.ValueType  # 6
+"""
+Machine predicted
+"""
+CotHow_m_s: CotHow.ValueType  # 7
+"""
+Machine simulated
+"""
+Global___CotHow: _TypeAlias = CotHow  # noqa: Y015
+
+class _CotType:
+    ValueType = _typing.NewType("ValueType", _builtins.int)
+    V: _TypeAlias = ValueType  # noqa: Y015
+
+class _CotTypeEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_CotType.ValueType], _builtins.type):
+    DESCRIPTOR: _descriptor.EnumDescriptor
+    CotType_Other: _CotType.ValueType  # 0
+    """
+    Unknown or unmapped type, use cot_type_str
+    """
+    CotType_a_f_G_U_C: _CotType.ValueType  # 1
+    """
+    a-f-G-U-C: Friendly ground unit combat
+    """
+    CotType_a_f_G_U_C_I: _CotType.ValueType  # 2
+    """
+    a-f-G-U-C-I: Friendly ground unit combat infantry
+    """
+    CotType_a_n_A_C_F: _CotType.ValueType  # 3
+    """
+    a-n-A-C-F: Neutral aircraft civilian fixed-wing
+    """
+    CotType_a_n_A_C_H: _CotType.ValueType  # 4
+    """
+    a-n-A-C-H: Neutral aircraft civilian helicopter
+    """
+    CotType_a_n_A_C: _CotType.ValueType  # 5
+    """
+    a-n-A-C: Neutral aircraft civilian
+    """
+    CotType_a_f_A_M_H: _CotType.ValueType  # 6
+    """
+    a-f-A-M-H: Friendly aircraft military helicopter
+    """
+    CotType_a_f_A_M: _CotType.ValueType  # 7
+    """
+    a-f-A-M: Friendly aircraft military
+    """
+    CotType_a_f_A_M_F_F: _CotType.ValueType  # 8
+    """
+    a-f-A-M-F-F: Friendly aircraft military fixed-wing fighter
+    """
+    CotType_a_f_A_M_H_A: _CotType.ValueType  # 9
+    """
+    a-f-A-M-H-A: Friendly aircraft military helicopter attack
+    """
+    CotType_a_f_A_M_H_U_M: _CotType.ValueType  # 10
+    """
+    a-f-A-M-H-U-M: Friendly aircraft military helicopter utility medium
+    """
+    CotType_a_h_A_M_F_F: _CotType.ValueType  # 11
+    """
+    a-h-A-M-F-F: Hostile aircraft military fixed-wing fighter
+    """
+    CotType_a_h_A_M_H_A: _CotType.ValueType  # 12
+    """
+    a-h-A-M-H-A: Hostile aircraft military helicopter attack
+    """
+    CotType_a_u_A_C: _CotType.ValueType  # 13
+    """
+    a-u-A-C: Unknown aircraft civilian
+    """
+    CotType_t_x_d_d: _CotType.ValueType  # 14
+    """
+    t-x-d-d: Tasking delete/disconnect
+    """
+    CotType_a_f_G_E_S_E: _CotType.ValueType  # 15
+    """
+    a-f-G-E-S-E: Friendly ground equipment sensor
+    """
+    CotType_a_f_G_E_V_C: _CotType.ValueType  # 16
+    """
+    a-f-G-E-V-C: Friendly ground equipment vehicle
+    """
+    CotType_a_f_S: _CotType.ValueType  # 17
+    """
+    a-f-S: Friendly sea
+    """
+    CotType_a_f_A_M_F: _CotType.ValueType  # 18
+    """
+    a-f-A-M-F: Friendly aircraft military fixed-wing
+    """
+    CotType_a_f_A_M_F_C_H: _CotType.ValueType  # 19
+    """
+    a-f-A-M-F-C-H: Friendly aircraft military fixed-wing cargo heavy
+    """
+    CotType_a_f_A_M_F_U_L: _CotType.ValueType  # 20
+    """
+    a-f-A-M-F-U-L: Friendly aircraft military fixed-wing utility light
+    """
+    CotType_a_f_A_M_F_L: _CotType.ValueType  # 21
+    """
+    a-f-A-M-F-L: Friendly aircraft military fixed-wing liaison
+    """
+    CotType_a_f_A_M_F_P: _CotType.ValueType  # 22
+    """
+    a-f-A-M-F-P: Friendly aircraft military fixed-wing patrol
+    """
+    CotType_a_f_A_C_H: _CotType.ValueType  # 23
+    """
+    a-f-A-C-H: Friendly aircraft civilian helicopter
+    """
+    CotType_a_n_A_M_F_Q: _CotType.ValueType  # 24
+    """
+    a-n-A-M-F-Q: Neutral aircraft military fixed-wing drone
+    """
+    CotType_b_t_f: _CotType.ValueType  # 25
+    """--- Chat / messaging ---
+
+
+    b-t-f: GeoChat message
+    """
+    CotType_b_r_f_h_c: _CotType.ValueType  # 26
+    """--- CASEVAC / MEDEVAC ---
+
+
+    b-r-f-h-c: CASEVAC/MEDEVAC report
+    """
+    CotType_b_a_o_pan: _CotType.ValueType  # 27
+    """--- Alerts ---
+
+
+    b-a-o-pan: Ring the bell / alert all
+    """
+    CotType_b_a_o_opn: _CotType.ValueType  # 28
+    """
+    b-a-o-opn: Troops in contact
+    """
+    CotType_b_a_o_can: _CotType.ValueType  # 29
+    """
+    b-a-o-can: Cancel alert
+    """
+    CotType_b_a_o_tbl: _CotType.ValueType  # 30
+    """
+    b-a-o-tbl: 911 alert
+    """
+    CotType_b_a_g: _CotType.ValueType  # 31
+    """
+    b-a-g: Geofence breach alert
+    """
+    CotType_a_f_G: _CotType.ValueType  # 32
+    """--- Generic ground atoms (simplified affiliation types) ---
+
+
+    a-f-G: Friendly ground (generic)
+    """
+    CotType_a_f_G_U: _CotType.ValueType  # 33
+    """
+    a-f-G-U: Friendly ground unit (generic)
+    """
+    CotType_a_h_G: _CotType.ValueType  # 34
+    """
+    a-h-G: Hostile ground (generic)
+    """
+    CotType_a_u_G: _CotType.ValueType  # 35
+    """
+    a-u-G: Unknown ground (generic)
+    """
+    CotType_a_n_G: _CotType.ValueType  # 36
+    """
+    a-n-G: Neutral ground (generic)
+    """
+    CotType_b_m_r: _CotType.ValueType  # 37
+    """--- Routes and waypoints ---
+
+
+    b-m-r: Route
+    """
+    CotType_b_m_p_w: _CotType.ValueType  # 38
+    """
+    b-m-p-w: Route waypoint
+    """
+    CotType_b_m_p_s_p_i: _CotType.ValueType  # 39
+    """
+    b-m-p-s-p-i: Self-position marker
+    """
+    CotType_u_d_f: _CotType.ValueType  # 40
+    """--- Drawing / tactical graphics ---
+
+
+    u-d-f: Freeform shape (line/polygon)
+    """
+    CotType_u_d_r: _CotType.ValueType  # 41
+    """
+    u-d-r: Rectangle
+    """
+    CotType_u_d_c_c: _CotType.ValueType  # 42
+    """
+    u-d-c-c: Circle
+    """
+    CotType_u_rb_a: _CotType.ValueType  # 43
+    """
+    u-rb-a: Range/bearing line
+    """
+    CotType_a_h_A: _CotType.ValueType  # 44
+    """--- Additional hostile/unknown aircraft ---
+
+
+    a-h-A: Hostile aircraft (generic)
+    """
+    CotType_a_u_A: _CotType.ValueType  # 45
+    """
+    a-u-A: Unknown aircraft (generic)
+    """
+    CotType_a_f_A_M_H_Q: _CotType.ValueType  # 46
+    """
+    a-f-A-M-H-Q: Friendly aircraft military helicopter observation
+    """
+    CotType_a_f_A_C_F: _CotType.ValueType  # 47
+    """Friendly aircraft civilian
+
+
+    a-f-A-C-F: Friendly aircraft civilian fixed-wing
+    """
+    CotType_a_f_A_C: _CotType.ValueType  # 48
+    """
+    a-f-A-C: Friendly aircraft civilian (generic)
+    """
+    CotType_a_f_A_C_L: _CotType.ValueType  # 49
+    """
+    a-f-A-C-L: Friendly aircraft civilian lighter-than-air
+    """
+    CotType_a_f_A: _CotType.ValueType  # 50
+    """
+    a-f-A: Friendly aircraft (generic)
+    """
+    CotType_a_f_A_M_H_C: _CotType.ValueType  # 51
+    """Friendly aircraft military helicopter variants
+
+
+    a-f-A-M-H-C: Friendly aircraft military helicopter cargo
+    """
+    CotType_a_n_A_M_F_F: _CotType.ValueType  # 52
+    """Neutral aircraft military
+
+
+    a-n-A-M-F-F: Neutral aircraft military fixed-wing fighter
+    """
+    CotType_a_u_A_C_F: _CotType.ValueType  # 53
+    """Unknown aircraft civilian
+
+
+    a-u-A-C-F: Unknown aircraft civilian fixed-wing
+    """
+    CotType_a_f_G_U_C_F_T_A: _CotType.ValueType  # 54
+    """Friendly ground unit subtypes
+
+
+    a-f-G-U-C-F-T-A: Friendly ground unit combat forces theater aviation
+    """
+    CotType_a_f_G_U_C_V_S: _CotType.ValueType  # 55
+    """
+    a-f-G-U-C-V-S: Friendly ground unit combat vehicle support
+    """
+    CotType_a_f_G_U_C_R_X: _CotType.ValueType  # 56
+    """
+    a-f-G-U-C-R-X: Friendly ground unit combat reconnaissance exploitation
+    """
+    CotType_a_f_G_U_C_I_Z: _CotType.ValueType  # 57
+    """
+    a-f-G-U-C-I-Z: Friendly ground unit combat infantry mechanized
+    """
+    CotType_a_f_G_U_C_E_C_W: _CotType.ValueType  # 58
+    """
+    a-f-G-U-C-E-C-W: Friendly ground unit combat engineer construction wheeled
+    """
+    CotType_a_f_G_U_C_I_L: _CotType.ValueType  # 59
+    """
+    a-f-G-U-C-I-L: Friendly ground unit combat infantry light
+    """
+    CotType_a_f_G_U_C_R_O: _CotType.ValueType  # 60
+    """
+    a-f-G-U-C-R-O: Friendly ground unit combat reconnaissance other
+    """
+    CotType_a_f_G_U_C_R_V: _CotType.ValueType  # 61
+    """
+    a-f-G-U-C-R-V: Friendly ground unit combat reconnaissance cavalry
+    """
+    CotType_a_f_G_U_H: _CotType.ValueType  # 62
+    """
+    a-f-G-U-H: Friendly ground unit headquarters
+    """
+    CotType_a_f_G_U_U_M_S_E: _CotType.ValueType  # 63
+    """
+    a-f-G-U-U-M-S-E: Friendly ground unit support medical surgical evacuation
+    """
+    CotType_a_f_G_U_S_M_C: _CotType.ValueType  # 64
+    """
+    a-f-G-U-S-M-C: Friendly ground unit support maintenance collection
+    """
+    CotType_a_f_G_E_S: _CotType.ValueType  # 65
+    """Friendly ground equipment
+
+
+    a-f-G-E-S: Friendly ground equipment sensor (generic)
+    """
+    CotType_a_f_G_E: _CotType.ValueType  # 66
+    """
+    a-f-G-E: Friendly ground equipment (generic)
+    """
+    CotType_a_f_G_E_V_C_U: _CotType.ValueType  # 67
+    """
+    a-f-G-E-V-C-U: Friendly ground equipment vehicle utility
+    """
+    CotType_a_f_G_E_V_C_ps: _CotType.ValueType  # 68
+    """
+    a-f-G-E-V-C-ps: Friendly ground equipment vehicle public safety
+    """
+    CotType_a_u_G_E_V: _CotType.ValueType  # 69
+    """Unknown ground
+
+
+    a-u-G-E-V: Unknown ground equipment vehicle
+    """
+    CotType_a_f_S_N_N_R: _CotType.ValueType  # 70
+    """Sea
+
+
+    a-f-S-N-N-R: Friendly sea surface non-naval rescue
+    """
+    CotType_a_f_F_B: _CotType.ValueType  # 71
+    """Friendly force (non-domain-specific)
+
+
+    a-f-F-B: Friendly force boundary
+    """
+    CotType_b_m_p_s_p_loc: _CotType.ValueType  # 72
+    """Bits / data messages
+
+
+    b-m-p-s-p-loc: Self-position location marker
+    """
+    CotType_b_i_v: _CotType.ValueType  # 73
+    """
+    b-i-v: Imagery/video
+    """
+    CotType_b_f_t_r: _CotType.ValueType  # 74
+    """
+    b-f-t-r: File transfer request
+    """
+    CotType_b_f_t_a: _CotType.ValueType  # 75
+    """
+    b-f-t-a: File transfer acknowledgment
+    """
+
+class CotType(_CotType, metaclass=_CotTypeEnumTypeWrapper):
+    """
+    Well-known CoT event types.
+    When the type is known, use the enum value for efficient encoding.
+    For unknown types, set cot_type_id to CotType_Other and populate cot_type_str.
+    """
+
+CotType_Other: CotType.ValueType  # 0
+"""
+Unknown or unmapped type, use cot_type_str
+"""
+CotType_a_f_G_U_C: CotType.ValueType  # 1
+"""
+a-f-G-U-C: Friendly ground unit combat
+"""
+CotType_a_f_G_U_C_I: CotType.ValueType  # 2
+"""
+a-f-G-U-C-I: Friendly ground unit combat infantry
+"""
+CotType_a_n_A_C_F: CotType.ValueType  # 3
+"""
+a-n-A-C-F: Neutral aircraft civilian fixed-wing
+"""
+CotType_a_n_A_C_H: CotType.ValueType  # 4
+"""
+a-n-A-C-H: Neutral aircraft civilian helicopter
+"""
+CotType_a_n_A_C: CotType.ValueType  # 5
+"""
+a-n-A-C: Neutral aircraft civilian
+"""
+CotType_a_f_A_M_H: CotType.ValueType  # 6
+"""
+a-f-A-M-H: Friendly aircraft military helicopter
+"""
+CotType_a_f_A_M: CotType.ValueType  # 7
+"""
+a-f-A-M: Friendly aircraft military
+"""
+CotType_a_f_A_M_F_F: CotType.ValueType  # 8
+"""
+a-f-A-M-F-F: Friendly aircraft military fixed-wing fighter
+"""
+CotType_a_f_A_M_H_A: CotType.ValueType  # 9
+"""
+a-f-A-M-H-A: Friendly aircraft military helicopter attack
+"""
+CotType_a_f_A_M_H_U_M: CotType.ValueType  # 10
+"""
+a-f-A-M-H-U-M: Friendly aircraft military helicopter utility medium
+"""
+CotType_a_h_A_M_F_F: CotType.ValueType  # 11
+"""
+a-h-A-M-F-F: Hostile aircraft military fixed-wing fighter
+"""
+CotType_a_h_A_M_H_A: CotType.ValueType  # 12
+"""
+a-h-A-M-H-A: Hostile aircraft military helicopter attack
+"""
+CotType_a_u_A_C: CotType.ValueType  # 13
+"""
+a-u-A-C: Unknown aircraft civilian
+"""
+CotType_t_x_d_d: CotType.ValueType  # 14
+"""
+t-x-d-d: Tasking delete/disconnect
+"""
+CotType_a_f_G_E_S_E: CotType.ValueType  # 15
+"""
+a-f-G-E-S-E: Friendly ground equipment sensor
+"""
+CotType_a_f_G_E_V_C: CotType.ValueType  # 16
+"""
+a-f-G-E-V-C: Friendly ground equipment vehicle
+"""
+CotType_a_f_S: CotType.ValueType  # 17
+"""
+a-f-S: Friendly sea
+"""
+CotType_a_f_A_M_F: CotType.ValueType  # 18
+"""
+a-f-A-M-F: Friendly aircraft military fixed-wing
+"""
+CotType_a_f_A_M_F_C_H: CotType.ValueType  # 19
+"""
+a-f-A-M-F-C-H: Friendly aircraft military fixed-wing cargo heavy
+"""
+CotType_a_f_A_M_F_U_L: CotType.ValueType  # 20
+"""
+a-f-A-M-F-U-L: Friendly aircraft military fixed-wing utility light
+"""
+CotType_a_f_A_M_F_L: CotType.ValueType  # 21
+"""
+a-f-A-M-F-L: Friendly aircraft military fixed-wing liaison
+"""
+CotType_a_f_A_M_F_P: CotType.ValueType  # 22
+"""
+a-f-A-M-F-P: Friendly aircraft military fixed-wing patrol
+"""
+CotType_a_f_A_C_H: CotType.ValueType  # 23
+"""
+a-f-A-C-H: Friendly aircraft civilian helicopter
+"""
+CotType_a_n_A_M_F_Q: CotType.ValueType  # 24
+"""
+a-n-A-M-F-Q: Neutral aircraft military fixed-wing drone
+"""
+CotType_b_t_f: CotType.ValueType  # 25
+"""--- Chat / messaging ---
+
+
+b-t-f: GeoChat message
+"""
+CotType_b_r_f_h_c: CotType.ValueType  # 26
+"""--- CASEVAC / MEDEVAC ---
+
+
+b-r-f-h-c: CASEVAC/MEDEVAC report
+"""
+CotType_b_a_o_pan: CotType.ValueType  # 27
+"""--- Alerts ---
+
+
+b-a-o-pan: Ring the bell / alert all
+"""
+CotType_b_a_o_opn: CotType.ValueType  # 28
+"""
+b-a-o-opn: Troops in contact
+"""
+CotType_b_a_o_can: CotType.ValueType  # 29
+"""
+b-a-o-can: Cancel alert
+"""
+CotType_b_a_o_tbl: CotType.ValueType  # 30
+"""
+b-a-o-tbl: 911 alert
+"""
+CotType_b_a_g: CotType.ValueType  # 31
+"""
+b-a-g: Geofence breach alert
+"""
+CotType_a_f_G: CotType.ValueType  # 32
+"""--- Generic ground atoms (simplified affiliation types) ---
+
+
+a-f-G: Friendly ground (generic)
+"""
+CotType_a_f_G_U: CotType.ValueType  # 33
+"""
+a-f-G-U: Friendly ground unit (generic)
+"""
+CotType_a_h_G: CotType.ValueType  # 34
+"""
+a-h-G: Hostile ground (generic)
+"""
+CotType_a_u_G: CotType.ValueType  # 35
+"""
+a-u-G: Unknown ground (generic)
+"""
+CotType_a_n_G: CotType.ValueType  # 36
+"""
+a-n-G: Neutral ground (generic)
+"""
+CotType_b_m_r: CotType.ValueType  # 37
+"""--- Routes and waypoints ---
+
+
+b-m-r: Route
+"""
+CotType_b_m_p_w: CotType.ValueType  # 38
+"""
+b-m-p-w: Route waypoint
+"""
+CotType_b_m_p_s_p_i: CotType.ValueType  # 39
+"""
+b-m-p-s-p-i: Self-position marker
+"""
+CotType_u_d_f: CotType.ValueType  # 40
+"""--- Drawing / tactical graphics ---
+
+
+u-d-f: Freeform shape (line/polygon)
+"""
+CotType_u_d_r: CotType.ValueType  # 41
+"""
+u-d-r: Rectangle
+"""
+CotType_u_d_c_c: CotType.ValueType  # 42
+"""
+u-d-c-c: Circle
+"""
+CotType_u_rb_a: CotType.ValueType  # 43
+"""
+u-rb-a: Range/bearing line
+"""
+CotType_a_h_A: CotType.ValueType  # 44
+"""--- Additional hostile/unknown aircraft ---
+
+
+a-h-A: Hostile aircraft (generic)
+"""
+CotType_a_u_A: CotType.ValueType  # 45
+"""
+a-u-A: Unknown aircraft (generic)
+"""
+CotType_a_f_A_M_H_Q: CotType.ValueType  # 46
+"""
+a-f-A-M-H-Q: Friendly aircraft military helicopter observation
+"""
+CotType_a_f_A_C_F: CotType.ValueType  # 47
+"""Friendly aircraft civilian
+
+
+a-f-A-C-F: Friendly aircraft civilian fixed-wing
+"""
+CotType_a_f_A_C: CotType.ValueType  # 48
+"""
+a-f-A-C: Friendly aircraft civilian (generic)
+"""
+CotType_a_f_A_C_L: CotType.ValueType  # 49
+"""
+a-f-A-C-L: Friendly aircraft civilian lighter-than-air
+"""
+CotType_a_f_A: CotType.ValueType  # 50
+"""
+a-f-A: Friendly aircraft (generic)
+"""
+CotType_a_f_A_M_H_C: CotType.ValueType  # 51
+"""Friendly aircraft military helicopter variants
+
+
+a-f-A-M-H-C: Friendly aircraft military helicopter cargo
+"""
+CotType_a_n_A_M_F_F: CotType.ValueType  # 52
+"""Neutral aircraft military
+
+
+a-n-A-M-F-F: Neutral aircraft military fixed-wing fighter
+"""
+CotType_a_u_A_C_F: CotType.ValueType  # 53
+"""Unknown aircraft civilian
+
+
+a-u-A-C-F: Unknown aircraft civilian fixed-wing
+"""
+CotType_a_f_G_U_C_F_T_A: CotType.ValueType  # 54
+"""Friendly ground unit subtypes
+
+
+a-f-G-U-C-F-T-A: Friendly ground unit combat forces theater aviation
+"""
+CotType_a_f_G_U_C_V_S: CotType.ValueType  # 55
+"""
+a-f-G-U-C-V-S: Friendly ground unit combat vehicle support
+"""
+CotType_a_f_G_U_C_R_X: CotType.ValueType  # 56
+"""
+a-f-G-U-C-R-X: Friendly ground unit combat reconnaissance exploitation
+"""
+CotType_a_f_G_U_C_I_Z: CotType.ValueType  # 57
+"""
+a-f-G-U-C-I-Z: Friendly ground unit combat infantry mechanized
+"""
+CotType_a_f_G_U_C_E_C_W: CotType.ValueType  # 58
+"""
+a-f-G-U-C-E-C-W: Friendly ground unit combat engineer construction wheeled
+"""
+CotType_a_f_G_U_C_I_L: CotType.ValueType  # 59
+"""
+a-f-G-U-C-I-L: Friendly ground unit combat infantry light
+"""
+CotType_a_f_G_U_C_R_O: CotType.ValueType  # 60
+"""
+a-f-G-U-C-R-O: Friendly ground unit combat reconnaissance other
+"""
+CotType_a_f_G_U_C_R_V: CotType.ValueType  # 61
+"""
+a-f-G-U-C-R-V: Friendly ground unit combat reconnaissance cavalry
+"""
+CotType_a_f_G_U_H: CotType.ValueType  # 62
+"""
+a-f-G-U-H: Friendly ground unit headquarters
+"""
+CotType_a_f_G_U_U_M_S_E: CotType.ValueType  # 63
+"""
+a-f-G-U-U-M-S-E: Friendly ground unit support medical surgical evacuation
+"""
+CotType_a_f_G_U_S_M_C: CotType.ValueType  # 64
+"""
+a-f-G-U-S-M-C: Friendly ground unit support maintenance collection
+"""
+CotType_a_f_G_E_S: CotType.ValueType  # 65
+"""Friendly ground equipment
+
+
+a-f-G-E-S: Friendly ground equipment sensor (generic)
+"""
+CotType_a_f_G_E: CotType.ValueType  # 66
+"""
+a-f-G-E: Friendly ground equipment (generic)
+"""
+CotType_a_f_G_E_V_C_U: CotType.ValueType  # 67
+"""
+a-f-G-E-V-C-U: Friendly ground equipment vehicle utility
+"""
+CotType_a_f_G_E_V_C_ps: CotType.ValueType  # 68
+"""
+a-f-G-E-V-C-ps: Friendly ground equipment vehicle public safety
+"""
+CotType_a_u_G_E_V: CotType.ValueType  # 69
+"""Unknown ground
+
+
+a-u-G-E-V: Unknown ground equipment vehicle
+"""
+CotType_a_f_S_N_N_R: CotType.ValueType  # 70
+"""Sea
+
+
+a-f-S-N-N-R: Friendly sea surface non-naval rescue
+"""
+CotType_a_f_F_B: CotType.ValueType  # 71
+"""Friendly force (non-domain-specific)
+
+
+a-f-F-B: Friendly force boundary
+"""
+CotType_b_m_p_s_p_loc: CotType.ValueType  # 72
+"""Bits / data messages
+
+
+b-m-p-s-p-loc: Self-position location marker
+"""
+CotType_b_i_v: CotType.ValueType  # 73
+"""
+b-i-v: Imagery/video
+"""
+CotType_b_f_t_r: CotType.ValueType  # 74
+"""
+b-f-t-r: File transfer request
+"""
+CotType_b_f_t_a: CotType.ValueType  # 75
+"""
+b-f-t-a: File transfer acknowledgment
+"""
+Global___CotType: _TypeAlias = CotType  # noqa: Y015
+
+class _GeoPointSource:
+    ValueType = _typing.NewType("ValueType", _builtins.int)
+    V: _TypeAlias = ValueType  # noqa: Y015
+
+class _GeoPointSourceEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_GeoPointSource.ValueType], _builtins.type):
+    DESCRIPTOR: _descriptor.EnumDescriptor
+    GeoPointSource_Unspecified: _GeoPointSource.ValueType  # 0
+    """
+    Unspecified
+    """
+    GeoPointSource_GPS: _GeoPointSource.ValueType  # 1
+    """
+    GPS derived
+    """
+    GeoPointSource_USER: _GeoPointSource.ValueType  # 2
+    """
+    User entered
+    """
+    GeoPointSource_NETWORK: _GeoPointSource.ValueType  # 3
+    """
+    Network/external
+    """
+
+class GeoPointSource(_GeoPointSource, metaclass=_GeoPointSourceEnumTypeWrapper):
+    """
+    Geopoint and altitude source
+    """
+
+GeoPointSource_Unspecified: GeoPointSource.ValueType  # 0
+"""
+Unspecified
+"""
+GeoPointSource_GPS: GeoPointSource.ValueType  # 1
+"""
+GPS derived
+"""
+GeoPointSource_USER: GeoPointSource.ValueType  # 2
+"""
+User entered
+"""
+GeoPointSource_NETWORK: GeoPointSource.ValueType  # 3
+"""
+Network/external
+"""
+Global___GeoPointSource: _TypeAlias = GeoPointSource  # noqa: Y015
+
+@_typing.final
+class TAKPacket(_message.Message):
     """
     Packets for the official ATAK Plugin
     """
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    IS_COMPRESSED_FIELD_NUMBER: builtins.int
-    CONTACT_FIELD_NUMBER: builtins.int
-    GROUP_FIELD_NUMBER: builtins.int
-    STATUS_FIELD_NUMBER: builtins.int
-    PLI_FIELD_NUMBER: builtins.int
-    CHAT_FIELD_NUMBER: builtins.int
-    DETAIL_FIELD_NUMBER: builtins.int
-    is_compressed: builtins.bool
+    IS_COMPRESSED_FIELD_NUMBER: _builtins.int
+    CONTACT_FIELD_NUMBER: _builtins.int
+    GROUP_FIELD_NUMBER: _builtins.int
+    STATUS_FIELD_NUMBER: _builtins.int
+    PLI_FIELD_NUMBER: _builtins.int
+    CHAT_FIELD_NUMBER: _builtins.int
+    DETAIL_FIELD_NUMBER: _builtins.int
+    is_compressed: _builtins.bool
     """
     Are the payloads strings compressed for LoRA transport?
     """
-    detail: builtins.bytes
+    detail: _builtins.bytes
     """
     Generic CoT detail XML
     May be compressed / truncated by the sender (EUD)
     """
-    @property
-    def contact(self) -> global___Contact:
+    @_builtins.property
+    def contact(self) -> Global___Contact:
         """
         The contact / callsign for ATAK user
         """
 
-    @property
-    def group(self) -> global___Group:
+    @_builtins.property
+    def group(self) -> Global___Group:
         """
         The group for ATAK user
         """
 
-    @property
-    def status(self) -> global___Status:
+    @_builtins.property
+    def status(self) -> Global___Status:
         """
         The status of the ATAK EUD
         """
 
-    @property
-    def pli(self) -> global___PLI:
+    @_builtins.property
+    def pli(self) -> Global___PLI:
         """
         TAK position report
         """
 
-    @property
-    def chat(self) -> global___GeoChat:
+    @_builtins.property
+    def chat(self) -> Global___GeoChat:
         """
         ATAK GeoChat message
         """
@@ -291,75 +1108,85 @@ class TAKPacket(google.protobuf.message.Message):
     def __init__(
         self,
         *,
-        is_compressed: builtins.bool = ...,
-        contact: global___Contact | None = ...,
-        group: global___Group | None = ...,
-        status: global___Status | None = ...,
-        pli: global___PLI | None = ...,
-        chat: global___GeoChat | None = ...,
-        detail: builtins.bytes = ...,
+        is_compressed: _builtins.bool = ...,
+        contact: Global___Contact | None = ...,
+        group: Global___Group | None = ...,
+        status: Global___Status | None = ...,
+        pli: Global___PLI | None = ...,
+        chat: Global___GeoChat | None = ...,
+        detail: _builtins.bytes = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["chat", b"chat", "contact", b"contact", "detail", b"detail", "group", b"group", "payload_variant", b"payload_variant", "pli", b"pli", "status", b"status"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["chat", b"chat", "contact", b"contact", "detail", b"detail", "group", b"group", "is_compressed", b"is_compressed", "payload_variant", b"payload_variant", "pli", b"pli", "status", b"status"]) -> None: ...
-    def WhichOneof(self, oneof_group: typing.Literal["payload_variant", b"payload_variant"]) -> typing.Literal["pli", "chat", "detail"] | None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["chat", b"chat", "contact", b"contact", "detail", b"detail", "group", b"group", "payload_variant", b"payload_variant", "pli", b"pli", "status", b"status"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["chat", b"chat", "contact", b"contact", "detail", b"detail", "group", b"group", "is_compressed", b"is_compressed", "payload_variant", b"payload_variant", "pli", b"pli", "status", b"status"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType_payload_variant: _TypeAlias = _typing.Literal["pli", "chat", "detail"]  # noqa: Y015
+    _WhichOneofArgType_payload_variant: _TypeAlias = _typing.Literal["payload_variant", b"payload_variant"]  # noqa: Y015
+    def WhichOneof(self, oneof_group: _WhichOneofArgType_payload_variant) -> _WhichOneofReturnType_payload_variant | None: ...
 
-global___TAKPacket = TAKPacket
+Global___TAKPacket: _TypeAlias = TAKPacket  # noqa: Y015
 
-@typing.final
-class GeoChat(google.protobuf.message.Message):
+@_typing.final
+class GeoChat(_message.Message):
     """
     ATAK GeoChat message
     """
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    MESSAGE_FIELD_NUMBER: builtins.int
-    TO_FIELD_NUMBER: builtins.int
-    TO_CALLSIGN_FIELD_NUMBER: builtins.int
-    message: builtins.str
+    MESSAGE_FIELD_NUMBER: _builtins.int
+    TO_FIELD_NUMBER: _builtins.int
+    TO_CALLSIGN_FIELD_NUMBER: _builtins.int
+    message: _builtins.str
     """
     The text message
     """
-    to: builtins.str
+    to: _builtins.str
     """
     Uid recipient of the message
     """
-    to_callsign: builtins.str
+    to_callsign: _builtins.str
     """
     Callsign of the recipient for the message
     """
     def __init__(
         self,
         *,
-        message: builtins.str = ...,
-        to: builtins.str | None = ...,
-        to_callsign: builtins.str | None = ...,
+        message: _builtins.str = ...,
+        to: _builtins.str | None = ...,
+        to_callsign: _builtins.str | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["_to", b"_to", "_to_callsign", b"_to_callsign", "to", b"to", "to_callsign", b"to_callsign"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_to", b"_to", "_to_callsign", b"_to_callsign", "message", b"message", "to", b"to", "to_callsign", b"to_callsign"]) -> None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_to", b"_to"]) -> typing.Literal["to"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_to_callsign", b"_to_callsign"]) -> typing.Literal["to_callsign"] | None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_to", b"_to", "_to_callsign", b"_to_callsign", "to", b"to", "to_callsign", b"to_callsign"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_to", b"_to", "_to_callsign", b"_to_callsign", "message", b"message", "to", b"to", "to_callsign", b"to_callsign"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__to: _TypeAlias = _typing.Literal["to"]  # noqa: Y015
+    _WhichOneofArgType__to: _TypeAlias = _typing.Literal["_to", b"_to"]  # noqa: Y015
+    _WhichOneofReturnType__to_callsign: _TypeAlias = _typing.Literal["to_callsign"]  # noqa: Y015
+    _WhichOneofArgType__to_callsign: _TypeAlias = _typing.Literal["_to_callsign", b"_to_callsign"]  # noqa: Y015
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__to) -> _WhichOneofReturnType__to | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__to_callsign) -> _WhichOneofReturnType__to_callsign | None: ...
 
-global___GeoChat = GeoChat
+Global___GeoChat: _TypeAlias = GeoChat  # noqa: Y015
 
-@typing.final
-class Group(google.protobuf.message.Message):
+@_typing.final
+class Group(_message.Message):
     """
     ATAK Group
     <__group role='Team Member' name='Cyan'/>
     """
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    ROLE_FIELD_NUMBER: builtins.int
-    TEAM_FIELD_NUMBER: builtins.int
-    role: global___MemberRole.ValueType
+    ROLE_FIELD_NUMBER: _builtins.int
+    TEAM_FIELD_NUMBER: _builtins.int
+    role: Global___MemberRole.ValueType
     """
     Role of the group member
     """
-    team: global___Team.ValueType
+    team: Global___Team.ValueType
     """
     Team (color)
     Default Cyan
@@ -367,52 +1194,54 @@ class Group(google.protobuf.message.Message):
     def __init__(
         self,
         *,
-        role: global___MemberRole.ValueType = ...,
-        team: global___Team.ValueType = ...,
+        role: Global___MemberRole.ValueType = ...,
+        team: Global___Team.ValueType = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["role", b"role", "team", b"team"]) -> None: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["role", b"role", "team", b"team"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
-global___Group = Group
+Global___Group: _TypeAlias = Group  # noqa: Y015
 
-@typing.final
-class Status(google.protobuf.message.Message):
+@_typing.final
+class Status(_message.Message):
     """
     ATAK EUD Status
     <status battery='100' />
     """
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    BATTERY_FIELD_NUMBER: builtins.int
-    battery: builtins.int
+    BATTERY_FIELD_NUMBER: _builtins.int
+    battery: _builtins.int
     """
     Battery level
     """
     def __init__(
         self,
         *,
-        battery: builtins.int = ...,
+        battery: _builtins.int = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["battery", b"battery"]) -> None: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["battery", b"battery"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
-global___Status = Status
+Global___Status: _TypeAlias = Status  # noqa: Y015
 
-@typing.final
-class Contact(google.protobuf.message.Message):
+@_typing.final
+class Contact(_message.Message):
     """
     ATAK Contact
     <contact endpoint='0.0.0.0:4242:tcp' phone='+12345678' callsign='FALKE'/>
     """
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    CALLSIGN_FIELD_NUMBER: builtins.int
-    DEVICE_CALLSIGN_FIELD_NUMBER: builtins.int
-    callsign: builtins.str
+    CALLSIGN_FIELD_NUMBER: _builtins.int
+    DEVICE_CALLSIGN_FIELD_NUMBER: _builtins.int
+    callsign: _builtins.str
     """
     Callsign
     """
-    device_callsign: builtins.str
+    device_callsign: _builtins.str
     """
     Device callsign
 
@@ -421,57 +1250,323 @@ class Contact(google.protobuf.message.Message):
     def __init__(
         self,
         *,
-        callsign: builtins.str = ...,
-        device_callsign: builtins.str = ...,
+        callsign: _builtins.str = ...,
+        device_callsign: _builtins.str = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["callsign", b"callsign", "device_callsign", b"device_callsign"]) -> None: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["callsign", b"callsign", "device_callsign", b"device_callsign"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
-global___Contact = Contact
+Global___Contact: _TypeAlias = Contact  # noqa: Y015
 
-@typing.final
-class PLI(google.protobuf.message.Message):
+@_typing.final
+class PLI(_message.Message):
     """
     Position Location Information from ATAK
     """
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    LATITUDE_I_FIELD_NUMBER: builtins.int
-    LONGITUDE_I_FIELD_NUMBER: builtins.int
-    ALTITUDE_FIELD_NUMBER: builtins.int
-    SPEED_FIELD_NUMBER: builtins.int
-    COURSE_FIELD_NUMBER: builtins.int
-    latitude_i: builtins.int
+    LATITUDE_I_FIELD_NUMBER: _builtins.int
+    LONGITUDE_I_FIELD_NUMBER: _builtins.int
+    ALTITUDE_FIELD_NUMBER: _builtins.int
+    SPEED_FIELD_NUMBER: _builtins.int
+    COURSE_FIELD_NUMBER: _builtins.int
+    latitude_i: _builtins.int
     """
     The new preferred location encoding, multiply by 1e-7 to get degrees
     in floating point
     """
-    longitude_i: builtins.int
+    longitude_i: _builtins.int
     """
     The new preferred location encoding, multiply by 1e-7 to get degrees
     in floating point
     """
-    altitude: builtins.int
+    altitude: _builtins.int
     """
     Altitude (ATAK prefers HAE)
     """
-    speed: builtins.int
+    speed: _builtins.int
     """
     Speed
     """
-    course: builtins.int
+    course: _builtins.int
     """
     Course in degrees
     """
     def __init__(
         self,
         *,
-        latitude_i: builtins.int = ...,
-        longitude_i: builtins.int = ...,
-        altitude: builtins.int = ...,
-        speed: builtins.int = ...,
-        course: builtins.int = ...,
+        latitude_i: _builtins.int = ...,
+        longitude_i: _builtins.int = ...,
+        altitude: _builtins.int = ...,
+        speed: _builtins.int = ...,
+        course: _builtins.int = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["altitude", b"altitude", "course", b"course", "latitude_i", b"latitude_i", "longitude_i", b"longitude_i", "speed", b"speed"]) -> None: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["altitude", b"altitude", "course", b"course", "latitude_i", b"latitude_i", "longitude_i", b"longitude_i", "speed", b"speed"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
-global___PLI = PLI
+Global___PLI: _TypeAlias = PLI  # noqa: Y015
+
+@_typing.final
+class AircraftTrack(_message.Message):
+    """
+    Aircraft track information from ADS-B or military air tracking.
+    Covers the majority of observed real-world CoT traffic.
+    """
+
+    DESCRIPTOR: _descriptor.Descriptor
+
+    ICAO_FIELD_NUMBER: _builtins.int
+    REGISTRATION_FIELD_NUMBER: _builtins.int
+    FLIGHT_FIELD_NUMBER: _builtins.int
+    AIRCRAFT_TYPE_FIELD_NUMBER: _builtins.int
+    SQUAWK_FIELD_NUMBER: _builtins.int
+    CATEGORY_FIELD_NUMBER: _builtins.int
+    RSSI_X10_FIELD_NUMBER: _builtins.int
+    GPS_FIELD_NUMBER: _builtins.int
+    COT_HOST_ID_FIELD_NUMBER: _builtins.int
+    icao: _builtins.str
+    """
+    ICAO hex identifier (e.g. "AD237C")
+    """
+    registration: _builtins.str
+    """
+    Aircraft registration (e.g. "N946AK")
+    """
+    flight: _builtins.str
+    """
+    Flight number/callsign (e.g. "ASA864")
+    """
+    aircraft_type: _builtins.str
+    """
+    ICAO aircraft type designator (e.g. "B39M")
+    """
+    squawk: _builtins.int
+    """
+    Transponder squawk code (0-7777 octal)
+    """
+    category: _builtins.str
+    """
+    ADS-B emitter category (e.g. "A3")
+    """
+    rssi_x10: _builtins.int
+    """
+    Received signal strength * 10 (e.g. -194 for -19.4 dBm)
+    """
+    gps: _builtins.bool
+    """
+    Whether receiver has GPS fix
+    """
+    cot_host_id: _builtins.str
+    """
+    CoT host ID for source attribution
+    """
+    def __init__(
+        self,
+        *,
+        icao: _builtins.str = ...,
+        registration: _builtins.str = ...,
+        flight: _builtins.str = ...,
+        aircraft_type: _builtins.str = ...,
+        squawk: _builtins.int = ...,
+        category: _builtins.str = ...,
+        rssi_x10: _builtins.int = ...,
+        gps: _builtins.bool = ...,
+        cot_host_id: _builtins.str = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["aircraft_type", b"aircraft_type", "category", b"category", "cot_host_id", b"cot_host_id", "flight", b"flight", "gps", b"gps", "icao", b"icao", "registration", b"registration", "rssi_x10", b"rssi_x10", "squawk", b"squawk"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+Global___AircraftTrack: _TypeAlias = AircraftTrack  # noqa: Y015
+
+@_typing.final
+class TAKPacketV2(_message.Message):
+    """
+    ATAK v2 packet with expanded CoT field support and zstd dictionary compression.
+    Sent on ATAK_PLUGIN_V2 port. The wire payload is:
+      [1 byte flags][zstd-compressed TAKPacketV2 protobuf]
+    Flags byte: bits 0-5 = dictionary ID, bits 6-7 = reserved.
+    """
+
+    DESCRIPTOR: _descriptor.Descriptor
+
+    COT_TYPE_ID_FIELD_NUMBER: _builtins.int
+    HOW_FIELD_NUMBER: _builtins.int
+    CALLSIGN_FIELD_NUMBER: _builtins.int
+    TEAM_FIELD_NUMBER: _builtins.int
+    ROLE_FIELD_NUMBER: _builtins.int
+    LATITUDE_I_FIELD_NUMBER: _builtins.int
+    LONGITUDE_I_FIELD_NUMBER: _builtins.int
+    ALTITUDE_FIELD_NUMBER: _builtins.int
+    SPEED_FIELD_NUMBER: _builtins.int
+    COURSE_FIELD_NUMBER: _builtins.int
+    BATTERY_FIELD_NUMBER: _builtins.int
+    GEO_SRC_FIELD_NUMBER: _builtins.int
+    ALT_SRC_FIELD_NUMBER: _builtins.int
+    UID_FIELD_NUMBER: _builtins.int
+    DEVICE_CALLSIGN_FIELD_NUMBER: _builtins.int
+    STALE_SECONDS_FIELD_NUMBER: _builtins.int
+    TAK_VERSION_FIELD_NUMBER: _builtins.int
+    TAK_DEVICE_FIELD_NUMBER: _builtins.int
+    TAK_PLATFORM_FIELD_NUMBER: _builtins.int
+    TAK_OS_FIELD_NUMBER: _builtins.int
+    ENDPOINT_FIELD_NUMBER: _builtins.int
+    PHONE_FIELD_NUMBER: _builtins.int
+    COT_TYPE_STR_FIELD_NUMBER: _builtins.int
+    PLI_FIELD_NUMBER: _builtins.int
+    CHAT_FIELD_NUMBER: _builtins.int
+    AIRCRAFT_FIELD_NUMBER: _builtins.int
+    RAW_DETAIL_FIELD_NUMBER: _builtins.int
+    cot_type_id: Global___CotType.ValueType
+    """
+    Well-known CoT event type enum.
+    Use CotType_Other with cot_type_str for unknown types.
+    """
+    how: Global___CotHow.ValueType
+    """
+    How the coordinates were generated
+    """
+    callsign: _builtins.str
+    """
+    Callsign
+    """
+    team: Global___Team.ValueType
+    """
+    Team color assignment
+    """
+    role: Global___MemberRole.ValueType
+    """
+    Role of the group member
+    """
+    latitude_i: _builtins.int
+    """
+    Latitude, multiply by 1e-7 to get degrees in floating point
+    """
+    longitude_i: _builtins.int
+    """
+    Longitude, multiply by 1e-7 to get degrees in floating point
+    """
+    altitude: _builtins.int
+    """
+    Altitude in meters (HAE)
+    """
+    speed: _builtins.int
+    """
+    Speed in cm/s
+    """
+    course: _builtins.int
+    """
+    Course in degrees * 100 (0-36000)
+    """
+    battery: _builtins.int
+    """
+    Battery level 0-100
+    """
+    geo_src: Global___GeoPointSource.ValueType
+    """
+    Geopoint source
+    """
+    alt_src: Global___GeoPointSource.ValueType
+    """
+    Altitude source
+    """
+    uid: _builtins.str
+    """
+    Device UID (UUID string or device ID like "ANDROID-xxxx")
+    """
+    device_callsign: _builtins.str
+    """
+    Device callsign
+    """
+    stale_seconds: _builtins.int
+    """
+    Stale time as seconds offset from event time
+    """
+    tak_version: _builtins.str
+    """
+    TAK client version string
+    """
+    tak_device: _builtins.str
+    """
+    TAK device model
+    """
+    tak_platform: _builtins.str
+    """
+    TAK platform (ATAK-CIV, WebTAK, etc.)
+    """
+    tak_os: _builtins.str
+    """
+    TAK OS version
+    """
+    endpoint: _builtins.str
+    """
+    Connection endpoint
+    """
+    phone: _builtins.str
+    """
+    Phone number
+    """
+    cot_type_str: _builtins.str
+    """
+    CoT event type string, only populated when cot_type_id is CotType_Other
+    """
+    pli: _builtins.bool
+    """
+    Position report (true = PLI, no extra fields beyond the common ones above)
+    """
+    raw_detail: _builtins.bytes
+    """
+    Generic CoT detail XML for unmapped types
+    """
+    @_builtins.property
+    def chat(self) -> Global___GeoChat:
+        """
+        ATAK GeoChat message
+        """
+
+    @_builtins.property
+    def aircraft(self) -> Global___AircraftTrack:
+        """
+        Aircraft track data (ADS-B, military air)
+        """
+
+    def __init__(
+        self,
+        *,
+        cot_type_id: Global___CotType.ValueType = ...,
+        how: Global___CotHow.ValueType = ...,
+        callsign: _builtins.str = ...,
+        team: Global___Team.ValueType = ...,
+        role: Global___MemberRole.ValueType = ...,
+        latitude_i: _builtins.int = ...,
+        longitude_i: _builtins.int = ...,
+        altitude: _builtins.int = ...,
+        speed: _builtins.int = ...,
+        course: _builtins.int = ...,
+        battery: _builtins.int = ...,
+        geo_src: Global___GeoPointSource.ValueType = ...,
+        alt_src: Global___GeoPointSource.ValueType = ...,
+        uid: _builtins.str = ...,
+        device_callsign: _builtins.str = ...,
+        stale_seconds: _builtins.int = ...,
+        tak_version: _builtins.str = ...,
+        tak_device: _builtins.str = ...,
+        tak_platform: _builtins.str = ...,
+        tak_os: _builtins.str = ...,
+        endpoint: _builtins.str = ...,
+        phone: _builtins.str = ...,
+        cot_type_str: _builtins.str = ...,
+        pli: _builtins.bool = ...,
+        chat: Global___GeoChat | None = ...,
+        aircraft: Global___AircraftTrack | None = ...,
+        raw_detail: _builtins.bytes = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["aircraft", b"aircraft", "chat", b"chat", "payload_variant", b"payload_variant", "pli", b"pli", "raw_detail", b"raw_detail"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["aircraft", b"aircraft", "alt_src", b"alt_src", "altitude", b"altitude", "battery", b"battery", "callsign", b"callsign", "chat", b"chat", "cot_type_id", b"cot_type_id", "cot_type_str", b"cot_type_str", "course", b"course", "device_callsign", b"device_callsign", "endpoint", b"endpoint", "geo_src", b"geo_src", "how", b"how", "latitude_i", b"latitude_i", "longitude_i", b"longitude_i", "payload_variant", b"payload_variant", "phone", b"phone", "pli", b"pli", "raw_detail", b"raw_detail", "role", b"role", "speed", b"speed", "stale_seconds", b"stale_seconds", "tak_device", b"tak_device", "tak_os", b"tak_os", "tak_platform", b"tak_platform", "tak_version", b"tak_version", "team", b"team", "uid", b"uid"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType_payload_variant: _TypeAlias = _typing.Literal["pli", "chat", "aircraft", "raw_detail"]  # noqa: Y015
+    _WhichOneofArgType_payload_variant: _TypeAlias = _typing.Literal["payload_variant", b"payload_variant"]  # noqa: Y015
+    def WhichOneof(self, oneof_group: _WhichOneofArgType_payload_variant) -> _WhichOneofReturnType_payload_variant | None: ...
+
+Global___TAKPacketV2: _TypeAlias = TAKPacketV2  # noqa: Y015

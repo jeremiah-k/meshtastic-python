@@ -90,6 +90,34 @@ Historical required BLE wrappers and warning policy are tracked in
 - [Pre-requisites](https://meshtastic.org/docs/development/python/building/#pre-requisites)
 - also execute `poetry install --all-extras --with dev,powermon` for all optional dependencies
 
+### Updating protobufs
+
+To update the protobuf submodule and regenerate `meshtastic/protobuf/*_pb2.py`
+and `*_pb2.pyi` files:
+
+```bash
+make protobufs-update
+```
+
+The generator needs a `protoc` compiler. The CI workflow uses the `protoc`
+binary bundled with nanopb's Linux release package from
+<https://jpa.kapsi.fi/nanopb/download/>:
+
+```bash
+curl -fsSL -o nanopb-0.4.9.1-linux-x86.tar.gz \
+  https://jpa.kapsi.fi/nanopb/download/nanopb-0.4.9.1-linux-x86.tar.gz
+printf '%s  %s\n' \
+  951a9ab2385424a4cdf245d0c84f4c88c6ccbc65a0dade4b246d50c068f24128 \
+  nanopb-0.4.9.1-linux-x86.tar.gz | sha256sum -c -
+tar xzf nanopb-0.4.9.1-linux-x86.tar.gz
+mv nanopb-0.4.9.1-linux-x86 nanopb-0.4.9.1
+```
+
+The `nanopb-*` directory is intentionally ignored by git. If you already have
+another compatible `protoc`, run `PROTOC=/path/to/protoc ./bin/regen-protobufs.sh`.
+To allow discovery from `PATH`, run
+`ALLOW_SYSTEM_PROTOC=1 ./bin/regen-protobufs.sh`.
+
 ### Quick check (recommended)
 
 Run all CI checks locally with a single command:
