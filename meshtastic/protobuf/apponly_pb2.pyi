@@ -3,19 +3,25 @@
 isort:skip_file
 """
 
-import builtins
-import collections.abc
-import google.protobuf.descriptor
-import google.protobuf.internal.containers
-import google.protobuf.message
-import meshtastic.protobuf.channel_pb2
-import meshtastic.protobuf.config_pb2
-import typing
+from collections import abc as _abc
+from google.protobuf import descriptor as _descriptor
+from google.protobuf import message as _message
+from google.protobuf.internal import containers as _containers
+from . import channel_pb2 as _channel_pb2
+from . import config_pb2 as _config_pb2
+import builtins as _builtins
+import sys
+import typing as _typing
 
-DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
+if sys.version_info >= (3, 10):
+    from typing import TypeAlias as _TypeAlias
+else:
+    from typing_extensions import TypeAlias as _TypeAlias
 
-@typing.final
-class ChannelSet(google.protobuf.message.Message):
+DESCRIPTOR: _descriptor.FileDescriptor
+
+@_typing.final
+class ChannelSet(_message.Message):
     """
     This is the most compact possible representation for a set of channels.
     It includes only one PRIMARY channel (which must be first) and
@@ -24,18 +30,18 @@ class ChannelSet(google.protobuf.message.Message):
     This abstraction is used only on the the 'app side' of the world (ie python, javascript and android etc) to show a group of Channels as a (long) URL
     """
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    SETTINGS_FIELD_NUMBER: builtins.int
-    LORA_CONFIG_FIELD_NUMBER: builtins.int
-    @property
-    def settings(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[meshtastic.protobuf.channel_pb2.ChannelSettings]:
+    SETTINGS_FIELD_NUMBER: _builtins.int
+    LORA_CONFIG_FIELD_NUMBER: _builtins.int
+    @_builtins.property
+    def settings(self) -> _containers.RepeatedCompositeFieldContainer[_channel_pb2.ChannelSettings]:
         """
         Channel list with settings
         """
 
-    @property
-    def lora_config(self) -> meshtastic.protobuf.config_pb2.Config.LoRaConfig:
+    @_builtins.property
+    def lora_config(self) -> _config_pb2.Config.LoRaConfig:
         """
         LoRa config
         """
@@ -43,10 +49,12 @@ class ChannelSet(google.protobuf.message.Message):
     def __init__(
         self,
         *,
-        settings: collections.abc.Iterable[meshtastic.protobuf.channel_pb2.ChannelSettings] | None = ...,
-        lora_config: meshtastic.protobuf.config_pb2.Config.LoRaConfig | None = ...,
+        settings: _abc.Iterable[_channel_pb2.ChannelSettings] | None = ...,
+        lora_config: _config_pb2.Config.LoRaConfig | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["lora_config", b"lora_config"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["lora_config", b"lora_config", "settings", b"settings"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["lora_config", b"lora_config"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["lora_config", b"lora_config", "settings", b"settings"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
-global___ChannelSet = ChannelSet
+Global___ChannelSet: _TypeAlias = ChannelSet  # noqa: Y015

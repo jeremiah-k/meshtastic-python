@@ -20,4 +20,5 @@ coverage.xml
 junit.xml
 .ipynb_checkpoints
 .cursor/
+.codex
 meshtastic/tests/api_baselines/*_test.json

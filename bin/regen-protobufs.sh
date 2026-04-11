@@ -2,6 +2,11 @@
 
 set -e
 
+NANOPB_VERSION="${NANOPB_VERSION:-0.4.9.1}"
+NANOPB_DIR="${NANOPB_DIR:-./nanopb-${NANOPB_VERSION}}"
+NANOPB_LINUX_DIR="./nanopb-${NANOPB_VERSION}-linux-x86"
+NANOPB_DOWNLOAD_URL="https://jpa.kapsi.fi/nanopb/download/nanopb-${NANOPB_VERSION}-linux-x86.tar.gz"
+
 #Uncomment to run hack
 #gsed -i 's/import "\//import ".\//g' ./protobufs/meshtastic/*
 #gsed -i 's/package meshtastic;//g' ./protobufs/meshtastic/*
@@ -20,6 +25,39 @@ if [[ -z ${POETRYDIR} || ! -f "${POETRYDIR}/bin/activate" ]]; then
 fi
 # shellcheck disable=SC1090,SC1091
 source "${POETRYDIR}/bin/activate"
+
+if [[ -z ${PROTOC:-} ]]; then
+	for PROTOC_CANDIDATE in \
+		"${NANOPB_DIR}/generator-bin/protoc" \
+		"${NANOPB_LINUX_DIR}/generator-bin/protoc" \
+		./nanopb-0.4.8/generator-bin/protoc; do
+		if [[ -x ${PROTOC_CANDIDATE} ]]; then
+			PROTOC="${PROTOC_CANDIDATE}"
+			break
+		fi
+	done
+fi
+
+if [[ -z ${PROTOC:-} ]] && command -v protoc >/dev/null 2>&1; then
+	PROTOC="$(command -v protoc)"
+fi
+
+if [[ -z ${PROTOC:-} || ! -x ${PROTOC} ]]; then
+	cat >&2 <<EOF
+Unable to find a protoc compiler.
+
+Set PROTOC=/path/to/protoc, install protoc in PATH, or download nanopb:
+  curl -fsSL -o nanopb-${NANOPB_VERSION}-linux-x86.tar.gz ${NANOPB_DOWNLOAD_URL}
+  tar xzf nanopb-${NANOPB_VERSION}-linux-x86.tar.gz
+  mv nanopb-${NANOPB_VERSION}-linux-x86 nanopb-${NANOPB_VERSION}
+
+The nanopb directory is intentionally ignored by git.
+EOF
+	exit 1
+fi
+
+echo "Using protoc: ${PROTOC}"
+"${PROTOC}" --version
 
 # Put our temp files in the poetry build directory
 TMPDIR=./build/meshtastic/protofixup
@@ -50,7 +88,7 @@ fi
 "${SEDCMD[@]}" 's/^import "nanopb.proto"/import "meshtastic\/protobuf\/nanopb.proto"/' "${INDIR}/"*.proto
 
 # Generate the python files
-./nanopb-0.4.8/generator-bin/protoc -I="${TMPDIR}/in" --python_out "${OUTDIR}" "--mypy_out=${PYIDIR}" "${INDIR}"/*.proto
+"${PROTOC}" -I="${TMPDIR}/in" --python_out "${OUTDIR}" "--mypy_out=${PYIDIR}" "${INDIR}"/*.proto
 
 # Change "from meshtastic.protobuf import" to "from . import"
 "${SEDCMD[@]}" 's/^from meshtastic.protobuf import/from . import/' "${OUTDIR}"/meshtastic/protobuf/*pb2*.py

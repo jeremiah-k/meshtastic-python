@@ -6,6 +6,7 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  NANOPB_VERSION: "0.4.9.1"
 
 jobs:
   update-protobufs:
@@ -36,9 +37,9 @@ jobs:
 
       - name: Download nanopb
         run: |
-          curl -L -o nanopb-0.4.8-linux-x86.tar.gz https://jpa.kapsi.fi/nanopb/download/nanopb-0.4.8-linux-x86.tar.gz
-          tar xvzf nanopb-0.4.8-linux-x86.tar.gz
-          mv nanopb-0.4.8-linux-x86 nanopb-0.4.8
+          curl -fsSL -o nanopb-${NANOPB_VERSION}-linux-x86.tar.gz https://jpa.kapsi.fi/nanopb/download/nanopb-${NANOPB_VERSION}-linux-x86.tar.gz
+          tar xzf nanopb-${NANOPB_VERSION}-linux-x86.tar.gz
+          mv nanopb-${NANOPB_VERSION}-linux-x86 nanopb-${NANOPB_VERSION}
 
       - name: Install Python dependencies
         run: |
