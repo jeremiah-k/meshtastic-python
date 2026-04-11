@@ -106,12 +106,17 @@ binary bundled with nanopb's Linux release package from
 ```bash
 curl -fsSL -o nanopb-0.4.9.1-linux-x86.tar.gz \
   https://jpa.kapsi.fi/nanopb/download/nanopb-0.4.9.1-linux-x86.tar.gz
+printf '%s  %s\n' \
+  951a9ab2385424a4cdf245d0c84f4c88c6ccbc65a0dade4b246d50c068f24128 \
+  nanopb-0.4.9.1-linux-x86.tar.gz | sha256sum -c -
 tar xzf nanopb-0.4.9.1-linux-x86.tar.gz
 mv nanopb-0.4.9.1-linux-x86 nanopb-0.4.9.1
 ```
 
 The `nanopb-*` directory is intentionally ignored by git. If you already have
 another compatible `protoc`, run `PROTOC=/path/to/protoc ./bin/regen-protobufs.sh`.
+To allow discovery from `PATH`, run
+`ALLOW_SYSTEM_PROTOC=1 ./bin/regen-protobufs.sh`.
 
 ### Quick check (recommended)
 

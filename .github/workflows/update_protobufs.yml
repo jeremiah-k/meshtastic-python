@@ -6,7 +6,8 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  NANOPB_VERSION: "0.4.9.1"
+  NANOPB_VERSION: 0.4.9.1
+  NANOPB_SHA256: 951a9ab2385424a4cdf245d0c84f4c88c6ccbc65a0dade4b246d50c068f24128
 
 jobs:
   update-protobufs:
@@ -38,6 +39,7 @@ jobs:
       - name: Download nanopb
         run: |
           curl -fsSL -o nanopb-${NANOPB_VERSION}-linux-x86.tar.gz https://jpa.kapsi.fi/nanopb/download/nanopb-${NANOPB_VERSION}-linux-x86.tar.gz
+          echo "${NANOPB_SHA256}  nanopb-${NANOPB_VERSION}-linux-x86.tar.gz" | sha256sum -c -
           tar xzf nanopb-${NANOPB_VERSION}-linux-x86.tar.gz
           mv nanopb-${NANOPB_VERSION}-linux-x86 nanopb-${NANOPB_VERSION}
 
