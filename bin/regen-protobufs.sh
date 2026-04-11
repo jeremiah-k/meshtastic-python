@@ -4,8 +4,8 @@ set -e
 
 NANOPB_VERSION="${NANOPB_VERSION:-0.4.9.1}"
 NANOPB_DIR="${NANOPB_DIR:-./nanopb-${NANOPB_VERSION}}"
-NANOPB_LINUX_DIR="./nanopb-${NANOPB_VERSION}-linux-x86"
-NANOPB_DOWNLOAD_URL="https://jpa.kapsi.fi/nanopb/download/nanopb-${NANOPB_VERSION}-linux-x86.tar.gz"
+NANOPB_LINUX_DIR="${NANOPB_LINUX_DIR:-./nanopb-${NANOPB_VERSION}-linux-x86}"
+NANOPB_DOWNLOAD_URL="${NANOPB_DOWNLOAD_URL:-https://jpa.kapsi.fi/nanopb/download/nanopb-${NANOPB_VERSION}-linux-x86.tar.gz}"
 
 #Uncomment to run hack
 #gsed -i 's/import "\//import ".\//g' ./protobufs/meshtastic/*
