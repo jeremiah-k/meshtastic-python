@@ -19,12 +19,7 @@ This is a **temporary fork** of
 [meshtastic/python](https://github.com/meshtastic/python). It exists to ship
 fixes and improvements while they are validated and upstreamed selectively.
 
-**This repository does not accept pull requests.** Community development efforts should be directed to the upstream project:
-
-- Upstream repo: <https://github.com/meshtastic/python>
-- Upstream contributing guide: <https://github.com/meshtastic/python/blob/master/.github/CONTRIBUTING.md>
-
-If you find a fix or improvement here that you would like to carry upstream, please do so.
+**This repository does not accept pull requests.** Community development efforts should be directed to the [upstream project](https://github.com/meshtastic/python). If you find a fix or improvement here that you would like to carry upstream, please do so.
 
 ## Notable Changes
 
