@@ -22,7 +22,7 @@ requests = "^2.33.0"
 pyyaml = "^6.0.1"
 # Keep pypubsub >=4.0.7 for PEP 561 `py.typed` metadata in strict type checking.
 pypubsub = "^4.0.7"
-bleak = "^2.1.1"
+bleak = "^3.0.0"
 packaging = "^26.0"
 argcomplete = { version = "^3.5.2", optional = true }
 pyqrcode = { version = "^1.2.1", optional = true }
