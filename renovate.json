@@ -5,7 +5,6 @@
   "mode": "full",
   "enabledManagers": ["poetry", "github-actions", "git-submodules"],
   "timezone": "America/Chicago",
-  "schedule": ["after 9am and before 11pm on Sunday"],
   "updateNotScheduled": true,
   "dependencyDashboard": true,
   "dependencyDashboardTitle": "Dependency Updates (mtjk)",
@@ -46,8 +45,7 @@
     }
   ],
   "lockFileMaintenance": {
-    "enabled": true,
-    "schedule": ["after 9am and before 11pm on Sunday"]
+    "enabled": true
   },
   "git-submodules": {
     "enabled": true
