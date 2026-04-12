@@ -3,7 +3,7 @@
   "extends": ["config:best-practices"],
   "forkProcessing": "enabled",
   "mode": "full",
-  "enabledManagers": ["poetry", "github-actions"],
+  "enabledManagers": ["poetry", "github-actions", "git-submodules"],
   "timezone": "America/Chicago",
   "schedule": ["after 9am and before 11pm on Sunday"],
   "updateNotScheduled": true,
@@ -36,6 +36,13 @@
       "description": "Keep bleak updates manual for planned migration work",
       "matchPackageNames": ["bleak"],
       "automerge": false
+    },
+    {
+      "description": "Automerge protobuf submodule updates",
+      "matchManagers": ["git-submodules"],
+      "matchDepNames": ["protobufs"],
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest", "pinDigest"],
+      "automerge": true
     }
   ],
   "lockFileMaintenance": {
@@ -43,6 +50,6 @@
     "schedule": ["after 9am and before 11pm on Sunday"]
   },
   "git-submodules": {
-    "enabled": false
+    "enabled": true
   }
 }

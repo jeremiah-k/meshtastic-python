@@ -1,0 +1,78 @@
+name: Regenerate protobufs for Renovate submodule updates
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - protobufs
+
+permissions:
+  contents: write
+  pull-requests: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  NANOPB_VERSION: 0.4.9.1
+  NANOPB_SHA256: 951a9ab2385424a4cdf245d0c84f4c88c6ccbc65a0dade4b246d50c068f24128
+
+jobs:
+  regenerate-protobufs:
+    if: >
+      github.actor == 'renovate[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'renovate/')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: protobuf-regen-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout Renovate branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          submodules: true
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "poetry==2.3.2"
+
+      - name: Sync submodules
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive
+
+      - name: Download nanopb
+        run: |
+          curl -fsSL -o nanopb-${NANOPB_VERSION}-linux-x86.tar.gz https://jpa.kapsi.fi/nanopb/download/nanopb-${NANOPB_VERSION}-linux-x86.tar.gz
+          echo "${NANOPB_SHA256}  nanopb-${NANOPB_VERSION}-linux-x86.tar.gz" | sha256sum -c -
+          tar xzf nanopb-${NANOPB_VERSION}-linux-x86.tar.gz
+          mv nanopb-${NANOPB_VERSION}-linux-x86 nanopb-${NANOPB_VERSION}
+
+      - name: Install Python dependencies
+        run: poetry install --with dev
+
+      - name: Re-generate protocol buffers
+        run: ./bin/regen-protobufs.sh
+
+      - name: Commit generated protobuf changes
+        env:
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          git config --global user.name 'github-actions'
+          git config --global user.email 'bot@noreply.github.com'
+          git add protobufs
+          git add meshtastic/protobuf
+          if ! git diff --cached --quiet; then
+            git commit -m "build(protobufs): regenerate protobuf outputs"
+            git push origin "HEAD:${PR_HEAD_REF}"
+          else
+            echo "No changes to commit"
+          fi
