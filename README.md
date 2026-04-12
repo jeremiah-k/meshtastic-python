@@ -28,6 +28,7 @@ fixes and improvements while they are validated and upstreamed selectively.
 - CI and release workflows were modernized, including Trusted Publisher-based PyPI release flow
 
 For technical details, see:
+
 - [REFACTOR_PROGRAM.md](REFACTOR_PROGRAM.md): rationale and early change log for the major refactor work maintained here.
 - [COMPATIBILITY.md](COMPATIBILITY.md): canonical inventory of compatibility shims, deprecations, and migration mapping.
 - [CONTRIBUTING.md](CONTRIBUTING.md): local setup, CI-equivalent checks, and contributor workflow conventions.
@@ -84,6 +85,7 @@ pipx uninstall mtjk
 Dependency name is `mtjk`, but import namespace remains `meshtastic`.
 
 Important:
+
 - If your dependency spec says `meshtastic`, you will install upstream.
 - Use `mtjk` in dependency specs for this package.
 - The package does not provide `import mtjk`.
@@ -155,6 +157,7 @@ interface.close()
 ## Support
 
 Report `mtjk`-specific issues here:
+
 - <https://github.com/jeremiah-k/meshtastic-python/issues>
 
 Please do not file `mtjk`-specific issues with upstream maintainers.
