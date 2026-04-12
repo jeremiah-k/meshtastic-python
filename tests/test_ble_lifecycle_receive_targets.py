@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import contextlib
 import importlib
+import itertools
 import threading
-import time
 from types import SimpleNamespace
 from typing import Any, Protocol
 from unittest.mock import MagicMock
@@ -2784,11 +2784,12 @@ def test_receive_remaining_branches(
         assert recovered == ["receive_thread_fatal"]
 
         with monkeypatch.context() as m:
-            monotonic_values = iter([100.0, 100.1])
-            real_monotonic = time.monotonic
+            monotonic_values = itertools.chain(
+                [100.0, 100.1], itertools.repeat(100.1)
+            )
             m.setattr(
                 "meshtastic.interfaces.ble.receive_service.time.monotonic",
-                lambda: next(monotonic_values, real_monotonic()),
+                lambda: next(monotonic_values),
             )
             with iface._state_lock:
                 iface.client = DummyClient()
