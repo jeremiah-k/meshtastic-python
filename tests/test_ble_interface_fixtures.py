@@ -400,10 +400,14 @@ def mock_bleak_exc(
     class _StubBleakDeviceNotFoundError(_StubBleakError):
         """Stub BleakDeviceNotFoundError type for tests."""
 
+    class _StubBleakGATTProtocolError(_StubBleakError):
+        """Stub BleakGATTProtocolError type for tests."""
+
     bleak_exc_module_any = cast(Any, bleak_exc_module)
     bleak_exc_module_any.BleakError = _StubBleakError
     bleak_exc_module_any.BleakDBusError = _StubBleakDBusError
     bleak_exc_module_any.BleakDeviceNotFoundError = _StubBleakDeviceNotFoundError
+    bleak_exc_module_any.BleakGATTProtocolError = _StubBleakGATTProtocolError
 
     # Attach to parent module
     cast(Any, mock_bleak).exc = bleak_exc_module

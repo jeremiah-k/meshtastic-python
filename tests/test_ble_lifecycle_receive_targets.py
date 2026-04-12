@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib
+import itertools
 import threading
 from types import SimpleNamespace
 from typing import Any, Protocol
@@ -11,6 +12,11 @@ from unittest.mock import MagicMock
 
 import pytest
 from bleak.exc import BleakDBusError, BleakError
+
+try:
+    from bleak.exc import BleakGATTProtocolError
+except ImportError:  # pragma: no cover - compatibility with older local envs
+    BleakGATTProtocolError = BleakError  # type: ignore[assignment]
 
 from meshtastic.interfaces.ble.constants import ERROR_INTERFACE_CLOSING
 from meshtastic.interfaces.ble.lifecycle_primitives import (
@@ -35,6 +41,23 @@ class _IfaceWithStateManager(Protocol):
 
 def _make_iface(monkeypatch: pytest.MonkeyPatch) -> Any:
     return _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+
+
+def _make_gatt_protocol_error() -> BaseException:
+    """Create a BleakGATTProtocolError across constructor signature variants.
+
+    Returns
+    -------
+    BaseException
+        BleakGATTProtocolError instance compatible with multiple constructor
+        signatures, or a ``BleakError("gatt")`` fallback.
+    """
+    for args in (("gatt",), (1,), ("gatt", 1), ()):
+        try:
+            return BleakGATTProtocolError(*args)  # type: ignore[misc]
+        except TypeError:
+            continue
+    return BleakError("gatt")
 
 
 def _reset_state_manager(iface: _IfaceWithStateManager) -> None:
@@ -1556,6 +1579,20 @@ def test_receive_service_branch_targets_payload_paths(
         monkeypatch.setattr(
             controller,
             "_read_and_handle_payload",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                _make_gatt_protocol_error()
+            ),
+        )
+        iface._handle_read_loop_disconnect = lambda *_args, **_kwargs: True
+        assert BLEReceiveRecoveryService._handle_payload_read(
+            iface,
+            DummyClient(),
+            poll_without_notify=False,
+        ) == (True, False)
+
+        monkeypatch.setattr(
+            controller,
+            "_read_and_handle_payload",
             lambda *_args, **_kwargs: (_ for _ in ()).throw(BleakError("transient")),
         )
         iface._handle_transient_read_error = lambda _err: (_ for _ in ()).throw(
@@ -2754,7 +2791,9 @@ def test_receive_remaining_branches(
         assert recovered == ["receive_thread_fatal"]
 
         with monkeypatch.context() as m:
-            monotonic_values = iter([100.0, 100.1])
+            monotonic_values = itertools.chain(
+                [100.0, 100.1], itertools.repeat(100.1)
+            )
             m.setattr(
                 "meshtastic.interfaces.ble.receive_service.time.monotonic",
                 lambda: next(monotonic_values),

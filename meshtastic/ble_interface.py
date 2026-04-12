@@ -21,6 +21,7 @@ try:
     from bleak.exc import (  # noqa: F401  # pylint: disable=unused-import
         BleakDBusError,
         BleakError,
+        BleakGATTProtocolError,
     )
 except ModuleNotFoundError as exc:  # pragma: no cover - dependency guard
     if exc.name != "bleak":
@@ -68,6 +69,7 @@ _COMPAT_BLEAK_EXPORTS = (
     "BLEDevice",
     "BleakError",
     "BleakDBusError",
+    "BleakGATTProtocolError",
 )
 
 # Stable public API delegates to canonical facade exports plus retained Bleak

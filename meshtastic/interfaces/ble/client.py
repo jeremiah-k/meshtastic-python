@@ -214,9 +214,39 @@ class BLEClient:
             if log_if_no_address:
                 logger.debug("No address provided - only discover method will work.")
             return
+        transport_kwargs = self._normalize_bluez_adapter_kwargs(kwargs)
         # kwargs intentionally forward to BleakRootClient's external, untyped constructor.
-        self.bleak_client = BleakRootClient(address, **kwargs)
+        self.bleak_client = BleakRootClient(address, **transport_kwargs)
         self._sync_address_from_bleak()
+
+    @staticmethod
+    def _normalize_bluez_adapter_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Normalize deprecated ``adapter`` kwarg into Bleak 3 ``bluez`` args.
+
+        Bleak 3 deprecates ``adapter=...`` in favor of
+        ``bluez={"adapter": ...}``. We translate when possible to avoid
+        deprecation warnings while preserving caller-provided explicit ``bluez``
+        mappings.
+        """
+        normalized_kwargs = dict(kwargs)
+        adapter = normalized_kwargs.pop("adapter", None)
+        if adapter is None:
+            return normalized_kwargs
+
+        bluez_kwargs = normalized_kwargs.get("bluez")
+        if bluez_kwargs is None:
+            normalized_kwargs["bluez"] = {"adapter": adapter}
+            return normalized_kwargs
+        if isinstance(bluez_kwargs, dict):
+            merged_bluez_kwargs = dict(bluez_kwargs)
+            merged_bluez_kwargs.setdefault("adapter", adapter)
+            normalized_kwargs["bluez"] = merged_bluez_kwargs
+            return normalized_kwargs
+
+        # Preserve historical kwarg behavior when ``bluez`` is provided with an
+        # unexpected type that we cannot safely merge.
+        normalized_kwargs["adapter"] = adapter
+        return normalized_kwargs
 
     def _sync_address_from_bleak(self) -> None:
         """Refresh cached address from the underlying Bleak client when available."""
@@ -418,7 +448,8 @@ class BLEClient:
     def _discover(self, **kwargs: Any) -> Any:
         """Discover nearby BLE devices.
 
-        Keyword arguments are forwarded to BleakScanner.discover (for example: `timeout`, `adapter`) to configure discovery.
+        Keyword arguments are forwarded to BleakScanner.discover (for example:
+        `timeout`, `bluez={"adapter": "hci0"}`) to configure discovery.
 
         Parameters
         ----------
@@ -430,7 +461,8 @@ class BLEClient:
         Any
             A list of discovered `BLEDevice` objects.
         """
-        return self._async_await(BleakScanner.discover(**kwargs))
+        discover_kwargs = self._normalize_bluez_adapter_kwargs(kwargs)
+        return self._async_await(BleakScanner.discover(**discover_kwargs))
 
     def discover(self, **kwargs: Any) -> Any:
         """Discover nearby BLE devices.
