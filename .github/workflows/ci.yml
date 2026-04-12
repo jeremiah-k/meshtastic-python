@@ -194,7 +194,7 @@ jobs:
             single >>"${GITHUB_STEP_SUMMARY}"
       - name: Upload meshtasticd integration logs
         if: always()
-        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: meshtasticd-integration-logs
           path: ${{ env.MESHTASTICD_LOG_DIR }}
@@ -234,7 +234,7 @@ jobs:
             multinode >>"${GITHUB_STEP_SUMMARY}"
       - name: Upload meshtasticd multinode logs
         if: always()
-        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: meshtasticd-multinode-logs
           path: ${{ env.MESHTASTICD_LOG_DIR }}
