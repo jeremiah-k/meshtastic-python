@@ -5,7 +5,7 @@
   "mode": "full",
   "enabledManagers": ["poetry", "github-actions"],
   "timezone": "America/Chicago",
-  "schedule": ["after 9am and before 1pm on Sunday"],
+  "schedule": ["after 9am and before 11pm on Sunday"],
   "updateNotScheduled": false,
   "dependencyDashboard": true,
   "dependencyDashboardTitle": "Dependency Updates (mtjk)",
