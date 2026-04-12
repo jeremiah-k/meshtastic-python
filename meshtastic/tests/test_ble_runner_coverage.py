@@ -457,12 +457,16 @@ class TestBLECoroutineRunnerRunCoroutineThreadsafe:
         async def simple_coro() -> str:
             return "done"
 
-        with pytest.raises(
-            ValueError, match="Specify only one of timeout or startup_timeout"
-        ):
-            fresh_runner._run_coroutine_threadsafe(
-                simple_coro(), timeout=1.0, startup_timeout=2.0
-            )
+        coro = simple_coro()
+        try:
+            with pytest.raises(
+                ValueError, match="Specify only one of timeout or startup_timeout"
+            ):
+                fresh_runner._run_coroutine_threadsafe(
+                    coro, timeout=1.0, startup_timeout=2.0
+                )
+        finally:
+            BLECoroutineRunner._close_coroutine_safely(coro)
 
     def test_run_coroutine_deprecated_timeout_warning(
         self,

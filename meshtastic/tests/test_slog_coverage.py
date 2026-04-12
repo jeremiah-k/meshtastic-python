@@ -1018,10 +1018,14 @@ def test_power_logger_store_current_reading_no_lock_fallback() -> None:
     logger._reading_lock = threading.Lock()
     # Don't initialize _deprecation_warning_lock
 
-    # Should not raise - will use fallback lock
-    with warnings.catch_warnings():
+    # Should not raise - will use fallback lock and emit deprecation warning
+    with warnings.catch_warnings(record=True) as captured:
         warnings.simplefilter("always")
         logger.store_current_reading()
+
+    assert any(
+        issubclass(item.category, DeprecationWarning) for item in captured
+    )
 
 
 @pytest.mark.unit
