@@ -690,9 +690,7 @@ class ClientManager:
                 ):
                     try:
                         is_connected = bool(is_connected_probe())
-                    except (
-                        Exception
-                    ):  # noqa: BLE001 - shutdown must remain best effort
+                    except Exception:  # noqa: BLE001 - shutdown must remain best effort
                         logger.debug(
                             "Failed to read BLE client connected state via %s during shutdown.",
                             probe_name,
@@ -700,9 +698,9 @@ class ClientManager:
                         )
                     if is_connected:
                         break
-                elif isinstance(is_connected_probe, bool) and not _is_unconfigured_mock_member(
-                    is_connected_probe
-                ):
+                elif isinstance(
+                    is_connected_probe, bool
+                ) and not _is_unconfigured_mock_member(is_connected_probe):
                     is_connected = is_connected_probe
                     if is_connected:
                         break

@@ -1,10 +1,10 @@
 # Includes PEP 561 py.typed marker for type checker support
 [tool.poetry]
 name = "mtjk"
-version = "2.7.8.post1"
+version = "2.7.8.post2"
 description = "Python API & client shell for talking to Meshtastic devices"
 authors = ["Meshtastic Developers (upstream project authors)"]
-maintainers = ["Jeremiah K. <17190268+jeremiah-k@users.noreply.github.com>"]
+maintainers = ["Jeremiah K. <jeremiahk@gmx.com>"]
 license = "GPL-3.0-only"
 readme = "README.md"
 homepage = "https://github.com/jeremiah-k/meshtastic-python"

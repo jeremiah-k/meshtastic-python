@@ -26,7 +26,7 @@ fi
 # shellcheck disable=SC1090,SC1091
 source "${POETRYDIR}/bin/activate"
 
-if [[ -z ${PROTOC:-} ]]; then
+if [[ -z ${PROTOC-} ]]; then
 	for PROTOC_CANDIDATE in \
 		"${NANOPB_DIR}/generator-bin/protoc" \
 		"${NANOPB_LINUX_DIR}/generator-bin/protoc"; do
@@ -37,11 +37,11 @@ if [[ -z ${PROTOC:-} ]]; then
 	done
 fi
 
-if [[ -z ${PROTOC:-} && ${ALLOW_SYSTEM_PROTOC:-0} == 1 ]] && command -v protoc >/dev/null 2>&1; then
+if [[ -z ${PROTOC-} && ${ALLOW_SYSTEM_PROTOC:-0} == 1 ]] && command -v protoc >/dev/null 2>&1; then
 	PROTOC="$(command -v protoc)"
 fi
 
-if [[ -z ${PROTOC:-} || ! -x ${PROTOC} ]]; then
+if [[ -z ${PROTOC-} || ! -x ${PROTOC} ]]; then
 	cat >&2 <<EOF
 Unable to find a protoc compiler.
 

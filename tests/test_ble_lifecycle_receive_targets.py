@@ -2791,9 +2791,7 @@ def test_receive_remaining_branches(
         assert recovered == ["receive_thread_fatal"]
 
         with monkeypatch.context() as m:
-            monotonic_values = itertools.chain(
-                [100.0, 100.1], itertools.repeat(100.1)
-            )
+            monotonic_values = itertools.chain([100.0, 100.1], itertools.repeat(100.1))
             m.setattr(
                 "meshtastic.interfaces.ble.receive_service.time.monotonic",
                 lambda: next(monotonic_values),

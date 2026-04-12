@@ -18,7 +18,13 @@
   "packageRules": [
     {
       "description": "Automerge all non-major dependency updates",
-      "matchUpdateTypes": ["minor", "patch", "pin", "digest", "lockFileMaintenance"],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "pin",
+        "digest",
+        "lockFileMaintenance"
+      ],
       "automerge": true
     },
     {
