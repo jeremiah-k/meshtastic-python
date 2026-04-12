@@ -44,7 +44,14 @@ def _make_iface(monkeypatch: pytest.MonkeyPatch) -> Any:
 
 
 def _make_gatt_protocol_error() -> BaseException:
-    """Create a BleakGATTProtocolError across constructor signature variants."""
+    """Create a BleakGATTProtocolError across constructor signature variants.
+
+    Returns
+    -------
+    BaseException
+        BleakGATTProtocolError instance compatible with multiple constructor
+        signatures, or a ``BleakError("gatt")`` fallback.
+    """
     for args in (("gatt",), (1,), ("gatt", 1), ()):
         try:
             return BleakGATTProtocolError(*args)  # type: ignore[misc]

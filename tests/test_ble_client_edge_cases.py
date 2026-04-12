@@ -231,6 +231,52 @@ def test_bleclient_init_translates_adapter_kwarg_to_bluez(
 
 
 @pytest.mark.unit
+def test_bleclient_discover_translates_adapter_kwarg_to_bluez(
+    monkeypatch: pytest.MonkeyPatch,
+    ble_client: BLEClient,
+) -> None:
+    """BLEClient discover() should map deprecated adapter kwarg to bluez args."""
+    captured_kwargs: list[dict[str, Any]] = []
+
+    async def _discover_stub(**kwargs: Any) -> list[Any]:
+        captured_kwargs.append(dict(kwargs))
+        return []
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.client.BleakScanner.discover",
+        _discover_stub,
+    )
+    monkeypatch.setattr(ble_client, "_async_await", _make_run_awaitable())
+
+    assert ble_client.discover(adapter="hci0") == []
+    assert captured_kwargs == [{"bluez": {"adapter": "hci0"}}]
+
+
+@pytest.mark.unit
+def test_bleclient_init_prefers_explicit_bluez_adapter_over_adapter_kwarg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BLEClient should preserve explicit bluez adapter when adapter kwarg is also set."""
+    captured_kwargs: list[dict[str, Any]] = []
+
+    class _BleakStub:
+        def __init__(self, _address: object, **kwargs: object) -> None:
+            captured_kwargs.append(dict(kwargs))
+            self.address = "AA:BB:CC:DD:EE:FF"
+
+    monkeypatch.setattr("meshtastic.interfaces.ble.client.BleakRootClient", _BleakStub)
+
+    client = BLEClient(
+        "11:22:33:44:55:66",
+        adapter="hci0",
+        bluez={"adapter": "hci1"},
+    )
+    assert client.bleak_client is not None
+    assert captured_kwargs == [{"bluez": {"adapter": "hci1"}}]
+    client.close()
+
+
+@pytest.mark.unit
 def test_bleclient_sync_address_noops_without_bleak_client(
     ble_client: BLEClient,
 ) -> None:
