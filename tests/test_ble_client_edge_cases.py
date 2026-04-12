@@ -210,6 +210,27 @@ def test_bleclient_init_with_address_syncs_from_bleak(
 
 
 @pytest.mark.unit
+def test_bleclient_init_translates_adapter_kwarg_to_bluez(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BLEClient should map deprecated adapter kwarg to bluez adapter args."""
+
+    captured_kwargs: list[dict[str, Any]] = []
+
+    class _BleakStub:
+        def __init__(self, _address: object, **kwargs: object) -> None:
+            captured_kwargs.append(dict(kwargs))
+            self.address = "AA:BB:CC:DD:EE:FF"
+
+    monkeypatch.setattr("meshtastic.interfaces.ble.client.BleakRootClient", _BleakStub)
+
+    client = BLEClient("11:22:33:44:55:66", adapter="hci0")
+    assert client.bleak_client is not None
+    assert captured_kwargs == [{"bluez": {"adapter": "hci0"}}]
+    client.close()
+
+
+@pytest.mark.unit
 def test_bleclient_sync_address_noops_without_bleak_client(
     ble_client: BLEClient,
 ) -> None:

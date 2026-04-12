@@ -7,7 +7,7 @@ from collections.abc import Callable
 from functools import wraps
 from typing import TYPE_CHECKING, cast
 
-from bleak.exc import BleakDBusError, BleakError
+from bleak.exc import BleakDBusError, BleakError, BleakGATTProtocolError
 
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import (
@@ -869,7 +869,7 @@ class BLEReceiveRecoveryController:
             ):
                 return True, False
             return False, False
-        except BleakDBusError as exc:
+        except (BleakDBusError, BleakGATTProtocolError) as exc:
             if self.handle_read_loop_disconnect(repr(exc), client):
                 return True, False
             return True, True
@@ -953,6 +953,7 @@ class BLEReceiveRecoveryController:
             raise
         except (
             BleakDBusError,
+            BleakGATTProtocolError,
             BLEClient.BLEError,
             BleakError,
             DecodeError,

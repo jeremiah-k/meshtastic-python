@@ -10,7 +10,7 @@ recommended patterns for code that embeds `meshtastic-python`.
 | Component                                    | Responsibility                                                                                                                                     |
 | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `BLEInterface`                               | User-facing entry point; extends `MeshInterface` with BLE lifecycle management                                                                     |
-| `BLEClient`                                  | Synchronous wrapper around Bleak; delegates async calls to the singleton runner                                                                    |
+| `BLEClient`                                  | Synchronous wrapper around Bleak; delegates async calls to the singleton runner and normalizes deprecated `adapter=` args to Bleak 3 `bluez` args  |
 | `BLECoroutineRunner`                         | Process-wide singleton with one background thread and one asyncio event loop                                                                       |
 | `BLEStateManager`                            | Centralized state machine (states: `DISCONNECTED`, `CONNECTING`, `CONNECTED`, `DISCONNECTING`, `RECONNECTING`, `ERROR`)                            |
 | `BLEErrorHandler`                            | Unified exception-handling helpers used across the BLE subsystem                                                                                   |
@@ -109,6 +109,30 @@ recommended patterns for code that embeds `meshtastic-python`.
   during connect (`pair_on_connect=True` or `connect(pair=True)`), and also
   exposes an explicit Linux trust helper (`trust(address=None)`) that calls
   `bluetoothctl trust <addr>`.
+
+---
+
+## Bleak 3 compatibility notes
+
+- The project now targets `bleak` `^3.0.1`.
+- Bleak 3 deprecates `adapter=...` in favor of
+  `bluez={"adapter": ...}` for Linux/BlueZ arguments.
+- `BLEClient` keeps compatibility for older callers by translating legacy
+  `adapter=` kwargs to `bluez={"adapter": ...}` when creating clients and
+  when running scanner discovery.
+- Preferred new call style for Linux adapter selection is:
+
+```python
+client = BLEClient(address="AA:BB:CC:DD:EE:FF", bluez={"adapter": "hci0"})
+devices = client.discover(timeout=10.0, return_adv=True, bluez={"adapter": "hci0"})
+```
+
+- Bleak 3 introduces `BleakGATTProtocolError` for GATT protocol-level
+  read/write failures. In the Meshtastic receive loop, this is handled with the
+  same disconnect/recovery path used for `BleakDBusError` so recovery behavior
+  remains consistent.
+- The compatibility shim `meshtastic.ble_interface` now also re-exports
+  `BleakGATTProtocolError` with the other retained Bleak symbols.
 
 ---
 
@@ -483,6 +507,7 @@ with BLEInterface(address="DD:DD:13:27:74:29") as iface:
 | Layered reconnect loops                       | Use either the library's `auto_reconnect=True` **or** your own loop, never both.                                                                           |
 | Aggressive retry cadence                      | Include exponential backoff; long `scan + connect` calls during rapid retries exhaust BlueZ.                                                               |
 | Forgetting to resubscribe notifications       | Use the same instance so `NotificationManager` can call `_resubscribe_all()` automatically after reconnects (non-`FROMNUM_UUID`; dispatcher owns FROMNUM). |
+| Passing only deprecated `adapter=` kwargs     | Prefer `bluez={"adapter": "hci0"}` for Bleak 3; `BLEClient` still translates legacy `adapter=` for compatibility.                                          |
 | Not closing the interface                     | Always call `close()` or use the context-manager pattern; unclosed BLE handles on Linux prevent future connections (BlueZ quirk).                          |
 
 ---
