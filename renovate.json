@@ -1,18 +1,18 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
-  "enabledManagers": ["poetry"],
+  "enabledManagers": ["poetry", "github-actions"],
   "timezone": "America/Chicago",
   "schedule": ["after 9:30am and before 10:29am on Sunday"],
   "updateNotScheduled": false,
   "dependencyDashboard": true,
   "dependencyDashboardTitle": "Dependency Updates (mtjk)",
   "separateMajorMinor": true,
-  "prConcurrentLimit": 2,
-  "prHourlyLimit": 2,
+  "prConcurrentLimit": 0,
+  "prHourlyLimit": 0,
   "lockFileMaintenance": {
     "enabled": true,
-    "schedule": ["after 11:00am and before 11:59am on Sunday"]
+    "schedule": ["after 9:30am and before 10:29am on Sunday"]
   },
   "git-submodules": {
     "enabled": false
