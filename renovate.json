@@ -12,6 +12,13 @@
   "separateMajorMinor": true,
   "prConcurrentLimit": 0,
   "prHourlyLimit": 0,
+  "packageRules": [
+    {
+      "description": "Hold pandas on v2 until Python/compatibility migration is complete",
+      "matchPackageNames": ["pandas"],
+      "allowedVersions": "<3"
+    }
+  ],
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": ["after 9am and before 1pm on Sunday"]
