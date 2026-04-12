@@ -38,7 +38,7 @@
       "automerge": false
     },
     {
-      "description": "Automerge protobuf submodule updates after regen workflow passes",
+      "description": "Automerge protobuf submodule updates",
       "matchManagers": ["git-submodules"],
       "matchDepNames": ["protobufs"],
       "matchUpdateTypes": ["minor", "patch", "pin", "digest", "pinDigest"],
