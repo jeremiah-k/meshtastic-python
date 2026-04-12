@@ -9,7 +9,7 @@
   "updateNotScheduled": false,
   "dependencyDashboard": true,
   "dependencyDashboardTitle": "Dependency Updates (mtjk)",
-  "automerge": true,
+  "automerge": false,
   "automergeType": "pr",
   "platformAutomerge": true,
   "separateMajorMinor": true,
@@ -17,9 +17,19 @@
   "prHourlyLimit": 0,
   "packageRules": [
     {
+      "description": "Automerge all non-major dependency updates",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest", "lockFileMaintenance"],
+      "automerge": true
+    },
+    {
       "description": "Hold pandas on v2 until Python/compatibility migration is complete",
       "matchPackageNames": ["pandas"],
       "allowedVersions": "<3"
+    },
+    {
+      "description": "Keep bleak updates manual for planned migration work",
+      "matchPackageNames": ["bleak"],
+      "automerge": false
     }
   ],
   "lockFileMaintenance": {
