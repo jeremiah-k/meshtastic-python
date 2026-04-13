@@ -95,8 +95,11 @@ recommended patterns for code that embeds `meshtastic-python`.
   (see `DIRECT_CONNECT_TIMEOUT_SECONDS` in
   [`meshtastic/interfaces/ble/connection.py`](meshtastic/interfaces/ble/connection.py),
   default 12 s).
-  - For explicit BLE addresses (`AA:BB:CC:DD:EE:FF`), retries stay direct-only
-    and do **not** fall back to discovery scans.
+  - For caller-explicit BLE addresses (`AA:BB:CC:DD:EE:FF` passed via
+    `connect(address=...)`), retries stay direct-only and do **not** fall back
+    to discovery scans.
+  - Derived reconnect targets (for example carrying a prior `current_address`
+    when no explicit address is supplied) may still use discovery fallback.
   - Discovery fallback is only used when connecting by identifier/name (or when
     no address is provided) where device resolution is expected to come from
     scanning.

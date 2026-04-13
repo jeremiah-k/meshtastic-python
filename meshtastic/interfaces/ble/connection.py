@@ -1326,6 +1326,9 @@ class ConnectionOrchestrator:
                 direct_err,
                 exc_info=True,
             )
+            # Preserve strict direct-only retries only for caller-explicit BLE
+            # addresses. Derived targets (for example current_address carried
+            # into reconnect flows) are still allowed to use discovery fallback.
             skip_discovery_scan = explicit_address and _looks_like_ble_address(
                 target_address
             )
@@ -1337,6 +1340,11 @@ class ConnectionOrchestrator:
             elif skip_discovery_scan:
                 logger.debug(
                     "Direct connect to explicit address %s failed; retrying without discovery scan.",
+                    normalized_target,
+                )
+            elif target_address and _looks_like_ble_address(target_address):
+                logger.debug(
+                    "Direct connect to derived address %s failed; allowing discovery fallback.",
                     normalized_target,
                 )
             self._client_manager_safe_close_client(client)
@@ -1721,12 +1729,13 @@ class ConnectionOrchestrator:
         with self.state_lock:
             if not self._state_transition_to(ConnectionState.CONNECTING):
                 raise self.interface.BLEError(BLECLIENT_ERROR_ALREADY_CONNECTED)
+        is_explicit_target = address is not None
         client: BLEClient | None = None
         skip_discovery_scan = False
         try:
             client, skip_discovery_scan = self._attempt_direct_connect(
                 target_address=target_address,
-                explicit_address=address is not None,
+                explicit_address=is_explicit_target,
                 normalized_target=normalized_target,
                 on_disconnect_func=on_disconnect_func,
                 pair_on_connect=pair_on_connect,

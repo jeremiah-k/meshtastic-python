@@ -378,6 +378,40 @@ def test_connection_orchestrator_direct_and_retry_exception_paths(
             orchestrator._compat_find_device(TEST_BLE_ADDRESS)
 
 
+def test_attempt_direct_connect_allows_discovery_for_derived_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Derived address targets should not force skip_discovery_scan direct-only mode."""
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        direct_client = DummyClient()
+        closed_clients: list[object] = []
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: direct_client
+        )
+        orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: (
+            _ for _ in ()
+        ).throw(TimeoutError("direct fail"))
+        orchestrator._client_manager_safe_close_client = (
+            lambda client: closed_clients.append(client)
+        )
+
+        client, skip_discovery_scan = orchestrator._attempt_direct_connect(
+            target_address=TEST_BLE_ADDRESS,
+            explicit_address=False,
+            normalized_target="aabbccddeeff",
+            on_disconnect_func=lambda _client: None,
+            pair_on_connect=False,
+            direct_connect_timeout=1.0,
+            register_notifications_func=lambda _client: None,
+            on_connected_func=lambda: None,
+            emit_connected_side_effects=True,
+        )
+
+        assert client is None
+        assert skip_discovery_scan is False
+        assert closed_clients == [direct_client]
+
+
 def test_connection_orchestrator_finalize_and_establish_error_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
