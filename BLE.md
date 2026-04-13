@@ -519,7 +519,7 @@ with BLEInterface(address="DD:DD:13:27:74:29") as iface:
 | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Multiple `BLEInterface` instances per address | Reuse one instance; multiple instances collide on the address gate.                                                                                        |
 | Layered reconnect loops                       | Use either the library's `auto_reconnect=True` **or** your own loop, never both.                                                                           |
-| Aggressive retry cadence                      | Include exponential backoff; repeated direct retries or `scan + connect` cycles during rapid retries exhaust BlueZ.                                       |
+| Aggressive retry cadence                      | Include exponential backoff; repeated direct retries or `scan + connect` cycles during rapid retries exhaust BlueZ.                                        |
 | Forgetting to resubscribe notifications       | Use the same instance so `NotificationManager` can call `_resubscribe_all()` automatically after reconnects (non-`FROMNUM_UUID`; dispatcher owns FROMNUM). |
 | Passing only deprecated `adapter=` kwargs     | Prefer `bluez={"adapter": "hci0"}` for Bleak 3; `BLEClient` still translates legacy `adapter=` for compatibility.                                          |
 | Not closing the interface                     | Always call `close()` or use the context-manager pattern; unclosed BLE handles on Linux prevent future connections (BlueZ quirk).                          |
