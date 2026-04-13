@@ -1154,7 +1154,7 @@ class ConnectionOrchestrator:
         *,
         address: str | None,
         current_address: str | None,
-    ) -> tuple[str | None, str | None]:
+    ) -> tuple[str | None, str | None, bool]:
         """Resolve and validate the connection target address for this attempt.
 
         Parameters
@@ -1166,9 +1166,11 @@ class ConnectionOrchestrator:
 
         Returns
         -------
-        tuple[str | None, str | None]
-            Tuple of ``(target_address, normalized_target)`` where
-            ``normalized_target`` is produced by :func:`sanitize_address`.
+        tuple[str | None, str | None, bool]
+            Tuple of ``(target_address, normalized_target, explicit_address)``
+            where ``normalized_target`` is produced by
+            :func:`sanitize_address` and ``explicit_address`` tracks whether the
+            target came from the caller-provided ``address`` argument.
 
         Raises
         ------
@@ -1191,7 +1193,7 @@ class ConnectionOrchestrator:
             logger.info("Attempting to connect to %s", target_address)
         else:
             logger.info("Attempting discovery-mode connection (no address specified)")
-        return target_address, normalized_target
+        return target_address, normalized_target, explicit_address
 
     def _resolve_connection_timeouts(
         self,
@@ -1242,6 +1244,7 @@ class ConnectionOrchestrator:
         self,
         *,
         target_address: str | None,
+        explicit_address: bool,
         normalized_target: str | None,
         on_disconnect_func: Callable[["BleakRootClient"], None],
         pair_on_connect: bool,
@@ -1256,6 +1259,9 @@ class ConnectionOrchestrator:
         ----------
         target_address : str | None
             Explicit address to connect, or ``None`` for discovery mode.
+        explicit_address : bool
+            Whether ``target_address`` originated from an explicitly supplied
+            ``address`` argument rather than derived current-address state.
         normalized_target : str | None
             Sanitized logging form of ``target_address``.
         on_disconnect_func : Callable[[BleakRootClient], None]
@@ -1317,17 +1323,30 @@ class ConnectionOrchestrator:
             TimeoutError,
         ) as direct_err:
             logger.debug(
-                "Direct connect to %s failed; falling back to discovery: %s",
+                "Direct connect to %s failed; preparing retry path: %s",
                 normalized_target,
                 direct_err,
                 exc_info=True,
             )
-            skip_discovery_scan = _looks_like_ble_address(
+            # Preserve strict direct-only retries only for caller-explicit BLE
+            # addresses. Derived targets (for example current_address carried
+            # into reconnect flows) are still allowed to use discovery fallback.
+            skip_discovery_scan = explicit_address and _looks_like_ble_address(
                 target_address
-            ) and _is_device_not_found_error(direct_err)
-            if skip_discovery_scan:
+            )
+            if skip_discovery_scan and _is_device_not_found_error(direct_err):
                 logger.debug(
                     "Direct connect reported device-not-found for %s; skipping discovery scan and retrying explicit address connect.",
+                    normalized_target,
+                )
+            elif skip_discovery_scan:
+                logger.debug(
+                    "Direct connect to explicit address %s failed; retrying without discovery scan.",
+                    normalized_target,
+                )
+            elif target_address and _looks_like_ble_address(target_address):
+                logger.debug(
+                    "Direct connect to derived address %s failed; allowing discovery fallback.",
                     normalized_target,
                 )
             self._client_manager_safe_close_client(client)
@@ -1400,9 +1419,8 @@ class ConnectionOrchestrator:
         on_disconnect_func: Callable[["BleakRootClient"], None],
         pair_on_connect: bool,
         retry_connect_timeout: float,
-        discovery_connect_timeout: float,
     ) -> tuple[BLEClient, str]:
-        """Connect retry target with optional discovery fallback after direct retry.
+        """Connect a resolved retry target and return the connected client.
 
         Parameters
         ----------
@@ -1420,8 +1438,6 @@ class ConnectionOrchestrator:
             Whether pairing should be requested during connect.
         retry_connect_timeout : float
             Timeout for the initial retry connect.
-        discovery_connect_timeout : float
-            Timeout for discovery-fallback connect.
 
         Returns
         -------
@@ -1463,39 +1479,17 @@ class ConnectionOrchestrator:
             OSError,
             TimeoutError,
         ) as retry_err:
-            should_attempt_discovery_after_retry = (
+            if (
                 skip_discovery_scan
                 and target_address is not None
                 and _is_device_not_found_error(retry_err)
-            )
-            if not should_attempt_discovery_after_retry:
-                self._client_manager_safe_close_client(client)
-                raise
-            logger.debug(
-                "Direct retry also reported device-not-found for %s; attempting discovery scan fallback.",
-                sanitize_address(target_address),
-            )
-            self._client_manager_safe_close_client(client)
-
-            self._raise_if_interface_closing()
-            device = self._compat_find_device(target_address)
-            self._raise_if_interface_closing()
-            resolved_address = device.address
-            client = self._client_manager_create_client(
-                device,
-                on_disconnect_func,
-                pair_on_connect=pair_on_connect,
-                connect_timeout=discovery_connect_timeout,
-            )
-            try:
-                self._raise_if_interface_closing()
-                self._client_manager_connect_client(
-                    client,
-                    timeout=discovery_connect_timeout,
+            ):
+                logger.debug(
+                    "Direct retry also reported device-not-found for %s; explicit-address mode does not use discovery fallback.",
+                    sanitize_address(target_address),
                 )
-            except BaseException:
-                self._client_manager_safe_close_client(client)
-                raise
+            self._client_manager_safe_close_client(client)
+            raise
         except Exception:
             self._client_manager_safe_close_client(client)
             raise
@@ -1723,9 +1717,11 @@ class ConnectionOrchestrator:
         self._validator_validate_connection_request()
         self._raise_if_interface_closing()
 
-        target_address, normalized_target = self._prepare_connection_target(
-            address=address,
-            current_address=current_address,
+        target_address, normalized_target, explicit_address = (
+            self._prepare_connection_target(
+                address=address,
+                current_address=current_address,
+            )
         )
         direct_connect_timeout, discovery_connect_timeout = (
             self._resolve_connection_timeouts(
@@ -1742,6 +1738,7 @@ class ConnectionOrchestrator:
         try:
             client, skip_discovery_scan = self._attempt_direct_connect(
                 target_address=target_address,
+                explicit_address=explicit_address,
                 normalized_target=normalized_target,
                 on_disconnect_func=on_disconnect_func,
                 pair_on_connect=pair_on_connect,
@@ -1772,7 +1769,6 @@ class ConnectionOrchestrator:
                 on_disconnect_func=on_disconnect_func,
                 pair_on_connect=pair_on_connect,
                 retry_connect_timeout=retry_connect_timeout,
-                discovery_connect_timeout=discovery_connect_timeout,
             )
 
             self._raise_if_interface_closing()
