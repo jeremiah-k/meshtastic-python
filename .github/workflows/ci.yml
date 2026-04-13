@@ -86,6 +86,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: jeremiah-k/mtjk
+          files: ./junit.xml
           report_type: test_results
           fail_ci_if_error: false
   pylint:
