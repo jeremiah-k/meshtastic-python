@@ -98,6 +98,29 @@ mesh-analysis = "meshtastic.analysis.__main__:main [analysis]"
 code = "code ."
 juypter = "poetry run jupyter lab"
 
+[tool.mypy]
+
+[[tool.mypy.overrides]]
+module = [
+  "argcomplete",
+  "dash",
+  "dash_bootstrap_components",
+  "dotmap",
+  "numpy",
+  "pandas",
+  "parse",
+  "plotly",
+  "plotly.*",
+  "ppk2_api",
+  "print_color",
+  "pyarrow",
+  "pyarrow.*",
+  "pyqrcode",
+  "pytap2",
+  "riden",
+]
+ignore_missing_imports = true
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

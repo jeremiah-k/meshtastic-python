@@ -9,7 +9,7 @@ import threading
 from typing import IO, TYPE_CHECKING, Any, TypeAlias
 
 try:
-    import print_color  # type: ignore[import-untyped]
+    import print_color
 except ImportError:
     print_color = None
 

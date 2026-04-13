@@ -105,7 +105,7 @@ class _FallbackDotMap(dict[str, Any]):
 
 DotMap: type[Any]
 try:
-    from dotmap import DotMap as _ImportedDotMap  # type: ignore[import-untyped]
+    from dotmap import DotMap as _ImportedDotMap
 except ImportError:
     DotMap = _FallbackDotMap
 else:

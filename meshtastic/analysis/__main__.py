@@ -8,13 +8,17 @@ import re
 from collections.abc import Iterable
 from typing import Any, NoReturn, cast
 
-import dash_bootstrap_components as dbc  # type: ignore[import-untyped]
-import numpy as np
-import pandas as pd
-import plotly.express as px  # type: ignore[import-untyped]
-import plotly.graph_objects as go  # type: ignore[import-untyped]
+import dash_bootstrap_components as dbc  # pylint: disable=import-error
+import numpy as np  # pylint: disable=import-error
+import pandas as pd  # pylint: disable=import-error
+import plotly.express as px  # pylint: disable=import-error
+import plotly.graph_objects as go  # pylint: disable=import-error
 import pyarrow as pa
-from dash import Dash, dcc, html
+from dash import (  # pylint: disable=import-error
+    Dash,
+    dcc,
+    html,
+)
 from pyarrow import feather
 
 from .. import mesh_pb2, powermon_pb2, util

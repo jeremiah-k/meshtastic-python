@@ -48,7 +48,7 @@ except ImportError:
 
 pyqrcode: ModuleType | None = None
 try:
-    import pyqrcode as _pyqrcode  # type: ignore[import-untyped]
+    import pyqrcode as _pyqrcode
 
     pyqrcode = _pyqrcode
 except ImportError:

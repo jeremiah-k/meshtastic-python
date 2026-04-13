@@ -19,7 +19,7 @@ import google.protobuf.json_format
 from google.protobuf import message as protobuf_message
 
 try:
-    import print_color  # type: ignore[import-untyped]
+    import print_color
 except ImportError:
     print_color = None
 

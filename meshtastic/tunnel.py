@@ -22,7 +22,7 @@ from contextlib import suppress
 from typing import Any
 
 from pubsub import pub
-from pytap2 import TapDevice
+from pytap2 import TapDevice  # pylint: disable=import-error
 
 from meshtastic import mt_config
 from meshtastic.protobuf import portnums_pb2
