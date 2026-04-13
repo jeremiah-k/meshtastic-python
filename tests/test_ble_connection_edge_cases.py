@@ -1729,6 +1729,8 @@ def test_connection_orchestrator_raises_after_explicit_address_direct_retry_not_
         )
 
     interface.findDevice.assert_not_called()
+    interface.find_device.assert_not_called()
+    interface._find_device.assert_not_called()
     assert client_manager.connect_client.call_count == 2
     direct_timeout = min(DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT)
     assert (
