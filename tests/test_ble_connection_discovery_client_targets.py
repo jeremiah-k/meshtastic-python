@@ -341,6 +341,7 @@ def test_connection_orchestrator_direct_and_retry_exception_paths(
         with pytest.raises(RuntimeError, match="finalize failed"):
             orchestrator._attempt_direct_connect(
                 target_address=TEST_BLE_ADDRESS,
+                explicit_address=True,
                 normalized_target="aabbccddeeff",
                 on_disconnect_func=lambda _client: None,
                 pair_on_connect=False,
@@ -697,6 +698,7 @@ def test_orchestrator_create_connect_direct_retry_remaining_branches(
         with pytest.raises(ValueError, match="direct fail"):
             orchestrator._attempt_direct_connect(
                 target_address=TEST_BLE_ADDRESS,
+                explicit_address=True,
                 normalized_target="aabbccddeeff",
                 on_disconnect_func=lambda _client: None,
                 pair_on_connect=False,
