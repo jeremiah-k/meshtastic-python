@@ -11,8 +11,8 @@
 
 ## Development resources
 
-- `mtjk` repository: <https://github.com/jeremiah-k/meshtastic-python>
-- `mtjk` issue tracker: <https://github.com/jeremiah-k/meshtastic-python/issues>
+- `mtjk` repository: <https://github.com/jeremiah-k/mtjk>
+- `mtjk` issue tracker: <https://github.com/jeremiah-k/mtjk/issues>
 - Upstream technical docs (still useful reference):
   - [API Documentation](https://python.meshtastic.org/)
   - [Meshtastic Python Development](https://meshtastic.org/docs/development/python/)

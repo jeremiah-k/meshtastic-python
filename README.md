@@ -70,7 +70,7 @@ To install the latest unreleased version from this repository (clean install):
 pipx uninstall meshtastic || true
 
 pipx uninstall mtjk || true
-pipx install "git+https://github.com/jeremiah-k/meshtastic-python.git@develop"
+pipx install "git+https://github.com/jeremiah-k/mtjk.git@develop"
 ```
 
 ## Upgrade / Uninstall
@@ -99,14 +99,14 @@ mtjk
 Unreleased from Git:
 
 ```text
-mtjk @ git+https://github.com/jeremiah-k/meshtastic-python.git@develop
+mtjk @ git+https://github.com/jeremiah-k/mtjk.git@develop
 ```
 
 If you need optional CLI extras in a dependency spec:
 
 ```text
 mtjk[cli]
-mtjk[cli] @ git+https://github.com/jeremiah-k/meshtastic-python.git@develop
+mtjk[cli] @ git+https://github.com/jeremiah-k/mtjk.git@develop
 ```
 
 ### pyproject.toml (PEP 621)
@@ -123,7 +123,7 @@ Unreleased from Git:
 ```toml
 [project]
 dependencies = [
-  "mtjk @ git+https://github.com/jeremiah-k/meshtastic-python.git@develop",
+  "mtjk @ git+https://github.com/jeremiah-k/mtjk.git@develop",
 ]
 ```
 
@@ -140,7 +140,7 @@ Unreleased from Git:
 ```ini
 [options]
 install_requires =
-    mtjk @ git+https://github.com/jeremiah-k/meshtastic-python.git@develop
+    mtjk @ git+https://github.com/jeremiah-k/mtjk.git@develop
 ```
 
 ### Python import (unchanged)
@@ -158,7 +158,7 @@ interface.close()
 
 Report `mtjk`-specific issues here:
 
-- <https://github.com/jeremiah-k/meshtastic-python/issues>
+- <https://github.com/jeremiah-k/mtjk/issues>
 
 Please do not file `mtjk`-specific issues with upstream maintainers.
 
@@ -169,4 +169,4 @@ Please do not file `mtjk`-specific issues with upstream maintainers.
 - Trusted Publisher workflow expects the git tag version to match `pyproject.toml` exactly.
 - Supported tag formats are `vX.Y.Z...` or `X.Y.Z...` (both map to the same package version check).
 - PyPI Trusted Publisher must match this repo/workflow/environment tuple:
-  `jeremiah-k/meshtastic-python` + `.github/workflows/pypi-publish.yml` + `pypi-release`.
+  `jeremiah-k/mtjk` + `.github/workflows/pypi-publish.yml` + `pypi-release`.

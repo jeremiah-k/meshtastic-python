@@ -7,8 +7,8 @@ authors = ["Meshtastic Developers (upstream project authors)"]
 maintainers = ["Jeremiah K. <jeremiahk@gmx.com>"]
 license = "GPL-3.0-only"
 readme = "README.md"
-homepage = "https://github.com/jeremiah-k/meshtastic-python"
-repository = "https://github.com/jeremiah-k/meshtastic-python"
+homepage = "https://github.com/jeremiah-k/mtjk"
+repository = "https://github.com/jeremiah-k/mtjk"
 packages = [{ include = "meshtastic" }]
 include = [{ path = "meshtastic/py.typed", format = ["sdist", "wheel"] }]
 
