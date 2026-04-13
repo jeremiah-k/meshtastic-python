@@ -369,7 +369,6 @@ def test_connection_orchestrator_direct_and_retry_exception_paths(
                 on_disconnect_func=lambda _client: None,
                 pair_on_connect=False,
                 retry_connect_timeout=1.0,
-                discovery_connect_timeout=1.0,
             )
         assert retry_client in closed_clients
 
@@ -725,7 +724,6 @@ def test_orchestrator_create_connect_direct_retry_remaining_branches(
                 on_disconnect_func=lambda _client: None,
                 pair_on_connect=False,
                 retry_connect_timeout=1.0,
-                discovery_connect_timeout=1.0,
             )
         assert retry_client in closed_clients
 
@@ -746,31 +744,23 @@ def test_orchestrator_create_connect_direct_retry_remaining_branches(
                 on_disconnect_func=lambda _client: None,
                 pair_on_connect=False,
                 retry_connect_timeout=1.0,
-                discovery_connect_timeout=1.0,
             )
         assert retry_client in closed_clients
 
         first_retry_client = DummyClient()
-        second_retry_client = DummyClient()
-        create_clients = iter([first_retry_client, second_retry_client])
         closed_clients.clear()
-        orchestrator._client_manager_create_client = lambda *_args, **_kwargs: next(
-            create_clients
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: first_retry_client
         )
-
-        connect_attempt_count = [0]
 
         def _connect_side_effect(*_args: object, **_kwargs: object) -> None:
-            if connect_attempt_count[0] == 0:
-                connect_attempt_count[0] += 1
-                raise BleakDeviceNotFoundError("device not found")
-            raise RuntimeError("discovery connect failed")
+            raise BleakDeviceNotFoundError("device not found")
 
         orchestrator._client_manager_connect_client = _connect_side_effect
-        orchestrator._compat_find_device = lambda _target: SimpleNamespace(
-            address="AA:BB"
+        orchestrator._compat_find_device = lambda _target: (_ for _ in ()).throw(
+            AssertionError("explicit-address retry should not scan")
         )
-        with pytest.raises(RuntimeError, match="discovery connect failed"):
+        with pytest.raises(BleakDeviceNotFoundError):
             orchestrator._connect_retry_target(
                 connection_target=TEST_BLE_ADDRESS,
                 resolved_address=TEST_BLE_ADDRESS,
@@ -779,9 +769,8 @@ def test_orchestrator_create_connect_direct_retry_remaining_branches(
                 on_disconnect_func=lambda _client: None,
                 pair_on_connect=False,
                 retry_connect_timeout=1.0,
-                discovery_connect_timeout=1.0,
             )
-        assert closed_clients == [first_retry_client, second_retry_client]
+        assert closed_clients == [first_retry_client]
 
 
 def test_orchestrator_finalize_and_establish_remaining_branches(

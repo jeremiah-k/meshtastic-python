@@ -91,11 +91,16 @@ recommended patterns for code that embeds `meshtastic-python`.
   after `BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS` (default 300 s).
   A suppressed attempt logs `Connection suppressed: recently connected elsewhere`.
 
-- **Short direct connect, then scan fallback.** A direct connect is tried first
+- **Direct-first explicit address semantics.** A direct connect is always tried first
   (see `DIRECT_CONNECT_TIMEOUT_SECONDS` in
   [`meshtastic/interfaces/ble/connection.py`](meshtastic/interfaces/ble/connection.py),
-  default 12 s). On failure, a 10 s scan runs and then a full connect uses
-  `BLEConfig.CONNECTION_TIMEOUT` (default 60 s).
+  default 12 s).
+  - For explicit BLE addresses (`AA:BB:CC:DD:EE:FF`), retries stay direct-only
+    and do **not** fall back to discovery scans.
+  - Discovery fallback is only used when connecting by identifier/name (or when
+    no address is provided) where device resolution is expected to come from
+    scanning.
+  - Discovery-resolved connects use `BLEConfig.CONNECTION_TIMEOUT` (default 60 s).
 
 - **Serialized disconnect handling.** A per-interface `_disconnect_lock`
   deduplicates concurrent disconnect callbacks and marks the address as free
@@ -440,9 +445,11 @@ seconds will continue to be suppressed.
 
 ### Keep retries bounded
 
-- The scan + connect cycle can block up to `BLEConfig.CONNECTION_TIMEOUT` (60 s).
-  After a failed cycle, wait at least 30–60 s before retrying to avoid
-  exhausting Linux/BlueZ resources.
+- Explicit-address direct retries are bounded by
+  `DIRECT_CONNECT_TIMEOUT_SECONDS` (default 12 s per attempt).
+- Identifier/no-address discovery + connect cycles can block up to
+  `BLEConfig.CONNECTION_TIMEOUT` (60 s). After a failed cycle, wait at least
+  30–60 s before retrying to avoid exhausting Linux/BlueZ resources.
 - A scan returning zero devices on Linux is expected when the peripheral is
   already connected elsewhere. Rely on the address gate; repeated scans make
   things worse.
@@ -505,7 +512,7 @@ with BLEInterface(address="DD:DD:13:27:74:29") as iface:
 | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Multiple `BLEInterface` instances per address | Reuse one instance; multiple instances collide on the address gate.                                                                                        |
 | Layered reconnect loops                       | Use either the library's `auto_reconnect=True` **or** your own loop, never both.                                                                           |
-| Aggressive retry cadence                      | Include exponential backoff; long `scan + connect` calls during rapid retries exhaust BlueZ.                                                               |
+| Aggressive retry cadence                      | Include exponential backoff; repeated direct retries or `scan + connect` cycles during rapid retries exhaust BlueZ.                                       |
 | Forgetting to resubscribe notifications       | Use the same instance so `NotificationManager` can call `_resubscribe_all()` automatically after reconnects (non-`FROMNUM_UUID`; dispatcher owns FROMNUM). |
 | Passing only deprecated `adapter=` kwargs     | Prefer `bluez={"adapter": "hci0"}` for Bleak 3; `BLEClient` still translates legacy `adapter=` for compatibility.                                          |
 | Not closing the interface                     | Always call `close()` or use the context-manager pattern; unclosed BLE handles on Linux prevent future connections (BlueZ quirk).                          |
@@ -517,8 +524,8 @@ with BLEInterface(address="DD:DD:13:27:74:29") as iface:
 Restart if you observe:
 
 - repeated `Cannot connect while interface is closing` for several minutes, or
-- repeated scan + connect cycles timing out on Linux/BlueZ despite the device
-  being powered and advertising.
+- repeated direct retries (or discovery cycles when using identifier mode)
+  timing out on Linux/BlueZ despite the device being powered and advertising.
 
 A clean restart clears leaked BLE/DBus handles and resets the process-wide
 address gate.
