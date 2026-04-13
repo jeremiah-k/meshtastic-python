@@ -1322,12 +1322,15 @@ class ConnectionOrchestrator:
                 direct_err,
                 exc_info=True,
             )
-            skip_discovery_scan = _looks_like_ble_address(
-                target_address
-            ) and _is_device_not_found_error(direct_err)
-            if skip_discovery_scan:
+            skip_discovery_scan = _looks_like_ble_address(target_address)
+            if skip_discovery_scan and _is_device_not_found_error(direct_err):
                 logger.debug(
                     "Direct connect reported device-not-found for %s; skipping discovery scan and retrying explicit address connect.",
+                    normalized_target,
+                )
+            elif skip_discovery_scan:
+                logger.debug(
+                    "Direct connect to explicit address %s failed; retrying without discovery scan.",
                     normalized_target,
                 )
             self._client_manager_safe_close_client(client)

@@ -1381,6 +1381,73 @@ def test_connection_orchestrator_skips_scan_after_direct_device_not_found_for_ex
 
 
 @pytest.mark.unit
+def test_connection_orchestrator_skips_scan_after_direct_timeout_for_explicit_address() -> (
+    None
+):
+    """Explicit-address direct timeout should skip discovery scan fallback."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = _make_orchestrator_client_manager()
+    direct_client = MagicMock()
+    retry_client = MagicMock()
+    client_manager.create_client.side_effect = [direct_client, retry_client]
+    client_manager.connect_client.side_effect = [
+        TimeoutError("direct connect timed out"),
+        None,
+    ]
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = False
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+    orchestrator._finalize_connection = MagicMock()  # type: ignore[method-assign]
+
+    result = orchestrator._establish_connection(
+        address="AA:BB:CC:DD:EE:FF",
+        current_address=None,
+        register_notifications_func=lambda _client: None,
+        on_connected_func=lambda: None,
+        on_disconnect_func=lambda _client: None,
+    )
+
+    assert result is retry_client
+    interface.findDevice.assert_not_called()
+    interface.find_device.assert_not_called()
+    interface._find_device.assert_not_called()
+    assert client_manager.connect_client.call_count == 2
+    direct_timeout = min(DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT)
+    assert (
+        client_manager.connect_client.call_args_list[0].kwargs["timeout"]
+        == direct_timeout
+    )
+    assert (
+        client_manager.connect_client.call_args_list[1].kwargs["timeout"]
+        == direct_timeout
+    )
+    assert [
+        call.kwargs["connect_timeout"]
+        for call in client_manager.create_client.call_args_list
+    ] == [direct_timeout, direct_timeout]
+    orchestrator._finalize_connection.assert_called_once_with(
+        retry_client,
+        "AA:BB:CC:DD:EE:FF",
+        ANY,
+        ANY,
+        emit_connected_side_effects=True,
+    )
+
+
+@pytest.mark.unit
 def test_connection_orchestrator_uses_discovery_for_non_address_identifier_after_direct_failure() -> (
     None
 ):
