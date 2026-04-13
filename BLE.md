@@ -91,17 +91,21 @@ recommended patterns for code that embeds `meshtastic-python`.
   after `BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS` (default 300 s).
   A suppressed attempt logs `Connection suppressed: recently connected elsewhere`.
 
-- **Direct-first explicit address semantics.** A direct connect is always tried first
-  (see `DIRECT_CONNECT_TIMEOUT_SECONDS` in
-  [`meshtastic/interfaces/ble/connection.py`](meshtastic/interfaces/ble/connection.py),
+- **Direct-first explicit address semantics.** When an address or identifier is
+  available, a direct connect is tried first (see
+  `BLEConfig.DIRECT_CONNECT_TIMEOUT_SECONDS` in
+  [`meshtastic/interfaces/ble/constants.py`](meshtastic/interfaces/ble/constants.py),
   default 12 s).
   - For caller-explicit BLE addresses (`AA:BB:CC:DD:EE:FF` passed via
     `connect(address=...)`), retries stay direct-only and do **not** fall back
     to discovery scans.
   - Derived reconnect targets (for example carrying a prior `current_address`
     when no explicit address is supplied) may still use discovery fallback.
-  - Discovery fallback is only used when connecting by identifier/name (or when
-    no address is provided) where device resolution is expected to come from
+  - Discovery-only mode (`connect(address=None)` with no derived
+    `current_address`/identifier) starts with scan-based resolution and does not
+    enter the direct-connect path.
+  - Discovery fallback is only used when connecting by identifier/name (or in
+    discovery-only mode) where device resolution is expected to come from
     scanning.
   - Discovery-resolved connects use `BLEConfig.CONNECTION_TIMEOUT` (default 60 s).
 

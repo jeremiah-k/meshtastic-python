@@ -1154,7 +1154,7 @@ class ConnectionOrchestrator:
         *,
         address: str | None,
         current_address: str | None,
-    ) -> tuple[str | None, str | None]:
+    ) -> tuple[str | None, str | None, bool]:
         """Resolve and validate the connection target address for this attempt.
 
         Parameters
@@ -1166,9 +1166,11 @@ class ConnectionOrchestrator:
 
         Returns
         -------
-        tuple[str | None, str | None]
-            Tuple of ``(target_address, normalized_target)`` where
-            ``normalized_target`` is produced by :func:`sanitize_address`.
+        tuple[str | None, str | None, bool]
+            Tuple of ``(target_address, normalized_target, explicit_address)``
+            where ``normalized_target`` is produced by
+            :func:`sanitize_address` and ``explicit_address`` tracks whether the
+            target came from the caller-provided ``address`` argument.
 
         Raises
         ------
@@ -1191,7 +1193,7 @@ class ConnectionOrchestrator:
             logger.info("Attempting to connect to %s", target_address)
         else:
             logger.info("Attempting discovery-mode connection (no address specified)")
-        return target_address, normalized_target
+        return target_address, normalized_target, explicit_address
 
     def _resolve_connection_timeouts(
         self,
@@ -1715,9 +1717,11 @@ class ConnectionOrchestrator:
         self._validator_validate_connection_request()
         self._raise_if_interface_closing()
 
-        target_address, normalized_target = self._prepare_connection_target(
-            address=address,
-            current_address=current_address,
+        target_address, normalized_target, explicit_address = (
+            self._prepare_connection_target(
+                address=address,
+                current_address=current_address,
+            )
         )
         direct_connect_timeout, discovery_connect_timeout = (
             self._resolve_connection_timeouts(
@@ -1729,13 +1733,12 @@ class ConnectionOrchestrator:
         with self.state_lock:
             if not self._state_transition_to(ConnectionState.CONNECTING):
                 raise self.interface.BLEError(BLECLIENT_ERROR_ALREADY_CONNECTED)
-        is_explicit_target = address is not None
         client: BLEClient | None = None
         skip_discovery_scan = False
         try:
             client, skip_discovery_scan = self._attempt_direct_connect(
                 target_address=target_address,
-                explicit_address=is_explicit_target,
+                explicit_address=explicit_address,
                 normalized_target=normalized_target,
                 on_disconnect_func=on_disconnect_func,
                 pair_on_connect=pair_on_connect,
