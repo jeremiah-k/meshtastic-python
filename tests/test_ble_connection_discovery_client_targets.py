@@ -432,7 +432,7 @@ def test_connection_orchestrator_finalize_and_establish_error_paths(
 
         orchestrator._validator_validate_connection_request = lambda: None
         orchestrator._raise_if_interface_closing = lambda: None
-        orchestrator._prepare_connection_target = lambda **_kwargs: ("AA", "aa")
+        orchestrator._prepare_connection_target = lambda **_kwargs: ("AA", "aa", True)
         orchestrator._resolve_connection_timeouts = lambda **_kwargs: (1.0, 1.0)
         orchestrator._state_transition_to = lambda _state: True
         client = DummyClient()
@@ -858,7 +858,7 @@ def test_orchestrator_finalize_and_establish_remaining_branches(
         closed_clients: list[object] = []
         orchestrator._validator_validate_connection_request = lambda: None
         orchestrator._raise_if_interface_closing = lambda: None
-        orchestrator._prepare_connection_target = lambda **_kwargs: ("AA", "aa")
+        orchestrator._prepare_connection_target = lambda **_kwargs: ("AA", "aa", True)
         orchestrator._resolve_connection_timeouts = lambda **_kwargs: (1.0, 1.0)
         orchestrator._state_transition_to = lambda _state: True
         orchestrator._attempt_direct_connect = lambda **_kwargs: (None, False)
