@@ -165,3 +165,170 @@ def test_channel_url_invalid_device_url() -> None:
     s.name = "test"
     s.psk = b"\x01"
     assert _verify_channel_url_match(_make_channel_url([s]), "garbage") is False
+
+
+@pytest.mark.unit
+def test_verify_fields_repeated_scalar_coerced_to_list() -> None:
+    proto = localonly_pb2.LocalConfig()
+    proto.security.admin_key.append(b"\x01")
+    result = _verify_requested_fields(
+        {"admin_key": b"\x01"}, proto.security, "security"
+    )
+    assert result == []
+
+
+@pytest.mark.unit
+def test_verify_fields_repeated_list_order_mismatch() -> None:
+    proto = localonly_pb2.LocalConfig()
+    proto.security.admin_key.extend([b"\x01", b"\x02"])
+    result = _verify_requested_fields(
+        {"admin_key": [b"\x02", b"\x01"]}, proto.security, "security"
+    )
+    assert result == ["security.admin_key"]
+
+
+@pytest.mark.unit
+def test_verify_fields_non_repeated_given_list_uses_first() -> None:
+    proto = localonly_pb2.LocalConfig()
+    proto.lora.hop_limit = 3
+    result = _verify_requested_fields({"hop_limit": [3, 5]}, proto.lora, "lora")
+    assert result == []
+
+
+@pytest.mark.unit
+def test_verify_fields_non_repeated_given_wrong_list() -> None:
+    proto = localonly_pb2.LocalConfig()
+    proto.lora.hop_limit = 3
+    result = _verify_requested_fields({"hop_limit": [5]}, proto.lora, "lora")
+    assert result == ["lora.hop_limit"]
+
+
+@pytest.mark.unit
+def test_verify_fields_invalid_enum_name_treated_as_mismatch() -> None:
+    proto = localonly_pb2.LocalConfig()
+    proto.lora.region = config_pb2.Config.LoRaConfig.RegionCode.Value("US")
+    result = _verify_requested_fields({"region": "INVALID_REGION"}, proto.lora, "lora")
+    assert result == ["lora.region"]
+
+
+@pytest.mark.unit
+def test_channel_url_name_mismatch() -> None:
+    s1 = channel_pb2.ChannelSettings()
+    s1.name = "alpha"
+    s1.psk = b"\x01\x02\x03"
+    s2 = channel_pb2.ChannelSettings()
+    s2.name = "alpha"
+    s2.psk = b"\x01\x02\x03"
+    s2.uplink_enabled = False
+    s3 = channel_pb2.ChannelSettings()
+    s3.name = "alpha"
+    s3.psk = b"\x01\x02\x03"
+    s3.uplink_enabled = True
+    assert (
+        _verify_channel_url_match(_make_channel_url([s2]), _make_channel_url([s3]))
+        is False
+    )
+
+
+@pytest.mark.unit
+def test_channel_url_uplink_mismatch() -> None:
+    s1 = channel_pb2.ChannelSettings()
+    s1.name = "test"
+    s1.psk = b"\x01"
+    s1.uplink_enabled = True
+    s2 = channel_pb2.ChannelSettings()
+    s2.name = "test"
+    s2.psk = b"\x01"
+    s2.uplink_enabled = False
+    assert (
+        _verify_channel_url_match(_make_channel_url([s1]), _make_channel_url([s2]))
+        is False
+    )
+
+
+@pytest.mark.unit
+def test_channel_url_downlink_mismatch() -> None:
+    s1 = channel_pb2.ChannelSettings()
+    s1.name = "test"
+    s1.psk = b"\x01"
+    s1.downlink_enabled = True
+    s2 = channel_pb2.ChannelSettings()
+    s2.name = "test"
+    s2.psk = b"\x01"
+    s2.downlink_enabled = False
+    assert (
+        _verify_channel_url_match(_make_channel_url([s1]), _make_channel_url([s2]))
+        is False
+    )
+
+
+@pytest.mark.unit
+def test_channel_url_id_mismatch() -> None:
+    s1 = channel_pb2.ChannelSettings()
+    s1.name = "test"
+    s1.psk = b"\x01"
+    s1.id = 12345
+    s2 = channel_pb2.ChannelSettings()
+    s2.name = "test"
+    s2.psk = b"\x01"
+    s2.id = 99999
+    assert (
+        _verify_channel_url_match(_make_channel_url([s1]), _make_channel_url([s2]))
+        is False
+    )
+
+
+@pytest.mark.unit
+def test_channel_url_module_settings_mismatch() -> None:
+    s1 = channel_pb2.ChannelSettings()
+    s1.name = "test"
+    s1.psk = b"\x01"
+    s1.module_settings.position_precision = 10
+    s2 = channel_pb2.ChannelSettings()
+    s2.name = "test"
+    s2.psk = b"\x01"
+    s2.module_settings.position_precision = 5
+    assert (
+        _verify_channel_url_match(_make_channel_url([s1]), _make_channel_url([s2]))
+        is False
+    )
+
+
+@pytest.mark.unit
+def test_channel_url_module_settings_is_muted_mismatch() -> None:
+    s1 = channel_pb2.ChannelSettings()
+    s1.name = "test"
+    s1.psk = b"\x01"
+    s1.module_settings.is_muted = True
+    s2 = channel_pb2.ChannelSettings()
+    s2.name = "test"
+    s2.psk = b"\x01"
+    s2.module_settings.is_muted = False
+    assert (
+        _verify_channel_url_match(_make_channel_url([s1]), _make_channel_url([s2]))
+        is False
+    )
+
+
+@pytest.mark.unit
+def test_channel_url_all_fields_match() -> None:
+    s1 = channel_pb2.ChannelSettings()
+    s1.name = "full"
+    s1.psk = b"\xaa\xbb\xcc"
+    s1.id = 42
+    s1.uplink_enabled = True
+    s1.downlink_enabled = False
+    s1.module_settings.position_precision = 8
+    s1.module_settings.is_muted = True
+    s2 = channel_pb2.ChannelSettings()
+    s2.name = "full"
+    s2.psk = b"\xaa\xbb\xcc"
+    s2.id = 42
+    s2.uplink_enabled = True
+    s2.downlink_enabled = False
+    s2.module_settings.position_precision = 8
+    s2.module_settings.is_muted = True
+    assert (
+        _verify_channel_url_match(_make_channel_url([s1]), _make_channel_url([s2]))
+        is True
+    )

@@ -224,12 +224,16 @@ def _post_configure_reconnect_and_verify(
     verify_config_fields: dict[str, dict[str, Any]] | None = None,
     verify_module_config_fields: dict[str, dict[str, Any]] | None = None,
 ) -> _ConfigureReconnectResult:
-    """Wait for device reconnect after a reboot-capable configure commit.
+    """Reconnect after a configure commit, reload config, and verify values.
 
     After ``commitSettingsTransaction()``, the firmware may reboot the device.
-    This function waits for the interface to disconnect and reconnect within
-    *timeout* seconds, then verifies config is loaded and optionally checks
-    that requested configuration sections are readable.
+    This helper:
+
+    1. Waits for the interface to disconnect and reconnect within *timeout*.
+    2. Calls ``waitForConfig()`` to reload the device configuration.
+    3. If any verification targets were provided (channel URL, config fields,
+       or module config fields), performs value-aware comparison of the
+       explicitly requested settings against what the device reports.
 
     Returns a _ConfigureReconnectResult indicating the outcome.
     """
@@ -362,7 +366,9 @@ def _verify_post_reconnect_config(
                 "Channel URL verification: device URL does not match requested URL."
             )
             return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-        logger.info("Channel URL verified (values match).")
+        logger.info(
+            "Channel URL verified (channel presence, PSK, name, uplink/downlink, and module settings match)."
+        )
 
     if verify_config_fields and not _verify_config_sections(
         verify_config_fields, target_node.localConfig, "Config"
@@ -1131,7 +1137,7 @@ def _handle_configure_command(
             )
             if _reconnect_result == _ConfigureReconnectResult.VERIFIED:
                 print(
-                    "Phase 3: Device reconnected, config reloaded, and requested settings verified (field values confirmed)."
+                    "Phase 3: Device reconnected, config reloaded, and requested settings verified."
                 )
             elif _reconnect_result == _ConfigureReconnectResult.VERIFICATION_INCOMPLETE:
                 print(

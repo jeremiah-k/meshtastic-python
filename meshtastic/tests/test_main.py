@@ -5019,7 +5019,7 @@ def test_main_configure_phase3_verified_with_matching_config_values(
     _patch_fast_monotonic(monkeypatch)
     _run_main_configure_file(config_path, iface, monkeypatch)
     out, _ = capsys.readouterr()
-    assert "field values confirmed" in out
+    assert "requested settings verified" in out
 
 
 @pytest.mark.unit
@@ -5102,7 +5102,7 @@ def test_main_configure_phase3_channel_url_verified(
     _patch_fast_monotonic(monkeypatch)
     _run_main_configure_file(config_path, iface, monkeypatch)
     out, _ = capsys.readouterr()
-    assert "field values confirmed" in out
+    assert "requested settings verified" in out
 
 
 @pytest.mark.unit

@@ -38,12 +38,29 @@ def _verify_requested_fields(
                 enum_val = field_desc.enum_type.values_by_name.get(yaml_value)
                 if enum_val is not None:
                     coerced = enum_val.number
+                else:
+                    logger.debug(
+                        "Unknown enum name %r for field %s.%s; treating as mismatch.",
+                        yaml_value,
+                        section_path,
+                        snake_key,
+                    )
+                    coerced = yaml_value
             if isinstance(yaml_value, str) and field_desc.enum_type is None:
                 coerced = meshtastic.util.fromStr(yaml_value)
             if field_desc.is_repeated:
+                if not isinstance(coerced, (list, tuple)):
+                    coerced = [coerced]
                 if list(coerced) != list(actual):
                     mismatches.append(f"{section_path}.{snake_key}")
             else:
+                if isinstance(coerced, (list, tuple)):
+                    logger.debug(
+                        "YAML provided a list for non-repeated field %s.%s; using first element.",
+                        section_path,
+                        snake_key,
+                    )
+                    coerced = coerced[0] if coerced else coerced
                 if coerced != actual:
                     mismatches.append(f"{section_path}.{snake_key}")
     return mismatches
@@ -64,6 +81,26 @@ def _verify_channel_url_match(
         except Exception:
             return None
 
+    def _settings_match(req: Any, dev: Any) -> bool:
+        if req.psk != dev.psk:
+            return False
+        if req.name != dev.name:
+            return False
+        if req.id != dev.id:
+            return False
+        if req.uplink_enabled != dev.uplink_enabled:
+            return False
+        if req.downlink_enabled != dev.downlink_enabled:
+            return False
+        if (
+            req.module_settings.position_precision
+            != dev.module_settings.position_precision
+        ):
+            return False
+        if req.module_settings.is_muted != dev.module_settings.is_muted:
+            return False
+        return True
+
     req_cs = _parse_channel_set(requested_url)
     dev_cs = _parse_channel_set(device_url)
     if req_cs is None or dev_cs is None:
@@ -74,6 +111,6 @@ def _verify_channel_url_match(
         dev_settings = dev_lookup.get(name)
         if dev_settings is None:
             return False
-        if req_settings.psk != dev_settings.psk:
+        if not _settings_match(req_settings, dev_settings):
             return False
     return True
