@@ -68,9 +68,17 @@ class TestSetUrlExecutionEngine:
 
     @pytest.mark.unit
     def test_execute_add_only_with_lora_update_sends_admin(
-        self, execution_engine: _SetUrlExecutionEngine, mock_local_node: MagicMock
+        self,
+        execution_engine: _SetUrlExecutionEngine,
+        mock_local_node: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """execute_add_only with LoRa update sends admin message."""
+        sleep_calls: list[float] = []
+        monkeypatch.setattr(
+            "meshtastic.node_runtime.seturl.execution.time.sleep",
+            lambda seconds: sleep_calls.append(seconds),
+        )
         channel_set = _make_channel_set_with_lora("test")
 
         parsed_input = _SetUrlParsedInput(
@@ -105,12 +113,21 @@ class TestSetUrlExecutionEngine:
         mock_local_node.ensureSessionKey.assert_called()
         mock_local_node._send_admin.assert_called()
         assert state.lora_write_started is True
+        assert 2.0 in sleep_calls
 
     @pytest.mark.unit
     def test_execute_add_only_with_lora_update_skipped_send_raises(
-        self, execution_engine: _SetUrlExecutionEngine, mock_local_node: MagicMock
+        self,
+        execution_engine: _SetUrlExecutionEngine,
+        mock_local_node: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """execute_add_only should abort when LoRa send is not started."""
+        sleep_calls: list[float] = []
+        monkeypatch.setattr(
+            "meshtastic.node_runtime.seturl.execution.time.sleep",
+            lambda seconds: sleep_calls.append(seconds),
+        )
         channel_set = _make_channel_set_with_lora("test")
         parsed_input = _SetUrlParsedInput(
             channel_set=channel_set,
@@ -143,6 +160,7 @@ class TestSetUrlExecutionEngine:
                 state=state,
             )
         assert state.lora_write_started is False
+        assert 2.0 not in sleep_calls
 
     @pytest.mark.unit
     def test_execute_replace_all_writes_channels(

@@ -187,6 +187,26 @@ def _verify_channel_url_match(
             "; ".join(parts),
         )
         return False
+
+    req_has_lora = req_cs.HasField("lora_config")
+    dev_has_lora = dev_cs.HasField("lora_config")
+    if req_has_lora != dev_has_lora:
+        logger.warning(
+            "Channel URL verification: lora_config presence mismatch "
+            "(requested=%s, device=%s).",
+            req_has_lora,
+            dev_has_lora,
+        )
+        return False
+    if req_has_lora and (
+        req_cs.lora_config.SerializeToString()
+        != dev_cs.lora_config.SerializeToString()
+    ):
+        logger.warning(
+            "Channel URL verification: lora_config differs between requested and device URLs."
+        )
+        return False
+
     for name, req_settings in req_lookup.items():
         dev_settings = dev_lookup[name]
         if not _settings_match(req_settings, dev_settings):

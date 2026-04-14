@@ -311,6 +311,25 @@ def _post_configure_reconnect_and_verify(
     if not has_verification:
         return _ConfigureReconnectResult.VERIFIED
 
+    if not disconnected:
+        try:
+            _refresh_no_disconnect_verify_state(
+                interface.getNode(node_dest),
+                verify_channel_url=verify_channel_url,
+                verify_config_fields=verify_config_fields,
+                verify_module_config_fields=verify_module_config_fields,
+            )
+            interface.waitForConfig()
+            logger.info(
+                "No disconnect observed; touched config/channel state refreshed before verification."
+            )
+        except Exception:
+            logger.warning(
+                "No-disconnect verify refresh failed while reloading config.",
+                exc_info=True,
+            )
+            return _ConfigureReconnectResult.CONFIG_RELOAD_FAILED
+
     try:
         result = _verify_post_reconnect_config(
             interface,
@@ -339,6 +358,70 @@ def _is_local_destination(interface: MeshInterface, dest: str) -> bool:
         return str(my_info.my_node_num) == dest
     except Exception:
         return False
+
+
+def _validate_non_empty_mapping_sections(
+    *,
+    top_level_key: str,
+    section_mapping: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Validate that each section payload is a non-empty mapping."""
+    validated_sections: dict[str, dict[str, Any]] = {}
+    for section_name, section_value in section_mapping.items():
+        if not isinstance(section_value, dict) or not section_value:
+            _cli_exit(
+                f"ERROR: '{top_level_key}.{section_name}' must be a non-empty mapping, got "
+                f"{type(section_value).__name__}"
+                f"{' (empty)' if isinstance(section_value, dict) else ''}"
+            )
+        validated_sections[section_name] = section_value
+    return validated_sections
+
+
+def _refresh_no_disconnect_verify_state(
+    target_node: Any,
+    *,
+    verify_channel_url: str | None,
+    verify_config_fields: dict[str, dict[str, Any]] | None,
+    verify_module_config_fields: dict[str, dict[str, Any]] | None,
+) -> None:
+    """Invalidate touched cached state and request fresh values for Phase 3 verification."""
+    request_config = getattr(target_node, "requestConfig", None)
+
+    for section_name in verify_config_fields or {}:
+        section_snake = meshtastic.util.camel_to_snake(section_name)
+        field_desc = target_node.localConfig.DESCRIPTOR.fields_by_name.get(section_snake)
+        if field_desc is None:
+            logger.warning(
+                "Skipping config refresh for unknown section %r.",
+                section_name,
+            )
+            continue
+        target_node.localConfig.ClearField(section_snake)
+        if callable(request_config):
+            request_config(field_desc)
+
+    for section_name in verify_module_config_fields or {}:
+        section_snake = meshtastic.util.camel_to_snake(section_name)
+        field_desc = target_node.moduleConfig.DESCRIPTOR.fields_by_name.get(
+            section_snake
+        )
+        if field_desc is None:
+            logger.warning(
+                "Skipping module_config refresh for unknown section %r.",
+                section_name,
+            )
+            continue
+        target_node.moduleConfig.ClearField(section_snake)
+        if callable(request_config):
+            request_config(field_desc)
+
+    if verify_channel_url:
+        target_node.channels = None
+        target_node.partialChannels = []
+        request_channels = getattr(target_node, "requestChannels", None)
+        if callable(request_channels):
+            request_channels(0)
 
 
 def _verify_config_sections(
@@ -1080,6 +1163,8 @@ def _handle_configure_command(
         print("Phase 1 complete.")
 
     settings_transaction_started = False
+    validated_config_sections: dict[str, dict[str, Any]] = {}
+    validated_module_config_sections: dict[str, dict[str, Any]] = {}
     if "config" in configuration:
         _cfg_val = configuration["config"]
         if not isinstance(_cfg_val, dict) or not _cfg_val:
@@ -1087,6 +1172,10 @@ def _handle_configure_command(
                 f"ERROR: 'config' must be a non-empty mapping, got "
                 f"{type(_cfg_val).__name__}{' (empty)' if isinstance(_cfg_val, dict) else ''}"
             )
+        validated_config_sections = _validate_non_empty_mapping_sections(
+            top_level_key="config",
+            section_mapping=_cfg_val,
+        )
     if "module_config" in configuration:
         _mcfg_val = configuration["module_config"]
         if not isinstance(_mcfg_val, dict) or not _mcfg_val:
@@ -1094,10 +1183,14 @@ def _handle_configure_command(
                 f"ERROR: 'module_config' must be a non-empty mapping, got "
                 f"{type(_mcfg_val).__name__}{' (empty)' if isinstance(_mcfg_val, dict) else ''}"
             )
+        validated_module_config_sections = _validate_non_empty_mapping_sections(
+            top_level_key="module_config",
+            section_mapping=_mcfg_val,
+        )
 
-    has_valid_config_section = (
-        "config" in configuration and configuration["config"]
-    ) or ("module_config" in configuration and configuration["module_config"])
+    has_valid_config_section = bool(
+        validated_config_sections or validated_module_config_sections
+    )
     if has_valid_config_section:
         print(
             "Phase 2: Applying configuration transaction (may trigger device reboot)..."
@@ -1105,13 +1198,13 @@ def _handle_configure_command(
         interface.getNode(args.dest, False, **getNode_kwargs).beginSettingsTransaction()
         settings_transaction_started = True
 
-    if "config" in configuration and configuration["config"]:
+    if validated_config_sections:
         localConfig = interface.getNode(args.dest, **getNode_kwargs).localConfig
-        for section in configuration["config"]:
+        for section, section_values in validated_config_sections.items():
             failed_config_fields: list[str] = []
             applied = traverseConfig(
                 section,
-                configuration["config"][section],
+                section_values,
                 localConfig,
                 failed_fields=failed_config_fields,
             )
@@ -1139,13 +1232,13 @@ def _handle_configure_command(
             )
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
-    if "module_config" in configuration and configuration["module_config"]:
+    if validated_module_config_sections:
         moduleConfig = interface.getNode(args.dest, **getNode_kwargs).moduleConfig
-        for section in configuration["module_config"]:
+        for section, section_values in validated_module_config_sections.items():
             failed_module_fields: list[str] = []
             applied = traverseConfig(
                 section,
-                configuration["module_config"][section],
+                section_values,
                 moduleConfig,
                 failed_fields=failed_module_fields,
             )
@@ -1186,8 +1279,8 @@ def _handle_configure_command(
         _verify_channel_url = configuration.get("channel_url") or configuration.get(
             "channelUrl"
         )
-        _verify_config_fields = configuration.get("config")
-        _verify_module_config_fields = configuration.get("module_config")
+        _verify_config_fields = validated_config_sections or None
+        _verify_module_config_fields = validated_module_config_sections or None
         if _is_local_destination(interface, args.dest):
             _reconnect_result = _post_configure_reconnect_and_verify(
                 interface,

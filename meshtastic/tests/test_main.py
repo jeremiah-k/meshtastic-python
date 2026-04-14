@@ -2292,6 +2292,64 @@ def test_main_configure_rejects_non_dict_module_config(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@pytest.mark.parametrize(
+    ("top_key", "section_name", "section_value"),
+    [
+        ("config", "lora", 1),
+        ("config", "lora", {}),
+        ("module_config", "mqtt", 1),
+        ("module_config", "mqtt", {}),
+    ],
+)
+def test_main_configure_rejects_invalid_subsection_payloads(
+    top_key: str,
+    section_name: str,
+    section_value: object,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test --configure rejects non-mapping or empty subsection payloads."""
+    config_path = tmp_path / f"invalid_{top_key}_{section_name}.yaml"
+    config_path.write_text(
+        yaml.safe_dump({top_key: {section_name: section_value}}),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+
+    with pytest.raises(SystemExit) as excinfo:
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    _, err = capsys.readouterr()
+    assert f"{top_key}.{section_name}" in err
+    assert "non-empty mapping" in err
+    assert excinfo.value.code == 1
+    target_node.beginSettingsTransaction.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_rejects_malformed_yaml(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test --configure exits cleanly on malformed YAML input."""
+    config_path = tmp_path / "malformed_config.yaml"
+    config_path.write_text("config:\n  lora: [\n", encoding="utf-8")
+    iface, target_node = _build_configure_interface()
+
+    with pytest.raises(SystemExit) as excinfo:
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    _, err = capsys.readouterr()
+    assert "Failed to parse YAML configuration" in err
+    assert excinfo.value.code == 1
+    target_node.beginSettingsTransaction.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_main_ch_add_valid(capsys: pytest.CaptureFixture[str]) -> None:
     """Test --ch-add with valid channel name, and that channel name does not already exist."""
     sys.argv = ["", "--ch-add", "testing"]
@@ -5136,10 +5194,19 @@ def test_main_configure_phase3_verified_with_matching_config_values(
     iface.isConnected = threading.Event()
     iface.isConnected.set()
     iface.waitForConfig = MagicMock()
+    target_node.requestConfig = MagicMock(
+        side_effect=lambda field_desc: (
+            setattr(target_local.power, "ls_secs", 222)
+            if getattr(field_desc, "name", "") == "power"
+            else None
+        )
+    )
     _patch_fast_monotonic(monkeypatch)
     _run_main_configure_file(config_path, iface, monkeypatch)
     out, _ = capsys.readouterr()
     assert "requested settings verified" in out
+    assert iface.waitForConfig.call_count == 2
+    target_node.requestConfig.assert_called_once()
 
 
 @pytest.mark.unit
@@ -5161,6 +5228,13 @@ def test_main_configure_phase3_verification_incomplete_on_value_mismatch(
     iface.isConnected = threading.Event()
     iface.isConnected.set()
     iface.waitForConfig = MagicMock()
+    target_node.requestConfig = MagicMock(
+        side_effect=lambda field_desc: (
+            setattr(target_local.power, "ls_secs", 222)
+            if getattr(field_desc, "name", "") == "power"
+            else None
+        )
+    )
     monkeypatch.setattr(
         "meshtastic.__main__._verify_requested_fields",
         lambda *a, **k: ["power.ls_secs"],
@@ -5214,6 +5288,14 @@ def test_main_configure_phase3_channel_url_verified(
     iface.isConnected = threading.Event()
     iface.isConnected.set()
     iface.waitForConfig = MagicMock()
+    target_node.requestConfig = MagicMock(
+        side_effect=lambda field_desc: (
+            setattr(target_local.power, "ls_secs", 222)
+            if getattr(field_desc, "name", "") == "power"
+            else None
+        )
+    )
+    target_node.requestChannels = MagicMock()
     target_node.getURL = MagicMock(return_value=test_url)
     monkeypatch.setattr(
         "meshtastic.__main__._verify_channel_url_match",
@@ -5223,6 +5305,8 @@ def test_main_configure_phase3_channel_url_verified(
     _run_main_configure_file(config_path, iface, monkeypatch)
     out, _ = capsys.readouterr()
     assert "requested settings verified" in out
+    assert iface.waitForConfig.call_count == 2
+    target_node.requestChannels.assert_called_once_with(0)
 
 
 @pytest.mark.unit
@@ -5251,6 +5335,14 @@ def test_main_configure_phase3_channel_url_mismatch(
     iface.isConnected = threading.Event()
     iface.isConnected.set()
     iface.waitForConfig = MagicMock()
+    target_node.requestConfig = MagicMock(
+        side_effect=lambda field_desc: (
+            setattr(target_local.power, "ls_secs", 222)
+            if getattr(field_desc, "name", "") == "power"
+            else None
+        )
+    )
+    target_node.requestChannels = MagicMock()
     target_node.getURL = MagicMock(return_value=different_url)
     monkeypatch.setattr(
         "meshtastic.__main__._verify_channel_url_match",

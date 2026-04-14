@@ -136,6 +136,8 @@ class _SetUrlExecutionEngine:
             state.written_indices.append(staged_channel.index)
             written_count += 1
 
+        if parsed_input.has_lora_update and written_count > 0:
+            time.sleep(LORA_WRITE_SETTLE_SECONDS)
         self._write_lora_config(parsed_input, admin_context, state)
 
         if plan.deferred_add_only_admin_channel is not None:
