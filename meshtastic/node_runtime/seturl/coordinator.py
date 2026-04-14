@@ -116,7 +116,14 @@ class _SetUrlTransactionCoordinator:
             )
 
     def _apply_replace_all(self) -> None:
-        """Execute the replace-all setURL transaction pipeline."""
+        """Execute the replace-all setURL transaction pipeline.
+
+        TODO(transport-robustness): After execution.py adds per-write
+        confirmation, this coordinator should support a retry/reconnect
+        loop that resumes an interrupted replace-all from the last
+        confirmed write index. The execution_state.written_channel_indices
+        list already tracks progress and can seed resume logic.
+        """
         planner = _SetUrlReplacePlanner(
             self._node,
             parsed_input=self._parsed_input,

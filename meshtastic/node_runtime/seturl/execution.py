@@ -137,7 +137,15 @@ class _SetUrlExecutionEngine:
         plan: _SetUrlReplacePlan,
         state: _SetUrlReplaceExecutionState,
     ) -> None:
-        """Execute replace-all writes in transactional order."""
+        """Execute replace-all writes in transactional order.
+
+        TODO(transport-robustness): Add per-write confirmation and
+        reconnect/reload recovery for partial-write states. Currently
+        fail-fast aborts on first error, leaving the device partially
+        configured. The recovery seam is between individual channel
+        writes in the loop below — each write should be confirmable
+        and resumable after a transport reconnect.
+        """
         deferred_channel_indexes = {
             channel.index
             for channel in (

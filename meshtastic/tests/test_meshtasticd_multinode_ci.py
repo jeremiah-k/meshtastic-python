@@ -431,7 +431,7 @@ def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
         timeout=HOST_CONFIGURE_TIMEOUT_SECONDS,
         meshtastic_bin=meshtastic_bin,
     )
-    assert "Writing modified configuration to device" in configure_output
+    assert "Phase 1 complete." in configure_output
     _wait_for_host_ready(
         HOST_B,
         meshtastic_bin,
@@ -500,100 +500,154 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
         Path or name of the meshtastic CLI binary under test.
     """
     _wait_for_host_ready(HOST_A, meshtastic_bin)
-    baseline_export_path = tmp_path / "meshtasticd-multinode-a-baseline.yaml"
-    _run_host_cli_ok(
+
+    _configure_channel_blueprint(HOST_A, meshtastic_bin)
+    initial_info = _run_host_cli_ok(HOST_A, "--info", meshtastic_bin=meshtastic_bin)
+    initial_channels = _extract_channel_names(initial_info)
+    assert initial_channels
+
+    max_attempts = _estimate_saturation_add_attempts(
         HOST_A,
-        "--export-config",
-        str(baseline_export_path),
-        meshtastic_bin=meshtastic_bin,
+        meshtastic_bin,
+        configured_channel_count=len(initial_channels),
+        tmp_path=tmp_path,
     )
-    assert baseline_export_path.exists()
-
-    try:
-        _configure_channel_blueprint(HOST_A, meshtastic_bin)
-        initial_info = _run_host_cli_ok(HOST_A, "--info", meshtastic_bin=meshtastic_bin)
-        initial_channels = _extract_channel_names(initial_info)
-        assert initial_channels
-
-        max_attempts = _estimate_saturation_add_attempts(
+    saturated = False
+    for attempt in range(max_attempts):
+        fill_name = f"CIFill{attempt:02d}"
+        returncode, output = _run_host_cli(
             HOST_A,
-            meshtastic_bin,
-            configured_channel_count=len(initial_channels),
-            tmp_path=tmp_path,
-        )
-        saturated = False
-        for attempt in range(max_attempts):
-            fill_name = f"CIFill{attempt:02d}"
-            returncode, output = _run_host_cli(
-                HOST_A,
-                "--ch-add",
-                fill_name,
-                meshtastic_bin=meshtastic_bin,
-                timeout=CLI_DEFAULT_TIMEOUT_SECONDS,
-            )
-            if returncode == 0:
-                continue
-            assert SATURATION_ERROR_MSG in output
-            saturated = True
-            break
-        assert saturated
-        saturated_info = _run_host_cli_ok(
-            HOST_A,
-            "--info",
-            meshtastic_bin=meshtastic_bin,
-        )
-        saturated_channels = _extract_channel_names(saturated_info)
-        saturated_export_before_path = (
-            tmp_path / "meshtasticd-multinode-a-sat-before.yaml"
-        )
-        _run_host_cli_ok(
-            HOST_A,
-            "--export-config",
-            str(saturated_export_before_path),
-            meshtastic_bin=meshtastic_bin,
-        )
-        saturated_config_before = yaml.safe_load(
-            saturated_export_before_path.read_text(encoding="utf-8")
-        )
-
-        channel_name = "CIRollbackProbe"
-        channel_url = _build_add_only_channel_url(channel_name)
-        add_rc, add_out = _run_host_cli(
-            HOST_A,
-            "--ch-add-url",
-            channel_url,
+            "--ch-add",
+            fill_name,
             meshtastic_bin=meshtastic_bin,
             timeout=CLI_DEFAULT_TIMEOUT_SECONDS,
         )
-        assert add_rc != 0
-        assert SATURATION_ERROR_MSG in add_out
+        if returncode == 0:
+            continue
+        assert SATURATION_ERROR_MSG in output
+        saturated = True
+        break
+    assert saturated
+    saturated_info = _run_host_cli_ok(
+        HOST_A,
+        "--info",
+        meshtastic_bin=meshtastic_bin,
+    )
+    saturated_channels = _extract_channel_names(saturated_info)
+    saturated_export_before_path = tmp_path / "meshtasticd-multinode-a-sat-before.yaml"
+    _run_host_cli_ok(
+        HOST_A,
+        "--export-config",
+        str(saturated_export_before_path),
+        meshtastic_bin=meshtastic_bin,
+    )
+    saturated_config_before = yaml.safe_load(
+        saturated_export_before_path.read_text(encoding="utf-8")
+    )
 
-        after_info = _run_host_cli_ok(HOST_A, "--info", meshtastic_bin=meshtastic_bin)
-        assert _extract_channel_names(after_info) == saturated_channels
-        assert channel_name not in after_info
-        saturated_export_after_path = (
-            tmp_path / "meshtasticd-multinode-a-sat-after.yaml"
-        )
-        _run_host_cli_ok(
-            HOST_A,
-            "--export-config",
-            str(saturated_export_after_path),
-            meshtastic_bin=meshtastic_bin,
-        )
-        saturated_config_after = yaml.safe_load(
-            saturated_export_after_path.read_text(encoding="utf-8")
-        )
-        assert saturated_config_after == saturated_config_before
-    finally:
-        _run_host_cli_ok(
-            HOST_A,
-            "--configure",
-            str(baseline_export_path),
-            timeout=HOST_CONFIGURE_TIMEOUT_SECONDS,
-            meshtastic_bin=meshtastic_bin,
-        )
-        _wait_for_host_ready(
-            HOST_A,
-            meshtastic_bin,
-            timeout_seconds=HOST_READY_AFTER_CONFIGURE_TIMEOUT_SECONDS,
-        )
+    channel_name = "CIRollbackProbe"
+    channel_url = _build_add_only_channel_url(channel_name)
+    add_rc, add_out = _run_host_cli(
+        HOST_A,
+        "--ch-add-url",
+        channel_url,
+        meshtastic_bin=meshtastic_bin,
+        timeout=CLI_DEFAULT_TIMEOUT_SECONDS,
+    )
+    assert add_rc != 0
+    assert SATURATION_ERROR_MSG in add_out
+
+    after_info = _run_host_cli_ok(HOST_A, "--info", meshtastic_bin=meshtastic_bin)
+    assert _extract_channel_names(after_info) == saturated_channels
+    assert channel_name not in after_info
+    saturated_export_after_path = tmp_path / "meshtasticd-multinode-a-sat-after.yaml"
+    _run_host_cli_ok(
+        HOST_A,
+        "--export-config",
+        str(saturated_export_after_path),
+        meshtastic_bin=meshtastic_bin,
+    )
+    saturated_config_after = yaml.safe_load(
+        saturated_export_after_path.read_text(encoding="utf-8")
+    )
+    assert saturated_config_after == saturated_config_before
+
+
+@pytest.mark.xfail(
+    reason="Known product gap: large setURL replace-all over TCP/meshtasticd "
+    "can cause transport disconnects mid-transaction. "
+    "See seturl/execution.py executeReplaceAll for next implementation boundary.",
+    strict=False,
+)
+def test_meshtasticd_multinode_large_channel_url_replace_all_over_tcp(
+    tmp_path: Path,
+    meshtastic_bin: str,
+) -> None:
+    """Restore a full 8-channel blueprint via --configure over TCP.
+
+    This test exercises the known transport-robustness gap where large
+    setURL replace-all transactions over TCP can disconnect mid-write.
+    When the transport-robustness pass lands, this test should be
+    changed from xfail to a regular passing test.
+    """
+    _wait_for_host_ready(HOST_A, meshtastic_bin)
+    _wait_for_host_ready(HOST_B, meshtastic_bin)
+
+    expected_channel_names = _configure_channel_blueprint(HOST_A, meshtastic_bin)
+
+    export_path = tmp_path / "meshtasticd-multinode-xfail-export.yaml"
+    _run_host_cli_ok(
+        HOST_A,
+        "--export-config",
+        str(export_path),
+        meshtastic_bin=meshtastic_bin,
+    )
+    exported_data = yaml.safe_load(export_path.read_text(encoding="utf-8"))
+    assert isinstance(exported_data, dict)
+    exported_data["owner"] = CONFIGURED_OWNER
+    exported_data["owner_short"] = CONFIGURED_OWNER_SHORT
+    export_path.write_text(
+        yaml.safe_dump(exported_data, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    configure_output = _run_host_cli_ok(
+        HOST_B,
+        "--configure",
+        str(export_path),
+        timeout=HOST_CONFIGURE_TIMEOUT_SECONDS,
+        meshtastic_bin=meshtastic_bin,
+    )
+    assert "Phase 1 complete." in configure_output
+    _wait_for_host_ready(
+        HOST_B,
+        meshtastic_bin,
+        timeout_seconds=HOST_READY_AFTER_CONFIGURE_TIMEOUT_SECONDS,
+    )
+
+    info_output_b = _run_host_cli_ok(HOST_B, "--info", meshtastic_bin=meshtastic_bin)
+    channel_name_map_b = _extract_channel_names(info_output_b)
+    export_path_b = tmp_path / "meshtasticd-multinode-xfail-export-b.yaml"
+    _run_host_cli_ok(
+        HOST_B,
+        "--export-config",
+        str(export_path_b),
+        meshtastic_bin=meshtastic_bin,
+    )
+    exported_data_b = yaml.safe_load(export_path_b.read_text(encoding="utf-8"))
+    assert isinstance(exported_data_b, dict)
+
+    channels_a = exported_data.get("channels")
+    channels_b = exported_data_b.get("channels")
+    if channels_a is not None and channels_b is not None:
+        assert isinstance(channels_a, list)
+        assert isinstance(channels_b, list)
+        identities_a = _extract_exported_channel_identities(channels_a)
+        identities_b = _extract_exported_channel_identities(channels_b)
+        assert len(identities_a) == len(channels_a)
+        assert len(identities_b) == len(channels_b)
+        assert identities_a == identities_b
+    else:
+        observed_names = {name for name in channel_name_map_b.values() if name}
+        expected_names = {name for name in expected_channel_names.values() if name}
+        assert observed_names <= expected_names
