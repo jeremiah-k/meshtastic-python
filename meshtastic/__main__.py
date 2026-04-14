@@ -377,6 +377,62 @@ def _verify_post_reconnect_config(
     return _ConfigureReconnectResult.VERIFIED
 
 
+# COMPAT_STABLE_SHIM: historical snake_case helper name.
+def support_info() -> None:
+    """Compatibility alias for supportInfo()."""
+    supportInfo()
+
+
+def onReceive(packet: dict[str, Any], interface: MeshInterface) -> None:
+    """Handle an incoming mesh packet, optionally send a text reply, and close the interface when appropriate."""
+    args = mt_config.args
+    try:
+        d = packet.get("decoded")
+        logger.debug("in onReceive() d:%s", d)
+
+        is_text_reply = (
+            args
+            and args.sendtext
+            and d is not None
+            and interface.myInfo is not None
+            and packet.get("to") == interface.myInfo.my_node_num
+            and d.get("portnum")
+            == portnums_pb2.PortNum.Name(portnums_pb2.PortNum.TEXT_MESSAGE_APP)
+        )
+        if is_text_reply:
+            interface.close()
+
+        if d is not None and args and args.reply:
+            msg = d.get("text")
+            if msg:
+                rxSnr = packet["rxSnr"]
+                hopLimit = packet["hopLimit"]
+                print(f"message: {msg}")
+                reply = f"got msg '{msg}' with rxSnr: {rxSnr} and hopLimit: {hopLimit}"
+                print("Sending reply: ", reply)
+                interface.sendText(reply)
+
+    except Exception as ex:
+        logger.warning("Error processing received packet: %s", ex)
+
+
+def onConnection(interface: MeshInterface, topic: Any = pub.AUTO_TOPIC) -> None:
+    """Notify about a change in the radio connection state."""
+    _ = interface
+    topic_name = topic.getName() if hasattr(topic, "getName") else str(topic)
+    print(f"Connection changed: {topic_name}")
+
+
+def checkChannel(interface: MeshInterface, channelIndex: int) -> bool:
+    """Determine whether the local node has the channel at the given index enabled."""
+    if hasattr(type(interface.localNode), "getChannelCopyByChannelIndex"):
+        ch = interface.localNode.getChannelCopyByChannelIndex(channelIndex)
+    else:
+        ch = interface.localNode.getChannelByChannelIndex(channelIndex)
+    logger.debug("ch:%s", ch)
+    return bool(ch and ch.role != channel_pb2.Channel.Role.DISABLED)
+
+
 def _normalize_pref_name(comp_name: str) -> str:
     """Normalize a preference path to canonical snake_case and apply aliases."""
     canonical = ".".join(
