@@ -82,24 +82,17 @@ def _verify_channel_url_match(
             return None
 
     def _settings_match(req: Any, dev: Any) -> bool:
-        if req.psk != dev.psk:
-            return False
-        if req.name != dev.name:
-            return False
-        if req.id != dev.id:
-            return False
-        if req.uplink_enabled != dev.uplink_enabled:
-            return False
-        if req.downlink_enabled != dev.downlink_enabled:
-            return False
-        if (
+        checks = [
+            req.psk == dev.psk,
+            req.name == dev.name,
+            req.id == dev.id,
+            req.uplink_enabled == dev.uplink_enabled,
+            req.downlink_enabled == dev.downlink_enabled,
             req.module_settings.position_precision
-            != dev.module_settings.position_precision
-        ):
-            return False
-        if req.module_settings.is_muted != dev.module_settings.is_muted:
-            return False
-        return True
+            == dev.module_settings.position_precision,
+            req.module_settings.is_muted == dev.module_settings.is_muted,
+        ]
+        return all(checks)
 
     req_cs = _parse_channel_set(requested_url)
     dev_cs = _parse_channel_set(device_url)
