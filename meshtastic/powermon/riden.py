@@ -6,7 +6,7 @@ import time
 from datetime import datetime
 from typing import Any, Final, cast
 
-import riden  # type: ignore[import-not-found]
+import riden  # type: ignore[import-untyped,import-not-found]
 
 from .constants import MILLIAMPS_PER_AMP, SECONDS_PER_HOUR
 from .power_supply import PowerError, PowerSupply
