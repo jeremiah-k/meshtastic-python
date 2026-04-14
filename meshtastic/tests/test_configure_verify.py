@@ -133,7 +133,7 @@ def test_channel_url_device_has_extra_channels() -> None:
     s2.psk = b"\xaa\xbb"
     assert (
         _verify_channel_url_match(_make_channel_url([s1]), _make_channel_url([s1, s2]))
-        is True
+        is False
     )
 
 

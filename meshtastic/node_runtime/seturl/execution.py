@@ -139,6 +139,8 @@ class _SetUrlExecutionEngine:
         self._write_lora_config(parsed_input, admin_context, state)
 
         if plan.deferred_add_only_admin_channel is not None:
+            if written_count > 0 or state.lora_write_started:
+                time.sleep(DEFERRED_ADMIN_PACE_SECONDS)
             staged_channel, channel_name = plan.deferred_add_only_admin_channel
             logger.info("Adding new channel '%s' to device", channel_name)
             self._node._write_channel_snapshot(  # noqa: SLF001

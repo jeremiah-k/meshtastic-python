@@ -23,6 +23,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+POST_FAILURE_RECONNECT_TIMEOUT_SECONDS = 10.0
+"""Maximum time to wait for transport reconnect after a replace-all write failure."""
+
 
 class _SetUrlTransactionCoordinator:
     """Coordinates setURL transaction planning, execution, and cache policy with fail-fast semantics."""
@@ -63,6 +66,60 @@ class _SetUrlTransactionCoordinator:
             named_admin_index_for_write=named_admin_index_for_write,
             has_admin_write_node_named_admin=(named_admin_index_for_write is not None),
         )
+
+    def _attempt_post_failure_reconnect_report(self) -> None:
+        """Best-effort reconnect and device state report after a write failure.
+
+        Attempts to wait for the transport to reconnect, reload the node
+        configuration, and log the actual device channel state.  This does
+        **not** resume writes — it only provides diagnostic information
+        about what the device actually contains after the partial failure.
+
+        All steps are wrapped in broad exception handling so that a
+        secondary failure during diagnostics never suppresses the original
+        error.
+        """
+        try:
+            iface = self._node.iface
+            connected = iface.isConnected.is_set()
+            if not connected:
+                logger.info(
+                    "Attempting to wait for transport reconnect after failure "
+                    "(timeout=%.1fs)...",
+                    POST_FAILURE_RECONNECT_TIMEOUT_SECONDS,
+                )
+                connected = iface.isConnected.wait(
+                    POST_FAILURE_RECONNECT_TIMEOUT_SECONDS
+                )
+            if not connected:
+                logger.warning(
+                    "Transport did not reconnect within %.1fs; "
+                    "cannot report actual device channel state.",
+                    POST_FAILURE_RECONNECT_TIMEOUT_SECONDS,
+                )
+                return
+            logger.info("Transport reconnected; reloading device config...")
+            iface.waitForConfig()
+            actual_url = self._node.getURL()
+            logger.info(
+                "Actual device channel URL after partial failure: %s", actual_url
+            )
+            channels = self._node.channels
+            if channels is not None:
+                active_names = [
+                    ch.settings.name
+                    for ch in channels
+                    if ch.role != 0 and ch.HasField("settings") and ch.settings.name
+                ]
+                logger.info(
+                    "Active named channels on device: %s",
+                    ", ".join(active_names) if active_names else "(none)",
+                )
+        except Exception:
+            logger.debug(
+                "Post-failure reconnect/report failed; ignoring diagnostic error.",
+                exc_info=True,
+            )
 
     def _apply_add_only(self) -> None:
         """Execute the addOnly setURL transaction pipeline."""
@@ -122,6 +179,10 @@ class _SetUrlTransactionCoordinator:
         invalidates local caches on failure.  The execution state tracks
         the current stage and written channel indices so that error
         reports identify the exact failure point.
+
+        On failure, attempts a best-effort reconnect and device state
+        report so that operators can see what the device actually
+        contains without having to manually reconnect first.
         """
         planner = _SetUrlReplacePlanner(
             self._node,
@@ -162,4 +223,5 @@ class _SetUrlTransactionCoordinator:
                     "LoRa config cache cleared after setURL replace-all partial failure; "
                     "reload config before using localConfig.lora."
                 )
+            self._attempt_post_failure_reconnect_report()
             raise

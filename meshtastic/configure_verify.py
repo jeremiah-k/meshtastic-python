@@ -144,10 +144,23 @@ def _verify_channel_url_match(
 
     req_lookup: dict[str, Any] = {s.name: s for s in req_cs.settings}
     dev_lookup: dict[str, Any] = {s.name: s for s in dev_cs.settings}
+    req_name_set = set(req_lookup.keys())
+    dev_name_set = set(dev_lookup.keys())
+    if req_name_set != dev_name_set:
+        missing_on_device = req_name_set - dev_name_set
+        extra_on_device = dev_name_set - req_name_set
+        parts: list[str] = []
+        if missing_on_device:
+            parts.append(f"missing on device: {sorted(missing_on_device)}")
+        if extra_on_device:
+            parts.append(f"extra on device: {sorted(extra_on_device)}")
+        logger.warning(
+            "Channel URL verification: channel name sets do not match (%s).",
+            "; ".join(parts),
+        )
+        return False
     for name, req_settings in req_lookup.items():
-        dev_settings = dev_lookup.get(name)
-        if dev_settings is None:
-            return False
+        dev_settings = dev_lookup[name]
         if not _settings_match(req_settings, dev_settings):
             return False
     return True
