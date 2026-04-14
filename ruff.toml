@@ -1,5 +1,5 @@
 extend = ".trunk/configs/ruff.toml"
 
 [lint.per-file-ignores]
-"meshtastic/protobuf/*_pb2.py" = ["F401", "E402", "D"]
-"meshtastic/protobuf/*_pb2.pyi" = ["F401", "E402", "D"]
+"meshtastic/protobuf/*_pb2.py" = ["ALL"]
+"meshtastic/protobuf/*_pb2.pyi" = ["ALL"]
