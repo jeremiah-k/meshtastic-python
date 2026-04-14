@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from meshtastic.node_runtime.seturl.cache import _SetUrlCacheManager
 from meshtastic.node_runtime.seturl.context import _SetUrlAdminContext
 from meshtastic.node_runtime.seturl.execution import (
+    _ReplaceAllStage,
     _SetUrlAddOnlyExecutionState,
     _SetUrlExecutionEngine,
     _SetUrlReplaceExecutionState,
@@ -118,11 +119,10 @@ class _SetUrlTransactionCoordinator:
     def _apply_replace_all(self) -> None:
         """Execute the replace-all setURL transaction pipeline.
 
-        TODO(transport-robustness): After execution.py adds per-write
-        confirmation, this coordinator should support a retry/reconnect
-        loop that resumes an interrupted replace-all from the last
-        confirmed write index. The execution_state.written_channel_indices
-        list already tracks progress and can seed resume logic.
+        Plans the write sequence, delegates execution to the engine, and
+        invalidates local caches on failure.  The execution state tracks
+        the current stage and written channel indices so that error
+        reports identify the exact failure point.
         """
         planner = _SetUrlReplacePlanner(
             self._node,
@@ -139,11 +139,21 @@ class _SetUrlTransactionCoordinator:
                 state=execution_state,
             )
         except Exception:
+            _stage_label = (
+                execution_state.stage.value
+                if execution_state.stage is not None
+                else "unknown"
+            )
+            _total_channels = len(plan.staged_channels)
             logger.error(
-                "setURL replace-all failed after writing %d channel(s); "
-                "device may be partially configured. "
-                "Local caches invalidated — reconnect and reload before further operations.",
+                "setURL replace-all failed at stage '%s' after writing %d of %d "
+                "planned channel writes; device may be partially configured. "
+                "Phase 3 reconnect/verify did not run because failure occurred "
+                "during Phase 1. Local caches invalidated — reconnect and reload "
+                "before further operations.",
+                _stage_label,
                 len(execution_state.written_channel_indices),
+                _total_channels,
             )
             self._cache_manager.invalidate_channel_cache(
                 "Channel cache invalidated after setURL replace-all partial failure."

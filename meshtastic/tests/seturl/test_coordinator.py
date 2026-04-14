@@ -42,7 +42,7 @@ class TestSetUrlTransactionCoordinator:
 
     @pytest.mark.unit
     def test_init_creates_components(self, mock_local_node: MagicMock) -> None:
-        """__init__ creates cache manager, execution engine, and rollback engine."""
+        """__init__ creates cache manager and execution engine (no rollback engine)."""
         channel_set = apponly_pb2.ChannelSet()
         settings = channel_set.settings.add()
         settings.name = "test"

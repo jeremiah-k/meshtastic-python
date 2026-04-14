@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import enum
 import logging
 import time
 from dataclasses import dataclass, field
@@ -36,9 +37,23 @@ DEFERRED_ADMIN_PACE_SECONDS = 1.5
 admin channel topology and need extra settle time."""
 
 
+class _ReplaceAllStage(enum.Enum):
+    """Stage of a replace-all write sequence.
+
+    Tracks which phase of ``executeReplaceAll`` is currently in progress
+    so that error reporting can identify the exact failure point and a
+    future reconnect-aware wrapper can decide whether resume is safe.
+    """
+
+    CHANNEL_WRITES = "channel_writes"
+    LORA_CONFIG = "lora_config"
+    DEFERRED_NAMED_ADMIN = "deferred_named_admin"
+    DEFERRED_PREVIOUS_ADMIN = "deferred_previous_admin"
+
+
 @dataclass
 class _SetUrlAddOnlyExecutionState:
-    """Execution/rollback tracking state for addOnly transactions."""
+    """Execution tracking state for addOnly transactions."""
 
     written_indices: list[int] = field(default_factory=list)
     lora_write_started: bool = False
@@ -46,10 +61,11 @@ class _SetUrlAddOnlyExecutionState:
 
 @dataclass
 class _SetUrlReplaceExecutionState:
-    """Execution/rollback tracking state for replace-all transactions."""
+    """Execution tracking state for replace-all transactions."""
 
     written_channel_indices: list[int] = field(default_factory=list)
     lora_write_started: bool = False
+    stage: _ReplaceAllStage | None = None
 
 
 class _SetUrlExecutionEngine:
@@ -102,14 +118,15 @@ class _SetUrlExecutionEngine:
         state: _SetUrlAddOnlyExecutionState,
     ) -> None:
         """Execute addOnly writes in transactional order."""
-        for i, (staged_channel, channel_name) in enumerate(plan.channels_to_write):
+        written_count = 0
+        for staged_channel, channel_name in plan.channels_to_write:
             if (
                 plan.deferred_add_only_admin_channel is not None
                 and staged_channel.index
                 == plan.deferred_add_only_admin_channel[0].index
             ):
                 continue
-            if i > 0:
+            if written_count > 0:
                 time.sleep(CHANNEL_WRITE_PACE_SECONDS)
             logger.info("Adding new channel '%s' to device", channel_name)
             self._node._write_channel_snapshot(  # noqa: SLF001
@@ -117,6 +134,7 @@ class _SetUrlExecutionEngine:
                 adminIndex=admin_context.admin_index_for_write,
             )
             state.written_indices.append(staged_channel.index)
+            written_count += 1
 
         self._write_lora_config(parsed_input, admin_context, state)
 
@@ -139,12 +157,11 @@ class _SetUrlExecutionEngine:
     ) -> None:
         """Execute replace-all writes in transactional order.
 
-        TODO(transport-robustness): Add per-write confirmation and
-        reconnect/reload recovery for partial-write states. Currently
-        fail-fast aborts on first error, leaving the device partially
-        configured. The recovery seam is between individual channel
-        writes in the loop below — each write should be confirmable
-        and resumable after a transport reconnect.
+        The write sequence proceeds through four stages tracked in
+        *state.stage*: channel writes, LoRa config, deferred named
+        admin channel, and deferred previous admin slot.  Each stage
+        is set before the first write of that stage so that an error
+        handler can report exactly where the sequence stopped.
         """
         deferred_channel_indexes = {
             channel.index
@@ -172,10 +189,12 @@ class _SetUrlExecutionEngine:
             self._node._raise_interface_error(  # noqa: SLF001
                 "Channel cache changed before replace-all write; aborting transaction."
             )
-        for i, staged_channel in enumerate(plan.staged_channels):
+        state.stage = _ReplaceAllStage.CHANNEL_WRITES
+        written_count = 0
+        for staged_channel in plan.staged_channels:
             if staged_channel.index in deferred_channel_indexes:
                 continue
-            if i > 0:
+            if written_count > 0:
                 time.sleep(CHANNEL_WRITE_PACE_SECONDS)
             logger.debug(
                 "Writing channel index=%s role=%s name=%s",
@@ -192,7 +211,9 @@ class _SetUrlExecutionEngine:
                 staged_channel,
                 expected_channels_ref=plan.replace_original_channels_ref,
             )
+            written_count += 1
 
+        state.stage = _ReplaceAllStage.LORA_CONFIG
         if parsed_input.has_lora_update:
             time.sleep(LORA_WRITE_SETTLE_SECONDS)
         self._write_lora_config(parsed_input, admin_context, state)
@@ -200,6 +221,7 @@ class _SetUrlExecutionEngine:
             self._cache_manager.apply_lora_success(parsed_input.channel_set.lora_config)
 
         if plan.deferred_new_named_admin_channel is not None:
+            state.stage = _ReplaceAllStage.DEFERRED_NAMED_ADMIN
             time.sleep(DEFERRED_ADMIN_PACE_SECONDS)
             logger.debug(
                 "Writing deferred admin channel index=%s role=%s name=%s",
@@ -226,6 +248,7 @@ class _SetUrlExecutionEngine:
             )
 
         if plan.deferred_previous_admin_slot_channel is not None:
+            state.stage = _ReplaceAllStage.DEFERRED_PREVIOUS_ADMIN
             time.sleep(DEFERRED_ADMIN_PACE_SECONDS)
             updated_admin_index_for_write = admin_context.admin_index_for_write
             if plan.deferred_new_named_admin_channel is not None:

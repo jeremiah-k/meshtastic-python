@@ -123,6 +123,21 @@ CONFIG_COMMIT_SETTLE_SECONDS = 1.0
 CONFIG_RECONNECT_WAIT_SECONDS = 15.0
 """Maximum time to wait for device reconnect after a reboot-capable configure commit."""
 
+_ALLOWED_CONFIGURE_KEYS = frozenset(
+    {
+        "owner",
+        "owner_short",
+        "ownerShort",
+        "channel_url",
+        "channelUrl",
+        "canned_messages",
+        "ringtone",
+        "location",
+        "config",
+        "module_config",
+    }
+)
+
 # Delay between GPIO watch iterations
 GPIO_WATCH_INTERVAL_SECONDS = 1.0
 
@@ -312,6 +327,15 @@ def _post_configure_reconnect_and_verify(
         return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
 
     return result
+
+
+def _is_local_destination(interface: MeshInterface, dest: str) -> bool:
+    if dest in (BROADCAST_ADDR, LOCAL_ADDR):
+        return True
+    try:
+        return str(interface.myInfo.my_node_num) == dest
+    except Exception:
+        return False
 
 
 def _verify_config_sections(
@@ -920,6 +944,18 @@ def _handle_configure_command(
     with open(args.configure[0], encoding="utf8") as file:
         configuration = yaml.safe_load(file)
 
+        if configuration is None:
+            _cli_exit("ERROR: YAML configuration file is empty")
+        if not isinstance(configuration, dict):
+            _cli_exit(
+                f"ERROR: YAML configuration must be a mapping/dictionary, got {type(configuration).__name__}"
+            )
+        _unknown_keys = set(configuration.keys()) - _ALLOWED_CONFIGURE_KEYS
+        if _unknown_keys:
+            _cli_exit(
+                f"ERROR: Unknown top-level key(s) in YAML: {', '.join(sorted(_unknown_keys))}"
+            )
+
         phase1_started = False
 
         if "owner" in configuration:
@@ -1127,32 +1163,43 @@ def _handle_configure_command(
             )
             _verify_config_fields = configuration.get("config")
             _verify_module_config_fields = configuration.get("module_config")
-            _reconnect_result = _post_configure_reconnect_and_verify(
-                interface,
-                timeout=CONFIG_RECONNECT_WAIT_SECONDS,
-                node_dest=args.dest,
-                verify_channel_url=_verify_channel_url,
-                verify_config_fields=_verify_config_fields,
-                verify_module_config_fields=_verify_module_config_fields,
-            )
-            if _reconnect_result == _ConfigureReconnectResult.VERIFIED:
-                print(
-                    "Phase 3: Device reconnected, config reloaded, and requested settings verified."
+            if _is_local_destination(interface, args.dest):
+                _reconnect_result = _post_configure_reconnect_and_verify(
+                    interface,
+                    timeout=CONFIG_RECONNECT_WAIT_SECONDS,
+                    node_dest=args.dest,
+                    verify_channel_url=_verify_channel_url,
+                    verify_config_fields=_verify_config_fields,
+                    verify_module_config_fields=_verify_module_config_fields,
                 )
-            elif _reconnect_result == _ConfigureReconnectResult.VERIFICATION_INCOMPLETE:
+                if _reconnect_result == _ConfigureReconnectResult.VERIFIED:
+                    print(
+                        "Phase 3: Device reconnected, config reloaded, and requested settings verified."
+                    )
+                elif (
+                    _reconnect_result
+                    == _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+                ):
+                    print(
+                        "Phase 3: Device reconnected and config reloaded. "
+                        "Could not fully verify applied settings."
+                    )
+                elif (
+                    _reconnect_result == _ConfigureReconnectResult.CONFIG_RELOAD_FAILED
+                ):
+                    print(
+                        "Phase 3: Device reconnected but config reload failed. "
+                        "Settings may still be applying."
+                    )
+                elif _reconnect_result == _ConfigureReconnectResult.RECONNECT_FAILED:
+                    print(
+                        "Phase 3: Device did not reconnect within timeout. "
+                        "Configuration may still be applying."
+                    )
+            else:
                 print(
-                    "Phase 3: Device reconnected and config reloaded. "
-                    "Could not fully verify applied settings."
-                )
-            elif _reconnect_result == _ConfigureReconnectResult.CONFIG_RELOAD_FAILED:
-                print(
-                    "Phase 3: Device reconnected but config reload failed. "
-                    "Settings may still be applying."
-                )
-            elif _reconnect_result == _ConfigureReconnectResult.RECONNECT_FAILED:
-                print(
-                    "Phase 3: Device did not reconnect within timeout. "
-                    "Configuration may still be applying."
+                    "Phase 3: Reboot/reconnect verification skipped for remote target. "
+                    "Local transport state does not confirm remote node reload status."
                 )
         else:
             print("Configuration applied (no reboot expected).")
@@ -1576,7 +1623,7 @@ def onConnected(interface: MeshInterface) -> None:
                 interface, args, getNode_kwargs
             )
             if _settings_transaction_started:
-                waitForAckNak = True
+                waitForAckNak = False
 
         if args.export_config:
             if args.dest != BROADCAST_ADDR:

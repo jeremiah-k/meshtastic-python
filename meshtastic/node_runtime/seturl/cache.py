@@ -117,7 +117,12 @@ class _SetUrlCacheManager:
         self._node._execute_with_node_db_lock(_apply)
 
     def clear_lora_cache_with_warning(self, warning_message: str) -> None:
-        """Clear LoRa cache when rollback cannot restore prior value."""
+        """Clear the local LoRa config cache after a partial failure.
+
+        Removes the locally-cached LoRa configuration so that subsequent
+        reads will fetch fresh state from the device.  The caller is
+        responsible for logging the reason via *warning_message*.
+        """
 
         def _clear() -> None:
             self._node.localConfig.ClearField("lora")

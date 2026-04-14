@@ -17,6 +17,32 @@ def _verify_requested_fields(
     proto_message: Any,
     section_path: str,
 ) -> list[str]:
+    """Compare YAML-requested field values against a protobuf message.
+
+    Recursively walks *yaml_dict*, converting each camelCase key to
+    snake_case and looking up the corresponding field on *proto_message*.
+    For leaf values, enum strings are resolved to their numeric form and
+    non-enum strings are coerced via ``meshtastic.util.fromStr()``.
+    Repeated fields are compared as lists; non-repeated fields that
+    receive a list use only the first element.
+
+    Parameters
+    ----------
+    yaml_dict : dict[str, Any]
+        Mapping of camelCase field names to the YAML-requested values.
+    proto_message : Any
+        Protocol buffer message whose current field values are the
+        source of truth for comparison.
+    section_path : str
+        Dot-separated path prefix used in mismatch reports (e.g.
+        ``"Config.lora"``).
+
+    Returns
+    -------
+    list[str]
+        Dot-separated paths of fields whose requested value does not
+        match the protobuf value.  Empty list means all fields match.
+    """
     mismatches: list[str] = []
     for key, yaml_value in yaml_dict.items():
         snake_key = meshtastic.util.camel_to_snake(key)
