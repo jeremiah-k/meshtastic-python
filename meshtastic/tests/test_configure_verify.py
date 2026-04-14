@@ -332,3 +332,89 @@ def test_channel_url_all_fields_match() -> None:
         _verify_channel_url_match(_make_channel_url([s1]), _make_channel_url([s2]))
         is True
     )
+
+
+@pytest.mark.unit
+def test_channel_url_duplicate_requested_names_returns_false() -> None:
+    s1 = channel_pb2.ChannelSettings()
+    s1.name = "dup"
+    s1.psk = b"\x01"
+    s2 = channel_pb2.ChannelSettings()
+    s2.name = "dup"
+    s2.psk = b"\x02"
+    s3 = channel_pb2.ChannelSettings()
+    s3.name = "dup"
+    s3.psk = b"\x01"
+    assert (
+        _verify_channel_url_match(_make_channel_url([s1, s2]), _make_channel_url([s3]))
+        is False
+    )
+
+
+@pytest.mark.unit
+def test_channel_url_duplicate_device_names_returns_false() -> None:
+    s1 = channel_pb2.ChannelSettings()
+    s1.name = "dup"
+    s1.psk = b"\x01"
+    s2 = channel_pb2.ChannelSettings()
+    s2.name = "dup"
+    s2.psk = b"\x02"
+    assert (
+        _verify_channel_url_match(_make_channel_url([s1]), _make_channel_url([s1, s2]))
+        is False
+    )
+
+
+@pytest.mark.unit
+def test_channel_url_duplicate_names_both_sides_returns_false() -> None:
+    s1 = channel_pb2.ChannelSettings()
+    s1.name = "same"
+    s1.psk = b"\x01"
+    s2 = channel_pb2.ChannelSettings()
+    s2.name = "same"
+    s2.psk = b"\x01"
+    assert (
+        _verify_channel_url_match(
+            _make_channel_url([s1, s2]), _make_channel_url([s1, s2])
+        )
+        is False
+    )
+
+
+@pytest.mark.unit
+def test_channel_url_no_duplicates_still_works() -> None:
+    s1 = channel_pb2.ChannelSettings()
+    s1.name = "alpha"
+    s1.psk = b"\x01"
+    s2 = channel_pb2.ChannelSettings()
+    s2.name = "beta"
+    s2.psk = b"\x02"
+    s3 = channel_pb2.ChannelSettings()
+    s3.name = "alpha"
+    s3.psk = b"\x01"
+    s4 = channel_pb2.ChannelSettings()
+    s4.name = "beta"
+    s4.psk = b"\x02"
+    assert (
+        _verify_channel_url_match(
+            _make_channel_url([s1, s2]), _make_channel_url([s3, s4])
+        )
+        is True
+    )
+
+
+@pytest.mark.unit
+def test_channel_url_duplicate_requested_with_mismatch_settings_returns_false() -> None:
+    s1 = channel_pb2.ChannelSettings()
+    s1.name = "dup"
+    s1.psk = b"\x01"
+    s2 = channel_pb2.ChannelSettings()
+    s2.name = "dup"
+    s2.psk = b"\xff"
+    s3 = channel_pb2.ChannelSettings()
+    s3.name = "dup"
+    s3.psk = b"\x01"
+    assert (
+        _verify_channel_url_match(_make_channel_url([s1, s2]), _make_channel_url([s3]))
+        is False
+    )

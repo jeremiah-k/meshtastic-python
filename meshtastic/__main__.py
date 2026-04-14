@@ -367,7 +367,7 @@ def _verify_post_reconnect_config(
             )
             return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
         logger.info(
-            "Channel URL verified (channel presence, PSK, name, uplink/downlink, and module settings match)."
+            "Channel URL verified (channels matched by name; PSK, uplink/downlink, and module settings match)."
         )
 
     if verify_config_fields and not _verify_config_sections(

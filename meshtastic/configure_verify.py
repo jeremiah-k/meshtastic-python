@@ -98,6 +98,24 @@ def _verify_channel_url_match(
     dev_cs = _parse_channel_set(device_url)
     if req_cs is None or dev_cs is None:
         return False
+
+    req_names = [s.name for s in req_cs.settings]
+    dev_names = [s.name for s in dev_cs.settings]
+    if len(req_names) != len(set(req_names)):
+        logger.warning(
+            "Channel URL verification: duplicate channel names in requested URL "
+            "(%s); cannot verify unambiguously.",
+            ", ".join(req_names),
+        )
+        return False
+    if len(dev_names) != len(set(dev_names)):
+        logger.warning(
+            "Channel URL verification: duplicate channel names in device URL "
+            "(%s); cannot verify unambiguously.",
+            ", ".join(dev_names),
+        )
+        return False
+
     req_lookup: dict[str, Any] = {s.name: s for s in req_cs.settings}
     dev_lookup: dict[str, Any] = {s.name: s for s in dev_cs.settings}
     for name, req_settings in req_lookup.items():
