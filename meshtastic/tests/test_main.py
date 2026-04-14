@@ -8,6 +8,7 @@ import logging
 import platform
 import re
 import sys
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, cast
@@ -4984,3 +4985,158 @@ def test_printConfig_skips_non_message_sections(
     out, err = capsys.readouterr()
     assert out == ""
     assert err == ""
+
+
+def _patch_fast_monotonic(monkeypatch: pytest.MonkeyPatch) -> None:
+    _val = [0.0]
+
+    def _fast():
+        _val[0] += 100.0
+        return _val[0]
+
+    monkeypatch.setattr(main_module.time, "monotonic", _fast)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_phase3_verified_with_matching_config_values(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "phase3_verified.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"config": {"power": {"ls_secs": 222}}}),
+        encoding="utf-8",
+    )
+    target_local = localonly_pb2.LocalConfig()
+    iface, target_node = _build_configure_interface(
+        target_local, localonly_pb2.LocalModuleConfig()
+    )
+    iface.isConnected = threading.Event()
+    iface.isConnected.set()
+    iface.waitForConfig = MagicMock()
+    _patch_fast_monotonic(monkeypatch)
+    _run_main_configure_file(config_path, iface, monkeypatch)
+    out, _ = capsys.readouterr()
+    assert "field values confirmed" in out
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_phase3_verification_incomplete_on_value_mismatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "phase3_mismatch.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"config": {"power": {"ls_secs": 222}}}),
+        encoding="utf-8",
+    )
+    target_local = localonly_pb2.LocalConfig()
+    iface, target_node = _build_configure_interface(
+        target_local, localonly_pb2.LocalModuleConfig()
+    )
+    iface.isConnected = threading.Event()
+    iface.isConnected.set()
+    iface.waitForConfig = MagicMock()
+    monkeypatch.setattr(
+        "meshtastic.__main__._verify_requested_fields",
+        lambda *a, **k: ["power.ls_secs"],
+    )
+    _patch_fast_monotonic(monkeypatch)
+    _run_main_configure_file(config_path, iface, monkeypatch)
+    out, _ = capsys.readouterr()
+    assert "Could not fully verify" in out
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_phase3_no_reconnect_needed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "phase3_no_reboot.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"owner": "TestUser"}),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    _run_main_configure_file(config_path, iface, monkeypatch)
+    out, _ = capsys.readouterr()
+    assert "no reboot expected" in out
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_phase3_channel_url_verified(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "phase3_channel_url.yaml"
+    test_url = "https://meshtastic.org/e/#CGUhYQMgdAaA"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "channel_url": test_url,
+                "config": {"power": {"ls_secs": 222}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    target_local = localonly_pb2.LocalConfig()
+    iface, target_node = _build_configure_interface(
+        target_local, localonly_pb2.LocalModuleConfig()
+    )
+    iface.isConnected = threading.Event()
+    iface.isConnected.set()
+    iface.waitForConfig = MagicMock()
+    target_node.getURL = MagicMock(return_value=test_url)
+    monkeypatch.setattr(
+        "meshtastic.__main__._verify_channel_url_match",
+        lambda *a, **k: True,
+    )
+    _patch_fast_monotonic(monkeypatch)
+    _run_main_configure_file(config_path, iface, monkeypatch)
+    out, _ = capsys.readouterr()
+    assert "field values confirmed" in out
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_phase3_channel_url_mismatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "phase3_channel_url_mismatch.yaml"
+    requested_url = "https://meshtastic.org/e/#CGUhYQMgdAaA"
+    different_url = "https://meshtastic.org/e/#AgaMYAMgeBIB"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "channel_url": requested_url,
+                "config": {"power": {"ls_secs": 222}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    target_local = localonly_pb2.LocalConfig()
+    iface, target_node = _build_configure_interface(
+        target_local, localonly_pb2.LocalModuleConfig()
+    )
+    iface.isConnected = threading.Event()
+    iface.isConnected.set()
+    iface.waitForConfig = MagicMock()
+    target_node.getURL = MagicMock(return_value=different_url)
+    monkeypatch.setattr(
+        "meshtastic.__main__._verify_channel_url_match",
+        lambda *a, **k: False,
+    )
+    _patch_fast_monotonic(monkeypatch)
+    _run_main_configure_file(config_path, iface, monkeypatch)
+    out, _ = capsys.readouterr()
+    assert "Could not fully verify" in out

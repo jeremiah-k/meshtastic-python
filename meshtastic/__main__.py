@@ -26,6 +26,10 @@ import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
 from meshtastic import BROADCAST_ADDR, LOCAL_ADDR, mt_config, remote_hardware
+from meshtastic.configure_verify import (
+    _verify_channel_url_match,
+    _verify_requested_fields,
+)
 from meshtastic.host_port import parseHostAndPort
 from meshtastic.interfaces.ble import BLEInterface
 from meshtastic.mesh_interface import MeshInterface
@@ -216,9 +220,9 @@ def _post_configure_reconnect_and_verify(
     *,
     timeout: float,
     node_dest: str,
-    verify_channel_url: bool = False,
-    verify_config_sections: list[str] | None = None,
-    verify_module_config_sections: list[str] | None = None,
+    verify_channel_url: str | None = None,
+    verify_config_fields: dict[str, dict[str, Any]] | None = None,
+    verify_module_config_fields: dict[str, dict[str, Any]] | None = None,
 ) -> _ConfigureReconnectResult:
     """Wait for device reconnect after a reboot-capable configure commit.
 
@@ -283,7 +287,7 @@ def _post_configure_reconnect_and_verify(
         return _ConfigureReconnectResult.CONFIG_RELOAD_FAILED
 
     has_verification = (
-        verify_channel_url or verify_config_sections or verify_module_config_sections
+        verify_channel_url or verify_config_fields or verify_module_config_fields
     )
     if not has_verification:
         return _ConfigureReconnectResult.VERIFIED
@@ -292,31 +296,66 @@ def _post_configure_reconnect_and_verify(
         target_node = interface.getNode(node_dest)
 
         if verify_channel_url:
-            url = target_node.getURL()
-            if not url:
+            device_url = target_node.getURL()
+            if not device_url:
                 logger.warning("Channel URL verification: getURL() returned empty.")
                 return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-            logger.info("Channel URL verified: %s", url)
+            if not _verify_channel_url_match(verify_channel_url, device_url):
+                logger.warning(
+                    "Channel URL verification: device URL does not match requested URL."
+                )
+                return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+            logger.info("Channel URL verified (values match).")
 
-        if verify_config_sections:
-            for section in verify_config_sections:
-                if not target_node.localConfig.HasField(section):
+        if verify_config_fields:
+            for section_name, yaml_values in verify_config_fields.items():
+                section_snake = meshtastic.util.camel_to_snake(section_name)
+                if not target_node.localConfig.HasField(section_snake):
                     logger.warning(
                         "Config section %r not present in localConfig after reload.",
-                        section,
+                        section_name,
                     )
                     return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-                logger.info("Config section %r verified.", section)
+                proto_section = getattr(target_node.localConfig, section_snake)
+                mismatches = _verify_requested_fields(
+                    yaml_values, proto_section, section_name
+                )
+                if mismatches:
+                    logger.warning(
+                        "Config section %r field mismatches: %s",
+                        section_name,
+                        ", ".join(mismatches),
+                    )
+                    return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+                logger.info(
+                    "Config section %r verified (all requested field values match).",
+                    section_name,
+                )
 
-        if verify_module_config_sections:
-            for section in verify_module_config_sections:
-                if not target_node.moduleConfig.HasField(section):
+        if verify_module_config_fields:
+            for section_name, yaml_values in verify_module_config_fields.items():
+                section_snake = meshtastic.util.camel_to_snake(section_name)
+                if not target_node.moduleConfig.HasField(section_snake):
                     logger.warning(
                         "Module config section %r not present in moduleConfig after reload.",
-                        section,
+                        section_name,
                     )
                     return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-                logger.info("Module config section %r verified.", section)
+                proto_section = getattr(target_node.moduleConfig, section_snake)
+                mismatches = _verify_requested_fields(
+                    yaml_values, proto_section, section_name
+                )
+                if mismatches:
+                    logger.warning(
+                        "Module config section %r field mismatches: %s",
+                        section_name,
+                        ", ".join(mismatches),
+                    )
+                    return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+                logger.info(
+                    "Module config section %r verified (all requested field values match).",
+                    section_name,
+                )
 
     except Exception:
         logger.warning(
@@ -1529,30 +1568,22 @@ def onConnected(interface: MeshInterface) -> None:
                 # Phase 3: Reconnect and verify
                 # ------------------------------------------------------------------
                 if settings_transaction_started:
-                    _verify_channel_url = (
-                        "channel_url" in configuration or "channelUrl" in configuration
-                    )
-                    _verify_config_sections = (
-                        list(configuration["config"].keys())
-                        if "config" in configuration
-                        else None
-                    )
-                    _verify_module_config_sections = (
-                        list(configuration["module_config"].keys())
-                        if "module_config" in configuration
-                        else None
-                    )
+                    _verify_channel_url = configuration.get(
+                        "channel_url"
+                    ) or configuration.get("channelUrl")
+                    _verify_config_fields = configuration.get("config")
+                    _verify_module_config_fields = configuration.get("module_config")
                     _reconnect_result = _post_configure_reconnect_and_verify(
                         interface,
                         timeout=CONFIG_RECONNECT_WAIT_SECONDS,
                         node_dest=args.dest,
                         verify_channel_url=_verify_channel_url,
-                        verify_config_sections=_verify_config_sections,
-                        verify_module_config_sections=_verify_module_config_sections,
+                        verify_config_fields=_verify_config_fields,
+                        verify_module_config_fields=_verify_module_config_fields,
                     )
                     if _reconnect_result == _ConfigureReconnectResult.VERIFIED:
                         print(
-                            "Phase 3: Device reconnected, config reloaded, and requested settings verified."
+                            "Phase 3: Device reconnected, config reloaded, and requested settings verified (field values confirmed)."
                         )
                     elif (
                         _reconnect_result
