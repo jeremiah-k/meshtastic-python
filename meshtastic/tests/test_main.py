@@ -1830,7 +1830,7 @@ def test_main_set_with_invalid(
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
-@patch("builtins.open", new_callable=mock_open, read_data="data")
+@patch("builtins.open", new_callable=mock_open, read_data="{}")
 @patch("serial.Serial")
 @patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
 def test_main_configure_with_snake_case(
@@ -1872,7 +1872,7 @@ def test_main_configure_with_snake_case(
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
-@patch("builtins.open", new_callable=mock_open, read_data="data")
+@patch("builtins.open", new_callable=mock_open, read_data="{}")
 @patch("serial.Serial")
 @patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
 def test_main_configure_with_camel_case_keys(

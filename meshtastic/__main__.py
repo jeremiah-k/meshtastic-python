@@ -333,7 +333,10 @@ def _is_local_destination(interface: MeshInterface, dest: str) -> bool:
     if dest in (BROADCAST_ADDR, LOCAL_ADDR):
         return True
     try:
-        return str(interface.myInfo.my_node_num) == dest
+        my_info = interface.myInfo
+        if my_info is None:
+            return False
+        return str(my_info.my_node_num) == dest
     except Exception:
         return False
 
