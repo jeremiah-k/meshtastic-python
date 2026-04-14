@@ -3,8 +3,10 @@
 isort:skip_file
 trunk-ignore(buf-lint/PACKAGE_DIRECTORY_MATCH)"""
 
+from collections import abc as _abc
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
+from google.protobuf.internal import containers as _containers
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 import builtins as _builtins
 import sys
@@ -657,6 +659,154 @@ class _CotTypeEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_CotType.Value
     """
     b-f-t-a: File transfer acknowledgment
     """
+    CotType_u_d_f_m: _CotType.ValueType  # 76
+    """--- Additional drawing / tactical graphics ---
+
+
+    u-d-f-m: Freehand telestration / annotation. Anchor at event point,
+    geometry carried via DrawnShape.vertices. May be truncated to
+    MAX_VERTICES by the sender.
+    """
+    CotType_u_d_p: _CotType.ValueType  # 77
+    """
+    u-d-p: Closed polygon. Geometry carried via DrawnShape.vertices,
+    implicitly closed (receiver duplicates first vertex as needed).
+    """
+    CotType_b_m_p_s_m: _CotType.ValueType  # 78
+    """--- Additional markers ---
+
+
+    b-m-p-s-m: Spot map marker (colored dot at a point of interest).
+    """
+    CotType_b_m_p_c: _CotType.ValueType  # 79
+    """
+    b-m-p-c: Checkpoint (intermediate route control point).
+    """
+    CotType_u_r_b_c_c: _CotType.ValueType  # 80
+    """--- Ranging tools ---
+
+
+    u-r-b-c-c: Ranging circle (range rings centered on the event point).
+    """
+    CotType_u_r_b_bullseye: _CotType.ValueType  # 81
+    """
+    u-r-b-bullseye: Bullseye with configurable range rings and bearing
+    reference (magnetic / true / grid).
+    """
+    CotType_a_f_G_E_V_A: _CotType.ValueType  # 82
+    """--- PLI self-reporting (1) ------------------------------------------
+
+
+    a-f-G-E-V-A: Friendly armored vehicle, user-selectable self PLI.
+    """
+    CotType_a_n_A: _CotType.ValueType  # 83
+    """--- 2525 quick-drop: basic affiliation gaps -------------------------
+
+
+    a-n-A: Neutral aircraft (friendly/hostile/unknown already present).
+    """
+    CotType_a_u_G_U_C_F: _CotType.ValueType  # 84
+    """--- 2525 quick-drop: artillery (4) ----------------------------------"""
+    CotType_a_n_G_U_C_F: _CotType.ValueType  # 85
+    CotType_a_h_G_U_C_F: _CotType.ValueType  # 86
+    CotType_a_f_G_U_C_F: _CotType.ValueType  # 87
+    CotType_a_u_G_I: _CotType.ValueType  # 88
+    """--- 2525 quick-drop: building (4) -----------------------------------"""
+    CotType_a_n_G_I: _CotType.ValueType  # 89
+    CotType_a_h_G_I: _CotType.ValueType  # 90
+    CotType_a_f_G_I: _CotType.ValueType  # 91
+    CotType_a_u_G_E_X_M: _CotType.ValueType  # 92
+    """--- 2525 quick-drop: mine (4) ---------------------------------------"""
+    CotType_a_n_G_E_X_M: _CotType.ValueType  # 93
+    CotType_a_h_G_E_X_M: _CotType.ValueType  # 94
+    CotType_a_f_G_E_X_M: _CotType.ValueType  # 95
+    CotType_a_u_S: _CotType.ValueType  # 96
+    """--- 2525 quick-drop: ship (3; a-f-S already at 17) ------------------"""
+    CotType_a_n_S: _CotType.ValueType  # 97
+    CotType_a_h_S: _CotType.ValueType  # 98
+    CotType_a_u_G_U_C_I_d: _CotType.ValueType  # 99
+    """--- 2525 quick-drop: sniper (4) -------------------------------------"""
+    CotType_a_n_G_U_C_I_d: _CotType.ValueType  # 100
+    CotType_a_h_G_U_C_I_d: _CotType.ValueType  # 101
+    CotType_a_f_G_U_C_I_d: _CotType.ValueType  # 102
+    CotType_a_u_G_E_V_A_T: _CotType.ValueType  # 103
+    """--- 2525 quick-drop: tank (4) ---------------------------------------"""
+    CotType_a_n_G_E_V_A_T: _CotType.ValueType  # 104
+    CotType_a_h_G_E_V_A_T: _CotType.ValueType  # 105
+    CotType_a_f_G_E_V_A_T: _CotType.ValueType  # 106
+    CotType_a_u_G_U_C_I: _CotType.ValueType  # 107
+    """--- 2525 quick-drop: troops (3; a-f-G-U-C-I already at 2) -----------"""
+    CotType_a_n_G_U_C_I: _CotType.ValueType  # 108
+    CotType_a_h_G_U_C_I: _CotType.ValueType  # 109
+    CotType_a_n_G_E_V: _CotType.ValueType  # 110
+    """--- 2525 quick-drop: generic vehicle (3; a-u-G-E-V already at 69) ---"""
+    CotType_a_h_G_E_V: _CotType.ValueType  # 111
+    CotType_a_f_G_E_V: _CotType.ValueType  # 112
+    CotType_b_m_p_w_GOTO: _CotType.ValueType  # 113
+    """--- Mission-specific points (4) -------------------------------------
+
+
+    b-m-p-w-GOTO: Go To / bloodhound navigation target.
+    """
+    CotType_b_m_p_c_ip: _CotType.ValueType  # 114
+    """
+    b-m-p-c-ip: Initial point (mission planning).
+    """
+    CotType_b_m_p_c_cp: _CotType.ValueType  # 115
+    """
+    b-m-p-c-cp: Contact point (mission planning).
+    """
+    CotType_b_m_p_s_p_op: _CotType.ValueType  # 116
+    """
+    b-m-p-s-p-op: Observation post.
+    """
+    CotType_u_d_v: _CotType.ValueType  # 117
+    """--- Vehicle drawings (2) --------------------------------------------
+
+
+    u-d-v: 2D vehicle outline drawn on the map.
+    """
+    CotType_u_d_v_m: _CotType.ValueType  # 118
+    """
+    u-d-v-m: 3D vehicle model reference.
+    """
+    CotType_u_d_c_e: _CotType.ValueType  # 119
+    """--- Drawing shapes (1) ----------------------------------------------
+
+
+    u-d-c-e: Non-circular ellipse (circle with distinct major/minor axes).
+    """
+    CotType_b_i_x_i: _CotType.ValueType  # 120
+    """--- Image / media marker (1) ----------------------------------------
+
+
+    b-i-x-i: Quick Pic geotagged image marker. The image itself does not
+    ride on LoRa; this event references the image via iconset metadata.
+    """
+    CotType_b_t_f_d: _CotType.ValueType  # 121
+    """--- GeoChat receipts (2) --------------------------------------------
+
+
+    b-t-f-d: GeoChat delivered receipt. Carried on the existing `chat`
+    payload_variant via GeoChat.receipt_for_uid + receipt_type.
+    """
+    CotType_b_t_f_r: _CotType.ValueType  # 122
+    """
+    b-t-f-r: GeoChat read receipt. Same wire slot as b-t-f-d.
+    """
+    CotType_b_a_o_c: _CotType.ValueType  # 123
+    """--- Custom emergency (1) --------------------------------------------
+
+
+    b-a-o-c: Custom / generic emergency beacon.
+    """
+    CotType_t_s: _CotType.ValueType  # 124
+    """--- Tasking (1) -----------------------------------------------------
+
+
+    t-s: Task / engage request. Structured payload carried via the new
+    TaskRequest typed variant.
+    """
 
 class CotType(_CotType, metaclass=_CotTypeEnumTypeWrapper):
     """
@@ -1003,6 +1153,154 @@ CotType_b_f_t_a: CotType.ValueType  # 75
 """
 b-f-t-a: File transfer acknowledgment
 """
+CotType_u_d_f_m: CotType.ValueType  # 76
+"""--- Additional drawing / tactical graphics ---
+
+
+u-d-f-m: Freehand telestration / annotation. Anchor at event point,
+geometry carried via DrawnShape.vertices. May be truncated to
+MAX_VERTICES by the sender.
+"""
+CotType_u_d_p: CotType.ValueType  # 77
+"""
+u-d-p: Closed polygon. Geometry carried via DrawnShape.vertices,
+implicitly closed (receiver duplicates first vertex as needed).
+"""
+CotType_b_m_p_s_m: CotType.ValueType  # 78
+"""--- Additional markers ---
+
+
+b-m-p-s-m: Spot map marker (colored dot at a point of interest).
+"""
+CotType_b_m_p_c: CotType.ValueType  # 79
+"""
+b-m-p-c: Checkpoint (intermediate route control point).
+"""
+CotType_u_r_b_c_c: CotType.ValueType  # 80
+"""--- Ranging tools ---
+
+
+u-r-b-c-c: Ranging circle (range rings centered on the event point).
+"""
+CotType_u_r_b_bullseye: CotType.ValueType  # 81
+"""
+u-r-b-bullseye: Bullseye with configurable range rings and bearing
+reference (magnetic / true / grid).
+"""
+CotType_a_f_G_E_V_A: CotType.ValueType  # 82
+"""--- PLI self-reporting (1) ------------------------------------------
+
+
+a-f-G-E-V-A: Friendly armored vehicle, user-selectable self PLI.
+"""
+CotType_a_n_A: CotType.ValueType  # 83
+"""--- 2525 quick-drop: basic affiliation gaps -------------------------
+
+
+a-n-A: Neutral aircraft (friendly/hostile/unknown already present).
+"""
+CotType_a_u_G_U_C_F: CotType.ValueType  # 84
+"""--- 2525 quick-drop: artillery (4) ----------------------------------"""
+CotType_a_n_G_U_C_F: CotType.ValueType  # 85
+CotType_a_h_G_U_C_F: CotType.ValueType  # 86
+CotType_a_f_G_U_C_F: CotType.ValueType  # 87
+CotType_a_u_G_I: CotType.ValueType  # 88
+"""--- 2525 quick-drop: building (4) -----------------------------------"""
+CotType_a_n_G_I: CotType.ValueType  # 89
+CotType_a_h_G_I: CotType.ValueType  # 90
+CotType_a_f_G_I: CotType.ValueType  # 91
+CotType_a_u_G_E_X_M: CotType.ValueType  # 92
+"""--- 2525 quick-drop: mine (4) ---------------------------------------"""
+CotType_a_n_G_E_X_M: CotType.ValueType  # 93
+CotType_a_h_G_E_X_M: CotType.ValueType  # 94
+CotType_a_f_G_E_X_M: CotType.ValueType  # 95
+CotType_a_u_S: CotType.ValueType  # 96
+"""--- 2525 quick-drop: ship (3; a-f-S already at 17) ------------------"""
+CotType_a_n_S: CotType.ValueType  # 97
+CotType_a_h_S: CotType.ValueType  # 98
+CotType_a_u_G_U_C_I_d: CotType.ValueType  # 99
+"""--- 2525 quick-drop: sniper (4) -------------------------------------"""
+CotType_a_n_G_U_C_I_d: CotType.ValueType  # 100
+CotType_a_h_G_U_C_I_d: CotType.ValueType  # 101
+CotType_a_f_G_U_C_I_d: CotType.ValueType  # 102
+CotType_a_u_G_E_V_A_T: CotType.ValueType  # 103
+"""--- 2525 quick-drop: tank (4) ---------------------------------------"""
+CotType_a_n_G_E_V_A_T: CotType.ValueType  # 104
+CotType_a_h_G_E_V_A_T: CotType.ValueType  # 105
+CotType_a_f_G_E_V_A_T: CotType.ValueType  # 106
+CotType_a_u_G_U_C_I: CotType.ValueType  # 107
+"""--- 2525 quick-drop: troops (3; a-f-G-U-C-I already at 2) -----------"""
+CotType_a_n_G_U_C_I: CotType.ValueType  # 108
+CotType_a_h_G_U_C_I: CotType.ValueType  # 109
+CotType_a_n_G_E_V: CotType.ValueType  # 110
+"""--- 2525 quick-drop: generic vehicle (3; a-u-G-E-V already at 69) ---"""
+CotType_a_h_G_E_V: CotType.ValueType  # 111
+CotType_a_f_G_E_V: CotType.ValueType  # 112
+CotType_b_m_p_w_GOTO: CotType.ValueType  # 113
+"""--- Mission-specific points (4) -------------------------------------
+
+
+b-m-p-w-GOTO: Go To / bloodhound navigation target.
+"""
+CotType_b_m_p_c_ip: CotType.ValueType  # 114
+"""
+b-m-p-c-ip: Initial point (mission planning).
+"""
+CotType_b_m_p_c_cp: CotType.ValueType  # 115
+"""
+b-m-p-c-cp: Contact point (mission planning).
+"""
+CotType_b_m_p_s_p_op: CotType.ValueType  # 116
+"""
+b-m-p-s-p-op: Observation post.
+"""
+CotType_u_d_v: CotType.ValueType  # 117
+"""--- Vehicle drawings (2) --------------------------------------------
+
+
+u-d-v: 2D vehicle outline drawn on the map.
+"""
+CotType_u_d_v_m: CotType.ValueType  # 118
+"""
+u-d-v-m: 3D vehicle model reference.
+"""
+CotType_u_d_c_e: CotType.ValueType  # 119
+"""--- Drawing shapes (1) ----------------------------------------------
+
+
+u-d-c-e: Non-circular ellipse (circle with distinct major/minor axes).
+"""
+CotType_b_i_x_i: CotType.ValueType  # 120
+"""--- Image / media marker (1) ----------------------------------------
+
+
+b-i-x-i: Quick Pic geotagged image marker. The image itself does not
+ride on LoRa; this event references the image via iconset metadata.
+"""
+CotType_b_t_f_d: CotType.ValueType  # 121
+"""--- GeoChat receipts (2) --------------------------------------------
+
+
+b-t-f-d: GeoChat delivered receipt. Carried on the existing `chat`
+payload_variant via GeoChat.receipt_for_uid + receipt_type.
+"""
+CotType_b_t_f_r: CotType.ValueType  # 122
+"""
+b-t-f-r: GeoChat read receipt. Same wire slot as b-t-f-d.
+"""
+CotType_b_a_o_c: CotType.ValueType  # 123
+"""--- Custom emergency (1) --------------------------------------------
+
+
+b-a-o-c: Custom / generic emergency beacon.
+"""
+CotType_t_s: CotType.ValueType  # 124
+"""--- Tasking (1) -----------------------------------------------------
+
+
+t-s: Task / engage request. Structured payload carried via the new
+TaskRequest typed variant.
+"""
 Global___CotType: _TypeAlias = CotType  # noqa: Y015
 
 class _GeoPointSource:
@@ -1134,12 +1432,44 @@ class GeoChat(_message.Message):
 
     DESCRIPTOR: _descriptor.Descriptor
 
+    class _ReceiptType:
+        ValueType = _typing.NewType("ValueType", _builtins.int)
+        V: _TypeAlias = ValueType  # noqa: Y015
+
+    class _ReceiptTypeEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[GeoChat._ReceiptType.ValueType], _builtins.type):
+        DESCRIPTOR: _descriptor.EnumDescriptor
+        ReceiptType_None: GeoChat._ReceiptType.ValueType  # 0
+        """normal chat message"""
+        ReceiptType_Delivered: GeoChat._ReceiptType.ValueType  # 1
+        """b-t-f-d delivered receipt"""
+        ReceiptType_Read: GeoChat._ReceiptType.ValueType  # 2
+        """b-t-f-r read receipt"""
+
+    class ReceiptType(_ReceiptType, metaclass=_ReceiptTypeEnumTypeWrapper):
+        """
+        Receipt discriminator. Set alongside cot_type_id = b-t-f-d (delivered)
+        or b-t-f-r (read). ReceiptType_None is the default for a normal chat
+        message (cot_type_id = b-t-f).
+
+        Receivers can detect a receipt by checking receipt_type != ReceiptType_None
+        without re-parsing the envelope cot_type_id.
+        """
+
+    ReceiptType_None: GeoChat.ReceiptType.ValueType  # 0
+    """normal chat message"""
+    ReceiptType_Delivered: GeoChat.ReceiptType.ValueType  # 1
+    """b-t-f-d delivered receipt"""
+    ReceiptType_Read: GeoChat.ReceiptType.ValueType  # 2
+    """b-t-f-r read receipt"""
+
     MESSAGE_FIELD_NUMBER: _builtins.int
     TO_FIELD_NUMBER: _builtins.int
     TO_CALLSIGN_FIELD_NUMBER: _builtins.int
+    RECEIPT_FOR_UID_FIELD_NUMBER: _builtins.int
+    RECEIPT_TYPE_FIELD_NUMBER: _builtins.int
     message: _builtins.str
     """
-    The text message
+    The text message. Empty for receipts.
     """
     to: _builtins.str
     """
@@ -1149,16 +1479,30 @@ class GeoChat(_message.Message):
     """
     Callsign of the recipient for the message
     """
+    receipt_for_uid: _builtins.str
+    """
+    UID of the chat message this event is acknowledging. Empty for a
+    normal chat message; set for delivered / read receipts. Paired with
+    receipt_type so receivers can match the ack back to the original
+    outbound GeoChat by its event uid.
+    """
+    receipt_type: Global___GeoChat.ReceiptType.ValueType
+    """
+    Receipt kind discriminator. See ReceiptType doc. Default ReceiptType_None
+    means this is a regular chat message, not a receipt.
+    """
     def __init__(
         self,
         *,
         message: _builtins.str = ...,
         to: _builtins.str | None = ...,
         to_callsign: _builtins.str | None = ...,
+        receipt_for_uid: _builtins.str = ...,
+        receipt_type: Global___GeoChat.ReceiptType.ValueType = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _typing.Literal["_to", b"_to", "_to_callsign", b"_to_callsign", "to", b"to", "to_callsign", b"to_callsign"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["_to", b"_to", "_to_callsign", b"_to_callsign", "message", b"message", "to", b"to", "to_callsign", b"to_callsign"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_to", b"_to", "_to_callsign", b"_to_callsign", "message", b"message", "receipt_for_uid", b"receipt_for_uid", "receipt_type", b"receipt_type", "to", b"to", "to_callsign", b"to_callsign"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     _WhichOneofReturnType__to: _TypeAlias = _typing.Literal["to"]  # noqa: Y015
     _WhichOneofArgType__to: _TypeAlias = _typing.Literal["_to", b"_to"]  # noqa: Y015
@@ -1380,6 +1724,1230 @@ class AircraftTrack(_message.Message):
 Global___AircraftTrack: _TypeAlias = AircraftTrack  # noqa: Y015
 
 @_typing.final
+class CotGeoPoint(_message.Message):
+    """
+    Compact geographic vertex used by repeated vertex lists in TAK geometry
+    payloads. Named with a `Cot` prefix to avoid a namespace collision with
+    `meshtastic.GeoPoint` in `device_ui.proto`, which is an unrelated zoom/
+    latitude/longitude type used by the on-device map UI.
+
+    Encoded as a signed DELTA from TAKPacketV2.latitude_i / longitude_i (the
+    enclosing event's anchor point). The absolute coordinate is recovered by
+    the receiver as `event.latitude_i + vertex.lat_delta_i` (and likewise for
+    longitude).
+
+    Why deltas: a 32-vertex telestration with vertices clustered within a few
+    hundred meters of the anchor has per-vertex deltas in the ±10^4 range.
+    Under sint32+zigzag those encode as 2 bytes each (tag+varint), versus the
+    4 bytes that sfixed32 would always require. At 32 vertices that is ~128
+    bytes of savings — the difference between fitting under the LoRa MTU or
+    not. Absolute coordinates (values ~10^9) would cost sint32 varint 5 bytes
+    per field, which is why TAKPacketV2's top-level latitude_i / longitude_i
+    stay sfixed32 — only small values win with sint32.
+    """
+
+    DESCRIPTOR: _descriptor.Descriptor
+
+    LAT_DELTA_I_FIELD_NUMBER: _builtins.int
+    LON_DELTA_I_FIELD_NUMBER: _builtins.int
+    lat_delta_i: _builtins.int
+    """
+    Latitude delta from TAKPacketV2.latitude_i, in 1e-7 degree units.
+    Add to the enclosing event's latitude_i to recover the absolute latitude.
+    """
+    lon_delta_i: _builtins.int
+    """
+    Longitude delta from TAKPacketV2.longitude_i, in 1e-7 degree units.
+    """
+    def __init__(
+        self,
+        *,
+        lat_delta_i: _builtins.int = ...,
+        lon_delta_i: _builtins.int = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["lat_delta_i", b"lat_delta_i", "lon_delta_i", b"lon_delta_i"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+Global___CotGeoPoint: _TypeAlias = CotGeoPoint  # noqa: Y015
+
+@_typing.final
+class DrawnShape(_message.Message):
+    """
+    User-drawn tactical graphic: circle, rectangle, polygon, polyline, freehand
+    telestration, ranging circle, or bullseye.
+
+    Covers CoT types u-d-c-c, u-d-r, u-d-f, u-d-f-m, u-d-p, u-r-b-c-c,
+    u-r-b-bullseye. The shape's anchor position is carried on
+    TAKPacketV2.latitude_i/longitude_i; polyline/polygon vertices are in the
+    `vertices` repeated field as `CotGeoPoint` deltas from that anchor.
+
+    Colors use the Team enum as a 14-color palette (see color encoding below)
+    with a fixed32 exact-ARGB fallback for custom user-picked colors that
+    don't map to a palette entry.
+    """
+
+    DESCRIPTOR: _descriptor.Descriptor
+
+    class _Kind:
+        ValueType = _typing.NewType("ValueType", _builtins.int)
+        V: _TypeAlias = ValueType  # noqa: Y015
+
+    class _KindEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[DrawnShape._Kind.ValueType], _builtins.type):
+        DESCRIPTOR: _descriptor.EnumDescriptor
+        Kind_Unspecified: DrawnShape._Kind.ValueType  # 0
+        """
+        Unspecified (do not use on the wire)
+        """
+        Kind_Circle: DrawnShape._Kind.ValueType  # 1
+        """
+        u-d-c-c: User-drawn circle (uses major/minor/angle, anchor = event point)
+        """
+        Kind_Rectangle: DrawnShape._Kind.ValueType  # 2
+        """
+        u-d-r: User-drawn rectangle (uses vertices = 4 corners)
+        """
+        Kind_Freeform: DrawnShape._Kind.ValueType  # 3
+        """
+        u-d-f: User-drawn polyline (uses vertices, not closed)
+        """
+        Kind_Telestration: DrawnShape._Kind.ValueType  # 4
+        """
+        u-d-f-m: Freehand telestration / annotation (uses vertices, may be truncated)
+        """
+        Kind_Polygon: DrawnShape._Kind.ValueType  # 5
+        """
+        u-d-p: Closed polygon (uses vertices, implicitly closed)
+        """
+        Kind_RangingCircle: DrawnShape._Kind.ValueType  # 6
+        """
+        u-r-b-c-c: Ranging circle (major/minor/angle, stroke + optional fill)
+        """
+        Kind_Bullseye: DrawnShape._Kind.ValueType  # 7
+        """
+        u-r-b-bullseye: Bullseye ring with range rings and bearing reference
+        """
+        Kind_Ellipse: DrawnShape._Kind.ValueType  # 8
+        """
+        u-d-c-e: Ellipse with distinct major/minor axes (same storage as
+        Kind_Circle — uses major_cm/minor_cm/angle_deg — but receivers
+        render it as a non-circular ellipse rather than a round circle).
+        """
+        Kind_Vehicle2D: DrawnShape._Kind.ValueType  # 9
+        """
+        u-d-v: 2D vehicle outline drawn on the map. Vertices carry the
+        outline polygon; receivers draw it as a filled polygon.
+        """
+        Kind_Vehicle3D: DrawnShape._Kind.ValueType  # 10
+        """
+        u-d-v-m: 3D vehicle model reference. Same vertex polygon as
+        Kind_Vehicle2D; receivers that support 3D rendering extrude it.
+        """
+
+    class Kind(_Kind, metaclass=_KindEnumTypeWrapper):
+        """
+        Shape kind discriminator. Drives receiver rendering and also controls
+        which optional fields below are meaningful.
+        """
+
+    Kind_Unspecified: DrawnShape.Kind.ValueType  # 0
+    """
+    Unspecified (do not use on the wire)
+    """
+    Kind_Circle: DrawnShape.Kind.ValueType  # 1
+    """
+    u-d-c-c: User-drawn circle (uses major/minor/angle, anchor = event point)
+    """
+    Kind_Rectangle: DrawnShape.Kind.ValueType  # 2
+    """
+    u-d-r: User-drawn rectangle (uses vertices = 4 corners)
+    """
+    Kind_Freeform: DrawnShape.Kind.ValueType  # 3
+    """
+    u-d-f: User-drawn polyline (uses vertices, not closed)
+    """
+    Kind_Telestration: DrawnShape.Kind.ValueType  # 4
+    """
+    u-d-f-m: Freehand telestration / annotation (uses vertices, may be truncated)
+    """
+    Kind_Polygon: DrawnShape.Kind.ValueType  # 5
+    """
+    u-d-p: Closed polygon (uses vertices, implicitly closed)
+    """
+    Kind_RangingCircle: DrawnShape.Kind.ValueType  # 6
+    """
+    u-r-b-c-c: Ranging circle (major/minor/angle, stroke + optional fill)
+    """
+    Kind_Bullseye: DrawnShape.Kind.ValueType  # 7
+    """
+    u-r-b-bullseye: Bullseye ring with range rings and bearing reference
+    """
+    Kind_Ellipse: DrawnShape.Kind.ValueType  # 8
+    """
+    u-d-c-e: Ellipse with distinct major/minor axes (same storage as
+    Kind_Circle — uses major_cm/minor_cm/angle_deg — but receivers
+    render it as a non-circular ellipse rather than a round circle).
+    """
+    Kind_Vehicle2D: DrawnShape.Kind.ValueType  # 9
+    """
+    u-d-v: 2D vehicle outline drawn on the map. Vertices carry the
+    outline polygon; receivers draw it as a filled polygon.
+    """
+    Kind_Vehicle3D: DrawnShape.Kind.ValueType  # 10
+    """
+    u-d-v-m: 3D vehicle model reference. Same vertex polygon as
+    Kind_Vehicle2D; receivers that support 3D rendering extrude it.
+    """
+
+    class _StyleMode:
+        ValueType = _typing.NewType("ValueType", _builtins.int)
+        V: _TypeAlias = ValueType  # noqa: Y015
+
+    class _StyleModeEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[DrawnShape._StyleMode.ValueType], _builtins.type):
+        DESCRIPTOR: _descriptor.EnumDescriptor
+        StyleMode_Unspecified: DrawnShape._StyleMode.ValueType  # 0
+        """
+        Unspecified — receiver infers from which color fields are non-zero.
+        """
+        StyleMode_StrokeOnly: DrawnShape._StyleMode.ValueType  # 1
+        """
+        Stroke only. No <fillColor> in the source XML. Used for polylines,
+        ranging lines, bullseye rings.
+        """
+        StyleMode_FillOnly: DrawnShape._StyleMode.ValueType  # 2
+        """
+        Fill only. No <strokeColor> in the source XML. Rare but valid in
+        ATAK (solid region with no outline).
+        """
+        StyleMode_StrokeAndFill: DrawnShape._StyleMode.ValueType  # 3
+        """
+        Both stroke and fill present. Closed shapes: circle, rectangle,
+        polygon, ranging circle.
+        """
+
+    class StyleMode(_StyleMode, metaclass=_StyleModeEnumTypeWrapper):
+        """
+        Explicit stroke/fill/both discriminator.
+
+        ATAK's source XML distinguishes "stroke-only polyline" from "closed shape
+        with both stroke and fill" by the presence of the <fillColor> element.
+        Both states can hash to all-zero color fields, so we carry the signal
+        explicitly. Parser sets this from (sawStrokeColor, sawFillColor) at the
+        end of parse; builder uses it to decide which of <strokeColor> /
+        <fillColor> to emit in the reconstructed XML.
+        """
+
+    StyleMode_Unspecified: DrawnShape.StyleMode.ValueType  # 0
+    """
+    Unspecified — receiver infers from which color fields are non-zero.
+    """
+    StyleMode_StrokeOnly: DrawnShape.StyleMode.ValueType  # 1
+    """
+    Stroke only. No <fillColor> in the source XML. Used for polylines,
+    ranging lines, bullseye rings.
+    """
+    StyleMode_FillOnly: DrawnShape.StyleMode.ValueType  # 2
+    """
+    Fill only. No <strokeColor> in the source XML. Rare but valid in
+    ATAK (solid region with no outline).
+    """
+    StyleMode_StrokeAndFill: DrawnShape.StyleMode.ValueType  # 3
+    """
+    Both stroke and fill present. Closed shapes: circle, rectangle,
+    polygon, ranging circle.
+    """
+
+    KIND_FIELD_NUMBER: _builtins.int
+    STYLE_FIELD_NUMBER: _builtins.int
+    MAJOR_CM_FIELD_NUMBER: _builtins.int
+    MINOR_CM_FIELD_NUMBER: _builtins.int
+    ANGLE_DEG_FIELD_NUMBER: _builtins.int
+    STROKE_COLOR_FIELD_NUMBER: _builtins.int
+    STROKE_ARGB_FIELD_NUMBER: _builtins.int
+    STROKE_WEIGHT_X10_FIELD_NUMBER: _builtins.int
+    FILL_COLOR_FIELD_NUMBER: _builtins.int
+    FILL_ARGB_FIELD_NUMBER: _builtins.int
+    LABELS_ON_FIELD_NUMBER: _builtins.int
+    VERTICES_FIELD_NUMBER: _builtins.int
+    TRUNCATED_FIELD_NUMBER: _builtins.int
+    BULLSEYE_DISTANCE_DM_FIELD_NUMBER: _builtins.int
+    BULLSEYE_BEARING_REF_FIELD_NUMBER: _builtins.int
+    BULLSEYE_FLAGS_FIELD_NUMBER: _builtins.int
+    BULLSEYE_UID_REF_FIELD_NUMBER: _builtins.int
+    kind: Global___DrawnShape.Kind.ValueType
+    """
+    Shape kind (circle, rectangle, freeform, etc.)
+    """
+    style: Global___DrawnShape.StyleMode.ValueType
+    """
+    Explicit stroke/fill/both discriminator. See StyleMode doc.
+    """
+    major_cm: _builtins.int
+    """
+    Ellipse major radius in centimeters. 0 for non-ellipse kinds.
+    """
+    minor_cm: _builtins.int
+    """
+    Ellipse minor radius in centimeters. 0 for non-ellipse kinds.
+    """
+    angle_deg: _builtins.int
+    """
+    Ellipse rotation angle in degrees. Valid values are 0..360 inclusive;
+    0 and 360 are equivalent rotations. In proto3, an unset uint32 reads
+    as 0, so senders should emit 0 when the angle is unspecified.
+    """
+    stroke_color: Global___Team.ValueType
+    """
+    Stroke color as a named palette entry from the Team enum. If
+    Unspecifed_Color, the exact ARGB is carried in stroke_argb.
+    Valid only when style is StrokeOnly or StrokeAndFill.
+    """
+    stroke_argb: _builtins.int
+    """
+    Stroke color as an exact 32-bit ARGB bit pattern. Always populated
+    on the wire; readers MUST use this value when stroke_color ==
+    Unspecifed_Color and MAY use it to recover the exact original bytes
+    even when a palette entry is set.
+    """
+    stroke_weight_x10: _builtins.int
+    """
+    Stroke weight in tenths of a unit (e.g. 30 = 3.0). Typical ATAK
+    range 10..60.
+    """
+    fill_color: Global___Team.ValueType
+    """
+    Fill color as a named palette entry. See stroke_color docs.
+    Valid only when style is FillOnly or StrokeAndFill.
+    """
+    fill_argb: _builtins.int
+    """
+    Fill color exact ARGB fallback. See stroke_argb docs.
+    """
+    labels_on: _builtins.bool
+    """
+    Whether labels are rendered on this shape.
+    """
+    truncated: _builtins.bool
+    """
+    True if the sender truncated `vertices` to fit the pool.
+    --- Bullseye-only fields. All ignored unless kind == Kind_Bullseye. ---
+    """
+    bullseye_distance_dm: _builtins.int
+    """
+    Bullseye distance in meters * 10 (e.g. 3285 = 328.5 m). 0 = unset.
+    """
+    bullseye_bearing_ref: _builtins.int
+    """
+    Bullseye bearing reference: 0 unset, 1 Magnetic, 2 True, 3 Grid.
+    """
+    bullseye_flags: _builtins.int
+    """
+    Bullseye attribute bit flags:
+      bit 0: rangeRingVisible
+      bit 1: hasRangeRings
+      bit 2: edgeToCenter
+      bit 3: mils
+    """
+    bullseye_uid_ref: _builtins.str
+    """
+    Bullseye reference UID (anchor marker). Empty = anchor is self.
+    """
+    @_builtins.property
+    def vertices(self) -> _containers.RepeatedCompositeFieldContainer[Global___CotGeoPoint]:
+        """
+        Vertex list for polyline/polygon/rectangle shapes. Capped at 32 by
+        the nanopb pool; senders MUST truncate longer inputs and set
+        `truncated = true`.
+        """
+
+    def __init__(
+        self,
+        *,
+        kind: Global___DrawnShape.Kind.ValueType = ...,
+        style: Global___DrawnShape.StyleMode.ValueType = ...,
+        major_cm: _builtins.int = ...,
+        minor_cm: _builtins.int = ...,
+        angle_deg: _builtins.int = ...,
+        stroke_color: Global___Team.ValueType = ...,
+        stroke_argb: _builtins.int = ...,
+        stroke_weight_x10: _builtins.int = ...,
+        fill_color: Global___Team.ValueType = ...,
+        fill_argb: _builtins.int = ...,
+        labels_on: _builtins.bool = ...,
+        vertices: _abc.Iterable[Global___CotGeoPoint] | None = ...,
+        truncated: _builtins.bool = ...,
+        bullseye_distance_dm: _builtins.int = ...,
+        bullseye_bearing_ref: _builtins.int = ...,
+        bullseye_flags: _builtins.int = ...,
+        bullseye_uid_ref: _builtins.str = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["angle_deg", b"angle_deg", "bullseye_bearing_ref", b"bullseye_bearing_ref", "bullseye_distance_dm", b"bullseye_distance_dm", "bullseye_flags", b"bullseye_flags", "bullseye_uid_ref", b"bullseye_uid_ref", "fill_argb", b"fill_argb", "fill_color", b"fill_color", "kind", b"kind", "labels_on", b"labels_on", "major_cm", b"major_cm", "minor_cm", b"minor_cm", "stroke_argb", b"stroke_argb", "stroke_color", b"stroke_color", "stroke_weight_x10", b"stroke_weight_x10", "style", b"style", "truncated", b"truncated", "vertices", b"vertices"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+Global___DrawnShape: _TypeAlias = DrawnShape  # noqa: Y015
+
+@_typing.final
+class Marker(_message.Message):
+    """
+    Fixed point of interest: spot marker, waypoint, checkpoint, 2525 symbol,
+    or custom icon.
+
+    Covers CoT types b-m-p-s-m, b-m-p-w, b-m-p-c, b-m-p-s-p-i, b-m-p-s-p-loc,
+    plus a-u-G / a-f-G / a-h-G / a-n-G with iconset paths. The marker position
+    is carried on TAKPacketV2.latitude_i/longitude_i; fields below carry only
+    the marker-specific metadata.
+    """
+
+    DESCRIPTOR: _descriptor.Descriptor
+
+    class _Kind:
+        ValueType = _typing.NewType("ValueType", _builtins.int)
+        V: _TypeAlias = ValueType  # noqa: Y015
+
+    class _KindEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[Marker._Kind.ValueType], _builtins.type):
+        DESCRIPTOR: _descriptor.EnumDescriptor
+        Kind_Unspecified: Marker._Kind.ValueType  # 0
+        """
+        Unspecified — fall back to TAKPacketV2.cot_type_id
+        """
+        Kind_Spot: Marker._Kind.ValueType  # 1
+        """
+        b-m-p-s-m: Spot map marker
+        """
+        Kind_Waypoint: Marker._Kind.ValueType  # 2
+        """
+        b-m-p-w: Route waypoint
+        """
+        Kind_Checkpoint: Marker._Kind.ValueType  # 3
+        """
+        b-m-p-c: Checkpoint
+        """
+        Kind_SelfPosition: Marker._Kind.ValueType  # 4
+        """
+        b-m-p-s-p-i / b-m-p-s-p-loc: Self-position marker
+        """
+        Kind_Symbol2525: Marker._Kind.ValueType  # 5
+        """
+        2525B/C military symbol (iconsetpath = COT_MAPPING_2525B/...)
+        """
+        Kind_SpotMap: Marker._Kind.ValueType  # 6
+        """
+        COT_MAPPING_SPOTMAP icon (e.g. colored dot)
+        """
+        Kind_CustomIcon: Marker._Kind.ValueType  # 7
+        """
+        Custom icon set (UUID/GroupName/filename.png)
+        """
+        Kind_GoToPoint: Marker._Kind.ValueType  # 8
+        """
+        b-m-p-w-GOTO: Go To / bloodhound navigation waypoint.
+        """
+        Kind_InitialPoint: Marker._Kind.ValueType  # 9
+        """
+        b-m-p-c-ip: Initial point (mission planning control point).
+        """
+        Kind_ContactPoint: Marker._Kind.ValueType  # 10
+        """
+        b-m-p-c-cp: Contact point (mission planning control point).
+        """
+        Kind_ObservationPost: Marker._Kind.ValueType  # 11
+        """
+        b-m-p-s-p-op: Observation post.
+        """
+        Kind_ImageMarker: Marker._Kind.ValueType  # 12
+        """
+        b-i-x-i: Quick Pic geotagged image marker. iconset carries the
+        image reference (local filename or remote URL); the image itself
+        does not ride on the LoRa wire.
+        """
+
+    class Kind(_Kind, metaclass=_KindEnumTypeWrapper):
+        """
+        Marker kind. Used to pick sensible receiver defaults when the CoT type
+        alone is ambiguous (e.g. a-u-G could be a 2525 symbol or a custom icon
+        depending on the iconset path).
+        """
+
+    Kind_Unspecified: Marker.Kind.ValueType  # 0
+    """
+    Unspecified — fall back to TAKPacketV2.cot_type_id
+    """
+    Kind_Spot: Marker.Kind.ValueType  # 1
+    """
+    b-m-p-s-m: Spot map marker
+    """
+    Kind_Waypoint: Marker.Kind.ValueType  # 2
+    """
+    b-m-p-w: Route waypoint
+    """
+    Kind_Checkpoint: Marker.Kind.ValueType  # 3
+    """
+    b-m-p-c: Checkpoint
+    """
+    Kind_SelfPosition: Marker.Kind.ValueType  # 4
+    """
+    b-m-p-s-p-i / b-m-p-s-p-loc: Self-position marker
+    """
+    Kind_Symbol2525: Marker.Kind.ValueType  # 5
+    """
+    2525B/C military symbol (iconsetpath = COT_MAPPING_2525B/...)
+    """
+    Kind_SpotMap: Marker.Kind.ValueType  # 6
+    """
+    COT_MAPPING_SPOTMAP icon (e.g. colored dot)
+    """
+    Kind_CustomIcon: Marker.Kind.ValueType  # 7
+    """
+    Custom icon set (UUID/GroupName/filename.png)
+    """
+    Kind_GoToPoint: Marker.Kind.ValueType  # 8
+    """
+    b-m-p-w-GOTO: Go To / bloodhound navigation waypoint.
+    """
+    Kind_InitialPoint: Marker.Kind.ValueType  # 9
+    """
+    b-m-p-c-ip: Initial point (mission planning control point).
+    """
+    Kind_ContactPoint: Marker.Kind.ValueType  # 10
+    """
+    b-m-p-c-cp: Contact point (mission planning control point).
+    """
+    Kind_ObservationPost: Marker.Kind.ValueType  # 11
+    """
+    b-m-p-s-p-op: Observation post.
+    """
+    Kind_ImageMarker: Marker.Kind.ValueType  # 12
+    """
+    b-i-x-i: Quick Pic geotagged image marker. iconset carries the
+    image reference (local filename or remote URL); the image itself
+    does not ride on the LoRa wire.
+    """
+
+    KIND_FIELD_NUMBER: _builtins.int
+    COLOR_FIELD_NUMBER: _builtins.int
+    COLOR_ARGB_FIELD_NUMBER: _builtins.int
+    READINESS_FIELD_NUMBER: _builtins.int
+    PARENT_UID_FIELD_NUMBER: _builtins.int
+    PARENT_TYPE_FIELD_NUMBER: _builtins.int
+    PARENT_CALLSIGN_FIELD_NUMBER: _builtins.int
+    ICONSET_FIELD_NUMBER: _builtins.int
+    kind: Global___Marker.Kind.ValueType
+    """
+    Marker kind
+    """
+    color: Global___Team.ValueType
+    """
+    Marker color as a named palette entry. If Unspecifed_Color, the exact
+    ARGB is in color_argb.
+    """
+    color_argb: _builtins.int
+    """
+    Marker color exact ARGB bit pattern. Always populated on the wire.
+    """
+    readiness: _builtins.bool
+    """
+    Status readiness flag (ATAK <status readiness="true"/>).
+    """
+    parent_uid: _builtins.str
+    """
+    Parent link UID (ATAK <link uid=... relation="p-p"/>). Empty = no parent.
+    For spot/waypoint markers this is typically the producing TAK user's UID.
+    """
+    parent_type: _builtins.str
+    """
+    Parent CoT type (e.g. "a-f-G-U-C"). Usually the parent TAK user's type.
+    """
+    parent_callsign: _builtins.str
+    """
+    Parent callsign (e.g. "HOPE").
+    """
+    iconset: _builtins.str
+    """
+    Iconset path stored verbatim. ATAK emits three flavors:
+      Kind_Symbol2525    -> "COT_MAPPING_2525B/<cot-type-prefix>/<cot-type>"
+      Kind_SpotMap       -> "COT_MAPPING_SPOTMAP/<cot-type>/<argb>"
+      Kind_CustomIcon    -> "<UUID>/<GroupName>/<filename>.png"
+    Stored end-to-end without prefix stripping; the ~19 bytes saved by
+    stripping well-known prefixes are not worth the builder-side bug
+    surface, and the dict compresses the repetition effectively.
+    """
+    def __init__(
+        self,
+        *,
+        kind: Global___Marker.Kind.ValueType = ...,
+        color: Global___Team.ValueType = ...,
+        color_argb: _builtins.int = ...,
+        readiness: _builtins.bool = ...,
+        parent_uid: _builtins.str = ...,
+        parent_type: _builtins.str = ...,
+        parent_callsign: _builtins.str = ...,
+        iconset: _builtins.str = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["color", b"color", "color_argb", b"color_argb", "iconset", b"iconset", "kind", b"kind", "parent_callsign", b"parent_callsign", "parent_type", b"parent_type", "parent_uid", b"parent_uid", "readiness", b"readiness"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+Global___Marker: _TypeAlias = Marker  # noqa: Y015
+
+@_typing.final
+class RangeAndBearing(_message.Message):
+    """
+    Range and bearing measurement line from the event anchor to a target point.
+
+    Covers CoT type u-rb-a. The anchor position is on
+    TAKPacketV2.latitude_i/longitude_i; the target endpoint is carried as a
+    CotGeoPoint — same delta-from-anchor encoding used by DrawnShape.vertices
+    so a self-anchored RAB (common case) encodes in zero bytes.
+    """
+
+    DESCRIPTOR: _descriptor.Descriptor
+
+    ANCHOR_FIELD_NUMBER: _builtins.int
+    ANCHOR_UID_FIELD_NUMBER: _builtins.int
+    RANGE_CM_FIELD_NUMBER: _builtins.int
+    BEARING_CDEG_FIELD_NUMBER: _builtins.int
+    STROKE_COLOR_FIELD_NUMBER: _builtins.int
+    STROKE_ARGB_FIELD_NUMBER: _builtins.int
+    STROKE_WEIGHT_X10_FIELD_NUMBER: _builtins.int
+    anchor_uid: _builtins.str
+    """
+    Anchor UID (from <link uid="anchor-1"/>). Empty = free-standing.
+    """
+    range_cm: _builtins.int
+    """
+    Range in centimeters (value * 100). Range 0..4294 km.
+    """
+    bearing_cdeg: _builtins.int
+    """
+    Bearing in degrees * 100 (0..36000).
+    """
+    stroke_color: Global___Team.ValueType
+    """
+    Stroke color as a Team palette entry. See DrawnShape.stroke_color doc.
+    """
+    stroke_argb: _builtins.int
+    """
+    Stroke color exact ARGB fallback.
+    """
+    stroke_weight_x10: _builtins.int
+    """
+    Stroke weight * 10 (e.g. 30 = 3.0).
+    """
+    @_builtins.property
+    def anchor(self) -> Global___CotGeoPoint:
+        """
+        Target/anchor endpoint (delta-encoded from TAKPacketV2.latitude_i/longitude_i).
+        """
+
+    def __init__(
+        self,
+        *,
+        anchor: Global___CotGeoPoint | None = ...,
+        anchor_uid: _builtins.str = ...,
+        range_cm: _builtins.int = ...,
+        bearing_cdeg: _builtins.int = ...,
+        stroke_color: Global___Team.ValueType = ...,
+        stroke_argb: _builtins.int = ...,
+        stroke_weight_x10: _builtins.int = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["anchor", b"anchor"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["anchor", b"anchor", "anchor_uid", b"anchor_uid", "bearing_cdeg", b"bearing_cdeg", "range_cm", b"range_cm", "stroke_argb", b"stroke_argb", "stroke_color", b"stroke_color", "stroke_weight_x10", b"stroke_weight_x10"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+Global___RangeAndBearing: _TypeAlias = RangeAndBearing  # noqa: Y015
+
+@_typing.final
+class Route(_message.Message):
+    """
+    Named route consisting of ordered waypoints and control points.
+
+    Covers CoT type b-m-r. The first waypoint's position is on
+    TAKPacketV2.latitude_i/longitude_i; subsequent waypoints and checkpoints
+    are in `links`. Link count is capped at 16 by the nanopb pool; senders
+    MUST truncate longer routes and set `truncated = true`.
+    """
+
+    DESCRIPTOR: _descriptor.Descriptor
+
+    class _Method:
+        ValueType = _typing.NewType("ValueType", _builtins.int)
+        V: _TypeAlias = ValueType  # noqa: Y015
+
+    class _MethodEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[Route._Method.ValueType], _builtins.type):
+        DESCRIPTOR: _descriptor.EnumDescriptor
+        Method_Unspecified: Route._Method.ValueType  # 0
+        """
+        Unspecified / unknown
+        """
+        Method_Driving: Route._Method.ValueType  # 1
+        """
+        Driving / vehicle
+        """
+        Method_Walking: Route._Method.ValueType  # 2
+        """
+        Walking / foot
+        """
+        Method_Flying: Route._Method.ValueType  # 3
+        """
+        Flying
+        """
+        Method_Swimming: Route._Method.ValueType  # 4
+        """
+        Swimming (individual)
+        """
+        Method_Watercraft: Route._Method.ValueType  # 5
+        """
+        Watercraft (boat)
+        """
+
+    class Method(_Method, metaclass=_MethodEnumTypeWrapper):
+        """
+        Travel method for the route.
+        """
+
+    Method_Unspecified: Route.Method.ValueType  # 0
+    """
+    Unspecified / unknown
+    """
+    Method_Driving: Route.Method.ValueType  # 1
+    """
+    Driving / vehicle
+    """
+    Method_Walking: Route.Method.ValueType  # 2
+    """
+    Walking / foot
+    """
+    Method_Flying: Route.Method.ValueType  # 3
+    """
+    Flying
+    """
+    Method_Swimming: Route.Method.ValueType  # 4
+    """
+    Swimming (individual)
+    """
+    Method_Watercraft: Route.Method.ValueType  # 5
+    """
+    Watercraft (boat)
+    """
+
+    class _Direction:
+        ValueType = _typing.NewType("ValueType", _builtins.int)
+        V: _TypeAlias = ValueType  # noqa: Y015
+
+    class _DirectionEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[Route._Direction.ValueType], _builtins.type):
+        DESCRIPTOR: _descriptor.EnumDescriptor
+        Direction_Unspecified: Route._Direction.ValueType  # 0
+        """
+        Unspecified
+        """
+        Direction_Infil: Route._Direction.ValueType  # 1
+        """
+        Infiltration (ingress)
+        """
+        Direction_Exfil: Route._Direction.ValueType  # 2
+        """
+        Exfiltration (egress)
+        """
+
+    class Direction(_Direction, metaclass=_DirectionEnumTypeWrapper):
+        """
+        Route direction (infil = ingress, exfil = egress).
+        """
+
+    Direction_Unspecified: Route.Direction.ValueType  # 0
+    """
+    Unspecified
+    """
+    Direction_Infil: Route.Direction.ValueType  # 1
+    """
+    Infiltration (ingress)
+    """
+    Direction_Exfil: Route.Direction.ValueType  # 2
+    """
+    Exfiltration (egress)
+    """
+
+    @_typing.final
+    class Link(_message.Message):
+        """
+        Route waypoint or control point. Each link corresponds to one ATAK
+        <link type=... point=...> entry inside the b-m-r event.
+        """
+
+        DESCRIPTOR: _descriptor.Descriptor
+
+        POINT_FIELD_NUMBER: _builtins.int
+        UID_FIELD_NUMBER: _builtins.int
+        CALLSIGN_FIELD_NUMBER: _builtins.int
+        LINK_TYPE_FIELD_NUMBER: _builtins.int
+        uid: _builtins.str
+        """
+        Optional UID (empty = receiver derives).
+        """
+        callsign: _builtins.str
+        """
+        Optional display callsign (e.g. "CP1"). Empty for unnamed control points.
+        """
+        link_type: _builtins.int
+        """
+        Link role: 0 = waypoint (b-m-p-w), 1 = checkpoint (b-m-p-c).
+        """
+        @_builtins.property
+        def point(self) -> Global___CotGeoPoint:
+            """
+            Waypoint position (delta-encoded from TAKPacketV2.latitude_i/longitude_i).
+            """
+
+        def __init__(
+            self,
+            *,
+            point: Global___CotGeoPoint | None = ...,
+            uid: _builtins.str = ...,
+            callsign: _builtins.str = ...,
+            link_type: _builtins.int = ...,
+        ) -> None: ...
+        _HasFieldArgType: _TypeAlias = _typing.Literal["point", b"point"]  # noqa: Y015
+        def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+        _ClearFieldArgType: _TypeAlias = _typing.Literal["callsign", b"callsign", "link_type", b"link_type", "point", b"point", "uid", b"uid"]  # noqa: Y015
+        def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+    METHOD_FIELD_NUMBER: _builtins.int
+    DIRECTION_FIELD_NUMBER: _builtins.int
+    PREFIX_FIELD_NUMBER: _builtins.int
+    STROKE_WEIGHT_X10_FIELD_NUMBER: _builtins.int
+    LINKS_FIELD_NUMBER: _builtins.int
+    TRUNCATED_FIELD_NUMBER: _builtins.int
+    method: Global___Route.Method.ValueType
+    """
+    Travel method
+    """
+    direction: Global___Route.Direction.ValueType
+    """
+    Direction (infil/exfil)
+    """
+    prefix: _builtins.str
+    """
+    Waypoint name prefix (e.g. "CP").
+    """
+    stroke_weight_x10: _builtins.int
+    """
+    Stroke weight * 10 (e.g. 30 = 3.0). 0 = default.
+    """
+    truncated: _builtins.bool
+    """
+    True if the sender truncated `links` to fit the pool.
+    """
+    @_builtins.property
+    def links(self) -> _containers.RepeatedCompositeFieldContainer[Global___Route.Link]:
+        """
+        Ordered list of route control points. Capped at 16.
+        """
+
+    def __init__(
+        self,
+        *,
+        method: Global___Route.Method.ValueType = ...,
+        direction: Global___Route.Direction.ValueType = ...,
+        prefix: _builtins.str = ...,
+        stroke_weight_x10: _builtins.int = ...,
+        links: _abc.Iterable[Global___Route.Link] | None = ...,
+        truncated: _builtins.bool = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["direction", b"direction", "links", b"links", "method", b"method", "prefix", b"prefix", "stroke_weight_x10", b"stroke_weight_x10", "truncated", b"truncated"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+Global___Route: _TypeAlias = Route  # noqa: Y015
+
+@_typing.final
+class CasevacReport(_message.Message):
+    """
+    9-line MEDEVAC request (CoT type b-r-f-h-c).
+
+    Mirrors the ATAK MedLine tool's <_medevac_> detail element. Every field
+    is optional (proto3 default); senders omit lines they don't have. The
+    envelope (TAKPacketV2.uid, cot_type_id=b-r-f-h-c, latitude_i/longitude_i,
+    altitude, callsign) carries Line 1 (location) and Line 2 (callsign).
+
+    All numeric fields are tight varints so a complete 9-line request fits
+    in well under 100 bytes of proto on the wire.
+    """
+
+    DESCRIPTOR: _descriptor.Descriptor
+
+    class _Precedence:
+        ValueType = _typing.NewType("ValueType", _builtins.int)
+        V: _TypeAlias = ValueType  # noqa: Y015
+
+    class _PrecedenceEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[CasevacReport._Precedence.ValueType], _builtins.type):
+        DESCRIPTOR: _descriptor.EnumDescriptor
+        Precedence_Unspecified: CasevacReport._Precedence.ValueType  # 0
+        Precedence_Urgent: CasevacReport._Precedence.ValueType  # 1
+        """A - immediate, life-threatening"""
+        Precedence_UrgentSurgical: CasevacReport._Precedence.ValueType  # 2
+        """B - needs surgery"""
+        Precedence_Priority: CasevacReport._Precedence.ValueType  # 3
+        """C - within 4 hours"""
+        Precedence_Routine: CasevacReport._Precedence.ValueType  # 4
+        """D - within 24 hours"""
+        Precedence_Convenience: CasevacReport._Precedence.ValueType  # 5
+        """E - convenience"""
+
+    class Precedence(_Precedence, metaclass=_PrecedenceEnumTypeWrapper):
+        """
+        Line 3: precedence / urgency.
+        """
+
+    Precedence_Unspecified: CasevacReport.Precedence.ValueType  # 0
+    Precedence_Urgent: CasevacReport.Precedence.ValueType  # 1
+    """A - immediate, life-threatening"""
+    Precedence_UrgentSurgical: CasevacReport.Precedence.ValueType  # 2
+    """B - needs surgery"""
+    Precedence_Priority: CasevacReport.Precedence.ValueType  # 3
+    """C - within 4 hours"""
+    Precedence_Routine: CasevacReport.Precedence.ValueType  # 4
+    """D - within 24 hours"""
+    Precedence_Convenience: CasevacReport.Precedence.ValueType  # 5
+    """E - convenience"""
+
+    class _HlzMarking:
+        ValueType = _typing.NewType("ValueType", _builtins.int)
+        V: _TypeAlias = ValueType  # noqa: Y015
+
+    class _HlzMarkingEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[CasevacReport._HlzMarking.ValueType], _builtins.type):
+        DESCRIPTOR: _descriptor.EnumDescriptor
+        HlzMarking_Unspecified: CasevacReport._HlzMarking.ValueType  # 0
+        HlzMarking_Panels: CasevacReport._HlzMarking.ValueType  # 1
+        HlzMarking_PyroSignal: CasevacReport._HlzMarking.ValueType  # 2
+        HlzMarking_Smoke: CasevacReport._HlzMarking.ValueType  # 3
+        HlzMarking_None: CasevacReport._HlzMarking.ValueType  # 4
+        HlzMarking_Other: CasevacReport._HlzMarking.ValueType  # 5
+
+    class HlzMarking(_HlzMarking, metaclass=_HlzMarkingEnumTypeWrapper):
+        """
+        Line 7: HLZ marking method.
+        """
+
+    HlzMarking_Unspecified: CasevacReport.HlzMarking.ValueType  # 0
+    HlzMarking_Panels: CasevacReport.HlzMarking.ValueType  # 1
+    HlzMarking_PyroSignal: CasevacReport.HlzMarking.ValueType  # 2
+    HlzMarking_Smoke: CasevacReport.HlzMarking.ValueType  # 3
+    HlzMarking_None: CasevacReport.HlzMarking.ValueType  # 4
+    HlzMarking_Other: CasevacReport.HlzMarking.ValueType  # 5
+
+    class _Security:
+        ValueType = _typing.NewType("ValueType", _builtins.int)
+        V: _TypeAlias = ValueType  # noqa: Y015
+
+    class _SecurityEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[CasevacReport._Security.ValueType], _builtins.type):
+        DESCRIPTOR: _descriptor.EnumDescriptor
+        Security_Unspecified: CasevacReport._Security.ValueType  # 0
+        Security_NoEnemy: CasevacReport._Security.ValueType  # 1
+        """N - no enemy activity"""
+        Security_PossibleEnemy: CasevacReport._Security.ValueType  # 2
+        """P - possible enemy"""
+        Security_EnemyInArea: CasevacReport._Security.ValueType  # 3
+        """E - enemy, approach with caution"""
+        Security_EnemyInArmedContact: CasevacReport._Security.ValueType  # 4
+        """X - armed escort required"""
+
+    class Security(_Security, metaclass=_SecurityEnumTypeWrapper):
+        """
+        Line 6: security situation at the pickup zone.
+        """
+
+    Security_Unspecified: CasevacReport.Security.ValueType  # 0
+    Security_NoEnemy: CasevacReport.Security.ValueType  # 1
+    """N - no enemy activity"""
+    Security_PossibleEnemy: CasevacReport.Security.ValueType  # 2
+    """P - possible enemy"""
+    Security_EnemyInArea: CasevacReport.Security.ValueType  # 3
+    """E - enemy, approach with caution"""
+    Security_EnemyInArmedContact: CasevacReport.Security.ValueType  # 4
+    """X - armed escort required"""
+
+    PRECEDENCE_FIELD_NUMBER: _builtins.int
+    EQUIPMENT_FLAGS_FIELD_NUMBER: _builtins.int
+    LITTER_PATIENTS_FIELD_NUMBER: _builtins.int
+    AMBULATORY_PATIENTS_FIELD_NUMBER: _builtins.int
+    SECURITY_FIELD_NUMBER: _builtins.int
+    HLZ_MARKING_FIELD_NUMBER: _builtins.int
+    ZONE_MARKER_FIELD_NUMBER: _builtins.int
+    US_MILITARY_FIELD_NUMBER: _builtins.int
+    US_CIVILIAN_FIELD_NUMBER: _builtins.int
+    NON_US_MILITARY_FIELD_NUMBER: _builtins.int
+    NON_US_CIVILIAN_FIELD_NUMBER: _builtins.int
+    EPW_FIELD_NUMBER: _builtins.int
+    CHILD_FIELD_NUMBER: _builtins.int
+    TERRAIN_FLAGS_FIELD_NUMBER: _builtins.int
+    FREQUENCY_FIELD_NUMBER: _builtins.int
+    precedence: Global___CasevacReport.Precedence.ValueType
+    """
+    Line 3: precedence / urgency.
+    """
+    equipment_flags: _builtins.int
+    """
+    Line 4: special equipment required, as a bitfield.
+      bit 0: none
+      bit 1: hoist
+      bit 2: extraction equipment
+      bit 3: ventilator
+      bit 4: blood
+    """
+    litter_patients: _builtins.int
+    """
+    Line 5: number of litter (stretcher-bound) patients.
+    """
+    ambulatory_patients: _builtins.int
+    """
+    Line 5: number of ambulatory (walking-wounded) patients.
+    """
+    security: Global___CasevacReport.Security.ValueType
+    """
+    Line 6: security situation at the PZ.
+    """
+    hlz_marking: Global___CasevacReport.HlzMarking.ValueType
+    """
+    Line 7: HLZ marking method.
+    """
+    zone_marker: _builtins.str
+    """
+    Line 7 supplementary: short free-text describing the zone marker
+    (e.g. "Green smoke", "VS-17 panel west"). Capped tight in options.
+    """
+    us_military: _builtins.int
+    """--- Line 8: patient nationality counts ---"""
+    us_civilian: _builtins.int
+    non_us_military: _builtins.int
+    non_us_civilian: _builtins.int
+    epw: _builtins.int
+    """enemy prisoner of war"""
+    child: _builtins.int
+    terrain_flags: _builtins.int
+    """
+    Line 9: terrain and obstacles at the PZ, as a bitfield.
+      bit 0: slope
+      bit 1: rough
+      bit 2: loose
+      bit 3: trees
+      bit 4: wires
+      bit 5: other
+    """
+    frequency: _builtins.str
+    """
+    Line 2: radio frequency / callsign metadata (e.g. "38.90 Mhz" or
+    "Victor 6"). Capped tight in options.
+    """
+    def __init__(
+        self,
+        *,
+        precedence: Global___CasevacReport.Precedence.ValueType = ...,
+        equipment_flags: _builtins.int = ...,
+        litter_patients: _builtins.int = ...,
+        ambulatory_patients: _builtins.int = ...,
+        security: Global___CasevacReport.Security.ValueType = ...,
+        hlz_marking: Global___CasevacReport.HlzMarking.ValueType = ...,
+        zone_marker: _builtins.str = ...,
+        us_military: _builtins.int = ...,
+        us_civilian: _builtins.int = ...,
+        non_us_military: _builtins.int = ...,
+        non_us_civilian: _builtins.int = ...,
+        epw: _builtins.int = ...,
+        child: _builtins.int = ...,
+        terrain_flags: _builtins.int = ...,
+        frequency: _builtins.str = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["ambulatory_patients", b"ambulatory_patients", "child", b"child", "epw", b"epw", "equipment_flags", b"equipment_flags", "frequency", b"frequency", "hlz_marking", b"hlz_marking", "litter_patients", b"litter_patients", "non_us_civilian", b"non_us_civilian", "non_us_military", b"non_us_military", "precedence", b"precedence", "security", b"security", "terrain_flags", b"terrain_flags", "us_civilian", b"us_civilian", "us_military", b"us_military", "zone_marker", b"zone_marker"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+Global___CasevacReport: _TypeAlias = CasevacReport  # noqa: Y015
+
+@_typing.final
+class EmergencyAlert(_message.Message):
+    """
+    Emergency alert / 911 beacon (CoT types b-a-o-tbl, b-a-o-pan, b-a-o-opn,
+    b-a-o-can, b-a-o-c, b-a-g).
+
+    Small, high-priority structured record. The CoT type string is still set
+    on cot_type_id so receivers that ignore payload_variant can still display
+    the alert from the enum alone; the typed fields let modern receivers show
+    the authoring unit and handle cancel-referencing without XML parsing.
+    """
+
+    DESCRIPTOR: _descriptor.Descriptor
+
+    class _Type:
+        ValueType = _typing.NewType("ValueType", _builtins.int)
+        V: _TypeAlias = ValueType  # noqa: Y015
+
+    class _TypeEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[EmergencyAlert._Type.ValueType], _builtins.type):
+        DESCRIPTOR: _descriptor.EnumDescriptor
+        Type_Unspecified: EmergencyAlert._Type.ValueType  # 0
+        Type_Alert911: EmergencyAlert._Type.ValueType  # 1
+        """b-a-o-tbl"""
+        Type_RingTheBell: EmergencyAlert._Type.ValueType  # 2
+        """b-a-o-pan"""
+        Type_InContact: EmergencyAlert._Type.ValueType  # 3
+        """b-a-o-opn"""
+        Type_GeoFenceBreached: EmergencyAlert._Type.ValueType  # 4
+        """b-a-g"""
+        Type_Custom: EmergencyAlert._Type.ValueType  # 5
+        """b-a-o-c"""
+        Type_Cancel: EmergencyAlert._Type.ValueType  # 6
+        """b-a-o-can"""
+
+    class Type(_Type, metaclass=_TypeEnumTypeWrapper): ...
+    Type_Unspecified: EmergencyAlert.Type.ValueType  # 0
+    Type_Alert911: EmergencyAlert.Type.ValueType  # 1
+    """b-a-o-tbl"""
+    Type_RingTheBell: EmergencyAlert.Type.ValueType  # 2
+    """b-a-o-pan"""
+    Type_InContact: EmergencyAlert.Type.ValueType  # 3
+    """b-a-o-opn"""
+    Type_GeoFenceBreached: EmergencyAlert.Type.ValueType  # 4
+    """b-a-g"""
+    Type_Custom: EmergencyAlert.Type.ValueType  # 5
+    """b-a-o-c"""
+    Type_Cancel: EmergencyAlert.Type.ValueType  # 6
+    """b-a-o-can"""
+
+    TYPE_FIELD_NUMBER: _builtins.int
+    AUTHORING_UID_FIELD_NUMBER: _builtins.int
+    CANCEL_REFERENCE_UID_FIELD_NUMBER: _builtins.int
+    type: Global___EmergencyAlert.Type.ValueType
+    """
+    Alert discriminator.
+    """
+    authoring_uid: _builtins.str
+    """
+    UID of the unit that raised the alert. Often the same as
+    TAKPacketV2.uid but can be a parent device uid when a tracker raises
+    an alert on behalf of a dismount.
+    """
+    cancel_reference_uid: _builtins.str
+    """
+    For Type_Cancel: the uid of the alert being cancelled. Empty for
+    non-cancel alert types.
+    """
+    def __init__(
+        self,
+        *,
+        type: Global___EmergencyAlert.Type.ValueType = ...,
+        authoring_uid: _builtins.str = ...,
+        cancel_reference_uid: _builtins.str = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["authoring_uid", b"authoring_uid", "cancel_reference_uid", b"cancel_reference_uid", "type", b"type"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+Global___EmergencyAlert: _TypeAlias = EmergencyAlert  # noqa: Y015
+
+@_typing.final
+class TaskRequest(_message.Message):
+    """
+    Task / engage request (CoT type t-s).
+
+    Mirrors ATAK's TaskCotReceiver / CotTaskBuilder workflow. The envelope
+    carries the task's originating uid (implicit requester), position, and
+    creation time; the fields below carry structured metadata the raw-detail
+    fallback currently loses.
+
+    Fields are deliberately lean — this variant is closer to the MTU ceiling
+    than the others, so every string is capped in options.
+    """
+
+    DESCRIPTOR: _descriptor.Descriptor
+
+    class _Priority:
+        ValueType = _typing.NewType("ValueType", _builtins.int)
+        V: _TypeAlias = ValueType  # noqa: Y015
+
+    class _PriorityEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[TaskRequest._Priority.ValueType], _builtins.type):
+        DESCRIPTOR: _descriptor.EnumDescriptor
+        Priority_Unspecified: TaskRequest._Priority.ValueType  # 0
+        Priority_Low: TaskRequest._Priority.ValueType  # 1
+        Priority_Normal: TaskRequest._Priority.ValueType  # 2
+        Priority_High: TaskRequest._Priority.ValueType  # 3
+        Priority_Critical: TaskRequest._Priority.ValueType  # 4
+
+    class Priority(_Priority, metaclass=_PriorityEnumTypeWrapper): ...
+    Priority_Unspecified: TaskRequest.Priority.ValueType  # 0
+    Priority_Low: TaskRequest.Priority.ValueType  # 1
+    Priority_Normal: TaskRequest.Priority.ValueType  # 2
+    Priority_High: TaskRequest.Priority.ValueType  # 3
+    Priority_Critical: TaskRequest.Priority.ValueType  # 4
+
+    class _Status:
+        ValueType = _typing.NewType("ValueType", _builtins.int)
+        V: _TypeAlias = ValueType  # noqa: Y015
+
+    class _StatusEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[TaskRequest._Status.ValueType], _builtins.type):
+        DESCRIPTOR: _descriptor.EnumDescriptor
+        Status_Unspecified: TaskRequest._Status.ValueType  # 0
+        Status_Pending: TaskRequest._Status.ValueType  # 1
+        """assigned, not yet acknowledged"""
+        Status_Acknowledged: TaskRequest._Status.ValueType  # 2
+        """assignee has seen it"""
+        Status_InProgress: TaskRequest._Status.ValueType  # 3
+        """assignee is working it"""
+        Status_Completed: TaskRequest._Status.ValueType  # 4
+        """task done"""
+        Status_Cancelled: TaskRequest._Status.ValueType  # 5
+        """cancelled before completion"""
+
+    class Status(_Status, metaclass=_StatusEnumTypeWrapper): ...
+    Status_Unspecified: TaskRequest.Status.ValueType  # 0
+    Status_Pending: TaskRequest.Status.ValueType  # 1
+    """assigned, not yet acknowledged"""
+    Status_Acknowledged: TaskRequest.Status.ValueType  # 2
+    """assignee has seen it"""
+    Status_InProgress: TaskRequest.Status.ValueType  # 3
+    """assignee is working it"""
+    Status_Completed: TaskRequest.Status.ValueType  # 4
+    """task done"""
+    Status_Cancelled: TaskRequest.Status.ValueType  # 5
+    """cancelled before completion"""
+
+    TASK_TYPE_FIELD_NUMBER: _builtins.int
+    TARGET_UID_FIELD_NUMBER: _builtins.int
+    ASSIGNEE_UID_FIELD_NUMBER: _builtins.int
+    PRIORITY_FIELD_NUMBER: _builtins.int
+    STATUS_FIELD_NUMBER: _builtins.int
+    NOTE_FIELD_NUMBER: _builtins.int
+    task_type: _builtins.str
+    """
+    Short tag for the task category (e.g. "engage", "observe", "recon",
+    "rescue"). Free text on the wire so ATAK-specific task taxonomies
+    don't need proto coordination; capped tight in options.
+    """
+    target_uid: _builtins.str
+    """
+    UID of the target / map item being tasked.
+    """
+    assignee_uid: _builtins.str
+    """
+    UID of the assigned unit. Empty = unassigned / broadcast task.
+    """
+    priority: Global___TaskRequest.Priority.ValueType
+    status: Global___TaskRequest.Status.ValueType
+    note: _builtins.str
+    """
+    Optional short note (reason, constraints, grid reference). Capped
+    tight in options to keep the worst-case under the LoRa MTU.
+    """
+    def __init__(
+        self,
+        *,
+        task_type: _builtins.str = ...,
+        target_uid: _builtins.str = ...,
+        assignee_uid: _builtins.str = ...,
+        priority: Global___TaskRequest.Priority.ValueType = ...,
+        status: Global___TaskRequest.Status.ValueType = ...,
+        note: _builtins.str = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["assignee_uid", b"assignee_uid", "note", b"note", "priority", b"priority", "status", b"status", "target_uid", b"target_uid", "task_type", b"task_type"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+Global___TaskRequest: _TypeAlias = TaskRequest  # noqa: Y015
+
+@_typing.final
 class TAKPacketV2(_message.Message):
     """
     ATAK v2 packet with expanded CoT field support and zstd dictionary compression.
@@ -1413,10 +2981,18 @@ class TAKPacketV2(_message.Message):
     ENDPOINT_FIELD_NUMBER: _builtins.int
     PHONE_FIELD_NUMBER: _builtins.int
     COT_TYPE_STR_FIELD_NUMBER: _builtins.int
+    REMARKS_FIELD_NUMBER: _builtins.int
     PLI_FIELD_NUMBER: _builtins.int
     CHAT_FIELD_NUMBER: _builtins.int
     AIRCRAFT_FIELD_NUMBER: _builtins.int
     RAW_DETAIL_FIELD_NUMBER: _builtins.int
+    SHAPE_FIELD_NUMBER: _builtins.int
+    MARKER_FIELD_NUMBER: _builtins.int
+    RAB_FIELD_NUMBER: _builtins.int
+    ROUTE_FIELD_NUMBER: _builtins.int
+    CASEVAC_FIELD_NUMBER: _builtins.int
+    EMERGENCY_FIELD_NUMBER: _builtins.int
+    TASK_FIELD_NUMBER: _builtins.int
     cot_type_id: Global___CotType.ValueType
     """
     Well-known CoT event type enum.
@@ -1510,13 +3086,23 @@ class TAKPacketV2(_message.Message):
     """
     CoT event type string, only populated when cot_type_id is CotType_Other
     """
+    remarks: _builtins.str
+    """
+    Optional remarks / free-text annotation from the <remarks> element.
+    Populated for non-GeoChat payload types (shapes, markers, routes, etc.)
+    when the original CoT event carried non-empty remarks text.
+    GeoChat messages carry their text in GeoChat.message instead.
+    Empty string (proto3 default) means no remarks were present.
+    """
     pli: _builtins.bool
     """
     Position report (true = PLI, no extra fields beyond the common ones above)
     """
     raw_detail: _builtins.bytes
     """
-    Generic CoT detail XML for unmapped types
+    Generic CoT detail XML for unmapped types. Kept as a fallback for CoT
+    types not yet promoted to a typed variant; drawings, markers, ranging
+    tools, and routes have dedicated variants below and should not land here.
     """
     @_builtins.property
     def chat(self) -> Global___GeoChat:
@@ -1528,6 +3114,50 @@ class TAKPacketV2(_message.Message):
     def aircraft(self) -> Global___AircraftTrack:
         """
         Aircraft track data (ADS-B, military air)
+        """
+
+    @_builtins.property
+    def shape(self) -> Global___DrawnShape:
+        """
+        User-drawn tactical graphic: circle, rectangle, polygon, polyline,
+        telestration, ranging circle, or bullseye. See DrawnShape.
+        """
+
+    @_builtins.property
+    def marker(self) -> Global___Marker:
+        """
+        Fixed point of interest: spot marker, waypoint, checkpoint, 2525
+        symbol, or custom icon. See Marker.
+        """
+
+    @_builtins.property
+    def rab(self) -> Global___RangeAndBearing:
+        """
+        Range and bearing measurement line. See RangeAndBearing.
+        """
+
+    @_builtins.property
+    def route(self) -> Global___Route:
+        """
+        Named route with ordered waypoints and control points. See Route.
+        """
+
+    @_builtins.property
+    def casevac(self) -> Global___CasevacReport:
+        """
+        9-line MEDEVAC request. See CasevacReport.
+        """
+
+    @_builtins.property
+    def emergency(self) -> Global___EmergencyAlert:
+        """
+        Emergency beacon / 911 alert. See EmergencyAlert.
+        """
+
+    @_builtins.property
+    def task(self) -> Global___TaskRequest:
+        """
+        Task / engage request. See TaskRequest.
         """
 
     def __init__(
@@ -1556,16 +3186,24 @@ class TAKPacketV2(_message.Message):
         endpoint: _builtins.str = ...,
         phone: _builtins.str = ...,
         cot_type_str: _builtins.str = ...,
+        remarks: _builtins.str = ...,
         pli: _builtins.bool = ...,
         chat: Global___GeoChat | None = ...,
         aircraft: Global___AircraftTrack | None = ...,
         raw_detail: _builtins.bytes = ...,
+        shape: Global___DrawnShape | None = ...,
+        marker: Global___Marker | None = ...,
+        rab: Global___RangeAndBearing | None = ...,
+        route: Global___Route | None = ...,
+        casevac: Global___CasevacReport | None = ...,
+        emergency: Global___EmergencyAlert | None = ...,
+        task: Global___TaskRequest | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _typing.Literal["aircraft", b"aircraft", "chat", b"chat", "payload_variant", b"payload_variant", "pli", b"pli", "raw_detail", b"raw_detail"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = _typing.Literal["aircraft", b"aircraft", "casevac", b"casevac", "chat", b"chat", "emergency", b"emergency", "marker", b"marker", "payload_variant", b"payload_variant", "pli", b"pli", "rab", b"rab", "raw_detail", b"raw_detail", "route", b"route", "shape", b"shape", "task", b"task"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["aircraft", b"aircraft", "alt_src", b"alt_src", "altitude", b"altitude", "battery", b"battery", "callsign", b"callsign", "chat", b"chat", "cot_type_id", b"cot_type_id", "cot_type_str", b"cot_type_str", "course", b"course", "device_callsign", b"device_callsign", "endpoint", b"endpoint", "geo_src", b"geo_src", "how", b"how", "latitude_i", b"latitude_i", "longitude_i", b"longitude_i", "payload_variant", b"payload_variant", "phone", b"phone", "pli", b"pli", "raw_detail", b"raw_detail", "role", b"role", "speed", b"speed", "stale_seconds", b"stale_seconds", "tak_device", b"tak_device", "tak_os", b"tak_os", "tak_platform", b"tak_platform", "tak_version", b"tak_version", "team", b"team", "uid", b"uid"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["aircraft", b"aircraft", "alt_src", b"alt_src", "altitude", b"altitude", "battery", b"battery", "callsign", b"callsign", "casevac", b"casevac", "chat", b"chat", "cot_type_id", b"cot_type_id", "cot_type_str", b"cot_type_str", "course", b"course", "device_callsign", b"device_callsign", "emergency", b"emergency", "endpoint", b"endpoint", "geo_src", b"geo_src", "how", b"how", "latitude_i", b"latitude_i", "longitude_i", b"longitude_i", "marker", b"marker", "payload_variant", b"payload_variant", "phone", b"phone", "pli", b"pli", "rab", b"rab", "raw_detail", b"raw_detail", "remarks", b"remarks", "role", b"role", "route", b"route", "shape", b"shape", "speed", b"speed", "stale_seconds", b"stale_seconds", "tak_device", b"tak_device", "tak_os", b"tak_os", "tak_platform", b"tak_platform", "tak_version", b"tak_version", "task", b"task", "team", b"team", "uid", b"uid"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
-    _WhichOneofReturnType_payload_variant: _TypeAlias = _typing.Literal["pli", "chat", "aircraft", "raw_detail"]  # noqa: Y015
+    _WhichOneofReturnType_payload_variant: _TypeAlias = _typing.Literal["pli", "chat", "aircraft", "raw_detail", "shape", "marker", "rab", "route", "casevac", "emergency", "task"]  # noqa: Y015
     _WhichOneofArgType_payload_variant: _TypeAlias = _typing.Literal["payload_variant", b"payload_variant"]  # noqa: Y015
     def WhichOneof(self, oneof_group: _WhichOneofArgType_payload_variant) -> _WhichOneofReturnType_payload_variant | None: ...
 

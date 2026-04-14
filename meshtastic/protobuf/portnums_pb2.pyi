@@ -101,6 +101,10 @@ class _PortNumEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_PortNum.Value
     """
     Module/port for handling key verification requests.
     """
+    REMOTE_SHELL_APP: _PortNum.ValueType  # 13
+    """
+    Module/port for handling primitive remote shell access.
+    """
     REPLY_APP: _PortNum.ValueType  # 32
     """
     Provides a 'ping' service that replies to any packet it receives.
@@ -335,6 +339,10 @@ Same as Text Message but used for critical alerts.
 KEY_VERIFICATION_APP: PortNum.ValueType  # 12
 """
 Module/port for handling key verification requests.
+"""
+REMOTE_SHELL_APP: PortNum.ValueType  # 13
+"""
+Module/port for handling primitive remote shell access.
 """
 REPLY_APP: PortNum.ValueType  # 32
 """

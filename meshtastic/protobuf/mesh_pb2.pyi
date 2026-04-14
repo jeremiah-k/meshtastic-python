@@ -569,7 +569,16 @@ class _HardwareModelEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_Hardwar
     Heltec Mesh Node T096 board features an nRF52840 CPU and a TFT screen.
     """
     TRACKER_T1000_E_PRO: _HardwareModel.ValueType  # 128
-    """Seeed studio T1000-E Pro tracker card. NRF52840 w/ LR2021 radio, GPS, button, buzzer, and sensors."""
+    """
+    Seeed studio T1000-E Pro tracker card. NRF52840 w/ LR2021 radio,
+    GPS, button, buzzer, and sensors.
+    """
+    THINKNODE_M7: _HardwareModel.ValueType  # 129
+    """
+    Elecrow ThinkNode M7, M8 and M9
+    """
+    THINKNODE_M8: _HardwareModel.ValueType  # 130
+    THINKNODE_M9: _HardwareModel.ValueType  # 131
     PRIVATE_HW: _HardwareModel.ValueType  # 255
     """
     ------------------------------------------------------------------------------------------------------------------------------------------
@@ -1117,7 +1126,16 @@ HELTEC_MESH_NODE_T096: HardwareModel.ValueType  # 127
 Heltec Mesh Node T096 board features an nRF52840 CPU and a TFT screen.
 """
 TRACKER_T1000_E_PRO: HardwareModel.ValueType  # 128
-"""Seeed studio T1000-E Pro tracker card. NRF52840 w/ LR2021 radio, GPS, button, buzzer, and sensors."""
+"""
+Seeed studio T1000-E Pro tracker card. NRF52840 w/ LR2021 radio,
+GPS, button, buzzer, and sensors.
+"""
+THINKNODE_M7: HardwareModel.ValueType  # 129
+"""
+Elecrow ThinkNode M7, M8 and M9
+"""
+THINKNODE_M8: HardwareModel.ValueType  # 130
+THINKNODE_M9: HardwareModel.ValueType  # 131
 PRIVATE_HW: HardwareModel.ValueType  # 255
 """
 ------------------------------------------------------------------------------------------------------------------------------------------
@@ -2457,6 +2475,115 @@ class StoreForwardPlusPlus(_message.Message):
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 Global___StoreForwardPlusPlus: _TypeAlias = StoreForwardPlusPlus  # noqa: Y015
+
+@_typing.final
+class RemoteShell(_message.Message):
+    """
+    The actual over-the-mesh message doing RemoteShell
+    """
+
+    DESCRIPTOR: _descriptor.Descriptor
+
+    class _OpCode:
+        ValueType = _typing.NewType("ValueType", _builtins.int)
+        V: _TypeAlias = ValueType  # noqa: Y015
+
+    class _OpCodeEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[RemoteShell._OpCode.ValueType], _builtins.type):
+        DESCRIPTOR: _descriptor.EnumDescriptor
+        OP_UNSET: RemoteShell._OpCode.ValueType  # 0
+        OPEN: RemoteShell._OpCode.ValueType  # 1
+        """Client -> server"""
+        INPUT: RemoteShell._OpCode.ValueType  # 2
+        RESIZE: RemoteShell._OpCode.ValueType  # 3
+        CLOSE: RemoteShell._OpCode.ValueType  # 4
+        PING: RemoteShell._OpCode.ValueType  # 5
+        ACK: RemoteShell._OpCode.ValueType  # 6
+        OPEN_OK: RemoteShell._OpCode.ValueType  # 64
+        """Server -> client"""
+        OUTPUT: RemoteShell._OpCode.ValueType  # 65
+        CLOSED: RemoteShell._OpCode.ValueType  # 66
+        ERROR: RemoteShell._OpCode.ValueType  # 67
+        PONG: RemoteShell._OpCode.ValueType  # 68
+
+    class OpCode(_OpCode, metaclass=_OpCodeEnumTypeWrapper):
+        """
+        Frame op code for PTY session control and stream transport.
+
+        Values 1-63 are client->server requests.
+        Values 64-127 are server->client responses/events.
+        """
+
+    OP_UNSET: RemoteShell.OpCode.ValueType  # 0
+    OPEN: RemoteShell.OpCode.ValueType  # 1
+    """Client -> server"""
+    INPUT: RemoteShell.OpCode.ValueType  # 2
+    RESIZE: RemoteShell.OpCode.ValueType  # 3
+    CLOSE: RemoteShell.OpCode.ValueType  # 4
+    PING: RemoteShell.OpCode.ValueType  # 5
+    ACK: RemoteShell.OpCode.ValueType  # 6
+    OPEN_OK: RemoteShell.OpCode.ValueType  # 64
+    """Server -> client"""
+    OUTPUT: RemoteShell.OpCode.ValueType  # 65
+    CLOSED: RemoteShell.OpCode.ValueType  # 66
+    ERROR: RemoteShell.OpCode.ValueType  # 67
+    PONG: RemoteShell.OpCode.ValueType  # 68
+
+    OP_FIELD_NUMBER: _builtins.int
+    SESSION_ID_FIELD_NUMBER: _builtins.int
+    SEQ_FIELD_NUMBER: _builtins.int
+    ACK_SEQ_FIELD_NUMBER: _builtins.int
+    PAYLOAD_FIELD_NUMBER: _builtins.int
+    COLS_FIELD_NUMBER: _builtins.int
+    ROWS_FIELD_NUMBER: _builtins.int
+    FLAGS_FIELD_NUMBER: _builtins.int
+    op: Global___RemoteShell.OpCode.ValueType
+    """
+    Structured frame operation.
+    """
+    session_id: _builtins.int
+    """
+    Logical PTY session identifier.
+    """
+    seq: _builtins.int
+    """
+    Monotonic sequence number for this frame.
+    """
+    ack_seq: _builtins.int
+    """
+    Cumulative ack sequence number.
+    """
+    payload: _builtins.bytes
+    """
+    Opaque bytes payload for INPUT/OUTPUT/ERROR and other frame bodies.
+    """
+    cols: _builtins.int
+    """
+    Terminal size columns used for OPEN/RESIZE signaling.
+    """
+    rows: _builtins.int
+    """
+    Terminal size rows used for OPEN/RESIZE signaling.
+    """
+    flags: _builtins.int
+    """
+    Bit flags for protocol extensions.
+    """
+    def __init__(
+        self,
+        *,
+        op: Global___RemoteShell.OpCode.ValueType = ...,
+        session_id: _builtins.int = ...,
+        seq: _builtins.int = ...,
+        ack_seq: _builtins.int = ...,
+        payload: _builtins.bytes = ...,
+        cols: _builtins.int = ...,
+        rows: _builtins.int = ...,
+        flags: _builtins.int = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["ack_seq", b"ack_seq", "cols", b"cols", "flags", b"flags", "op", b"op", "payload", b"payload", "rows", b"rows", "seq", b"seq", "session_id", b"session_id"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+Global___RemoteShell: _TypeAlias = RemoteShell  # noqa: Y015
 
 @_typing.final
 class Waypoint(_message.Message):
