@@ -101,6 +101,11 @@ class _SetUrlTransactionCoordinator:
             self._cache_manager.invalidate_channel_cache(
                 "Channel cache invalidated after setURL addOnly partial failure."
             )
+            if execution_state.lora_write_started:
+                self._cache_manager.clear_lora_cache_with_warning(
+                    "LoRa config cache cleared after setURL addOnly partial failure; "
+                    "reload config before using localConfig.lora."
+                )
             raise
         self._cache_manager.apply_add_only_success(
             plan.channels_to_write,

@@ -43,8 +43,6 @@ class _SetUrlReplacePlan:
     max_channels: int
     replace_original_channels_ref: list[channel_pb2.Channel]
     replace_original_channels_fingerprint: tuple[bytes, ...]
-    replace_original_channels_snapshot: list[channel_pb2.Channel]
-    replace_original_channels_by_index: dict[int, channel_pb2.Channel]
     staged_channels: list[channel_pb2.Channel]
     staged_channels_by_index: dict[int, channel_pb2.Channel]
     deferred_new_named_admin_channel: channel_pb2.Channel | None
@@ -199,15 +197,6 @@ class _SetUrlReplacePlanner:
                 )
             replace_original_channels_ref = channels
             max_channels = len(channels)
-            replace_original_channels_snapshot: list[channel_pb2.Channel] = []
-            replace_original_channels_by_index: dict[int, channel_pb2.Channel] = {}
-            for existing_channel in channels:
-                channel_snapshot = channel_pb2.Channel()
-                channel_snapshot.CopyFrom(existing_channel)
-                replace_original_channels_snapshot.append(channel_snapshot)
-                replace_original_channels_by_index[existing_channel.index] = (
-                    channel_snapshot
-                )
             replace_original_channels_fingerprint = _channels_fingerprint(channels)
 
         replace_original_lora_config: config_pb2.Config.LoRaConfig | None = None
@@ -291,8 +280,6 @@ class _SetUrlReplacePlanner:
             max_channels=max_channels,
             replace_original_channels_ref=replace_original_channels_ref,
             replace_original_channels_fingerprint=replace_original_channels_fingerprint,
-            replace_original_channels_snapshot=replace_original_channels_snapshot,
-            replace_original_channels_by_index=replace_original_channels_by_index,
             staged_channels=staged_channels,
             staged_channels_by_index=staged_channels_by_index,
             deferred_new_named_admin_channel=deferred_new_named_admin_channel,

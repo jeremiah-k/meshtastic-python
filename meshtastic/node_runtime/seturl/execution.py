@@ -15,9 +15,6 @@ from meshtastic.node_runtime.seturl.planner import (
     _SetUrlAddOnlyPlan,
     _SetUrlReplacePlan,
 )
-from meshtastic.node_runtime.shared import (
-    isNamedAdminChannelName as _isNamedAdminChannelName,
-)
 from meshtastic.protobuf import admin_pb2, channel_pb2
 
 if TYPE_CHECKING:
@@ -73,20 +70,6 @@ class _SetUrlExecutionEngine:
         if role in channel_pb2.Channel.Role.values():
             return channel_pb2.Channel.Role.Name(role)  # type: ignore[arg-type]
         return f"UNKNOWN({role})"
-
-    @staticmethod
-    def _post_write_fallback_admin_index(plan: _SetUrlReplacePlan) -> int:
-        """Return fallback admin index from staged post-write channel state."""
-        for channel_index in sorted(plan.staged_channels_by_index):
-            channel = plan.staged_channels_by_index[channel_index]
-            if (
-                channel.role != channel_pb2.Channel.Role.DISABLED
-                and channel.settings
-                and channel.settings.name
-                and _isNamedAdminChannelName(channel.settings.name)
-            ):
-                return channel.index
-        return 0
 
     def _write_lora_config(
         self,

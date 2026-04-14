@@ -180,8 +180,6 @@ class TestSetUrlExecutionEngine:
             replace_original_channels_fingerprint=_channels_fingerprint(
                 mock_local_node.channels
             ),
-            replace_original_channels_snapshot=[],
-            replace_original_channels_by_index={},
             staged_channels=[staged],
             staged_channels_by_index={0: staged},
             deferred_new_named_admin_channel=None,
@@ -227,8 +225,6 @@ class TestSetUrlExecutionEngine:
             replace_original_channels_fingerprint=_channels_fingerprint(
                 mock_local_node.channels
             ),
-            replace_original_channels_snapshot=[],
-            replace_original_channels_by_index={},
             staged_channels=[staged],
             staged_channels_by_index={0: staged},
             deferred_new_named_admin_channel=None,
@@ -277,8 +273,6 @@ class TestSetUrlExecutionEngine:
             replace_original_channels_fingerprint=_channels_fingerprint(
                 mock_local_node.channels
             ),
-            replace_original_channels_snapshot=[],
-            replace_original_channels_by_index={},
             staged_channels=[staged],
             staged_channels_by_index={0: staged},
             deferred_new_named_admin_channel=None,
@@ -300,50 +294,3 @@ class TestSetUrlExecutionEngine:
         mock_local_node.ensureSessionKey.assert_called()
         mock_local_node._send_admin.assert_called()
         assert state.lora_write_started is True
-
-    @pytest.mark.unit
-    def test_post_write_fallback_admin_index_returns_named_admin(self) -> None:
-        """_post_write_fallback_admin_index returns named admin channel index."""
-        staged_admin = _make_channel(1, channel_pb2.Channel.Role.SECONDARY, "admin")
-        staged_primary = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "primary")
-
-        plan = _SetUrlReplacePlan(
-            max_channels=2,
-            replace_original_channels_ref=[],
-            replace_original_channels_fingerprint=(),
-            replace_original_channels_snapshot=[],
-            replace_original_channels_by_index={},
-            staged_channels=[staged_primary, staged_admin],
-            staged_channels_by_index={0: staged_primary, 1: staged_admin},
-            deferred_new_named_admin_channel=None,
-            deferred_new_named_admin_index=None,
-            deferred_previous_admin_slot_channel=None,
-            replace_original_lora_config=None,
-        )
-
-        result = _SetUrlExecutionEngine._post_write_fallback_admin_index(plan)
-
-        assert result == 1
-
-    @pytest.mark.unit
-    def test_post_write_fallback_admin_index_defaults_to_zero(self) -> None:
-        """_post_write_fallback_admin_index returns 0 when no named admin."""
-        staged_primary = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "primary")
-
-        plan = _SetUrlReplacePlan(
-            max_channels=1,
-            replace_original_channels_ref=[],
-            replace_original_channels_fingerprint=(),
-            replace_original_channels_snapshot=[],
-            replace_original_channels_by_index={},
-            staged_channels=[staged_primary],
-            staged_channels_by_index={0: staged_primary},
-            deferred_new_named_admin_channel=None,
-            deferred_new_named_admin_index=None,
-            deferred_previous_admin_slot_channel=None,
-            replace_original_lora_config=None,
-        )
-
-        result = _SetUrlExecutionEngine._post_write_fallback_admin_index(plan)
-
-        assert result == 0

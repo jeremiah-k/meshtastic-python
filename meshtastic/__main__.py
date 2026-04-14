@@ -115,6 +115,9 @@ CONFIG_SETURL_DELAY_SECONDS = 2.0
 CONFIG_COMMIT_SETTLE_SECONDS = 1.0
 """Settle delay after commitSettingsTransaction before assuming the session may end."""
 
+CONFIG_RECONNECT_WAIT_SECONDS = 15.0
+"""Maximum time to wait for device reconnect after a reboot-capable configure commit."""
+
 # Delay between GPIO watch iterations
 GPIO_WATCH_INTERVAL_SECONDS = 1.0
 
@@ -198,6 +201,75 @@ def supportInfo() -> None:
     )
     print("")
     print("Please add the output from the command: meshtastic --info")
+
+
+def _post_configure_reconnect_and_verify(
+    interface: MeshInterface,
+    *,
+    timeout: float,
+    node_dest: str,
+) -> bool:
+    """Wait for device reconnect after a reboot-capable configure commit.
+
+    After ``commitSettingsTransaction()``, the firmware may reboot the device.
+    This function waits for the interface to disconnect and reconnect within
+    *timeout* seconds, then verifies config is loaded.
+
+    Returns True if reconnect succeeded, False otherwise.
+    """
+    deadline = time.monotonic() + timeout
+
+    disconnect_window = 5.0
+    logger.info(
+        "Waiting up to %.1fs for device disconnect (reboot indication)...",
+        disconnect_window,
+    )
+    disconnect_deadline = time.monotonic() + disconnect_window
+    disconnected = False
+    while time.monotonic() < disconnect_deadline:
+        if not interface.isConnected.is_set():
+            disconnected = True
+            logger.info("Device disconnected (reboot indication received).")
+            break
+        time.sleep(0.2)
+
+    if not disconnected:
+        logger.info(
+            "No disconnect detected within %.1fs; device may not require reboot.",
+            disconnect_window,
+        )
+
+    reconnect_deadline = min(deadline, time.monotonic() + (timeout - disconnect_window))
+    if disconnected:
+        logger.info(
+            "Waiting up to %.1fs for device reconnect...",
+            reconnect_deadline - time.monotonic(),
+        )
+    while time.monotonic() < reconnect_deadline:
+        if interface.isConnected.is_set():
+            logger.info("Device reconnected.")
+            break
+        time.sleep(0.2)
+
+    if not interface.isConnected.is_set():
+        logger.warning(
+            "Device did not reconnect within %.1fs after configure commit. "
+            "Configuration may still be applying.",
+            timeout,
+        )
+        return False
+
+    try:
+        interface.waitForConfig()
+        logger.info("Device config reloaded after reboot.")
+        return True
+    except Exception:
+        logger.warning(
+            "Device reconnected but config reload failed; "
+            "configuration may still be applying.",
+            exc_info=True,
+        )
+        return False
 
 
 # COMPAT_STABLE_SHIM: historical snake_case helper name.
@@ -1178,9 +1250,12 @@ def onConnected(interface: MeshInterface) -> None:
                 # ------------------------------------------------------------------
                 # Phase 1: Non-rebooting configuration
                 # ------------------------------------------------------------------
-                print("Phase 1: Applying non-rebooting configuration...")
+                phase1_started = False
 
                 if "owner" in configuration:
+                    if not phase1_started:
+                        print("Phase 1: Applying non-rebooting configuration...")
+                        phase1_started = True
                     # Validate owner name before setting
                     owner_name = str(configuration["owner"]).strip()
                     if not owner_name:
@@ -1195,6 +1270,9 @@ def onConnected(interface: MeshInterface) -> None:
                     time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
                 if "owner_short" in configuration:
+                    if not phase1_started:
+                        print("Phase 1: Applying non-rebooting configuration...")
+                        phase1_started = True
                     # Validate owner short name before setting
                     owner_short_name = str(configuration["owner_short"]).strip()
                     if not owner_short_name:
@@ -1211,6 +1289,9 @@ def onConnected(interface: MeshInterface) -> None:
                     time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
                 if "ownerShort" in configuration:
+                    if not phase1_started:
+                        print("Phase 1: Applying non-rebooting configuration...")
+                        phase1_started = True
                     # Validate owner short name before setting
                     owner_short_name = str(configuration["ownerShort"]).strip()
                     if not owner_short_name:
@@ -1227,6 +1308,9 @@ def onConnected(interface: MeshInterface) -> None:
                     time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
                 if "channel_url" in configuration:
+                    if not phase1_started:
+                        print("Phase 1: Applying non-rebooting configuration...")
+                        phase1_started = True
                     print("Setting channel url to", configuration["channel_url"])
                     interface.getNode(args.dest, **getNode_kwargs).setURL(
                         configuration["channel_url"]
@@ -1234,6 +1318,9 @@ def onConnected(interface: MeshInterface) -> None:
                     time.sleep(CONFIG_SETURL_DELAY_SECONDS)
 
                 if "channelUrl" in configuration:
+                    if not phase1_started:
+                        print("Phase 1: Applying non-rebooting configuration...")
+                        phase1_started = True
                     print("Setting channel url to", configuration["channelUrl"])
                     interface.getNode(args.dest, **getNode_kwargs).setURL(
                         configuration["channelUrl"]
@@ -1241,6 +1328,9 @@ def onConnected(interface: MeshInterface) -> None:
                     time.sleep(CONFIG_SETURL_DELAY_SECONDS)
 
                 if "canned_messages" in configuration:
+                    if not phase1_started:
+                        print("Phase 1: Applying non-rebooting configuration...")
+                        phase1_started = True
                     print(
                         "Setting canned message messages to",
                         configuration["canned_messages"],
@@ -1251,6 +1341,9 @@ def onConnected(interface: MeshInterface) -> None:
                     time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
                 if "ringtone" in configuration:
+                    if not phase1_started:
+                        print("Phase 1: Applying non-rebooting configuration...")
+                        phase1_started = True
                     print("Setting ringtone to", configuration["ringtone"])
                     interface.getNode(args.dest, **getNode_kwargs).set_ringtone(
                         configuration["ringtone"]
@@ -1258,6 +1351,9 @@ def onConnected(interface: MeshInterface) -> None:
                     time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
                 if "location" in configuration:
+                    if not phase1_started:
+                        print("Phase 1: Applying non-rebooting configuration...")
+                        phase1_started = True
                     alt = 0
                     lat = 0.0
                     lon = 0.0
@@ -1276,15 +1372,17 @@ def onConnected(interface: MeshInterface) -> None:
                     interface.localNode.setFixedPosition(lat, lon, alt)
                     time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
+                if phase1_started:
+                    print("Phase 1 complete.")
+
                 # ------------------------------------------------------------------
                 # Phase 2: Reboot-capable configuration transaction
                 # ------------------------------------------------------------------
-                print(
-                    "Phase 2: Applying configuration transaction (may trigger device reboot)..."
-                )
-
                 settings_transaction_started = False
                 if "config" in configuration or "module_config" in configuration:
+                    print(
+                        "Phase 2: Applying configuration transaction (may trigger device reboot)..."
+                    )
                     interface.getNode(
                         args.dest, False, **getNode_kwargs
                     ).beginSettingsTransaction()
@@ -1367,22 +1465,28 @@ def onConnected(interface: MeshInterface) -> None:
                         args.dest, False, **getNode_kwargs
                     ).commitSettingsTransaction()
                     time.sleep(CONFIG_COMMIT_SETTLE_SECONDS)
-                print(
-                    "Configuration transaction committed. Device may reboot to apply changes."
-                )
-                print("Writing modified configuration to device")
+                    print(
+                        "Configuration transaction committed. Device may reboot to apply changes."
+                    )
 
                 # ------------------------------------------------------------------
-                # Phase 3: Reconnect/verify (placeholder)
+                # Phase 3: Reconnect and verify
                 # ------------------------------------------------------------------
-                # TODO: Phase 3 — Reconnect and verify
-                # After commitSettingsTransaction, the device may reboot.
-                # A future iteration should:
-                # 1. Wait for disconnect/reboot indication (up to ~10s for real hardware)
-                # 2. Reconnect the interface
-                # 3. Wait for config and node DB to reload
-                # 4. Optionally verify applied state matches requested configuration
-                # For now, the configure session ends here — no further writes.
+                if settings_transaction_started:
+                    reconnect_ok = _post_configure_reconnect_and_verify(
+                        interface,
+                        timeout=CONFIG_RECONNECT_WAIT_SECONDS,
+                        node_dest=args.dest,
+                    )
+                    if reconnect_ok:
+                        print("Phase 3: Device reconnected and config reloaded.")
+                    else:
+                        print(
+                            "Phase 3: Device did not reconnect within timeout. "
+                            "Configuration may still be applying."
+                        )
+                else:
+                    print("Configuration applied (no reboot expected).")
 
         if args.export_config:
             if args.dest != BROADCAST_ADDR:
