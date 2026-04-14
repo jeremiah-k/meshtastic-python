@@ -22,3 +22,4 @@ junit.xml
 .cursor/
 .codex
 meshtastic/tests/api_baselines/*_test.json
+.worktrees/
