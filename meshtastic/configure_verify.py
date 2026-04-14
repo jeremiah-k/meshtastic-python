@@ -210,7 +210,7 @@ def _verify_channel_url_match(
         )
 
     lora_match = _lora_config_match(req_cs, dev_cs)
-    settings_match = all(
+    settings_match = name_sets_match and all(
         _settings_match(req_settings, dev_lookup[name])
         for name, req_settings in req_lookup.items()
     )

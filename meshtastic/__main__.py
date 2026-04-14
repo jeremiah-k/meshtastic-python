@@ -123,6 +123,12 @@ CONFIG_COMMIT_SETTLE_SECONDS = 1.0
 CONFIG_RECONNECT_WAIT_SECONDS = 15.0
 """Maximum time to wait for device reconnect after a reboot-capable configure commit."""
 
+CONFIGURE_PHASE1_HEADER = (
+    "Phase 1: Applying direct configuration "
+    "(channel URL updates may trigger reconnect/reboot)..."
+)
+"""Printed once when --configure starts applying Phase 1 settings."""
+
 _ALLOWED_CONFIGURE_KEYS = frozenset(
     {
         "owner",
@@ -1047,10 +1053,11 @@ def _handle_configure_command(
         )
 
     phase1_started = False
+    phase1_may_reconnect = False
 
     if "owner" in configuration:
         if not phase1_started:
-            print("Phase 1: Applying non-rebooting configuration...")
+            print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
         owner_name = str(configuration["owner"]).strip()
         if not owner_name:
@@ -1065,7 +1072,7 @@ def _handle_configure_command(
 
     if "owner_short" in configuration:
         if not phase1_started:
-            print("Phase 1: Applying non-rebooting configuration...")
+            print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
         owner_short_name = str(configuration["owner_short"]).strip()
         if not owner_short_name:
@@ -1080,7 +1087,7 @@ def _handle_configure_command(
 
     if "ownerShort" in configuration:
         if not phase1_started:
-            print("Phase 1: Applying non-rebooting configuration...")
+            print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
         owner_short_name = str(configuration["ownerShort"]).strip()
         if not owner_short_name:
@@ -1095,8 +1102,9 @@ def _handle_configure_command(
 
     if "channel_url" in configuration:
         if not phase1_started:
-            print("Phase 1: Applying non-rebooting configuration...")
+            print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
+        phase1_may_reconnect = True
         print("Setting channel url to", configuration["channel_url"])
         interface.getNode(args.dest, **getNode_kwargs).setURL(
             configuration["channel_url"]
@@ -1105,8 +1113,9 @@ def _handle_configure_command(
 
     if "channelUrl" in configuration:
         if not phase1_started:
-            print("Phase 1: Applying non-rebooting configuration...")
+            print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
+        phase1_may_reconnect = True
         print("Setting channel url to", configuration["channelUrl"])
         interface.getNode(args.dest, **getNode_kwargs).setURL(
             configuration["channelUrl"]
@@ -1115,7 +1124,7 @@ def _handle_configure_command(
 
     if "canned_messages" in configuration:
         if not phase1_started:
-            print("Phase 1: Applying non-rebooting configuration...")
+            print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
         print(
             "Setting canned message messages to",
@@ -1128,7 +1137,7 @@ def _handle_configure_command(
 
     if "ringtone" in configuration:
         if not phase1_started:
-            print("Phase 1: Applying non-rebooting configuration...")
+            print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
         print("Setting ringtone to", configuration["ringtone"])
         interface.getNode(args.dest, **getNode_kwargs).set_ringtone(
@@ -1138,7 +1147,7 @@ def _handle_configure_command(
 
     if "location" in configuration:
         if not phase1_started:
-            print("Phase 1: Applying non-rebooting configuration...")
+            print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
         alt = 0
         lat = 0.0
@@ -1315,7 +1324,12 @@ def _handle_configure_command(
                 "Local transport state does not confirm remote node reload status."
             )
     else:
-        print("Configuration applied (no reboot expected).")
+        if phase1_may_reconnect:
+            print(
+                "Configuration applied. Channel URL updates may still trigger reconnect/reboot."
+            )
+        else:
+            print("Configuration applied (no reboot expected).")
 
     return settings_transaction_started
 

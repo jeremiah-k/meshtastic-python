@@ -7,6 +7,7 @@ meshtasticd simulator instances.
 import base64
 import os
 import re
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -698,29 +699,39 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
             )
             raise
     finally:
-        restore_timeout = max(
-            HOST_CONFIGURE_TIMEOUT_SECONDS,
-            HOST_READY_AFTER_CONFIGURE_TIMEOUT_SECONDS,
-        )
-        restore_rc, restore_output = _run_host_cli(
+        restore_timeout = min(HOST_CONFIGURE_TIMEOUT_SECONDS, 25.0)
+        restore_cmd = [
+            meshtastic_bin,
+            "--host",
             HOST_A,
             "--configure",
             str(baseline_export_path),
-            timeout=restore_timeout,
-            meshtastic_bin=meshtastic_bin,
-        )
+        ]
+        try:
+            restore_proc = subprocess.run(  # noqa: S603
+                restore_cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=restore_timeout,
+            )
+            restore_rc = restore_proc.returncode
+            restore_output = (restore_proc.stdout or "") + (restore_proc.stderr or "")
+        except subprocess.TimeoutExpired as exc:
+            restore_rc = 124
+            stdout = exc.stdout if isinstance(exc.stdout, str) else ""
+            stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+            restore_output = (
+                f"cleanup restore command timed out after {restore_timeout}s\n"
+                + stdout
+                + stderr
+            )
         restore_artifact = tmp_path / "debug-add-only-saturation-restore-host-a.txt"
         restore_artifact.write_text(
             f"returncode={restore_rc}\ntimeout={restore_timeout}\n\n{restore_output}",
             encoding="utf-8",
         )
-        if restore_rc == 0:
-            _wait_for_host_ready(
-                HOST_A,
-                meshtastic_bin,
-                timeout_seconds=HOST_READY_AFTER_CONFIGURE_TIMEOUT_SECONDS,
-            )
-        else:
+        if restore_rc != 0:
             _capture_host_debug_state(
                 tmp_path,
                 HOST_A,

@@ -5359,6 +5359,30 @@ def test_main_configure_phase3_no_reconnect_needed(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_channel_url_only_reports_possible_reconnect(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "phase1_channel_url_only.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"channel_url": "https://meshtastic.org/e/#CgcSAQE6AggN"}),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    _run_main_configure_file(config_path, iface, monkeypatch)
+    out, _ = capsys.readouterr()
+    assert "Phase 1: Applying direct configuration" in out
+    assert (
+        "Configuration applied. Channel URL updates may still trigger reconnect/reboot."
+        in out
+    )
+    assert "Configuration applied (no reboot expected)." not in out
+    target_node.setURL.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_main_configure_phase3_channel_url_verified(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
