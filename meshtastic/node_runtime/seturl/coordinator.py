@@ -72,6 +72,32 @@ class _SetUrlTransactionCoordinator:
             has_admin_write_node_named_admin=(named_admin_index_for_write is not None),
         )
 
+    def _trigger_transport_reconnect(self, iface: object) -> bool:
+        """Best-effort reconnect trigger for transports that do not auto-recover."""
+        attempt_reconnect = getattr(iface, "_attempt_reconnect", None)
+        if callable(attempt_reconnect):
+            try:
+                reconnect_result = bool(attempt_reconnect())
+                if reconnect_result:
+                    logger.info("Transport reconnect hook reported success.")
+                    return True
+            except Exception:
+                logger.debug("Transport reconnect hook failed.", exc_info=True)
+
+        connect = getattr(iface, "connect", None)
+        if callable(connect):
+            try:
+                logger.info("Triggering interface reconnect via connect()...")
+                connect()
+                is_connected = getattr(iface, "isConnected", None)
+                if is_connected is not None and hasattr(is_connected, "is_set"):
+                    return bool(is_connected.is_set())
+                return False
+            except Exception:
+                logger.debug("Interface connect() reconnect attempt failed.", exc_info=True)
+
+        return False
+
     def _reconnect_and_compute_remaining(
         self,
         plan: _SetUrlReplacePlan,
@@ -87,6 +113,8 @@ class _SetUrlTransactionCoordinator:
         try:
             iface = self._node.iface
             connected = iface.isConnected.is_set()
+            if not connected:
+                connected = self._trigger_transport_reconnect(iface)
             if not connected:
                 logger.info(
                     "Waiting for transport reconnect (timeout=%.1fs)...",
@@ -230,7 +258,9 @@ class _SetUrlTransactionCoordinator:
         skip_lora = False
         last_exception: Exception | None = None
         execution_state = _SetUrlReplaceExecutionState()
+        attempts_used = 0
         for attempt in range(MAX_REPLACE_ALL_RESUME_ATTEMPTS):
+            attempts_used = attempt + 1
             execution_state = _SetUrlReplaceExecutionState()
             resume_skip_channel_indices = (
                 skip_channel_indices if attempt > 0 else None
@@ -310,7 +340,7 @@ class _SetUrlTransactionCoordinator:
             "not run because failure occurred during Phase 1. Local caches "
             "invalidated — reconnect and reload before further operations.",
             _stage_label,
-            MAX_REPLACE_ALL_RESUME_ATTEMPTS,
+            attempts_used,
         )
         self._cache_manager.invalidate_channel_cache(
             "Channel cache invalidated after setURL replace-all final failure."

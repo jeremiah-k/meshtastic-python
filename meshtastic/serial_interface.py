@@ -44,6 +44,40 @@ SERIAL_PORT_PATH_EMPTY_ERROR = (
 class SerialInterface(StreamInterface):
     """Interface class for meshtastic devices over a serial link."""
 
+    devPath: str | None
+    stream: serial.Serial | BinaryIO | None
+
+    def _open_serial_stream(self) -> serial.Serial:
+        """Open and return a configured serial stream for this interface."""
+        if self.devPath is None:
+            resolved_dev_path = self._resolve_dev_path()
+            if resolved_dev_path is None:
+                raise self.MeshInterfaceError(
+                    "No serial Meshtastic device detected for reconnect."
+                )
+            self.devPath = resolved_dev_path
+
+        if sys.platform != "win32":
+            with open(self.devPath, encoding="utf8") as f:
+                self._set_hupcl_with_termios(f)
+            time.sleep(SERIAL_SETTLING_DELAY)
+
+        serial_kwargs: dict[str, Any] = {
+            "timeout": SERIAL_READ_TIMEOUT,
+            "write_timeout": SERIAL_WRITE_TIMEOUT,
+        }
+        if sys.platform != "win32":
+            serial_kwargs["exclusive"] = True
+
+        stream = serial.Serial(
+            self.devPath,
+            DEFAULT_BAUD_RATE,
+            **serial_kwargs,
+        )
+        stream.flush()
+        time.sleep(SERIAL_SETTLING_DELAY)
+        return stream
+
     def _resolve_dev_path(self) -> str | None:
         """Return an explicit or auto-detected serial device path.
 
@@ -114,11 +148,9 @@ class SerialInterface(StreamInterface):
             When multiple serial ports are detected and none was explicitly specified.
         """
         self.noProto = noProto
-        self.stream: serial.Serial | BinaryIO | None = (
-            None  # Initialize early for safe cleanup
-        )
+        self.stream = None  # Initialize early for safe cleanup
 
-        self.devPath: str | None = devPath
+        self.devPath = devPath
         resolved_dev_path = self._resolve_dev_path()
         if resolved_dev_path is None:
             logger.warning(
@@ -139,27 +171,9 @@ class SerialInterface(StreamInterface):
 
         logger.debug("Connecting to %s", self.devPath)
 
-        if sys.platform != "win32":
-            with open(self.devPath, encoding="utf8") as f:
-                self._set_hupcl_with_termios(f)
-            time.sleep(SERIAL_SETTLING_DELAY)
-
-        serial_kwargs: dict[str, Any] = {
-            "timeout": SERIAL_READ_TIMEOUT,
-            "write_timeout": SERIAL_WRITE_TIMEOUT,
-        }
-        if sys.platform != "win32":
-            serial_kwargs["exclusive"] = True
-
-        self.stream = serial.Serial(
-            self.devPath,
-            DEFAULT_BAUD_RATE,
-            **serial_kwargs,
-        )
+        self.stream = self._open_serial_stream()
         initialized = False
         try:
-            self.stream.flush()
-            time.sleep(SERIAL_SETTLING_DELAY)
             super().__init__(
                 debugOut=debugOut,
                 noProto=noProto,
@@ -177,6 +191,12 @@ class SerialInterface(StreamInterface):
                     ):
                         self.stream.close()
                     self.stream = None
+
+    def connect(self) -> None:
+        """Reconnect by reopening serial stream when needed, then run StreamInterface connect."""
+        if self.stream is None or not getattr(self.stream, "is_open", True):
+            self.stream = self._open_serial_stream()
+        super().connect()
 
     def _set_hupcl_with_termios(self, f: IO[str]) -> None:
         """Clear the terminal HUPCL (hang-up-on-close) flag for the given device file to prevent the device from rebooting when RTS/DTR change.

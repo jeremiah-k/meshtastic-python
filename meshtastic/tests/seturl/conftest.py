@@ -217,11 +217,21 @@ def mock_iface_with_reconnect() -> MagicMock:
     MagicMock
         A mock interface with isConnected Event that can be controlled.
     """
-    iface = MagicMock(spec=["localNode", "isConnected", "waitForConfig"])
+    iface = MagicMock(
+        spec=[
+            "localNode",
+            "isConnected",
+            "waitForConfig",
+            "connect",
+            "_attempt_reconnect",
+        ]
+    )
     iface.localNode = None
     iface.isConnected = threading.Event()
     iface.isConnected.set()
     iface.waitForConfig = MagicMock()
+    iface.connect = MagicMock()
+    iface._attempt_reconnect = MagicMock(return_value=False)
     return iface
 
 

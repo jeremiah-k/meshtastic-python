@@ -425,6 +425,7 @@ class TestSetUrlTransactionCoordinator:
 
         with pytest.raises(RuntimeError, match="transport disconnect"):
             coordinator._apply_replace_all()
+        mock_iface.connect.assert_called_once()
 
     @pytest.mark.unit
     def test_compute_remaining_channel_writes_detects_differences(self) -> None:
