@@ -32,6 +32,12 @@ STREAM_IO_EXCEPTIONS = (
     serial.SerialException,
     serial.SerialTimeoutException,
 )
+_TRANSPORT_FD_STATE_TYPEERROR_MARKERS: tuple[str, ...] = (
+    "fd is none",
+    "'nonetype' object cannot be interpreted as an integer",
+    "nonetype object cannot be interpreted as an integer",
+    "an integer is required (got type nonetype)",
+)
 # Suppress TypeError during best-effort close for half-torn-down stream objects
 # without broadening read/write-path exception handling.
 STREAM_CLOSE_EXCEPTIONS: tuple[type[BaseException], ...] = (
@@ -43,6 +49,12 @@ STREAM_WRITE_EXCEPTIONS = STREAM_IO_EXCEPTIONS
 STREAM_READ_EXCEPTIONS = STREAM_IO_EXCEPTIONS
 
 logger = logging.getLogger(__name__)
+
+
+def _is_transport_fd_state_type_error(exc: TypeError) -> bool:
+    """Return whether a TypeError indicates a transient fd/state race."""
+    message = str(exc).casefold()
+    return any(marker in message for marker in _TRANSPORT_FD_STATE_TYPEERROR_MARKERS)
 
 
 class StreamInterface(MeshInterface):
@@ -339,6 +351,12 @@ class StreamInterface(MeshInterface):
         try:
             data = s.read(length)
         except STREAM_READ_EXCEPTIONS as exc:
+            raise StreamInterface.StreamClosedError(
+                str(exc) or StreamInterface.StreamClosedError.DEFAULT_MSG
+            ) from exc
+        except TypeError as exc:
+            if not _is_transport_fd_state_type_error(exc):
+                raise
             raise StreamInterface.StreamClosedError(
                 str(exc) or StreamInterface.StreamClosedError.DEFAULT_MSG
             ) from exc

@@ -119,19 +119,39 @@ def test_read_bytes_wraps_stream_exceptions_as_stream_closed() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_read_bytes_propagates_type_error() -> None:
-    """_read_bytes should not swallow backend TypeError programming errors."""
+def test_read_bytes_propagates_unexpected_type_error() -> None:
+    """_read_bytes should not swallow unexpected backend TypeError values."""
     iface = StreamInterface(noProto=True, connectNow=False)
     try:
         stream = MagicMock()
         stream.is_open = True
-        stream.read.side_effect = TypeError("fd is None")
+        stream.read.side_effect = TypeError("unexpected type bug")
         iface.stream = stream
 
-        with pytest.raises(TypeError, match="fd is None"):
+        with pytest.raises(TypeError, match="unexpected type bug"):
             iface._read_bytes(5)
         stream.close.assert_not_called()
         assert iface.stream is stream
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_read_bytes_wraps_transport_fd_type_error() -> None:
+    """_read_bytes should normalize transport fd-state TypeError to StreamClosedError."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        stream = MagicMock()
+        stream.is_open = True
+        stream.read.side_effect = TypeError(
+            "'NoneType' object cannot be interpreted as an integer"
+        )
+        iface.stream = stream
+
+        with pytest.raises(StreamInterface.StreamClosedError) as exc_info:
+            iface._read_bytes(5)
+        assert isinstance(exc_info.value.__cause__, TypeError)
     finally:
         iface.close()
 

@@ -369,6 +369,48 @@ def test_reader_handles_os_error_wrapped_during_close() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_reader_handles_transport_fd_type_error_wrapped_as_stream_closed() -> None:
+    """_reader should treat transport fd-state TypeError as stream closed."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        stream = MagicMock()
+        stream.is_open = True
+        stream.read.side_effect = TypeError(
+            "'NoneType' object cannot be interpreted as an integer"
+        )
+        iface.stream = stream
+
+        with patch.object(iface, "_disconnected") as mock_disconnect:
+            iface._reader()
+        assert iface._last_disconnect_source == "stream.closed"
+        mock_disconnect.assert_called_once()
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_reader_handles_transport_fd_type_error_wrapped_during_close() -> None:
+    """_reader should treat fd-state TypeError during close as close_requested."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        stream = MagicMock()
+        stream.is_open = True
+        stream.read.side_effect = TypeError(
+            "'NoneType' object cannot be interpreted as an integer"
+        )
+        iface.stream = stream
+        iface._wantExit = True
+
+        with patch.object(iface, "_disconnected"):
+            iface._reader()
+        assert iface._last_disconnect_source == "stream.close_requested"
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_reader_handles_unexpected_exception() -> None:
     """Lines 550-552: _reader should handle unexpected exceptions."""
     iface = StreamInterface(noProto=True, connectNow=False)

@@ -232,13 +232,16 @@ class _SetUrlTransactionCoordinator:
         execution_state = _SetUrlReplaceExecutionState()
         for attempt in range(MAX_REPLACE_ALL_RESUME_ATTEMPTS):
             execution_state = _SetUrlReplaceExecutionState()
+            resume_skip_channel_indices = (
+                skip_channel_indices if attempt > 0 else None
+            )
             try:
                 self._execution_engine.executeReplaceAll(
                     parsed_input=self._parsed_input,
                     admin_context=self._admin_context,
                     plan=plan,
                     state=execution_state,
-                    skip_channel_indices=skip_channel_indices or None,
+                    skip_channel_indices=resume_skip_channel_indices,
                     skip_lora=skip_lora,
                 )
                 return

@@ -285,6 +285,63 @@ class TestSetUrlTransactionCoordinator:
         assert call_count == 2
 
     @pytest.mark.unit
+    def test_replace_all_resumes_when_no_channels_converged_yet(
+        self, mock_local_node_with_reconnect: MagicMock
+    ) -> None:
+        """Resume retry should pass an explicit empty skip set when nothing converged."""
+        from meshtastic.tests.seturl.conftest import _make_channel
+
+        old_ch = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "old", b"\x02")
+        mock_local_node_with_reconnect.channels = [old_ch]
+
+        channel_set = apponly_pb2.ChannelSet()
+        settings = channel_set.settings.add()
+        settings.name = "new"
+        settings.psk = b"\x01"
+
+        parsed_input = _SetUrlParsedInput(
+            channel_set=channel_set,
+            has_lora_update=False,
+        )
+
+        coordinator = _SetUrlTransactionCoordinator(
+            mock_local_node_with_reconnect, parsed_input=parsed_input
+        )
+
+        call_count = 0
+        observed_skip_sets: list[set[int] | None] = []
+
+        def _first_fails_second_succeeds(
+            *,
+            parsed_input,
+            admin_context,
+            plan,
+            state,
+            skip_channel_indices=None,
+            skip_lora=False,
+        ):
+            nonlocal call_count
+            call_count += 1
+            observed_skip_sets.append(skip_channel_indices)
+            if call_count == 1:
+                raise RuntimeError("simulated disconnect before writes")
+            assert skip_channel_indices == set()
+
+        coordinator._execution_engine.executeReplaceAll = _first_fails_second_succeeds  # type: ignore[method-assign]
+
+        def _restore_channels() -> None:
+            mock_local_node_with_reconnect.channels = [old_ch]
+
+        mock_local_node_with_reconnect.iface.waitForConfig.side_effect = (
+            _restore_channels
+        )
+
+        coordinator._apply_replace_all()
+        assert call_count == 2
+        assert observed_skip_sets[0] is None
+        assert observed_skip_sets[1] == set()
+
+    @pytest.mark.unit
     def test_replace_all_exhausted_retries_raises(
         self, mock_local_node_with_reconnect: MagicMock
     ) -> None:
