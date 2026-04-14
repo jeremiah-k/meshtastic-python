@@ -1023,9 +1023,7 @@ def test_power_logger_store_current_reading_no_lock_fallback() -> None:
         warnings.simplefilter("always")
         logger.store_current_reading()
 
-    assert any(
-        issubclass(item.category, DeprecationWarning) for item in captured
-    )
+    assert any(issubclass(item.category, DeprecationWarning) for item in captured)
 
 
 @pytest.mark.unit

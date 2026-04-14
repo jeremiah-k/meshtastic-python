@@ -86,6 +86,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: jeremiah-k/mtjk
+          files: ./junit.xml
           report_type: test_results
           fail_ci_if_error: false
   pylint:
@@ -109,7 +110,7 @@ jobs:
       - *checkout_step
       - *setup_python_step
       - name: Install ruff
-        run: python -m pip install --upgrade "ruff==0.15.1"
+        run: python -m pip install --upgrade "ruff==0.15.10"
       - name: Run ruff on tests
         run: ruff check meshtastic/tests
   mypy:
