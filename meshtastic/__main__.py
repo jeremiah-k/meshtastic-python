@@ -45,7 +45,7 @@ from meshtastic.version import get_active_version
 
 argcomplete: ModuleType | None = None
 try:
-    import argcomplete as _argcomplete
+    import argcomplete as _argcomplete  # type: ignore[import-untyped]
 
     argcomplete = _argcomplete
 except ImportError:
@@ -813,6 +813,347 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
     return True
 
 
+def _handle_ota_update(
+    interface: MeshInterface,
+    args: Any,
+    getNode_kwargs: dict[str, Any],
+) -> None:
+    if not isinstance(interface, meshtastic.tcp_interface.TCPInterface):
+        _cli_exit(
+            "Error: OTA update currently requires a TCP connection to the node (use --host)."
+        )
+    if args.dest not in {BROADCAST_ADDR, LOCAL_ADDR}:
+        _cli_exit(
+            "Error: OTA update only supports the directly connected local node; omit --dest or use --dest ^local."
+        )
+    ota_dest = LOCAL_ADDR if args.dest == BROADCAST_ADDR else args.dest
+
+    try:
+        ota = meshtastic.ota.ESP32WiFiOTA(args.ota_update, interface.hostname)
+    except meshtastic.ota.OTAError as e:
+        _cli_exit(f"OTA update failed: {e}")
+
+    print(f"Triggering OTA update on {interface.hostname}...")
+    interface.getNode(ota_dest, requestChannels=False, **getNode_kwargs).startOTA(
+        mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=ota.hash_bytes()
+    )
+
+    print("Waiting for device to reboot into OTA mode...")
+    time.sleep(OTA_REBOOT_WAIT_SECONDS)
+
+    retries = OTA_MAX_RETRIES
+    while retries > 0:
+        try:
+            ota.update()
+            break
+
+        except meshtastic.ota.OTATransportError as e:
+            retries -= 1
+            if retries == 0:
+                _cli_exit(f"OTA update failed: {e}")
+
+            time.sleep(OTA_RETRY_DELAY_SECONDS)
+        except meshtastic.ota.OTAError as e:
+            _cli_exit(f"OTA update failed: {e}")
+
+    print("\nOTA update completed successfully!")
+
+
+def _handle_set_command(
+    interface: MeshInterface,
+    args: Any,
+    getNode_kwargs: dict[str, Any],
+) -> None:
+    node = interface.getNode(args.dest, False, **getNode_kwargs)
+
+    last_pref: list[str] | None = None
+    fields: set[str] = set()
+    any_found = False
+    for pref_item in args.set:
+        if pref_item is None or len(pref_item) < 2:
+            continue
+        last_pref = pref_item
+        found = False
+        normalized_pref_name = _normalize_pref_name(pref_item[0])
+        field = splitCompoundName(normalized_pref_name)[0]
+        for config in [node.localConfig, node.moduleConfig]:
+            config_type = config.DESCRIPTOR.fields_by_name.get(field)
+            if config_type:
+                if len(config.ListFields()) == 0:
+                    node.requestConfig(config.DESCRIPTOR.fields_by_name.get(field))
+                found = setPref(config, normalized_pref_name, pref_item[1])
+                if found:
+                    any_found = True
+                    fields.add(field)
+                    break
+
+    if any_found:
+        print("Writing modified preferences to device")
+        if len(fields) > 1:
+            print("Using a configuration transaction")
+            node.beginSettingsTransaction()
+        for field in fields:
+            print(f"Writing {field} configuration to device")
+            node.writeConfig(field)
+        if len(fields) > 1:
+            node.commitSettingsTransaction()
+    elif last_pref is not None:
+        print(
+            f"{node.localConfig.__class__.__name__} and {node.moduleConfig.__class__.__name__} do not have an attribute {last_pref[0]}."
+        )
+        print("Choices are...")
+        printConfig(node.localConfig)
+        printConfig(node.moduleConfig)
+
+
+def _handle_configure_command(
+    interface: MeshInterface,
+    args: Any,
+    getNode_kwargs: dict[str, Any],
+) -> bool:
+    with open(args.configure[0], encoding="utf8") as file:
+        configuration = yaml.safe_load(file)
+
+        phase1_started = False
+
+        if "owner" in configuration:
+            if not phase1_started:
+                print("Phase 1: Applying non-rebooting configuration...")
+                phase1_started = True
+            owner_name = str(configuration["owner"]).strip()
+            if not owner_name:
+                _cli_exit(
+                    "ERROR: Long Name cannot be empty or contain only whitespace characters"
+                )
+            print(f"Setting device owner to {configuration['owner']}")
+            interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
+                configuration["owner"]
+            )
+            time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+
+        if "owner_short" in configuration:
+            if not phase1_started:
+                print("Phase 1: Applying non-rebooting configuration...")
+                phase1_started = True
+            owner_short_name = str(configuration["owner_short"]).strip()
+            if not owner_short_name:
+                _cli_exit(
+                    "ERROR: Short Name cannot be empty or contain only whitespace characters"
+                )
+            print(f"Setting device owner short to {configuration['owner_short']}")
+            interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
+                long_name=None, short_name=configuration["owner_short"]
+            )
+            time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+
+        if "ownerShort" in configuration:
+            if not phase1_started:
+                print("Phase 1: Applying non-rebooting configuration...")
+                phase1_started = True
+            owner_short_name = str(configuration["ownerShort"]).strip()
+            if not owner_short_name:
+                _cli_exit(
+                    "ERROR: Short Name cannot be empty or contain only whitespace characters"
+                )
+            print(f"Setting device owner short to {configuration['ownerShort']}")
+            interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
+                long_name=None, short_name=configuration["ownerShort"]
+            )
+            time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+
+        if "channel_url" in configuration:
+            if not phase1_started:
+                print("Phase 1: Applying non-rebooting configuration...")
+                phase1_started = True
+            print("Setting channel url to", configuration["channel_url"])
+            interface.getNode(args.dest, **getNode_kwargs).setURL(
+                configuration["channel_url"]
+            )
+            time.sleep(CONFIG_SETURL_DELAY_SECONDS)
+
+        if "channelUrl" in configuration:
+            if not phase1_started:
+                print("Phase 1: Applying non-rebooting configuration...")
+                phase1_started = True
+            print("Setting channel url to", configuration["channelUrl"])
+            interface.getNode(args.dest, **getNode_kwargs).setURL(
+                configuration["channelUrl"]
+            )
+            time.sleep(CONFIG_SETURL_DELAY_SECONDS)
+
+        if "canned_messages" in configuration:
+            if not phase1_started:
+                print("Phase 1: Applying non-rebooting configuration...")
+                phase1_started = True
+            print(
+                "Setting canned message messages to",
+                configuration["canned_messages"],
+            )
+            interface.getNode(args.dest, **getNode_kwargs).set_canned_message(
+                configuration["canned_messages"]
+            )
+            time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+
+        if "ringtone" in configuration:
+            if not phase1_started:
+                print("Phase 1: Applying non-rebooting configuration...")
+                phase1_started = True
+            print("Setting ringtone to", configuration["ringtone"])
+            interface.getNode(args.dest, **getNode_kwargs).set_ringtone(
+                configuration["ringtone"]
+            )
+            time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+
+        if "location" in configuration:
+            if not phase1_started:
+                print("Phase 1: Applying non-rebooting configuration...")
+                phase1_started = True
+            alt = 0
+            lat = 0.0
+            lon = 0.0
+
+            if "alt" in configuration["location"]:
+                alt = int(configuration["location"]["alt"] or 0)
+                print(f"Fixing altitude at {alt} meters")
+            if "lat" in configuration["location"]:
+                lat = float(configuration["location"]["lat"] or 0)
+                print(f"Fixing latitude at {lat} degrees")
+            if "lon" in configuration["location"]:
+                lon = float(configuration["location"]["lon"] or 0)
+                print(f"Fixing longitude at {lon} degrees")
+            print("Setting device position")
+            interface.localNode.setFixedPosition(lat, lon, alt)
+            time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+
+        if phase1_started:
+            print("Phase 1 complete.")
+
+        settings_transaction_started = False
+        if "config" in configuration or "module_config" in configuration:
+            print(
+                "Phase 2: Applying configuration transaction (may trigger device reboot)..."
+            )
+            interface.getNode(
+                args.dest, False, **getNode_kwargs
+            ).beginSettingsTransaction()
+            settings_transaction_started = True
+
+        if "config" in configuration:
+            localConfig = interface.getNode(args.dest, **getNode_kwargs).localConfig
+            for section in configuration["config"]:
+                failed_config_fields: list[str] = []
+                applied = traverseConfig(
+                    section,
+                    configuration["config"][section],
+                    localConfig,
+                    failed_fields=failed_config_fields,
+                )
+                if not applied:
+                    failed_field_msg = (
+                        f" Failing field: {failed_config_fields[0]!r}."
+                        if failed_config_fields
+                        else ""
+                    )
+                    logger.error(
+                        "Failed to apply --configure config section %s%s",
+                        section,
+                        (
+                            f"; failing field={failed_config_fields[0]!r}"
+                            if failed_config_fields
+                            else ""
+                        ),
+                    )
+                    _cli_exit(
+                        f"Failed to apply config section {section!r}.{failed_field_msg} "
+                        "Check field names and values."
+                    )
+                interface.getNode(args.dest, **getNode_kwargs).writeConfig(
+                    meshtastic.util.camel_to_snake(section)
+                )
+            time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+
+        if "module_config" in configuration:
+            moduleConfig = interface.getNode(args.dest, **getNode_kwargs).moduleConfig
+            for section in configuration["module_config"]:
+                failed_module_fields: list[str] = []
+                applied = traverseConfig(
+                    section,
+                    configuration["module_config"][section],
+                    moduleConfig,
+                    failed_fields=failed_module_fields,
+                )
+                if not applied:
+                    failed_field_msg = (
+                        f" Failing field: {failed_module_fields[0]!r}."
+                        if failed_module_fields
+                        else ""
+                    )
+                    logger.error(
+                        "Failed to apply --configure module_config section %s%s",
+                        section,
+                        (
+                            f"; failing field={failed_module_fields[0]!r}"
+                            if failed_module_fields
+                            else ""
+                        ),
+                    )
+                    _cli_exit(
+                        f"Failed to apply module_config section {section!r}.{failed_field_msg} "
+                        "Check field names and values."
+                    )
+                interface.getNode(args.dest, **getNode_kwargs).writeConfig(
+                    meshtastic.util.camel_to_snake(section)
+                )
+            time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+
+        if settings_transaction_started:
+            interface.getNode(
+                args.dest, False, **getNode_kwargs
+            ).commitSettingsTransaction()
+            time.sleep(CONFIG_COMMIT_SETTLE_SECONDS)
+            print(
+                "Configuration transaction committed. Device may reboot to apply changes."
+            )
+
+        if settings_transaction_started:
+            _verify_channel_url = configuration.get("channel_url") or configuration.get(
+                "channelUrl"
+            )
+            _verify_config_fields = configuration.get("config")
+            _verify_module_config_fields = configuration.get("module_config")
+            _reconnect_result = _post_configure_reconnect_and_verify(
+                interface,
+                timeout=CONFIG_RECONNECT_WAIT_SECONDS,
+                node_dest=args.dest,
+                verify_channel_url=_verify_channel_url,
+                verify_config_fields=_verify_config_fields,
+                verify_module_config_fields=_verify_module_config_fields,
+            )
+            if _reconnect_result == _ConfigureReconnectResult.VERIFIED:
+                print(
+                    "Phase 3: Device reconnected, config reloaded, and requested settings verified (field values confirmed)."
+                )
+            elif _reconnect_result == _ConfigureReconnectResult.VERIFICATION_INCOMPLETE:
+                print(
+                    "Phase 3: Device reconnected and config reloaded. "
+                    "Could not fully verify applied settings."
+                )
+            elif _reconnect_result == _ConfigureReconnectResult.CONFIG_RELOAD_FAILED:
+                print(
+                    "Phase 3: Device reconnected but config reload failed. "
+                    "Settings may still be applying."
+                )
+            elif _reconnect_result == _ConfigureReconnectResult.RECONNECT_FAILED:
+                print(
+                    "Phase 3: Device did not reconnect within timeout. "
+                    "Configuration may still be applying."
+                )
+        else:
+            print("Configuration applied (no reboot expected).")
+
+    return settings_transaction_started
+
+
 def onConnected(interface: MeshInterface) -> None:
     """Execute CLI actions specified by parsed command-line arguments using the provided MeshInterface.
 
@@ -1019,49 +1360,8 @@ def onConnected(interface: MeshInterface) -> None:
 
         if args.ota_update:
             closeNow = True
-            waitForAckNak = True
             skip_ack_wait = True
-
-            if not isinstance(interface, meshtastic.tcp_interface.TCPInterface):
-                _cli_exit(
-                    "Error: OTA update currently requires a TCP connection to the node (use --host)."
-                )
-            if args.dest not in {BROADCAST_ADDR, LOCAL_ADDR}:
-                _cli_exit(
-                    "Error: OTA update only supports the directly connected local node; omit --dest or use --dest ^local."
-                )
-            ota_dest = LOCAL_ADDR if args.dest == BROADCAST_ADDR else args.dest
-            waitForAckNak = False
-
-            try:
-                ota = meshtastic.ota.ESP32WiFiOTA(args.ota_update, interface.hostname)
-            except meshtastic.ota.OTAError as e:
-                _cli_exit(f"OTA update failed: {e}")
-
-            print(f"Triggering OTA update on {interface.hostname}...")
-            interface.getNode(
-                ota_dest, requestChannels=False, **getNode_kwargs
-            ).startOTA(mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=ota.hash_bytes())
-
-            print("Waiting for device to reboot into OTA mode...")
-            time.sleep(OTA_REBOOT_WAIT_SECONDS)
-
-            retries = OTA_MAX_RETRIES
-            while retries > 0:
-                try:
-                    ota.update()
-                    break
-
-                except meshtastic.ota.OTATransportError as e:
-                    retries -= 1
-                    if retries == 0:
-                        _cli_exit(f"OTA update failed: {e}")
-
-                    time.sleep(OTA_RETRY_DELAY_SECONDS)
-                except meshtastic.ota.OTAError as e:
-                    _cli_exit(f"OTA update failed: {e}")
-
-            print("\nOTA update completed successfully!")
+            _handle_ota_update(interface, args, getNode_kwargs)
             return
 
         if args.enter_dfu:
@@ -1261,323 +1561,16 @@ def onConnected(interface: MeshInterface) -> None:
         if args.set:
             closeNow = True
             waitForAckNak = True
-            node = interface.getNode(args.dest, False, **getNode_kwargs)
-
-            # Handle the int/float/bool arguments
-            last_pref: list[str] | None = None
-            fields: set[str] = set()
-            any_found = False
-            for pref_item in args.set:
-                if pref_item is None or len(pref_item) < 2:
-                    continue
-                last_pref = pref_item
-                found = False
-                normalized_pref_name = _normalize_pref_name(pref_item[0])
-                field = splitCompoundName(normalized_pref_name)[0]
-                for config in [node.localConfig, node.moduleConfig]:
-                    config_type = config.DESCRIPTOR.fields_by_name.get(field)
-                    if config_type:
-                        if len(config.ListFields()) == 0:
-                            node.requestConfig(
-                                config.DESCRIPTOR.fields_by_name.get(field)
-                            )
-                        found = setPref(config, normalized_pref_name, pref_item[1])
-                        if found:
-                            any_found = True
-                            fields.add(field)
-                            break
-
-            if any_found:
-                print("Writing modified preferences to device")
-                if len(fields) > 1:
-                    print("Using a configuration transaction")
-                    node.beginSettingsTransaction()
-                for field in fields:
-                    print(f"Writing {field} configuration to device")
-                    node.writeConfig(field)
-                if len(fields) > 1:
-                    node.commitSettingsTransaction()
-            elif last_pref is not None:
-                print(
-                    f"{node.localConfig.__class__.__name__} and {node.moduleConfig.__class__.__name__} do not have an attribute {last_pref[0]}."
-                )
-                print("Choices are...")
-                printConfig(node.localConfig)
-                printConfig(node.moduleConfig)
+            _handle_set_command(interface, args, getNode_kwargs)
 
         if args.configure:
-            with open(args.configure[0], encoding="utf8") as file:
-                configuration = yaml.safe_load(file)
-                closeNow = True
-
-                # ------------------------------------------------------------------
-                # Phase 1: Non-rebooting configuration
-                # ------------------------------------------------------------------
-                phase1_started = False
-
-                if "owner" in configuration:
-                    if not phase1_started:
-                        print("Phase 1: Applying non-rebooting configuration...")
-                        phase1_started = True
-                    # Validate owner name before setting
-                    owner_name = str(configuration["owner"]).strip()
-                    if not owner_name:
-                        _cli_exit(
-                            "ERROR: Long Name cannot be empty or contain only whitespace characters"
-                        )
-                    print(f"Setting device owner to {configuration['owner']}")
-                    waitForAckNak = True
-                    interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
-                        configuration["owner"]
-                    )
-                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-                if "owner_short" in configuration:
-                    if not phase1_started:
-                        print("Phase 1: Applying non-rebooting configuration...")
-                        phase1_started = True
-                    # Validate owner short name before setting
-                    owner_short_name = str(configuration["owner_short"]).strip()
-                    if not owner_short_name:
-                        _cli_exit(
-                            "ERROR: Short Name cannot be empty or contain only whitespace characters"
-                        )
-                    print(
-                        f"Setting device owner short to {configuration['owner_short']}"
-                    )
-                    waitForAckNak = True
-                    interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
-                        long_name=None, short_name=configuration["owner_short"]
-                    )
-                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-                if "ownerShort" in configuration:
-                    if not phase1_started:
-                        print("Phase 1: Applying non-rebooting configuration...")
-                        phase1_started = True
-                    # Validate owner short name before setting
-                    owner_short_name = str(configuration["ownerShort"]).strip()
-                    if not owner_short_name:
-                        _cli_exit(
-                            "ERROR: Short Name cannot be empty or contain only whitespace characters"
-                        )
-                    print(
-                        f"Setting device owner short to {configuration['ownerShort']}"
-                    )
-                    waitForAckNak = True
-                    interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
-                        long_name=None, short_name=configuration["ownerShort"]
-                    )
-                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-                if "channel_url" in configuration:
-                    if not phase1_started:
-                        print("Phase 1: Applying non-rebooting configuration...")
-                        phase1_started = True
-                    print("Setting channel url to", configuration["channel_url"])
-                    interface.getNode(args.dest, **getNode_kwargs).setURL(
-                        configuration["channel_url"]
-                    )
-                    time.sleep(CONFIG_SETURL_DELAY_SECONDS)
-
-                if "channelUrl" in configuration:
-                    if not phase1_started:
-                        print("Phase 1: Applying non-rebooting configuration...")
-                        phase1_started = True
-                    print("Setting channel url to", configuration["channelUrl"])
-                    interface.getNode(args.dest, **getNode_kwargs).setURL(
-                        configuration["channelUrl"]
-                    )
-                    time.sleep(CONFIG_SETURL_DELAY_SECONDS)
-
-                if "canned_messages" in configuration:
-                    if not phase1_started:
-                        print("Phase 1: Applying non-rebooting configuration...")
-                        phase1_started = True
-                    print(
-                        "Setting canned message messages to",
-                        configuration["canned_messages"],
-                    )
-                    interface.getNode(args.dest, **getNode_kwargs).set_canned_message(
-                        configuration["canned_messages"]
-                    )
-                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-                if "ringtone" in configuration:
-                    if not phase1_started:
-                        print("Phase 1: Applying non-rebooting configuration...")
-                        phase1_started = True
-                    print("Setting ringtone to", configuration["ringtone"])
-                    interface.getNode(args.dest, **getNode_kwargs).set_ringtone(
-                        configuration["ringtone"]
-                    )
-                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-                if "location" in configuration:
-                    if not phase1_started:
-                        print("Phase 1: Applying non-rebooting configuration...")
-                        phase1_started = True
-                    alt = 0
-                    lat = 0.0
-                    lon = 0.0
-                    localConfig = interface.localNode.localConfig
-
-                    if "alt" in configuration["location"]:
-                        alt = int(configuration["location"]["alt"] or 0)
-                        print(f"Fixing altitude at {alt} meters")
-                    if "lat" in configuration["location"]:
-                        lat = float(configuration["location"]["lat"] or 0)
-                        print(f"Fixing latitude at {lat} degrees")
-                    if "lon" in configuration["location"]:
-                        lon = float(configuration["location"]["lon"] or 0)
-                        print(f"Fixing longitude at {lon} degrees")
-                    print("Setting device position")
-                    interface.localNode.setFixedPosition(lat, lon, alt)
-                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-                if phase1_started:
-                    print("Phase 1 complete.")
-
-                # ------------------------------------------------------------------
-                # Phase 2: Reboot-capable configuration transaction
-                # ------------------------------------------------------------------
-                settings_transaction_started = False
-                if "config" in configuration or "module_config" in configuration:
-                    print(
-                        "Phase 2: Applying configuration transaction (may trigger device reboot)..."
-                    )
-                    interface.getNode(
-                        args.dest, False, **getNode_kwargs
-                    ).beginSettingsTransaction()
-                    settings_transaction_started = True
-
-                if "config" in configuration:
-                    localConfig = interface.getNode(
-                        args.dest, **getNode_kwargs
-                    ).localConfig
-                    for section in configuration["config"]:
-                        failed_config_fields: list[str] = []
-                        applied = traverseConfig(
-                            section,
-                            configuration["config"][section],
-                            localConfig,
-                            failed_fields=failed_config_fields,
-                        )
-                        if not applied:
-                            failed_field_msg = (
-                                f" Failing field: {failed_config_fields[0]!r}."
-                                if failed_config_fields
-                                else ""
-                            )
-                            logger.error(
-                                "Failed to apply --configure config section %s%s",
-                                section,
-                                (
-                                    f"; failing field={failed_config_fields[0]!r}"
-                                    if failed_config_fields
-                                    else ""
-                                ),
-                            )
-                            _cli_exit(
-                                f"Failed to apply config section {section!r}.{failed_field_msg} "
-                                "Check field names and values."
-                            )
-                        interface.getNode(args.dest, **getNode_kwargs).writeConfig(
-                            meshtastic.util.camel_to_snake(section)
-                        )
-                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-                if "module_config" in configuration:
-                    moduleConfig = interface.getNode(
-                        args.dest, **getNode_kwargs
-                    ).moduleConfig
-                    for section in configuration["module_config"]:
-                        failed_module_fields: list[str] = []
-                        applied = traverseConfig(
-                            section,
-                            configuration["module_config"][section],
-                            moduleConfig,
-                            failed_fields=failed_module_fields,
-                        )
-                        if not applied:
-                            failed_field_msg = (
-                                f" Failing field: {failed_module_fields[0]!r}."
-                                if failed_module_fields
-                                else ""
-                            )
-                            logger.error(
-                                "Failed to apply --configure module_config section %s%s",
-                                section,
-                                (
-                                    f"; failing field={failed_module_fields[0]!r}"
-                                    if failed_module_fields
-                                    else ""
-                                ),
-                            )
-                            _cli_exit(
-                                f"Failed to apply module_config section {section!r}.{failed_field_msg} "
-                                "Check field names and values."
-                            )
-                        interface.getNode(args.dest, **getNode_kwargs).writeConfig(
-                            meshtastic.util.camel_to_snake(section)
-                        )
-                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-                if settings_transaction_started:
-                    interface.getNode(
-                        args.dest, False, **getNode_kwargs
-                    ).commitSettingsTransaction()
-                    time.sleep(CONFIG_COMMIT_SETTLE_SECONDS)
-                    print(
-                        "Configuration transaction committed. Device may reboot to apply changes."
-                    )
-
-                # ------------------------------------------------------------------
-                # Phase 3: Reconnect and verify
-                # ------------------------------------------------------------------
-                if settings_transaction_started:
-                    _verify_channel_url = configuration.get(
-                        "channel_url"
-                    ) or configuration.get("channelUrl")
-                    _verify_config_fields = configuration.get("config")
-                    _verify_module_config_fields = configuration.get("module_config")
-                    _reconnect_result = _post_configure_reconnect_and_verify(
-                        interface,
-                        timeout=CONFIG_RECONNECT_WAIT_SECONDS,
-                        node_dest=args.dest,
-                        verify_channel_url=_verify_channel_url,
-                        verify_config_fields=_verify_config_fields,
-                        verify_module_config_fields=_verify_module_config_fields,
-                    )
-                    if _reconnect_result == _ConfigureReconnectResult.VERIFIED:
-                        print(
-                            "Phase 3: Device reconnected, config reloaded, and requested settings verified (field values confirmed)."
-                        )
-                    elif (
-                        _reconnect_result
-                        == _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-                    ):
-                        print(
-                            "Phase 3: Device reconnected and config reloaded. "
-                            "Could not fully verify applied settings."
-                        )
-                    elif (
-                        _reconnect_result
-                        == _ConfigureReconnectResult.CONFIG_RELOAD_FAILED
-                    ):
-                        print(
-                            "Phase 3: Device reconnected but config reload failed. "
-                            "Settings may still be applying."
-                        )
-                    elif (
-                        _reconnect_result == _ConfigureReconnectResult.RECONNECT_FAILED
-                    ):
-                        print(
-                            "Phase 3: Device did not reconnect within timeout. "
-                            "Configuration may still be applying."
-                        )
-                else:
-                    print("Configuration applied (no reboot expected).")
+            closeNow = True
+            waitForAckNak = True
+            _settings_transaction_started = _handle_configure_command(
+                interface, args, getNode_kwargs
+            )
+            if _settings_transaction_started:
+                waitForAckNak = True
 
         if args.export_config:
             if args.dest != BROADCAST_ADDR:
