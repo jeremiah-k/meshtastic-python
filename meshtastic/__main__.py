@@ -293,70 +293,13 @@ def _post_configure_reconnect_and_verify(
         return _ConfigureReconnectResult.VERIFIED
 
     try:
-        target_node = interface.getNode(node_dest)
-
-        if verify_channel_url:
-            device_url = target_node.getURL()
-            if not device_url:
-                logger.warning("Channel URL verification: getURL() returned empty.")
-                return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-            if not _verify_channel_url_match(verify_channel_url, device_url):
-                logger.warning(
-                    "Channel URL verification: device URL does not match requested URL."
-                )
-                return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-            logger.info("Channel URL verified (values match).")
-
-        if verify_config_fields:
-            for section_name, yaml_values in verify_config_fields.items():
-                section_snake = meshtastic.util.camel_to_snake(section_name)
-                if not target_node.localConfig.HasField(section_snake):
-                    logger.warning(
-                        "Config section %r not present in localConfig after reload.",
-                        section_name,
-                    )
-                    return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-                proto_section = getattr(target_node.localConfig, section_snake)
-                mismatches = _verify_requested_fields(
-                    yaml_values, proto_section, section_name
-                )
-                if mismatches:
-                    logger.warning(
-                        "Config section %r field mismatches: %s",
-                        section_name,
-                        ", ".join(mismatches),
-                    )
-                    return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-                logger.info(
-                    "Config section %r verified (all requested field values match).",
-                    section_name,
-                )
-
-        if verify_module_config_fields:
-            for section_name, yaml_values in verify_module_config_fields.items():
-                section_snake = meshtastic.util.camel_to_snake(section_name)
-                if not target_node.moduleConfig.HasField(section_snake):
-                    logger.warning(
-                        "Module config section %r not present in moduleConfig after reload.",
-                        section_name,
-                    )
-                    return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-                proto_section = getattr(target_node.moduleConfig, section_snake)
-                mismatches = _verify_requested_fields(
-                    yaml_values, proto_section, section_name
-                )
-                if mismatches:
-                    logger.warning(
-                        "Module config section %r field mismatches: %s",
-                        section_name,
-                        ", ".join(mismatches),
-                    )
-                    return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-                logger.info(
-                    "Module config section %r verified (all requested field values match).",
-                    section_name,
-                )
-
+        result = _verify_post_reconnect_config(
+            interface,
+            node_dest,
+            verify_channel_url=verify_channel_url,
+            verify_config_fields=verify_config_fields,
+            verify_module_config_fields=verify_module_config_fields,
+        )
     except Exception:
         logger.warning(
             "Post-reconnect verification failed unexpectedly.",
@@ -364,105 +307,74 @@ def _post_configure_reconnect_and_verify(
         )
         return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
 
-    return _ConfigureReconnectResult.VERIFIED
+    return result
 
 
-# COMPAT_STABLE_SHIM: historical snake_case helper name.
-def support_info() -> None:
-    """Compatibility alias for supportInfo()."""
-    supportInfo()
-
-
-def onReceive(packet: dict[str, Any], interface: MeshInterface) -> None:
-    """Handle an incoming mesh packet, optionally send a text reply, and close the interface when appropriate.
-
-    If the CLI initiated a text send and the incoming packet is a text message addressed
-    to this node, the interface will be closed. If reply mode is enabled and the
-    decoded payload contains text, a reply containing the received text plus the packet's
-    `rxSnr` and `hopLimit` will be sent and printed.
-
-    Parameters
-    ----------
-    packet : dict[str, Any]
-        Incoming packet. Expected keys include `"decoded"` (dict or None,
-        with keys like `"text"` and `"portnum"`), `"to"` (destination node number),
-        `"rxSnr"`, and `"hopLimit"`.
-    interface : MeshInterface
-        Interface used to send replies and to close the connection.
-    """
-    args = mt_config.args
-    try:
-        d = packet.get("decoded")
-        logger.debug("in onReceive() d:%s", d)
-
-        # Exit once we receive a reply
-        is_text_reply = (
-            args
-            and args.sendtext
-            and d is not None
-            and interface.myInfo is not None
-            and packet.get("to") == interface.myInfo.my_node_num
-            and d.get("portnum")
-            == portnums_pb2.PortNum.Name(portnums_pb2.PortNum.TEXT_MESSAGE_APP)
+def _verify_config_sections(
+    config_fields: dict[str, dict[str, Any]],
+    proto_config: Any,
+    label: str,
+) -> bool:
+    for section_name, yaml_values in config_fields.items():
+        section_snake = meshtastic.util.camel_to_snake(section_name)
+        if not proto_config.HasField(section_snake):  # type: ignore[arg-type]
+            logger.warning(
+                "%s section %r not present after reload.",
+                label,
+                section_name,
+            )
+            return False
+        proto_section = getattr(proto_config, section_snake)
+        mismatches = _verify_requested_fields(yaml_values, proto_section, section_name)
+        if mismatches:
+            logger.warning(
+                "%s section %r field mismatches: %s",
+                label,
+                section_name,
+                ", ".join(mismatches),
+            )
+            return False
+        logger.info(
+            "%s section %r verified (all requested field values match).",
+            label,
+            section_name,
         )
-        if is_text_reply:
-            interface.close()  # after running command then exit
-
-        # Reply to every received message with some stats
-        if d is not None and args and args.reply:
-            msg = d.get("text")
-            if msg:
-                rxSnr = packet["rxSnr"]
-                hopLimit = packet["hopLimit"]
-                print(f"message: {msg}")
-                reply = f"got msg '{msg}' with rxSnr: {rxSnr} and hopLimit: {hopLimit}"
-                print("Sending reply: ", reply)
-                interface.sendText(reply)
-
-    except Exception as ex:
-        logger.warning("Error processing received packet: %s", ex)
+    return True
 
 
-def onConnection(interface: MeshInterface, topic: Any = pub.AUTO_TOPIC) -> None:
-    """Notify about a change in the radio connection state.
+def _verify_post_reconnect_config(
+    interface: MeshInterface,
+    node_dest: str,
+    *,
+    verify_channel_url: str | None = None,
+    verify_config_fields: dict[str, dict[str, Any]] | None = None,
+    verify_module_config_fields: dict[str, dict[str, Any]] | None = None,
+) -> _ConfigureReconnectResult:
+    target_node = interface.getNode(node_dest)
 
-    Prints a "Connection changed: <name>" message where <name> is obtained from
-    topic.getName() if available, otherwise str(topic).
+    if verify_channel_url:
+        device_url = target_node.getURL()
+        if not device_url:
+            logger.warning("Channel URL verification: getURL() returned empty.")
+            return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+        if not _verify_channel_url_match(verify_channel_url, device_url):
+            logger.warning(
+                "Channel URL verification: device URL does not match requested URL."
+            )
+            return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+        logger.info("Channel URL verified (values match).")
 
-    Parameters
-    ----------
-    interface : MeshInterface
-        The interface whose connection state changed.
-    topic : Any
-        Event topic or identifier; if it provides `getName()` that
-        value is used for display. (Default value = pub.AUTO_TOPIC)
-    """
-    _ = interface
-    topic_name = topic.getName() if hasattr(topic, "getName") else str(topic)
-    print(f"Connection changed: {topic_name}")
+    if verify_config_fields and not _verify_config_sections(
+        verify_config_fields, target_node.localConfig, "Config"
+    ):
+        return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
 
+    if verify_module_config_fields and not _verify_config_sections(
+        verify_module_config_fields, target_node.moduleConfig, "Module config"
+    ):
+        return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
 
-def checkChannel(interface: MeshInterface, channelIndex: int) -> bool:
-    """Determine whether the local node has the channel at the given index enabled.
-
-    Parameters
-    ----------
-    interface : MeshInterface
-        The mesh interface to query for channel information.
-    channelIndex : int
-        The index of the channel to check.
-
-    Returns
-    -------
-    bool
-        `True` if the channel exists and its role is not DISABLED, `False` otherwise.
-    """
-    if hasattr(type(interface.localNode), "getChannelCopyByChannelIndex"):
-        ch = interface.localNode.getChannelCopyByChannelIndex(channelIndex)
-    else:
-        ch = interface.localNode.getChannelByChannelIndex(channelIndex)
-    logger.debug("ch:%s", ch)
-    return bool(ch and ch.role != channel_pb2.Channel.Role.DISABLED)
+    return _ConfigureReconnectResult.VERIFIED
 
 
 def _normalize_pref_name(comp_name: str) -> str:

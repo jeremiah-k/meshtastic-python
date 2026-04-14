@@ -6,7 +6,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from meshtastic.node_runtime.seturl_runtime import (
-    _SetUrlAddOnlyPlanner,
     _SetUrlParsedInput,
     _SetUrlReplacePlanner,
 )
