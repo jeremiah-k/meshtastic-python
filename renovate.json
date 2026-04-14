@@ -45,7 +45,7 @@
     },
     {
       "description": "Automerge meshtasticd Docker image updates (digest + version)",
-      "matchManagers": ["regex"],
+      "matchManagers": ["custom.regex"],
       "matchDepNames": ["meshtastic/meshtasticd"],
       "matchUpdateTypes": ["minor", "patch", "pin", "digest", "pinDigest"],
       "automerge": true
@@ -55,9 +55,9 @@
     {
       "customType": "regex",
       "description": "Track meshtasticd Docker image in CI workflows and shell scripts",
-      "fileMatch": [
-        "^\\.github/workflows/[^/]+\\.ya?ml$",
-        "^bin/run-.*-with-meshtasticd\\.sh$"
+      "managerFilePatterns": [
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/",
+        "/^bin/run-.*-with-meshtasticd\\.sh$/"
       ],
       "matchStrings": [
         "meshtastic/meshtasticd:(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)"
