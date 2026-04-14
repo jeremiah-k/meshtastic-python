@@ -1424,11 +1424,13 @@ def onConnected(interface: MeshInterface) -> None:
         if args.reboot:
             closeNow = True
             waitForAckNak = True
+            skip_ack_wait = True
             interface.getNode(args.dest, False, **getNode_kwargs).reboot()
 
         if args.reboot_ota:
             closeNow = True
             waitForAckNak = True
+            skip_ack_wait = True
             interface.getNode(args.dest, False, **getNode_kwargs).rebootOTA()
 
         if args.ota_update:
@@ -1440,11 +1442,13 @@ def onConnected(interface: MeshInterface) -> None:
         if args.enter_dfu:
             closeNow = True
             waitForAckNak = True
+            skip_ack_wait = True
             interface.getNode(args.dest, False, **getNode_kwargs).enterDFUMode()
 
         if args.shutdown:
             closeNow = True
             waitForAckNak = True
+            skip_ack_wait = True
             interface.getNode(args.dest, False, **getNode_kwargs).shutdown()
 
         if args.device_metadata:
@@ -1468,6 +1472,8 @@ def onConnected(interface: MeshInterface) -> None:
             waitForAckNak = True
 
             full = bool(args.factory_reset_device)
+            if full:
+                skip_ack_wait = True
             interface.getNode(args.dest, False, **getNode_kwargs).factoryReset(
                 full=full
             )

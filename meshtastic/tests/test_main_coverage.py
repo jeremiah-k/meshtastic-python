@@ -568,6 +568,39 @@ def test_main_factory_reset_device(capsys: pytest.CaptureFixture[str]) -> None:
         mo.assert_called()
 
 
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_factory_reset_device_ack_skips_wait(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Full factory reset should skip trailing ACK waits because transport drops."""
+    sys.argv = ["", "--factory-reset-device", "--ack"]
+    mt_config.args = sys.argv  # type: ignore[assignment]
+
+    mocked_node = MagicMock()
+
+    def mock_factoryReset(full: bool = False) -> None:
+        print(f"inside mocked factoryReset full={full}")
+
+    mocked_node.factoryReset.side_effect = mock_factoryReset
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    iface.getNode.return_value = mocked_node
+    mocked_node.iface = iface
+
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        main()
+        out, _err = capsys.readouterr()
+        assert "Connected to radio" in out
+        assert "inside mocked factoryReset full=True" in out
+        assert "Waiting for an acknowledgment from remote node" not in out
+
+    mocked_node.factoryReset.assert_called_once_with(full=True)
+    iface.waitForAckNak.assert_not_called()
+
+
 # =============================================================================
 # Wait to Disconnect
 # =============================================================================

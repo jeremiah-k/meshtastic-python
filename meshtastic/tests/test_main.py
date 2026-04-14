@@ -1117,6 +1117,46 @@ def test_main_reboot_ota(capsys: pytest.CaptureFixture[str]) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@pytest.mark.parametrize(
+    ("args", "method_name", "marker"),
+    [
+        (["--reboot", "--ack"], "reboot", "inside mocked reboot"),
+        (["--enter-dfu", "--ack"], "enterDFUMode", "inside mocked enterDFU"),
+        (["--shutdown", "--ack"], "shutdown", "inside mocked shutdown"),
+    ],
+)
+def test_rebooting_commands_with_ack_skip_wait(
+    args: list[str],
+    method_name: str,
+    marker: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Rebooting commands should skip trailing ACK waits to avoid hangs."""
+    sys.argv = ["", *args]
+    mt_config.args = sys.argv  # type: ignore[assignment]
+
+    mocked_node = MagicMock(autospec=Node)
+    getattr(mocked_node, method_name).side_effect = lambda: print(marker)
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    iface.getNode.return_value = mocked_node
+    mocked_node.iface = iface
+
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        main()
+        out, err = capsys.readouterr()
+        assert "Connected to radio" in out
+        assert marker in out
+        assert "Waiting for an acknowledgment from remote node" not in out
+        assert err == ""
+
+    iface.waitForAckNak.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_main_shutdown(capsys: pytest.CaptureFixture[str]) -> None:
     """Test --shutdown."""
     sys.argv = ["", "--shutdown"]
