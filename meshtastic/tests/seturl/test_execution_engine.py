@@ -299,6 +299,7 @@ class TestSetUrlExecutionEngine:
         mock_local_node.channels = [
             _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "already_done"),
             _make_channel(1, channel_pb2.Channel.Role.SECONDARY, "needs_write"),
+            _make_channel(2, channel_pb2.Channel.Role.DISABLED),
         ]
 
         staged_0 = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "already_done")

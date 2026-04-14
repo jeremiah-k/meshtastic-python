@@ -208,6 +208,13 @@ class TestSetUrlTransactionCoordinator:
 
         coordinator._execution_engine.executeReplaceAll = _failing_then_check
 
+        def _restore_channels():
+            mock_local_node_with_reconnect.channels = [desired_ch]
+
+        mock_local_node_with_reconnect.iface.waitForConfig.side_effect = (
+            _restore_channels
+        )
+
         coordinator._apply_replace_all()
         assert call_count == 1
 
@@ -263,6 +270,16 @@ class TestSetUrlTransactionCoordinator:
             assert 1 not in skip_channel_indices
 
         coordinator._execution_engine.executeReplaceAll = _first_fails_second_succeeds
+
+        def _restore_channels():
+            mock_local_node_with_reconnect.channels = [
+                desired_0,
+                _make_channel(1, channel_pb2.Channel.Role.DISABLED),
+            ]
+
+        mock_local_node_with_reconnect.iface.waitForConfig.side_effect = (
+            _restore_channels
+        )
 
         coordinator._apply_replace_all()
         assert call_count == 2
