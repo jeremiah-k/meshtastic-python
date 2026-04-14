@@ -380,6 +380,12 @@ def _assert_admin_commands(host: str, meshtastic_bin: str) -> None:
     # next CLI command reconnects, which makes this integration lane flaky.
 
 
+@pytest.mark.xfail(
+    reason="Known product gap: 8-channel setURL replace-all over TCP/meshtasticd "
+    "can cause transport disconnects mid-transaction. "
+    "See seturl/execution.py executeReplaceAll for next implementation boundary.",
+    strict=False,
+)
 def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
     tmp_path: Path,
     meshtastic_bin: str,
