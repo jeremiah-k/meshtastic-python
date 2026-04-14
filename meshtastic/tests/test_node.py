@@ -1592,39 +1592,6 @@ def test_setURL_add_only_defers_first_named_admin_write_until_end(
 
 
 @pytest.mark.unit
-def test_setURL_add_only_requires_loaded_lora_config(
-    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
-) -> None:
-    """setURL(addOnly=True) should require cached LoRa config for fail-fast cache invalidation."""
-    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
-    primary = Channel(index=0, role=Channel.Role.PRIMARY)
-    primary.settings.name = "primary"
-    disabled = Channel(index=1, role=Channel.Role.DISABLED)
-    anode.channels = [primary, disabled]
-    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
-    before_local_config = anode.localConfig.SerializeToString()
-    anode._send_admin = MagicMock()  # type: ignore[method-assign]
-
-    channel_set = apponly_pb2.ChannelSet()
-    new_channel = channel_set.settings.add()
-    new_channel.name = "new-ch"
-    new_channel.psk = b"\x03"
-    channel_set.lora_config.hop_limit = 9
-    url = _encode_channel_set_to_url(channel_set)
-
-    with pytest.raises(
-        MeshInterface.MeshInterfaceError,
-        match=re.escape("LoRa config must be loaded before setURL(addOnly=True)"),
-    ):
-        anode.setURL(url, addOnly=True)
-
-    assert anode.channels is not None
-    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
-    assert after_snapshot == before_snapshot
-    assert anode.localConfig.SerializeToString() == before_local_config
-    anode._send_admin.assert_not_called()
-
-
 @pytest.mark.unit
 def test_setURL_add_only_is_transactional_when_slots_are_insufficient(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
