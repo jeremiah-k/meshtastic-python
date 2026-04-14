@@ -115,7 +115,7 @@ class TestSetUrlTransactionCoordinator:
             state.lora_write_started = True
             raise RuntimeError("simulated write timeout")
 
-        coordinator._execution_engine.executeAddOnly = _failing_execute
+        coordinator._execution_engine.executeAddOnly = _failing_execute  # type: ignore[method-assign]
 
         with pytest.raises(RuntimeError, match="simulated write timeout"):
             coordinator._apply_add_only()
@@ -154,7 +154,7 @@ class TestSetUrlTransactionCoordinator:
             state.lora_write_started = False
             raise RuntimeError("simulated write timeout")
 
-        coordinator._execution_engine.executeAddOnly = _failing_execute
+        coordinator._execution_engine.executeAddOnly = _failing_execute  # type: ignore[method-assign]
 
         with pytest.raises(RuntimeError, match="simulated write timeout"):
             coordinator._apply_add_only()

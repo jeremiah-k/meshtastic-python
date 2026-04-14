@@ -1861,7 +1861,9 @@ def test_main_configure_with_snake_case(
         # assert re.search(r"Fixing latitude", out, re.MULTILINE)
         # assert re.search(r"Fixing longitude", out, re.MULTILINE)
         # assert re.search(r"Set location_share to LocEnabled", out, re.MULTILINE)
-        assert re.search(r"Writing modified configuration to device", out, re.MULTILINE)
+        assert re.search(
+            r"Configuration applied \(no reboot expected\)", out, re.MULTILINE
+        )
         assert err == ""
         mo.assert_called()
 
@@ -1901,7 +1903,7 @@ def test_main_configure_with_camel_case_keys(
             # assert re.search(r"Fixing latitude", out, re.MULTILINE)
             # assert re.search(r"Fixing longitude", out, re.MULTILINE)
             assert re.search(
-                r"Writing modified configuration to device", out, re.MULTILINE
+                r"Configuration applied \(no reboot expected\)", out, re.MULTILINE
             )
             assert err == ""
             mo.assert_called()
@@ -3284,7 +3286,7 @@ def test_main_export_config_and_configure_round_trip_nonstandard(
 
     out, err = capsys.readouterr()
     assert re.search(r"Exported configuration to", out, re.MULTILINE)
-    assert re.search(r"Writing modified configuration to device", out, re.MULTILINE)
+    assert re.search(r"Configuration transaction committed", out, re.MULTILINE)
     assert err == ""
 
 
