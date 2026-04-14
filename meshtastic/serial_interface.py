@@ -25,8 +25,13 @@ DEFAULT_BAUD_RATE = 115200
 SERIAL_READ_TIMEOUT = 0.5
 """Default read timeout for serial operations (seconds)."""
 
-SERIAL_WRITE_TIMEOUT = 0.5
-"""Default write timeout for serial operations (seconds)."""
+SERIAL_WRITE_TIMEOUT = 3.0
+"""Default write timeout for serial operations (seconds).
+
+Increased from 0.5s to accommodate rapid-fire admin messages during
+setURL replace-all operations, which write up to 8 channel snapshots
+plus LoRa config in quick succession over serial connections.
+"""
 
 SERIAL_SETTLING_DELAY = 0.1
 """Delay for serial port operations to settle (seconds)."""
@@ -64,9 +69,7 @@ class SerialInterface(StreamInterface):
         if len(ports) == 0:
             return None
         if len(ports) > 1:
-            message: str = (
-                "Multiple serial ports were detected; one serial port must be specified with '--port'.\n"
-            )
+            message: str = "Multiple serial ports were detected; one serial port must be specified with '--port'.\n"
             message += (
                 "  Auto-detection cannot disambiguate when multiple compatible devices "
                 "or overlapping USB VID/PID aliases are present.\n"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -24,6 +25,13 @@ if TYPE_CHECKING:
     from meshtastic.node import Node
 
 logger = logging.getLogger(__name__)
+
+CHANNEL_WRITE_PACE_SECONDS = 0.3
+"""Delay between successive channel snapshot writes to avoid overwhelming the
+device's serial input buffer.  The firmware processes each admin message
+(write to flash, reconfigure radio) and cannot drain the host-side serial
+buffer fast enough when messages arrive with only the default 0.1 s
+post-write sleep."""
 
 
 @dataclass
@@ -107,13 +115,15 @@ class _SetUrlExecutionEngine:
         state: _SetUrlAddOnlyExecutionState,
     ) -> None:
         """Execute addOnly writes in transactional order."""
-        for staged_channel, channel_name in plan.channels_to_write:
+        for i, (staged_channel, channel_name) in enumerate(plan.channels_to_write):
             if (
                 plan.deferred_add_only_admin_channel is not None
                 and staged_channel.index
                 == plan.deferred_add_only_admin_channel[0].index
             ):
                 continue
+            if i > 0:
+                time.sleep(CHANNEL_WRITE_PACE_SECONDS)
             logger.info("Adding new channel '%s' to device", channel_name)
             self._node._write_channel_snapshot(  # noqa: SLF001
                 staged_channel,
@@ -167,9 +177,11 @@ class _SetUrlExecutionEngine:
             self._node._raise_interface_error(  # noqa: SLF001
                 "Channel cache changed before replace-all write; aborting transaction."
             )
-        for staged_channel in plan.staged_channels:
+        for i, staged_channel in enumerate(plan.staged_channels):
             if staged_channel.index in deferred_channel_indexes:
                 continue
+            if i > 0:
+                time.sleep(CHANNEL_WRITE_PACE_SECONDS)
             logger.debug(
                 "Writing channel index=%s role=%s name=%s",
                 staged_channel.index,
@@ -191,6 +203,7 @@ class _SetUrlExecutionEngine:
             self._cache_manager.apply_lora_success(parsed_input.channel_set.lora_config)
 
         if plan.deferred_new_named_admin_channel is not None:
+            time.sleep(CHANNEL_WRITE_PACE_SECONDS)
             logger.debug(
                 "Writing deferred admin channel index=%s role=%s name=%s",
                 plan.deferred_new_named_admin_channel.index,
@@ -220,6 +233,7 @@ class _SetUrlExecutionEngine:
             )
 
         if plan.deferred_previous_admin_slot_channel is not None:
+            time.sleep(CHANNEL_WRITE_PACE_SECONDS)
             updated_admin_index_for_write = admin_context.admin_index_for_write
             if plan.deferred_new_named_admin_channel is not None:
                 updated_admin_index_for_write = (

@@ -107,6 +107,11 @@ logger = logging.getLogger(__name__)
 # Delay after applying configuration changes (owner, channel, etc.)
 CONFIG_APPLY_DELAY_SECONDS = 0.5
 
+# Delay after setURL operations, which write up to 8 channel snapshots
+# plus LoRa config; the device needs extra time to commit all changes
+# before accepting further admin messages.
+CONFIG_SETURL_DELAY_SECONDS = 2.0
+
 # Delay between GPIO watch iterations
 GPIO_WATCH_INTERVAL_SECONDS = 1.0
 
@@ -1218,14 +1223,14 @@ def onConnected(interface: MeshInterface) -> None:
                     interface.getNode(args.dest, **getNode_kwargs).setURL(
                         configuration["channel_url"]
                     )
-                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+                    time.sleep(CONFIG_SETURL_DELAY_SECONDS)
 
                 if "channelUrl" in configuration:
                     print("Setting channel url to", configuration["channelUrl"])
                     interface.getNode(args.dest, **getNode_kwargs).setURL(
                         configuration["channelUrl"]
                     )
-                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+                    time.sleep(CONFIG_SETURL_DELAY_SECONDS)
 
                 if "canned_messages" in configuration:
                     print(

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from meshtastic.node_runtime.seturl.cache import _SetUrlCacheManager
 from meshtastic.node_runtime.seturl.context import _SetUrlAdminContext
 from meshtastic.node_runtime.seturl.execution import (
+    CHANNEL_WRITE_PACE_SECONDS,
     _SetUrlAddOnlyExecutionState,
     _SetUrlReplaceExecutionState,
 )
@@ -85,10 +87,12 @@ class _SetUrlRollbackEngine:
         rollback_failed = False
 
         # Rollback channels
-        for index in channel_rollback_order:
+        for i, index in enumerate(channel_rollback_order):
             rollback_channel = get_channel_snapshot(index)
             if rollback_channel is None:
                 continue
+            if i > 0:
+                time.sleep(CHANNEL_WRITE_PACE_SECONDS)
             rollback_succeeded = False
             last_rollback_error: Exception | None = None
             for rollback_admin_index in rollback_admin_indexes:
