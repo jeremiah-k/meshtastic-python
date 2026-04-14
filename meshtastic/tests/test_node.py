@@ -1595,7 +1595,7 @@ def test_setURL_add_only_defers_first_named_admin_write_until_end(
 def test_setURL_add_only_requires_loaded_lora_config(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """setURL(addOnly=True) should require cached LoRa config so rollback is possible."""
+    """setURL(addOnly=True) should require cached LoRa config for fail-fast cache invalidation."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
     primary = Channel(index=0, role=Channel.Role.PRIMARY)
     primary.settings.name = "primary"
@@ -1670,10 +1670,10 @@ def test_setURL_add_only_is_transactional_when_slots_are_insufficient(
 
 
 @pytest.mark.unit
-def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_failure(
+def test_setURL_add_only_uses_snapshotted_admin_index_and_fails_fast_on_write_failure(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """setURL(addOnly=True) should keep using pre-mutation admin path and rollback local channel state."""
+    """setURL(addOnly=True) should keep using pre-mutation admin path and invalidate caches on failure."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
 
     primary = Channel(index=0, role=Channel.Role.PRIMARY)
@@ -1685,10 +1685,8 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
     anode.localConfig.lora.hop_limit = 3
     ensure_session_key_spy = MagicMock(wraps=anode.ensureSessionKey)
     anode.ensureSessionKey = ensure_session_key_spy  # type: ignore[method-assign]
-    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
 
     staged_writes: list[tuple[int, str, int | None]] = []
-    rollback_writes: list[tuple[int, int | None]] = []
 
     def _send_admin_with_staged_write_failure(
         msg: admin_pb2.AdminMessage,
@@ -1702,14 +1700,8 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
                 staged_writes.append(
                     (msg.set_channel.index, msg.set_channel.settings.name, adminIndex)
                 )
-                # Simulate a concurrent local mutation after staging to prove we
-                # send the staged snapshot, not a fresh read from self.channels.
-                if len(staged_writes) == 1 and anode.channels is not None:
-                    anode.channels[2].settings.name = "raced-name"
                 if len(staged_writes) == 2:
                     raise RuntimeError("write failed during addOnly batch")
-            elif msg.set_channel.role == Channel.Role.DISABLED:
-                rollback_writes.append((msg.set_channel.index, adminIndex))
         return mesh_pb2.MeshPacket()
 
     anode._send_admin = _send_admin_with_staged_write_failure  # type: ignore[method-assign,assignment]
@@ -1734,29 +1726,17 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_rolls_back_on_write_fa
     assert ensure_session_admin_indexes[0] == 0
     assert set(ensure_session_admin_indexes) <= {0, 1}
 
-    # Admin index is snapshotted before local mutation (0 fallback here), and
-    # the first newly introduced named-admin channel is deferred until last.
     assert staged_writes == [(2, "new-b", 0), (1, "admin", 0)]
 
-    assert anode.channels is not None
-    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
-    # The staged addOnly transaction should not overwrite concurrent live-channel
-    # mutations when it fails and rolls back device writes.
-    assert after_snapshot[0] == before_snapshot[0]
-    assert after_snapshot[1] == before_snapshot[1]
-    assert anode.channels[2].settings.name == "raced-name"
-
-    # Only successfully started writes are tracked for rollback.
-    # The deferred admin write failed before it was marked written, so only the
-    # already-started channel write is reverted.
-    assert rollback_writes == [(2, 0)]
+    # Fail-fast: local channel cache is invalidated after partial write failure.
+    assert anode.channels is None
 
 
 @pytest.mark.unit
-def test_setURL_add_only_skips_rollback_when_deferred_write_never_started(
+def test_setURL_add_only_fails_fast_invalidate_cache_on_deferred_write_failure(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """setURL(addOnly=True) should skip rollback when deferred write fails before being marked started."""
+    """setURL(addOnly=True) should fail-fast and invalidate channel cache when deferred write fails."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
 
     primary = Channel(index=0, role=Channel.Role.PRIMARY)
@@ -1769,10 +1749,9 @@ def test_setURL_add_only_skips_rollback_when_deferred_write_never_started(
     ensure_session_key_spy = MagicMock(wraps=anode.ensureSessionKey)
     anode.ensureSessionKey = ensure_session_key_spy  # type: ignore[method-assign]
 
-    send_calls = {"rollback_failures": 0, "stage_writes": 0}
-    rollback_attempts: list[int] = []
+    send_calls = {"stage_writes": 0}
 
-    def _rollback_send_fails_once(
+    def _send_fails_on_second_secondary(
         msg: admin_pb2.AdminMessage,
         wantResponse: bool = False,
         onResponse: Callable[[dict[str, Any]], Any] | None = None,
@@ -1784,17 +1763,9 @@ def test_setURL_add_only_skips_rollback_when_deferred_write_never_started(
                 send_calls["stage_writes"] += 1
                 if send_calls["stage_writes"] == 2:
                     raise RuntimeError("write failed during addOnly batch")
-            elif (
-                msg.set_channel.role == Channel.Role.DISABLED
-                and msg.set_channel.index == 1
-                and send_calls["rollback_failures"] < 2
-            ):
-                send_calls["rollback_failures"] += 1
-                rollback_attempts.append(msg.set_channel.index)
-                raise OSError("channel rollback failed")
         return mesh_pb2.MeshPacket()
 
-    anode._send_admin = _rollback_send_fails_once  # type: ignore[method-assign,assignment]
+    anode._send_admin = _send_fails_on_second_secondary  # type: ignore[method-assign,assignment]
 
     channel_set = apponly_pb2.ChannelSet()
     first = channel_set.settings.add()
@@ -1816,17 +1787,14 @@ def test_setURL_add_only_skips_rollback_when_deferred_write_never_started(
     assert ensure_session_admin_indexes[0] == 0
     assert set(ensure_session_admin_indexes) <= {0, 1}
     assert send_calls["stage_writes"] == 2
-    # The failed deferred write is not marked as written, so index=1 rollback
-    # is not attempted.
-    assert send_calls["rollback_failures"] == 0
-    assert anode.channels is not None
+    assert anode.channels is None
 
 
 @pytest.mark.unit
-def test_setURL_add_only_rolls_back_with_fallback_admin_index_after_deferred_admin_failure(
+def test_setURL_add_only_deferred_admin_failure_fails_fast(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """Deferred addOnly admin-write failures should rollback using alternate admin indexes."""
+    """Deferred addOnly admin-write failures should fail-fast and invalidate channel cache."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
     anode.iface.localNode = anode
 
@@ -1835,10 +1803,10 @@ def test_setURL_add_only_rolls_back_with_fallback_admin_index_after_deferred_adm
     disabled1 = Channel(index=1, role=Channel.Role.DISABLED)
     disabled2 = Channel(index=2, role=Channel.Role.DISABLED)
     anode.channels = [primary, disabled1, disabled2]
-    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
 
     deferred_failure_seen = {"seen": False}
-    rollback_attempts: list[tuple[int, int | None]] = []
+    staged_writes: list[int] = []
+    admin_indexes: list[int | None] = []
 
     def _send_admin_with_deferred_admin_failure(
         msg: admin_pb2.AdminMessage,
@@ -1848,6 +1816,8 @@ def test_setURL_add_only_rolls_back_with_fallback_admin_index_after_deferred_adm
     ) -> mesh_pb2.MeshPacket:
         _ = (wantResponse, onResponse)
         if msg.HasField("set_channel"):
+            staged_writes.append(msg.set_channel.index)
+            admin_indexes.append(adminIndex)
             if (
                 msg.set_channel.role == Channel.Role.SECONDARY
                 and msg.set_channel.settings.name == "admin"
@@ -1855,10 +1825,6 @@ def test_setURL_add_only_rolls_back_with_fallback_admin_index_after_deferred_adm
             ):
                 deferred_failure_seen["seen"] = True
                 raise RuntimeError("deferred admin write failed")
-            if msg.set_channel.role == Channel.Role.DISABLED:
-                rollback_attempts.append((msg.set_channel.index, adminIndex))
-                if adminIndex == 1:
-                    raise OSError("stale admin index")
         return mesh_pb2.MeshPacket()
 
     anode._send_admin = _send_admin_with_deferred_admin_failure  # type: ignore[method-assign,assignment]
@@ -1875,19 +1841,17 @@ def test_setURL_add_only_rolls_back_with_fallback_admin_index_after_deferred_adm
     with pytest.raises(RuntimeError, match="deferred admin write failed"):
         anode.setURL(url, addOnly=True)
 
-    assert anode.channels is not None
-    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
-    assert after_snapshot == before_snapshot
-    # The deferred admin write failed before it was marked written, so rollback
-    # only reverts the successful write.
-    assert rollback_attempts == [(2, 0)]
+    assert anode.channels is None
+    assert deferred_failure_seen["seen"]
+    assert staged_writes == [2, 1]
+    assert admin_indexes == [0, 0]
 
 
 @pytest.mark.unit
-def test_setURL_add_only_skips_lora_rollback_when_forward_write_never_started(
+def test_setURL_add_only_skips_lora_clear_when_forward_write_never_started(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """setURL(addOnly=True) should skip LoRa rollback when forward write fails before being marked started."""
+    """setURL(addOnly=True) should skip LoRa cache clear when forward write fails before being marked started."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
 
     primary = Channel(index=0, role=Channel.Role.PRIMARY)
@@ -1895,14 +1859,12 @@ def test_setURL_add_only_skips_lora_rollback_when_forward_write_never_started(
     primary.settings.psk = b"\x01"
     disabled = Channel(index=1, role=Channel.Role.DISABLED)
     anode.channels = [primary, disabled]
-    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
     anode.localConfig.lora.hop_limit = 3
     ensure_session_key_spy = MagicMock(wraps=anode.ensureSessionKey)
     anode.ensureSessionKey = ensure_session_key_spy  # type: ignore[method-assign]
 
     failed_lora_send = {"seen": False}
     staged_channel_writes: list[int] = []
-    rollback_messages: list[admin_pb2.AdminMessage] = []
     admin_indexes: list[int | None] = []
 
     def _send_admin_with_lora_failure(
@@ -1926,7 +1888,6 @@ def test_setURL_add_only_skips_lora_rollback_when_forward_write_never_started(
             ):
                 failed_lora_send["seen"] = True
                 raise OSError("LoRa write failed")
-        rollback_messages.append(msg)
         return mesh_pb2.MeshPacket()
 
     anode._send_admin = _send_admin_with_lora_failure  # type: ignore[method-assign,assignment]
@@ -1946,26 +1907,8 @@ def test_setURL_add_only_skips_lora_rollback_when_forward_write_never_started(
         _get_mock_call_arg(call, name="adminIndex", positional_index=0) == 0
         for call in ensure_session_key_spy.call_args_list
     )
-    assert anode.channels is not None
-    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
-    assert after_snapshot == before_snapshot
-    # Deferred admin write is intentionally not attempted until after LoRa write.
+    assert anode.channels is None
     assert not staged_channel_writes
-
-    # No rollback write is attempted for LoRa because the forward LoRa write did
-    # not report as started.
-    rollback_channel_messages = [
-        msg
-        for msg in rollback_messages
-        if msg.HasField("set_channel") and msg.set_channel.role == Channel.Role.DISABLED
-    ]
-    rollback_lora_messages = [
-        msg
-        for msg in rollback_messages
-        if msg.HasField("set_config") and msg.set_config.HasField("lora")
-    ]
-    assert len(rollback_channel_messages) == 0
-    assert len(rollback_lora_messages) == 0
     assert admin_indexes == [0]
     assert anode.localConfig.lora.hop_limit == 3
 
@@ -2166,10 +2109,10 @@ def test_setURL_replace_when_admin_slot_moves_defers_old_slot_cleanup(
 
 
 @pytest.mark.unit
-def test_setURL_replace_rolls_back_with_fallback_admin_index_after_deferred_admin_failure(
+def test_setURL_replace_fails_fast_invalidate_cache_after_deferred_failure(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """Replace-all rollback should retry with alternate admin indexes after deferred admin failure."""
+    """Replace-all should fail-fast and invalidate channel cache after deferred admin failure."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
     anode.iface.localNode = anode
 
@@ -2180,10 +2123,9 @@ def test_setURL_replace_rolls_back_with_fallback_admin_index_after_deferred_admi
     third = Channel(index=2, role=Channel.Role.SECONDARY)
     third.settings.name = "third"
     anode.channels = [primary, old_admin, third]
-    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
 
     deferred_failure_seen = {"seen": False}
-    rollback_attempts: list[tuple[int, str, int | None]] = []
+    forward_writes: list[int] = []
 
     def _send_admin_with_deferred_admin_failure(
         msg: admin_pb2.AdminMessage,
@@ -2200,12 +2142,8 @@ def test_setURL_replace_rolls_back_with_fallback_admin_index_after_deferred_admi
             ):
                 deferred_failure_seen["seen"] = True
                 raise RuntimeError("deferred admin write failed")
-            if msg.set_channel.settings.name in {"primary", "third"}:
-                rollback_attempts.append(
-                    (msg.set_channel.index, msg.set_channel.settings.name, adminIndex)
-                )
-                if adminIndex == 0:
-                    raise OSError("stale admin index")
+            if msg.set_channel.settings.name not in {"primary", "third"}:
+                forward_writes.append(msg.set_channel.index)
         return mesh_pb2.MeshPacket()
 
     anode._send_admin = _send_admin_with_deferred_admin_failure  # type: ignore[method-assign,assignment]
@@ -2225,21 +2163,14 @@ def test_setURL_replace_rolls_back_with_fallback_admin_index_after_deferred_admi
     with pytest.raises(RuntimeError, match="deferred admin write failed"):
         anode.setURL(url, addOnly=False)
 
-    assert anode.channels is not None
-    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
-    assert after_snapshot == before_snapshot
-    # Deferred admin write failed before write tracking, so rollback only
-    # touches successfully started writes.
-    assert rollback_attempts == [
-        (2, "third", 1),
-    ]
+    assert anode.channels is None
 
 
 @pytest.mark.unit
-def test_setURL_replace_rolls_back_written_channels_on_midflight_failure(
+def test_setURL_replace_all_invalidates_cache_on_failure(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """setURL(addOnly=False) should restore previously written channels when replace fails mid-flight."""
+    """setURL(addOnly=False) should invalidate channel cache on replace failure mid-flight."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
     anode.iface.localNode = anode
 
@@ -2249,10 +2180,8 @@ def test_setURL_replace_rolls_back_written_channels_on_midflight_failure(
     secondary.settings.name = "existing"
     disabled = Channel(index=2, role=Channel.Role.DISABLED)
     anode.channels = [primary, secondary, disabled]
-    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
 
     failed_stage_write = {"seen": False}
-    sent_messages: list[admin_pb2.AdminMessage] = []
 
     def _send_admin_with_midflight_failure(
         msg: admin_pb2.AdminMessage,
@@ -2269,7 +2198,6 @@ def test_setURL_replace_rolls_back_written_channels_on_midflight_failure(
         ):
             failed_stage_write["seen"] = True
             raise RuntimeError("replace write failed")
-        sent_messages.append(msg)
         return mesh_pb2.MeshPacket()
 
     anode._send_admin = _send_admin_with_midflight_failure  # type: ignore[method-assign,assignment]
@@ -2286,27 +2214,14 @@ def test_setURL_replace_rolls_back_written_channels_on_midflight_failure(
     with pytest.raises(RuntimeError, match="replace write failed"):
         anode.setURL(url, addOnly=False)
 
-    assert anode.channels is not None
-    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
-    assert after_snapshot == before_snapshot
-    rollback_channels = [
-        msg.set_channel
-        for msg in sent_messages
-        if msg.HasField("set_channel")
-        and msg.set_channel.settings.name in {"primary", "existing"}
-    ]
-    assert {
-        (channel.index, channel.settings.name) for channel in rollback_channels
-    } == {
-        (0, "primary"),
-    }
+    assert anode.channels is None
 
 
 @pytest.mark.unit
-def test_setURL_replace_skips_lora_rollback_when_forward_write_never_started(
+def test_setURL_replace_skips_lora_clear_when_forward_write_never_started(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """setURL(addOnly=False) should skip LoRa rollback when forward write fails before being marked started."""
+    """setURL(addOnly=False) should skip LoRa cache clear when forward write fails before being marked started."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
     anode.iface.localNode = anode
 
@@ -2315,11 +2230,9 @@ def test_setURL_replace_skips_lora_rollback_when_forward_write_never_started(
     secondary = Channel(index=1, role=Channel.Role.SECONDARY)
     secondary.settings.name = "existing"
     anode.channels = [primary, secondary]
-    before_snapshot = [channel.SerializeToString() for channel in anode.channels]
     anode.localConfig.lora.hop_limit = 3
 
     failed_lora_send = {"seen": False}
-    sent_messages: list[admin_pb2.AdminMessage] = []
 
     def _send_admin_with_lora_failure(
         msg: admin_pb2.AdminMessage,
@@ -2332,7 +2245,6 @@ def test_setURL_replace_skips_lora_rollback_when_forward_write_never_started(
             if not failed_lora_send["seen"] and msg.set_config.lora.hop_limit == 9:
                 failed_lora_send["seen"] = True
                 raise OSError("LoRa replace write failed")
-        sent_messages.append(msg)
         return mesh_pb2.MeshPacket()
 
     anode._send_admin = _send_admin_with_lora_failure  # type: ignore[method-assign,assignment]
@@ -2350,15 +2262,7 @@ def test_setURL_replace_skips_lora_rollback_when_forward_write_never_started(
     with pytest.raises(OSError, match="LoRa replace write failed"):
         anode.setURL(url, addOnly=False)
 
-    assert anode.channels is not None
-    after_snapshot = [channel.SerializeToString() for channel in anode.channels]
-    assert after_snapshot == before_snapshot
-    rollback_lora_messages = [
-        msg
-        for msg in sent_messages
-        if msg.HasField("set_config") and msg.set_config.HasField("lora")
-    ]
-    assert len(rollback_lora_messages) == 0
+    assert anode.channels is None
     assert anode.localConfig.lora.hop_limit == 3
 
 

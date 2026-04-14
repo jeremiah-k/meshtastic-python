@@ -12,7 +12,6 @@ import pytest
 from meshtastic.node_runtime.seturl_runtime import (
     _SetUrlCacheManager,
     _SetUrlExecutionEngine,
-    _SetUrlRollbackEngine,
 )
 from meshtastic.protobuf import (
     apponly_pb2,
@@ -184,27 +183,6 @@ def cache_manager(mock_local_node: MagicMock) -> _SetUrlCacheManager:
         The cache manager instance under test.
     """
     return _SetUrlCacheManager(mock_local_node)
-
-
-@pytest.fixture
-def rollback_engine(
-    mock_local_node: MagicMock, cache_manager: _SetUrlCacheManager
-) -> _SetUrlRollbackEngine:
-    """Provide a _SetUrlRollbackEngine instance.
-
-    Parameters
-    ----------
-    mock_local_node : MagicMock
-        The mock node fixture.
-    cache_manager : _SetUrlCacheManager
-        The cache manager fixture.
-
-    Returns
-    -------
-    _SetUrlRollbackEngine
-        The rollback engine instance under test.
-    """
-    return _SetUrlRollbackEngine(mock_local_node, cache_manager=cache_manager)
 
 
 @pytest.fixture

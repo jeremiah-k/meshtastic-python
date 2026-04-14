@@ -14,7 +14,6 @@ from meshtastic.node_runtime.seturl import (  # noqa: F401
     _SetUrlReplaceExecutionState,
     _SetUrlReplacePlan,
     _SetUrlReplacePlanner,
-    _SetUrlRollbackEngine,
     _SetUrlTransactionCoordinator,
 )
 
@@ -30,7 +29,6 @@ __all__ = [
     "_SetUrlReplaceExecutionState",
     "_SetUrlReplacePlan",
     "_SetUrlReplacePlanner",
-    "_SetUrlRollbackEngine",
     "_SetUrlTransactionCoordinator",
     "_channels_fingerprint",
 ]

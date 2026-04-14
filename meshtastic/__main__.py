@@ -112,6 +112,9 @@ CONFIG_APPLY_DELAY_SECONDS = 0.5
 # before accepting further admin messages.
 CONFIG_SETURL_DELAY_SECONDS = 2.0
 
+CONFIG_COMMIT_SETTLE_SECONDS = 1.0
+"""Settle delay after commitSettingsTransaction before assuming the session may end."""
+
 # Delay between GPIO watch iterations
 GPIO_WATCH_INTERVAL_SECONDS = 1.0
 
@@ -1172,6 +1175,11 @@ def onConnected(interface: MeshInterface) -> None:
                 configuration = yaml.safe_load(file)
                 closeNow = True
 
+                # ------------------------------------------------------------------
+                # Phase 1: Non-rebooting configuration
+                # ------------------------------------------------------------------
+                print("Phase 1: Applying non-rebooting configuration...")
+
                 if "owner" in configuration:
                     # Validate owner name before setting
                     owner_name = str(configuration["owner"]).strip()
@@ -1268,6 +1276,13 @@ def onConnected(interface: MeshInterface) -> None:
                     interface.localNode.setFixedPosition(lat, lon, alt)
                     time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
+                # ------------------------------------------------------------------
+                # Phase 2: Reboot-capable configuration transaction
+                # ------------------------------------------------------------------
+                print(
+                    "Phase 2: Applying configuration transaction (may trigger device reboot)..."
+                )
+
                 settings_transaction_started = False
                 if "config" in configuration or "module_config" in configuration:
                     interface.getNode(
@@ -1351,7 +1366,23 @@ def onConnected(interface: MeshInterface) -> None:
                     interface.getNode(
                         args.dest, False, **getNode_kwargs
                     ).commitSettingsTransaction()
+                    time.sleep(CONFIG_COMMIT_SETTLE_SECONDS)
+                print(
+                    "Configuration transaction committed. Device may reboot to apply changes."
+                )
                 print("Writing modified configuration to device")
+
+                # ------------------------------------------------------------------
+                # Phase 3: Reconnect/verify (placeholder)
+                # ------------------------------------------------------------------
+                # TODO: Phase 3 — Reconnect and verify
+                # After commitSettingsTransaction, the device may reboot.
+                # A future iteration should:
+                # 1. Wait for disconnect/reboot indication (up to ~10s for real hardware)
+                # 2. Reconnect the interface
+                # 3. Wait for config and node DB to reload
+                # 4. Optionally verify applied state matches requested configuration
+                # For now, the configure session ends here — no further writes.
 
         if args.export_config:
             if args.dest != BROADCAST_ADDR:

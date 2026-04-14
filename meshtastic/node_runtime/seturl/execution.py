@@ -18,7 +18,6 @@ from meshtastic.node_runtime.seturl.planner import (
 from meshtastic.node_runtime.shared import (
     isNamedAdminChannelName as _isNamedAdminChannelName,
 )
-from meshtastic.node_runtime.shared import orderedAdminIndexes as _orderedAdminIndexes
 from meshtastic.protobuf import admin_pb2, channel_pb2
 
 if TYPE_CHECKING:
@@ -26,12 +25,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-CHANNEL_WRITE_PACE_SECONDS = 0.3
-"""Delay between successive channel snapshot writes to avoid overwhelming the
-device's serial input buffer.  The firmware processes each admin message
-(write to flash, reconfigure radio) and cannot drain the host-side serial
-buffer fast enough when messages arrive with only the default 0.1 s
-post-write sleep."""
+CHANNEL_WRITE_PACE_SECONDS = 1.0
+"""Delay between successive channel snapshot writes.  Real hardware needs
+time to write prefs to flash and reconfigure radio state between admin
+writes.  1.0 s is conservative but reliable for USB serial devices."""
+
+LORA_WRITE_SETTLE_SECONDS = 2.0
+"""Extra settle delay before/after LoRa config writes.  LoRa reconfiguration
+is expensive on firmware and may trigger radio recalibration."""
+
+DEFERRED_ADMIN_PACE_SECONDS = 1.5
+"""Delay before deferred admin-channel writes.  These writes modify the
+admin channel topology and need extra settle time."""
 
 
 @dataclass
@@ -48,7 +53,6 @@ class _SetUrlReplaceExecutionState:
 
     written_channel_indices: list[int] = field(default_factory=list)
     lora_write_started: bool = False
-    rollback_admin_indexes_for_write: list[int] = field(default_factory=list)
 
 
 class _SetUrlExecutionEngine:
@@ -198,12 +202,14 @@ class _SetUrlExecutionEngine:
                 expected_channels_ref=plan.replace_original_channels_ref,
             )
 
+        if parsed_input.has_lora_update:
+            time.sleep(LORA_WRITE_SETTLE_SECONDS)
         self._write_lora_config(parsed_input, admin_context, state)
         if parsed_input.has_lora_update:
             self._cache_manager.apply_lora_success(parsed_input.channel_set.lora_config)
 
         if plan.deferred_new_named_admin_channel is not None:
-            time.sleep(CHANNEL_WRITE_PACE_SECONDS)
+            time.sleep(DEFERRED_ADMIN_PACE_SECONDS)
             logger.debug(
                 "Writing deferred admin channel index=%s role=%s name=%s",
                 plan.deferred_new_named_admin_channel.index,
@@ -227,21 +233,14 @@ class _SetUrlExecutionEngine:
                 plan.deferred_new_named_admin_channel,
                 expected_channels_ref=plan.replace_original_channels_ref,
             )
-            state.rollback_admin_indexes_for_write = _orderedAdminIndexes(
-                plan.deferred_new_named_admin_channel.index,
-                *state.rollback_admin_indexes_for_write,
-            )
 
         if plan.deferred_previous_admin_slot_channel is not None:
-            time.sleep(CHANNEL_WRITE_PACE_SECONDS)
+            time.sleep(DEFERRED_ADMIN_PACE_SECONDS)
             updated_admin_index_for_write = admin_context.admin_index_for_write
             if plan.deferred_new_named_admin_channel is not None:
                 updated_admin_index_for_write = (
                     admin_context.admin_write_node._get_admin_channel_index()  # noqa: SLF001
                 )
-            post_write_fallback_admin_index = self._post_write_fallback_admin_index(
-                plan
-            )
             logger.debug(
                 "Rewriting deferred admin slot i:%s via admin index %s",
                 plan.deferred_previous_admin_slot_channel.index,
@@ -253,11 +252,6 @@ class _SetUrlExecutionEngine:
             )
             state.written_channel_indices.append(
                 plan.deferred_previous_admin_slot_channel.index
-            )
-            state.rollback_admin_indexes_for_write = _orderedAdminIndexes(
-                updated_admin_index_for_write,
-                post_write_fallback_admin_index,
-                *state.rollback_admin_indexes_for_write,
             )
             self._cache_manager.apply_replace_channel_write(
                 plan.deferred_previous_admin_slot_channel,

@@ -57,7 +57,7 @@ class TestSetUrlTransactionCoordinator:
 
         assert coordinator._cache_manager is not None
         assert coordinator._execution_engine is not None
-        assert coordinator._rollback_engine is not None
+        assert not hasattr(coordinator, "_rollback_engine")
 
     @pytest.mark.unit
     def test_init_resolves_admin_context(self, mock_local_node: MagicMock) -> None:

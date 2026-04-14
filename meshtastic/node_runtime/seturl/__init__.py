@@ -42,6 +42,3 @@ from meshtastic.node_runtime.seturl.planner import (
 from meshtastic.node_runtime.seturl.planner import (
     _SetUrlReplacePlanner as _SetUrlReplacePlanner,
 )
-from meshtastic.node_runtime.seturl.rollback import (
-    _SetUrlRollbackEngine as _SetUrlRollbackEngine,
-)

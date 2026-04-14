@@ -190,7 +190,7 @@ class TestSetUrlExecutionEngine:
             replace_original_lora_config=None,
         )
 
-        state = _SetUrlReplaceExecutionState(rollback_admin_indexes_for_write=[0])
+        state = _SetUrlReplaceExecutionState()
 
         execution_engine.executeReplaceAll(
             parsed_input=parsed_input,
@@ -236,7 +236,7 @@ class TestSetUrlExecutionEngine:
             deferred_previous_admin_slot_channel=None,
             replace_original_lora_config=None,
         )
-        state = _SetUrlReplaceExecutionState(rollback_admin_indexes_for_write=[0])
+        state = _SetUrlReplaceExecutionState()
         mock_local_node._send_admin.return_value = None
 
         mock_local_node._raise_interface_error = MagicMock(
@@ -286,7 +286,7 @@ class TestSetUrlExecutionEngine:
             deferred_previous_admin_slot_channel=None,
             replace_original_lora_config=config_pb2.Config.LoRaConfig(),
         )
-        state = _SetUrlReplaceExecutionState(rollback_admin_indexes_for_write=[0])
+        state = _SetUrlReplaceExecutionState()
         mock_local_node.ensureSessionKey = MagicMock()
         mock_local_node._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())
 

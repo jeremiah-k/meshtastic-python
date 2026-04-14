@@ -17,7 +17,6 @@ from meshtastic.node_runtime.seturl.planner import (
     _SetUrlAddOnlyPlanner,
     _SetUrlReplacePlanner,
 )
-from meshtastic.node_runtime.seturl.rollback import _SetUrlRollbackEngine
 
 if TYPE_CHECKING:
     from meshtastic.node import Node
@@ -26,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 class _SetUrlTransactionCoordinator:
-    """Coordinates setURL transaction planning, execution, rollback, and cache policy."""
+    """Coordinates setURL transaction planning, execution, and cache policy with fail-fast semantics."""
 
     def __init__(self, node: "Node", *, parsed_input: _SetUrlParsedInput) -> None:
         """Initialize the setURL transaction coordinator.
@@ -46,10 +45,6 @@ class _SetUrlTransactionCoordinator:
             node,
             cache_manager=self._cache_manager,
         )
-        self._rollback_engine = _SetUrlRollbackEngine(
-            node,
-            cache_manager=self._cache_manager,
-        )
 
     def _resolve_admin_context(self) -> _SetUrlAdminContext:
         """Capture admin-channel write context before staging any transaction writes."""
@@ -58,9 +53,7 @@ class _SetUrlTransactionCoordinator:
             self._node._raise_interface_error(  # noqa: SLF001
                 "Interface localNode not initialized"
             )
-        admin_index_for_write = (
-            admin_write_node._get_admin_channel_index()
-        )  # noqa: SLF001
+        admin_index_for_write = admin_write_node._get_admin_channel_index()  # noqa: SLF001
         named_admin_index_for_write = (
             admin_write_node._get_named_admin_channel_index()  # noqa: SLF001
         )
@@ -99,10 +92,14 @@ class _SetUrlTransactionCoordinator:
                 state=execution_state,
             )
         except Exception:
-            self._rollback_engine._rollback_add_only(
-                admin_context=self._admin_context,
-                plan=plan,
-                state=execution_state,
+            logger.error(
+                "setURL addOnly failed after writing %d channel(s); "
+                "device may be partially configured. "
+                "Local caches invalidated — reconnect and reload before further operations.",
+                len(execution_state.written_indices),
+            )
+            self._cache_manager.invalidate_channel_cache(
+                "Channel cache invalidated after setURL addOnly partial failure."
             )
             raise
         self._cache_manager.apply_add_only_success(
@@ -122,9 +119,7 @@ class _SetUrlTransactionCoordinator:
             admin_context=self._admin_context,
         )
         plan = planner.build_plan()
-        execution_state = _SetUrlReplaceExecutionState(
-            rollback_admin_indexes_for_write=[self._admin_context.admin_index_for_write]
-        )
+        execution_state = _SetUrlReplaceExecutionState()
         try:
             self._execution_engine.executeReplaceAll(
                 parsed_input=self._parsed_input,
@@ -133,9 +128,18 @@ class _SetUrlTransactionCoordinator:
                 state=execution_state,
             )
         except Exception:
-            self._rollback_engine._rollback_replace_all(
-                admin_context=self._admin_context,
-                plan=plan,
-                state=execution_state,
+            logger.error(
+                "setURL replace-all failed after writing %d channel(s); "
+                "device may be partially configured. "
+                "Local caches invalidated — reconnect and reload before further operations.",
+                len(execution_state.written_channel_indices),
             )
+            self._cache_manager.invalidate_channel_cache(
+                "Channel cache invalidated after setURL replace-all partial failure."
+            )
+            if execution_state.lora_write_started:
+                self._cache_manager.clear_lora_cache_with_warning(
+                    "LoRa config cache cleared after setURL replace-all partial failure; "
+                    "reload config before using localConfig.lora."
+                )
             raise
