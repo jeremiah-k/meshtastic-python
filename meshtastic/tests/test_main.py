@@ -1826,11 +1826,14 @@ def test_main_set_with_invalid(
             mo.assert_called()
 
 
-# TODO: write some negative --configure tests
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
-@patch("builtins.open", new_callable=mock_open, read_data="{}")
+@patch(
+    "builtins.open",
+    new_callable=mock_open,
+    read_data="owner: TestSnake\nowner_short: TS\n",
+)
 @patch("serial.Serial")
 @patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
 def test_main_configure_with_snake_case(
@@ -1840,7 +1843,7 @@ def test_main_configure_with_snake_case(
     _mocked_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Test --configure with valid file."""
+    """Test --configure applies snake_case owner/owner_short keys."""
     sys.argv = ["", "--configure", "example_config.yaml"]
     mt_config.args = sys.argv  # type: ignore[assignment]
 
@@ -1854,14 +1857,8 @@ def test_main_configure_with_snake_case(
             main()
             out, err = capsys.readouterr()
             assert re.search(r"Connected to radio", out, re.MULTILINE)
-            # should these come back? maybe a flag?
-            # assert re.search(r"Setting device owner", out, re.MULTILINE)
-            # assert re.search(r"Setting device owner short", out, re.MULTILINE)
-        # assert re.search(r"Setting channel url", out, re.MULTILINE)
-        # assert re.search(r"Fixing altitude", out, re.MULTILINE)
-        # assert re.search(r"Fixing latitude", out, re.MULTILINE)
-        # assert re.search(r"Fixing longitude", out, re.MULTILINE)
-        # assert re.search(r"Set location_share to LocEnabled", out, re.MULTILINE)
+            assert re.search(r"Setting device owner to TestSnake", out, re.MULTILINE)
+            assert re.search(r"Setting device owner short to TS", out, re.MULTILINE)
         assert re.search(
             r"Configuration applied \(no reboot expected\)", out, re.MULTILINE
         )
@@ -1872,7 +1869,11 @@ def test_main_configure_with_snake_case(
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
-@patch("builtins.open", new_callable=mock_open, read_data="{}")
+@patch(
+    "builtins.open",
+    new_callable=mock_open,
+    read_data="owner: TestCamel\nownerShort: TC\n",
+)
 @patch("serial.Serial")
 @patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
 def test_main_configure_with_camel_case_keys(
@@ -1882,7 +1883,7 @@ def test_main_configure_with_camel_case_keys(
     _mocked_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Test --configure with valid file."""
+    """Test --configure applies camelCase owner/ownerShort keys."""
     sys.argv = ["", "--configure", "exampleConfig.yaml"]
     mt_config.args = sys.argv  # type: ignore[assignment]
 
@@ -1896,18 +1897,13 @@ def test_main_configure_with_camel_case_keys(
             main()
             out, err = capsys.readouterr()
             assert re.search(r"Connected to radio", out, re.MULTILINE)
-            # should these come back? maybe a flag?
-            # assert re.search(r"Setting device owner", out, re.MULTILINE)
-            # assert re.search(r"Setting device owner short", out, re.MULTILINE)
-            # assert re.search(r"Setting channel url", out, re.MULTILINE)
-            # assert re.search(r"Fixing altitude", out, re.MULTILINE)
-            # assert re.search(r"Fixing latitude", out, re.MULTILINE)
-            # assert re.search(r"Fixing longitude", out, re.MULTILINE)
-            assert re.search(
-                r"Configuration applied \(no reboot expected\)", out, re.MULTILINE
-            )
-            assert err == ""
-            mo.assert_called()
+            assert re.search(r"Setting device owner to TestCamel", out, re.MULTILINE)
+            assert re.search(r"Setting device owner short to TC", out, re.MULTILINE)
+        assert re.search(
+            r"Configuration applied \(no reboot expected\)", out, re.MULTILINE
+        )
+        assert err == ""
+        mo.assert_called()
 
 
 @pytest.mark.unit
@@ -2168,6 +2164,90 @@ def test_main_configure_accepts_display_use_12h_alias_spellings(
     )
     _run_main_configure_file(config_path, iface, monkeypatch)
     assert target_local.display.use_12h_clock is True
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_rejects_empty_config_mapping(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test --configure rejects an empty config mapping."""
+    config_path = tmp_path / "empty_config.yaml"
+    config_path.write_text(yaml.safe_dump({"config": {}}), encoding="utf-8")
+    iface, target_node = _build_configure_interface()
+
+    with pytest.raises(SystemExit) as excinfo:
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    _, err = capsys.readouterr()
+    assert "config" in err
+    assert excinfo.value.code == 1
+    target_node.beginSettingsTransaction.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_rejects_empty_module_config_mapping(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test --configure rejects an empty module_config mapping."""
+    config_path = tmp_path / "empty_module_config.yaml"
+    config_path.write_text(yaml.safe_dump({"module_config": {}}), encoding="utf-8")
+    iface, target_node = _build_configure_interface()
+
+    with pytest.raises(SystemExit) as excinfo:
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    _, err = capsys.readouterr()
+    assert "module_config" in err
+    assert excinfo.value.code == 1
+    target_node.beginSettingsTransaction.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_rejects_non_dict_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test --configure rejects a non-dict config value."""
+    config_path = tmp_path / "non_dict_config.yaml"
+    config_path.write_text(yaml.safe_dump({"config": "invalid"}), encoding="utf-8")
+    iface, target_node = _build_configure_interface()
+
+    with pytest.raises(SystemExit) as excinfo:
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    _, err = capsys.readouterr()
+    assert "config" in err
+    assert excinfo.value.code == 1
+    target_node.beginSettingsTransaction.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_rejects_non_dict_module_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test --configure rejects a non-dict module_config value."""
+    config_path = tmp_path / "non_dict_module_config.yaml"
+    config_path.write_text(yaml.safe_dump({"module_config": 42}), encoding="utf-8")
+    iface, target_node = _build_configure_interface()
+
+    with pytest.raises(SystemExit) as excinfo:
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    _, err = capsys.readouterr()
+    assert "module_config" in err
+    assert excinfo.value.code == 1
+    target_node.beginSettingsTransaction.assert_not_called()
 
 
 @pytest.mark.unit

@@ -4,7 +4,10 @@ import base64
 
 import pytest
 
+from unittest.mock import MagicMock
+
 from meshtastic.configure_verify import (
+    _is_repeated_field,
     _verify_channel_url_match,
     _verify_requested_fields,
 )
@@ -152,6 +155,96 @@ def test_channel_url_missing_channel_in_device() -> None:
 
 
 @pytest.mark.unit
+def test_is_repeated_field_with_is_repeated_true() -> None:
+    fd = MagicMock()
+    fd.is_repeated = True
+    assert _is_repeated_field(fd) is True
+
+
+@pytest.mark.unit
+def test_is_repeated_field_with_is_repeated_false() -> None:
+    fd = MagicMock()
+    fd.is_repeated = False
+    assert _is_repeated_field(fd) is False
+
+
+@pytest.mark.unit
+def test_is_repeated_field_label_fallback() -> None:
+    fd = MagicMock(spec=[])
+    del fd.is_repeated
+    fd.label = 3
+    fd.LABEL_REPEATED = 3
+    assert _is_repeated_field(fd) is True
+
+
+@pytest.mark.unit
+def test_is_repeated_field_label_fallback_non_repeated() -> None:
+    fd = MagicMock(spec=[])
+    del fd.is_repeated
+    fd.label = 1
+    fd.LABEL_REPEATED = 3
+    assert _is_repeated_field(fd) is False
+
+
+@pytest.mark.unit
+def test_repeated_enum_list_coercion() -> None:
+    enum_val_mock = MagicMock()
+    enum_val_mock.number = 1
+
+    second_enum_val_mock = MagicMock()
+    second_enum_val_mock.number = 2
+
+    enum_type_mock = MagicMock()
+    enum_type_mock.values_by_name = {
+        "FIXED": enum_val_mock,
+        "RANDOM": second_enum_val_mock,
+    }
+
+    field_desc = MagicMock()
+    field_desc.is_repeated = True
+    field_desc.enum_type = enum_type_mock
+
+    sub_msg = MagicMock()
+    sub_msg.DESCRIPTOR.fields_by_name = {"my_field": field_desc}
+    sub_msg.my_field = [1, 2]
+
+    result = _verify_requested_fields(
+        {"my_field": ["FIXED", "RANDOM"]}, sub_msg, "test"
+    )
+    assert result == []
+
+
+@pytest.mark.unit
+def test_repeated_enum_list_mismatch() -> None:
+    enum_val_mock = MagicMock()
+    enum_val_mock.number = 1
+
+    enum_type_mock = MagicMock()
+    enum_type_mock.values_by_name = {"FIXED": enum_val_mock}
+
+    field_desc = MagicMock()
+    field_desc.is_repeated = True
+    field_desc.enum_type = enum_type_mock
+
+    sub_msg = MagicMock()
+    sub_msg.DESCRIPTOR.fields_by_name = {"my_field": field_desc}
+    sub_msg.my_field = [1, 2]
+
+    result = _verify_requested_fields({"my_field": ["FIXED"]}, sub_msg, "test")
+    assert result == ["test.my_field"]
+
+
+@pytest.mark.unit
+def test_repeated_non_enum_string_coercion() -> None:
+    proto = localonly_pb2.LocalConfig()
+    proto.security.admin_key.extend([b"\x01", b"\x02"])
+    result = _verify_requested_fields(
+        {"admin_key": ["0x01", "0x02"]}, proto.security, "security"
+    )
+    assert result == []
+
+
+@pytest.mark.unit
 def test_channel_url_invalid_requested_url() -> None:
     s = channel_pb2.ChannelSettings()
     s.name = "test"
@@ -225,7 +318,7 @@ def test_channel_url_name_mismatch() -> None:
     s3.psk = b"\x01\x02\x03"
     s3.uplink_enabled = True
     assert (
-        _verify_channel_url_match(_make_channel_url([s2]), _make_channel_url([s3]))
+        _verify_channel_url_match(_make_channel_url([s1, s2]), _make_channel_url([s1]))
         is False
     )
 
@@ -346,7 +439,7 @@ def test_channel_url_duplicate_requested_names_returns_false() -> None:
     s3.name = "dup"
     s3.psk = b"\x01"
     assert (
-        _verify_channel_url_match(_make_channel_url([s1, s2]), _make_channel_url([s3]))
+        _verify_channel_url_match(_make_channel_url([s1, s2]), _make_channel_url([s1]))
         is False
     )
 
@@ -415,6 +508,6 @@ def test_channel_url_duplicate_requested_with_mismatch_settings_returns_false() 
     s3.name = "dup"
     s3.psk = b"\x01"
     assert (
-        _verify_channel_url_match(_make_channel_url([s1, s2]), _make_channel_url([s3]))
+        _verify_channel_url_match(_make_channel_url([s1, s2]), _make_channel_url([s1]))
         is False
     )

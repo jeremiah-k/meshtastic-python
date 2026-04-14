@@ -12,6 +12,30 @@ from meshtastic.protobuf import apponly_pb2
 logger = logging.getLogger(__name__)
 
 
+def _is_repeated_field(field_desc: Any) -> bool:
+    is_repeated = getattr(field_desc, "is_repeated", None)
+    if isinstance(is_repeated, bool):
+        return is_repeated
+    label = getattr(field_desc, "label", None)
+    label_repeated = getattr(field_desc, "LABEL_REPEATED", None)
+    return label is not None and label == label_repeated
+
+
+def _coerce_element(field_desc: Any, element: Any) -> Any:
+    if field_desc.enum_type is not None and isinstance(element, str):
+        enum_val = field_desc.enum_type.values_by_name.get(element)
+        if enum_val is not None:
+            return enum_val.number
+        logger.debug(
+            "Unknown enum name %r for repeated element in field; treating as mismatch.",
+            element,
+        )
+        return element
+    if isinstance(element, str) and field_desc.enum_type is None:
+        return meshtastic.util.fromStr(element)
+    return element
+
+
 def _verify_requested_fields(
     yaml_dict: dict[str, Any],
     proto_message: Any,
@@ -59,27 +83,31 @@ def _verify_requested_fields(
             )
         else:
             actual = getattr(proto_message, snake_key)
-            coerced = yaml_value
-            if field_desc.enum_type is not None and isinstance(yaml_value, str):
-                enum_val = field_desc.enum_type.values_by_name.get(yaml_value)
-                if enum_val is not None:
-                    coerced = enum_val.number
-                else:
-                    logger.debug(
-                        "Unknown enum name %r for field %s.%s; treating as mismatch.",
-                        yaml_value,
-                        section_path,
-                        snake_key,
-                    )
-                    coerced = yaml_value
-            if isinstance(yaml_value, str) and field_desc.enum_type is None:
-                coerced = meshtastic.util.fromStr(yaml_value)
-            if field_desc.is_repeated:
-                if not isinstance(coerced, (list, tuple)):
-                    coerced = [coerced]
+            if _is_repeated_field(field_desc):
+                yaml_list = (
+                    yaml_value
+                    if isinstance(yaml_value, (list, tuple))
+                    else [yaml_value]
+                )
+                coerced = [_coerce_element(field_desc, el) for el in yaml_list]
                 if list(coerced) != list(actual):
                     mismatches.append(f"{section_path}.{snake_key}")
             else:
+                coerced = yaml_value
+                if field_desc.enum_type is not None and isinstance(yaml_value, str):
+                    enum_val = field_desc.enum_type.values_by_name.get(yaml_value)
+                    if enum_val is not None:
+                        coerced = enum_val.number
+                    else:
+                        logger.debug(
+                            "Unknown enum name %r for field %s.%s; treating as mismatch.",
+                            yaml_value,
+                            section_path,
+                            snake_key,
+                        )
+                        coerced = yaml_value
+                if isinstance(yaml_value, str) and field_desc.enum_type is None:
+                    coerced = meshtastic.util.fromStr(yaml_value)
                 if isinstance(coerced, (list, tuple)):
                     logger.debug(
                         "YAML provided a list for non-repeated field %s.%s; using first element.",

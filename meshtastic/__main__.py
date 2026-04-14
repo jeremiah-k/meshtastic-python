@@ -274,7 +274,7 @@ def _post_configure_reconnect_and_verify(
             disconnect_window,
         )
 
-    reconnect_deadline = min(deadline, time.monotonic() + (timeout - disconnect_window))
+    reconnect_deadline = deadline
     if disconnected:
         logger.info(
             "Waiting up to %.1fs for device reconnect...",
@@ -944,9 +944,9 @@ def _handle_configure_command(
     args: Any,
     getNode_kwargs: dict[str, Any],
 ) -> bool:
-    with open(args.configure[0], encoding="utf8") as file:
-        raw_text = file.read()
     try:
+        with open(args.configure[0], encoding="utf8") as file:
+            raw_text = file.read()
         configuration = yaml.safe_load(raw_text)
     except (yaml.YAMLError, UnicodeDecodeError) as exc:
         _cli_exit(f"ERROR: Failed to parse YAML configuration: {exc}")
@@ -1080,14 +1080,32 @@ def _handle_configure_command(
         print("Phase 1 complete.")
 
     settings_transaction_started = False
-    if "config" in configuration or "module_config" in configuration:
+    if "config" in configuration:
+        _cfg_val = configuration["config"]
+        if not isinstance(_cfg_val, dict) or not _cfg_val:
+            _cli_exit(
+                f"ERROR: 'config' must be a non-empty mapping, got "
+                f"{type(_cfg_val).__name__}{' (empty)' if isinstance(_cfg_val, dict) else ''}"
+            )
+    if "module_config" in configuration:
+        _mcfg_val = configuration["module_config"]
+        if not isinstance(_mcfg_val, dict) or not _mcfg_val:
+            _cli_exit(
+                f"ERROR: 'module_config' must be a non-empty mapping, got "
+                f"{type(_mcfg_val).__name__}{' (empty)' if isinstance(_mcfg_val, dict) else ''}"
+            )
+
+    has_valid_config_section = (
+        "config" in configuration and configuration["config"]
+    ) or ("module_config" in configuration and configuration["module_config"])
+    if has_valid_config_section:
         print(
             "Phase 2: Applying configuration transaction (may trigger device reboot)..."
         )
         interface.getNode(args.dest, False, **getNode_kwargs).beginSettingsTransaction()
         settings_transaction_started = True
 
-    if "config" in configuration:
+    if "config" in configuration and configuration["config"]:
         localConfig = interface.getNode(args.dest, **getNode_kwargs).localConfig
         for section in configuration["config"]:
             failed_config_fields: list[str] = []
@@ -1121,7 +1139,7 @@ def _handle_configure_command(
             )
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
-    if "module_config" in configuration:
+    if "module_config" in configuration and configuration["module_config"]:
         moduleConfig = interface.getNode(args.dest, **getNode_kwargs).moduleConfig
         for section in configuration["module_config"]:
             failed_module_fields: list[str] = []
@@ -1626,6 +1644,7 @@ def onConnected(interface: MeshInterface) -> None:
             )
             if _settings_transaction_started:
                 waitForAckNak = False
+                skip_ack_wait = True
 
         if args.export_config:
             if args.dest != BROADCAST_ADDR:
