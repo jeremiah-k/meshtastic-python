@@ -6,6 +6,7 @@
 
 import argparse
 import contextlib
+import enum
 import getpass
 import importlib
 import logging
@@ -203,19 +204,30 @@ def supportInfo() -> None:
     print("Please add the output from the command: meshtastic --info")
 
 
+class _ConfigureReconnectResult(enum.Enum):
+    RECONNECT_FAILED = "reconnect_failed"
+    CONFIG_RELOAD_FAILED = "config_reload_failed"
+    VERIFICATION_INCOMPLETE = "verification_incomplete"
+    VERIFIED = "verified"
+
+
 def _post_configure_reconnect_and_verify(
     interface: MeshInterface,
     *,
     timeout: float,
     node_dest: str,
-) -> bool:
+    verify_channel_url: bool = False,
+    verify_config_sections: list[str] | None = None,
+    verify_module_config_sections: list[str] | None = None,
+) -> _ConfigureReconnectResult:
     """Wait for device reconnect after a reboot-capable configure commit.
 
     After ``commitSettingsTransaction()``, the firmware may reboot the device.
     This function waits for the interface to disconnect and reconnect within
-    *timeout* seconds, then verifies config is loaded.
+    *timeout* seconds, then verifies config is loaded and optionally checks
+    that requested configuration sections are readable.
 
-    Returns True if reconnect succeeded, False otherwise.
+    Returns a _ConfigureReconnectResult indicating the outcome.
     """
     deadline = time.monotonic() + timeout
 
@@ -257,19 +269,63 @@ def _post_configure_reconnect_and_verify(
             "Configuration may still be applying.",
             timeout,
         )
-        return False
+        return _ConfigureReconnectResult.RECONNECT_FAILED
 
     try:
         interface.waitForConfig()
         logger.info("Device config reloaded after reboot.")
-        return True
     except Exception:
         logger.warning(
             "Device reconnected but config reload failed; "
             "configuration may still be applying.",
             exc_info=True,
         )
-        return False
+        return _ConfigureReconnectResult.CONFIG_RELOAD_FAILED
+
+    has_verification = (
+        verify_channel_url or verify_config_sections or verify_module_config_sections
+    )
+    if not has_verification:
+        return _ConfigureReconnectResult.VERIFIED
+
+    try:
+        target_node = interface.getNode(node_dest)
+
+        if verify_channel_url:
+            url = target_node.getURL()
+            if not url:
+                logger.warning("Channel URL verification: getURL() returned empty.")
+                return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+            logger.info("Channel URL verified: %s", url)
+
+        if verify_config_sections:
+            for section in verify_config_sections:
+                if not target_node.localConfig.HasField(section):
+                    logger.warning(
+                        "Config section %r not present in localConfig after reload.",
+                        section,
+                    )
+                    return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+                logger.info("Config section %r verified.", section)
+
+        if verify_module_config_sections:
+            for section in verify_module_config_sections:
+                if not target_node.moduleConfig.HasField(section):
+                    logger.warning(
+                        "Module config section %r not present in moduleConfig after reload.",
+                        section,
+                    )
+                    return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+                logger.info("Module config section %r verified.", section)
+
+    except Exception:
+        logger.warning(
+            "Post-reconnect verification failed unexpectedly.",
+            exc_info=True,
+        )
+        return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+
+    return _ConfigureReconnectResult.VERIFIED
 
 
 # COMPAT_STABLE_SHIM: historical snake_case helper name.
@@ -1473,14 +1529,50 @@ def onConnected(interface: MeshInterface) -> None:
                 # Phase 3: Reconnect and verify
                 # ------------------------------------------------------------------
                 if settings_transaction_started:
-                    reconnect_ok = _post_configure_reconnect_and_verify(
+                    _verify_channel_url = (
+                        "channel_url" in configuration or "channelUrl" in configuration
+                    )
+                    _verify_config_sections = (
+                        list(configuration["config"].keys())
+                        if "config" in configuration
+                        else None
+                    )
+                    _verify_module_config_sections = (
+                        list(configuration["module_config"].keys())
+                        if "module_config" in configuration
+                        else None
+                    )
+                    _reconnect_result = _post_configure_reconnect_and_verify(
                         interface,
                         timeout=CONFIG_RECONNECT_WAIT_SECONDS,
                         node_dest=args.dest,
+                        verify_channel_url=_verify_channel_url,
+                        verify_config_sections=_verify_config_sections,
+                        verify_module_config_sections=_verify_module_config_sections,
                     )
-                    if reconnect_ok:
-                        print("Phase 3: Device reconnected and config reloaded.")
-                    else:
+                    if _reconnect_result == _ConfigureReconnectResult.VERIFIED:
+                        print(
+                            "Phase 3: Device reconnected, config reloaded, and requested settings verified."
+                        )
+                    elif (
+                        _reconnect_result
+                        == _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+                    ):
+                        print(
+                            "Phase 3: Device reconnected and config reloaded. "
+                            "Could not fully verify applied settings."
+                        )
+                    elif (
+                        _reconnect_result
+                        == _ConfigureReconnectResult.CONFIG_RELOAD_FAILED
+                    ):
+                        print(
+                            "Phase 3: Device reconnected but config reload failed. "
+                            "Settings may still be applying."
+                        )
+                    elif (
+                        _reconnect_result == _ConfigureReconnectResult.RECONNECT_FAILED
+                    ):
                         print(
                             "Phase 3: Device did not reconnect within timeout. "
                             "Configuration may still be applying."

@@ -71,8 +71,7 @@ class _SetUrlTransactionCoordinator:
             parsed_input=self._parsed_input,
             admin_context=self._admin_context,
         )
-        original_lora_config = planner.capture_original_lora_snapshot()
-        plan = planner.build_plan(original_lora_config=original_lora_config)
+        plan = planner.build_plan()
         for ignored_name in plan.ignored_channel_names:
             logger.info(
                 'Ignoring existing or empty channel "%s" from add URL',

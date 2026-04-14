@@ -13,7 +13,7 @@ from meshtastic.node_runtime.seturl_runtime import (
     _SetUrlReplaceExecutionState,
     _SetUrlReplacePlan,
 )
-from meshtastic.protobuf import apponly_pb2, channel_pb2, config_pb2, mesh_pb2
+from meshtastic.protobuf import apponly_pb2, channel_pb2, mesh_pb2
 from meshtastic.tests.seturl.conftest import (
     _make_channel,
     _make_channel_set_with_lora,
@@ -52,7 +52,6 @@ class TestSetUrlExecutionEngine:
             original_channels_ref=[],
             original_channels_fingerprint=(),
             original_channels_by_index={},
-            original_lora_config=None,
         )
 
         state = _SetUrlAddOnlyExecutionState()
@@ -92,7 +91,6 @@ class TestSetUrlExecutionEngine:
             original_channels_ref=[],
             original_channels_fingerprint=(),
             original_channels_by_index={},
-            original_lora_config=config_pb2.Config.LoRaConfig(),
         )
 
         state = _SetUrlAddOnlyExecutionState()
@@ -129,7 +127,6 @@ class TestSetUrlExecutionEngine:
             original_channels_ref=[],
             original_channels_fingerprint=(),
             original_channels_by_index={},
-            original_lora_config=config_pb2.Config.LoRaConfig(),
         )
         state = _SetUrlAddOnlyExecutionState()
         mock_local_node._send_admin.return_value = None
@@ -185,7 +182,6 @@ class TestSetUrlExecutionEngine:
             deferred_new_named_admin_channel=None,
             deferred_new_named_admin_index=None,
             deferred_previous_admin_slot_channel=None,
-            replace_original_lora_config=None,
         )
 
         state = _SetUrlReplaceExecutionState()
@@ -230,7 +226,6 @@ class TestSetUrlExecutionEngine:
             deferred_new_named_admin_channel=None,
             deferred_new_named_admin_index=None,
             deferred_previous_admin_slot_channel=None,
-            replace_original_lora_config=None,
         )
         state = _SetUrlReplaceExecutionState()
         mock_local_node._send_admin.return_value = None
@@ -278,7 +273,6 @@ class TestSetUrlExecutionEngine:
             deferred_new_named_admin_channel=None,
             deferred_new_named_admin_index=None,
             deferred_previous_admin_slot_channel=None,
-            replace_original_lora_config=config_pb2.Config.LoRaConfig(),
         )
         state = _SetUrlReplaceExecutionState()
         mock_local_node.ensureSessionKey = MagicMock()
