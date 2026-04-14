@@ -206,7 +206,7 @@ class TestSetUrlTransactionCoordinator:
                 state.written_channel_indices.append(0)
                 raise RuntimeError("simulated transport disconnect")
 
-        coordinator._execution_engine.executeReplaceAll = _failing_then_check
+        coordinator._execution_engine.executeReplaceAll = _failing_then_check  # type: ignore[method-assign]
 
         def _restore_channels():
             mock_local_node_with_reconnect.channels = [desired_ch]
@@ -269,7 +269,7 @@ class TestSetUrlTransactionCoordinator:
             assert 0 in skip_channel_indices
             assert 1 not in skip_channel_indices
 
-        coordinator._execution_engine.executeReplaceAll = _first_fails_second_succeeds
+        coordinator._execution_engine.executeReplaceAll = _first_fails_second_succeeds  # type: ignore[method-assign]
 
         def _restore_channels():
             mock_local_node_with_reconnect.channels = [
@@ -321,7 +321,7 @@ class TestSetUrlTransactionCoordinator:
             state.written_channel_indices = []
             raise RuntimeError("persistent failure")
 
-        coordinator._execution_engine.executeReplaceAll = _always_fail
+        coordinator._execution_engine.executeReplaceAll = _always_fail  # type: ignore[method-assign]
 
         with pytest.raises(RuntimeError, match="persistent failure"):
             coordinator._apply_replace_all()
@@ -364,7 +364,7 @@ class TestSetUrlTransactionCoordinator:
         ):
             raise RuntimeError("transport disconnect")
 
-        coordinator._execution_engine.executeReplaceAll = _fail_once
+        coordinator._execution_engine.executeReplaceAll = _fail_once  # type: ignore[method-assign]
 
         with pytest.raises(RuntimeError, match="transport disconnect"):
             coordinator._apply_replace_all()

@@ -93,11 +93,11 @@ def _verify_requested_fields(
                 if list(coerced) != list(actual):
                     mismatches.append(f"{section_path}.{snake_key}")
             else:
-                coerced = yaml_value
+                scalar: Any = yaml_value
                 if field_desc.enum_type is not None and isinstance(yaml_value, str):
                     enum_val = field_desc.enum_type.values_by_name.get(yaml_value)
                     if enum_val is not None:
-                        coerced = enum_val.number
+                        scalar = enum_val.number
                     else:
                         logger.debug(
                             "Unknown enum name %r for field %s.%s; treating as mismatch.",
@@ -105,17 +105,17 @@ def _verify_requested_fields(
                             section_path,
                             snake_key,
                         )
-                        coerced = yaml_value
+                        scalar = yaml_value
                 if isinstance(yaml_value, str) and field_desc.enum_type is None:
-                    coerced = meshtastic.util.fromStr(yaml_value)
-                if isinstance(coerced, (list, tuple)):
+                    scalar = meshtastic.util.fromStr(yaml_value)
+                if isinstance(scalar, (list, tuple)):
                     logger.debug(
                         "YAML provided a list for non-repeated field %s.%s; using first element.",
                         section_path,
                         snake_key,
                     )
-                    coerced = coerced[0] if coerced else coerced
-                if coerced != actual:
+                    scalar = scalar[0] if scalar else scalar
+                if scalar != actual:
                     mismatches.append(f"{section_path}.{snake_key}")
     return mismatches
 
