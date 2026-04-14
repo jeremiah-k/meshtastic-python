@@ -698,18 +698,35 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
             )
             raise
     finally:
-        _run_host_cli_ok(
+        restore_timeout = max(
+            HOST_CONFIGURE_TIMEOUT_SECONDS,
+            HOST_READY_AFTER_CONFIGURE_TIMEOUT_SECONDS,
+        )
+        restore_rc, restore_output = _run_host_cli(
             HOST_A,
             "--configure",
             str(baseline_export_path),
-            timeout=HOST_CONFIGURE_TIMEOUT_SECONDS,
+            timeout=restore_timeout,
             meshtastic_bin=meshtastic_bin,
         )
-        _wait_for_host_ready(
-            HOST_A,
-            meshtastic_bin,
-            timeout_seconds=HOST_READY_AFTER_CONFIGURE_TIMEOUT_SECONDS,
+        restore_artifact = tmp_path / "debug-add-only-saturation-restore-host-a.txt"
+        restore_artifact.write_text(
+            f"returncode={restore_rc}\ntimeout={restore_timeout}\n\n{restore_output}",
+            encoding="utf-8",
         )
+        if restore_rc == 0:
+            _wait_for_host_ready(
+                HOST_A,
+                meshtastic_bin,
+                timeout_seconds=HOST_READY_AFTER_CONFIGURE_TIMEOUT_SECONDS,
+            )
+        else:
+            _capture_host_debug_state(
+                tmp_path,
+                HOST_A,
+                meshtastic_bin,
+                label="add-only-saturation-restore-failure-host-a",
+            )
 
 
 @pytest.mark.xfail(

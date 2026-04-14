@@ -17,14 +17,16 @@ from meshtastic.protobuf import apponly_pb2, channel_pb2, config_pb2, localonly_
 def _make_channel_url(
     settings_list: list[channel_pb2.ChannelSettings],
     *,
-    lora_region: int | None = None,
+    lora_region: str | None = None,
     lora_hop_limit: int | None = None,
 ) -> str:
     cs = apponly_pb2.ChannelSet()
     for s in settings_list:
         cs.settings.add().CopyFrom(s)
     if lora_region is not None:
-        cs.lora_config.region = lora_region
+        cs.lora_config.region = config_pb2.Config.LoRaConfig.RegionCode.Value(
+            lora_region
+        )
     if lora_hop_limit is not None:
         cs.lora_config.hop_limit = lora_hop_limit
     raw = cs.SerializeToString()
@@ -168,10 +170,9 @@ def test_channel_url_lora_presence_mismatch() -> None:
     s = channel_pb2.ChannelSettings()
     s.name = "test"
     s.psk = b"\x01\x02\x03"
-    region = config_pb2.Config.LoRaConfig.RegionCode.Value("US")
     assert (
         _verify_channel_url_match(
-            _make_channel_url([s], lora_region=region),
+            _make_channel_url([s], lora_region="US"),
             _make_channel_url([s]),
         )
         is False
@@ -183,11 +184,10 @@ def test_channel_url_lora_config_mismatch() -> None:
     s = channel_pb2.ChannelSettings()
     s.name = "test"
     s.psk = b"\x01\x02\x03"
-    region = config_pb2.Config.LoRaConfig.RegionCode.Value("US")
     assert (
         _verify_channel_url_match(
-            _make_channel_url([s], lora_region=region, lora_hop_limit=3),
-            _make_channel_url([s], lora_region=region, lora_hop_limit=5),
+            _make_channel_url([s], lora_region="US", lora_hop_limit=3),
+            _make_channel_url([s], lora_region="US", lora_hop_limit=5),
         )
         is False
     )

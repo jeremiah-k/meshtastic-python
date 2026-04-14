@@ -3225,6 +3225,11 @@ def _build_configure_interface(
     if target_module is None:
         target_module = localonly_pb2.LocalModuleConfig()
 
+    device_local = localonly_pb2.LocalConfig()
+    device_local.CopyFrom(target_local)
+    device_module = localonly_pb2.LocalModuleConfig()
+    device_module.CopyFrom(target_module)
+
     target_node = MagicMock()
     target_node.localConfig = target_local
     target_node.moduleConfig = target_module
@@ -3234,7 +3239,50 @@ def _build_configure_interface(
     target_node.setURL = MagicMock()
     target_node.set_canned_message = MagicMock()
     target_node.set_ringtone = MagicMock()
-    target_node.writeConfig = MagicMock()
+    target_node.channels = []
+    target_node.partialChannels = []
+    target_node.requestChannels = MagicMock()
+
+    def _write_config_side_effect(config_name: str) -> None:
+        local_field = target_local.DESCRIPTOR.fields_by_name.get(config_name)
+        if local_field is not None:
+            device_local.ClearField(config_name)  # type: ignore[arg-type]
+            if target_local.HasField(config_name):  # type: ignore[arg-type]
+                getattr(device_local, config_name).CopyFrom(
+                    getattr(target_local, config_name)
+                )
+            return
+        module_field = target_module.DESCRIPTOR.fields_by_name.get(config_name)
+        if module_field is not None:
+            device_module.ClearField(config_name)  # type: ignore[arg-type]
+            if target_module.HasField(config_name):  # type: ignore[arg-type]
+                getattr(device_module, config_name).CopyFrom(
+                    getattr(target_module, config_name)
+                )
+
+    target_node.writeConfig = MagicMock(side_effect=_write_config_side_effect)
+
+    def _request_config_side_effect(config_type: object, *_args: object) -> None:
+        field_name = getattr(config_type, "name", None)
+        containing_type = getattr(config_type, "containing_type", None)
+        containing_name = getattr(containing_type, "name", None)
+        if not isinstance(field_name, str):
+            return
+        if containing_name == "LocalConfig":
+            target_local.ClearField(field_name)  # type: ignore[arg-type]
+            if device_local.HasField(field_name):  # type: ignore[arg-type]
+                getattr(target_local, field_name).CopyFrom(
+                    getattr(device_local, field_name)
+                )
+            return
+        if containing_name == "LocalModuleConfig":
+            target_module.ClearField(field_name)  # type: ignore[arg-type]
+            if device_module.HasField(field_name):  # type: ignore[arg-type]
+                getattr(target_module, field_name).CopyFrom(
+                    getattr(device_module, field_name)
+                )
+
+    target_node.requestConfig = MagicMock(side_effect=_request_config_side_effect)
     target_node.setFixedPosition = MagicMock()
 
     iface = MagicMock(autospec=SerialInterface)
@@ -3400,6 +3448,8 @@ def test_main_export_config_and_configure_round_trip_nonstandard(
 
     target_local = localonly_pb2.LocalConfig()
     target_module = localonly_pb2.LocalModuleConfig()
+    device_local = localonly_pb2.LocalConfig()
+    device_module = localonly_pb2.LocalModuleConfig()
     target_node = MagicMock()
     target_node.localConfig = target_local
     target_node.moduleConfig = target_module
@@ -3409,7 +3459,51 @@ def test_main_export_config_and_configure_round_trip_nonstandard(
     target_node.setURL = MagicMock()
     target_node.set_canned_message = MagicMock()
     target_node.set_ringtone = MagicMock()
-    target_node.writeConfig = MagicMock()
+    target_node.channels = []
+    target_node.partialChannels = []
+    target_node.requestChannels = MagicMock()
+
+    def _write_config_side_effect(config_name: str) -> None:
+        local_field = target_local.DESCRIPTOR.fields_by_name.get(config_name)
+        if local_field is not None:
+            device_local.ClearField(config_name)  # type: ignore[arg-type]
+            if target_local.HasField(config_name):  # type: ignore[arg-type]
+                getattr(device_local, config_name).CopyFrom(
+                    getattr(target_local, config_name)
+                )
+            return
+        module_field = target_module.DESCRIPTOR.fields_by_name.get(config_name)
+        if module_field is not None:
+            device_module.ClearField(config_name)  # type: ignore[arg-type]
+            if target_module.HasField(config_name):  # type: ignore[arg-type]
+                getattr(device_module, config_name).CopyFrom(
+                    getattr(target_module, config_name)
+                )
+
+    target_node.writeConfig = MagicMock(side_effect=_write_config_side_effect)
+
+    def _request_config_side_effect(config_type: object, *_args: object) -> None:
+        field_name = getattr(config_type, "name", None)
+        containing_type = getattr(config_type, "containing_type", None)
+        containing_name = getattr(containing_type, "name", None)
+        if not isinstance(field_name, str):
+            return
+        if containing_name == "LocalConfig":
+            target_local.ClearField(field_name)  # type: ignore[arg-type]
+            if device_local.HasField(field_name):  # type: ignore[arg-type]
+                getattr(target_local, field_name).CopyFrom(
+                    getattr(device_local, field_name)
+                )
+            return
+        if containing_name == "LocalModuleConfig":
+            target_module.ClearField(field_name)  # type: ignore[arg-type]
+            if device_module.HasField(field_name):  # type: ignore[arg-type]
+                getattr(target_module, field_name).CopyFrom(
+                    getattr(device_module, field_name)
+                )
+
+    target_node.requestConfig = MagicMock(side_effect=_request_config_side_effect)
+    target_node.getURL = MagicMock(return_value="https://meshtastic.org/e/#CgYSAQABAA")
     target_node.setFixedPosition = MagicMock()
 
     configure_iface = MagicMock(autospec=SerialInterface)
