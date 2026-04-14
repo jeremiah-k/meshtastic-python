@@ -147,6 +147,7 @@ def mock_local_node(mock_iface: MagicMock) -> MagicMock:
             "_get_admin_channel_index",
             "_get_named_admin_channel_index",
             "_execute_with_node_db_lock",
+            "getURL",
         ]
     )
     node.nodeNum = 1234567890
@@ -163,6 +164,7 @@ def mock_local_node(mock_iface: MagicMock) -> MagicMock:
     node._get_admin_channel_index = MagicMock(return_value=0)
     node._get_named_admin_channel_index = MagicMock(return_value=None)
     node._execute_with_node_db_lock = MagicMock(side_effect=lambda func: func())
+    node.getURL = MagicMock(return_value="https://meshtastic.org/e/#test")
 
     mock_iface.localNode = node
     return node
@@ -204,3 +206,75 @@ def execution_engine(
         The execution engine instance under test.
     """
     return _SetUrlExecutionEngine(mock_local_node, cache_manager=cache_manager)
+
+
+@pytest.fixture
+def mock_iface_with_reconnect() -> MagicMock:
+    """Create a mock interface that simulates reconnect behavior.
+
+    Returns
+    -------
+    MagicMock
+        A mock interface with isConnected Event that can be controlled.
+    """
+    iface = MagicMock(spec=["localNode", "isConnected", "waitForConfig"])
+    iface.localNode = None
+    iface.isConnected = threading.Event()
+    iface.isConnected.set()
+    iface.waitForConfig = MagicMock()
+    return iface
+
+
+@pytest.fixture
+def mock_local_node_with_reconnect(
+    mock_iface_with_reconnect: MagicMock,
+) -> MagicMock:
+    """Create a mock local node with reconnect-capable interface.
+
+    Parameters
+    ----------
+    mock_iface_with_reconnect : MagicMock
+        The mock interface fixture with reconnect behavior.
+
+    Returns
+    -------
+    MagicMock
+        A mock node configured for reconnect testing.
+    """
+    node = MagicMock(
+        spec=[
+            "nodeNum",
+            "iface",
+            "noProto",
+            "_channels_lock",
+            "channels",
+            "partialChannels",
+            "localConfig",
+            "_raise_interface_error",
+            "_write_channel_snapshot",
+            "_send_admin",
+            "ensureSessionKey",
+            "_get_admin_channel_index",
+            "_get_named_admin_channel_index",
+            "_execute_with_node_db_lock",
+            "getURL",
+        ]
+    )
+    node.nodeNum = 1234567890
+    node.iface = mock_iface_with_reconnect
+    node.noProto = False
+    node._channels_lock = threading.RLock()
+    node.channels = None
+    node.partialChannels = []
+    node.localConfig = localonly_pb2.LocalConfig()
+    node._raise_interface_error = MagicMock(side_effect=Exception("interface error"))
+    node._write_channel_snapshot = MagicMock()
+    node._send_admin = MagicMock()
+    node.ensureSessionKey = MagicMock()
+    node._get_admin_channel_index = MagicMock(return_value=0)
+    node._get_named_admin_channel_index = MagicMock(return_value=None)
+    node._execute_with_node_db_lock = MagicMock(side_effect=lambda func: func())
+    node.getURL = MagicMock(return_value="https://meshtastic.org/e/#test")
+
+    mock_iface_with_reconnect.localNode = node
+    return node

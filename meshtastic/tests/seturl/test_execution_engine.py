@@ -288,3 +288,169 @@ class TestSetUrlExecutionEngine:
         mock_local_node.ensureSessionKey.assert_called()
         mock_local_node._send_admin.assert_called()
         assert state.lora_write_started is True
+
+    @pytest.mark.unit
+    def test_execute_replace_all_skip_channel_indices(
+        self,
+        execution_engine: _SetUrlExecutionEngine,
+        mock_local_node: MagicMock,
+    ) -> None:
+        """execute_replace_all skips channels in skip_channel_indices."""
+        mock_local_node.channels = [
+            _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "already_done"),
+            _make_channel(1, channel_pb2.Channel.Role.SECONDARY, "needs_write"),
+        ]
+
+        staged_0 = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "already_done")
+        staged_1 = _make_channel(1, channel_pb2.Channel.Role.SECONDARY, "needs_write")
+        staged_disabled = channel_pb2.Channel(
+            index=2, role=channel_pb2.Channel.Role.DISABLED
+        )
+
+        channel_set = apponly_pb2.ChannelSet()
+        settings_0 = channel_set.settings.add()
+        settings_0.name = "already_done"
+        settings_0.psk = b"\x01"
+        settings_1 = channel_set.settings.add()
+        settings_1.name = "needs_write"
+        settings_1.psk = b"\x02"
+
+        parsed_input = _SetUrlParsedInput(
+            channel_set=channel_set,
+            has_lora_update=False,
+        )
+
+        admin_context = MagicMock()
+        admin_context.admin_index_for_write = 0
+        admin_context.has_admin_write_node_named_admin = False
+
+        plan = _SetUrlReplacePlan(
+            max_channels=3,
+            replace_original_channels_ref=mock_local_node.channels,
+            replace_original_channels_fingerprint=_channels_fingerprint(
+                mock_local_node.channels
+            ),
+            staged_channels=[staged_0, staged_1, staged_disabled],
+            staged_channels_by_index={
+                0: staged_0,
+                1: staged_1,
+                2: staged_disabled,
+            },
+            deferred_new_named_admin_channel=None,
+            deferred_new_named_admin_index=None,
+            deferred_previous_admin_slot_channel=None,
+        )
+
+        state = _SetUrlReplaceExecutionState()
+
+        execution_engine.executeReplaceAll(
+            parsed_input=parsed_input,
+            admin_context=admin_context,
+            plan=plan,
+            state=state,
+            skip_channel_indices={0},
+        )
+
+        written_indices = [
+            call.args[0].index
+            for call in mock_local_node._write_channel_snapshot.call_args_list
+        ]
+        assert 0 not in written_indices
+        assert 1 in written_indices
+        assert 2 in written_indices
+
+    @pytest.mark.unit
+    def test_execute_replace_all_skip_lora(
+        self,
+        execution_engine: _SetUrlExecutionEngine,
+        mock_local_node: MagicMock,
+    ) -> None:
+        """execute_replace_all skips LoRa write when skip_lora=True."""
+        mock_local_node.channels = [
+            _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "primary"),
+        ]
+        channel_set = _make_channel_set_with_lora("primary")
+        parsed_input = _SetUrlParsedInput(
+            channel_set=channel_set,
+            has_lora_update=True,
+        )
+        admin_context = MagicMock()
+        admin_context.admin_index_for_write = 0
+        admin_context.has_admin_write_node_named_admin = False
+        staged = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "primary")
+        plan = _SetUrlReplacePlan(
+            max_channels=1,
+            replace_original_channels_ref=mock_local_node.channels,
+            replace_original_channels_fingerprint=_channels_fingerprint(
+                mock_local_node.channels
+            ),
+            staged_channels=[staged],
+            staged_channels_by_index={0: staged},
+            deferred_new_named_admin_channel=None,
+            deferred_new_named_admin_index=None,
+            deferred_previous_admin_slot_channel=None,
+        )
+        state = _SetUrlReplaceExecutionState()
+
+        execution_engine.executeReplaceAll(
+            parsed_input=parsed_input,
+            admin_context=admin_context,
+            plan=plan,
+            state=state,
+            skip_lora=True,
+        )
+
+        assert state.lora_write_started is False
+        mock_local_node._send_admin.assert_not_called()
+
+    @pytest.mark.unit
+    def test_execute_replace_all_skip_set_skips_fingerprint_check(
+        self,
+        execution_engine: _SetUrlExecutionEngine,
+        mock_local_node: MagicMock,
+    ) -> None:
+        """execute_replace_all with skip_channel_indices bypasses fingerprint pre-check."""
+        original_channels = [
+            _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "old"),
+        ]
+        mock_local_node.channels = [
+            _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "changed"),
+        ]
+
+        staged = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "newprimary")
+        channel_set = apponly_pb2.ChannelSet()
+        settings = channel_set.settings.add()
+        settings.name = "newprimary"
+        settings.psk = b"\x01"
+
+        parsed_input = _SetUrlParsedInput(
+            channel_set=channel_set,
+            has_lora_update=False,
+        )
+        admin_context = MagicMock()
+        admin_context.admin_index_for_write = 0
+
+        plan = _SetUrlReplacePlan(
+            max_channels=1,
+            replace_original_channels_ref=original_channels,
+            replace_original_channels_fingerprint=_channels_fingerprint(
+                original_channels
+            ),
+            staged_channels=[staged],
+            staged_channels_by_index={0: staged},
+            deferred_new_named_admin_channel=None,
+            deferred_new_named_admin_index=None,
+            deferred_previous_admin_slot_channel=None,
+        )
+
+        state = _SetUrlReplaceExecutionState()
+        execution_engine.executeReplaceAll(
+            parsed_input=parsed_input,
+            admin_context=admin_context,
+            plan=plan,
+            state=state,
+            skip_channel_indices=set(),
+        )
+
+        mock_local_node._write_channel_snapshot.assert_called_once()
+        assert 0 in state.written_channel_indices

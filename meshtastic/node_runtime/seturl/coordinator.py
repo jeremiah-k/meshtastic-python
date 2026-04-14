@@ -12,9 +12,11 @@ from meshtastic.node_runtime.seturl.execution import (
     _SetUrlExecutionEngine,
     _SetUrlReplaceExecutionState,
 )
+from meshtastic.node_runtime.seturl.helpers import _compute_remaining_channel_writes
 from meshtastic.node_runtime.seturl.parser import _SetUrlParsedInput
 from meshtastic.node_runtime.seturl.planner import (
     _SetUrlAddOnlyPlanner,
+    _SetUrlReplacePlan,
     _SetUrlReplacePlanner,
 )
 
@@ -23,8 +25,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-POST_FAILURE_RECONNECT_TIMEOUT_SECONDS = 10.0
-"""Maximum time to wait for transport reconnect after a replace-all write failure."""
+MAX_REPLACE_ALL_RESUME_ATTEMPTS = 3
+"""Maximum number of reconnect/resume cycles for replace-all."""
+
+RESUME_RECONNECT_TIMEOUT_SECONDS = 15.0
+"""Timeout for waiting for transport reconnect during resume."""
 
 
 class _SetUrlTransactionCoordinator:
@@ -67,59 +72,87 @@ class _SetUrlTransactionCoordinator:
             has_admin_write_node_named_admin=(named_admin_index_for_write is not None),
         )
 
-    def _attempt_post_failure_reconnect_report(self) -> None:
-        """Best-effort reconnect and device state report after a write failure.
+    def _reconnect_and_compute_remaining(
+        self,
+        plan: _SetUrlReplacePlan,
+    ) -> tuple[set[int], bool] | None:
+        """Reconnect, reload device state, and compute remaining writes.
 
-        Attempts to wait for the transport to reconnect, reload the node
-        configuration, and log the actual device channel state.  This does
-        **not** resume writes — it only provides diagnostic information
-        about what the device actually contains after the partial failure.
-
-        All steps are wrapped in broad exception handling so that a
-        secondary failure during diagnostics never suppresses the original
-        error.
+        Returns
+        -------
+        tuple[set[int], bool] | None
+            ``(remaining_channel_indices, lora_still_needed)`` if reconnect
+            succeeded, or ``None`` if reconnect failed.
         """
         try:
             iface = self._node.iface
             connected = iface.isConnected.is_set()
             if not connected:
                 logger.info(
-                    "Attempting to wait for transport reconnect after failure "
-                    "(timeout=%.1fs)...",
-                    POST_FAILURE_RECONNECT_TIMEOUT_SECONDS,
+                    "Waiting for transport reconnect (timeout=%.1fs)...",
+                    RESUME_RECONNECT_TIMEOUT_SECONDS,
                 )
-                connected = iface.isConnected.wait(
-                    POST_FAILURE_RECONNECT_TIMEOUT_SECONDS
-                )
+                connected = iface.isConnected.wait(RESUME_RECONNECT_TIMEOUT_SECONDS)
             if not connected:
                 logger.warning(
-                    "Transport did not reconnect within %.1fs; "
-                    "cannot report actual device channel state.",
-                    POST_FAILURE_RECONNECT_TIMEOUT_SECONDS,
+                    "Transport did not reconnect within %.1fs; cannot resume.",
+                    RESUME_RECONNECT_TIMEOUT_SECONDS,
                 )
-                return
+                return None
             logger.info("Transport reconnected; reloading device config...")
-            iface.waitForConfig()
-            actual_url = self._node.getURL()
-            logger.info(
-                "Actual device channel URL after partial failure: %s", actual_url
+            self._cache_manager.invalidate_channel_cache(
+                "Channel cache invalidated before resume reload."
             )
-            channels = self._node.channels
-            if channels is not None:
-                active_names = [
-                    ch.settings.name
-                    for ch in channels
-                    if ch.role != 0 and ch.HasField("settings") and ch.settings.name
-                ]
-                logger.info(
-                    "Active named channels on device: %s",
-                    ", ".join(active_names) if active_names else "(none)",
+            iface.waitForConfig()
+            actual_channels = self._node.channels
+            if actual_channels is None:
+                logger.warning(
+                    "Device channels not available after reconnect; cannot resume."
                 )
+                return None
+            remaining_indices = _compute_remaining_channel_writes(
+                actual_channels, plan.staged_channels_by_index
+            )
+            lora_needed = False
+            if self._parsed_input.has_lora_update:
+                actual_lora = self._node.localConfig.lora
+                lora_needed = (
+                    actual_lora.SerializeToString()
+                    != self._parsed_input.channel_set.lora_config.SerializeToString()
+                )
+            if not remaining_indices and not lora_needed:
+                logger.info(
+                    "Device state already matches desired configuration after "
+                    "reconnect; no further writes needed."
+                )
+                return (set(), False)
+            logger.info(
+                "After reconnect: %d channel(s) still differ from desired state, "
+                "LoRa update %s.",
+                len(remaining_indices),
+                "still needed" if lora_needed else "already applied",
+            )
+            if remaining_indices:
+                diff_names: list[str] = []
+                for idx in sorted(remaining_indices):
+                    desired_ch = plan.staged_channels_by_index.get(idx)
+                    name = (
+                        desired_ch.settings.name
+                        if desired_ch and desired_ch.settings
+                        else f"index {idx}"
+                    )
+                    diff_names.append(name)
+                logger.info(
+                    "Channels still needing writes: %s",
+                    ", ".join(diff_names),
+                )
+            return (remaining_indices, lora_needed)
         except Exception:
             logger.debug(
-                "Post-failure reconnect/report failed; ignoring diagnostic error.",
+                "Reconnect/compute-remaining failed; ignoring diagnostic error.",
                 exc_info=True,
             )
+            return None
 
     def _apply_add_only(self) -> None:
         """Execute the addOnly setURL transaction pipeline."""
@@ -173,16 +206,19 @@ class _SetUrlTransactionCoordinator:
             )
 
     def _apply_replace_all(self) -> None:
-        """Execute the replace-all setURL transaction pipeline.
+        """Execute the replace-all setURL transaction pipeline with bounded resume.
 
         Plans the write sequence, delegates execution to the engine, and
-        invalidates local caches on failure.  The execution state tracks
-        the current stage and written channel indices so that error
-        reports identify the exact failure point.
+        invalidates local caches on failure.  If a write failure occurs
+        (typically from transport disconnect during a large channel set
+        replacement over TCP), the coordinator attempts to reconnect,
+        reload actual device state, compute remaining writes, and continue
+        only the channels/LoRa config that still differ from desired state.
 
-        On failure, attempts a best-effort reconnect and device state
-        report so that operators can see what the device actually
-        contains without having to manually reconnect first.
+        Resume is bounded by ``MAX_REPLACE_ALL_RESUME_ATTEMPTS`` total
+        attempts (initial + resume retries).  If convergence is not
+        achieved within the bound, the final error is raised with
+        precise reporting of the failure stage.
         """
         planner = _SetUrlReplacePlanner(
             self._node,
@@ -190,38 +226,96 @@ class _SetUrlTransactionCoordinator:
             admin_context=self._admin_context,
         )
         plan = planner.build_plan()
+        skip_channel_indices: set[int] = set()
+        skip_lora = False
+        last_exception: Exception | None = None
         execution_state = _SetUrlReplaceExecutionState()
-        try:
-            self._execution_engine.executeReplaceAll(
-                parsed_input=self._parsed_input,
-                admin_context=self._admin_context,
-                plan=plan,
-                state=execution_state,
-            )
-        except Exception:
-            _stage_label = (
-                execution_state.stage.value
-                if execution_state.stage is not None
-                else "unknown"
-            )
-            _total_channels = len(plan.staged_channels)
-            logger.error(
-                "setURL replace-all failed at stage '%s' after writing %d of %d "
-                "planned channel writes; device may be partially configured. "
-                "Phase 3 reconnect/verify did not run because failure occurred "
-                "during Phase 1. Local caches invalidated — reconnect and reload "
-                "before further operations.",
-                _stage_label,
-                len(execution_state.written_channel_indices),
-                _total_channels,
-            )
-            self._cache_manager.invalidate_channel_cache(
-                "Channel cache invalidated after setURL replace-all partial failure."
-            )
-            if execution_state.lora_write_started:
-                self._cache_manager.clear_lora_cache_with_warning(
-                    "LoRa config cache cleared after setURL replace-all partial failure; "
-                    "reload config before using localConfig.lora."
+        for attempt in range(MAX_REPLACE_ALL_RESUME_ATTEMPTS):
+            execution_state = _SetUrlReplaceExecutionState()
+            try:
+                self._execution_engine.executeReplaceAll(
+                    parsed_input=self._parsed_input,
+                    admin_context=self._admin_context,
+                    plan=plan,
+                    state=execution_state,
+                    skip_channel_indices=skip_channel_indices or None,
+                    skip_lora=skip_lora,
                 )
-            self._attempt_post_failure_reconnect_report()
-            raise
+                return
+            except Exception as exc:
+                last_exception = exc
+                _stage_label = (
+                    execution_state.stage.value
+                    if execution_state.stage is not None
+                    else "unknown"
+                )
+                logger.warning(
+                    "setURL replace-all attempt %d/%d failed at stage '%s'; "
+                    "%d channel writes completed before failure.",
+                    attempt + 1,
+                    MAX_REPLACE_ALL_RESUME_ATTEMPTS,
+                    _stage_label,
+                    len(execution_state.written_channel_indices),
+                )
+                if attempt + 1 >= MAX_REPLACE_ALL_RESUME_ATTEMPTS:
+                    break
+                self._cache_manager.invalidate_channel_cache(
+                    "Channel cache invalidated after setURL replace-all partial failure."
+                )
+                if execution_state.lora_write_started:
+                    self._cache_manager.clear_lora_cache_with_warning(
+                        "LoRa config cache cleared after setURL replace-all partial failure."
+                    )
+                resume_result = self._reconnect_and_compute_remaining(plan)
+                if resume_result is None:
+                    logger.error(
+                        "Could not reconnect after replace-all failure; "
+                        "cannot attempt resume."
+                    )
+                    break
+                remaining_indices, lora_needed = resume_result
+                if not remaining_indices and not lora_needed:
+                    logger.info(
+                        "Replace-all resumed successfully: device converged to "
+                        "desired state after reconnect (attempt %d).",
+                        attempt + 1,
+                    )
+                    return
+                skip_channel_indices = {
+                    idx
+                    for idx in plan.staged_channels_by_index
+                    if idx not in remaining_indices
+                }
+                skip_lora = not lora_needed
+                self._admin_context = self._resolve_admin_context()
+                logger.info(
+                    "Resuming replace-all (attempt %d/%d): %d channel(s) and %s"
+                    "LoRa write remaining.",
+                    attempt + 2,
+                    MAX_REPLACE_ALL_RESUME_ATTEMPTS,
+                    len(remaining_indices),
+                    "" if lora_needed else "no ",
+                )
+        _stage_label = (
+            execution_state.stage.value
+            if execution_state.stage is not None
+            else "unknown"
+        )
+        logger.error(
+            "setURL replace-all failed at stage '%s' after %d attempt(s); "
+            "device may be partially configured. Phase 3 reconnect/verify did "
+            "not run because failure occurred during Phase 1. Local caches "
+            "invalidated — reconnect and reload before further operations.",
+            _stage_label,
+            MAX_REPLACE_ALL_RESUME_ATTEMPTS,
+        )
+        self._cache_manager.invalidate_channel_cache(
+            "Channel cache invalidated after setURL replace-all final failure."
+        )
+        if execution_state.lora_write_started:
+            self._cache_manager.clear_lora_cache_with_warning(
+                "LoRa config cache cleared after setURL replace-all final failure; "
+                "reload config before using localConfig.lora."
+            )
+        if last_exception is not None:
+            raise last_exception

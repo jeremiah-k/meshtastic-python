@@ -8,6 +8,7 @@ import pytest
 from meshtastic.node_runtime.seturl_runtime import (
     _SetUrlParsedInput,
     _SetUrlTransactionCoordinator,
+    _compute_remaining_channel_writes,
 )
 from meshtastic.protobuf import apponly_pb2, channel_pb2, localonly_pb2
 from meshtastic.tests.seturl.conftest import _make_channel
@@ -161,3 +162,210 @@ class TestSetUrlTransactionCoordinator:
 
         assert mock_local_node.channels is None
         assert mock_local_node.localConfig.lora.hop_limit == 5
+
+    @pytest.mark.unit
+    def test_replace_all_resumes_and_finds_convergence(
+        self, mock_local_node_with_reconnect: MagicMock
+    ) -> None:
+        """Replace-all resumes after failure and finds device already converged."""
+        from meshtastic.tests.seturl.conftest import _make_channel
+
+        desired_ch = _make_channel(
+            0, channel_pb2.Channel.Role.PRIMARY, "desired", b"\x01"
+        )
+        mock_local_node_with_reconnect.channels = [desired_ch]
+
+        channel_set = apponly_pb2.ChannelSet()
+        settings = channel_set.settings.add()
+        settings.name = "desired"
+        settings.psk = b"\x01"
+
+        parsed_input = _SetUrlParsedInput(
+            channel_set=channel_set,
+            has_lora_update=False,
+        )
+
+        coordinator = _SetUrlTransactionCoordinator(
+            mock_local_node_with_reconnect, parsed_input=parsed_input
+        )
+
+        call_count = 0
+
+        def _failing_then_check(
+            *,
+            parsed_input,
+            admin_context,
+            plan,
+            state,
+            skip_channel_indices=None,
+            skip_lora=False,
+        ):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                state.written_channel_indices.append(0)
+                raise RuntimeError("simulated transport disconnect")
+
+        coordinator._execution_engine.executeReplaceAll = _failing_then_check
+
+        coordinator._apply_replace_all()
+        assert call_count == 1
+
+    @pytest.mark.unit
+    def test_replace_all_resumes_partial_writes(
+        self, mock_local_node_with_reconnect: MagicMock
+    ) -> None:
+        """Replace-all resumes and writes only remaining channels."""
+        from meshtastic.tests.seturl.conftest import _make_channel
+
+        desired_0 = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "ch0", b"\x01")
+
+        mock_local_node_with_reconnect.channels = [
+            desired_0,
+            _make_channel(1, channel_pb2.Channel.Role.DISABLED),
+        ]
+
+        channel_set = apponly_pb2.ChannelSet()
+        settings_0 = channel_set.settings.add()
+        settings_0.name = "ch0"
+        settings_0.psk = b"\x01"
+        settings_1 = channel_set.settings.add()
+        settings_1.name = "ch1"
+        settings_1.psk = b"\x02"
+
+        parsed_input = _SetUrlParsedInput(
+            channel_set=channel_set,
+            has_lora_update=False,
+        )
+
+        coordinator = _SetUrlTransactionCoordinator(
+            mock_local_node_with_reconnect, parsed_input=parsed_input
+        )
+
+        call_count = 0
+
+        def _first_fails_second_succeeds(
+            *,
+            parsed_input,
+            admin_context,
+            plan,
+            state,
+            skip_channel_indices=None,
+            skip_lora=False,
+        ):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                state.written_channel_indices.append(0)
+                raise RuntimeError("simulated disconnect after channel 0")
+            assert skip_channel_indices is not None
+            assert 0 in skip_channel_indices
+            assert 1 not in skip_channel_indices
+
+        coordinator._execution_engine.executeReplaceAll = _first_fails_second_succeeds
+
+        coordinator._apply_replace_all()
+        assert call_count == 2
+
+    @pytest.mark.unit
+    def test_replace_all_exhausted_retries_raises(
+        self, mock_local_node_with_reconnect: MagicMock
+    ) -> None:
+        """Replace-all raises after exhausting all resume attempts."""
+        from meshtastic.tests.seturl.conftest import _make_channel
+
+        mock_local_node_with_reconnect.channels = [
+            _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "old"),
+        ]
+
+        channel_set = apponly_pb2.ChannelSet()
+        settings = channel_set.settings.add()
+        settings.name = "new"
+        settings.psk = b"\x01"
+
+        parsed_input = _SetUrlParsedInput(
+            channel_set=channel_set,
+            has_lora_update=False,
+        )
+
+        coordinator = _SetUrlTransactionCoordinator(
+            mock_local_node_with_reconnect, parsed_input=parsed_input
+        )
+
+        def _always_fail(
+            *,
+            parsed_input,
+            admin_context,
+            plan,
+            state,
+            skip_channel_indices=None,
+            skip_lora=False,
+        ):
+            state.written_channel_indices = []
+            raise RuntimeError("persistent failure")
+
+        coordinator._execution_engine.executeReplaceAll = _always_fail
+
+        with pytest.raises(RuntimeError, match="persistent failure"):
+            coordinator._apply_replace_all()
+
+    @pytest.mark.unit
+    def test_replace_all_reconnect_failure_raises_original(
+        self, mock_local_node_with_reconnect: MagicMock
+    ) -> None:
+        """Replace-all raises original error when reconnect fails."""
+        from meshtastic.tests.seturl.conftest import _make_channel
+
+        mock_local_node_with_reconnect.channels = [
+            _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "old"),
+        ]
+        mock_iface = mock_local_node_with_reconnect.iface
+        mock_iface.isConnected.clear()
+
+        channel_set = apponly_pb2.ChannelSet()
+        settings = channel_set.settings.add()
+        settings.name = "new"
+        settings.psk = b"\x01"
+
+        parsed_input = _SetUrlParsedInput(
+            channel_set=channel_set,
+            has_lora_update=False,
+        )
+
+        coordinator = _SetUrlTransactionCoordinator(
+            mock_local_node_with_reconnect, parsed_input=parsed_input
+        )
+
+        def _fail_once(
+            *,
+            parsed_input,
+            admin_context,
+            plan,
+            state,
+            skip_channel_indices=None,
+            skip_lora=False,
+        ):
+            raise RuntimeError("transport disconnect")
+
+        coordinator._execution_engine.executeReplaceAll = _fail_once
+
+        with pytest.raises(RuntimeError, match="transport disconnect"):
+            coordinator._apply_replace_all()
+
+    @pytest.mark.unit
+    def test_compute_remaining_channel_writes_detects_differences(self) -> None:
+        """_compute_remaining_channel_writes returns indices that differ."""
+        from meshtastic.tests.seturl.conftest import _make_channel
+
+        actual = [
+            _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "same", b"\x01"),
+            _make_channel(1, channel_pb2.Channel.Role.SECONDARY, "old", b"\x02"),
+            _make_channel(2, channel_pb2.Channel.Role.DISABLED),
+        ]
+        desired_by_index = {
+            0: _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "same", b"\x01"),
+            1: _make_channel(1, channel_pb2.Channel.Role.SECONDARY, "new", b"\x03"),
+            2: channel_pb2.Channel(index=2, role=channel_pb2.Channel.Role.DISABLED),
+        }
+        remaining = _compute_remaining_channel_writes(actual, desired_by_index)
+        assert remaining == {1}

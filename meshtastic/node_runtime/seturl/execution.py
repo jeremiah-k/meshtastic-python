@@ -156,6 +156,8 @@ class _SetUrlExecutionEngine:
         admin_context: _SetUrlAdminContext,
         plan: _SetUrlReplacePlan,
         state: _SetUrlReplaceExecutionState,
+        skip_channel_indices: set[int] | None = None,
+        skip_lora: bool = False,
     ) -> None:
         """Execute replace-all writes in transactional order.
 
@@ -173,28 +175,37 @@ class _SetUrlExecutionEngine:
             )
             if channel is not None
         }
-        channels = self._node.channels
-        channels_changed = plan.replace_original_channels_ref is not channels
-        if (
-            not channels_changed
-            and plan.replace_original_channels_fingerprint
-            and channels is not None
-        ):
-            channels_changed = (
-                _channels_fingerprint(channels)
-                != plan.replace_original_channels_fingerprint
-            )
-        if channels_changed:
-            self._cache_manager.invalidate_channel_cache(
-                "Channel cache changed before replace-all write; invalidating local channel cache."
-            )
-            self._node._raise_interface_error(  # noqa: SLF001
-                "Channel cache changed before replace-all write; aborting transaction."
-            )
+        cache_ref = (
+            plan.replace_original_channels_ref if skip_channel_indices is None else None
+        )
+        if skip_channel_indices is None:
+            channels = self._node.channels
+            channels_changed = plan.replace_original_channels_ref is not channels
+            if (
+                not channels_changed
+                and plan.replace_original_channels_fingerprint
+                and channels is not None
+            ):
+                channels_changed = (
+                    _channels_fingerprint(channels)
+                    != plan.replace_original_channels_fingerprint
+                )
+            if channels_changed:
+                self._cache_manager.invalidate_channel_cache(
+                    "Channel cache changed before replace-all write; invalidating local channel cache."
+                )
+                self._node._raise_interface_error(  # noqa: SLF001
+                    "Channel cache changed before replace-all write; aborting transaction."
+                )
         state.stage = _ReplaceAllStage.CHANNEL_WRITES
         written_count = 0
         for staged_channel in plan.staged_channels:
             if staged_channel.index in deferred_channel_indexes:
+                continue
+            if (
+                skip_channel_indices is not None
+                and staged_channel.index in skip_channel_indices
+            ):
                 continue
             if written_count > 0:
                 time.sleep(CHANNEL_WRITE_PACE_SECONDS)
@@ -211,65 +222,81 @@ class _SetUrlExecutionEngine:
             state.written_channel_indices.append(staged_channel.index)
             self._cache_manager.apply_replace_channel_write(
                 staged_channel,
-                expected_channels_ref=plan.replace_original_channels_ref,
+                expected_channels_ref=cache_ref,
             )
             written_count += 1
 
         state.stage = _ReplaceAllStage.LORA_CONFIG
-        if parsed_input.has_lora_update:
-            time.sleep(LORA_WRITE_SETTLE_SECONDS)
-        self._write_lora_config(parsed_input, admin_context, state)
-        if parsed_input.has_lora_update:
-            self._cache_manager.apply_lora_success(parsed_input.channel_set.lora_config)
+        if not skip_lora:
+            if parsed_input.has_lora_update:
+                time.sleep(LORA_WRITE_SETTLE_SECONDS)
+            self._write_lora_config(parsed_input, admin_context, state)
+            if parsed_input.has_lora_update:
+                self._cache_manager.apply_lora_success(
+                    parsed_input.channel_set.lora_config
+                )
 
         if plan.deferred_new_named_admin_channel is not None:
-            state.stage = _ReplaceAllStage.DEFERRED_NAMED_ADMIN
-            time.sleep(DEFERRED_ADMIN_PACE_SECONDS)
-            logger.debug(
-                "Writing deferred admin channel index=%s role=%s name=%s",
-                plan.deferred_new_named_admin_channel.index,
-                self._safe_channel_role_name(
-                    plan.deferred_new_named_admin_channel.role
-                ),
-                (
-                    plan.deferred_new_named_admin_channel.settings.name
-                    if plan.deferred_new_named_admin_channel.settings
-                    else None
-                ),
-            )
-            self._node._write_channel_snapshot(  # noqa: SLF001
-                plan.deferred_new_named_admin_channel,
-                adminIndex=admin_context.admin_index_for_write,
-            )
-            state.written_channel_indices.append(
-                plan.deferred_new_named_admin_channel.index
-            )
-            self._cache_manager.apply_replace_channel_write(
-                plan.deferred_new_named_admin_channel,
-                expected_channels_ref=plan.replace_original_channels_ref,
-            )
+            if (
+                skip_channel_indices is not None
+                and plan.deferred_new_named_admin_channel.index in skip_channel_indices
+            ):
+                pass
+            else:
+                state.stage = _ReplaceAllStage.DEFERRED_NAMED_ADMIN
+                time.sleep(DEFERRED_ADMIN_PACE_SECONDS)
+                logger.debug(
+                    "Writing deferred admin channel index=%s role=%s name=%s",
+                    plan.deferred_new_named_admin_channel.index,
+                    self._safe_channel_role_name(
+                        plan.deferred_new_named_admin_channel.role
+                    ),
+                    (
+                        plan.deferred_new_named_admin_channel.settings.name
+                        if plan.deferred_new_named_admin_channel.settings
+                        else None
+                    ),
+                )
+                self._node._write_channel_snapshot(  # noqa: SLF001
+                    plan.deferred_new_named_admin_channel,
+                    adminIndex=admin_context.admin_index_for_write,
+                )
+                state.written_channel_indices.append(
+                    plan.deferred_new_named_admin_channel.index
+                )
+                self._cache_manager.apply_replace_channel_write(
+                    plan.deferred_new_named_admin_channel,
+                    expected_channels_ref=cache_ref,
+                )
 
         if plan.deferred_previous_admin_slot_channel is not None:
-            state.stage = _ReplaceAllStage.DEFERRED_PREVIOUS_ADMIN
-            time.sleep(DEFERRED_ADMIN_PACE_SECONDS)
-            updated_admin_index_for_write = admin_context.admin_index_for_write
-            if plan.deferred_new_named_admin_channel is not None:
-                updated_admin_index_for_write = (
-                    admin_context.admin_write_node._get_admin_channel_index()  # noqa: SLF001
+            if (
+                skip_channel_indices is not None
+                and plan.deferred_previous_admin_slot_channel.index
+                in skip_channel_indices
+            ):
+                pass
+            else:
+                state.stage = _ReplaceAllStage.DEFERRED_PREVIOUS_ADMIN
+                time.sleep(DEFERRED_ADMIN_PACE_SECONDS)
+                updated_admin_index_for_write = admin_context.admin_index_for_write
+                if plan.deferred_new_named_admin_channel is not None:
+                    updated_admin_index_for_write = (
+                        admin_context.admin_write_node._get_admin_channel_index()  # noqa: SLF001
+                    )
+                logger.debug(
+                    "Rewriting deferred admin slot i:%s via admin index %s",
+                    plan.deferred_previous_admin_slot_channel.index,
+                    updated_admin_index_for_write,
                 )
-            logger.debug(
-                "Rewriting deferred admin slot i:%s via admin index %s",
-                plan.deferred_previous_admin_slot_channel.index,
-                updated_admin_index_for_write,
-            )
-            self._node._write_channel_snapshot(  # noqa: SLF001
-                plan.deferred_previous_admin_slot_channel,
-                adminIndex=updated_admin_index_for_write,
-            )
-            state.written_channel_indices.append(
-                plan.deferred_previous_admin_slot_channel.index
-            )
-            self._cache_manager.apply_replace_channel_write(
-                plan.deferred_previous_admin_slot_channel,
-                expected_channels_ref=plan.replace_original_channels_ref,
-            )
+                self._node._write_channel_snapshot(  # noqa: SLF001
+                    plan.deferred_previous_admin_slot_channel,
+                    adminIndex=updated_admin_index_for_write,
+                )
+                state.written_channel_indices.append(
+                    plan.deferred_previous_admin_slot_channel.index
+                )
+                self._cache_manager.apply_replace_channel_write(
+                    plan.deferred_previous_admin_slot_channel,
+                    expected_channels_ref=cache_ref,
+                )

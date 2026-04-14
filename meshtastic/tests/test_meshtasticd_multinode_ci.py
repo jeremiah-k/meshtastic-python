@@ -381,9 +381,10 @@ def _assert_admin_commands(host: str, meshtastic_bin: str) -> None:
 
 
 @pytest.mark.xfail(
-    reason="Known product gap: 8-channel setURL replace-all over TCP/meshtasticd "
-    "can cause transport disconnects mid-transaction. "
-    "See seturl/execution.py executeReplaceAll for next implementation boundary.",
+    reason="Resume logic implemented but 8-channel replace-all over TCP/meshtasticd "
+    "still prone to multi-disconnect edge cases. Resume handles single "
+    "disconnects; repeated disconnects within the same transaction may exceed "
+    "retry bounds.",
     strict=False,
 )
 def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
@@ -580,9 +581,10 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
 
 
 @pytest.mark.xfail(
-    reason="Known product gap: large setURL replace-all over TCP/meshtasticd "
-    "can cause transport disconnects mid-transaction. "
-    "See seturl/execution.py executeReplaceAll for next implementation boundary.",
+    reason="Resume logic implemented but large setURL replace-all over TCP/meshtasticd "
+    "still prone to multi-disconnect edge cases. Resume handles single "
+    "disconnects; repeated disconnects within the same transaction may exceed "
+    "retry bounds.",
     strict=False,
 )
 def test_meshtasticd_multinode_large_channel_url_replace_all_over_tcp(

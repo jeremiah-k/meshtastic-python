@@ -2,7 +2,9 @@
 """Backward-compat shim — canonical code lives in meshtastic.node_runtime.seturl package."""
 
 from meshtastic.node_runtime.seturl import (  # noqa: F401
+    _channel_matches_desired,
     _channels_fingerprint,
+    _compute_remaining_channel_writes,
     _SetUrlAddOnlyExecutionState,
     _SetUrlAddOnlyPlan,
     _SetUrlAddOnlyPlanner,
@@ -18,6 +20,9 @@ from meshtastic.node_runtime.seturl import (  # noqa: F401
 )
 
 __all__ = [
+    "_channel_matches_desired",
+    "_channels_fingerprint",
+    "_compute_remaining_channel_writes",
     "_SetUrlAddOnlyExecutionState",
     "_SetUrlAddOnlyPlan",
     "_SetUrlAddOnlyPlanner",
@@ -30,5 +35,4 @@ __all__ = [
     "_SetUrlReplacePlan",
     "_SetUrlReplacePlanner",
     "_SetUrlTransactionCoordinator",
-    "_channels_fingerprint",
 ]
