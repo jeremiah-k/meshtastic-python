@@ -524,3 +524,42 @@ def test_reader_resyncs_when_start1_repeats_before_start2() -> None:
         handle_from_radio.assert_called_once_with(b"X")
     finally:
         iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_connect_resets_closing_for_reconnect() -> None:
+    """connect() must reset _closing so a retry after close() can succeed."""
+    stream = MagicMock()
+    stream.read.return_value = b""
+    stream.write.return_value = 1
+    stream.is_open = True
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        iface.stream = stream
+        iface.connect()
+        assert iface._closing is False
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_connect_resets_closing_after_explicit_close() -> None:
+    """After close() sets _closing=True, a subsequent connect() must clear it."""
+    stream = MagicMock()
+    stream.read.return_value = b""
+    stream.write.return_value = 1
+    stream.is_open = True
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        iface.stream = stream
+        iface.connect()
+        iface.close()
+        assert iface._closing is True
+
+        iface.stream = stream
+        iface.connect()
+        assert iface._closing is False
+    finally:
+        iface.close()

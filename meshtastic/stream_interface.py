@@ -219,6 +219,7 @@ class StreamInterface(MeshInterface):
             # All reconnect side effects happen under the same lock so a concurrent
             # close() intent is not accidentally cleared by an early-return connect().
             self._wantExit = False
+            self._prepare_for_connect()
             should_wake_stream = requires_stream and self.stream is not None
             if should_wake_stream:
                 # Send bogus UART characters to wake sleeping devices and force parser
