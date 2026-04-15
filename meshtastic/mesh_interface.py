@@ -1691,8 +1691,21 @@ class MeshInterface:  # pylint: disable=R0902
                 if callable(abort_check):
                     abort_reason = abort_check()  # pylint: disable=not-callable
                     if abort_reason:
+                        logger.warning(
+                            "Connection wait aborted: %s (isConnected=%s, failure=%r, last_disconnect_source=%s)",
+                            abort_reason,
+                            self.isConnected.is_set(),
+                            self.failure,
+                            getattr(self, "_last_disconnect_source", "unknown"),
+                        )
                         raise MeshInterface.MeshInterfaceError(abort_reason)
             if not connected:
+                logger.error(
+                    "Timed out waiting for connection completion (isConnected=%s, failure=%r, last_disconnect_source=%s)",
+                    self.isConnected.is_set(),
+                    self.failure,
+                    getattr(self, "_last_disconnect_source", "unknown"),
+                )
                 raise MeshInterface.MeshInterfaceError(
                     "Timed out waiting for connection completion"
                 )

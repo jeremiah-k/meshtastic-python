@@ -85,11 +85,26 @@ class SerialInterface(StreamInterface):
 
         # Avoid opening with default asserted control lines.  Some USB/MCU
         # combinations treat DTR/RTS transitions as reset triggers.
+        logger.info(
+            "Opening serial stream on %s (baud=%d, exclusive=%s)",
+            self.devPath,
+            DEFAULT_BAUD_RATE,
+            serial_kwargs.get("exclusive", False),
+        )
         stream = serial.Serial(**serial_kwargs)
         stream.port = self.devPath
-        stream.dtr = False
+        # Keep DTR asserted so USB CDC output remains active on nRF52 boards.
+        stream.dtr = True
+        # Keep RTS deasserted to avoid accidental reset-line pulses on some adapters.
         stream.rts = False
         stream.open()
+        logger.info(
+            "Serial stream opened: port=%s is_open=%s dtr=%s rts=%s",
+            self.devPath,
+            getattr(stream, "is_open", None),
+            getattr(stream, "dtr", None),
+            getattr(stream, "rts", None),
+        )
 
         if sys.platform != "win32":
             self._clear_hupcl_on_fd(stream.fileno())
@@ -232,25 +247,66 @@ class SerialInterface(StreamInterface):
 
     def connect(self) -> None:
         """Reconnect by reopening serial stream when needed, then run StreamInterface connect."""
+        connect_start = time.monotonic()
         retry_deadline = time.monotonic() + SERIAL_CONNECT_RETRY_BUDGET_SECONDS
         for attempt in range(1, SERIAL_CONNECT_MAX_ATTEMPTS + 1):
+            attempt_start = time.monotonic()
+            stream = self.stream
+            logger.info(
+                "Serial connect attempt %d/%d starting: devPath=%s stream_open=%s last_disconnect_source=%s",
+                attempt,
+                SERIAL_CONNECT_MAX_ATTEMPTS,
+                self.devPath,
+                (
+                    getattr(stream, "is_open", None)
+                    if stream is not None
+                    else None
+                ),
+                getattr(self, "_last_disconnect_source", "unknown"),
+            )
             try:
                 super().connect()
+                logger.info(
+                    "Serial connect attempt %d succeeded in %.2fs (total elapsed %.2fs).",
+                    attempt,
+                    time.monotonic() - attempt_start,
+                    time.monotonic() - connect_start,
+                )
                 return
             except Exception as exc:
                 if not self._is_retryable_connect_error(exc):
+                    logger.error(
+                        "Serial connect attempt %d failed with non-retryable error after %.2fs: %s",
+                        attempt,
+                        time.monotonic() - connect_start,
+                        exc,
+                    )
                     raise
                 remaining = retry_deadline - time.monotonic()
                 if attempt >= SERIAL_CONNECT_MAX_ATTEMPTS or remaining <= 0:
+                    logger.error(
+                        "Serial connect retry budget exhausted after %.2fs (attempt %d/%d). Last error: %s",
+                        time.monotonic() - connect_start,
+                        attempt,
+                        SERIAL_CONNECT_MAX_ATTEMPTS,
+                        exc,
+                    )
                     raise
                 retry_delay = min(SERIAL_CONNECT_RETRY_DELAY_SECONDS, remaining)
                 logger.warning(
-                    "Serial connect attempt %d/%d failed: %s. Retrying in %.1fs (%.1fs retry budget remaining)...",
+                    "Serial connect attempt %d/%d failed: %s. Retrying in %.1fs (%.1fs retry budget remaining). "
+                    "stream_open=%s last_disconnect_source=%s",
                     attempt,
                     SERIAL_CONNECT_MAX_ATTEMPTS,
                     exc,
                     retry_delay,
                     remaining,
+                    (
+                        getattr(self.stream, "is_open", None)
+                        if self.stream is not None
+                        else None
+                    ),
+                    getattr(self, "_last_disconnect_source", "unknown"),
                 )
                 with self._connect_lock:
                     with contextlib.suppress(

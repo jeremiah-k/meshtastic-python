@@ -382,7 +382,7 @@ def test_open_serial_stream_sets_control_lines_before_open(
     mock_sleep: MagicMock,
     mock_exists: MagicMock,
 ) -> None:
-    """Serial open should preconfigure DTR/RTS low before opening the port."""
+    """Serial open should preconfigure control lines before opening the port."""
     mocked_serial_instance = MagicMock()
     mocked_serial_instance.in_waiting = 0
     mocked_serial_instance.flush = MagicMock()
@@ -392,7 +392,7 @@ def test_open_serial_stream_sets_control_lines_before_open(
         iface._open_serial_stream()
     serial_ctor.assert_called_once()
     assert mocked_serial_instance.port == "/dev/ttyUSB0"
-    assert mocked_serial_instance.dtr is False
+    assert mocked_serial_instance.dtr is True
     assert mocked_serial_instance.rts is False
     mocked_serial_instance.open.assert_called_once()
 
