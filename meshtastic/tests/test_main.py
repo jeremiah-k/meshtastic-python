@@ -3514,6 +3514,10 @@ def test_main_export_config_and_configure_round_trip_nonstandard(
 
     monkeypatch.setattr("time.sleep", lambda _: None)
     _patch_fast_monotonic(monkeypatch)
+    monkeypatch.setattr(
+        "meshtastic.__main__._post_seturl_stability_check",
+        lambda *a, **k: True,
+    )
     configure_iface.waitForConfig = MagicMock()
     sys.argv = ["", "--configure", str(export_path)]
     mt_config.args = cast(Any, sys.argv)
@@ -5300,7 +5304,7 @@ def test_main_configure_phase3_verified_with_matching_config_values(
     _patch_fast_monotonic(monkeypatch)
     _run_main_configure_file(config_path, iface, monkeypatch)
     out, _ = capsys.readouterr()
-    assert "Could not fully verify" in out
+    assert "requested settings verified" in out
 
 
 @pytest.mark.unit
@@ -5415,8 +5419,8 @@ def test_main_configure_seturl_unstable_aborts_before_phase2(
         _run_main_configure_file(config_path, iface, monkeypatch)
 
     target_node.beginSettingsTransaction.assert_not_called()
-    out, _ = capsys.readouterr()
-    assert "transport did not stabilize" in out
+    _, err = capsys.readouterr()
+    assert "transport did not stabilize" in err
 
 
 @pytest.mark.unit
@@ -5474,9 +5478,9 @@ def test_main_configure_rejects_channel_url_aliases(
     with pytest.raises(SystemExit):
         _run_main_configure_file(config_path, iface, monkeypatch)
 
-    out, _ = capsys.readouterr()
-    assert "channel_url" in out
-    assert "channelUrl" in out
+    _, err = capsys.readouterr()
+    assert "channel_url" in err
+    assert "channelUrl" in err
 
 
 @pytest.mark.unit
@@ -5500,9 +5504,9 @@ def test_main_configure_rejects_owner_short_aliases(
     with pytest.raises(SystemExit):
         _run_main_configure_file(config_path, iface, monkeypatch)
 
-    out, _ = capsys.readouterr()
-    assert "owner_short" in out
-    assert "ownerShort" in out
+    _, err = capsys.readouterr()
+    assert "owner_short" in err
+    assert "ownerShort" in err
 
 
 @pytest.mark.unit
@@ -5585,6 +5589,10 @@ def test_main_configure_phase3_channel_url_verified(
         "meshtastic.__main__._verify_channel_url_match",
         lambda *a, **k: True,
     )
+    monkeypatch.setattr(
+        "meshtastic.__main__._post_seturl_stability_check",
+        lambda *a, **k: True,
+    )
     _patch_fast_monotonic(monkeypatch)
     _run_main_configure_file(config_path, iface, monkeypatch)
     out, _ = capsys.readouterr()
@@ -5631,6 +5639,10 @@ def test_main_configure_phase3_channel_url_mismatch(
     monkeypatch.setattr(
         "meshtastic.__main__._verify_channel_url_match",
         lambda *a, **k: False,
+    )
+    monkeypatch.setattr(
+        "meshtastic.__main__._post_seturl_stability_check",
+        lambda *a, **k: True,
     )
     _patch_fast_monotonic(monkeypatch)
     _run_main_configure_file(config_path, iface, monkeypatch)
