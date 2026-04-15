@@ -25,6 +25,8 @@ WINDOWS11_WRITE_DELAY = 1.0  # Extended post-write delay on Windows 11.
 READER_THREAD_JOIN_TIMEOUT = 2.0  # Reader thread join timeout during shutdown.
 READER_IDLE_BACKOFF_SECONDS = 0.01  # Backoff when read loop receives no bytes.
 WRITE_PROGRESS_TIMEOUT_SECONDS = 10.0  # Guard against indefinitely stalled writes.
+TRANSIENT_READ_MAX_RETRIES = 3  # Max retries for transient USB CDC read failures.
+TRANSIENT_READ_BACKOFF_SECONDS = 0.1  # Backoff between transient read retries.
 
 STREAM_IO_EXCEPTIONS = (
     OSError,
@@ -506,10 +508,28 @@ class StreamInterface(MeshInterface):
 
         try:
             while not self._wantExit:
-                # logger.debug("reading character")
                 # Read a single byte at a time because log lines and framed protobuf
                 # payloads are multiplexed on the same stream.
-                b = self._read_bytes(1)
+                transient_retries = 0
+                while True:
+                    try:
+                        b = self._read_bytes(1)
+                        break
+                    except StreamInterface.StreamClosedError:
+                        if self._wantExit:
+                            raise
+                        s = self.stream
+                        if s is None or not getattr(s, "is_open", True):
+                            raise
+                        if transient_retries >= TRANSIENT_READ_MAX_RETRIES:
+                            raise
+                        transient_retries += 1
+                        logger.debug(
+                            "Transient read error (attempt %d/%d), retrying...",
+                            transient_retries,
+                            TRANSIENT_READ_MAX_RETRIES,
+                        )
+                        time.sleep(TRANSIENT_READ_BACKOFF_SECONDS * transient_retries)
                 # logger.debug("In reader loop")
                 # logger.debug(f"read returned {b}")
                 if b:
