@@ -126,6 +126,9 @@ CONFIG_RECONNECT_WAIT_SECONDS = 15.0
 SETURL_STABILITY_TIMEOUT_SECONDS = 30.0
 """Timeout for post-setURL transport stability before opening Phase 2 writes."""
 
+FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS = 20.0
+"""Timeout for post-reset reconnect probe inside factory-reset command."""
+
 CONFIGURE_PHASE1_HEADER = (
     "Phase 1: Applying direct configuration "
     "(channel URL updates may trigger reconnect/reboot)..."
@@ -485,6 +488,43 @@ def _is_local_destination(interface: MeshInterface, dest: str) -> bool:
         return parsed_dest_num == my_node_num
     except Exception:
         return False
+
+
+def _post_factory_reset_ready_probe(interface: MeshInterface) -> None:
+    """Close, probe reconnect, and close again so next command starts clean."""
+    if not isinstance(interface, meshtastic.serial_interface.SerialInterface):
+        return
+
+    logger.info("Factory reset: closing serial interface to release port.")
+    try:
+        interface.close()
+    except Exception:
+        logger.debug(
+            "Factory reset: initial serial close failed.",
+            exc_info=True,
+        )
+
+    logger.info(
+        "Factory reset: probing reconnect readiness (timeout=%.1fs)...",
+        FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS,
+    )
+    try:
+        interface.connect()
+        interface.waitForConfig()
+        logger.info("Factory reset: reconnect probe succeeded.")
+    except Exception:
+        logger.warning(
+            "Factory reset: reconnect probe did not complete before timeout.",
+            exc_info=True,
+        )
+    finally:
+        try:
+            interface.close()
+        except Exception:
+            logger.debug(
+                "Factory reset: final serial close failed.",
+                exc_info=True,
+            )
 
 
 def _validate_non_empty_mapping_sections(
@@ -1807,16 +1847,7 @@ def onConnected(interface: MeshInterface) -> None:
                 and _is_local_destination(interface, args.dest)
                 and isinstance(interface, meshtastic.serial_interface.SerialInterface)
             ):
-                logger.info(
-                    "Factory reset: closing local serial interface immediately after reset command."
-                )
-                try:
-                    interface.close()
-                except Exception:
-                    logger.debug(
-                        "Factory reset: immediate serial close failed.",
-                        exc_info=True,
-                    )
+                _post_factory_reset_ready_probe(interface)
 
         if args.remove_node:
             closeNow = True

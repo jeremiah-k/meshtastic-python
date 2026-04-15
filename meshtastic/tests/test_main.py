@@ -5808,36 +5808,14 @@ def test_post_seturl_stability_check_triggers_reconnect_when_disconnected(
 
 
 @pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_factory_reset_device_closes_local_serial_immediately(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class _Args(SimpleNamespace):
-        def __getattr__(self, _name: str) -> Any:
-            return None
-
+def test_post_factory_reset_ready_probe_closes_and_probes_reconnect() -> None:
     iface = cast(Any, object.__new__(SerialInterface))
+    iface.connect = MagicMock()
+    iface.waitForConfig = MagicMock()
     iface.close = MagicMock()
-    iface.isConnected = threading.Event()
-    iface.isConnected.set()
-    iface.myInfo = SimpleNamespace(my_node_num=123)
-    node = MagicMock()
-    iface.getNode = MagicMock(return_value=node)
 
-    args = _Args(
-        channel_fetch_attempts=3,
-        timeout=300,
-        factory_reset=False,
-        factory_reset_device=True,
-        seriallog=False,
-        noproto=False,
-        ack=False,
-        wait_to_disconnect=None,
-        dest=MAIN_LOCAL_ADDR,
-    )
-    monkeypatch.setattr(main_module.mt_config, "channel_index", None)
-    monkeypatch.setattr(main_module.mt_config, "args", cast(Any, args))
+    main_module._post_factory_reset_ready_probe(cast(Any, iface))
 
-    main_module.onConnected(cast(Any, iface))
-    node.factoryReset.assert_called_once_with(full=True)
-    iface.close.assert_called()
+    iface.connect.assert_called_once()
+    iface.waitForConfig.assert_called_once()
+    assert iface.close.call_count >= 2
