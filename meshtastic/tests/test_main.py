@@ -5811,11 +5811,9 @@ def test_post_seturl_stability_check_triggers_reconnect_when_disconnected(
 def test_post_factory_reset_ready_probe_closes_and_probes_reconnect() -> None:
     iface = cast(Any, object.__new__(SerialInterface))
     iface.connect = MagicMock()
-    iface.waitForConfig = MagicMock()
     iface.close = MagicMock()
 
     main_module._post_factory_reset_ready_probe(cast(Any, iface))
 
     iface.connect.assert_called_once()
-    iface.waitForConfig.assert_called_once()
     assert iface.close.call_count >= 2

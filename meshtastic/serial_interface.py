@@ -40,6 +40,9 @@ SERIAL_SETTLING_DELAY = 0.1
 SERIAL_CONNECT_RETRY_DELAY_SECONDS = 1.5
 """Delay between serial connect retry attempts."""
 
+SERIAL_CONNECT_STREAM_CLOSED_RETRY_DELAY_SECONDS = 0.25
+"""Short retry delay when previous connect attempt died in bootstrap stream close."""
+
 SERIAL_CONNECT_RETRY_BUDGET_SECONDS = 20.0
 """Total retry window for transient serial reconnect failures."""
 
@@ -292,7 +295,11 @@ class SerialInterface(StreamInterface):
                         exc,
                     )
                     raise
-                retry_delay = min(SERIAL_CONNECT_RETRY_DELAY_SECONDS, remaining)
+                disconnect_source = getattr(self, "_last_disconnect_source", "unknown")
+                retry_delay_base = SERIAL_CONNECT_RETRY_DELAY_SECONDS
+                if disconnect_source == "stream.closed":
+                    retry_delay_base = SERIAL_CONNECT_STREAM_CLOSED_RETRY_DELAY_SECONDS
+                retry_delay = min(retry_delay_base, remaining)
                 logger.warning(
                     "Serial connect attempt %d/%d failed: %s. Retrying in %.1fs (%.1fs retry budget remaining). "
                     "stream_open=%s last_disconnect_source=%s",
@@ -306,7 +313,7 @@ class SerialInterface(StreamInterface):
                         if self.stream is not None
                         else None
                     ),
-                    getattr(self, "_last_disconnect_source", "unknown"),
+                    disconnect_source,
                 )
                 with self._connect_lock:
                     with contextlib.suppress(

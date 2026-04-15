@@ -491,7 +491,7 @@ def _is_local_destination(interface: MeshInterface, dest: str) -> bool:
 
 
 def _post_factory_reset_ready_probe(interface: MeshInterface) -> None:
-    """Close, probe reconnect, and close again so next command starts clean."""
+    """Close, probe transport reconnect readiness, and close again for a clean next command."""
     if not isinstance(interface, meshtastic.serial_interface.SerialInterface):
         return
 
@@ -508,10 +508,13 @@ def _post_factory_reset_ready_probe(interface: MeshInterface) -> None:
         "Factory reset: probing reconnect readiness (timeout=%.1fs)...",
         FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS,
     )
+    probe_start = time.monotonic()
     try:
         interface.connect()
-        interface.waitForConfig()
-        logger.info("Factory reset: reconnect probe succeeded.")
+        logger.info(
+            "Factory reset: reconnect probe succeeded in %.2fs.",
+            time.monotonic() - probe_start,
+        )
     except Exception:
         logger.warning(
             "Factory reset: reconnect probe did not complete before timeout.",

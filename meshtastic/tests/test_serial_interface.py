@@ -10,7 +10,10 @@ import pytest
 
 from ..mesh_interface import MeshInterface
 from ..protobuf import config_pb2
-from ..serial_interface import SerialInterface
+from ..serial_interface import (
+    SERIAL_CONNECT_STREAM_CLOSED_RETRY_DELAY_SECONDS,
+    SerialInterface,
+)
 from ..stream_interface import StreamInterface
 
 
@@ -181,6 +184,37 @@ def test_serial_interface_connect_retries_transient_connect_errors(
     assert base_connect.call_count == 2
     stream.close.assert_called_once()
     mock_sleep.assert_called_once()
+
+
+@pytest.mark.unit
+@patch("time.sleep")
+def test_serial_interface_connect_uses_fast_retry_delay_for_stream_closed(
+    mock_sleep: MagicMock,
+) -> None:
+    """connect() should use fast retry pacing after bootstrap stream-close failures."""
+    iface = object.__new__(SerialInterface)
+    iface.devPath = "/dev/ttyUSB0"
+    stream = MagicMock()
+    stream.is_open = True
+    iface.stream = stream
+    iface._connect_lock = threading.Lock()
+    iface._dev_path_auto_detected = False
+    iface._last_disconnect_source = "stream.closed"
+    transient_error = MeshInterface.MeshInterfaceError(
+        "Connection lost while waiting for connection completion (stream.closed)"
+    )
+    with (
+        patch.object(
+            StreamInterface,
+            "connect",
+            side_effect=[transient_error, None],
+        ),
+        patch.object(iface, "_open_serial_stream", return_value=stream),
+    ):
+        iface.connect()
+    mock_sleep.assert_called_once_with(
+        SERIAL_CONNECT_STREAM_CLOSED_RETRY_DELAY_SECONDS
+    )
 
 
 @pytest.mark.unit

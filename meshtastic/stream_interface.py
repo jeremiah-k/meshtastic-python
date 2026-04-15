@@ -31,6 +31,11 @@ BOOTSTRAP_TRANSIENT_READ_TIMEOUT_SECONDS = 5.0
 """Transient read retry window while initial connection is still bootstrapping."""
 MAX_TRANSIENT_READ_BACKOFF_SECONDS = 0.5
 """Cap retry backoff during transient read recovery."""
+BOOTSTRAP_STREAM_CLOSED_FAILFAST_MARKERS: tuple[str, ...] = (
+    "device reports readiness to read but returned no data",
+    "stream is not available",
+)
+"""Stream-close messages that should fail fast during bootstrap instead of spinning retries."""
 
 STREAM_IO_EXCEPTIONS = (
     OSError,
@@ -61,6 +66,16 @@ def _is_transport_fd_state_type_error(exc: TypeError) -> bool:
     """Return whether a TypeError indicates a transient fd/state race."""
     message = str(exc).casefold()
     return any(marker in message for marker in _TRANSPORT_FD_STATE_TYPEERROR_MARKERS)
+
+
+def _is_bootstrap_stream_closed_retryable(
+    exc: "StreamInterface.StreamClosedError",
+) -> bool:
+    """Return whether bootstrap should retry after a StreamClosedError."""
+    message = str(exc).casefold()
+    if not message:
+        return True
+    return not any(marker in message for marker in BOOTSTRAP_STREAM_CLOSED_FAILFAST_MARKERS)
 
 
 class StreamInterface(MeshInterface):
@@ -520,13 +535,15 @@ class StreamInterface(MeshInterface):
                     try:
                         b = self._read_bytes(1)
                         break
-                    except StreamInterface.StreamClosedError:
+                    except StreamInterface.StreamClosedError as exc:
                         if self._wantExit:
                             raise
                         s = self.stream
                         if s is None or not getattr(s, "is_open", True):
                             raise
                         if not self.isConnected.is_set():
+                            if not _is_bootstrap_stream_closed_retryable(exc):
+                                raise
                             if bootstrap_deadline is None:
                                 bootstrap_deadline = (
                                     time.monotonic()

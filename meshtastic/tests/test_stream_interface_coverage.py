@@ -312,6 +312,35 @@ def test_reader_handles_stream_closed_error_unexpectedly() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_reader_fails_fast_on_bootstrap_no_data_stream_closed() -> None:
+    """Bootstrap EOF stream-close should fail fast instead of consuming retry backoff."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        stream = MagicMock()
+        stream.is_open = True
+        iface.stream = stream
+        iface.isConnected.clear()
+        with (
+            patch.object(
+                iface,
+                "_read_bytes",
+                side_effect=StreamInterface.StreamClosedError(
+                    "device reports readiness to read but returned no data"
+                ),
+            ),
+            patch("time.sleep") as sleep_mock,
+            patch.object(iface, "_disconnected"),
+        ):
+            iface._reader()
+        # No transient bootstrap backoff sleep should run on fail-fast EOF closure.
+        sleep_mock.assert_not_called()
+        assert iface._last_disconnect_source == "stream.closed"
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_reader_handles_stream_closed_error_during_close() -> None:
     """Lines 536-538: _reader should use close_requested source when StreamClosedError during close."""
     iface = StreamInterface(noProto=True, connectNow=False)
