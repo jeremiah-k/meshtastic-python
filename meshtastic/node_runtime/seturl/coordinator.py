@@ -325,11 +325,10 @@ class _SetUrlTransactionCoordinator:
                 diff_names: list[str] = []
                 for idx in sorted(remaining_indices):
                     desired_ch = plan.staged_channels_by_index.get(idx)
-                    name = (
-                        desired_ch.settings.name
-                        if desired_ch and desired_ch.settings
-                        else f"index {idx}"
+                    channel_name = (
+                        desired_ch.settings.name if desired_ch and desired_ch.settings else ""
                     )
+                    name = channel_name if channel_name else f"index {idx}"
                     diff_names.append(name)
                 logger.info(
                     "Channels still needing writes: %s",

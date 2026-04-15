@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 import meshtastic.util
-from meshtastic.protobuf import apponly_pb2
+from meshtastic.protobuf import apponly_pb2, channel_pb2
 
 logger = logging.getLogger(__name__)
 
@@ -124,81 +124,162 @@ def _verify_channel_url_match(
     requested_url: str,
     device_url: str,
 ) -> bool:
-    def _parse_channel_set(url: str) -> apponly_pb2.ChannelSet | None:
-        try:
-            b64 = url.split("#")[-1]
-            b64 += "=" * ((4 - len(b64) % 4) % 4)
-            raw = base64.b64decode(b64, altchars=b"-_")
-            cs = apponly_pb2.ChannelSet()
-            cs.ParseFromString(raw)
-            return cs
-        except Exception:
-            return None
-
-    def _settings_match(req: Any, dev: Any) -> bool:
-        checks = [
-            req.psk == dev.psk,
-            req.name == dev.name,
-            req.id == dev.id,
-            req.uplink_enabled == dev.uplink_enabled,
-            req.downlink_enabled == dev.downlink_enabled,
-            req.module_settings.position_precision
-            == dev.module_settings.position_precision,
-            req.module_settings.is_muted == dev.module_settings.is_muted,
-        ]
-        return all(checks)
-
-    def _has_duplicate_names(names: list[str], *, source_label: str) -> bool:
-        if len(names) == len(set(names)):
-            return False
-        logger.warning(
-            "Channel URL verification: duplicate channel names in %s URL "
-            "(%s); cannot verify unambiguously.",
-            source_label,
-            ", ".join(names),
-        )
-        return True
-
-    def _lora_config_match(req: apponly_pb2.ChannelSet, dev: apponly_pb2.ChannelSet) -> bool:
-        req_has_lora = req.HasField("lora_config")
-        dev_has_lora = dev.HasField("lora_config")
-        if req_has_lora != dev_has_lora:
-            logger.warning(
-                "Channel URL verification: lora_config presence mismatch "
-                "(requested=%s, device=%s).",
-                req_has_lora,
-                dev_has_lora,
-            )
-            return False
-        if req_has_lora and (
-            req.lora_config.SerializeToString() != dev.lora_config.SerializeToString()
-        ):
-            logger.warning(
-                "Channel URL verification: lora_config differs between requested and device URLs."
-            )
-            return False
-        return True
-
     req_cs = _parse_channel_set(requested_url)
     dev_cs = _parse_channel_set(device_url)
     if req_cs is None or dev_cs is None:
         return False
+    return _verify_channel_sets_match(req_cs, dev_cs)
 
-    req_names = [s.name for s in req_cs.settings]
-    dev_names = [s.name for s in dev_cs.settings]
-    if _has_duplicate_names(req_names, source_label="requested") or _has_duplicate_names(
-        dev_names, source_label="device"
+
+def _verify_channel_url_against_state(
+    requested_url: str,
+    *,
+    device_channels: list[Any] | None,
+    device_lora_config: Any | None,
+) -> bool:
+    """Verify requested channel URL against already-loaded device channel/LoRa state."""
+    requested_channel_set = _parse_channel_set(requested_url)
+    if requested_channel_set is None:
+        logger.warning(
+            "Channel URL verification: requested URL could not be parsed."
+        )
+        return False
+    device_channel_set = _build_channel_set_from_state(
+        device_channels=device_channels,
+        device_lora_config=device_lora_config,
+    )
+    if device_channel_set is None:
+        return False
+    return _verify_channel_sets_match(requested_channel_set, device_channel_set)
+
+
+def _parse_channel_set(url: str) -> apponly_pb2.ChannelSet | None:
+    try:
+        b64 = url.split("#")[-1]
+        b64 += "=" * ((4 - len(b64) % 4) % 4)
+        raw = base64.b64decode(b64, altchars=b"-_")
+        channel_set = apponly_pb2.ChannelSet()
+        channel_set.ParseFromString(raw)
+        return channel_set
+    except Exception:
+        return None
+
+
+def _build_channel_set_from_state(
+    *,
+    device_channels: list[Any] | None,
+    device_lora_config: Any | None,
+) -> apponly_pb2.ChannelSet | None:
+    if not device_channels:
+        logger.warning(
+            "Channel URL verification: device channels are not loaded."
+        )
+        return None
+
+    primary_channel = next(
+        (
+            channel
+            for channel in device_channels
+            if channel.role == channel_pb2.Channel.Role.PRIMARY
+        ),
+        None,
+    )
+    if primary_channel is None:
+        logger.warning(
+            "Channel URL verification: no primary channel in device state."
+        )
+        return None
+
+    channel_set = apponly_pb2.ChannelSet()
+    channel_set.settings.append(primary_channel.settings)
+    for channel in device_channels:
+        if channel.role == channel_pb2.Channel.Role.SECONDARY:
+            channel_set.settings.append(channel.settings)
+
+    if device_lora_config is None:
+        logger.warning(
+            "Channel URL verification: device LoRa config is not loaded."
+        )
+        return None
+    try:
+        channel_set.lora_config.CopyFrom(device_lora_config)
+    except Exception:
+        logger.warning(
+            "Channel URL verification: failed to copy device LoRa config.",
+            exc_info=True,
+        )
+        return None
+    return channel_set
+
+
+def _settings_match(req: Any, dev: Any) -> bool:
+    checks = [
+        req.psk == dev.psk,
+        req.name == dev.name,
+        req.id == dev.id,
+        req.uplink_enabled == dev.uplink_enabled,
+        req.downlink_enabled == dev.downlink_enabled,
+        req.module_settings.position_precision == dev.module_settings.position_precision,
+        req.module_settings.is_muted == dev.module_settings.is_muted,
+    ]
+    return all(checks)
+
+
+def _has_duplicate_names(names: list[str], *, source_label: str) -> bool:
+    if len(names) == len(set(names)):
+        return False
+    logger.warning(
+        "Channel URL verification: duplicate channel names in %s URL "
+        "(%s); cannot verify unambiguously.",
+        source_label,
+        ", ".join(names),
+    )
+    return True
+
+
+def _lora_config_match(req: apponly_pb2.ChannelSet, dev: apponly_pb2.ChannelSet) -> bool:
+    req_has_lora = req.HasField("lora_config")
+    dev_has_lora = dev.HasField("lora_config")
+    if req_has_lora != dev_has_lora:
+        logger.warning(
+            "Channel URL verification: lora_config presence mismatch "
+            "(requested=%s, device=%s).",
+            req_has_lora,
+            dev_has_lora,
+        )
+        return False
+    if req_has_lora and (
+        req.lora_config.SerializeToString() != dev.lora_config.SerializeToString()
+    ):
+        logger.warning(
+            "Channel URL verification: lora_config differs between requested and device URLs."
+        )
+        return False
+    return True
+
+
+def _verify_channel_sets_match(
+    requested_channel_set: apponly_pb2.ChannelSet,
+    device_channel_set: apponly_pb2.ChannelSet,
+) -> bool:
+    requested_names = [settings.name for settings in requested_channel_set.settings]
+    device_names = [settings.name for settings in device_channel_set.settings]
+    if _has_duplicate_names(requested_names, source_label="requested") or _has_duplicate_names(
+        device_names, source_label="device"
     ):
         return False
 
-    req_lookup: dict[str, Any] = {s.name: s for s in req_cs.settings}
-    dev_lookup: dict[str, Any] = {s.name: s for s in dev_cs.settings}
-    req_name_set = set(req_lookup.keys())
-    dev_name_set = set(dev_lookup.keys())
-    name_sets_match = req_name_set == dev_name_set
-    if not name_sets_match:
-        missing_on_device = req_name_set - dev_name_set
-        extra_on_device = dev_name_set - req_name_set
+    requested_lookup: dict[str, Any] = {
+        settings.name: settings for settings in requested_channel_set.settings
+    }
+    device_lookup: dict[str, Any] = {
+        settings.name: settings for settings in device_channel_set.settings
+    }
+    requested_name_set = set(requested_lookup.keys())
+    device_name_set = set(device_lookup.keys())
+    if requested_name_set != device_name_set:
+        missing_on_device = requested_name_set - device_name_set
+        extra_on_device = device_name_set - requested_name_set
         parts: list[str] = []
         if missing_on_device:
             parts.append(f"missing on device: {sorted(missing_on_device)}")
@@ -208,10 +289,12 @@ def _verify_channel_url_match(
             "Channel URL verification: channel name sets do not match (%s).",
             "; ".join(parts),
         )
+        return False
 
-    lora_match = _lora_config_match(req_cs, dev_cs)
-    settings_match = name_sets_match and all(
-        _settings_match(req_settings, dev_lookup[name])
-        for name, req_settings in req_lookup.items()
+    if not _lora_config_match(requested_channel_set, device_channel_set):
+        return False
+
+    return all(
+        _settings_match(requested_settings, device_lookup[name])
+        for name, requested_settings in requested_lookup.items()
     )
-    return name_sets_match and lora_match and settings_match

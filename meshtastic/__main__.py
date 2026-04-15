@@ -27,7 +27,7 @@ import meshtastic.tcp_interface
 import meshtastic.util
 from meshtastic import BROADCAST_ADDR, LOCAL_ADDR, mt_config, remote_hardware
 from meshtastic.configure_verify import (
-    _verify_channel_url_match,
+    _verify_channel_url_against_state,
     _verify_requested_fields,
 )
 from meshtastic.host_port import parseHostAndPort
@@ -490,6 +490,22 @@ def _refresh_no_disconnect_verify_state(
             request_channels(0)
 
 
+def _channel_url_matches_current_device_state(
+    target_node: Any,
+    requested_channel_url: str,
+) -> bool:
+    """Return True when requested channel URL already matches loaded device state."""
+    local_config = getattr(target_node, "localConfig", None)
+    has_field = getattr(local_config, "HasField", None)
+    if local_config is None or not callable(has_field) or not has_field("lora"):
+        return False
+    return _verify_channel_url_against_state(
+        requested_channel_url,
+        device_channels=getattr(target_node, "channels", None),
+        device_lora_config=local_config.lora,
+    )
+
+
 def _verify_config_sections(
     config_fields: dict[str, dict[str, Any]],
     proto_config: Any,
@@ -530,16 +546,29 @@ def _verify_post_reconnect_config(
     verify_config_fields: dict[str, dict[str, Any]] | None = None,
     verify_module_config_fields: dict[str, dict[str, Any]] | None = None,
 ) -> _ConfigureReconnectResult:
+    if not interface.isConnected.is_set():
+        logger.warning(
+            "Post-reconnect verification skipped: transport disconnected."
+        )
+        return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+
     target_node = interface.getNode(node_dest)
 
     if verify_channel_url:
-        device_url = target_node.getURL()
-        if not device_url:
-            logger.warning("Channel URL verification: getURL() returned empty.")
-            return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-        if not _verify_channel_url_match(verify_channel_url, device_url):
+        local_config = getattr(target_node, "localConfig", None)
+        has_field = getattr(local_config, "HasField", None)
+        device_lora_config = (
+            local_config.lora
+            if local_config is not None and callable(has_field) and has_field("lora")
+            else None
+        )
+        if not _verify_channel_url_against_state(
+            verify_channel_url,
+            device_channels=getattr(target_node, "channels", None),
+            device_lora_config=device_lora_config,
+        ):
             logger.warning(
-                "Channel URL verification: device URL does not match requested URL."
+                "Channel URL verification: device state does not match requested URL."
             )
             return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
         logger.info(
@@ -554,6 +583,12 @@ def _verify_post_reconnect_config(
     if verify_module_config_fields and not _verify_config_sections(
         verify_module_config_fields, target_node.moduleConfig, "Module config"
     ):
+        return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+
+    if not interface.isConnected.is_set():
+        logger.warning(
+            "Post-reconnect verification did not complete: transport disconnected."
+        )
         return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
 
     return _ConfigureReconnectResult.VERIFIED
@@ -1250,25 +1285,37 @@ def _handle_configure_command(
         if not phase1_started:
             print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
-        phase1_may_reconnect = True
-        seturl_executed = True
-        print("Setting channel url to", configuration["channel_url"])
-        interface.getNode(args.dest, **getNode_kwargs).setURL(
-            configuration["channel_url"]
-        )
-        time.sleep(CONFIG_SETURL_DELAY_SECONDS)
+        requested_channel_url = configuration["channel_url"]
+        target_node = interface.getNode(args.dest, **getNode_kwargs)
+        if _channel_url_matches_current_device_state(
+            target_node, requested_channel_url
+        ):
+            print("Channel url already matches device state; skipping apply.")
+            logger.info("Skipping setURL apply because channel URL already matches.")
+        else:
+            phase1_may_reconnect = True
+            seturl_executed = True
+            print("Setting channel url to", requested_channel_url)
+            target_node.setURL(requested_channel_url)
+            time.sleep(CONFIG_SETURL_DELAY_SECONDS)
 
     if "channelUrl" in configuration:
         if not phase1_started:
             print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
-        phase1_may_reconnect = True
-        seturl_executed = True
-        print("Setting channel url to", configuration["channelUrl"])
-        interface.getNode(args.dest, **getNode_kwargs).setURL(
-            configuration["channelUrl"]
-        )
-        time.sleep(CONFIG_SETURL_DELAY_SECONDS)
+        requested_channel_url = configuration["channelUrl"]
+        target_node = interface.getNode(args.dest, **getNode_kwargs)
+        if _channel_url_matches_current_device_state(
+            target_node, requested_channel_url
+        ):
+            print("Channel url already matches device state; skipping apply.")
+            logger.info("Skipping setURL apply because channel URL already matches.")
+        else:
+            phase1_may_reconnect = True
+            seturl_executed = True
+            print("Setting channel url to", requested_channel_url)
+            target_node.setURL(requested_channel_url)
+            time.sleep(CONFIG_SETURL_DELAY_SECONDS)
 
     if phase1_started:
         print("Phase 1 complete.")

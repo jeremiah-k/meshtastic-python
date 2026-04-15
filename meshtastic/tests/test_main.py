@@ -5611,6 +5611,30 @@ def test_main_configure_channel_url_only_reports_possible_reconnect(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_channel_url_skip_when_already_matching(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "phase1_channel_url_skip.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"channel_url": "https://meshtastic.org/e/#CgcSAQE6AggN"}),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    monkeypatch.setattr(
+        "meshtastic.__main__._channel_url_matches_current_device_state",
+        lambda *a, **k: True,
+    )
+    _run_main_configure_file(config_path, iface, monkeypatch)
+    out, _ = capsys.readouterr()
+    assert "Channel url already matches device state; skipping apply." in out
+    assert "Configuration applied (no reboot expected)." in out
+    target_node.setURL.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_main_configure_phase3_channel_url_verified(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -5642,9 +5666,8 @@ def test_main_configure_phase3_channel_url_verified(
         )
     )
     target_node.requestChannels = MagicMock()
-    target_node.getURL = MagicMock(return_value=test_url)
     monkeypatch.setattr(
-        "meshtastic.__main__._verify_channel_url_match",
+        "meshtastic.__main__._verify_channel_url_against_state",
         lambda *a, **k: True,
     )
     monkeypatch.setattr(
@@ -5668,7 +5691,6 @@ def test_main_configure_phase3_channel_url_mismatch(
 ) -> None:
     config_path = tmp_path / "phase3_channel_url_mismatch.yaml"
     requested_url = "https://meshtastic.org/e/#CGUhYQMgdAaA"
-    different_url = "https://meshtastic.org/e/#AgaMYAMgeBIB"
     config_path.write_text(
         yaml.safe_dump(
             {
@@ -5693,9 +5715,8 @@ def test_main_configure_phase3_channel_url_mismatch(
         )
     )
     target_node.requestChannels = MagicMock()
-    target_node.getURL = MagicMock(return_value=different_url)
     monkeypatch.setattr(
-        "meshtastic.__main__._verify_channel_url_match",
+        "meshtastic.__main__._verify_channel_url_against_state",
         lambda *a, **k: False,
     )
     monkeypatch.setattr(

@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 
 from meshtastic.configure_verify import (
     _is_repeated_field,
+    _verify_channel_url_against_state,
     _verify_channel_url_match,
     _verify_requested_fields,
 )
@@ -188,6 +189,62 @@ def test_channel_url_lora_config_mismatch() -> None:
         _verify_channel_url_match(
             _make_channel_url([s], lora_region="US", lora_hop_limit=3),
             _make_channel_url([s], lora_region="US", lora_hop_limit=5),
+        )
+        is False
+    )
+
+
+@pytest.mark.unit
+def test_channel_url_against_state_match() -> None:
+    primary_settings = channel_pb2.ChannelSettings()
+    primary_settings.name = "primary"
+    primary_settings.psk = b"\x01\x02"
+    secondary_settings = channel_pb2.ChannelSettings()
+    secondary_settings.name = "secondary"
+    secondary_settings.psk = b"\x03\x04"
+    requested_url = _make_channel_url(
+        [primary_settings, secondary_settings],
+        lora_region="US",
+        lora_hop_limit=5,
+    )
+
+    primary_channel = channel_pb2.Channel()
+    primary_channel.role = channel_pb2.Channel.Role.PRIMARY
+    primary_channel.settings.CopyFrom(primary_settings)
+    secondary_channel = channel_pb2.Channel()
+    secondary_channel.role = channel_pb2.Channel.Role.SECONDARY
+    secondary_channel.settings.CopyFrom(secondary_settings)
+
+    local_config = localonly_pb2.LocalConfig()
+    local_config.lora.region = config_pb2.Config.LoRaConfig.RegionCode.Value("US")
+    local_config.lora.hop_limit = 5
+
+    assert (
+        _verify_channel_url_against_state(
+            requested_url,
+            device_channels=[primary_channel, secondary_channel],
+            device_lora_config=local_config.lora,
+        )
+        is True
+    )
+
+
+@pytest.mark.unit
+def test_channel_url_against_state_missing_lora_is_false() -> None:
+    primary_settings = channel_pb2.ChannelSettings()
+    primary_settings.name = "primary"
+    primary_settings.psk = b"\x01\x02"
+    requested_url = _make_channel_url([primary_settings], lora_region="US")
+
+    primary_channel = channel_pb2.Channel()
+    primary_channel.role = channel_pb2.Channel.Role.PRIMARY
+    primary_channel.settings.CopyFrom(primary_settings)
+
+    assert (
+        _verify_channel_url_against_state(
+            requested_url,
+            device_channels=[primary_channel],
+            device_lora_config=None,
         )
         is False
     )
