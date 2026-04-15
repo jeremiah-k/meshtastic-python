@@ -69,11 +69,6 @@ class SerialInterface(StreamInterface):
                 f"Serial port {self.devPath} does not exist (device disconnected)"
             )
 
-        if sys.platform != "win32":
-            with open(self.devPath, encoding="utf8") as f:
-                self._set_hupcl_with_termios(f)
-            time.sleep(SERIAL_SETTLING_DELAY)
-
         serial_kwargs: dict[str, Any] = {
             "timeout": SERIAL_READ_TIMEOUT,
             "write_timeout": SERIAL_WRITE_TIMEOUT,
@@ -86,11 +81,29 @@ class SerialInterface(StreamInterface):
             DEFAULT_BAUD_RATE,
             **serial_kwargs,
         )
+
+        if sys.platform != "win32":
+            self._clear_hupcl_on_fd(stream.fileno())
+            time.sleep(SERIAL_SETTLING_DELAY)
+
         stream.flush()
         time.sleep(SERIAL_SETTLING_DELAY)
         if stream.in_waiting:
             stream.reset_input_buffer()
         return stream
+
+    @staticmethod
+    def _clear_hupcl_on_fd(fd: int) -> None:
+        """Clear the HUPCL flag on an already-open serial file descriptor.
+
+        This prevents the kernel from de-asserting DTR on last close, which
+        would reboot many Meshtastic devices (nRF52, RAK4631, etc.).
+        """
+        import termios  # pylint: disable=C0415,E0401
+
+        attrs = termios.tcgetattr(fd)
+        attrs[2] = attrs[2] & ~termios.HUPCL
+        termios.tcsetattr(fd, termios.TCSAFLUSH, attrs)
 
     def _resolve_dev_path(self) -> str | None:
         """Return an explicit or auto-detected serial device path.
@@ -268,23 +281,12 @@ class SerialInterface(StreamInterface):
         return False
 
     def _set_hupcl_with_termios(self, f: IO[str]) -> None:
-        """Clear the terminal HUPCL (hang-up-on-close) flag for the given device file to prevent the device from rebooting when RTS/DTR change.
+        """No-op retained for test compatibility.
 
-        On Windows this is a no-op.
-
-        Parameters
-        ----------
-        f : IO[str]
-            Open file-like handle for the serial device whose terminal attributes will be adjusted.
+        HUPCL is now cleared via _clear_hupcl_on_fd() after serial.Serial()
+        opens the port, avoiding a double-open that causes DTR transitions on
+        some devices (e.g. nRF52840/RAK4631).
         """
-        if sys.platform == "win32":
-            return
-
-        import termios  # pylint: disable=C0415,E0401
-
-        attrs = termios.tcgetattr(f)
-        attrs[2] = attrs[2] & ~termios.HUPCL
-        termios.tcsetattr(f, termios.TCSAFLUSH, attrs)
 
     def __repr__(self) -> str:
         """Provide a concise, machine-readable representation of the SerialInterface instance.

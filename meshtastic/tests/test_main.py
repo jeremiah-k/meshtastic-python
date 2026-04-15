@@ -1327,6 +1327,7 @@ def test_main_sendtext_with_invalid_channel_nine(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 @patch("serial.Serial")
@@ -1336,6 +1337,7 @@ def test_main_sendtext_with_dest(
     _mock_serial: Any,
     _mocked_open: Any,
     _mock_hupcl: Any,
+    _mock_clear_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -1596,6 +1598,7 @@ def test_main_seturl(capsys: pytest.CaptureFixture[str]) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 @patch("serial.Serial")
@@ -1605,6 +1608,7 @@ def test_main_set_valid(
     _mocked_serial: Any,
     _mocked_open: Any,
     _mocked_hupcl: Any,
+    _mock_clear_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test --set with valid field."""
@@ -1628,6 +1632,7 @@ def test_main_set_valid(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 @patch("serial.Serial")
@@ -1637,6 +1642,7 @@ def test_main_set_valid_display_use_12_hour_alias(
     _mocked_serial: Any,
     _mocked_open: Any,
     _mocked_hupcl: Any,
+    _mock_clear_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test --set accepts legacy display.use_12_hour alias."""
@@ -1661,6 +1667,7 @@ def test_main_set_valid_display_use_12_hour_alias(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 @patch("serial.Serial")
@@ -1670,6 +1677,7 @@ def test_main_set_valid_wifi_psk(
     _mocked_serial: Any,
     _mocked_open: Any,
     _mocked_hupcl: Any,
+    _mock_clear_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -1698,6 +1706,7 @@ def test_main_set_valid_wifi_psk(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 @patch("serial.Serial")
@@ -1707,6 +1716,7 @@ def test_main_set_valid_lora_hop_limit(
     _mocked_serial: Any,
     _mocked_open: Any,
     _mocked_hupcl: Any,
+    _mock_clear_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test --set lora.hop_limit applies in a single configure write."""
@@ -1732,6 +1742,7 @@ def test_main_set_valid_lora_hop_limit(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 @patch("serial.Serial")
@@ -1741,6 +1752,7 @@ def test_main_set_invalid_wifi_psk(
     _mocked_serial: Any,
     _mocked_open: Any,
     _mocked_hupcl: Any,
+    _mock_clear_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test --set with an invalid value (psk must be 8 or more characters)."""
@@ -1864,6 +1876,7 @@ def test_get_pref_allow_secrets_shows_security_section_keys(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 @patch("serial.Serial")
@@ -1873,6 +1886,7 @@ def test_main_set_valid_camel_case(
     _mocked_serial: Any,
     _mocked_open: Any,
     _mocked_hupcl: Any,
+    _mock_clear_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test --set with valid field."""
@@ -1897,6 +1911,7 @@ def test_main_set_valid_camel_case(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 @patch("serial.Serial")
@@ -1906,6 +1921,7 @@ def test_main_set_with_invalid(
     _mocked_serial: Any,
     _mocked_open: Any,
     _mocked_hupcl: Any,
+    _mock_clear_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test --set with invalid field."""
@@ -1929,6 +1945,7 @@ def test_main_set_with_invalid(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch(
     "builtins.open",
@@ -1942,6 +1959,7 @@ def test_main_configure_with_snake_case(
     _mocked_serial: Any,
     _mocked_open: Any,
     _mocked_hupcl: Any,
+    _mock_clear_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test --configure applies snake_case owner/owner_short keys."""
@@ -1969,6 +1987,7 @@ def test_main_configure_with_snake_case(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch(
     "builtins.open",
@@ -1982,6 +2001,7 @@ def test_main_configure_with_camel_case_keys(
     _mocked_serial: Any,
     _mocked_open: Any,
     _mocked_hupcl: Any,
+    _mock_clear_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test --configure applies camelCase owner/ownerShort keys."""
@@ -4604,6 +4624,7 @@ def test_tunnel_subnet_arg_with_no_devices(
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("platform.system")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 @patch("serial.Serial")
@@ -4613,6 +4634,7 @@ def test_tunnel_tunnel_arg(
     _mocked_serial: Any,
     _mocked_open: Any,
     _mock_hupcl: Any,
+    _mock_clear_hupcl: Any,
     mock_platform_system: Any,
     caplog: pytest.LogCaptureFixture,
     capsys: pytest.CaptureFixture[str],

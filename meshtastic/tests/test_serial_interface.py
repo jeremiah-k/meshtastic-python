@@ -2,7 +2,6 @@
 
 import logging
 import re
-import sys
 import threading
 from typing import Any, cast
 from unittest.mock import MagicMock, mock_open, patch
@@ -19,6 +18,7 @@ from ..stream_interface import StreamInterface
 @pytest.mark.unit
 @patch("os.path.exists", return_value=True)
 @patch("time.sleep")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 @patch("serial.Serial")
@@ -28,6 +28,7 @@ def test_SerialInterface_single_port(
     mocked_serial: MagicMock,
     mocked_open: MagicMock,
     mock_hupcl: MagicMock,
+    mock_clear_hupcl: MagicMock,
     mock_sleep: MagicMock,
     mock_exists: MagicMock,
     capsys: pytest.CaptureFixture[str],
@@ -40,11 +41,6 @@ def test_SerialInterface_single_port(
     iface.close()
     mocked_findPorts.assert_called()
     mocked_serial.assert_called()
-
-    # doesn't get called in SerialInterface on windows
-    if sys.platform != "win32":
-        mocked_open.assert_called()
-        mock_hupcl.assert_called()
 
     mock_sleep.assert_called()
     out, err = capsys.readouterr()
@@ -97,6 +93,7 @@ def test_SerialInterface_rejects_empty_explicit_port_path() -> None:
 @pytest.mark.unit
 @patch("os.path.exists", return_value=True)
 @patch("time.sleep")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 @patch("serial.Serial")
@@ -106,6 +103,7 @@ def test_SerialInterface_close_skips_flush_when_stream_closed(
     mocked_serial: MagicMock,
     mocked_open: MagicMock,
     mock_hupcl: MagicMock,
+    mock_clear_hupcl: MagicMock,
     mock_sleep: MagicMock,
     mock_exists: MagicMock,
 ) -> None:
@@ -114,21 +112,13 @@ def test_SerialInterface_close_skips_flush_when_stream_closed(
 
     iface = SerialInterface(noProto=True, connectNow=False)
     stream.is_open = False
-    # setup may flush during constructor; only assert close() behavior.
     stream.flush.reset_mock()
     mock_sleep.reset_mock()
-    # Defensive safety-net: side_effect would catch unexpected flush() calls,
-    # but SerialInterface.close() skips flush when is_open is False.
     stream.flush.side_effect = RuntimeError("flush on closed stream")
     iface.close()
 
-    # flush can be called during __init__ for setup; we only guarantee close()
-    # won't raise and still performs underlying cleanup.
     mocked_findPorts.assert_called()
     stream.close.assert_called()
-    if sys.platform != "win32":
-        mocked_open.assert_called()
-        mock_hupcl.assert_called()
     stream.flush.assert_not_called()
     mock_sleep.assert_not_called()
 
@@ -237,6 +227,7 @@ def test_serial_interface_connect_skips_reopen_when_reader_alive() -> None:
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("os.path.exists", return_value=True)
 @patch("time.sleep")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 @patch("serial.Serial")
@@ -246,6 +237,7 @@ def test_auto_detected_flag_true_when_devPath_none(
     mocked_serial: MagicMock,
     mocked_open: MagicMock,
     mock_hupcl: MagicMock,
+    mock_clear_hupcl: MagicMock,
     mock_sleep: MagicMock,
     mock_exists: MagicMock,
 ) -> None:
@@ -259,6 +251,7 @@ def test_auto_detected_flag_true_when_devPath_none(
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("os.path.exists", return_value=True)
 @patch("time.sleep")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 @patch("serial.Serial")
@@ -266,6 +259,7 @@ def test_auto_detected_flag_false_when_devPath_explicit(
     mocked_serial: MagicMock,
     mocked_open: MagicMock,
     mock_hupcl: MagicMock,
+    mock_clear_hupcl: MagicMock,
     mock_sleep: MagicMock,
     mock_exists: MagicMock,
 ) -> None:
@@ -332,23 +326,22 @@ def test_devPath_preserved_on_retry_for_user_specified(
 
 
 @pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
 @patch("os.path.exists", return_value=True)
 @patch("time.sleep")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 def test_input_buffer_drained_when_data_waiting(
     mocked_open: MagicMock,
     mock_hupcl: MagicMock,
+    mock_clear_hupcl: MagicMock,
     mock_sleep: MagicMock,
     mock_exists: MagicMock,
 ) -> None:
     """reset_input_buffer should be called when in_waiting > 0."""
-    mocked_serial = MagicMock()
     mocked_serial_instance = MagicMock()
     mocked_serial_instance.in_waiting = 42
     mocked_serial_instance.flush = MagicMock()
-    mocked_serial.return_value = mocked_serial_instance
     iface = object.__new__(SerialInterface)
     iface.devPath = "/dev/ttyUSB0"
     with patch("serial.Serial", return_value=mocked_serial_instance):
@@ -357,14 +350,15 @@ def test_input_buffer_drained_when_data_waiting(
 
 
 @pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
 @patch("os.path.exists", return_value=True)
 @patch("time.sleep")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 def test_input_buffer_not_drained_when_empty(
     mocked_open: MagicMock,
     mock_hupcl: MagicMock,
+    mock_clear_hupcl: MagicMock,
     mock_sleep: MagicMock,
     mock_exists: MagicMock,
 ) -> None:
