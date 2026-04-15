@@ -374,6 +374,30 @@ def test_input_buffer_not_drained_when_empty(
 
 
 @pytest.mark.unit
+@patch("os.path.exists", return_value=True)
+@patch("time.sleep")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
+def test_open_serial_stream_sets_control_lines_before_open(
+    mock_clear_hupcl: MagicMock,
+    mock_sleep: MagicMock,
+    mock_exists: MagicMock,
+) -> None:
+    """Serial open should preconfigure DTR/RTS low before opening the port."""
+    mocked_serial_instance = MagicMock()
+    mocked_serial_instance.in_waiting = 0
+    mocked_serial_instance.flush = MagicMock()
+    iface = object.__new__(SerialInterface)
+    iface.devPath = "/dev/ttyUSB0"
+    with patch("serial.Serial", return_value=mocked_serial_instance) as serial_ctor:
+        iface._open_serial_stream()
+    serial_ctor.assert_called_once()
+    assert mocked_serial_instance.port == "/dev/ttyUSB0"
+    assert mocked_serial_instance.dtr is False
+    assert mocked_serial_instance.rts is False
+    mocked_serial_instance.open.assert_called_once()
+
+
+@pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("os.path.exists", return_value=False)
 def test_port_existence_check_raises_for_missing_device(

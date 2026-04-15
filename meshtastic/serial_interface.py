@@ -73,17 +73,23 @@ class SerialInterface(StreamInterface):
             )
 
         serial_kwargs: dict[str, Any] = {
+            "port": None,
+            "baudrate": DEFAULT_BAUD_RATE,
             "timeout": SERIAL_READ_TIMEOUT,
             "write_timeout": SERIAL_WRITE_TIMEOUT,
+            "rtscts": False,
+            "dsrdtr": False,
         }
         if sys.platform != "win32":
             serial_kwargs["exclusive"] = True
 
-        stream = serial.Serial(
-            self.devPath,
-            DEFAULT_BAUD_RATE,
-            **serial_kwargs,
-        )
+        # Avoid opening with default asserted control lines.  Some USB/MCU
+        # combinations treat DTR/RTS transitions as reset triggers.
+        stream = serial.Serial(**serial_kwargs)
+        stream.port = self.devPath
+        stream.dtr = False
+        stream.rts = False
+        stream.open()
 
         if sys.platform != "win32":
             self._clear_hupcl_on_fd(stream.fileno())
