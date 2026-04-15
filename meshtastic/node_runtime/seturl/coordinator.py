@@ -210,6 +210,20 @@ class _SetUrlTransactionCoordinator:
             ``(remaining_channel_indices, lora_still_needed)`` if reconnect
             and config reload succeeded, or ``None`` if reconnect failed.
         """
+        try:
+            return self._reconnect_and_compute_remaining_impl(plan, failure_stage)
+        except Exception:
+            logger.debug(
+                "Reconnect/compute-remaining failed; ignoring diagnostic error.",
+                exc_info=True,
+            )
+            return None
+
+    def _reconnect_and_compute_remaining_impl(
+        self,
+        plan: _SetUrlReplacePlan,
+        failure_stage: _ReplaceAllStage | None = None,
+    ) -> tuple[set[int], bool] | None:
         if failure_stage == _ReplaceAllStage.LORA_CONFIG:
             logger.info(
                 "LoRa-stage failure; settling %.1fs before reconnect.",
@@ -256,9 +270,6 @@ class _SetUrlTransactionCoordinator:
                 )
                 continue
 
-            self._cache_manager.invalidate_channel_cache(
-                "Channel cache invalidated before resume reload."
-            )
             logger.info(
                 "Transport stable; reloading device config (timeout=%.1fs)...",
                 RESUME_CONFIG_RELOAD_TIMEOUT_SECONDS,

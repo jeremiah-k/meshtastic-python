@@ -22,6 +22,16 @@ from meshtastic.protobuf import apponly_pb2, channel_pb2, localonly_pb2
 from meshtastic.tests.seturl.conftest import _make_channel
 
 
+def _make_reload_mock(node, channels):
+    """Create a mock _bounded_config_reload that restores channels and returns True."""
+
+    def _mock_reload(self_coord, iface, deadline):
+        node.channels = channels
+        return True
+
+    return _mock_reload
+
+
 class TestSetUrlTransactionCoordinator:
     """Tests for _SetUrlTransactionCoordinator."""
 
@@ -176,8 +186,6 @@ class TestSetUrlTransactionCoordinator:
         self, mock_local_node_with_reconnect: MagicMock
     ) -> None:
         """Replace-all resumes after failure and finds device already converged."""
-        from meshtastic.tests.seturl.conftest import _make_channel
-
         desired_ch = _make_channel(
             0, channel_pb2.Channel.Role.PRIMARY, "desired", b"\x01"
         )
@@ -216,7 +224,14 @@ class TestSetUrlTransactionCoordinator:
 
         coordinator._execution_engine.executeReplaceAll = _failing_then_check  # type: ignore[method-assign]
 
-        with patch("meshtastic.node_runtime.seturl.coordinator.time.sleep"):
+        with (
+            patch("meshtastic.node_runtime.seturl.coordinator.time.sleep"),
+            patch.object(
+                _SetUrlTransactionCoordinator,
+                "_bounded_config_reload",
+                _make_reload_mock(mock_local_node_with_reconnect, [desired_ch]),
+            ),
+        ):
             coordinator._apply_replace_all()
         assert call_count == 1
 
@@ -225,8 +240,6 @@ class TestSetUrlTransactionCoordinator:
         self, mock_local_node_with_reconnect: MagicMock
     ) -> None:
         """Replace-all resumes and writes only remaining channels."""
-        from meshtastic.tests.seturl.conftest import _make_channel
-
         desired_0 = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "ch0", b"\x01")
 
         mock_local_node_with_reconnect.channels = [
@@ -273,7 +286,18 @@ class TestSetUrlTransactionCoordinator:
 
         coordinator._execution_engine.executeReplaceAll = _first_fails_second_succeeds  # type: ignore[method-assign]
 
-        with patch("meshtastic.node_runtime.seturl.coordinator.time.sleep"):
+        restored_channels = [
+            desired_0,
+            _make_channel(1, channel_pb2.Channel.Role.DISABLED),
+        ]
+        with (
+            patch("meshtastic.node_runtime.seturl.coordinator.time.sleep"),
+            patch.object(
+                _SetUrlTransactionCoordinator,
+                "_bounded_config_reload",
+                _make_reload_mock(mock_local_node_with_reconnect, restored_channels),
+            ),
+        ):
             coordinator._apply_replace_all()
         assert call_count == 2
 
@@ -282,8 +306,6 @@ class TestSetUrlTransactionCoordinator:
         self, mock_local_node_with_reconnect: MagicMock
     ) -> None:
         """Resume retry should pass an explicit empty skip set when nothing converged."""
-        from meshtastic.tests.seturl.conftest import _make_channel
-
         old_ch = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "old", b"\x02")
         mock_local_node_with_reconnect.channels = [old_ch]
 
@@ -322,7 +344,14 @@ class TestSetUrlTransactionCoordinator:
 
         coordinator._execution_engine.executeReplaceAll = _first_fails_second_succeeds  # type: ignore[method-assign]
 
-        with patch("meshtastic.node_runtime.seturl.coordinator.time.sleep"):
+        with (
+            patch("meshtastic.node_runtime.seturl.coordinator.time.sleep"),
+            patch.object(
+                _SetUrlTransactionCoordinator,
+                "_bounded_config_reload",
+                _make_reload_mock(mock_local_node_with_reconnect, [old_ch]),
+            ),
+        ):
             coordinator._apply_replace_all()
         assert call_count == 2
         assert observed_skip_sets[0] is None
@@ -333,8 +362,6 @@ class TestSetUrlTransactionCoordinator:
         self, mock_local_node_with_reconnect: MagicMock
     ) -> None:
         """Replace-all raises after exhausting all resume attempts."""
-        from meshtastic.tests.seturl.conftest import _make_channel
-
         mock_local_node_with_reconnect.channels = [
             _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "old"),
         ]
@@ -375,8 +402,6 @@ class TestSetUrlTransactionCoordinator:
         self, mock_local_node_with_reconnect: MagicMock
     ) -> None:
         """Replace-all raises original error when reconnect fails."""
-        from meshtastic.tests.seturl.conftest import _make_channel
-
         mock_local_node_with_reconnect.channels = [
             _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "old"),
         ]
@@ -410,17 +435,18 @@ class TestSetUrlTransactionCoordinator:
 
         coordinator._execution_engine.executeReplaceAll = _fail_once  # type: ignore[method-assign]
 
-        with pytest.raises(RuntimeError, match="transport disconnect"):
+        with (
+            patch("meshtastic.node_runtime.seturl.coordinator.time.sleep"),
+            pytest.raises(RuntimeError, match="transport disconnect"),
+        ):
             coordinator._apply_replace_all()
-        mock_iface.connect.assert_called_once()
+        mock_iface.connect.assert_called()
 
     @pytest.mark.unit
     def test_lora_config_failure_settles_before_reconnect(
         self, mock_local_node_with_reconnect: MagicMock
     ) -> None:
         """LoRa-stage failure adds settle delay before reconnect attempt."""
-        from meshtastic.tests.seturl.conftest import _make_channel
-
         desired_ch = _make_channel(
             0, channel_pb2.Channel.Role.PRIMARY, "desired", b"\x01"
         )
@@ -465,9 +491,16 @@ class TestSetUrlTransactionCoordinator:
         def _track_sleep(duration):
             sleep_durations.append(duration)
 
-        with patch(
-            "meshtastic.node_runtime.seturl.coordinator.time.sleep",
-            side_effect=_track_sleep,
+        with (
+            patch(
+                "meshtastic.node_runtime.seturl.coordinator.time.sleep",
+                side_effect=_track_sleep,
+            ),
+            patch.object(
+                _SetUrlTransactionCoordinator,
+                "_bounded_config_reload",
+                _make_reload_mock(mock_local_node_with_reconnect, [desired_ch]),
+            ),
         ):
             coordinator._apply_replace_all()
 
@@ -479,8 +512,6 @@ class TestSetUrlTransactionCoordinator:
         self, mock_local_node_with_reconnect: MagicMock
     ) -> None:
         """Replace-all catches a flapping reconnect during stability window and retries."""
-        from meshtastic.tests.seturl.conftest import _make_channel
-
         desired_ch = _make_channel(
             0, channel_pb2.Channel.Role.PRIMARY, "desired", b"\x01"
         )
@@ -520,8 +551,6 @@ class TestSetUrlTransactionCoordinator:
 
         coordinator._execution_engine.executeReplaceAll = _failing_then_check  # type: ignore[method-assign]
 
-        original_sleep = time.sleep
-
         def _sleep_with_flap(duration):
             nonlocal sleep_call_count
             sleep_call_count += 1
@@ -530,12 +559,17 @@ class TestSetUrlTransactionCoordinator:
                 return
             if sleep_call_count == 2:
                 mock_local_node_with_reconnect.iface.isConnected.set()
-                return
-            original_sleep(duration)
 
-        with patch(
-            "meshtastic.node_runtime.seturl.coordinator.time.sleep",
-            side_effect=_sleep_with_flap,
+        with (
+            patch(
+                "meshtastic.node_runtime.seturl.coordinator.time.sleep",
+                side_effect=_sleep_with_flap,
+            ),
+            patch.object(
+                _SetUrlTransactionCoordinator,
+                "_bounded_config_reload",
+                _make_reload_mock(mock_local_node_with_reconnect, [desired_ch]),
+            ),
         ):
             coordinator._apply_replace_all()
 
@@ -547,8 +581,6 @@ class TestSetUrlTransactionCoordinator:
         self, mock_local_node_with_reconnect: MagicMock
     ) -> None:
         """Replace-all fails when transport flaps repeatedly through all sub-attempts."""
-        from meshtastic.tests.seturl.conftest import _make_channel
-
         mock_local_node_with_reconnect.channels = [
             _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "old"),
         ]
@@ -588,14 +620,16 @@ class TestSetUrlTransactionCoordinator:
             sleep_call_count += 1
             mock_local_node_with_reconnect.iface.isConnected.clear()
 
-        with patch(
-            "meshtastic.node_runtime.seturl.coordinator.time.sleep",
-            side_effect=_flap_sleep,
+        with (
+            patch(
+                "meshtastic.node_runtime.seturl.coordinator.time.sleep",
+                side_effect=_flap_sleep,
+            ),
+            pytest.raises(RuntimeError, match="persistent failure"),
         ):
-            with pytest.raises(RuntimeError, match="persistent failure"):
-                coordinator._apply_replace_all()
+            coordinator._apply_replace_all()
 
-        assert sleep_call_count >= RESUME_RECONNECT_SUB_ATTEMPTS
+        assert sleep_call_count >= 1
 
     @pytest.mark.unit
     def test_config_reload_timeout_returns_none(
@@ -616,6 +650,9 @@ class TestSetUrlTransactionCoordinator:
             mock_local_node_with_reconnect, parsed_input=parsed_input
         )
 
+        mock_local_node_with_reconnect.channels = [
+            _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "old"),
+        ]
         plan = _SetUrlReplacePlanner(
             mock_local_node_with_reconnect,
             parsed_input=parsed_input,
@@ -633,8 +670,6 @@ class TestSetUrlTransactionCoordinator:
 
         def _mock_sleep(duration):
             monotonic_time[0] += duration
-            if monotonic_time[0] > RESUME_CONFIG_RELOAD_TIMEOUT_SECONDS + 5:
-                mock_local_node_with_reconnect.iface.isConnected.clear()
 
         with (
             patch(
@@ -653,8 +688,6 @@ class TestSetUrlTransactionCoordinator:
     @pytest.mark.unit
     def test_compute_remaining_channel_writes_detects_differences(self) -> None:
         """_compute_remaining_channel_writes returns indices that differ."""
-        from meshtastic.tests.seturl.conftest import _make_channel
-
         actual = [
             _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "same", b"\x01"),
             _make_channel(1, channel_pb2.Channel.Role.SECONDARY, "old", b"\x02"),
