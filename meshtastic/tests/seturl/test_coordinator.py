@@ -1,6 +1,5 @@
 """Tests for _SetUrlTransactionCoordinator."""
 
-import time
 from typing import NoReturn
 from unittest.mock import MagicMock, patch
 
@@ -9,8 +8,6 @@ import pytest
 from meshtastic.node_runtime.seturl.execution import _ReplaceAllStage
 from meshtastic.node_runtime.seturl.coordinator import (
     LORA_CONFIG_RECONNECT_SETTLE_SECONDS,
-    RESUME_CONFIG_RELOAD_TIMEOUT_SECONDS,
-    RESUME_RECONNECT_SUB_ATTEMPTS,
 )
 from meshtastic.node_runtime.seturl.planner import _SetUrlReplacePlanner
 from meshtastic.node_runtime.seturl_runtime import (
