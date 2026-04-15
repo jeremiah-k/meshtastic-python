@@ -1689,7 +1689,7 @@ class MeshInterface:  # pylint: disable=R0902
                 if self.failure is not None:
                     raise self.failure
                 if callable(abort_check):
-                    abort_reason = abort_check()
+                    abort_reason = abort_check()  # pylint: disable=not-callable
                     if abort_reason:
                         raise MeshInterface.MeshInterfaceError(abort_reason)
             if not connected:
