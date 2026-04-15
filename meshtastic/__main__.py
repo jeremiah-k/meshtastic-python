@@ -123,6 +123,9 @@ CONFIG_COMMIT_SETTLE_SECONDS = 1.0
 CONFIG_RECONNECT_WAIT_SECONDS = 15.0
 """Maximum time to wait for device reconnect after a reboot-capable configure commit."""
 
+SETURL_STABILITY_TIMEOUT_SECONDS = 30.0
+"""Timeout for post-setURL transport stability before opening Phase 2 writes."""
+
 CONFIGURE_PHASE1_HEADER = (
     "Phase 1: Applying direct configuration "
     "(channel URL updates may trigger reconnect/reboot)..."
@@ -503,6 +506,7 @@ def _channel_url_matches_current_device_state(
         requested_channel_url,
         device_channels=getattr(target_node, "channels", None),
         device_lora_config=local_config.lora,
+        emit_warnings=False,
     )
 
 
@@ -1351,7 +1355,7 @@ def _handle_configure_command(
     )
     if seturl_executed and has_valid_config_section:
         if not _post_seturl_stability_check(
-            interface, timeout=CONFIG_RECONNECT_WAIT_SECONDS
+            interface, timeout=SETURL_STABILITY_TIMEOUT_SECONDS
         ):
             _cli_exit(
                 "ERROR: channel_url applied, but transport did not stabilize "

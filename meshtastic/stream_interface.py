@@ -244,6 +244,22 @@ class StreamInterface(MeshInterface):
                 self._join_reader_thread()
             raise
 
+    def _connect_wait_should_abort(self) -> str | None:
+        """Return abort reason when connection wait should fail fast, else None."""
+        if self._wantExit:
+            return "Connection cancelled while waiting for completion"
+        stream = self.stream
+        if stream is None or not getattr(stream, "is_open", True):
+            return "Connection lost while waiting for connection completion (stream closed)"
+        reader_thread = getattr(self, "_rxThread", None)
+        if reader_thread is not None and not reader_thread.is_alive():
+            disconnect_source = getattr(self, "_last_disconnect_source", "unknown")
+            return (
+                "Connection lost while waiting for connection completion "
+                f"({disconnect_source})"
+            )
+        return None
+
     def _close_stream_safely(self) -> None:
         """Best-effort close and clear of the underlying stream handle."""
         s = self.stream

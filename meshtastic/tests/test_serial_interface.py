@@ -10,6 +10,7 @@ import pytest
 from ..mesh_interface import MeshInterface
 from ..protobuf import config_pb2
 from ..serial_interface import SerialInterface
+from ..stream_interface import StreamInterface
 
 
 # pylint: disable=R0917
@@ -154,3 +155,49 @@ def test_serial_interface_repr_includes_optional_fields() -> None:
     assert "noProto=True" in rendered
     assert "noNodes=True" in rendered
     assert rendered.endswith(")")
+
+
+@pytest.mark.unit
+@patch("time.sleep")
+def test_serial_interface_connect_retries_transient_connect_errors(
+    mock_sleep: MagicMock,
+) -> None:
+    """connect() should retry when startup fails due transient transport loss."""
+    iface = object.__new__(SerialInterface)
+    iface.devPath = "/dev/ttyUSB0"
+    stream = MagicMock()
+    stream.is_open = True
+    iface.stream = stream
+    transient_error = MeshInterface.MeshInterfaceError(
+        "Connection lost while waiting for connection completion (stream.closed)"
+    )
+    with (
+        patch.object(
+            StreamInterface,
+            "connect",
+            side_effect=[transient_error, None],
+        ) as base_connect,
+        patch.object(iface, "_open_serial_stream", return_value=stream),
+    ):
+        iface.connect()
+    assert base_connect.call_count == 2
+    stream.close.assert_called_once()
+    mock_sleep.assert_called_once()
+
+
+@pytest.mark.unit
+def test_serial_interface_connect_does_not_retry_non_retryable_errors() -> None:
+    """connect() should fail immediately on non-retryable errors."""
+    iface = object.__new__(SerialInterface)
+    iface.devPath = "/dev/ttyUSB0"
+    stream = MagicMock()
+    stream.is_open = True
+    iface.stream = stream
+    with patch.object(
+        StreamInterface,
+        "connect",
+        side_effect=RuntimeError("non-retryable failure"),
+    ) as base_connect:
+        with pytest.raises(RuntimeError, match="non-retryable failure"):
+            iface.connect()
+    assert base_connect.call_count == 1

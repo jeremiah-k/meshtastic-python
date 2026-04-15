@@ -36,6 +36,12 @@ plus LoRa config in quick succession over serial connections.
 SERIAL_SETTLING_DELAY = 0.1
 """Delay for serial port operations to settle (seconds)."""
 
+SERIAL_CONNECT_ATTEMPTS = 3
+"""Maximum serial connect attempts for transient reboot/disconnect windows."""
+
+SERIAL_CONNECT_RETRY_DELAY_SECONDS = 1.5
+"""Delay between serial connect retry attempts."""
+
 SERIAL_PORT_PATH_EMPTY_ERROR = (
     "Serial port path cannot be empty; pass None to auto-detect."
 )
@@ -196,9 +202,50 @@ class SerialInterface(StreamInterface):
 
     def connect(self) -> None:
         """Reconnect by reopening serial stream when needed, then run StreamInterface connect."""
-        if self.stream is None or not getattr(self.stream, "is_open", True):
-            self.stream = self._open_serial_stream()
-        super().connect()
+        for attempt in range(SERIAL_CONNECT_ATTEMPTS):
+            try:
+                if self.stream is None or not getattr(self.stream, "is_open", True):
+                    self.stream = self._open_serial_stream()
+                super().connect()
+                return
+            except Exception as exc:
+                if (
+                    attempt + 1 >= SERIAL_CONNECT_ATTEMPTS
+                    or not self._is_retryable_connect_error(exc)
+                ):
+                    raise
+                logger.warning(
+                    "Serial connect attempt %d/%d failed: %s. Retrying in %.1fs...",
+                    attempt + 1,
+                    SERIAL_CONNECT_ATTEMPTS,
+                    exc,
+                    SERIAL_CONNECT_RETRY_DELAY_SECONDS,
+                )
+                with contextlib.suppress(OSError, ValueError, serial.SerialException):
+                    if self.stream is not None and getattr(self.stream, "is_open", True):
+                        self.stream.close()
+                self.stream = None
+                time.sleep(SERIAL_CONNECT_RETRY_DELAY_SECONDS)
+
+    def _is_retryable_connect_error(self, exc: Exception) -> bool:
+        """Return True when serial connect failures are likely transient."""
+        if isinstance(
+            exc,
+            (
+                serial.SerialException,
+                OSError,
+                StreamInterface.StreamClosedError,
+            ),
+        ):
+            return True
+        message = str(exc)
+        if isinstance(exc, self.MeshInterfaceError):
+            return (
+                "Timed out waiting for connection completion" in message
+                or "Connection lost while waiting for connection completion" in message
+                or "No serial Meshtastic device detected for reconnect." in message
+            )
+        return False
 
     def _set_hupcl_with_termios(self, f: IO[str]) -> None:
         """Clear the terminal HUPCL (hang-up-on-close) flag for the given device file to prevent the device from rebooting when RTS/DTR change.

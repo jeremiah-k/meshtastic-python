@@ -93,6 +93,7 @@ from meshtastic.util import (
 logger = logging.getLogger(__name__)
 
 HEARTBEAT_INTERVAL_SECONDS = 300
+CONNECT_WAIT_POLL_SECONDS = 0.2
 
 PACKET_ID_MASK = 0xFFFFFFFF
 PACKET_ID_COUNTER_MASK = 0x3FF
@@ -1668,7 +1669,21 @@ class MeshInterface:  # pylint: disable=R0902
             Re-raises a stored fatal exception if one occurred during connection.
         """
         if not self.noProto:
-            if not self.isConnected.wait(timeout):  # timeout after x seconds
+            deadline = time.monotonic() + timeout
+            abort_check = getattr(self, "_connect_wait_should_abort", None)
+            connected = False
+            while time.monotonic() < deadline:
+                remaining = deadline - time.monotonic()
+                if self.isConnected.wait(min(CONNECT_WAIT_POLL_SECONDS, remaining)):
+                    connected = True
+                    break
+                if self.failure is not None:
+                    raise self.failure
+                if callable(abort_check):
+                    abort_reason = abort_check()
+                    if abort_reason:
+                        raise MeshInterface.MeshInterfaceError(abort_reason)
+            if not connected:
                 raise MeshInterface.MeshInterfaceError(
                     "Timed out waiting for connection completion"
                 )
