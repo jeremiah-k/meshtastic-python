@@ -3,6 +3,8 @@
 import logging
 import re
 import sys
+import threading
+from typing import Any, cast
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
@@ -168,6 +170,7 @@ def test_serial_interface_connect_retries_transient_connect_errors(
     stream = MagicMock()
     stream.is_open = True
     iface.stream = stream
+    iface._connect_lock = threading.Lock()
     transient_error = MeshInterface.MeshInterfaceError(
         "Connection lost while waiting for connection completion (stream.closed)"
     )
@@ -201,3 +204,22 @@ def test_serial_interface_connect_does_not_retry_non_retryable_errors() -> None:
         with pytest.raises(RuntimeError, match="non-retryable failure"):
             iface.connect()
     assert base_connect.call_count == 1
+
+
+@pytest.mark.unit
+def test_serial_interface_connect_skips_reopen_when_reader_alive() -> None:
+    """connect() should not reopen stream while reader thread is already running."""
+    iface = object.__new__(SerialInterface)
+    iface.devPath = "/dev/ttyUSB0"
+    iface.stream = None
+    iface._connect_lock = threading.Lock()
+    iface._stream_close_in_progress = False
+    iface._wantExit = False
+    cast_iface = cast(Any, iface)
+    cast_iface._provides_own_stream = False
+    iface._rxThread = MagicMock()
+    iface._rxThread.is_alive.return_value = True
+    iface._rxThread.ident = 1
+    with patch.object(iface, "_open_serial_stream") as open_stream:
+        iface.connect()
+    open_stream.assert_not_called()

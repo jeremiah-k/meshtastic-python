@@ -605,6 +605,7 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
         meshtastic_bin=meshtastic_bin,
     )
 
+    body_failed = False
     try:
         try:
             initial_info = _run_host_cli_ok(
@@ -691,6 +692,7 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
             )
             assert saturated_config_after == saturated_config_before
         except Exception:
+            body_failed = True
             _capture_host_debug_state(
                 tmp_path,
                 HOST_A,
@@ -738,6 +740,11 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
                 meshtastic_bin,
                 label="add-only-saturation-restore-failure-host-a",
             )
+            if not body_failed:
+                pytest.fail(
+                    "Saturation test cleanup restore failed; refusing to continue "
+                    "with potentially mutated HOST_A state."
+                )
 
 
 @pytest.mark.xfail(

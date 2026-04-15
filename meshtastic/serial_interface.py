@@ -204,8 +204,6 @@ class SerialInterface(StreamInterface):
         """Reconnect by reopening serial stream when needed, then run StreamInterface connect."""
         for attempt in range(SERIAL_CONNECT_ATTEMPTS):
             try:
-                if self.stream is None or not getattr(self.stream, "is_open", True):
-                    self.stream = self._open_serial_stream()
                 super().connect()
                 return
             except Exception as exc:
@@ -221,11 +219,19 @@ class SerialInterface(StreamInterface):
                     exc,
                     SERIAL_CONNECT_RETRY_DELAY_SECONDS,
                 )
-                with contextlib.suppress(OSError, ValueError, serial.SerialException):
-                    if self.stream is not None and getattr(self.stream, "is_open", True):
-                        self.stream.close()
-                self.stream = None
+                with self._connect_lock:
+                    with contextlib.suppress(OSError, ValueError, serial.SerialException):
+                        if self.stream is not None and getattr(self.stream, "is_open", True):
+                            self.stream.close()
+                    self.stream = None
                 time.sleep(SERIAL_CONNECT_RETRY_DELAY_SECONDS)
+
+    def _ensure_stream_for_connect_locked(self, *, requires_stream: bool) -> None:
+        """Open/reopen serial stream atomically under StreamInterface connect lock."""
+        if not requires_stream:
+            return
+        if self.stream is None or not getattr(self.stream, "is_open", True):
+            self.stream = self._open_serial_stream()
 
     def _is_retryable_connect_error(self, exc: Exception) -> bool:
         """Return True when serial connect failures are likely transient."""

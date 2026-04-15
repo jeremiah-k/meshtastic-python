@@ -268,6 +268,17 @@ def test_parse_host_port_rejects_empty_bracketed_ipv6_hostname() -> None:
 
 
 @pytest.mark.unit
+def test_is_local_destination_accepts_hex_node_id_forms() -> None:
+    iface = MagicMock()
+    iface.myInfo = SimpleNamespace(my_node_num=int("25d6e474", 16))
+
+    assert main_module._is_local_destination(iface, "!25d6e474") is True
+    assert main_module._is_local_destination(iface, "0x25D6E474") is True
+    assert main_module._is_local_destination(iface, str(int("25d6e474", 16))) is True
+    assert main_module._is_local_destination(iface, "!ffffffff") is False
+
+
+@pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_host_argument_passes_parsed_port_to_tcp_interface() -> None:
     """Test --host host:port passes parsed host and port to TCPInterface."""
@@ -5407,6 +5418,31 @@ def test_main_configure_phase1_direct_write_order(
         "setURL",
     ]
     assert relevant == expected
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_owner_values_use_normalized_strings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "owner_normalized.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "owner": "  Normalized Owner  ",
+                "owner_short": "  NO  ",
+            }
+        ),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    _run_main_configure_file(config_path, iface, monkeypatch)
+
+    assert target_node.setOwner.call_args_list == [
+        call(long_name="Normalized Owner"),
+        call(long_name=None, short_name="NO"),
+    ]
 
 
 @pytest.mark.unit

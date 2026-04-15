@@ -690,6 +690,38 @@ class TestSetUrlTransactionCoordinator:
         assert result is None
 
     @pytest.mark.unit
+    def test_reconnect_handles_missing_isconnected_event(
+        self, mock_local_node_with_reconnect: MagicMock
+    ) -> None:
+        """Reconnect path should degrade safely when iface.isConnected is unavailable."""
+        channel_set = apponly_pb2.ChannelSet()
+        settings = channel_set.settings.add()
+        settings.name = "desired"
+        settings.psk = b"\x01"
+
+        parsed_input = _SetUrlParsedInput(
+            channel_set=channel_set,
+            has_lora_update=False,
+        )
+        coordinator = _SetUrlTransactionCoordinator(
+            mock_local_node_with_reconnect,
+            parsed_input=parsed_input,
+        )
+
+        mock_local_node_with_reconnect.channels = [
+            _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "old"),
+        ]
+        plan = _SetUrlReplacePlanner(
+            mock_local_node_with_reconnect,
+            parsed_input=parsed_input,
+            admin_context=coordinator._admin_context,
+        ).build_plan()
+
+        mock_local_node_with_reconnect.iface.isConnected = None
+        result = coordinator._reconnect_and_compute_remaining(plan)
+        assert result is None
+
+    @pytest.mark.unit
     def test_compute_remaining_channel_writes_detects_differences(self) -> None:
         """_compute_remaining_channel_writes returns indices that differ."""
         actual = [

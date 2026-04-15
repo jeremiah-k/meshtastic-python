@@ -416,13 +416,33 @@ def _post_seturl_stability_check(
 
 
 def _is_local_destination(interface: MeshInterface, dest: str) -> bool:
-    if dest in (BROADCAST_ADDR, LOCAL_ADDR):
+    dest_value = str(dest).strip()
+    if dest_value in (BROADCAST_ADDR, LOCAL_ADDR):
         return True
+
+    def _parse_dest_node_num(value: str) -> int | None:
+        if value.isdecimal():
+            return int(value)
+        normalized = value.casefold()
+        hex_part = ""
+        if normalized.startswith("!"):
+            hex_part = normalized[1:]
+        elif normalized.startswith("0x"):
+            hex_part = normalized[2:]
+        if not hex_part:
+            return None
+        try:
+            return int(hex_part, 16)
+        except ValueError:
+            return None
+
     try:
         my_info = interface.myInfo
         if my_info is None:
             return False
-        return str(my_info.my_node_num) == dest
+        my_node_num = int(my_info.my_node_num)
+        parsed_dest_num = _parse_dest_node_num(dest_value)
+        return parsed_dest_num == my_node_num
     except Exception:
         return False
 
@@ -1185,9 +1205,9 @@ def _handle_configure_command(
             _cli_exit(
                 "ERROR: Long Name cannot be empty or contain only whitespace characters"
             )
-        print(f"Setting device owner to {configuration['owner']}")
+        print(f"Setting device owner to {owner_name}")
         interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
-            configuration["owner"]
+            long_name=owner_name
         )
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
@@ -1200,9 +1220,9 @@ def _handle_configure_command(
             _cli_exit(
                 "ERROR: Short Name cannot be empty or contain only whitespace characters"
             )
-        print(f"Setting device owner short to {configuration['owner_short']}")
+        print(f"Setting device owner short to {owner_short_name}")
         interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
-            long_name=None, short_name=configuration["owner_short"]
+            long_name=None, short_name=owner_short_name
         )
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
@@ -1215,9 +1235,9 @@ def _handle_configure_command(
             _cli_exit(
                 "ERROR: Short Name cannot be empty or contain only whitespace characters"
             )
-        print(f"Setting device owner short to {configuration['ownerShort']}")
+        print(f"Setting device owner short to {owner_short_name}")
         interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
-            long_name=None, short_name=configuration["ownerShort"]
+            long_name=None, short_name=owner_short_name
         )
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 

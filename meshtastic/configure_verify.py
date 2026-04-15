@@ -31,9 +31,19 @@ def _coerce_element(field_desc: Any, element: Any) -> Any:
             element,
         )
         return element
-    if isinstance(element, str) and field_desc.enum_type is None:
+    if (
+        isinstance(element, str)
+        and field_desc.enum_type is None
+        and not _is_string_field(field_desc)
+    ):
         return meshtastic.util.fromStr(element)
     return element
+
+
+def _is_string_field(field_desc: Any) -> bool:
+    field_type = getattr(field_desc, "type", None)
+    type_string = getattr(field_desc, "TYPE_STRING", None)
+    return field_type is not None and type_string is not None and field_type == type_string
 
 
 def _verify_requested_fields(
@@ -106,7 +116,11 @@ def _verify_requested_fields(
                             snake_key,
                         )
                         scalar = yaml_value
-                if isinstance(yaml_value, str) and field_desc.enum_type is None:
+                if (
+                    isinstance(yaml_value, str)
+                    and field_desc.enum_type is None
+                    and not _is_string_field(field_desc)
+                ):
                     scalar = meshtastic.util.fromStr(yaml_value)
                 if isinstance(scalar, (list, tuple)):
                     logger.debug(
@@ -289,6 +303,28 @@ def _verify_channel_sets_match(
     *,
     emit_warnings: bool,
 ) -> bool:
+    if not requested_channel_set.settings or not device_channel_set.settings:
+        if emit_warnings:
+            logger.warning(
+                "Channel URL verification: missing primary channel entry "
+                "(requested=%d, device=%d).",
+                len(requested_channel_set.settings),
+                len(device_channel_set.settings),
+            )
+        return False
+
+    requested_primary = requested_channel_set.settings[0]
+    device_primary = device_channel_set.settings[0]
+    if not _settings_match(requested_primary, device_primary):
+        if emit_warnings:
+            logger.warning(
+                "Channel URL verification: primary channel entry differs "
+                "(requested primary=%r, device primary=%r).",
+                requested_primary.name,
+                device_primary.name,
+            )
+        return False
+
     requested_names = [settings.name for settings in requested_channel_set.settings]
     device_names = [settings.name for settings in device_channel_set.settings]
     if _has_duplicate_names(

@@ -206,15 +206,16 @@ class StreamInterface(MeshInterface):
                     "connect() called while close() is in progress; ignoring request"
                 )
                 return
-            if self.stream is None and requires_stream:
-                raise StreamInterface.StreamInterfaceError(
-                    StreamInterface.StreamInterfaceError.CONNECT_WITHOUT_STREAM_MSG
-                )
             if self._rxThread.is_alive():
                 logger.warning(
                     "connect() called while reader thread is still alive; ignoring request"
                 )
                 return
+            self._ensure_stream_for_connect_locked(requires_stream=requires_stream)
+            if self.stream is None and requires_stream:
+                raise StreamInterface.StreamInterfaceError(
+                    StreamInterface.StreamInterfaceError.CONNECT_WITHOUT_STREAM_MSG
+                )
             # All reconnect side effects happen under the same lock so a concurrent
             # close() intent is not accidentally cleared by an early-return connect().
             self._wantExit = False
@@ -243,6 +244,10 @@ class StreamInterface(MeshInterface):
             with contextlib.suppress(Exception):
                 self._join_reader_thread()
             raise
+
+    def _ensure_stream_for_connect_locked(self, *, requires_stream: bool) -> None:
+        """Initialize or reopen stream under connect lock in subclasses."""
+        _ = requires_stream
 
     def _connect_wait_should_abort(self) -> str | None:
         """Return abort reason when connection wait should fail fast, else None."""

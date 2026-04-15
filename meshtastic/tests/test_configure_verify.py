@@ -195,6 +195,27 @@ def test_channel_url_lora_config_mismatch() -> None:
 
 
 @pytest.mark.unit
+def test_channel_url_primary_entry_order_mismatch_fails() -> None:
+    requested_primary = channel_pb2.ChannelSettings()
+    requested_primary.name = "primary"
+    requested_primary.psk = b"\x01\x01"
+    requested_secondary = channel_pb2.ChannelSettings()
+    requested_secondary.name = "secondary"
+    requested_secondary.psk = b"\x02\x02"
+    device_primary = channel_pb2.ChannelSettings()
+    device_primary.CopyFrom(requested_secondary)
+    device_secondary = channel_pb2.ChannelSettings()
+    device_secondary.CopyFrom(requested_primary)
+    assert (
+        _verify_channel_url_match(
+            _make_channel_url([requested_primary, requested_secondary], lora_region="US"),
+            _make_channel_url([device_primary, device_secondary], lora_region="US"),
+        )
+        is False
+    )
+
+
+@pytest.mark.unit
 def test_channel_url_against_state_match() -> None:
     primary_settings = channel_pb2.ChannelSettings()
     primary_settings.name = "primary"
@@ -247,6 +268,16 @@ def test_channel_url_against_state_missing_lora_is_false() -> None:
             device_lora_config=None,
         )
         is False
+    )
+
+
+@pytest.mark.unit
+def test_verify_fields_string_literal_true_stays_string() -> None:
+    telemetry = localonly_pb2.LocalModuleConfig()
+    telemetry.detection_sensor.name = "true"
+    assert (
+        _verify_requested_fields({"name": "true"}, telemetry.detection_sensor, "detection_sensor")
+        == []
     )
 
 

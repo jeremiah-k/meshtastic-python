@@ -232,8 +232,21 @@ class _SetUrlTransactionCoordinator:
             time.sleep(LORA_CONFIG_RECONNECT_SETTLE_SECONDS)
 
         iface = self._node.iface
+
+        is_connected_event = getattr(iface, "isConnected", None)
+
+        def _event_is_set() -> bool:
+            if is_connected_event is None or not hasattr(is_connected_event, "is_set"):
+                return False
+            return bool(is_connected_event.is_set())
+
+        def _event_wait(timeout_seconds: float) -> bool:
+            if is_connected_event is None or not hasattr(is_connected_event, "wait"):
+                return False
+            return bool(is_connected_event.wait(timeout_seconds))
+
         for sub_attempt in range(RESUME_RECONNECT_SUB_ATTEMPTS):
-            connected = iface.isConnected.is_set()
+            connected = _event_is_set()
             if not connected:
                 connected = self._trigger_transport_reconnect(iface)
             if not connected:
@@ -244,7 +257,7 @@ class _SetUrlTransactionCoordinator:
                     RESUME_RECONNECT_SUB_ATTEMPTS,
                     RESUME_RECONNECT_TIMEOUT_SECONDS,
                 )
-                connected = iface.isConnected.wait(RESUME_RECONNECT_TIMEOUT_SECONDS)
+                connected = _event_wait(RESUME_RECONNECT_TIMEOUT_SECONDS)
             if not connected:
                 logger.warning(
                     "Reconnect sub-attempt %d/%d: transport did not reconnect.",
@@ -261,7 +274,7 @@ class _SetUrlTransactionCoordinator:
                 RESUME_STABLE_CONNECTED_SECONDS,
             )
             time.sleep(RESUME_STABLE_CONNECTED_SECONDS)
-            if not iface.isConnected.is_set():
+            if not _event_is_set():
                 logger.warning(
                     "Reconnect sub-attempt %d/%d: transport flapped during "
                     "stability window; retrying reconnect.",
@@ -277,7 +290,7 @@ class _SetUrlTransactionCoordinator:
             config_deadline = time.monotonic() + RESUME_CONFIG_RELOAD_TIMEOUT_SECONDS
             config_loaded = self._bounded_config_reload(iface, config_deadline)
             if not config_loaded:
-                if not iface.isConnected.is_set():
+                if not _event_is_set():
                     logger.warning(
                         "Reconnect sub-attempt %d/%d: transport dropped "
                         "during config reload; retrying reconnect.",
