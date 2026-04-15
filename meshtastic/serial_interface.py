@@ -37,11 +37,14 @@ plus LoRa config in quick succession over serial connections.
 SERIAL_SETTLING_DELAY = 0.1
 """Delay for serial port operations to settle (seconds)."""
 
-SERIAL_CONNECT_ATTEMPTS = 3
-"""Maximum serial connect attempts for transient reboot/disconnect windows."""
-
 SERIAL_CONNECT_RETRY_DELAY_SECONDS = 1.5
 """Delay between serial connect retry attempts."""
+
+SERIAL_CONNECT_RETRY_BUDGET_SECONDS = 20.0
+"""Total retry window for transient serial reconnect failures."""
+
+SERIAL_CONNECT_MAX_ATTEMPTS = 12
+"""Hard cap on serial connect attempts within the retry window."""
 
 SERIAL_PORT_PATH_EMPTY_ERROR = (
     "Serial port path cannot be empty; pass None to auto-detect."
@@ -223,22 +226,25 @@ class SerialInterface(StreamInterface):
 
     def connect(self) -> None:
         """Reconnect by reopening serial stream when needed, then run StreamInterface connect."""
-        for attempt in range(SERIAL_CONNECT_ATTEMPTS):
+        retry_deadline = time.monotonic() + SERIAL_CONNECT_RETRY_BUDGET_SECONDS
+        for attempt in range(1, SERIAL_CONNECT_MAX_ATTEMPTS + 1):
             try:
                 super().connect()
                 return
             except Exception as exc:
-                if (
-                    attempt + 1 >= SERIAL_CONNECT_ATTEMPTS
-                    or not self._is_retryable_connect_error(exc)
-                ):
+                if not self._is_retryable_connect_error(exc):
                     raise
+                remaining = retry_deadline - time.monotonic()
+                if attempt >= SERIAL_CONNECT_MAX_ATTEMPTS or remaining <= 0:
+                    raise
+                retry_delay = min(SERIAL_CONNECT_RETRY_DELAY_SECONDS, remaining)
                 logger.warning(
-                    "Serial connect attempt %d/%d failed: %s. Retrying in %.1fs...",
-                    attempt + 1,
-                    SERIAL_CONNECT_ATTEMPTS,
+                    "Serial connect attempt %d/%d failed: %s. Retrying in %.1fs (%.1fs retry budget remaining)...",
+                    attempt,
+                    SERIAL_CONNECT_MAX_ATTEMPTS,
                     exc,
-                    SERIAL_CONNECT_RETRY_DELAY_SECONDS,
+                    retry_delay,
+                    remaining,
                 )
                 with self._connect_lock:
                     with contextlib.suppress(
@@ -251,7 +257,7 @@ class SerialInterface(StreamInterface):
                     self.stream = None
                 if self._dev_path_auto_detected:
                     self.devPath = None
-                time.sleep(SERIAL_CONNECT_RETRY_DELAY_SECONDS)
+                time.sleep(retry_delay)
 
     def _ensure_stream_for_connect_locked(self, *, requires_stream: bool) -> None:
         """Open/reopen serial stream atomically under StreamInterface connect lock."""

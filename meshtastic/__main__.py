@@ -364,19 +364,59 @@ def _post_seturl_stability_check(
 ) -> bool:
     _MAX_STABILITY_ATTEMPTS = 3
     _STABILITY_WINDOW_SECONDS = 1.5
+    _RECONNECT_WAIT_SECONDS = 10.0
 
     deadline = time.monotonic() + timeout
+
+    is_connected_event = getattr(interface, "isConnected", None)
+
+    def _event_is_set() -> bool:
+        return bool(
+            is_connected_event is not None
+            and hasattr(is_connected_event, "is_set")
+            and is_connected_event.is_set()
+        )
+
+    def _event_wait(timeout_seconds: float) -> bool:
+        return bool(
+            is_connected_event is not None
+            and hasattr(is_connected_event, "wait")
+            and is_connected_event.wait(timeout_seconds)
+        )
+
+    def _trigger_reconnect() -> bool:
+        reconnect = getattr(interface, "_attempt_reconnect", None)
+        if callable(reconnect):
+            try:
+                if reconnect():
+                    return _event_is_set()
+            except Exception:
+                logger.debug(
+                    "post-setURL reconnect hook failed.",
+                    exc_info=True,
+                )
+        connect = getattr(interface, "connect", None)
+        if callable(connect):
+            try:
+                connect()
+            except Exception:
+                logger.debug(
+                    "post-setURL connect() trigger failed.",
+                    exc_info=True,
+                )
+        return _event_is_set()
 
     for _attempt in range(_MAX_STABILITY_ATTEMPTS):
         if time.monotonic() >= deadline:
             return False
 
-        while time.monotonic() < deadline:
-            if interface.isConnected.is_set():
-                break
-            time.sleep(0.2)
+        if not _event_is_set():
+            _trigger_reconnect()
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                _event_wait(min(_RECONNECT_WAIT_SECONDS, remaining))
 
-        if not interface.isConnected.is_set():
+        if not _event_is_set():
             logger.warning(
                 "Transport not connected after setURL (attempt %d/%d)",
                 _attempt + 1,
@@ -387,7 +427,7 @@ def _post_seturl_stability_check(
         stability_end = time.monotonic() + _STABILITY_WINDOW_SECONDS
         stable = True
         while time.monotonic() < stability_end:
-            if not interface.isConnected.is_set():
+            if not _event_is_set():
                 stable = False
                 break
             time.sleep(0.1)

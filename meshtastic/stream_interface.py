@@ -597,7 +597,13 @@ class StreamInterface(MeshInterface):
                 logger.debug("Stream closed during shutdown: %s", ex)
             else:
                 disconnect_source = "stream.closed"
-                logger.warning("Stream closed unexpectedly: %s", ex)
+                if self.isConnected.is_set():
+                    logger.warning("Stream closed unexpectedly: %s", ex)
+                else:
+                    logger.info(
+                        "Stream closed during connection bootstrap; waiting for reconnect: %s",
+                        ex,
+                    )
         except OSError:
             if (
                 not self._wantExit

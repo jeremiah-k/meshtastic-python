@@ -5785,3 +5785,23 @@ def test_main_configure_phase3_channel_url_mismatch(
     _run_main_configure_file(config_path, iface, monkeypatch)
     out, _ = capsys.readouterr()
     assert "Could not fully verify" in out
+
+
+@pytest.mark.unit
+def test_post_seturl_stability_check_triggers_reconnect_when_disconnected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    event = threading.Event()
+    iface = SimpleNamespace(
+        isConnected=event,
+        waitForConfig=MagicMock(),
+    )
+    iface.connect = MagicMock(side_effect=event.set)
+    monkeypatch.setattr("time.sleep", lambda _: None)
+
+    assert (
+        main_module._post_seturl_stability_check(cast(Any, iface), timeout=2.0)
+        is True
+    )
+    iface.connect.assert_called()
+    iface.waitForConfig.assert_called_once()
