@@ -337,7 +337,7 @@ def test_main_ch_index_no_devices(
     """Verify CLI handles --ch-index 1 when no devices are available.
 
     Asserts that the global channel_index is set to 1, main() exits with SystemExit
-    code 1, stderr contains "Error connecting to localhost", and the port discovery
+    code 1, stderr contains "No Meshtastic device detected", and the port discovery
     function was invoked.
 
     """
@@ -351,7 +351,11 @@ def test_main_ch_index_no_devices(
     assert pytest_wrapped_e.value.code == 1
     out, err = capsys.readouterr()
     assert out == ""
-    assert re.search(r"Error connecting to localhost", err, re.MULTILINE)
+    assert re.search(
+        r"No Meshtastic device detected and no TCP listener on localhost",
+        err,
+        re.MULTILINE,
+    )
     patched_find_ports.assert_called()
 
 
@@ -4548,7 +4552,11 @@ def test_tunnel_tunnel_arg_with_no_devices(
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         _out, err = capsys.readouterr()
-        assert re.search(r"Error connecting to localhost", err, re.MULTILINE)
+        assert re.search(
+            r"No Meshtastic device detected and no TCP listener on localhost",
+            err,
+            re.MULTILINE,
+        )
 
 
 @pytest.mark.unit
@@ -4574,7 +4582,11 @@ def test_tunnel_subnet_arg_with_no_devices(
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         _out, err = capsys.readouterr()
-        assert re.search(r"Error connecting to localhost", err, re.MULTILINE)
+        assert re.search(
+            r"No Meshtastic device detected and no TCP listener on localhost",
+            err,
+            re.MULTILINE,
+        )
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="on windows is no fcntl module")

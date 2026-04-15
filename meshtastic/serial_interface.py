@@ -103,7 +103,9 @@ class SerialInterface(StreamInterface):
         if len(ports) == 0:
             return None
         if len(ports) > 1:
-            message: str = "Multiple serial ports were detected; one serial port must be specified with '--port'.\n"
+            message: str = (
+                "Multiple serial ports were detected; one serial port must be specified with '--port'.\n"
+            )
             message += (
                 "  Auto-detection cannot disambiguate when multiple compatible devices "
                 "or overlapping USB VID/PID aliases are present.\n"
@@ -153,7 +155,7 @@ class SerialInterface(StreamInterface):
         self.devPath = devPath
         resolved_dev_path = self._resolve_dev_path()
         if resolved_dev_path is None:
-            logger.warning(
+            logger.info(
                 "No serial Meshtastic device detected; creating StreamInterface fallback without a serial connection."
             )
             # Ensure base classes are initialized so close() is safe.

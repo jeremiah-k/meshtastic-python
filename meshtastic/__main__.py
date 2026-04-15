@@ -45,7 +45,7 @@ from meshtastic.version import get_active_version
 
 argcomplete: ModuleType | None = None
 try:
-    import argcomplete as _argcomplete  # type: ignore[import-untyped]
+    import argcomplete as _argcomplete
 
     argcomplete = _argcomplete
 except ImportError:
@@ -497,7 +497,7 @@ def _verify_config_sections(
 ) -> bool:
     for section_name, yaml_values in config_fields.items():
         section_snake = meshtastic.util.camel_to_snake(section_name)
-        if not proto_config.HasField(section_snake):  # type: ignore[arg-type]
+        if not proto_config.HasField(section_snake):
             logger.warning(
                 "%s section %r not present after reload.",
                 label,
@@ -719,9 +719,11 @@ def getPref(node: Any, comp_name: str, *, allow_secrets: bool = False) -> bool:
         """
         if repeated:
             display_value: str | list[str] = [
-                meshtastic.util.toStr(v)
-                if allow_secrets
-                else _redact_pref_value(secret_name, meshtastic.util.toStr(v))
+                (
+                    meshtastic.util.toStr(v)
+                    if allow_secrets
+                    else _redact_pref_value(secret_name, meshtastic.util.toStr(v))
+                )
                 for v in pref_value
             ]
             log_value: str | list[str] = [
@@ -2218,7 +2220,10 @@ def onConnected(interface: MeshInterface) -> None:
 
         # if the user didn't ask for serial debugging output, we might want to exit after we've done our operation
         if (not args.seriallog) and closeNow:
-            interface.close()  # after running command then exit
+            try:
+                interface.close()
+            except Exception:
+                logger.debug("Error during interface close", exc_info=True)
 
         # Close any structured logs after we've done all of our API operations
         if log_set:
@@ -2874,7 +2879,10 @@ def common() -> None:
                         except MeshInterface.MeshInterfaceError as ex:
                             _cli_exit(f"[TCP localhost] {ex}", 1)
                         except OSError as ex:
-                            _cli_exit(f"Error connecting to localhost: {ex}", 1)
+                            _cli_exit(
+                                f"No Meshtastic device detected and no TCP listener on localhost: {ex}",
+                                1,
+                            )
 
                 if client is None:
                     _cli_exit(

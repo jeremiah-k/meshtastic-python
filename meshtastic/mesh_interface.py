@@ -733,13 +733,16 @@ class MeshInterface:  # pylint: disable=R0902
             The traceback object for the exception if present, otherwise None.
         """
         if exc_type is not None and exc_value is not None:
-            logger.error(
-                "An exception of type %s with value %s has occurred",
-                exc_type,
-                exc_value,
-            )
-            if trace is not None:
-                logger.error("Traceback:\n%s", "".join(traceback.format_tb(trace)))
+            if isinstance(exc_value, (SystemExit, KeyboardInterrupt)):
+                logger.debug("Exiting (%s: %s)", exc_type.__name__, exc_value)
+            else:
+                logger.error(
+                    "An exception of type %s with value %s has occurred",
+                    exc_type,
+                    exc_value,
+                )
+                if trace is not None:
+                    logger.error("Traceback:\n%s", "".join(traceback.format_tb(trace)))
         try:
             self.close()
         except Exception:
