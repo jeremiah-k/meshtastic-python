@@ -224,6 +224,7 @@ def mock_iface_with_reconnect() -> MagicMock:
             "waitForConfig",
             "connect",
             "_attempt_reconnect",
+            "myInfo",
         ]
     )
     iface.localNode = None
@@ -232,6 +233,7 @@ def mock_iface_with_reconnect() -> MagicMock:
     iface.waitForConfig = MagicMock()
     iface.connect = MagicMock()
     iface._attempt_reconnect = MagicMock(return_value=False)
+    iface.myInfo = MagicMock()
     return iface
 
 

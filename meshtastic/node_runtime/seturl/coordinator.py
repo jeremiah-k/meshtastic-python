@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING
 
 from meshtastic.node_runtime.seturl.cache import _SetUrlCacheManager
 from meshtastic.node_runtime.seturl.context import _SetUrlAdminContext
 from meshtastic.node_runtime.seturl.execution import (
+    _ReplaceAllStage,
     _SetUrlAddOnlyExecutionState,
     _SetUrlExecutionEngine,
     _SetUrlReplaceExecutionState,
@@ -30,6 +32,32 @@ MAX_REPLACE_ALL_RESUME_ATTEMPTS = 3
 
 RESUME_RECONNECT_TIMEOUT_SECONDS = 15.0
 """Timeout for waiting for transport reconnect during resume."""
+
+RESUME_STABLE_CONNECTED_SECONDS = 1.5
+"""Minimum time transport must remain connected before config reload attempt.
+
+After detecting isConnected, we wait this duration and verify the flag is
+still set.  This catches serial flapping where the port opens briefly then
+drops again (common after LoRa recalibration triggers device reboot)."""
+
+RESUME_CONFIG_RELOAD_TIMEOUT_SECONDS = 30.0
+"""Bounded timeout for config reload during resume.
+
+Replaces the unbounded iface.waitForConfig() (which uses the default 300s
+timeout) with a shorter deadline appropriate for reconnect recovery."""
+
+RESUME_RECONNECT_SUB_ATTEMPTS = 3
+"""Maximum reconnect sub-attempts within a single resume cycle.
+
+Allows recovery from: connect succeeds -> stream drops -> reconnect succeeds
+-> config reload works.  Each sub-attempt includes stability window check."""
+
+LORA_CONFIG_RECONNECT_SETTLE_SECONDS = 1.0
+"""Extra settle delay before reconnect after lora_config-stage failure.
+
+LoRa recalibration is expensive on firmware and may trigger radio
+recalibration or device reboot.  This delay gives the device time to
+settle before we attempt serial reconnect."""
 
 
 class _SetUrlTransactionCoordinator:
@@ -94,44 +122,166 @@ class _SetUrlTransactionCoordinator:
                     return bool(is_connected.is_set())
                 return False
             except Exception:
-                logger.debug("Interface connect() reconnect attempt failed.", exc_info=True)
+                logger.debug(
+                    "Interface connect() reconnect attempt failed.", exc_info=True
+                )
 
+        return False
+
+    def _bounded_config_reload(
+        self,
+        iface: object,
+        deadline: float,
+    ) -> bool:
+        """Poll for config availability with bounded timeout and liveness check.
+
+        Unlike ``iface.waitForConfig()`` which uses the default 300s timeout,
+        this method polls with a caller-supplied deadline and checks
+        ``isConnected`` during the poll.  If the transport drops during
+        config reload, the method returns ``False`` immediately rather than
+        blocking until timeout.
+
+        Parameters
+        ----------
+        iface : object
+            The mesh interface (duck-typed; must have ``isConnected`` Event
+            and ``myInfo`` attribute).
+        deadline : float
+            ``time.monotonic()`` deadline for the poll loop.
+
+        Returns
+        -------
+        bool
+            ``True`` if config appears available, ``False`` if timeout or
+            transport dropped.
+        """
+        is_connected = getattr(iface, "isConnected", None)
+        while time.monotonic() < deadline:
+            if is_connected is not None and not is_connected.is_set():
+                logger.info("Transport dropped during config reload; aborting poll.")
+                return False
+            if (
+                getattr(iface, "myInfo", None) is not None
+                and self._node.channels is not None
+            ):
+                return True
+            time.sleep(0.1)
+        logger.info(
+            "Config reload timed out after %.1fs.",
+            RESUME_CONFIG_RELOAD_TIMEOUT_SECONDS,
+        )
         return False
 
     def _reconnect_and_compute_remaining(
         self,
         plan: _SetUrlReplacePlan,
+        failure_stage: _ReplaceAllStage | None = None,
     ) -> tuple[set[int], bool] | None:
-        """Reconnect, reload device state, and compute remaining writes.
+        """Reconnect with stability check, reload device state, and compute remaining writes.
+
+        This method implements a bounded reconnect/reload state machine:
+
+        1.  If ``failure_stage`` is ``LORA_CONFIG``, wait a short settle
+            delay before attempting reconnect (LoRa recalibration causes
+            serial instability).
+        2.  Attempt up to ``RESUME_RECONNECT_SUB_ATTEMPTS`` reconnect
+            cycles.  Each cycle:
+            a. Trigger reconnect if not connected.
+            b. Wait for ``isConnected`` with timeout.
+            c. **Stability window**: wait ``RESUME_STABLE_CONNECTED_SECONDS``
+               and verify ``isConnected`` is still set (catches flapping).
+            d. **Bounded config reload**: poll for config with
+               ``RESUME_CONFIG_RELOAD_TIMEOUT_SECONDS`` deadline, checking
+               ``isConnected`` liveness during the poll.
+        3.  If config loads, compute remaining channel/LoRa writes.
+        4.  If the reconnect sub-loop exhausts, return ``None``.
+
+        Parameters
+        ----------
+        plan : _SetUrlReplacePlan
+            The replace-all plan with staged channels.
+        failure_stage : _ReplaceAllStage | None
+            The stage at which the previous attempt failed, used for
+            stage-aware settle delays.
 
         Returns
         -------
         tuple[set[int], bool] | None
             ``(remaining_channel_indices, lora_still_needed)`` if reconnect
-            succeeded, or ``None`` if reconnect failed.
+            and config reload succeeded, or ``None`` if reconnect failed.
         """
-        try:
-            iface = self._node.iface
+        if failure_stage == _ReplaceAllStage.LORA_CONFIG:
+            logger.info(
+                "LoRa-stage failure; settling %.1fs before reconnect.",
+                LORA_CONFIG_RECONNECT_SETTLE_SECONDS,
+            )
+            time.sleep(LORA_CONFIG_RECONNECT_SETTLE_SECONDS)
+
+        iface = self._node.iface
+        for sub_attempt in range(RESUME_RECONNECT_SUB_ATTEMPTS):
             connected = iface.isConnected.is_set()
             if not connected:
                 connected = self._trigger_transport_reconnect(iface)
             if not connected:
                 logger.info(
-                    "Waiting for transport reconnect (timeout=%.1fs)...",
+                    "Reconnect sub-attempt %d/%d: waiting for transport "
+                    "(timeout=%.1fs)...",
+                    sub_attempt + 1,
+                    RESUME_RECONNECT_SUB_ATTEMPTS,
                     RESUME_RECONNECT_TIMEOUT_SECONDS,
                 )
                 connected = iface.isConnected.wait(RESUME_RECONNECT_TIMEOUT_SECONDS)
             if not connected:
                 logger.warning(
-                    "Transport did not reconnect within %.1fs; cannot resume.",
-                    RESUME_RECONNECT_TIMEOUT_SECONDS,
+                    "Reconnect sub-attempt %d/%d: transport did not reconnect.",
+                    sub_attempt + 1,
+                    RESUME_RECONNECT_SUB_ATTEMPTS,
                 )
-                return None
-            logger.info("Transport reconnected; reloading device config...")
+                continue
+
+            logger.info(
+                "Reconnect sub-attempt %d/%d: transport connected; "
+                "verifying stability (%.1fs window)...",
+                sub_attempt + 1,
+                RESUME_RECONNECT_SUB_ATTEMPTS,
+                RESUME_STABLE_CONNECTED_SECONDS,
+            )
+            time.sleep(RESUME_STABLE_CONNECTED_SECONDS)
+            if not iface.isConnected.is_set():
+                logger.warning(
+                    "Reconnect sub-attempt %d/%d: transport flapped during "
+                    "stability window; retrying reconnect.",
+                    sub_attempt + 1,
+                    RESUME_RECONNECT_SUB_ATTEMPTS,
+                )
+                continue
+
             self._cache_manager.invalidate_channel_cache(
                 "Channel cache invalidated before resume reload."
             )
-            iface.waitForConfig()
+            logger.info(
+                "Transport stable; reloading device config (timeout=%.1fs)...",
+                RESUME_CONFIG_RELOAD_TIMEOUT_SECONDS,
+            )
+            config_deadline = time.monotonic() + RESUME_CONFIG_RELOAD_TIMEOUT_SECONDS
+            config_loaded = self._bounded_config_reload(iface, config_deadline)
+            if not config_loaded:
+                if not iface.isConnected.is_set():
+                    logger.warning(
+                        "Reconnect sub-attempt %d/%d: transport dropped "
+                        "during config reload; retrying reconnect.",
+                        sub_attempt + 1,
+                        RESUME_RECONNECT_SUB_ATTEMPTS,
+                    )
+                    continue
+                logger.warning(
+                    "Reconnect sub-attempt %d/%d: config reload timed out "
+                    "after stable reconnect.",
+                    sub_attempt + 1,
+                    RESUME_RECONNECT_SUB_ATTEMPTS,
+                )
+                continue
+
             actual_channels = self._node.channels
             if actual_channels is None:
                 logger.warning(
@@ -175,12 +325,13 @@ class _SetUrlTransactionCoordinator:
                     ", ".join(diff_names),
                 )
             return (remaining_indices, lora_needed)
-        except Exception:
-            logger.debug(
-                "Reconnect/compute-remaining failed; ignoring diagnostic error.",
-                exc_info=True,
-            )
-            return None
+
+        logger.error(
+            "Replace-all resume failed after %d reconnect sub-attempt(s); "
+            "transport did not stabilize.",
+            RESUME_RECONNECT_SUB_ATTEMPTS,
+        )
+        return None
 
     def _apply_add_only(self) -> None:
         """Execute the addOnly setURL transaction pipeline."""
@@ -262,9 +413,7 @@ class _SetUrlTransactionCoordinator:
         for attempt in range(MAX_REPLACE_ALL_RESUME_ATTEMPTS):
             attempts_used = attempt + 1
             execution_state = _SetUrlReplaceExecutionState()
-            resume_skip_channel_indices = (
-                skip_channel_indices if attempt > 0 else None
-            )
+            resume_skip_channel_indices = skip_channel_indices if attempt > 0 else None
             try:
                 self._execution_engine.executeReplaceAll(
                     parsed_input=self._parsed_input,
@@ -299,7 +448,9 @@ class _SetUrlTransactionCoordinator:
                     self._cache_manager.clear_lora_cache_with_warning(
                         "LoRa config cache cleared after setURL replace-all partial failure."
                     )
-                resume_result = self._reconnect_and_compute_remaining(plan)
+                resume_result = self._reconnect_and_compute_remaining(
+                    plan, failure_stage=execution_state.stage
+                )
                 if resume_result is None:
                     logger.error(
                         "Could not reconnect after replace-all failure; "

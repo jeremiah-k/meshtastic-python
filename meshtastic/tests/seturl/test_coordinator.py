@@ -1,10 +1,18 @@
 """Tests for _SetUrlTransactionCoordinator."""
 
+import time
 from typing import NoReturn
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from meshtastic.node_runtime.seturl.execution import _ReplaceAllStage
+from meshtastic.node_runtime.seturl.coordinator import (
+    LORA_CONFIG_RECONNECT_SETTLE_SECONDS,
+    RESUME_CONFIG_RELOAD_TIMEOUT_SECONDS,
+    RESUME_RECONNECT_SUB_ATTEMPTS,
+)
+from meshtastic.node_runtime.seturl.planner import _SetUrlReplacePlanner
 from meshtastic.node_runtime.seturl_runtime import (
     _SetUrlParsedInput,
     _SetUrlTransactionCoordinator,
@@ -208,14 +216,8 @@ class TestSetUrlTransactionCoordinator:
 
         coordinator._execution_engine.executeReplaceAll = _failing_then_check  # type: ignore[method-assign]
 
-        def _restore_channels():
-            mock_local_node_with_reconnect.channels = [desired_ch]
-
-        mock_local_node_with_reconnect.iface.waitForConfig.side_effect = (
-            _restore_channels
-        )
-
-        coordinator._apply_replace_all()
+        with patch("meshtastic.node_runtime.seturl.coordinator.time.sleep"):
+            coordinator._apply_replace_all()
         assert call_count == 1
 
     @pytest.mark.unit
@@ -271,17 +273,8 @@ class TestSetUrlTransactionCoordinator:
 
         coordinator._execution_engine.executeReplaceAll = _first_fails_second_succeeds  # type: ignore[method-assign]
 
-        def _restore_channels():
-            mock_local_node_with_reconnect.channels = [
-                desired_0,
-                _make_channel(1, channel_pb2.Channel.Role.DISABLED),
-            ]
-
-        mock_local_node_with_reconnect.iface.waitForConfig.side_effect = (
-            _restore_channels
-        )
-
-        coordinator._apply_replace_all()
+        with patch("meshtastic.node_runtime.seturl.coordinator.time.sleep"):
+            coordinator._apply_replace_all()
         assert call_count == 2
 
     @pytest.mark.unit
@@ -329,14 +322,8 @@ class TestSetUrlTransactionCoordinator:
 
         coordinator._execution_engine.executeReplaceAll = _first_fails_second_succeeds  # type: ignore[method-assign]
 
-        def _restore_channels() -> None:
-            mock_local_node_with_reconnect.channels = [old_ch]
-
-        mock_local_node_with_reconnect.iface.waitForConfig.side_effect = (
-            _restore_channels
-        )
-
-        coordinator._apply_replace_all()
+        with patch("meshtastic.node_runtime.seturl.coordinator.time.sleep"):
+            coordinator._apply_replace_all()
         assert call_count == 2
         assert observed_skip_sets[0] is None
         assert observed_skip_sets[1] == set()
@@ -426,6 +413,242 @@ class TestSetUrlTransactionCoordinator:
         with pytest.raises(RuntimeError, match="transport disconnect"):
             coordinator._apply_replace_all()
         mock_iface.connect.assert_called_once()
+
+    @pytest.mark.unit
+    def test_lora_config_failure_settles_before_reconnect(
+        self, mock_local_node_with_reconnect: MagicMock
+    ) -> None:
+        """LoRa-stage failure adds settle delay before reconnect attempt."""
+        from meshtastic.tests.seturl.conftest import _make_channel
+
+        desired_ch = _make_channel(
+            0, channel_pb2.Channel.Role.PRIMARY, "desired", b"\x01"
+        )
+        mock_local_node_with_reconnect.channels = [desired_ch]
+
+        channel_set = apponly_pb2.ChannelSet()
+        settings = channel_set.settings.add()
+        settings.name = "desired"
+        settings.psk = b"\x01"
+
+        parsed_input = _SetUrlParsedInput(
+            channel_set=channel_set,
+            has_lora_update=False,
+        )
+
+        coordinator = _SetUrlTransactionCoordinator(
+            mock_local_node_with_reconnect, parsed_input=parsed_input
+        )
+
+        call_count = 0
+
+        def _fail_at_lora(
+            *,
+            parsed_input,
+            admin_context,
+            plan,
+            state,
+            skip_channel_indices=None,
+            skip_lora=False,
+        ):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                state.written_channel_indices.append(0)
+                state.stage = _ReplaceAllStage.LORA_CONFIG
+                raise RuntimeError("simulated LoRa-stage disconnect")
+
+        coordinator._execution_engine.executeReplaceAll = _fail_at_lora  # type: ignore[method-assign]
+
+        sleep_durations: list[float] = []
+
+        def _track_sleep(duration):
+            sleep_durations.append(duration)
+
+        with patch(
+            "meshtastic.node_runtime.seturl.coordinator.time.sleep",
+            side_effect=_track_sleep,
+        ):
+            coordinator._apply_replace_all()
+
+        assert LORA_CONFIG_RECONNECT_SETTLE_SECONDS in sleep_durations
+        assert call_count == 1
+
+    @pytest.mark.unit
+    def test_reconnect_flap_during_stability_window_recovers(
+        self, mock_local_node_with_reconnect: MagicMock
+    ) -> None:
+        """Replace-all catches a flapping reconnect during stability window and retries."""
+        from meshtastic.tests.seturl.conftest import _make_channel
+
+        desired_ch = _make_channel(
+            0, channel_pb2.Channel.Role.PRIMARY, "desired", b"\x01"
+        )
+        mock_local_node_with_reconnect.channels = [desired_ch]
+
+        channel_set = apponly_pb2.ChannelSet()
+        settings = channel_set.settings.add()
+        settings.name = "desired"
+        settings.psk = b"\x01"
+
+        parsed_input = _SetUrlParsedInput(
+            channel_set=channel_set,
+            has_lora_update=False,
+        )
+
+        coordinator = _SetUrlTransactionCoordinator(
+            mock_local_node_with_reconnect, parsed_input=parsed_input
+        )
+
+        call_count = 0
+        sleep_call_count = 0
+
+        def _failing_then_check(
+            *,
+            parsed_input,
+            admin_context,
+            plan,
+            state,
+            skip_channel_indices=None,
+            skip_lora=False,
+        ):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                state.written_channel_indices.append(0)
+                raise RuntimeError("simulated transport disconnect")
+
+        coordinator._execution_engine.executeReplaceAll = _failing_then_check  # type: ignore[method-assign]
+
+        original_sleep = time.sleep
+
+        def _sleep_with_flap(duration):
+            nonlocal sleep_call_count
+            sleep_call_count += 1
+            if sleep_call_count == 1:
+                mock_local_node_with_reconnect.iface.isConnected.clear()
+                return
+            if sleep_call_count == 2:
+                mock_local_node_with_reconnect.iface.isConnected.set()
+                return
+            original_sleep(duration)
+
+        with patch(
+            "meshtastic.node_runtime.seturl.coordinator.time.sleep",
+            side_effect=_sleep_with_flap,
+        ):
+            coordinator._apply_replace_all()
+
+        assert call_count == 1
+        assert sleep_call_count >= 2
+
+    @pytest.mark.unit
+    def test_bounded_failure_transport_never_stabilizes(
+        self, mock_local_node_with_reconnect: MagicMock
+    ) -> None:
+        """Replace-all fails when transport flaps repeatedly through all sub-attempts."""
+        from meshtastic.tests.seturl.conftest import _make_channel
+
+        mock_local_node_with_reconnect.channels = [
+            _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "old"),
+        ]
+
+        channel_set = apponly_pb2.ChannelSet()
+        settings = channel_set.settings.add()
+        settings.name = "new"
+        settings.psk = b"\x01"
+
+        parsed_input = _SetUrlParsedInput(
+            channel_set=channel_set,
+            has_lora_update=False,
+        )
+
+        coordinator = _SetUrlTransactionCoordinator(
+            mock_local_node_with_reconnect, parsed_input=parsed_input
+        )
+
+        def _always_fail(
+            *,
+            parsed_input,
+            admin_context,
+            plan,
+            state,
+            skip_channel_indices=None,
+            skip_lora=False,
+        ):
+            state.written_channel_indices = []
+            raise RuntimeError("persistent failure")
+
+        coordinator._execution_engine.executeReplaceAll = _always_fail  # type: ignore[method-assign]
+
+        sleep_call_count = 0
+
+        def _flap_sleep(duration):
+            nonlocal sleep_call_count
+            sleep_call_count += 1
+            mock_local_node_with_reconnect.iface.isConnected.clear()
+
+        with patch(
+            "meshtastic.node_runtime.seturl.coordinator.time.sleep",
+            side_effect=_flap_sleep,
+        ):
+            with pytest.raises(RuntimeError, match="persistent failure"):
+                coordinator._apply_replace_all()
+
+        assert sleep_call_count >= RESUME_RECONNECT_SUB_ATTEMPTS
+
+    @pytest.mark.unit
+    def test_config_reload_timeout_returns_none(
+        self, mock_local_node_with_reconnect: MagicMock
+    ) -> None:
+        """_reconnect_and_compute_remaining returns None when config reload times out."""
+        channel_set = apponly_pb2.ChannelSet()
+        settings = channel_set.settings.add()
+        settings.name = "desired"
+        settings.psk = b"\x01"
+
+        parsed_input = _SetUrlParsedInput(
+            channel_set=channel_set,
+            has_lora_update=False,
+        )
+
+        coordinator = _SetUrlTransactionCoordinator(
+            mock_local_node_with_reconnect, parsed_input=parsed_input
+        )
+
+        plan = _SetUrlReplacePlanner(
+            mock_local_node_with_reconnect,
+            parsed_input=parsed_input,
+            admin_context=coordinator._admin_context,
+        ).build_plan()
+
+        mock_local_node_with_reconnect.channels = None
+        mock_local_node_with_reconnect.iface.isConnected.set()
+        mock_local_node_with_reconnect.iface.myInfo = None
+
+        monotonic_time = [0.0]
+
+        def _mock_monotonic():
+            return monotonic_time[0]
+
+        def _mock_sleep(duration):
+            monotonic_time[0] += duration
+            if monotonic_time[0] > RESUME_CONFIG_RELOAD_TIMEOUT_SECONDS + 5:
+                mock_local_node_with_reconnect.iface.isConnected.clear()
+
+        with (
+            patch(
+                "meshtastic.node_runtime.seturl.coordinator.time.monotonic",
+                side_effect=_mock_monotonic,
+            ),
+            patch(
+                "meshtastic.node_runtime.seturl.coordinator.time.sleep",
+                side_effect=_mock_sleep,
+            ),
+        ):
+            result = coordinator._reconnect_and_compute_remaining(plan)
+
+        assert result is None
 
     @pytest.mark.unit
     def test_compute_remaining_channel_writes_detects_differences(self) -> None:
