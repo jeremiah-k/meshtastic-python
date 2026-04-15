@@ -665,7 +665,7 @@ def _redact_pref_value(name: str, value: str) -> str:
     return "<redacted>" if name in _SECRET_PREF_NAMES else value
 
 
-def getPref(node: Any, comp_name: str) -> bool:
+def getPref(node: Any, comp_name: str, *, allow_secrets: bool = False) -> bool:
     """Retrieve and display a configuration preference or channel field for a node.
 
     Given a dot-separated preference name (section.field) or a single name (used for
@@ -718,16 +718,26 @@ def getPref(node: Any, comp_name: str) -> bool:
             Canonical snake_case field name used to determine whether to redact.
         """
         if repeated:
-            pref_value = [
+            display_value: str | list[str] = [
+                meshtastic.util.toStr(v)
+                if allow_secrets
+                else _redact_pref_value(secret_name, meshtastic.util.toStr(v))
+                for v in pref_value
+            ]
+            log_value: str | list[str] = [
                 _redact_pref_value(secret_name, meshtastic.util.toStr(v))
                 for v in pref_value
             ]
         else:
-            pref_value = _redact_pref_value(
-                secret_name, meshtastic.util.toStr(pref_value)
+            raw_display = meshtastic.util.toStr(pref_value)
+            display_value = (
+                raw_display
+                if allow_secrets
+                else _redact_pref_value(secret_name, raw_display)
             )
-        print(f"{str(config_type.name)}.{uni_name}: {str(pref_value)}")
-        logger.debug("%s.%s: %s", config_type.name, uni_name, pref_value)
+            log_value = _redact_pref_value(secret_name, raw_display)
+        print(f"{str(config_type.name)}.{uni_name}: {str(display_value)}")
+        logger.debug("%s.%s: %s", config_type.name, uni_name, log_value)
 
     comp_name = _normalize_pref_name(comp_name)
     name = splitCompoundName(comp_name)
@@ -1174,19 +1184,37 @@ def _handle_configure_command(
         if not phase1_started:
             print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
+        _loc = configuration["location"]
+        if not isinstance(_loc, dict) or not _loc:
+            _cli_exit(
+                "location must be a non-empty mapping with lat, lon, and optional alt"
+            )
+        _allowed_loc_keys = {"lat", "lon", "alt"}
+        _unknown_loc_keys = set(_loc.keys()) - _allowed_loc_keys
+        if _unknown_loc_keys:
+            _cli_exit(
+                f"location contains unknown keys: {', '.join(sorted(_unknown_loc_keys))}. "
+                f"Allowed: lat, lon, alt"
+            )
+        if "lat" not in _loc or "lon" not in _loc:
+            _cli_exit("location requires both lat and lon")
+        try:
+            lat = float(_loc["lat"])
+        except (ValueError, TypeError):
+            _cli_exit(f"location.lat must be a number, got: {_loc['lat']!r}")
+        try:
+            lon = float(_loc["lon"])
+        except (ValueError, TypeError):
+            _cli_exit(f"location.lon must be a number, got: {_loc['lon']!r}")
         alt = 0
-        lat = 0.0
-        lon = 0.0
-
-        if "alt" in configuration["location"]:
-            alt = int(configuration["location"]["alt"] or 0)
+        if "alt" in _loc:
+            try:
+                alt = int(_loc["alt"])
+            except (ValueError, TypeError):
+                _cli_exit(f"location.alt must be an integer, got: {_loc['alt']!r}")
             print(f"Fixing altitude at {alt} meters")
-        if "lat" in configuration["location"]:
-            lat = float(configuration["location"]["lat"] or 0)
-            print(f"Fixing latitude at {lat} degrees")
-        if "lon" in configuration["location"]:
-            lon = float(configuration["location"]["lon"] or 0)
-            print(f"Fixing longitude at {lon} degrees")
+        print(f"Fixing latitude at {lat} degrees")
+        print(f"Fixing longitude at {lon} degrees")
         print("Setting device position")
         interface.getNode(args.dest, False, **getNode_kwargs).setFixedPosition(
             lat, lon, alt
@@ -1657,10 +1685,9 @@ def onConnected(interface: MeshInterface) -> None:
         if args.factory_reset or args.factory_reset_device:
             closeNow = True
             waitForAckNak = True
+            skip_ack_wait = True
 
             full = bool(args.factory_reset_device)
-            if full:
-                skip_ack_wait = True
             interface.getNode(args.dest, False, **getNode_kwargs).factoryReset(
                 full=full
             )
@@ -2093,7 +2120,7 @@ def onConnected(interface: MeshInterface) -> None:
             node = interface.getNode(args.dest, False, **getNode_kwargs)
             found = False
             for pref in args.get:
-                found = getPref(node, pref[0])
+                found = getPref(node, pref[0], allow_secrets=True)
 
             if found:
                 print("Completed getting preferences")

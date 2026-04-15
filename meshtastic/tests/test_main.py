@@ -1121,6 +1121,7 @@ def test_main_reboot_ota(capsys: pytest.CaptureFixture[str]) -> None:
     ("args", "method_name", "marker"),
     [
         (["--reboot", "--ack"], "reboot", "inside mocked reboot"),
+        (["--reboot-ota", "--ack"], "rebootOTA", "inside mocked rebootOTA"),
         (["--enter-dfu", "--ack"], "enterDFUMode", "inside mocked enterDFU"),
         (["--shutdown", "--ack"], "shutdown", "inside mocked shutdown"),
     ],
@@ -1798,6 +1799,51 @@ def test_get_pref_redacts_security_section_values(
     assert base64.b64encode(private_key).decode("utf-8") not in out
     assert base64.b64encode(public_key).decode("utf-8") not in out
     assert base64.b64encode(admin_key).decode("utf-8") not in out
+    assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_get_pref_allow_secrets_shows_private_key(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """getPref(allow_secrets=True) should show the actual private key value."""
+    node = SimpleNamespace(
+        localConfig=localonly_pb2.LocalConfig(),
+        moduleConfig=localonly_pb2.LocalModuleConfig(),
+        requestConfig=MagicMock(),
+    )
+    private_key = bytes(range(32))
+    node.localConfig.security.private_key = private_key
+
+    assert main_module.getPref(node, "security.private_key", allow_secrets=True) is True
+    out, err = capsys.readouterr()
+    assert "security.private_key: <redacted>" not in out
+    assert base64.b64encode(private_key).decode("utf-8") in out
+    assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_get_pref_allow_secrets_shows_security_section_keys(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """getPref(allow_secrets=True) whole-field read should show actual key values."""
+    node = SimpleNamespace(
+        localConfig=localonly_pb2.LocalConfig(),
+        moduleConfig=localonly_pb2.LocalModuleConfig(),
+        requestConfig=MagicMock(),
+    )
+    private_key = bytes(range(32))
+    public_key = bytes(range(32, 64))
+    node.localConfig.security.private_key = private_key
+    node.localConfig.security.public_key = public_key
+
+    assert main_module.getPref(node, "security", allow_secrets=True) is True
+    out, err = capsys.readouterr()
+    assert "<redacted>" not in out
+    assert base64.b64encode(private_key).decode("utf-8") in out
+    assert base64.b64encode(public_key).decode("utf-8") in out
     assert err == ""
 
 

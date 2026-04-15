@@ -64,27 +64,39 @@ def _capture_host_debug_state(
 ) -> None:
     """Best-effort host snapshot to improve integration-failure diagnostics."""
     label_token = re.sub(r"[^A-Za-z0-9_.-]+", "_", label).strip("_") or "failure"
-    info_rc, info_output = _run_host_cli(
-        host,
-        "--info",
-        timeout=HOST_READY_POLL_TIMEOUT_SECONDS,
-        meshtastic_bin=meshtastic_bin,
-    )
-    (tmp_path / f"debug-{label_token}-info.txt").write_text(
-        f"host={host}\nreturncode={info_rc}\n\n{info_output}",
-        encoding="utf-8",
-    )
+    try:
+        info_rc, info_output = _run_host_cli(
+            host,
+            "--info",
+            timeout=HOST_READY_POLL_TIMEOUT_SECONDS,
+            meshtastic_bin=meshtastic_bin,
+        )
+        (tmp_path / f"debug-{label_token}-info.txt").write_text(
+            f"host={host}\nreturncode={info_rc}\n\n{info_output}",
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        (tmp_path / f"debug-{label_token}-info-error.txt").write_text(
+            f"host={host}\nsnapshot_exception={exc!r}\n",
+            encoding="utf-8",
+        )
     export_path = tmp_path / f"debug-{label_token}-export.yaml"
-    export_rc, export_output = _run_host_cli(
-        host,
-        "--export-config",
-        str(export_path),
-        timeout=HOST_READY_TIMEOUT_SECONDS,
-        meshtastic_bin=meshtastic_bin,
-    )
-    if export_rc != 0:
+    try:
+        export_rc, export_output = _run_host_cli(
+            host,
+            "--export-config",
+            str(export_path),
+            timeout=HOST_READY_TIMEOUT_SECONDS,
+            meshtastic_bin=meshtastic_bin,
+        )
+        if export_rc != 0:
+            (tmp_path / f"debug-{label_token}-export-error.txt").write_text(
+                f"host={host}\nreturncode={export_rc}\n\n{export_output}",
+                encoding="utf-8",
+            )
+    except Exception as exc:
         (tmp_path / f"debug-{label_token}-export-error.txt").write_text(
-            f"host={host}\nreturncode={export_rc}\n\n{export_output}",
+            f"host={host}\nsnapshot_exception={exc!r}\n",
             encoding="utf-8",
         )
 
