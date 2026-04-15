@@ -64,7 +64,7 @@ def test_connect_raises_without_stream() -> None:
 def test_connect_warns_when_thread_already_alive(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Lines 202-205: connect() should warn and return when reader thread is still alive."""
+    """connect() should raise when reader thread from previous attempt is still alive."""
     iface = StreamInterface(noProto=True, connectNow=False)
     try:
         iface._provides_own_stream = True  # type: ignore[attr-defined]
@@ -73,9 +73,11 @@ def test_connect_warns_when_thread_already_alive(
         iface._rxThread = MagicMock()
         iface._rxThread.is_alive.return_value = True
         with patch.object(iface, "_start_config") as start_config:
-            with caplog.at_level("WARNING"):
+            with pytest.raises(
+                StreamInterface.StreamInterfaceError,
+                match="reader thread from previous attempt is still alive",
+            ):
                 iface.connect()
-        assert "connect() called while reader thread is still alive" in caplog.text
         start_config.assert_not_called()
     finally:
         iface.close()

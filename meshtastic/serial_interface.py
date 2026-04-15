@@ -64,7 +64,7 @@ class SerialInterface(StreamInterface):
                 )
             self.devPath = resolved_dev_path
 
-        if not os.path.exists(self.devPath):
+        if not self.noProto and not os.path.exists(self.devPath):
             raise self.MeshInterfaceError(
                 f"Serial port {self.devPath} does not exist (device disconnected)"
             )
