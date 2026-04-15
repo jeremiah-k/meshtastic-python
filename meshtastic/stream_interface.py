@@ -27,6 +27,10 @@ READER_IDLE_BACKOFF_SECONDS = 0.01  # Backoff when read loop receives no bytes.
 WRITE_PROGRESS_TIMEOUT_SECONDS = 10.0  # Guard against indefinitely stalled writes.
 TRANSIENT_READ_MAX_RETRIES = 3  # Max retries for transient USB CDC read failures.
 TRANSIENT_READ_BACKOFF_SECONDS = 0.1  # Backoff between transient read retries.
+BOOTSTRAP_TRANSIENT_READ_TIMEOUT_SECONDS = 5.0
+"""Transient read retry window while initial connection is still bootstrapping."""
+MAX_TRANSIENT_READ_BACKOFF_SECONDS = 0.5
+"""Cap retry backoff during transient read recovery."""
 
 STREAM_IO_EXCEPTIONS = (
     OSError,
@@ -511,6 +515,7 @@ class StreamInterface(MeshInterface):
                 # Read a single byte at a time because log lines and framed protobuf
                 # payloads are multiplexed on the same stream.
                 transient_retries = 0
+                bootstrap_deadline: float | None = None
                 while True:
                     try:
                         b = self._read_bytes(1)
@@ -520,6 +525,27 @@ class StreamInterface(MeshInterface):
                             raise
                         s = self.stream
                         if s is None or not getattr(s, "is_open", True):
+                            raise
+                        if not self.isConnected.is_set():
+                            if bootstrap_deadline is None:
+                                bootstrap_deadline = (
+                                    time.monotonic()
+                                    + BOOTSTRAP_TRANSIENT_READ_TIMEOUT_SECONDS
+                                )
+                            if time.monotonic() < bootstrap_deadline:
+                                transient_retries += 1
+                                logger.debug(
+                                    "Transient bootstrap read error (attempt %d), retrying...",
+                                    transient_retries,
+                                )
+                                time.sleep(
+                                    min(
+                                        TRANSIENT_READ_BACKOFF_SECONDS
+                                        * transient_retries,
+                                        MAX_TRANSIENT_READ_BACKOFF_SECONDS,
+                                    )
+                                )
+                                continue
                             raise
                         if transient_retries >= TRANSIENT_READ_MAX_RETRIES:
                             raise
