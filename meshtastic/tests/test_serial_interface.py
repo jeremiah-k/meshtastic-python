@@ -17,6 +17,7 @@ from ..stream_interface import StreamInterface
 
 # pylint: disable=R0917
 @pytest.mark.unit
+@patch("os.path.exists", return_value=True)
 @patch("time.sleep")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
@@ -28,6 +29,7 @@ def test_SerialInterface_single_port(
     mocked_open: MagicMock,
     mock_hupcl: MagicMock,
     mock_sleep: MagicMock,
+    mock_exists: MagicMock,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test that we can instantiate a SerialInterface with a single port."""
@@ -93,6 +95,7 @@ def test_SerialInterface_rejects_empty_explicit_port_path() -> None:
 
 
 @pytest.mark.unit
+@patch("os.path.exists", return_value=True)
 @patch("time.sleep")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
@@ -104,6 +107,7 @@ def test_SerialInterface_close_skips_flush_when_stream_closed(
     mocked_open: MagicMock,
     mock_hupcl: MagicMock,
     mock_sleep: MagicMock,
+    mock_exists: MagicMock,
 ) -> None:
     """close() should not fail when stream exists but is already closed."""
     stream = mocked_serial.return_value
@@ -171,6 +175,7 @@ def test_serial_interface_connect_retries_transient_connect_errors(
     stream.is_open = True
     iface.stream = stream
     iface._connect_lock = threading.Lock()
+    iface._dev_path_auto_detected = False
     transient_error = MeshInterface.MeshInterfaceError(
         "Connection lost while waiting for connection completion (stream.closed)"
     )
@@ -193,6 +198,7 @@ def test_serial_interface_connect_does_not_retry_non_retryable_errors() -> None:
     """connect() should fail immediately on non-retryable errors."""
     iface = object.__new__(SerialInterface)
     iface.devPath = "/dev/ttyUSB0"
+    iface._dev_path_auto_detected = False
     stream = MagicMock()
     stream.is_open = True
     iface.stream = stream
@@ -211,6 +217,7 @@ def test_serial_interface_connect_skips_reopen_when_reader_alive() -> None:
     """connect() should not reopen stream while reader thread is already running."""
     iface = object.__new__(SerialInterface)
     iface.devPath = "/dev/ttyUSB0"
+    iface._dev_path_auto_detected = False
     iface.stream = None
     iface._connect_lock = threading.Lock()
     iface._stream_close_in_progress = False
@@ -221,5 +228,165 @@ def test_serial_interface_connect_skips_reopen_when_reader_alive() -> None:
     iface._rxThread.is_alive.return_value = True
     iface._rxThread.ident = 1
     with patch.object(iface, "_open_serial_stream") as open_stream:
-        iface.connect()
+        with pytest.raises(StreamInterface.StreamInterfaceError, match="reader thread"):
+            iface.connect()
     open_stream.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@patch("os.path.exists", return_value=True)
+@patch("time.sleep")
+@patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
+@patch("builtins.open", new_callable=mock_open, read_data="data")
+@patch("serial.Serial")
+@patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
+def test_auto_detected_flag_true_when_devPath_none(
+    mocked_findPorts: MagicMock,
+    mocked_serial: MagicMock,
+    mocked_open: MagicMock,
+    mock_hupcl: MagicMock,
+    mock_sleep: MagicMock,
+    mock_exists: MagicMock,
+) -> None:
+    """_dev_path_auto_detected should be True when devPath is auto-detected."""
+    iface = SerialInterface(noProto=True)
+    assert iface._dev_path_auto_detected is True
+    iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@patch("os.path.exists", return_value=True)
+@patch("time.sleep")
+@patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
+@patch("builtins.open", new_callable=mock_open, read_data="data")
+@patch("serial.Serial")
+def test_auto_detected_flag_false_when_devPath_explicit(
+    mocked_serial: MagicMock,
+    mocked_open: MagicMock,
+    mock_hupcl: MagicMock,
+    mock_sleep: MagicMock,
+    mock_exists: MagicMock,
+) -> None:
+    """_dev_path_auto_detected should be False when devPath is user-specified."""
+    iface = SerialInterface(devPath="/dev/ttyUSB0", noProto=True)
+    assert iface._dev_path_auto_detected is False
+    iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@patch("time.sleep")
+def test_devPath_reset_on_retry_for_auto_detected(mock_sleep: MagicMock) -> None:
+    """DevPath should be reset to None on retry when auto-detected."""
+    iface = object.__new__(SerialInterface)
+    iface.devPath = "/dev/ttyUSB0"
+    stream = MagicMock()
+    stream.is_open = True
+    iface.stream = stream
+    iface._connect_lock = threading.Lock()
+    iface._dev_path_auto_detected = True
+    transient_error = MeshInterface.MeshInterfaceError(
+        "Connection lost while waiting for connection completion (stream.closed)"
+    )
+    with (
+        patch.object(
+            StreamInterface,
+            "connect",
+            side_effect=[transient_error, None],
+        ),
+        patch.object(iface, "_open_serial_stream", return_value=stream),
+    ):
+        iface.connect()
+    assert iface.devPath is None
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@patch("time.sleep")
+def test_devPath_preserved_on_retry_for_user_specified(
+    mock_sleep: MagicMock,
+) -> None:
+    """DevPath should NOT be reset on retry when user-specified."""
+    iface = object.__new__(SerialInterface)
+    iface.devPath = "/dev/ttyUSB0"
+    stream = MagicMock()
+    stream.is_open = True
+    iface.stream = stream
+    iface._connect_lock = threading.Lock()
+    iface._dev_path_auto_detected = False
+    transient_error = MeshInterface.MeshInterfaceError(
+        "Connection lost while waiting for connection completion (stream.closed)"
+    )
+    with (
+        patch.object(
+            StreamInterface,
+            "connect",
+            side_effect=[transient_error, None],
+        ),
+        patch.object(iface, "_open_serial_stream", return_value=stream),
+    ):
+        iface.connect()
+    assert iface.devPath == "/dev/ttyUSB0"
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@patch("os.path.exists", return_value=True)
+@patch("time.sleep")
+@patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
+@patch("builtins.open", new_callable=mock_open, read_data="data")
+def test_input_buffer_drained_when_data_waiting(
+    mocked_open: MagicMock,
+    mock_hupcl: MagicMock,
+    mock_sleep: MagicMock,
+    mock_exists: MagicMock,
+) -> None:
+    """reset_input_buffer should be called when in_waiting > 0."""
+    mocked_serial = MagicMock()
+    mocked_serial_instance = MagicMock()
+    mocked_serial_instance.in_waiting = 42
+    mocked_serial_instance.flush = MagicMock()
+    mocked_serial.return_value = mocked_serial_instance
+    iface = object.__new__(SerialInterface)
+    iface.devPath = "/dev/ttyUSB0"
+    with patch("serial.Serial", return_value=mocked_serial_instance):
+        iface._open_serial_stream()
+    mocked_serial_instance.reset_input_buffer.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@patch("os.path.exists", return_value=True)
+@patch("time.sleep")
+@patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
+@patch("builtins.open", new_callable=mock_open, read_data="data")
+def test_input_buffer_not_drained_when_empty(
+    mocked_open: MagicMock,
+    mock_hupcl: MagicMock,
+    mock_sleep: MagicMock,
+    mock_exists: MagicMock,
+) -> None:
+    """Input buffer drain should NOT be called when in_waiting is 0."""
+    mocked_serial_instance = MagicMock()
+    mocked_serial_instance.in_waiting = 0
+    mocked_serial_instance.flush = MagicMock()
+    iface = object.__new__(SerialInterface)
+    iface.devPath = "/dev/ttyUSB0"
+    with patch("serial.Serial", return_value=mocked_serial_instance):
+        iface._open_serial_stream()
+    mocked_serial_instance.reset_input_buffer.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@patch("os.path.exists", return_value=False)
+def test_port_existence_check_raises_for_missing_device(
+    mock_exists: MagicMock,
+) -> None:
+    """MeshInterfaceError should be raised when serial port path does not exist."""
+    iface = object.__new__(SerialInterface)
+    iface.devPath = "/dev/ttyUSB0"
+    with pytest.raises(MeshInterface.MeshInterfaceError, match="does not exist"):
+        iface._open_serial_stream()

@@ -563,3 +563,49 @@ def test_connect_resets_closing_after_explicit_close() -> None:
         assert iface._closing is False
     finally:
         iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_connect_raises_when_reader_thread_alive() -> None:
+    """connect() must raise StreamInterfaceError if the reader thread from a prior attempt is still alive."""
+    import threading
+
+    iface = StreamInterface(noProto=True, connectNow=False)
+    alive_event = threading.Event()
+    blocking_thread = threading.Thread(
+        target=alive_event.wait, kwargs={"timeout": 5}, daemon=True
+    )
+    blocking_thread.start()
+    try:
+        iface._rxThread = blocking_thread
+        with pytest.raises(
+            StreamInterface.StreamInterfaceError,
+            match="Cannot reconnect: reader thread from previous attempt is still alive",
+        ):
+            iface.connect()
+    finally:
+        alive_event.set()
+        blocking_thread.join(timeout=3)
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_connect_succeeds_when_reader_thread_dead() -> None:
+    """connect() should proceed normally when the previous reader thread is dead."""
+    import threading
+
+    iface = StreamInterface(noProto=True, connectNow=False)
+    dead_thread = threading.Thread(target=lambda: None, daemon=True)
+    dead_thread.start()
+    dead_thread.join(timeout=3)
+    iface._rxThread = dead_thread
+    iface._provides_own_stream = True  # type: ignore[attr-defined]
+    iface.stream = None
+    with (
+        patch.object(iface, "_start_config"),
+    ):
+        iface.connect()
+    assert iface._rxThread.is_alive()
+    iface.close()

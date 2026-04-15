@@ -263,7 +263,7 @@ def _post_configure_reconnect_and_verify(
     """
     deadline = time.monotonic() + timeout
 
-    disconnect_window = 5.0
+    disconnect_window = 2.0
     logger.info(
         "Waiting up to %.1fs for device disconnect (reboot indication)...",
         disconnect_window,
@@ -571,9 +571,7 @@ def _verify_post_reconnect_config(
     verify_module_config_fields: dict[str, dict[str, Any]] | None = None,
 ) -> _ConfigureReconnectResult:
     if not interface.isConnected.is_set():
-        logger.warning(
-            "Post-reconnect verification skipped: transport disconnected."
-        )
+        logger.warning("Post-reconnect verification skipped: transport disconnected.")
         return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
 
     target_node = interface.getNode(node_dest)

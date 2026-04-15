@@ -133,7 +133,9 @@ def _capture_host_debug_state(
                 encoding="utf-8",
             )
     except Exception as exc:  # pragma: no cover - debug-only fallback
-        fallback_artifact = tmp_path / f"debug-{label_token}-{host_token}-capture-error.txt"
+        fallback_artifact = (
+            tmp_path / f"debug-{label_token}-{host_token}-capture-error.txt"
+        )
         fallback_artifact.write_text(
             f"Failed to capture debug state: {exc!r}",
             encoding="utf-8",
@@ -670,7 +672,9 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
             assert add_rc != 0
             assert SATURATION_ERROR_MSG in add_out
 
-            after_info = _run_host_cli_ok(HOST_A, "--info", meshtastic_bin=meshtastic_bin)
+            after_info = _run_host_cli_ok(
+                HOST_A, "--info", meshtastic_bin=meshtastic_bin
+            )
             after_channels = _extract_channel_names(after_info)
             assert after_channels == saturated_channels, (
                 "Channel map changed after failed add-only URL when saturated.\n"
@@ -701,7 +705,7 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
             )
             raise
     finally:
-        restore_timeout = min(HOST_CONFIGURE_TIMEOUT_SECONDS, 25.0)
+        restore_timeout = HOST_CONFIGURE_TIMEOUT_SECONDS
         restore_cmd = [
             meshtastic_bin,
             "--host",

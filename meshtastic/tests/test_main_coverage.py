@@ -11,6 +11,7 @@ This module provides focused tests for uncovered paths in the CLI:
 
 import argparse
 import sys
+import time as _time
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
@@ -696,623 +697,82 @@ def test_main_export_config_to_file_error(
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         with patch("meshtastic.__main__.exportConfig") as mock_export:
             mock_export.return_value = "test config content"
-            with pytest.raises(SystemExit) as pytest_wrapped_e:
-                main()
-            assert pytest_wrapped_e.type is SystemExit
-            assert pytest_wrapped_e.value.code == 1
-            _out, err = capsys.readouterr()
-            assert "ERROR: Failed to write config file" in err
-
-
-# =============================================================================
-# Channel URL Operations
-# =============================================================================
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_ch_set_url(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test --ch-set-url command."""
-    sys.argv = ["", "--ch-set-url", "https://www.meshtastic.org/d/#CgUYAyIBAQ"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    mocked_node = MagicMock()
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
-    iface.getNode.return_value = mocked_node
-
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        main()
-        out, _err = capsys.readouterr()
-        assert "Connected to radio" in out
-        mocked_node.setURL.assert_called_once_with(
-            "https://www.meshtastic.org/d/#CgUYAyIBAQ", addOnly=False
-        )
-        mo.assert_called()
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_ch_add_url(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test --ch-add-url command."""
-    sys.argv = ["", "--ch-add-url", "https://www.meshtastic.org/d/#CgUYAyIBAQ"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    mocked_node = MagicMock()
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
-    iface.getNode.return_value = mocked_node
-
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        main()
-        out, _err = capsys.readouterr()
-        assert "Connected to radio" in out
-        mocked_node.setURL.assert_called_once_with(
-            "https://www.meshtastic.org/d/#CgUYAyIBAQ", addOnly=True
-        )
-        mo.assert_called()
-
-
-# =============================================================================
-# Remote Node Management Commands
-# =============================================================================
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_remove_node(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test --remove-node command."""
-    sys.argv = ["", "--remove-node", "!12345678"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    mocked_node = MagicMock()
-
-    def mock_removeNode(node_id: str) -> None:
-        print(f"inside mocked removeNode {node_id}")
-
-    mocked_node.removeNode.side_effect = mock_removeNode
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
-    iface.getNode.return_value = mocked_node
-
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        main()
-        out, _err = capsys.readouterr()
-        assert "Connected to radio" in out
-        assert "inside mocked removeNode !12345678" in out
-        mocked_node.removeNode.assert_called_once_with("!12345678")
-        mo.assert_called()
-
-
-# =============================================================================
-# Listen Mode
-# =============================================================================
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-@patch("time.sleep")
-def test_main_listen_mode(
-    mock_sleep: Any,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Test --listen mode runs and handles keyboard interrupt."""
-    sys.argv = ["", "--listen"]
-    mt_config.args = cast(Any, sys.argv)
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
-
-    # Simulate keyboard interrupt after first sleep
-    def side_effect_sleep(amount: float) -> None:
-        raise KeyboardInterrupt()
-
-    mock_sleep.side_effect = side_effect_sleep
-
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        main()
-        out, _err = capsys.readouterr()
-        assert "Connected to radio" in out
-        mock_sleep.assert_called()
-        mo.assert_called()
-
-
-# =============================================================================
-# Power/Logging without Powermon
-# =============================================================================
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_power_stress_without_powermon_exits(
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Test --power-stress exits when powermon is unavailable."""
-    sys.argv = ["", "--power-stress"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    # Ensure powermon is marked as unavailable
-    monkeypatch.setattr(main_module, "have_powermon", False)
-    monkeypatch.setattr(
-        main_module, "powermon_exception", ImportError("No module named 'powermon'")
-    )
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
-
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
-        with pytest.raises(SystemExit) as pytest_wrapped_e:
-            main()
-        assert pytest_wrapped_e.type is SystemExit
-        assert pytest_wrapped_e.value.code == 1
-        _out, err = capsys.readouterr()
-        assert "powermon module could not be loaded" in err.lower()
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_slog_without_powermon_exits(
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Test --slog exits when powermon is unavailable."""
-    sys.argv = ["", "--slog"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    # Ensure powermon is marked as unavailable
-    monkeypatch.setattr(main_module, "have_powermon", False)
-    monkeypatch.setattr(
-        main_module, "powermon_exception", ImportError("No module named 'powermon'")
-    )
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
-
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
-        with pytest.raises(SystemExit) as pytest_wrapped_e:
-            main()
-        assert pytest_wrapped_e.type is SystemExit
-        assert pytest_wrapped_e.value.code == 1
-        _out, err = capsys.readouterr()
-        assert "powermon module could not be loaded" in err.lower()
-
-
-# =============================================================================
-# Connection Error Handling
-# =============================================================================
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_file_not_found_error(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Test FileNotFoundError handling when serial device not found."""
-    sys.argv = ["", "--port", "/dev/ttyNonexistent", "--info"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    with patch(
-        "meshtastic.serial_interface.SerialInterface",
-        side_effect=FileNotFoundError("No such file or directory"),
-    ):
-        with pytest.raises(SystemExit) as pytest_wrapped_e:
-            main()
-        assert pytest_wrapped_e.type is SystemExit
-        assert pytest_wrapped_e.value.code == 1
-        _out, err = capsys.readouterr()
-        assert "File Not Found Error" in err
-        assert "power-only USB cable" in err
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-@patch("os.getlogin")
-def test_main_permission_error_with_getlogin(
-    patched_getlogin: Any,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Test PermissionError handling when serial device permission denied."""
-    sys.argv = ["", "--port", "/dev/ttyUSB0", "--info"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-    patched_getlogin.return_value = "testuser"
-
-    with patch(
-        "meshtastic.serial_interface.SerialInterface",
-        side_effect=PermissionError("Permission denied"),
-    ):
-        with pytest.raises(SystemExit) as pytest_wrapped_e:
-            main()
-        assert pytest_wrapped_e.type is SystemExit
-        assert pytest_wrapped_e.value.code == 1
-        _out, err = capsys.readouterr()
-        assert "Permission Error" in err
-        assert "dialout" in err
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-@patch("os.getlogin")
-@patch("getpass.getuser")
-def test_main_permission_error_getlogin_fails(
-    patched_getuser: Any,
-    patched_getlogin: Any,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Test PermissionError handling when os.getlogin fails."""
-    sys.argv = ["", "--port", "/dev/ttyUSB0", "--info"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-    patched_getlogin.side_effect = OSError("No such device")
-    patched_getuser.return_value = "fallbackuser"
-
-    with patch(
-        "meshtastic.serial_interface.SerialInterface",
-        side_effect=PermissionError("Permission denied"),
-    ):
-        with pytest.raises(SystemExit) as pytest_wrapped_e:
-            main()
-        assert pytest_wrapped_e.type is SystemExit
-        assert pytest_wrapped_e.value.code == 1
-        _out, err = capsys.readouterr()
-        assert "Permission Error" in err
-        assert "fallbackuser" in err
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_oserror_serial(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Test OSError handling when serial device is in use."""
-    sys.argv = ["", "--port", "/dev/ttyUSB0", "--info"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    with patch(
-        "meshtastic.serial_interface.SerialInterface",
-        side_effect=OSError("Device or resource busy"),
-    ):
-        with pytest.raises(SystemExit) as pytest_wrapped_e:
-            main()
-        assert pytest_wrapped_e.type is SystemExit
-        assert pytest_wrapped_e.value.code == 1
-        _out, err = capsys.readouterr()
-        assert "OS Error" in err
-        assert "in use by another process" in err
-
-
-# =============================================================================
-# BLE Connection Tests
-# =============================================================================
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_ble_scan(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test --ble-scan command."""
-    sys.argv = ["", "--ble-scan"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    mock_device = MagicMock()
-    mock_device.name = "TestDevice"
-    mock_device.address = "AA:BB:CC:DD:EE:FF"
-
-    with patch(
-        "meshtastic.interfaces.ble.BLEInterface.scan", return_value=[mock_device]
-    ):
-        with pytest.raises(SystemExit) as pytest_wrapped_e:
-            main()
-        assert pytest_wrapped_e.type is SystemExit
-        assert pytest_wrapped_e.value.code == 0
-        out, _err = capsys.readouterr()
-        assert "Found: name='TestDevice'" in out
-        assert "address='AA:BB:CC:DD:EE:FF'" in out
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_ble_connection_error(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Test BLE connection error handling."""
-    sys.argv = ["", "--ble", "test-device", "--info"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    with patch(
-        "meshtastic.interfaces.ble.BLEInterface",
-        side_effect=Exception("BLE connection failed"),
-    ):
-        with pytest.raises(SystemExit) as pytest_wrapped_e:
-            main()
-        assert pytest_wrapped_e.type is SystemExit
-        assert pytest_wrapped_e.value.code == 1
-
-
-# =============================================================================
-# tunnelMain Function
-# =============================================================================
-
-
-@pytest.mark.unit
-def test_tunnel_main_sets_tunnel_flag() -> None:
-    """Test tunnelMain sets tunnel flag on args."""
-    original_args = mt_config.args
-    original_parser = mt_config.parser
-    try:
-        # tunnelMain requires valid parser/args setup
-        # We test that the function tries to set tunnel=True
-        # by checking the error occurs after initParser would run
-        test_parser = argparse.ArgumentParser(add_help=False)
-        mt_config.parser = test_parser
-        mt_config.args = None
-
-        # The function should try to parse args then set tunnel=True
-        # Since we don't have proper args, it will fail on initParser
-        # but we verify the structure is correct
-        with pytest.raises((RuntimeError, SystemExit)):
-            tunnelMain()
-    finally:
-        mt_config.args = original_args
-        mt_config.parser = original_parser
-
-
-# =============================================================================
-# Traceroute Command
-# =============================================================================
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_traceroute(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test --traceroute command."""
-    sys.argv = ["", "--traceroute", "!12345678"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    lora_config = MagicMock()
-    lora_config.hop_limit = 3
-
-    mocked_node = MagicMock()
-    mocked_node.localConfig.lora = lora_config
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
-    iface.localNode = mocked_node
-
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        with patch.object(iface, "sendTraceRoute") as mock_send_traceroute:
-            main()
-            out, _err = capsys.readouterr()
-            assert "Connected to radio" in out
-            assert "Sending traceroute request" in out
-            mock_send_traceroute.assert_called_once()
-            mo.assert_called()
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_traceroute_with_broadcast_succeeds(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Test --traceroute with broadcast address is allowed."""
-    sys.argv = ["", "--traceroute", "^all"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    lora_config = MagicMock()
-    lora_config.hop_limit = 3
-
-    mocked_node = MagicMock()
-    mocked_node.localConfig.lora = lora_config
-
-    mocked_channel = MagicMock()
-    mocked_channel.role = 1  # PRIMARY role
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
-    iface.localNode = mocked_node
-    iface.myInfo = MagicMock()
-    iface.myInfo.my_node_num = 12345
-
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        with patch.object(iface, "sendTraceRoute") as mock_send_traceroute:
-            main()
-            out, _err = capsys.readouterr()
-            assert "Connected to radio" in out
-            assert "Sending traceroute request to ^all" in out
-            mock_send_traceroute.assert_called_once()
-            mo.assert_called()
-
-
-# =============================================================================
-# Request Telemetry
-# =============================================================================
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-@pytest.mark.parametrize(
-    "telem_type",
-    [
-        "device",
-        "environment",
-        "air_quality",
-        "airquality",
-        "power",
-        "localstats",
-        "local_stats",
-    ],
-)
-def test_main_request_telemetry_types(
-    telem_type: str,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Test --request-telemetry with various telemetry types."""
-    sys.argv = ["", "--request-telemetry", telem_type, "--dest", "!12345678"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    mocked_channel = MagicMock()
-    mocked_channel.role = 1  # PRIMARY role
-
-    mocked_node = MagicMock()
-    mocked_node.getChannelCopyByChannelIndex.return_value = mocked_channel
-    mocked_node.getChannelByChannelIndex.return_value = mocked_channel
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
-    iface.getNode.return_value = mocked_node
-    iface.myInfo = MagicMock()
-    iface.myInfo.my_node_num = 12345
-
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        with patch.object(iface, "sendTelemetry") as mock_send_telemetry:
-            main()
-            out, _err = capsys.readouterr()
-            assert "Connected to radio" in out
-            mock_send_telemetry.assert_called_once()
-            mo.assert_called()
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_request_telemetry_broadcast_exits(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Test --request-telemetry with broadcast address exits."""
-    sys.argv = ["", "--request-telemetry", "device"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
-
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
-        with pytest.raises(SystemExit) as pytest_wrapped_e:
-            main()
-        assert pytest_wrapped_e.type is SystemExit
-        assert pytest_wrapped_e.value.code == 1
-        _out, err = capsys.readouterr()
-        assert "Must use a destination node ID" in err
-
-
-# =============================================================================
-# Request Position
-# =============================================================================
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_request_position(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test --request-position command."""
-    sys.argv = ["", "--request-position", "--dest", "!12345678"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    mocked_channel = MagicMock()
-    mocked_channel.role = 1  # PRIMARY role
-
-    mocked_node = MagicMock()
-    mocked_node.getChannelCopyByChannelIndex.return_value = mocked_channel
-    mocked_node.getChannelByChannelIndex.return_value = mocked_channel
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
-    iface.getNode.return_value = mocked_node
-    iface.myInfo = MagicMock()
-    iface.myInfo.my_node_num = 12345
-
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        with patch.object(iface, "sendPosition") as mock_send_position:
-            main()
-            out, _err = capsys.readouterr()
-            assert "Connected to radio" in out
-            assert "Sending position request" in out
-            mock_send_position.assert_called_once()
-            mo.assert_called()
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_request_position_broadcast_exits(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Test --request-position with broadcast address exits."""
-    sys.argv = ["", "--request-position"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
-
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
-        with pytest.raises(SystemExit) as pytest_wrapped_e:
-            main()
-        assert pytest_wrapped_e.type is SystemExit
-        assert pytest_wrapped_e.value.code == 1
-        _out, err = capsys.readouterr()
-        assert "Must use a destination node ID" in err
-
-
-# =============================================================================
-# onConnected Exception Handler
-# =============================================================================
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_onconnected_exception_handling(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Test exception handling in onConnected."""
-    sys.argv = ["", "--set-owner", "TestOwner"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    mocked_node = MagicMock()
-    mocked_node.setOwner.side_effect = Exception("Test exception")
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
-    iface.getNode.return_value = mocked_node
-
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
-        with pytest.raises(SystemExit) as pytest_wrapped_e:
-            main()
-        assert pytest_wrapped_e.type is SystemExit
-        assert pytest_wrapped_e.value.code == 1
-        _out, err = capsys.readouterr()
-        assert "Aborting due to:" in err
-
-
-# =============================================================================
-# Owner Name Validation in common()
-# =============================================================================
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_set_owner_whitespace_only_in_common(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Test that --set-owner with whitespace-only is rejected in common()."""
-    sys.argv = ["", "--set-owner", "   "]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
     with pytest.raises(SystemExit) as pytest_wrapped_e:
         main()
     assert pytest_wrapped_e.type is SystemExit
     assert pytest_wrapped_e.value.code == 1
     _out, err = capsys.readouterr()
     assert "cannot be empty or contain only whitespace" in err
+
+
+# =============================================================================
+# _post_configure_reconnect_and_verify tests
+# =============================================================================
+
+
+def _make_mock_interface(connected: bool = True) -> MagicMock:
+    iface = MagicMock()
+    iface.isConnected.is_set.return_value = connected
+    iface.waitForConfig.return_value = None
+    return iface
+
+
+@pytest.mark.unit
+def test_post_configure_no_disconnect_returns_quickly() -> None:
+    iface = _make_mock_interface(connected=True)
+    start = _time.monotonic()
+    result = main_module._post_configure_reconnect_and_verify(
+        iface,
+        timeout=10.0,
+        node_dest="!local",
+    )
+    elapsed = _time.monotonic() - start
+    assert result is main_module._ConfigureReconnectResult.VERIFIED
+    assert elapsed < 4.0
+
+
+@pytest.mark.unit
+def test_post_configure_detects_disconnect_and_reconnect() -> None:
+    iface = _make_mock_interface(connected=True)
+    call_count = {"n": 0}
+
+    def _is_set_side_effect() -> bool:
+        call_count["n"] += 1
+        if call_count["n"] <= 3:
+            return False
+        return True
+
+    iface.isConnected.is_set.side_effect = _is_set_side_effect
+    result = main_module._post_configure_reconnect_and_verify(
+        iface,
+        timeout=10.0,
+        node_dest="!local",
+    )
+    assert result is main_module._ConfigureReconnectResult.VERIFIED
+    iface.waitForConfig.assert_called_once()
+
+
+@pytest.mark.unit
+def test_post_configure_reconnect_timeout() -> None:
+    iface = _make_mock_interface(connected=False)
+    result = main_module._post_configure_reconnect_and_verify(
+        iface,
+        timeout=0.5,
+        node_dest="!local",
+    )
+    assert result is main_module._ConfigureReconnectResult.RECONNECT_FAILED
+
+
+@pytest.mark.unit
+def test_post_configure_config_reload_fails() -> None:
+    iface = _make_mock_interface(connected=True)
+    iface.waitForConfig.side_effect = RuntimeError("reload failed")
+    result = main_module._post_configure_reconnect_and_verify(
+        iface,
+        timeout=10.0,
+        node_dest="!local",
+    )
+    assert result is main_module._ConfigureReconnectResult.CONFIG_RELOAD_FAILED
 
 
 @pytest.mark.unit

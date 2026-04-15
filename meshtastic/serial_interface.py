@@ -6,6 +6,7 @@ Meshtastic devices via USB/serial connections.
 
 import contextlib
 import logging
+import os
 import sys
 import time
 import types
@@ -63,6 +64,11 @@ class SerialInterface(StreamInterface):
                 )
             self.devPath = resolved_dev_path
 
+        if not os.path.exists(self.devPath):
+            raise self.MeshInterfaceError(
+                f"Serial port {self.devPath} does not exist (device disconnected)"
+            )
+
         if sys.platform != "win32":
             with open(self.devPath, encoding="utf8") as f:
                 self._set_hupcl_with_termios(f)
@@ -82,6 +88,8 @@ class SerialInterface(StreamInterface):
         )
         stream.flush()
         time.sleep(SERIAL_SETTLING_DELAY)
+        if stream.in_waiting:
+            stream.reset_input_buffer()
         return stream
 
     def _resolve_dev_path(self) -> str | None:
@@ -109,9 +117,7 @@ class SerialInterface(StreamInterface):
         if len(ports) == 0:
             return None
         if len(ports) > 1:
-            message: str = (
-                "Multiple serial ports were detected; one serial port must be specified with '--port'.\n"
-            )
+            message: str = "Multiple serial ports were detected; one serial port must be specified with '--port'.\n"
             message += (
                 "  Auto-detection cannot disambiguate when multiple compatible devices "
                 "or overlapping USB VID/PID aliases are present.\n"
@@ -157,6 +163,7 @@ class SerialInterface(StreamInterface):
         """
         self.noProto = noProto
         self.stream = None  # Initialize early for safe cleanup
+        self._dev_path_auto_detected = False
 
         self.devPath = devPath
         resolved_dev_path = self._resolve_dev_path()
@@ -176,6 +183,7 @@ class SerialInterface(StreamInterface):
             )
             return
         self.devPath = resolved_dev_path
+        self._dev_path_auto_detected = devPath is None
 
         logger.debug("Connecting to %s", self.devPath)
 
@@ -220,10 +228,16 @@ class SerialInterface(StreamInterface):
                     SERIAL_CONNECT_RETRY_DELAY_SECONDS,
                 )
                 with self._connect_lock:
-                    with contextlib.suppress(OSError, ValueError, serial.SerialException):
-                        if self.stream is not None and getattr(self.stream, "is_open", True):
+                    with contextlib.suppress(
+                        OSError, ValueError, serial.SerialException
+                    ):
+                        if self.stream is not None and getattr(
+                            self.stream, "is_open", True
+                        ):
                             self.stream.close()
                     self.stream = None
+                if self._dev_path_auto_detected:
+                    self.devPath = None
                 time.sleep(SERIAL_CONNECT_RETRY_DELAY_SECONDS)
 
     def _ensure_stream_for_connect_locked(self, *, requires_stream: bool) -> None:

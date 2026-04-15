@@ -207,10 +207,9 @@ class StreamInterface(MeshInterface):
                 )
                 return
             if self._rxThread.is_alive():
-                logger.warning(
-                    "connect() called while reader thread is still alive; ignoring request"
+                raise StreamInterface.StreamInterfaceError(
+                    "Cannot reconnect: reader thread from previous attempt is still alive"
                 )
-                return
             self._ensure_stream_for_connect_locked(requires_stream=requires_stream)
             if self.stream is None and requires_stream:
                 raise StreamInterface.StreamInterfaceError(
