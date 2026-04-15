@@ -532,7 +532,9 @@ class TestSetUrlTransactionCoordinator:
         )
 
         call_count = 0
+        connect_call_count = 0
         sleep_call_count = 0
+        iface = mock_local_node_with_reconnect.iface
 
         def _failing_then_check(
             *,
@@ -551,14 +553,19 @@ class TestSetUrlTransactionCoordinator:
 
         coordinator._execution_engine.executeReplaceAll = _failing_then_check  # type: ignore[method-assign]
 
+        def _connect_with_recovery():
+            nonlocal connect_call_count
+            connect_call_count += 1
+            if connect_call_count >= 1:
+                iface.isConnected.set()
+
+        iface.connect = MagicMock(side_effect=_connect_with_recovery)
+
         def _sleep_with_flap(duration):
             nonlocal sleep_call_count
             sleep_call_count += 1
             if sleep_call_count == 1:
-                mock_local_node_with_reconnect.iface.isConnected.clear()
-                return
-            if sleep_call_count == 2:
-                mock_local_node_with_reconnect.iface.isConnected.set()
+                iface.isConnected.clear()
 
         with (
             patch(
@@ -574,7 +581,7 @@ class TestSetUrlTransactionCoordinator:
             coordinator._apply_replace_all()
 
         assert call_count == 1
-        assert sleep_call_count >= 2
+        assert connect_call_count >= 1
 
     @pytest.mark.unit
     def test_bounded_failure_transport_never_stabilizes(
