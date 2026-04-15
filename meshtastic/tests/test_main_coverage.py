@@ -695,12 +695,12 @@ def test_main_export_config_to_file_error(
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         with patch("meshtastic.__main__.exportConfig") as mock_export:
             mock_export.return_value = "test config content"
-    with pytest.raises(SystemExit) as pytest_wrapped_e:
-        main()
+            with pytest.raises(SystemExit) as pytest_wrapped_e:
+                main()
     assert pytest_wrapped_e.type is SystemExit
     assert pytest_wrapped_e.value.code == 1
     _out, err = capsys.readouterr()
-    assert "cannot be empty or contain only whitespace" in err
+    assert "Failed to write config file" in err
 
 
 # =============================================================================
