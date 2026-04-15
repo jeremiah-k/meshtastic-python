@@ -126,15 +126,6 @@ CONFIG_RECONNECT_WAIT_SECONDS = 15.0
 SETURL_STABILITY_TIMEOUT_SECONDS = 30.0
 """Timeout for post-setURL transport stability before opening Phase 2 writes."""
 
-FACTORY_RESET_PORT_REENUMERATION_TIMEOUT_SECONDS = 20.0
-"""Timeout for serial port disappearance/re-enumeration after full factory reset."""
-
-FACTORY_RESET_PORT_POLL_SECONDS = 0.2
-"""Poll interval while waiting for serial port re-enumeration."""
-
-FACTORY_RESET_PORT_STABLE_SECONDS = 0.8
-"""Required stable duration for the post-reset serial port candidate."""
-
 CONFIGURE_PHASE1_HEADER = (
     "Phase 1: Applying direct configuration "
     "(channel URL updates may trigger reconnect/reboot)..."
@@ -462,94 +453,6 @@ def _post_seturl_stability_check(
             continue
 
     return False
-
-
-def _post_factory_reset_serial_settle(
-    interface: MeshInterface,
-    *,
-    previous_port: str | None,
-    timeout: float = FACTORY_RESET_PORT_REENUMERATION_TIMEOUT_SECONDS,
-    poll_interval: float = FACTORY_RESET_PORT_POLL_SECONDS,
-    stable_window: float = FACTORY_RESET_PORT_STABLE_SECONDS,
-) -> None:
-    """Release serial handle and wait for post-reset port re-enumeration stability."""
-    if not isinstance(interface, meshtastic.serial_interface.SerialInterface):
-        return
-
-    logger.info("Factory reset: closing local serial interface to release port lock.")
-    try:
-        interface.close()
-    except Exception:
-        logger.debug(
-            "Factory reset: serial close after reset command failed.",
-            exc_info=True,
-        )
-
-    if not previous_port:
-        return
-
-    logger.info(
-        "Factory reset: waiting for serial re-enumeration from %s (timeout=%.1fs).",
-        previous_port,
-        timeout,
-    )
-    deadline = time.monotonic() + timeout
-    port_disappeared = False
-    stable_port: str | None = None
-    stable_since = 0.0
-
-    while time.monotonic() < deadline:
-        try:
-            ports = meshtastic.util.findPorts(eliminate_duplicates=True)
-        except Exception:
-            logger.debug(
-                "Factory reset: findPorts failed during re-enumeration wait.",
-                exc_info=True,
-            )
-            time.sleep(poll_interval)
-            continue
-
-        now = time.monotonic()
-        if previous_port not in ports:
-            if not port_disappeared:
-                logger.info(
-                    "Factory reset: previous serial port %s disappeared.",
-                    previous_port,
-                )
-            port_disappeared = True
-
-        candidate: str | None = None
-        if port_disappeared:
-            if len(ports) == 1:
-                candidate = ports[0]
-            elif len(ports) > 1:
-                for port in ports:
-                    if port != previous_port:
-                        candidate = port
-                        break
-
-        if candidate is not None:
-            if candidate != stable_port:
-                stable_port = candidate
-                stable_since = now
-                logger.info(
-                    "Factory reset: observed candidate serial port %s.",
-                    stable_port,
-                )
-            elif now - stable_since >= stable_window:
-                logger.info(
-                    "Factory reset: serial port stabilized at %s.",
-                    stable_port,
-                )
-                return
-
-        time.sleep(poll_interval)
-
-    logger.warning(
-        "Factory reset: serial re-enumeration did not stabilize within %.1fs (previous=%s).",
-        timeout,
-        previous_port,
-    )
 
 
 def _is_local_destination(interface: MeshInterface, dest: str) -> bool:
@@ -1896,19 +1799,24 @@ def onConnected(interface: MeshInterface) -> None:
             skip_ack_wait = True
 
             full = bool(args.factory_reset_device)
-            previous_serial_port = getattr(interface, "devPath", None)
             interface.getNode(args.dest, False, **getNode_kwargs).factoryReset(
                 full=full
             )
-            if full and _is_local_destination(interface, args.dest):
-                _post_factory_reset_serial_settle(
-                    interface,
-                    previous_port=(
-                        str(previous_serial_port)
-                        if isinstance(previous_serial_port, str)
-                        else None
-                    ),
+            if (
+                full
+                and _is_local_destination(interface, args.dest)
+                and isinstance(interface, meshtastic.serial_interface.SerialInterface)
+            ):
+                logger.info(
+                    "Factory reset: closing local serial interface immediately after reset command."
                 )
+                try:
+                    interface.close()
+                except Exception:
+                    logger.debug(
+                        "Factory reset: immediate serial close failed.",
+                        exc_info=True,
+                    )
 
         if args.remove_node:
             closeNow = True

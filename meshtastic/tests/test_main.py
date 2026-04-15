@@ -5808,39 +5808,36 @@ def test_post_seturl_stability_check_triggers_reconnect_when_disconnected(
 
 
 @pytest.mark.unit
-def test_post_factory_reset_serial_settle_closes_and_waits_for_new_port(
+@pytest.mark.usefixtures("reset_mt_config")
+def test_factory_reset_device_closes_local_serial_immediately(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake_iface = cast(Any, object.__new__(SerialInterface))
-    fake_iface.close = MagicMock()
+    class _Args(SimpleNamespace):
+        def __getattr__(self, _name: str) -> Any:
+            return None
 
-    now = {"t": 0.0}
+    iface = cast(Any, object.__new__(SerialInterface))
+    iface.close = MagicMock()
+    iface.isConnected = threading.Event()
+    iface.isConnected.set()
+    iface.myInfo = SimpleNamespace(my_node_num=123)
+    node = MagicMock()
+    iface.getNode = MagicMock(return_value=node)
 
-    def _fake_monotonic() -> float:
-        return now["t"]
-
-    def _fake_sleep(interval: float) -> None:
-        now["t"] += interval
-
-    def _fake_find_ports(*, eliminate_duplicates: bool) -> list[str]:
-        _ = eliminate_duplicates
-        t = now["t"]
-        if t < 0.2:
-            return ["/dev/ttyACM0"]
-        if t < 0.4:
-            return []
-        return ["/dev/ttyACM1"]
-
-    monkeypatch.setattr("time.monotonic", _fake_monotonic)
-    monkeypatch.setattr("time.sleep", _fake_sleep)
-    monkeypatch.setattr("meshtastic.util.findPorts", _fake_find_ports)
-
-    main_module._post_factory_reset_serial_settle(
-        fake_iface,
-        previous_port="/dev/ttyACM0",
-        timeout=2.0,
-        poll_interval=0.1,
-        stable_window=0.2,
+    args = _Args(
+        channel_fetch_attempts=3,
+        timeout=300,
+        factory_reset=False,
+        factory_reset_device=True,
+        seriallog=False,
+        noproto=False,
+        ack=False,
+        wait_to_disconnect=None,
+        dest=MAIN_LOCAL_ADDR,
     )
+    monkeypatch.setattr(main_module.mt_config, "channel_index", None)
+    monkeypatch.setattr(main_module.mt_config, "args", cast(Any, args))
 
-    fake_iface.close.assert_called_once()
+    main_module.onConnected(cast(Any, iface))
+    node.factoryReset.assert_called_once_with(full=True)
+    iface.close.assert_called()

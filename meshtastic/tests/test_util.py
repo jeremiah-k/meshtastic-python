@@ -370,6 +370,54 @@ def test_findPorts_when_duplicate_found_and_duplicate_option_not_used(
 
 
 @pytest.mark.unitslow
+@patch("serial.tools.list_ports.comports")
+@patch("glob.glob")
+@patch("os.path.isdir", return_value=True)
+@patch("platform.system", return_value="Linux")
+@patch("os.path.realpath")
+def test_findPorts_prefers_linux_by_id_alias_when_available(
+    patch_realpath: MagicMock,
+    patch_system: MagicMock,
+    patch_isdir: MagicMock,
+    patch_glob: MagicMock,
+    patch_comports: MagicMock,
+) -> None:
+    """On Linux, prefer stable /dev/serial/by-id aliases over ttyACM paths."""
+    by_id_alias = "/dev/serial/by-id/usb-RAK4631-if00"
+    tty_device = "/dev/ttyACM1"
+    fake1 = _TempPort(tty_device, vid=0x239A)
+    patch_comports.return_value = [fake1]
+    patch_glob.return_value = [by_id_alias]
+    patch_realpath.side_effect = (
+        lambda path: tty_device if path in (by_id_alias, tty_device) else path
+    )
+
+    assert findPorts() == [by_id_alias]
+
+
+@pytest.mark.unitslow
+@patch("serial.tools.list_ports.comports")
+@patch("glob.glob", return_value=[])
+@patch("os.path.isdir", return_value=True)
+@patch("platform.system", return_value="Linux")
+@patch("os.path.realpath")
+def test_findPorts_keeps_tty_path_when_no_by_id_alias_matches(
+    patch_realpath: MagicMock,
+    patch_system: MagicMock,
+    patch_isdir: MagicMock,
+    patch_glob: MagicMock,
+    patch_comports: MagicMock,
+) -> None:
+    """When no by-id alias resolves to a tty path, keep original device path."""
+    tty_device = "/dev/ttyACM1"
+    fake1 = _TempPort(tty_device, vid=0x239A)
+    patch_comports.return_value = [fake1]
+    patch_realpath.side_effect = lambda path: path
+
+    assert findPorts() == [tty_device]
+
+
+@pytest.mark.unitslow
 def test_convert_mac_addr() -> None:
     """Test convert_mac_addr()."""
     assert convert_mac_addr("/c0gFyhb") == "fd:cd:20:17:28:5b"

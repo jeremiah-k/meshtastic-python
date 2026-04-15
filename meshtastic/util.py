@@ -50,6 +50,7 @@ whitelistVids: set[int] = WHITELIST_VIDS
 
 # Interval for polling the deferred execution queue in seconds
 _DEFERRED_QUEUE_POLL_TIMEOUT_SECONDS = 0.1
+_LINUX_SERIAL_BY_ID_DIR = "/dev/serial/by-id"
 
 logger = logging.getLogger(__name__)
 
@@ -344,6 +345,22 @@ def findPorts(eliminate_duplicates: bool = False) -> list[str]:
     list[str]
         Sorted list of serial device path strings.
     """
+    def _linux_by_id_aliases() -> dict[str, str]:
+        """Map Linux tty realpaths to stable /dev/serial/by-id aliases."""
+        if platform.system() != "Linux":
+            return {}
+        if not os.path.isdir(_LINUX_SERIAL_BY_ID_DIR):
+            return {}
+        aliases: dict[str, str] = {}
+        for alias in glob.glob(f"{_LINUX_SERIAL_BY_ID_DIR}/*"):
+            try:
+                resolved = os.path.realpath(alias)
+            except OSError:
+                continue
+            if resolved:
+                aliases[resolved] = alias
+        return aliases
+
     all_ports = serial.tools.list_ports.comports()
 
     # look for 'likely' meshtastic devices
@@ -369,6 +386,18 @@ def findPorts(eliminate_duplicates: bool = False) -> list[str]:
                 ),
             )
         )
+
+    alias_by_realpath = _linux_by_id_aliases()
+    if alias_by_realpath:
+        mapped_ports: list[str] = []
+        for device in ports:
+            try:
+                resolved_device = os.path.realpath(device)
+            except OSError:
+                resolved_device = device
+            mapped_ports.append(alias_by_realpath.get(resolved_device, device))
+        # Keep deterministic ordering while preventing alias/raw duplicate pairs.
+        ports = list(dict.fromkeys(mapped_ports))
 
     ports.sort()
     if eliminate_duplicates:
