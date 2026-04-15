@@ -5805,3 +5805,42 @@ def test_post_seturl_stability_check_triggers_reconnect_when_disconnected(
     )
     iface.connect.assert_called()
     iface.waitForConfig.assert_called_once()
+
+
+@pytest.mark.unit
+def test_post_factory_reset_serial_settle_closes_and_waits_for_new_port(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_iface = cast(Any, object.__new__(SerialInterface))
+    fake_iface.close = MagicMock()
+
+    now = {"t": 0.0}
+
+    def _fake_monotonic() -> float:
+        return now["t"]
+
+    def _fake_sleep(interval: float) -> None:
+        now["t"] += interval
+
+    def _fake_find_ports(*, eliminate_duplicates: bool) -> list[str]:
+        _ = eliminate_duplicates
+        t = now["t"]
+        if t < 0.2:
+            return ["/dev/ttyACM0"]
+        if t < 0.4:
+            return []
+        return ["/dev/ttyACM1"]
+
+    monkeypatch.setattr("time.monotonic", _fake_monotonic)
+    monkeypatch.setattr("time.sleep", _fake_sleep)
+    monkeypatch.setattr("meshtastic.util.findPorts", _fake_find_ports)
+
+    main_module._post_factory_reset_serial_settle(
+        fake_iface,
+        previous_port="/dev/ttyACM0",
+        timeout=2.0,
+        poll_interval=0.1,
+        stable_window=0.2,
+    )
+
+    fake_iface.close.assert_called_once()
