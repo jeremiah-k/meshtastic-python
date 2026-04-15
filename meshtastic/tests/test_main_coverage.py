@@ -9,7 +9,6 @@ This module provides focused tests for uncovered paths in the CLI:
 
 # pylint: disable=C0302,W0613,R0917
 
-import argparse
 import sys
 import time as _time
 from typing import Any, cast
@@ -32,7 +31,6 @@ from meshtastic.__main__ import (
     common,
     initParser,
     main,
-    tunnelMain,
 )
 from meshtastic.serial_interface import SerialInterface
 
