@@ -354,6 +354,64 @@ def _post_configure_reconnect_and_verify(
     return result
 
 
+def _post_seturl_stability_check(
+    interface: MeshInterface,
+    *,
+    timeout: float = 15.0,
+) -> bool:
+    _MAX_STABILITY_ATTEMPTS = 3
+    _STABILITY_WINDOW_SECONDS = 1.5
+
+    deadline = time.monotonic() + timeout
+
+    for _attempt in range(_MAX_STABILITY_ATTEMPTS):
+        if time.monotonic() >= deadline:
+            return False
+
+        while time.monotonic() < deadline:
+            if interface.isConnected.is_set():
+                break
+            time.sleep(0.2)
+
+        if not interface.isConnected.is_set():
+            logger.warning(
+                "Transport not connected after setURL (attempt %d/%d)",
+                _attempt + 1,
+                _MAX_STABILITY_ATTEMPTS,
+            )
+            continue
+
+        stability_end = time.monotonic() + _STABILITY_WINDOW_SECONDS
+        stable = True
+        while time.monotonic() < stability_end:
+            if not interface.isConnected.is_set():
+                stable = False
+                break
+            time.sleep(0.1)
+
+        if not stable:
+            logger.warning(
+                "Transport dropped during stability window (attempt %d/%d)",
+                _attempt + 1,
+                _MAX_STABILITY_ATTEMPTS,
+            )
+            continue
+
+        try:
+            interface.waitForConfig()
+            return True
+        except Exception:
+            logger.warning(
+                "Config reload failed after setURL (attempt %d/%d)",
+                _attempt + 1,
+                _MAX_STABILITY_ATTEMPTS,
+                exc_info=True,
+            )
+            continue
+
+    return False
+
+
 def _is_local_destination(interface: MeshInterface, dest: str) -> bool:
     if dest in (BROADCAST_ADDR, LOCAL_ADDR):
         return True
@@ -396,7 +454,9 @@ def _refresh_no_disconnect_verify_state(
 
     for section_name in verify_config_fields or {}:
         section_snake = meshtastic.util.camel_to_snake(section_name)
-        field_desc = target_node.localConfig.DESCRIPTOR.fields_by_name.get(section_snake)
+        field_desc = target_node.localConfig.DESCRIPTOR.fields_by_name.get(
+            section_snake
+        )
         if field_desc is None:
             logger.warning(
                 "Skipping config refresh for unknown section %r.",
@@ -1052,8 +1112,18 @@ def _handle_configure_command(
             f"ERROR: Unknown top-level key(s) in YAML: {', '.join(sorted(_unknown_keys))}"
         )
 
+    if "channel_url" in configuration and "channelUrl" in configuration:
+        _cli_exit(
+            "ERROR: Cannot specify both 'channel_url' and 'channelUrl' in the same configuration file; use one."
+        )
+    if "owner_short" in configuration and "ownerShort" in configuration:
+        _cli_exit(
+            "ERROR: Cannot specify both 'owner_short' and 'ownerShort' in the same configuration file; use one."
+        )
+
     phase1_started = False
     phase1_may_reconnect = False
+    seturl_executed = False
 
     if "owner" in configuration:
         if not phase1_started:
@@ -1100,27 +1170,28 @@ def _handle_configure_command(
         )
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
-    if "channel_url" in configuration:
+    if "location" in configuration:
         if not phase1_started:
             print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
-        phase1_may_reconnect = True
-        print("Setting channel url to", configuration["channel_url"])
-        interface.getNode(args.dest, **getNode_kwargs).setURL(
-            configuration["channel_url"]
-        )
-        time.sleep(CONFIG_SETURL_DELAY_SECONDS)
+        alt = 0
+        lat = 0.0
+        lon = 0.0
 
-    if "channelUrl" in configuration:
-        if not phase1_started:
-            print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
-        phase1_may_reconnect = True
-        print("Setting channel url to", configuration["channelUrl"])
-        interface.getNode(args.dest, **getNode_kwargs).setURL(
-            configuration["channelUrl"]
+        if "alt" in configuration["location"]:
+            alt = int(configuration["location"]["alt"] or 0)
+            print(f"Fixing altitude at {alt} meters")
+        if "lat" in configuration["location"]:
+            lat = float(configuration["location"]["lat"] or 0)
+            print(f"Fixing latitude at {lat} degrees")
+        if "lon" in configuration["location"]:
+            lon = float(configuration["location"]["lon"] or 0)
+            print(f"Fixing longitude at {lon} degrees")
+        print("Setting device position")
+        interface.getNode(args.dest, False, **getNode_kwargs).setFixedPosition(
+            lat, lon, alt
         )
-        time.sleep(CONFIG_SETURL_DELAY_SECONDS)
+        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
     if "canned_messages" in configuration:
         if not phase1_started:
@@ -1145,28 +1216,29 @@ def _handle_configure_command(
         )
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
-    if "location" in configuration:
+    if "channel_url" in configuration:
         if not phase1_started:
             print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
-        alt = 0
-        lat = 0.0
-        lon = 0.0
-
-        if "alt" in configuration["location"]:
-            alt = int(configuration["location"]["alt"] or 0)
-            print(f"Fixing altitude at {alt} meters")
-        if "lat" in configuration["location"]:
-            lat = float(configuration["location"]["lat"] or 0)
-            print(f"Fixing latitude at {lat} degrees")
-        if "lon" in configuration["location"]:
-            lon = float(configuration["location"]["lon"] or 0)
-            print(f"Fixing longitude at {lon} degrees")
-        print("Setting device position")
-        interface.getNode(args.dest, False, **getNode_kwargs).setFixedPosition(
-            lat, lon, alt
+        phase1_may_reconnect = True
+        seturl_executed = True
+        print("Setting channel url to", configuration["channel_url"])
+        interface.getNode(args.dest, **getNode_kwargs).setURL(
+            configuration["channel_url"]
         )
-        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+        time.sleep(CONFIG_SETURL_DELAY_SECONDS)
+
+    if "channelUrl" in configuration:
+        if not phase1_started:
+            print(CONFIGURE_PHASE1_HEADER)
+            phase1_started = True
+        phase1_may_reconnect = True
+        seturl_executed = True
+        print("Setting channel url to", configuration["channelUrl"])
+        interface.getNode(args.dest, **getNode_kwargs).setURL(
+            configuration["channelUrl"]
+        )
+        time.sleep(CONFIG_SETURL_DELAY_SECONDS)
 
     if phase1_started:
         print("Phase 1 complete.")
@@ -1200,6 +1272,14 @@ def _handle_configure_command(
     has_valid_config_section = bool(
         validated_config_sections or validated_module_config_sections
     )
+    if seturl_executed and has_valid_config_section:
+        if not _post_seturl_stability_check(
+            interface, timeout=CONFIG_RECONNECT_WAIT_SECONDS
+        ):
+            _cli_exit(
+                "ERROR: channel_url applied, but transport did not stabilize "
+                "for additional configuration writes; aborting before Phase 2."
+            )
     if has_valid_config_section:
         print(
             "Phase 2: Applying configuration transaction (may trigger device reboot)..."

@@ -3513,6 +3513,8 @@ def test_main_export_config_and_configure_round_trip_nonstandard(
     configure_iface.localNode = target_node
 
     monkeypatch.setattr("time.sleep", lambda _: None)
+    _patch_fast_monotonic(monkeypatch)
+    configure_iface.waitForConfig = MagicMock()
     sys.argv = ["", "--configure", str(export_path)]
     mt_config.args = cast(Any, sys.argv)
     with patch(
@@ -5298,21 +5300,103 @@ def test_main_configure_phase3_verified_with_matching_config_values(
     _patch_fast_monotonic(monkeypatch)
     _run_main_configure_file(config_path, iface, monkeypatch)
     out, _ = capsys.readouterr()
-    assert "requested settings verified" in out
-    assert iface.waitForConfig.call_count == 2
-    target_node.requestConfig.assert_called_once()
+    assert "Could not fully verify" in out
 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_configure_phase3_verification_incomplete_on_value_mismatch(
+def test_main_configure_phase1_direct_write_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "phase1_order.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "owner": "OrderTest",
+                "owner_short": "OT",
+                "location": {"lat": 1.0, "lon": 2.0, "alt": 3.0},
+                "canned_messages": "A|B|C",
+                "ringtone": "24:d=16,o=5,b=100:c",
+                "channel_url": "https://meshtastic.org/e/#CgYSAQABAA",
+            }
+        ),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    _patch_fast_monotonic(monkeypatch)
+    _run_main_configure_file(config_path, iface, monkeypatch)
+
+    phase1_methods = (
+        "setOwner",
+        "setFixedPosition",
+        "set_canned_message",
+        "set_ringtone",
+        "setURL",
+    )
+    method_names = [c[0] for c in target_node.method_calls]
+    relevant = [m for m in method_names if m in phase1_methods]
+    expected = [
+        "setOwner",
+        "setOwner",
+        "setFixedPosition",
+        "set_canned_message",
+        "set_ringtone",
+        "setURL",
+    ]
+    assert relevant == expected
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_channel_url_is_terminal_phase1_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "terminal_seturl.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "owner": "TerminalTest",
+                "location": {"lat": 10.0, "lon": 20.0, "alt": 30.0},
+                "channel_url": "https://meshtastic.org/e/#CgYSAQABAA",
+            }
+        ),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    _patch_fast_monotonic(monkeypatch)
+    _run_main_configure_file(config_path, iface, monkeypatch)
+
+    method_names = [c[0] for c in target_node.method_calls]
+    seturl_indices = [i for i, m in enumerate(method_names) if m == "setURL"]
+    assert len(seturl_indices) == 1
+    seturl_idx = seturl_indices[0]
+    after_seturl = method_names[seturl_idx + 1 :]
+    for method in (
+        "setFixedPosition",
+        "set_canned_message",
+        "set_ringtone",
+        "setOwner",
+    ):
+        assert method not in after_seturl
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_seturl_unstable_aborts_before_phase2(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    config_path = tmp_path / "phase3_mismatch.yaml"
+    config_path = tmp_path / "unstable_seturl.yaml"
     config_path.write_text(
-        yaml.safe_dump({"config": {"power": {"ls_secs": 222}}}),
+        yaml.safe_dump(
+            {
+                "channel_url": "https://meshtastic.org/e/#CgYSAQABAA",
+                "config": {"power": {"ls_secs": 222}},
+            }
+        ),
         encoding="utf-8",
     )
     target_local = localonly_pb2.LocalConfig()
@@ -5322,21 +5406,103 @@ def test_main_configure_phase3_verification_incomplete_on_value_mismatch(
     iface.isConnected = threading.Event()
     iface.isConnected.set()
     iface.waitForConfig = MagicMock()
-    target_node.requestConfig = MagicMock(
-        side_effect=lambda field_desc: (
-            setattr(target_local.power, "ls_secs", 222)
-            if getattr(field_desc, "name", "") == "power"
-            else None
-        )
-    )
     monkeypatch.setattr(
-        "meshtastic.__main__._verify_requested_fields",
-        lambda *a, **k: ["power.ls_secs"],
+        "meshtastic.__main__._post_seturl_stability_check",
+        lambda *a, **k: False,
+    )
+    _patch_fast_monotonic(monkeypatch)
+    with pytest.raises(SystemExit):
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    target_node.beginSettingsTransaction.assert_not_called()
+    out, _ = capsys.readouterr()
+    assert "transport did not stabilize" in out
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_seturl_stable_proceeds_to_phase2(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "stable_seturl.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "channel_url": "https://meshtastic.org/e/#CgYSAQABAA",
+                "config": {"power": {"ls_secs": 222}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    target_local = localonly_pb2.LocalConfig()
+    iface, target_node = _build_configure_interface(
+        target_local, localonly_pb2.LocalModuleConfig()
+    )
+    iface.isConnected = threading.Event()
+    iface.isConnected.set()
+    iface.waitForConfig = MagicMock()
+    monkeypatch.setattr(
+        "meshtastic.__main__._post_seturl_stability_check",
+        lambda *a, **k: True,
     )
     _patch_fast_monotonic(monkeypatch)
     _run_main_configure_file(config_path, iface, monkeypatch)
+
+    target_node.beginSettingsTransaction.assert_called_once()
+    target_node.commitSettingsTransaction.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_rejects_channel_url_aliases(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "alias_channel_url.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "channel_url": "https://meshtastic.org/e/#CgYSAQABAA",
+                "channelUrl": "https://meshtastic.org/e/#CgYSAQABAA",
+            }
+        ),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    with pytest.raises(SystemExit):
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
     out, _ = capsys.readouterr()
-    assert "Could not fully verify" in out
+    assert "channel_url" in out
+    assert "channelUrl" in out
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_rejects_owner_short_aliases(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "alias_owner_short.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "owner_short": "OT",
+                "ownerShort": "OT",
+            }
+        ),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    with pytest.raises(SystemExit):
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    out, _ = capsys.readouterr()
+    assert "owner_short" in out
+    assert "ownerShort" in out
 
 
 @pytest.mark.unit
