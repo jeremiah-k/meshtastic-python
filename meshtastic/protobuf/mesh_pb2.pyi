@@ -2536,6 +2536,8 @@ class RemoteShell(_message.Message):
     COLS_FIELD_NUMBER: _builtins.int
     ROWS_FIELD_NUMBER: _builtins.int
     FLAGS_FIELD_NUMBER: _builtins.int
+    LAST_TX_SEQ_FIELD_NUMBER: _builtins.int
+    LAST_RX_SEQ_FIELD_NUMBER: _builtins.int
     op: Global___RemoteShell.OpCode.ValueType
     """
     Structured frame operation.
@@ -2568,6 +2570,14 @@ class RemoteShell(_message.Message):
     """
     Bit flags for protocol extensions.
     """
+    last_tx_seq: _builtins.int
+    """
+    The last sequence number TX'd.
+    """
+    last_rx_seq: _builtins.int
+    """
+    The last sequence number RX'd.
+    """
     def __init__(
         self,
         *,
@@ -2579,8 +2589,10 @@ class RemoteShell(_message.Message):
         cols: _builtins.int = ...,
         rows: _builtins.int = ...,
         flags: _builtins.int = ...,
+        last_tx_seq: _builtins.int = ...,
+        last_rx_seq: _builtins.int = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["ack_seq", b"ack_seq", "cols", b"cols", "flags", b"flags", "op", b"op", "payload", b"payload", "rows", b"rows", "seq", b"seq", "session_id", b"session_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["ack_seq", b"ack_seq", "cols", b"cols", "flags", b"flags", "last_rx_seq", b"last_rx_seq", "last_tx_seq", b"last_tx_seq", "op", b"op", "payload", b"payload", "rows", b"rows", "seq", b"seq", "session_id", b"session_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 Global___RemoteShell: _TypeAlias = RemoteShell  # noqa: Y015
