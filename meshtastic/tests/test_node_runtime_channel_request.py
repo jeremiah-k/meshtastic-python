@@ -378,3 +378,17 @@ def test_timeout_for_field_returns_false_on_timeout(
     mock_node.localConfig = mock_local_config
     result = channel_request_runtime._timeout_for_field("lora", 0.1)
     assert result is False
+
+
+@pytest.mark.unit
+def test_timeout_for_field_hasfield_not_callable(
+    channel_request_runtime: _NodeChannelRequestRuntime,
+    mock_node: MagicMock,
+) -> None:
+    """_timeout_for_field returns False when HasField is absent or non-callable."""
+    mock_local_config = MagicMock()
+    mock_local_config.DESCRIPTOR.fields_by_name = {"lora": MagicMock()}
+    mock_local_config.HasField = None
+    mock_node.localConfig = mock_local_config
+    result = channel_request_runtime._timeout_for_field("lora", 0.1)
+    assert result is False

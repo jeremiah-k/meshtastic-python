@@ -313,15 +313,20 @@ def test_traverse_config_batches_multiple_sections(
         "mqtt": {"address": "test", "username": "user"},
     }
 
-    with patch.object(main_module, "_resolve_pref", return_value=False):
-        result = traverseConfig("module_config", config, interface_config)
-        assert result is True
+    with caplog.at_level(logging.WARNING, logger="meshtastic.__main__"):
+        with patch.object(main_module, "_resolve_pref", return_value=False):
+            result = traverseConfig("module_config", config, interface_config)
+            assert result is True
 
-    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert len(warning_records) == 2
-    texts = [r.message for r in warning_records]
-    assert any("3 unknown field(s) from ambient_lighting" in t for t in texts)
-    assert any("2 unknown field(s) from mqtt" in t for t in texts)
+        warning_records = [
+            r
+            for r in caplog.records
+            if r.name == "meshtastic.__main__" and r.levelno == logging.WARNING
+        ]
+        assert len(warning_records) == 2
+        texts = [r.message for r in warning_records]
+        assert any("3 unknown field(s) from ambient_lighting" in t for t in texts)
+        assert any("2 unknown field(s) from mqtt" in t for t in texts)
 
 
 # =============================================================================

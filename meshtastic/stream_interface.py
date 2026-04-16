@@ -390,7 +390,7 @@ class StreamInterface(MeshInterface):
             resolved = os.path.realpath(dev_path)
         except OSError:
             return None
-        for alias in glob.glob(f"{by_id_dir}/*"):
+        for alias in sorted(glob.glob(f"{by_id_dir}/*")):
             try:
                 if os.path.realpath(alias) == resolved:
                     return alias

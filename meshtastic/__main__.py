@@ -1620,7 +1620,7 @@ def _handle_configure_command(
             args.dest, False, **getNode_kwargs
         ).commitSettingsTransaction()
         time.sleep(CONFIG_COMMIT_SETTLE_SECONDS)
-        print(
+        _cli_print(
             "Configuration transaction committed. Device may reboot to apply changes."
         )
 
