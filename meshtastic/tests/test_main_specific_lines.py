@@ -525,11 +525,11 @@ def test_on_connected_raises_without_args() -> None:
 
 @pytest.mark.unit
 def test_set_canned_message_module_unavailable(
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Test --set-canned-message when module unavailable (line 799).
 
-    When CANNEDMSG_CONFIG module is not available, should print skip message.
+    When CANNEDMSG_CONFIG module is not available, a warning is emitted.
     """
     sys.argv = ["", "--set-canned-message", "test message"]
     mt_config.args = sys.argv  # type: ignore[assignment]
@@ -544,22 +544,25 @@ def test_set_canned_message_module_unavailable(
 
     from meshtastic.__main__ import main
 
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
-        # Just run main() - the code path will be executed even if no SystemExit
-        try:
-            main()
-        except SystemExit:
-            pass  # Expected, but not required for the test
-        _out, _err = capsys.readouterr()
-        # Check if skip message was printed
-        assert "canned message" in _out.lower() or "excluded" in _out.lower()  # noqa
+    with caplog.at_level(logging.WARNING, logger="meshtastic.__main__"):
+        with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+            try:
+                main()
+            except SystemExit:
+                pass
+            assert (
+                "canned message" in caplog.text.lower()
+                or "excluded" in caplog.text.lower()
+            )
 
 
 @pytest.mark.unit
-def test_set_ringtone_module_unavailable(capsys: pytest.CaptureFixture[str]) -> None:
+def test_set_ringtone_module_unavailable(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Test --set-ringtone when module unavailable (lines 809-811).
 
-    When EXTNOTIF_CONFIG module is not available, should print skip message.
+    When EXTNOTIF_CONFIG module is not available, a warning is emitted.
     """
     sys.argv = ["", "--set-ringtone", "test.mp3"]
     mt_config.args = sys.argv  # type: ignore[assignment]
@@ -574,17 +577,16 @@ def test_set_ringtone_module_unavailable(capsys: pytest.CaptureFixture[str]) -> 
 
     from meshtastic.__main__ import main
 
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
-        # Just run main() - the code path will be executed even if no SystemExit
-        try:
-            main()
-        except SystemExit:
-            pass  # Expected, but not required for the test
-        _out, _err = capsys.readouterr()
-        # Check if skip message was printed
-        assert (
-            "ringtone" in _out.lower() or "external notification" in _out.lower()  # noqa
-        )
+    with caplog.at_level(logging.WARNING, logger="meshtastic.__main__"):
+        with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+            try:
+                main()
+            except SystemExit:
+                pass
+            assert (
+                "ringtone" in caplog.text.lower()
+                or "external notification" in caplog.text.lower()
+            )
 
 
 # =============================================================================

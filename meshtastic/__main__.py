@@ -1816,7 +1816,7 @@ def onConnected(interface: MeshInterface) -> None:
                 )
                 node.set_canned_message(args.set_canned_message)
             else:
-                _cli_print(
+                logger.warning(
                     "Canned Message module is excluded by firmware; skipping set."
                 )
 
@@ -1828,7 +1828,7 @@ def onConnected(interface: MeshInterface) -> None:
                 _cli_print(f"Setting ringtone to {args.set_ringtone}")
                 node.set_ringtone(args.set_ringtone)
             else:
-                _cli_print(
+                logger.warning(
                     "External Notification is excluded by firmware; skipping ringtone set."
                 )
 
