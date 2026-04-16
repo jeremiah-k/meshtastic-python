@@ -1,6 +1,6 @@
 """Tests for _SetUrlTransactionCoordinator."""
 
-from typing import NoReturn
+from typing import Any, Callable, NoReturn, Sequence
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -19,10 +19,12 @@ from meshtastic.protobuf import apponly_pb2, channel_pb2, localonly_pb2
 from meshtastic.tests.seturl.conftest import _make_channel
 
 
-def _make_reload_mock(node, channels):
+def _make_reload_mock(
+    node: Any, channels: Sequence[Any]
+) -> Callable[[Any, Any, float], bool]:
     """Create a mock _bounded_config_reload that restores channels and returns True."""
 
-    def _mock_reload(self_coord, iface, deadline):
+    def _mock_reload(self_coord: Any, iface: Any, deadline: float) -> bool:
         node.channels = channels
         return True
 

@@ -544,7 +544,7 @@ def _validate_non_empty_mapping_sections(
     for section_name, section_value in section_mapping.items():
         if not isinstance(section_value, dict):
             _cli_exit(
-                f"ERROR: '{top_level_key}.{section_name}' must be a mapping, got "
+                f"ERROR: '{top_level_key}.{section_name}' must be a non-empty mapping, got "
                 f"{type(section_value).__name__}"
             )
         validated_sections[section_name] = section_value
@@ -1247,7 +1247,7 @@ def _handle_configure_command(
     interface: MeshInterface,
     args: Any,
     getNode_kwargs: dict[str, Any],
-) -> bool:
+) -> tuple[bool, bool]:
     try:
         with open(args.configure[0], encoding="utf8") as file:
             raw_text = file.read()
@@ -1276,6 +1276,32 @@ def _handle_configure_command(
     if "owner_short" in configuration and "ownerShort" in configuration:
         _cli_exit(
             "ERROR: Cannot specify both 'owner_short' and 'ownerShort' in the same configuration file; use one."
+        )
+
+    # Pre-validate config/module_config shapes before any Phase-1 mutations.
+    validated_config_sections: dict[str, dict[str, Any]] = {}
+    validated_module_config_sections: dict[str, dict[str, Any]] = {}
+    if "config" in configuration:
+        _cfg_val = configuration["config"]
+        if not isinstance(_cfg_val, dict) or not _cfg_val:
+            _cli_exit(
+                f"ERROR: 'config' must be a non-empty mapping, got "
+                f"{type(_cfg_val).__name__}{' (empty)' if isinstance(_cfg_val, dict) else ''}"
+            )
+        validated_config_sections = _validate_non_empty_mapping_sections(
+            top_level_key="config",
+            section_mapping=_cfg_val,
+        )
+    if "module_config" in configuration:
+        _mcfg_val = configuration["module_config"]
+        if not isinstance(_mcfg_val, dict) or not _mcfg_val:
+            _cli_exit(
+                f"ERROR: 'module_config' must be a non-empty mapping, got "
+                f"{type(_mcfg_val).__name__}{' (empty)' if isinstance(_mcfg_val, dict) else ''}"
+            )
+        validated_module_config_sections = _validate_non_empty_mapping_sections(
+            top_level_key="module_config",
+            section_mapping=_mcfg_val,
         )
 
     phase1_started = False
@@ -1441,31 +1467,6 @@ def _handle_configure_command(
         print("Phase 1 complete.")
 
     settings_transaction_started = False
-    validated_config_sections: dict[str, dict[str, Any]] = {}
-    validated_module_config_sections: dict[str, dict[str, Any]] = {}
-    if "config" in configuration:
-        _cfg_val = configuration["config"]
-        if not isinstance(_cfg_val, dict) or not _cfg_val:
-            _cli_exit(
-                f"ERROR: 'config' must be a non-empty mapping, got "
-                f"{type(_cfg_val).__name__}{' (empty)' if isinstance(_cfg_val, dict) else ''}"
-            )
-        validated_config_sections = _validate_non_empty_mapping_sections(
-            top_level_key="config",
-            section_mapping=_cfg_val,
-        )
-    if "module_config" in configuration:
-        _mcfg_val = configuration["module_config"]
-        if not isinstance(_mcfg_val, dict) or not _mcfg_val:
-            _cli_exit(
-                f"ERROR: 'module_config' must be a non-empty mapping, got "
-                f"{type(_mcfg_val).__name__}{' (empty)' if isinstance(_mcfg_val, dict) else ''}"
-            )
-        validated_module_config_sections = _validate_non_empty_mapping_sections(
-            top_level_key="module_config",
-            section_mapping=_mcfg_val,
-        )
-
     has_valid_config_section = bool(
         validated_config_sections or validated_module_config_sections
     )
@@ -1615,7 +1616,9 @@ def _handle_configure_command(
         else:
             print("Configuration applied (no reboot expected).")
 
-    return settings_transaction_started
+    return settings_transaction_started, (
+        seturl_executed and _is_local_destination(interface, args.dest)
+    )
 
 
 def onConnected(interface: MeshInterface) -> None:
@@ -2047,10 +2050,10 @@ def onConnected(interface: MeshInterface) -> None:
         if args.configure:
             closeNow = True
             waitForAckNak = True
-            _settings_transaction_started = _handle_configure_command(
-                interface, args, getNode_kwargs
+            _settings_transaction_started, _phase1_channel_url_applied = (
+                _handle_configure_command(interface, args, getNode_kwargs)
             )
-            if _settings_transaction_started:
+            if _settings_transaction_started or _phase1_channel_url_applied:
                 waitForAckNak = False
                 skip_ack_wait = True
 

@@ -277,8 +277,9 @@ class StreamInterface(MeshInterface):
         if self._wantExit:
             return "Connection cancelled while waiting for completion"
         stream = self.stream
-        if stream is None or not getattr(stream, "is_open", True):
-            return "Connection lost while waiting for connection completion (stream closed)"
+        if not getattr(self, "_provides_own_stream", False):
+            if stream is None or not getattr(stream, "is_open", True):
+                return "Connection lost while waiting for connection completion (stream closed)"
         reader_thread = getattr(self, "_rxThread", None)
         if reader_thread is not None and not reader_thread.is_alive():
             disconnect_source = getattr(self, "_last_disconnect_source", "unknown")

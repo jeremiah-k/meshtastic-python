@@ -144,6 +144,7 @@ def test_meshtasticd_export_and_configure_roundtrip(
             yaml.safe_dump(mutated_data, sort_keys=False), encoding="utf-8"
         )
 
+        original_exc: BaseException | None = None
         try:
             configure_output = _run_host_cli_ok(
                 HOST,
@@ -161,7 +162,8 @@ def test_meshtasticd_export_and_configure_roundtrip(
             )
             assert info_output.startswith("Connected to radio")
             assert re.search(r"^Owner: Meshtastic CI\b", info_output, re.MULTILINE)
-        except Exception:
+        except Exception as exc:
+            original_exc = exc
             _capture_host_debug_state(
                 tmp_path,
                 HOST,
@@ -170,14 +172,19 @@ def test_meshtasticd_export_and_configure_roundtrip(
             )
             raise
         finally:
-            restore_output = _run_host_cli_ok(
-                HOST,
-                "--configure",
-                str(export_path),
-                meshtastic_bin=meshtastic_bin,
-            )
-            assert "Writing modified configuration to device" in restore_output
-            _wait_for_host_ready(HOST, meshtastic_bin)
+            try:
+                restore_output = _run_host_cli_ok(
+                    HOST,
+                    "--configure",
+                    str(export_path),
+                    meshtastic_bin=meshtastic_bin,
+                )
+                assert "Writing modified configuration to device" in restore_output
+                _wait_for_host_ready(HOST, meshtastic_bin)
+            except Exception:
+                if original_exc is not None:
+                    raise original_exc
+                raise
     except Exception:
         _capture_host_debug_state(
             tmp_path,

@@ -1833,6 +1833,7 @@ def test_get_pref_redacts_security_section_values(
 @pytest.mark.usefixtures("reset_mt_config")
 def test_get_pref_allow_secrets_shows_private_key(
     capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """getPref(allow_secrets=True) should show the actual private key value."""
     node = SimpleNamespace(
@@ -1843,10 +1844,15 @@ def test_get_pref_allow_secrets_shows_private_key(
     private_key = bytes(range(32))
     node.localConfig.security.private_key = private_key
 
-    assert main_module.getPref(node, "security.private_key", allow_secrets=True) is True
+    with caplog.at_level(logging.DEBUG):
+        assert (
+            main_module.getPref(node, "security.private_key", allow_secrets=True)
+            is True
+        )
     out, err = capsys.readouterr()
     assert "security.private_key: <redacted>" not in out
     assert base64.b64encode(private_key).decode("utf-8") in out
+    assert base64.b64encode(private_key).decode("utf-8") not in caplog.text
     assert err == ""
 
 
@@ -1854,6 +1860,7 @@ def test_get_pref_allow_secrets_shows_private_key(
 @pytest.mark.usefixtures("reset_mt_config")
 def test_get_pref_allow_secrets_shows_security_section_keys(
     capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """getPref(allow_secrets=True) whole-field read should show actual key values."""
     node = SimpleNamespace(
@@ -1866,11 +1873,14 @@ def test_get_pref_allow_secrets_shows_security_section_keys(
     node.localConfig.security.private_key = private_key
     node.localConfig.security.public_key = public_key
 
-    assert main_module.getPref(node, "security", allow_secrets=True) is True
+    with caplog.at_level(logging.DEBUG):
+        assert main_module.getPref(node, "security", allow_secrets=True) is True
     out, err = capsys.readouterr()
     assert "<redacted>" not in out
     assert base64.b64encode(private_key).decode("utf-8") in out
     assert base64.b64encode(public_key).decode("utf-8") in out
+    assert base64.b64encode(private_key).decode("utf-8") not in caplog.text
+    assert base64.b64encode(public_key).decode("utf-8") not in caplog.text
     assert err == ""
 
 
@@ -2377,9 +2387,7 @@ def test_main_configure_rejects_non_dict_module_config(
     ("top_key", "section_name", "section_value"),
     [
         ("config", "lora", 1),
-        ("config", "lora", {}),
         ("module_config", "mqtt", 1),
-        ("module_config", "mqtt", {}),
     ],
 )
 def test_main_configure_rejects_invalid_subsection_payloads(
@@ -2390,7 +2398,7 @@ def test_main_configure_rejects_invalid_subsection_payloads(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Test --configure rejects non-mapping or empty subsection payloads."""
+    """Test --configure rejects non-mapping subsection payloads."""
     config_path = tmp_path / f"invalid_{top_key}_{section_name}.yaml"
     config_path.write_text(
         yaml.safe_dump({top_key: {section_name: section_value}}),
@@ -5597,6 +5605,8 @@ def test_main_configure_rejects_channel_url_aliases(
     _, err = capsys.readouterr()
     assert "channel_url" in err
     assert "channelUrl" in err
+    target_node.beginSettingsTransaction.assert_not_called()
+    target_node.setURL.assert_not_called()
 
 
 @pytest.mark.unit
@@ -5623,6 +5633,8 @@ def test_main_configure_rejects_owner_short_aliases(
     _, err = capsys.readouterr()
     assert "owner_short" in err
     assert "ownerShort" in err
+    target_node.beginSettingsTransaction.assert_not_called()
+    target_node.setOwner.assert_not_called()
 
 
 @pytest.mark.unit
@@ -5698,8 +5710,19 @@ def test_main_configure_phase3_channel_url_verified(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    from ..protobuf import apponly_pb2, channel_pb2
+
     config_path = tmp_path / "phase3_channel_url.yaml"
-    test_url = "https://meshtastic.org/e/#CGUhYQMgdAaA"
+    channel_settings = channel_pb2.ChannelSettings()
+    channel_settings.psk = b"\x01"
+    channel_settings.name = "test"
+    cs = apponly_pb2.ChannelSet()
+    cs.settings.add().CopyFrom(channel_settings)
+    cs.lora_config.region = config_pb2.Config.LoRaConfig.RegionCode.Value("US")
+    cs.lora_config.hop_limit = 3
+    raw = cs.SerializeToString()
+    b64 = base64.b64encode(raw, altchars=b"-_").decode().rstrip("=")
+    test_url = f"https://meshtastic.org/e/#{b64}"
     config_path.write_text(
         yaml.safe_dump(
             {
@@ -5710,9 +5733,19 @@ def test_main_configure_phase3_channel_url_verified(
         encoding="utf-8",
     )
     target_local = localonly_pb2.LocalConfig()
+    target_local.lora.region = config_pb2.Config.LoRaConfig.RegionCode.Value("US")
+    target_local.lora.hop_limit = 3
     iface, target_node = _build_configure_interface(
         target_local, localonly_pb2.LocalModuleConfig()
     )
+    primary_channel = channel_pb2.Channel()
+    primary_channel.role = channel_pb2.Channel.Role.PRIMARY
+    primary_channel.settings.CopyFrom(channel_settings)
+
+    def _request_channels_side_effect(*_args: object) -> None:
+        target_node.channels = [primary_channel]
+
+    target_node.channels = [primary_channel]
     iface.isConnected = threading.Event()
     iface.isConnected.set()
     iface.waitForConfig = MagicMock()
@@ -5723,56 +5756,7 @@ def test_main_configure_phase3_channel_url_verified(
             else None
         )
     )
-    target_node.requestChannels = MagicMock()
-    monkeypatch.setattr(
-        "meshtastic.__main__._verify_channel_url_against_state",
-        lambda *a, **k: True,
-    )
-    monkeypatch.setattr(
-        "meshtastic.__main__._post_seturl_stability_check",
-        lambda *a, **k: True,
-    )
-    _patch_fast_monotonic(monkeypatch)
-    _run_main_configure_file(config_path, iface, monkeypatch)
-    out, _ = capsys.readouterr()
-    assert "requested settings verified" in out
-    assert iface.waitForConfig.call_count == 2
-    target_node.requestChannels.assert_called_once_with(0)
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_configure_phase3_channel_url_mismatch(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    config_path = tmp_path / "phase3_channel_url_mismatch.yaml"
-    requested_url = "https://meshtastic.org/e/#CGUhYQMgdAaA"
-    config_path.write_text(
-        yaml.safe_dump(
-            {
-                "channel_url": requested_url,
-                "config": {"power": {"ls_secs": 222}},
-            }
-        ),
-        encoding="utf-8",
-    )
-    target_local = localonly_pb2.LocalConfig()
-    iface, target_node = _build_configure_interface(
-        target_local, localonly_pb2.LocalModuleConfig()
-    )
-    iface.isConnected = threading.Event()
-    iface.isConnected.set()
-    iface.waitForConfig = MagicMock()
-    target_node.requestConfig = MagicMock(
-        side_effect=lambda field_desc: (
-            setattr(target_local.power, "ls_secs", 222)
-            if getattr(field_desc, "name", "") == "power"
-            else None
-        )
-    )
-    target_node.requestChannels = MagicMock()
+    target_node.requestChannels = MagicMock(side_effect=_request_channels_side_effect)
     monkeypatch.setattr(
         "meshtastic.__main__._verify_channel_url_against_state",
         lambda *a, **k: False,

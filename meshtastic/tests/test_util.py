@@ -369,7 +369,7 @@ def test_findPorts_when_duplicate_found_and_duplicate_option_not_used(
     patch_comports.assert_called()
 
 
-@pytest.mark.unitslow
+@pytest.mark.unit
 @patch("serial.tools.list_ports.comports")
 @patch("glob.glob")
 @patch("os.path.isdir", return_value=True)
@@ -395,7 +395,7 @@ def test_findPorts_prefers_linux_by_id_alias_when_available(
     assert findPorts() == [by_id_alias]
 
 
-@pytest.mark.unitslow
+@pytest.mark.unit
 @patch("serial.tools.list_ports.comports")
 @patch("glob.glob", return_value=[])
 @patch("os.path.isdir", return_value=True)
@@ -692,9 +692,9 @@ def test_messageToJson_shows_all() -> None:
         "nodedbCount": 0,
     }
     for key, value in expected.items():
-        assert (
-            actual.get(key) == value
-        ), f"Key {key}: expected {value}, got {actual.get(key)}"
+        assert actual.get(key) == value, (
+            f"Key {key}: expected {value}, got {actual.get(key)}"
+        )
     # firmwareEdition presence only — value depends on proto enum default name
     assert "firmwareEdition" in actual
 
@@ -869,8 +869,10 @@ def test_fuzz_fromStr_hex_prefixed(hex_digits: str) -> None:
         min_size=1,
         max_size=64,
     ).filter(
-        lambda s: re.fullmatch(r"[0-9a-fA-F]+", s) is None
-        and not any(ch.isspace() for ch in s)
+        lambda s: (
+            re.fullmatch(r"[0-9a-fA-F]+", s) is None
+            and not any(ch.isspace() for ch in s)
+        )
     )
 )
 def test_fuzz_fromStr_hex_invalid_raises(hex_digits: str) -> None:
@@ -1003,15 +1005,15 @@ def test_tdeck_vid_pid_mapping() -> None:
         for d in supported_devices
         if d.usb_vendor_id_in_hex == "303a" and d.usb_product_id_in_hex == "1001"
     ]
-    assert (
-        len(tdeck_devices) == 1
-    ), "Expected exactly one T-Deck device with VID 303a and PID 1001"
-    assert (
-        tdeck_devices[0].name == "T-Deck"
-    ), f"Expected device name 'T-Deck', got '{tdeck_devices[0].name}'"
-    assert (
-        tdeck_devices[0].for_firmware == "t-deck"
-    ), f"Expected for_firmware 't-deck', got '{tdeck_devices[0].for_firmware}'"
+    assert len(tdeck_devices) == 1, (
+        "Expected exactly one T-Deck device with VID 303a and PID 1001"
+    )
+    assert tdeck_devices[0].name == "T-Deck", (
+        f"Expected device name 'T-Deck', got '{tdeck_devices[0].name}'"
+    )
+    assert tdeck_devices[0].for_firmware == "t-deck", (
+        f"Expected for_firmware 't-deck', got '{tdeck_devices[0].for_firmware}'"
+    )
 
 
 @pytest.mark.unit

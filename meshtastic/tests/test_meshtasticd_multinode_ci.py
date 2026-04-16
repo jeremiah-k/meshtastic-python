@@ -465,6 +465,25 @@ def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
     meshtastic_bin : str
         Path or name of the meshtastic CLI binary under test.
     """
+    baseline_export_path_a = (
+        tmp_path / "meshtasticd-multinode-a-baseline-blueprint.yaml"
+    )
+    baseline_export_path_b = (
+        tmp_path / "meshtasticd-multinode-b-baseline-blueprint.yaml"
+    )
+    _run_host_cli_ok(
+        HOST_A,
+        "--export-config",
+        str(baseline_export_path_a),
+        meshtastic_bin=meshtastic_bin,
+    )
+    _run_host_cli_ok(
+        HOST_B,
+        "--export-config",
+        str(baseline_export_path_b),
+        meshtastic_bin=meshtastic_bin,
+    )
+
     try:
         _wait_for_host_ready(HOST_A, meshtastic_bin)
         _wait_for_host_ready(HOST_B, meshtastic_bin)
@@ -584,6 +603,20 @@ def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
             label="blueprint-export-reuse-failure-host-b",
         )
         raise
+    finally:
+        for host, baseline_path in [
+            (HOST_A, baseline_export_path_a),
+            (HOST_B, baseline_export_path_b),
+        ]:
+            restore_rc = subprocess.run(  # noqa: S603
+                [meshtastic_bin, "--host", host, "--configure", str(baseline_path)],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=HOST_CONFIGURE_TIMEOUT_SECONDS,
+            ).returncode
+            if restore_rc == 0:
+                _wait_for_host_ready(host, meshtastic_bin)
 
 
 def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain(
@@ -601,7 +634,6 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
     """
     _wait_for_host_ready(HOST_A, meshtastic_bin)
 
-    _configure_channel_blueprint(HOST_A, meshtastic_bin)
     baseline_export_path = tmp_path / "meshtasticd-multinode-a-baseline.yaml"
     _run_host_cli_ok(
         HOST_A,
@@ -609,6 +641,8 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
         str(baseline_export_path),
         meshtastic_bin=meshtastic_bin,
     )
+
+    _configure_channel_blueprint(HOST_A, meshtastic_bin)
 
     body_failed = False
     try:
@@ -761,6 +795,8 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
                     f"refusing to continue with potentially mutated HOST_A state. "
                     f"See restore artifact: {restore_artifact}"
                 )
+        else:
+            _wait_for_host_ready(HOST_A, meshtastic_bin)
 
 
 @pytest.mark.xfail(
@@ -781,6 +817,21 @@ def test_meshtasticd_multinode_large_channel_url_replace_all_over_tcp(
     When the transport-robustness pass lands, this test should be
     changed from xfail to a regular passing test.
     """
+    baseline_export_path_a = tmp_path / "meshtasticd-multinode-a-baseline-xfail.yaml"
+    baseline_export_path_b = tmp_path / "meshtasticd-multinode-b-baseline-xfail.yaml"
+    _run_host_cli_ok(
+        HOST_A,
+        "--export-config",
+        str(baseline_export_path_a),
+        meshtastic_bin=meshtastic_bin,
+    )
+    _run_host_cli_ok(
+        HOST_B,
+        "--export-config",
+        str(baseline_export_path_b),
+        meshtastic_bin=meshtastic_bin,
+    )
+
     try:
         _wait_for_host_ready(HOST_A, meshtastic_bin)
         _wait_for_host_ready(HOST_B, meshtastic_bin)
@@ -867,3 +918,17 @@ def test_meshtasticd_multinode_large_channel_url_replace_all_over_tcp(
             label="large-replace-all-failure-host-b",
         )
         raise
+    finally:
+        for host, baseline_path in [
+            (HOST_A, baseline_export_path_a),
+            (HOST_B, baseline_export_path_b),
+        ]:
+            restore_rc = subprocess.run(  # noqa: S603
+                [meshtastic_bin, "--host", host, "--configure", str(baseline_path)],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=HOST_CONFIGURE_TIMEOUT_SECONDS,
+            ).returncode
+            if restore_rc == 0:
+                _wait_for_host_ready(host, meshtastic_bin)

@@ -89,9 +89,7 @@ class _SetUrlTransactionCoordinator:
             self._node._raise_interface_error(  # noqa: SLF001
                 "Interface localNode not initialized"
             )
-        admin_index_for_write = (
-            admin_write_node._get_admin_channel_index()
-        )  # noqa: SLF001
+        admin_index_for_write = admin_write_node._get_admin_channel_index()  # noqa: SLF001
         named_admin_index_for_write = (
             admin_write_node._get_named_admin_channel_index()  # noqa: SLF001
         )
@@ -107,10 +105,15 @@ class _SetUrlTransactionCoordinator:
         attempt_reconnect = getattr(iface, "_attempt_reconnect", None)
         if callable(attempt_reconnect):
             try:
-                reconnect_result = bool(attempt_reconnect())
-                if reconnect_result:
-                    logger.info("Transport reconnect hook reported success.")
-                    return True
+                reconnect_triggered = bool(attempt_reconnect())
+                if reconnect_triggered:
+                    is_connected = self._get_is_connected_event(iface)
+                    if self._event_is_set(is_connected):
+                        logger.info("Transport reconnect hook reported success.")
+                        return True
+                    logger.info(
+                        "Transport reconnect hook triggered; waiting for connection event."
+                    )
             except Exception:
                 logger.debug("Transport reconnect hook failed.", exc_info=True)
 
@@ -582,8 +585,7 @@ class _SetUrlTransactionCoordinator:
         )
         logger.error(
             "setURL replace-all failed at stage '%s' after %d attempt(s); "
-            "device may be partially configured. Phase 3 reconnect/verify did "
-            "not run because failure occurred during Phase 1. Local caches "
+            "device may be partially configured. Local caches "
             "invalidated — reconnect and reload before further operations.",
             _stage_label,
             attempts_used,
