@@ -391,7 +391,26 @@ class TestSetUrlTransactionCoordinator:
 
         coordinator._execution_engine.executeReplaceAll = _always_fail  # type: ignore[method-assign]
 
-        with pytest.raises(RuntimeError, match="persistent failure"):
+        # Simulate time passage so that config reload timeout is reached quickly
+        monotonic_time = [0.0]
+
+        def _mock_monotonic():
+            return monotonic_time[0]
+
+        def _mock_sleep(duration):
+            monotonic_time[0] += duration
+
+        with (
+            patch(
+                "meshtastic.node_runtime.seturl.coordinator.time.monotonic",
+                side_effect=_mock_monotonic,
+            ),
+            patch(
+                "meshtastic.node_runtime.seturl.coordinator.time.sleep",
+                side_effect=_mock_sleep,
+            ),
+            pytest.raises(RuntimeError, match="persistent failure"),
+        ):
             coordinator._apply_replace_all()
 
     @pytest.mark.unit

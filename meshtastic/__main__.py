@@ -1846,10 +1846,15 @@ def onConnected(interface: MeshInterface) -> None:
             interface.getNode(args.dest, False, **getNode_kwargs).factoryReset(
                 full=full
             )
+            # Guard the isinstance check: SerialInterface may be a mock or not resolve in tests.
+            _serial_interface_cls = getattr(
+                meshtastic.serial_interface, "SerialInterface", None
+            )
             if (
                 full
                 and _is_local_destination(interface, args.dest)
-                and isinstance(interface, meshtastic.serial_interface.SerialInterface)
+                and isinstance(_serial_interface_cls, type)
+                and isinstance(interface, _serial_interface_cls)
             ):
                 _post_factory_reset_ready_probe(interface)
 
