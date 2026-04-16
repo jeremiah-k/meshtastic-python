@@ -621,6 +621,7 @@ def _verify_config_sections(
     config_fields: dict[str, dict[str, Any]],
     proto_config: Any,
     label: str,
+    verified_fields: list[str] | None = None,
 ) -> bool:
     for section_name, yaml_values in config_fields.items():
         section_snake = meshtastic.util.camel_to_snake(section_name)
@@ -641,7 +642,10 @@ def _verify_config_sections(
                 ", ".join(mismatches),
             )
             return False
-        logger.info(
+        if verified_fields is not None:
+            for field_name in yaml_values:
+                verified_fields.append(f"{section_snake}.{field_name}")
+        logger.debug(
             "%s section %r verified (all requested field values match).",
             label,
             section_name,
@@ -662,6 +666,7 @@ def _verify_post_reconnect_config(
         return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
 
     target_node = interface.getNode(node_dest)
+    verified_fields: list[str] = []
 
     if verify_channel_url:
         local_config = getattr(target_node, "localConfig", None)
@@ -680,17 +685,21 @@ def _verify_post_reconnect_config(
                 "Channel URL verification: device state does not match requested URL."
             )
             return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-        logger.info(
-            "Channel URL verified (channels matched by name; PSK, uplink/downlink, and module settings match)."
-        )
+        verified_fields.append("channel_url")
 
     if verify_config_fields and not _verify_config_sections(
-        verify_config_fields, target_node.localConfig, "Config"
+        verify_config_fields,
+        target_node.localConfig,
+        "Config",
+        verified_fields=verified_fields,
     ):
         return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
 
     if verify_module_config_fields and not _verify_config_sections(
-        verify_module_config_fields, target_node.moduleConfig, "Module config"
+        verify_module_config_fields,
+        target_node.moduleConfig,
+        "Module config",
+        verified_fields=verified_fields,
     ):
         return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
 
@@ -699,6 +708,9 @@ def _verify_post_reconnect_config(
             "Post-reconnect verification did not complete: transport disconnected."
         )
         return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+
+    if verified_fields:
+        logger.info("Verified: %s", ", ".join(verified_fields))
 
     return _ConfigureReconnectResult.VERIFIED
 
@@ -1606,7 +1618,7 @@ def _handle_configure_command(
             )
             if _reconnect_result == _ConfigureReconnectResult.VERIFIED:
                 print(
-                    "Phase 3: Device reconnected, config reloaded, and requested settings verified."
+                    "Phase 3: Device reconnected and config reloaded. All settings verified."
                 )
             elif _reconnect_result == _ConfigureReconnectResult.VERIFICATION_INCOMPLETE:
                 print(
