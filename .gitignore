@@ -22,3 +22,8 @@ junit.xml
 .cursor/
 .codex
 meshtastic/tests/api_baselines/*_test.json
+.worktrees/
+
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md

@@ -64,7 +64,7 @@ def test_connect_raises_without_stream() -> None:
 def test_connect_warns_when_thread_already_alive(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Lines 202-205: connect() should warn and return when reader thread is still alive."""
+    """connect() should raise when reader thread from previous attempt is still alive."""
     iface = StreamInterface(noProto=True, connectNow=False)
     try:
         iface._provides_own_stream = True  # type: ignore[attr-defined]
@@ -73,9 +73,11 @@ def test_connect_warns_when_thread_already_alive(
         iface._rxThread = MagicMock()
         iface._rxThread.is_alive.return_value = True
         with patch.object(iface, "_start_config") as start_config:
-            with caplog.at_level("WARNING"):
+            with pytest.raises(
+                StreamInterface.StreamInterfaceError,
+                match="reader thread from previous attempt is still alive",
+            ):
                 iface.connect()
-        assert "connect() called while reader thread is still alive" in caplog.text
         start_config.assert_not_called()
     finally:
         iface.close()
@@ -310,6 +312,35 @@ def test_reader_handles_stream_closed_error_unexpectedly() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_reader_fails_fast_on_bootstrap_no_data_stream_closed() -> None:
+    """Bootstrap EOF stream-close should fail fast instead of consuming retry backoff."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        stream = MagicMock()
+        stream.is_open = True
+        iface.stream = stream
+        iface.isConnected.clear()
+        with (
+            patch.object(
+                iface,
+                "_read_bytes",
+                side_effect=StreamInterface.StreamClosedError(
+                    "device reports readiness to read but returned no data"
+                ),
+            ),
+            patch("time.sleep") as sleep_mock,
+            patch.object(iface, "_disconnected"),
+        ):
+            iface._reader()
+        # No transient bootstrap backoff sleep should run on fail-fast EOF closure.
+        sleep_mock.assert_not_called()
+        assert iface._last_disconnect_source == "stream.closed"
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_reader_handles_stream_closed_error_during_close() -> None:
     """Lines 536-538: _reader should use close_requested source when StreamClosedError during close."""
     iface = StreamInterface(noProto=True, connectNow=False)
@@ -362,6 +393,48 @@ def test_reader_handles_os_error_wrapped_during_close() -> None:
         with patch.object(iface, "_disconnected"):
             iface._reader()
         # When wantExit is True, any exception is treated as close_requested
+        assert iface._last_disconnect_source == "stream.close_requested"
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_reader_handles_transport_fd_type_error_wrapped_as_stream_closed() -> None:
+    """_reader should treat transport fd-state TypeError as stream closed."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        stream = MagicMock()
+        stream.is_open = True
+        stream.read.side_effect = TypeError(
+            "'NoneType' object cannot be interpreted as an integer"
+        )
+        iface.stream = stream
+
+        with patch.object(iface, "_disconnected") as mock_disconnect:
+            iface._reader()
+        assert iface._last_disconnect_source == "stream.closed"
+        mock_disconnect.assert_called_once()
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_reader_handles_transport_fd_type_error_wrapped_during_close() -> None:
+    """_reader should treat fd-state TypeError during close as close_requested."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        stream = MagicMock()
+        stream.is_open = True
+        stream.read.side_effect = TypeError(
+            "'NoneType' object cannot be interpreted as an integer"
+        )
+        iface.stream = stream
+        iface._wantExit = True
+
+        with patch.object(iface, "_disconnected"):
+            iface._reader()
         assert iface._last_disconnect_source == "stream.close_requested"
     finally:
         iface.close()

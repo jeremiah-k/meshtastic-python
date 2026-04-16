@@ -25,12 +25,29 @@ WINDOWS11_WRITE_DELAY = 1.0  # Extended post-write delay on Windows 11.
 READER_THREAD_JOIN_TIMEOUT = 2.0  # Reader thread join timeout during shutdown.
 READER_IDLE_BACKOFF_SECONDS = 0.01  # Backoff when read loop receives no bytes.
 WRITE_PROGRESS_TIMEOUT_SECONDS = 10.0  # Guard against indefinitely stalled writes.
+TRANSIENT_READ_MAX_RETRIES = 3  # Max retries for transient USB CDC read failures.
+TRANSIENT_READ_BACKOFF_SECONDS = 0.1  # Backoff between transient read retries.
+BOOTSTRAP_TRANSIENT_READ_TIMEOUT_SECONDS = 5.0
+"""Transient read retry window while initial connection is still bootstrapping."""
+MAX_TRANSIENT_READ_BACKOFF_SECONDS = 0.5
+"""Cap retry backoff during transient read recovery."""
+BOOTSTRAP_STREAM_CLOSED_FAILFAST_MARKERS: tuple[str, ...] = (
+    "device reports readiness to read but returned no data",
+    "stream is not available",
+)
+"""Stream-close messages that should fail fast during bootstrap instead of spinning retries."""
 
 STREAM_IO_EXCEPTIONS = (
     OSError,
     ValueError,
     serial.SerialException,
     serial.SerialTimeoutException,
+)
+_TRANSPORT_FD_STATE_TYPEERROR_MARKERS: tuple[str, ...] = (
+    "fd is none",
+    "'nonetype' object cannot be interpreted as an integer",
+    "nonetype object cannot be interpreted as an integer",
+    "an integer is required (got type nonetype)",
 )
 # Suppress TypeError during best-effort close for half-torn-down stream objects
 # without broadening read/write-path exception handling.
@@ -43,6 +60,24 @@ STREAM_WRITE_EXCEPTIONS = STREAM_IO_EXCEPTIONS
 STREAM_READ_EXCEPTIONS = STREAM_IO_EXCEPTIONS
 
 logger = logging.getLogger(__name__)
+
+
+def _is_transport_fd_state_type_error(exc: TypeError) -> bool:
+    """Return whether a TypeError indicates a transient fd/state race."""
+    message = str(exc).casefold()
+    return any(marker in message for marker in _TRANSPORT_FD_STATE_TYPEERROR_MARKERS)
+
+
+def _is_bootstrap_stream_closed_retryable(
+    exc: "StreamInterface.StreamClosedError",
+) -> bool:
+    """Return whether bootstrap should retry after a StreamClosedError."""
+    message = str(exc).casefold()
+    if not message:
+        return True
+    return not any(
+        marker in message for marker in BOOTSTRAP_STREAM_CLOSED_FAILFAST_MARKERS
+    )
 
 
 class StreamInterface(MeshInterface):
@@ -194,18 +229,19 @@ class StreamInterface(MeshInterface):
                     "connect() called while close() is in progress; ignoring request"
                 )
                 return
+            if self._rxThread.is_alive():
+                raise StreamInterface.StreamInterfaceError(
+                    "Cannot reconnect: reader thread from previous attempt is still alive"
+                )
+            self._ensure_stream_for_connect_locked(requires_stream=requires_stream)
             if self.stream is None and requires_stream:
                 raise StreamInterface.StreamInterfaceError(
                     StreamInterface.StreamInterfaceError.CONNECT_WITHOUT_STREAM_MSG
                 )
-            if self._rxThread.is_alive():
-                logger.warning(
-                    "connect() called while reader thread is still alive; ignoring request"
-                )
-                return
             # All reconnect side effects happen under the same lock so a concurrent
             # close() intent is not accidentally cleared by an early-return connect().
             self._wantExit = False
+            self._prepare_for_connect()
             should_wake_stream = requires_stream and self.stream is not None
             if should_wake_stream:
                 # Send bogus UART characters to wake sleeping devices and force parser
@@ -231,6 +267,27 @@ class StreamInterface(MeshInterface):
             with contextlib.suppress(Exception):
                 self._join_reader_thread()
             raise
+
+    def _ensure_stream_for_connect_locked(self, *, requires_stream: bool) -> None:
+        """Initialize or reopen stream under connect lock in subclasses."""
+        _ = requires_stream
+
+    def _connect_wait_should_abort(self) -> str | None:
+        """Return abort reason when connection wait should fail fast, else None."""
+        if self._wantExit:
+            return "Connection cancelled while waiting for completion"
+        stream = self.stream
+        if not getattr(self, "_provides_own_stream", False):
+            if stream is None or not getattr(stream, "is_open", True):
+                return "Connection lost while waiting for connection completion (stream closed)"
+        reader_thread = getattr(self, "_rxThread", None)
+        if reader_thread is not None and not reader_thread.is_alive():
+            disconnect_source = getattr(self, "_last_disconnect_source", "unknown")
+            return (
+                "Connection lost while waiting for connection completion "
+                f"({disconnect_source})"
+            )
+        return None
 
     def _close_stream_safely(self) -> None:
         """Best-effort close and clear of the underlying stream handle."""
@@ -339,6 +396,12 @@ class StreamInterface(MeshInterface):
         try:
             data = s.read(length)
         except STREAM_READ_EXCEPTIONS as exc:
+            raise StreamInterface.StreamClosedError(
+                str(exc) or StreamInterface.StreamClosedError.DEFAULT_MSG
+            ) from exc
+        except TypeError as exc:
+            if not _is_transport_fd_state_type_error(exc):
+                raise
             raise StreamInterface.StreamClosedError(
                 str(exc) or StreamInterface.StreamClosedError.DEFAULT_MSG
             ) from exc
@@ -467,10 +530,52 @@ class StreamInterface(MeshInterface):
 
         try:
             while not self._wantExit:
-                # logger.debug("reading character")
                 # Read a single byte at a time because log lines and framed protobuf
                 # payloads are multiplexed on the same stream.
-                b = self._read_bytes(1)
+                transient_retries = 0
+                bootstrap_deadline: float | None = None
+                while True:
+                    try:
+                        b = self._read_bytes(1)
+                        break
+                    except StreamInterface.StreamClosedError as exc:
+                        if self._wantExit:
+                            raise
+                        s = self.stream
+                        if s is None or not getattr(s, "is_open", True):
+                            raise
+                        if not self.isConnected.is_set():
+                            if not _is_bootstrap_stream_closed_retryable(exc):
+                                raise
+                            if bootstrap_deadline is None:
+                                bootstrap_deadline = (
+                                    time.monotonic()
+                                    + BOOTSTRAP_TRANSIENT_READ_TIMEOUT_SECONDS
+                                )
+                            if time.monotonic() < bootstrap_deadline:
+                                transient_retries += 1
+                                logger.debug(
+                                    "Transient bootstrap read error (attempt %d), retrying...",
+                                    transient_retries,
+                                )
+                                time.sleep(
+                                    min(
+                                        TRANSIENT_READ_BACKOFF_SECONDS
+                                        * transient_retries,
+                                        MAX_TRANSIENT_READ_BACKOFF_SECONDS,
+                                    )
+                                )
+                                continue
+                            raise
+                        if transient_retries >= TRANSIENT_READ_MAX_RETRIES:
+                            raise
+                        transient_retries += 1
+                        logger.debug(
+                            "Transient read error (attempt %d/%d), retrying...",
+                            transient_retries,
+                            TRANSIENT_READ_MAX_RETRIES,
+                        )
+                        time.sleep(TRANSIENT_READ_BACKOFF_SECONDS * transient_retries)
                 # logger.debug("In reader loop")
                 # logger.debug(f"read returned {b}")
                 if b:
@@ -538,7 +643,13 @@ class StreamInterface(MeshInterface):
                 logger.debug("Stream closed during shutdown: %s", ex)
             else:
                 disconnect_source = "stream.closed"
-                logger.warning("Stream closed unexpectedly: %s", ex)
+                if self.isConnected.is_set():
+                    logger.warning("Stream closed unexpectedly: %s", ex)
+                else:
+                    logger.info(
+                        "Stream closed during connection bootstrap; waiting for reconnect: %s",
+                        ex,
+                    )
         except OSError:
             if (
                 not self._wantExit

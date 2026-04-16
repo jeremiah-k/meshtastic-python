@@ -44,7 +44,6 @@ class TestSetUrlReplaceExecutionState:
 
         assert not state.written_channel_indices
         assert state.lora_write_started is False
-        assert not state.rollback_admin_indexes_for_write
 
     @pytest.mark.unit
     def test_state_tracks_writes(self) -> None:
@@ -59,16 +58,3 @@ class TestSetUrlReplaceExecutionState:
         new_state = _SetUrlReplaceExecutionState()
         assert not new_state.written_channel_indices
         assert new_state.lora_write_started is False
-
-    @pytest.mark.unit
-    def test_state_with_initial_rollback_indexes(self) -> None:
-        """State can be initialized with rollback admin indexes."""
-        state = _SetUrlReplaceExecutionState(rollback_admin_indexes_for_write=[0, 1])
-
-        assert state.rollback_admin_indexes_for_write == [0, 1]
-
-        # Verify defaults are not shared across instances
-        new_state = _SetUrlReplaceExecutionState()
-        assert not new_state.written_channel_indices
-        assert new_state.lora_write_started is False
-        assert not new_state.rollback_admin_indexes_for_write

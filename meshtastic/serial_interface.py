@@ -6,6 +6,7 @@ Meshtastic devices via USB/serial connections.
 
 import contextlib
 import logging
+import os
 import sys
 import time
 import types
@@ -25,11 +26,28 @@ DEFAULT_BAUD_RATE = 115200
 SERIAL_READ_TIMEOUT = 0.5
 """Default read timeout for serial operations (seconds)."""
 
-SERIAL_WRITE_TIMEOUT = 0.5
-"""Default write timeout for serial operations (seconds)."""
+SERIAL_WRITE_TIMEOUT = 3.0
+"""Default write timeout for serial operations (seconds).
+
+Increased from 0.5s to accommodate rapid-fire admin messages during
+setURL replace-all operations, which write up to 8 channel snapshots
+plus LoRa config in quick succession over serial connections.
+"""
 
 SERIAL_SETTLING_DELAY = 0.1
 """Delay for serial port operations to settle (seconds)."""
+
+SERIAL_CONNECT_RETRY_DELAY_SECONDS = 1.5
+"""Delay between serial connect retry attempts."""
+
+SERIAL_CONNECT_STREAM_CLOSED_RETRY_DELAY_SECONDS = 0.25
+"""Short retry delay when previous connect attempt died in bootstrap stream close."""
+
+SERIAL_CONNECT_RETRY_BUDGET_SECONDS = 20.0
+"""Total retry window for transient serial reconnect failures."""
+
+SERIAL_CONNECT_MAX_ATTEMPTS = 12
+"""Hard cap on serial connect attempts within the retry window."""
 
 SERIAL_PORT_PATH_EMPTY_ERROR = (
     "Serial port path cannot be empty; pass None to auto-detect."
@@ -38,6 +56,81 @@ SERIAL_PORT_PATH_EMPTY_ERROR = (
 
 class SerialInterface(StreamInterface):
     """Interface class for meshtastic devices over a serial link."""
+
+    devPath: str | None
+    stream: serial.Serial | BinaryIO | None
+
+    def _open_serial_stream(self) -> serial.Serial:
+        """Open and return a configured serial stream for this interface."""
+        if self.devPath is None:
+            resolved_dev_path = self._resolve_dev_path()
+            if resolved_dev_path is None:
+                raise self.MeshInterfaceError(
+                    "No serial Meshtastic device detected for reconnect."
+                )
+            self.devPath = resolved_dev_path
+
+        if not getattr(self, "noProto", False) and not os.path.exists(self.devPath):
+            raise self.MeshInterfaceError(
+                f"Serial port {self.devPath} does not exist (device disconnected)"
+            )
+
+        serial_kwargs: dict[str, Any] = {
+            "port": None,
+            "baudrate": DEFAULT_BAUD_RATE,
+            "timeout": SERIAL_READ_TIMEOUT,
+            "write_timeout": SERIAL_WRITE_TIMEOUT,
+            "rtscts": False,
+            "dsrdtr": False,
+        }
+        if sys.platform != "win32":
+            serial_kwargs["exclusive"] = True
+
+        # Avoid opening with default asserted control lines.  Some USB/MCU
+        # combinations treat DTR/RTS transitions as reset triggers.
+        logger.info(
+            "Opening serial stream on %s (baud=%d, exclusive=%s)",
+            self.devPath,
+            DEFAULT_BAUD_RATE,
+            serial_kwargs.get("exclusive", False),
+        )
+        stream = serial.Serial(**serial_kwargs)
+        stream.port = self.devPath
+        # Keep DTR asserted so USB CDC output remains active on nRF52 boards.
+        stream.dtr = True
+        # Keep RTS deasserted to avoid accidental reset-line pulses on some adapters.
+        stream.rts = False
+        stream.open()
+        logger.info(
+            "Serial stream opened: port=%s is_open=%s dtr=%s rts=%s",
+            self.devPath,
+            getattr(stream, "is_open", None),
+            getattr(stream, "dtr", None),
+            getattr(stream, "rts", None),
+        )
+
+        if sys.platform != "win32":
+            self._clear_hupcl_on_fd(stream.fileno())
+            time.sleep(SERIAL_SETTLING_DELAY)
+
+        stream.flush()
+        time.sleep(SERIAL_SETTLING_DELAY)
+        if stream.in_waiting:
+            stream.reset_input_buffer()
+        return stream
+
+    @staticmethod
+    def _clear_hupcl_on_fd(fd: int) -> None:
+        """Clear the HUPCL flag on an already-open serial file descriptor.
+
+        This prevents the kernel from de-asserting DTR on last close, which
+        would reboot many Meshtastic devices (nRF52, RAK4631, etc.).
+        """
+        import termios  # pylint: disable=C0415,E0401
+
+        attrs = termios.tcgetattr(fd)
+        attrs[2] = attrs[2] & ~termios.HUPCL
+        termios.tcsetattr(fd, termios.TCSAFLUSH, attrs)
 
     def _resolve_dev_path(self) -> str | None:
         """Return an explicit or auto-detected serial device path.
@@ -111,14 +204,13 @@ class SerialInterface(StreamInterface):
             When multiple serial ports are detected and none was explicitly specified.
         """
         self.noProto = noProto
-        self.stream: serial.Serial | BinaryIO | None = (
-            None  # Initialize early for safe cleanup
-        )
+        self.stream = None  # Initialize early for safe cleanup
+        self._dev_path_auto_detected = False
 
-        self.devPath: str | None = devPath
+        self.devPath = devPath
         resolved_dev_path = self._resolve_dev_path()
         if resolved_dev_path is None:
-            logger.warning(
+            logger.info(
                 "No serial Meshtastic device detected; creating StreamInterface fallback without a serial connection."
             )
             # Ensure base classes are initialized so close() is safe.
@@ -133,30 +225,13 @@ class SerialInterface(StreamInterface):
             )
             return
         self.devPath = resolved_dev_path
+        self._dev_path_auto_detected = devPath is None
 
         logger.debug("Connecting to %s", self.devPath)
 
-        if sys.platform != "win32":
-            with open(self.devPath, encoding="utf8") as f:
-                self._set_hupcl_with_termios(f)
-            time.sleep(SERIAL_SETTLING_DELAY)
-
-        serial_kwargs: dict[str, Any] = {
-            "timeout": SERIAL_READ_TIMEOUT,
-            "write_timeout": SERIAL_WRITE_TIMEOUT,
-        }
-        if sys.platform != "win32":
-            serial_kwargs["exclusive"] = True
-
-        self.stream = serial.Serial(
-            self.devPath,
-            DEFAULT_BAUD_RATE,
-            **serial_kwargs,
-        )
+        self.stream = self._open_serial_stream()
         initialized = False
         try:
-            self.stream.flush()
-            time.sleep(SERIAL_SETTLING_DELAY)
             super().__init__(
                 debugOut=debugOut,
                 noProto=noProto,
@@ -175,24 +250,116 @@ class SerialInterface(StreamInterface):
                         self.stream.close()
                     self.stream = None
 
-    def _set_hupcl_with_termios(self, f: IO[str]) -> None:
-        """Clear the terminal HUPCL (hang-up-on-close) flag for the given device file to prevent the device from rebooting when RTS/DTR change.
+    def connect(self) -> None:
+        """Reconnect by reopening serial stream when needed, then run StreamInterface connect."""
+        connect_start = time.monotonic()
+        retry_deadline = time.monotonic() + SERIAL_CONNECT_RETRY_BUDGET_SECONDS
+        for attempt in range(1, SERIAL_CONNECT_MAX_ATTEMPTS + 1):
+            attempt_start = time.monotonic()
+            stream = self.stream
+            logger.info(
+                "Serial connect attempt %d/%d starting: devPath=%s stream_open=%s last_disconnect_source=%s",
+                attempt,
+                SERIAL_CONNECT_MAX_ATTEMPTS,
+                self.devPath,
+                (getattr(stream, "is_open", None) if stream is not None else None),
+                getattr(self, "_last_disconnect_source", "unknown"),
+            )
+            try:
+                super().connect()
+                logger.info(
+                    "Serial connect attempt %d succeeded in %.2fs (total elapsed %.2fs).",
+                    attempt,
+                    time.monotonic() - attempt_start,
+                    time.monotonic() - connect_start,
+                )
+                return
+            except Exception as exc:
+                if not self._is_retryable_connect_error(exc):
+                    logger.error(
+                        "Serial connect attempt %d failed with non-retryable error after %.2fs: %s",
+                        attempt,
+                        time.monotonic() - connect_start,
+                        exc,
+                    )
+                    raise
+                remaining = retry_deadline - time.monotonic()
+                if attempt >= SERIAL_CONNECT_MAX_ATTEMPTS or remaining <= 0:
+                    logger.error(
+                        "Serial connect retry budget exhausted after %.2fs (attempt %d/%d). Last error: %s",
+                        time.monotonic() - connect_start,
+                        attempt,
+                        SERIAL_CONNECT_MAX_ATTEMPTS,
+                        exc,
+                    )
+                    raise
+                disconnect_source = getattr(self, "_last_disconnect_source", "unknown")
+                retry_delay_base = SERIAL_CONNECT_RETRY_DELAY_SECONDS
+                if disconnect_source == "stream.closed":
+                    retry_delay_base = SERIAL_CONNECT_STREAM_CLOSED_RETRY_DELAY_SECONDS
+                retry_delay = min(retry_delay_base, remaining)
+                logger.warning(
+                    "Serial connect attempt %d/%d failed: %s. Retrying in %.1fs (%.1fs retry budget remaining). "
+                    "stream_open=%s last_disconnect_source=%s",
+                    attempt,
+                    SERIAL_CONNECT_MAX_ATTEMPTS,
+                    exc,
+                    retry_delay,
+                    remaining,
+                    (
+                        getattr(self.stream, "is_open", None)
+                        if self.stream is not None
+                        else None
+                    ),
+                    disconnect_source,
+                )
+                with self._connect_lock:
+                    with contextlib.suppress(
+                        OSError, ValueError, serial.SerialException
+                    ):
+                        if self.stream is not None and getattr(
+                            self.stream, "is_open", True
+                        ):
+                            self.stream.close()
+                    self.stream = None
+                if self._dev_path_auto_detected:
+                    self.devPath = None
+                time.sleep(retry_delay)
 
-        On Windows this is a no-op.
-
-        Parameters
-        ----------
-        f : IO[str]
-            Open file-like handle for the serial device whose terminal attributes will be adjusted.
-        """
-        if sys.platform == "win32":
+    def _ensure_stream_for_connect_locked(self, *, requires_stream: bool) -> None:
+        """Open/reopen serial stream atomically under StreamInterface connect lock."""
+        if not requires_stream:
             return
+        if self.stream is None or not getattr(self.stream, "is_open", True):
+            self.stream = self._open_serial_stream()
 
-        import termios  # pylint: disable=C0415,E0401
+    def _is_retryable_connect_error(self, exc: Exception) -> bool:
+        """Return True when serial connect failures are likely transient."""
+        if isinstance(
+            exc,
+            (
+                serial.SerialException,
+                OSError,
+                StreamInterface.StreamClosedError,
+            ),
+        ):
+            return True
+        message = str(exc)
+        if isinstance(exc, self.MeshInterfaceError):
+            return (
+                "Timed out waiting for connection completion" in message
+                or "Connection lost while waiting for connection completion" in message
+                or "No serial Meshtastic device detected for reconnect." in message
+            )
+        return False
 
-        attrs = termios.tcgetattr(f)
-        attrs[2] = attrs[2] & ~termios.HUPCL
-        termios.tcsetattr(f, termios.TCSAFLUSH, attrs)
+    def _set_hupcl_with_termios(self, f: IO[str]) -> None:
+        """No-op retained for test compatibility.
+
+        HUPCL is now cleared via _clear_hupcl_on_fd() after serial.Serial()
+        opens the port, avoiding a double-open that causes DTR transitions on
+        some devices (e.g. nRF52840/RAK4631).
+        """
 
     def __repr__(self) -> str:
         """Provide a concise, machine-readable representation of the SerialInterface instance.

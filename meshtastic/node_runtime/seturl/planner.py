@@ -12,7 +12,7 @@ from meshtastic.node_runtime.seturl.parser import _SetUrlParsedInput
 from meshtastic.node_runtime.shared import (
     isNamedAdminChannelName as _isNamedAdminChannelName,
 )
-from meshtastic.protobuf import channel_pb2, config_pb2
+from meshtastic.protobuf import channel_pb2
 
 if TYPE_CHECKING:
     from meshtastic.node import Node
@@ -33,7 +33,6 @@ class _SetUrlAddOnlyPlan:
     original_channels_ref: list[channel_pb2.Channel]
     original_channels_fingerprint: tuple[bytes, ...]
     original_channels_by_index: dict[int, channel_pb2.Channel]
-    original_lora_config: config_pb2.Config.LoRaConfig | None
 
 
 @dataclass
@@ -43,14 +42,11 @@ class _SetUrlReplacePlan:
     max_channels: int
     replace_original_channels_ref: list[channel_pb2.Channel]
     replace_original_channels_fingerprint: tuple[bytes, ...]
-    replace_original_channels_snapshot: list[channel_pb2.Channel]
-    replace_original_channels_by_index: dict[int, channel_pb2.Channel]
     staged_channels: list[channel_pb2.Channel]
     staged_channels_by_index: dict[int, channel_pb2.Channel]
     deferred_new_named_admin_channel: channel_pb2.Channel | None
     deferred_new_named_admin_index: int | None
     deferred_previous_admin_slot_channel: channel_pb2.Channel | None
-    replace_original_lora_config: config_pb2.Config.LoRaConfig | None
 
 
 class _SetUrlAddOnlyPlanner:
@@ -67,27 +63,7 @@ class _SetUrlAddOnlyPlanner:
         self._parsed_input = parsed_input
         self._admin_context = admin_context
 
-    def capture_original_lora_snapshot(self) -> config_pb2.Config.LoRaConfig | None:
-        """Capture original LoRa config snapshot for addOnly rollback when needed."""
-        if not self._parsed_input.has_lora_update:
-            return None
-
-        def _capture() -> config_pb2.Config.LoRaConfig:
-            if not self._node.localConfig.HasField("lora"):
-                self._node._raise_interface_error(  # noqa: SLF001
-                    "LoRa config must be loaded before setURL(addOnly=True)"
-                )
-            original_lora_config = config_pb2.Config.LoRaConfig()
-            original_lora_config.CopyFrom(self._node.localConfig.lora)
-            return original_lora_config
-
-        return self._node._execute_with_node_db_lock(_capture)
-
-    def build_plan(
-        self,
-        *,
-        original_lora_config: config_pb2.Config.LoRaConfig | None,
-    ) -> _SetUrlAddOnlyPlan:
+    def build_plan(self) -> _SetUrlAddOnlyPlan:
         """Build addOnly staging plan, dedupe selection, and deferred admin handling."""
         ignored_channel_names: list[str] = []
         channels_to_write: list[tuple[channel_pb2.Channel, str]] = []
@@ -169,7 +145,6 @@ class _SetUrlAddOnlyPlanner:
             original_channels_ref=original_channels_ref,
             original_channels_fingerprint=original_channels_fingerprint,
             original_channels_by_index=original_channels_by_index,
-            original_lora_config=original_lora_config,
         )
 
 
@@ -199,32 +174,7 @@ class _SetUrlReplacePlanner:
                 )
             replace_original_channels_ref = channels
             max_channels = len(channels)
-            replace_original_channels_snapshot: list[channel_pb2.Channel] = []
-            replace_original_channels_by_index: dict[int, channel_pb2.Channel] = {}
-            for existing_channel in channels:
-                channel_snapshot = channel_pb2.Channel()
-                channel_snapshot.CopyFrom(existing_channel)
-                replace_original_channels_snapshot.append(channel_snapshot)
-                replace_original_channels_by_index[existing_channel.index] = (
-                    channel_snapshot
-                )
             replace_original_channels_fingerprint = _channels_fingerprint(channels)
-
-        replace_original_lora_config: config_pb2.Config.LoRaConfig | None = None
-        if self._parsed_input.has_lora_update:
-
-            def _capture_replace_lora() -> config_pb2.Config.LoRaConfig:
-                if not self._node.localConfig.HasField("lora"):
-                    self._node._raise_interface_error(  # noqa: SLF001
-                        "LoRa config must be loaded before setURL() when the URL updates LoRa settings"
-                    )
-                snapshot = config_pb2.Config.LoRaConfig()
-                snapshot.CopyFrom(self._node.localConfig.lora)
-                return snapshot
-
-            replace_original_lora_config = self._node._execute_with_node_db_lock(
-                _capture_replace_lora
-            )
 
         staged_channels: list[channel_pb2.Channel] = []
         for i, channel_settings in enumerate(self._parsed_input.channel_set.settings):
@@ -291,12 +241,9 @@ class _SetUrlReplacePlanner:
             max_channels=max_channels,
             replace_original_channels_ref=replace_original_channels_ref,
             replace_original_channels_fingerprint=replace_original_channels_fingerprint,
-            replace_original_channels_snapshot=replace_original_channels_snapshot,
-            replace_original_channels_by_index=replace_original_channels_by_index,
             staged_channels=staged_channels,
             staged_channels_by_index=staged_channels_by_index,
             deferred_new_named_admin_channel=deferred_new_named_admin_channel,
             deferred_new_named_admin_index=deferred_new_named_admin_index,
             deferred_previous_admin_slot_channel=deferred_previous_admin_slot_channel,
-            replace_original_lora_config=replace_original_lora_config,
         )

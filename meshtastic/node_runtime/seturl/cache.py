@@ -104,52 +104,9 @@ class _SetUrlCacheManager:
             self._node.partialChannels = []
 
     def invalidate_channel_cache(self, warning_message: str) -> None:
-        """Invalidate local channel cache after incomplete rollback."""
+        """Invalidate local channel cache after partial failure."""
         with self._node._channels_lock:  # noqa: SLF001
             self._invalidate_channel_cache_locked(warning_message)
-
-    def restore_replace_channels_snapshot(
-        self,
-        replace_original_channels_snapshot: list[channel_pb2.Channel],
-        *,
-        expected_channels_fingerprint: tuple[bytes, ...] | None = None,
-        expected_channels_ref: list[channel_pb2.Channel] | None = None,
-    ) -> None:
-        """Restore replace-all channel cache from pre-transaction snapshot."""
-        with self._node._channels_lock:  # noqa: SLF001
-            channels = self._node.channels
-            channels_changed = False
-            if channels is None and (
-                expected_channels_ref is not None
-                or expected_channels_fingerprint is not None
-            ):
-                channels_changed = True
-            if (
-                expected_channels_ref is not None
-                and channels is not None
-                and channels is not expected_channels_ref
-            ):
-                channels_changed = True
-            if (
-                not channels_changed
-                and expected_channels_fingerprint is not None
-                and channels is not None
-            ):
-                channels_changed = (
-                    _channels_fingerprint(channels) != expected_channels_fingerprint
-                )
-            if channels_changed:
-                self._invalidate_channel_cache_locked(
-                    "Channel cache changed during replace-all rollback restore; invalidating local channel cache."
-                )
-                return
-            restored_channels: list[channel_pb2.Channel] = []
-            for original_channel in replace_original_channels_snapshot:
-                restored_channel = channel_pb2.Channel()
-                restored_channel.CopyFrom(original_channel)
-                restored_channels.append(restored_channel)
-            self._node.channels = restored_channels
-            self._node.partialChannels = []
 
     def apply_lora_success(self, lora_config: config_pb2.Config.LoRaConfig) -> None:
         """Apply successful LoRa cache update."""
@@ -159,19 +116,13 @@ class _SetUrlCacheManager:
 
         self._node._execute_with_node_db_lock(_apply)
 
-    def restore_lora_snapshot(
-        self,
-        original_lora_config: config_pb2.Config.LoRaConfig,
-    ) -> None:
-        """Restore LoRa cache from pre-transaction snapshot."""
-
-        def _restore() -> None:
-            self._node.localConfig.lora.CopyFrom(original_lora_config)
-
-        self._node._execute_with_node_db_lock(_restore)
-
     def clear_lora_cache_with_warning(self, warning_message: str) -> None:
-        """Clear LoRa cache when rollback cannot restore prior value."""
+        """Clear the local LoRa config cache after a partial failure.
+
+        Removes the locally-cached LoRa configuration so that subsequent
+        reads will fetch fresh state from the device.  The caller is
+        responsible for logging the reason via *warning_message*.
+        """
 
         def _clear() -> None:
             self._node.localConfig.ClearField("lora")

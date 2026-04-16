@@ -5,7 +5,9 @@
 # pylint: disable=R0917,C0302
 
 import argparse
+import binascii
 import contextlib
+import enum
 import getpass
 import importlib
 import logging
@@ -25,6 +27,10 @@ import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
 from meshtastic import BROADCAST_ADDR, LOCAL_ADDR, mt_config, remote_hardware
+from meshtastic.configure_verify import (
+    _verify_channel_url_against_state,
+    _verify_requested_fields,
+)
 from meshtastic.host_port import parseHostAndPort
 from meshtastic.interfaces.ble import BLEInterface
 from meshtastic.mesh_interface import MeshInterface
@@ -106,6 +112,44 @@ logger = logging.getLogger(__name__)
 
 # Delay after applying configuration changes (owner, channel, etc.)
 CONFIG_APPLY_DELAY_SECONDS = 0.5
+
+# Delay after setURL operations, which write up to 8 channel snapshots
+# plus LoRa config; the device needs extra time to commit all changes
+# before accepting further admin messages.
+CONFIG_SETURL_DELAY_SECONDS = 2.0
+
+CONFIG_COMMIT_SETTLE_SECONDS = 1.0
+"""Settle delay after commitSettingsTransaction before assuming the session may end."""
+
+CONFIG_RECONNECT_WAIT_SECONDS = 15.0
+"""Maximum time to wait for device reconnect after a reboot-capable configure commit."""
+
+SETURL_STABILITY_TIMEOUT_SECONDS = 30.0
+"""Timeout for post-setURL transport stability before opening Phase 2 writes."""
+
+FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS = 20.0
+"""Timeout for post-reset reconnect probe inside factory-reset command."""
+
+CONFIGURE_PHASE1_HEADER = (
+    "Phase 1: Applying direct configuration "
+    "(channel URL updates may trigger reconnect/reboot)..."
+)
+"""Printed once when --configure starts applying Phase 1 settings."""
+
+_ALLOWED_CONFIGURE_KEYS = frozenset(
+    {
+        "owner",
+        "owner_short",
+        "ownerShort",
+        "channel_url",
+        "channelUrl",
+        "canned_messages",
+        "ringtone",
+        "location",
+        "config",
+        "module_config",
+    }
+)
 
 # Delay between GPIO watch iterations
 GPIO_WATCH_INTERVAL_SECONDS = 1.0
@@ -192,6 +236,473 @@ def supportInfo() -> None:
     print("Please add the output from the command: meshtastic --info")
 
 
+class _ConfigureReconnectResult(enum.Enum):
+    RECONNECT_FAILED = "reconnect_failed"
+    CONFIG_RELOAD_FAILED = "config_reload_failed"
+    VERIFICATION_INCOMPLETE = "verification_incomplete"
+    VERIFIED = "verified"
+
+
+def _post_configure_reconnect_and_verify(
+    interface: MeshInterface,
+    *,
+    timeout: float,
+    node_dest: str,
+    verify_channel_url: str | None = None,
+    verify_config_fields: dict[str, dict[str, Any]] | None = None,
+    verify_module_config_fields: dict[str, dict[str, Any]] | None = None,
+) -> _ConfigureReconnectResult:
+    """Reconnect after a configure commit, reload config, and verify values.
+
+    After ``commitSettingsTransaction()``, the firmware may reboot the device.
+    This helper:
+
+    1. Waits for the interface to disconnect and reconnect within *timeout*.
+    2. Calls ``waitForConfig()`` to reload the device configuration.
+    3. If any verification targets were provided (channel URL, config fields,
+       or module config fields), performs value-aware comparison of the
+       explicitly requested settings against what the device reports.
+
+    Returns a _ConfigureReconnectResult indicating the outcome.
+    """
+    deadline = time.monotonic() + timeout
+
+    disconnect_window = 2.0
+    logger.info(
+        "Waiting up to %.1fs for device disconnect (reboot indication)...",
+        disconnect_window,
+    )
+    disconnect_deadline = time.monotonic() + disconnect_window
+    disconnected = False
+    while time.monotonic() < disconnect_deadline:
+        if not interface.isConnected.is_set():
+            disconnected = True
+            logger.info("Device disconnected (reboot indication received).")
+            break
+        time.sleep(0.2)
+
+    if not disconnected:
+        logger.info(
+            "No disconnect detected within %.1fs; device may not require reboot.",
+            disconnect_window,
+        )
+
+    reconnect_deadline = deadline
+    if disconnected:
+        logger.info(
+            "Waiting up to %.1fs for device reconnect...",
+            reconnect_deadline - time.monotonic(),
+        )
+    while time.monotonic() < reconnect_deadline:
+        if interface.isConnected.is_set():
+            logger.info("Device reconnected.")
+            break
+        time.sleep(0.2)
+
+    if not interface.isConnected.is_set():
+        logger.warning(
+            "Device did not reconnect within %.1fs after configure commit. "
+            "Configuration may still be applying.",
+            timeout,
+        )
+        return _ConfigureReconnectResult.RECONNECT_FAILED
+
+    try:
+        interface.waitForConfig()
+        logger.info("Device config reloaded after reboot.")
+    except Exception:
+        logger.warning(
+            "Device reconnected but config reload failed; "
+            "configuration may still be applying.",
+            exc_info=True,
+        )
+        return _ConfigureReconnectResult.CONFIG_RELOAD_FAILED
+
+    has_verification = (
+        verify_channel_url or verify_config_fields or verify_module_config_fields
+    )
+    if not has_verification:
+        return _ConfigureReconnectResult.VERIFIED
+
+    if not disconnected:
+        try:
+            _refresh_no_disconnect_verify_state(
+                interface.getNode(node_dest),
+                verify_channel_url=verify_channel_url,
+                verify_config_fields=verify_config_fields,
+                verify_module_config_fields=verify_module_config_fields,
+            )
+            interface.waitForConfig()
+            logger.info(
+                "No disconnect observed; touched config/channel state refreshed before verification."
+            )
+        except Exception:
+            logger.warning(
+                "No-disconnect verify refresh failed while reloading config.",
+                exc_info=True,
+            )
+            return _ConfigureReconnectResult.CONFIG_RELOAD_FAILED
+
+    try:
+        result = _verify_post_reconnect_config(
+            interface,
+            node_dest,
+            verify_channel_url=verify_channel_url,
+            verify_config_fields=verify_config_fields,
+            verify_module_config_fields=verify_module_config_fields,
+        )
+    except Exception:
+        logger.warning(
+            "Post-reconnect verification failed unexpectedly.",
+            exc_info=True,
+        )
+        return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+
+    return result
+
+
+def _post_seturl_stability_check(
+    interface: MeshInterface,
+    *,
+    timeout: float = 15.0,
+) -> bool:
+    _MAX_STABILITY_ATTEMPTS = 3
+    _STABILITY_WINDOW_SECONDS = 1.5
+    _RECONNECT_WAIT_SECONDS = 10.0
+
+    deadline = time.monotonic() + timeout
+
+    is_connected_event = getattr(interface, "isConnected", None)
+
+    def _event_is_set() -> bool:
+        return bool(
+            is_connected_event is not None
+            and hasattr(is_connected_event, "is_set")
+            and is_connected_event.is_set()
+        )
+
+    def _event_wait(timeout_seconds: float) -> bool:
+        return bool(
+            is_connected_event is not None
+            and hasattr(is_connected_event, "wait")
+            and is_connected_event.wait(timeout_seconds)
+        )
+
+    def _trigger_reconnect() -> bool:
+        reconnect = getattr(interface, "_attempt_reconnect", None)
+        if callable(reconnect):
+            try:
+                if reconnect():
+                    return _event_is_set()
+            except Exception:
+                logger.debug(
+                    "post-setURL reconnect hook failed.",
+                    exc_info=True,
+                )
+        connect = getattr(interface, "connect", None)
+        if callable(connect):
+            try:
+                connect()
+            except Exception:
+                logger.debug(
+                    "post-setURL connect() trigger failed.",
+                    exc_info=True,
+                )
+        return _event_is_set()
+
+    for _attempt in range(_MAX_STABILITY_ATTEMPTS):
+        if time.monotonic() >= deadline:
+            return False
+
+        if not _event_is_set():
+            _trigger_reconnect()
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                _event_wait(min(_RECONNECT_WAIT_SECONDS, remaining))
+
+        if not _event_is_set():
+            logger.warning(
+                "Transport not connected after setURL (attempt %d/%d)",
+                _attempt + 1,
+                _MAX_STABILITY_ATTEMPTS,
+            )
+            continue
+
+        stability_end = time.monotonic() + _STABILITY_WINDOW_SECONDS
+        stable = True
+        while time.monotonic() < stability_end:
+            if not _event_is_set():
+                stable = False
+                break
+            time.sleep(0.1)
+
+        if not stable:
+            logger.warning(
+                "Transport dropped during stability window (attempt %d/%d)",
+                _attempt + 1,
+                _MAX_STABILITY_ATTEMPTS,
+            )
+            continue
+
+        try:
+            interface.waitForConfig()
+            return True
+        except Exception:
+            logger.warning(
+                "Config reload failed after setURL (attempt %d/%d)",
+                _attempt + 1,
+                _MAX_STABILITY_ATTEMPTS,
+                exc_info=True,
+            )
+            continue
+
+    return False
+
+
+def _is_local_destination(interface: MeshInterface, dest: str) -> bool:
+    dest_value = str(dest).strip()
+    if dest_value in (BROADCAST_ADDR, LOCAL_ADDR):
+        return True
+
+    def _parse_dest_node_num(value: str) -> int | None:
+        if value.isdecimal():
+            return int(value)
+        normalized = value.casefold()
+        hex_part = ""
+        if normalized.startswith("!"):
+            hex_part = normalized[1:]
+        elif normalized.startswith("0x"):
+            hex_part = normalized[2:]
+        if not hex_part:
+            return None
+        try:
+            return int(hex_part, 16)
+        except ValueError:
+            return None
+
+    try:
+        my_info = interface.myInfo
+        if my_info is None:
+            return False
+        my_node_num = int(my_info.my_node_num)
+        parsed_dest_num = _parse_dest_node_num(dest_value)
+        return parsed_dest_num == my_node_num
+    except Exception:
+        return False
+
+
+def _post_factory_reset_ready_probe(interface: MeshInterface) -> None:
+    """Close, probe transport reconnect readiness, and close again for a clean next command."""
+    if not isinstance(interface, meshtastic.serial_interface.SerialInterface):
+        return
+
+    logger.info("Factory reset: closing serial interface to release port.")
+    try:
+        interface.close()
+    except Exception:
+        logger.debug(
+            "Factory reset: initial serial close failed.",
+            exc_info=True,
+        )
+
+    logger.info(
+        "Factory reset: probing reconnect readiness (timeout=%.1fs)...",
+        FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS,
+    )
+    probe_start = time.monotonic()
+    try:
+        interface.connect()
+        logger.info(
+            "Factory reset: reconnect probe succeeded in %.2fs.",
+            time.monotonic() - probe_start,
+        )
+    except Exception:
+        logger.warning(
+            "Factory reset: reconnect probe did not complete before timeout.",
+            exc_info=True,
+        )
+    finally:
+        try:
+            interface.close()
+        except Exception:
+            logger.debug(
+                "Factory reset: final serial close failed.",
+                exc_info=True,
+            )
+
+
+def _validate_non_empty_mapping_sections(
+    *,
+    top_level_key: str,
+    section_mapping: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Validate that each section payload is a mapping.
+
+    Empty mappings (e.g., ``audio: {}``) are allowed — they represent
+    protobuf default values and are emitted by ``--export-config``.
+    """
+    validated_sections: dict[str, dict[str, Any]] = {}
+    for section_name, section_value in section_mapping.items():
+        if not isinstance(section_value, dict):
+            _cli_exit(
+                f"ERROR: '{top_level_key}.{section_name}' must be a non-empty mapping, got "
+                f"{type(section_value).__name__}"
+            )
+        validated_sections[section_name] = section_value
+    return validated_sections
+
+
+def _refresh_no_disconnect_verify_state(
+    target_node: Any,
+    *,
+    verify_channel_url: str | None,
+    verify_config_fields: dict[str, dict[str, Any]] | None,
+    verify_module_config_fields: dict[str, dict[str, Any]] | None,
+) -> None:
+    """Invalidate touched cached state and request fresh values for Phase 3 verification."""
+    request_config = getattr(target_node, "requestConfig", None)
+
+    for section_name in verify_config_fields or {}:
+        section_snake = meshtastic.util.camel_to_snake(section_name)
+        field_desc = target_node.localConfig.DESCRIPTOR.fields_by_name.get(
+            section_snake
+        )
+        if field_desc is None:
+            logger.warning(
+                "Skipping config refresh for unknown section %r.",
+                section_name,
+            )
+            continue
+        target_node.localConfig.ClearField(section_snake)
+        if callable(request_config):
+            request_config(field_desc)
+
+    for section_name in verify_module_config_fields or {}:
+        section_snake = meshtastic.util.camel_to_snake(section_name)
+        field_desc = target_node.moduleConfig.DESCRIPTOR.fields_by_name.get(
+            section_snake
+        )
+        if field_desc is None:
+            logger.warning(
+                "Skipping module_config refresh for unknown section %r.",
+                section_name,
+            )
+            continue
+        target_node.moduleConfig.ClearField(section_snake)
+        if callable(request_config):
+            request_config(field_desc)
+
+    if verify_channel_url:
+        target_node.channels = None
+        target_node.partialChannels = []
+        request_channels = getattr(target_node, "requestChannels", None)
+        if callable(request_channels):
+            request_channels(0)
+
+
+def _channel_url_matches_current_device_state(
+    target_node: Any,
+    requested_channel_url: str,
+) -> bool:
+    """Return True when requested channel URL already matches loaded device state."""
+    local_config = getattr(target_node, "localConfig", None)
+    has_field = getattr(local_config, "HasField", None)
+    if local_config is None or not callable(has_field) or not has_field("lora"):
+        return False
+    return _verify_channel_url_against_state(
+        requested_channel_url,
+        device_channels=getattr(target_node, "channels", None),
+        device_lora_config=local_config.lora,
+        emit_warnings=False,
+    )
+
+
+def _verify_config_sections(
+    config_fields: dict[str, dict[str, Any]],
+    proto_config: Any,
+    label: str,
+) -> bool:
+    for section_name, yaml_values in config_fields.items():
+        section_snake = meshtastic.util.camel_to_snake(section_name)
+        if not proto_config.HasField(section_snake):
+            logger.warning(
+                "%s section %r not present after reload.",
+                label,
+                section_name,
+            )
+            return False
+        proto_section = getattr(proto_config, section_snake)
+        mismatches = _verify_requested_fields(yaml_values, proto_section, section_name)
+        if mismatches:
+            logger.warning(
+                "%s section %r field mismatches: %s",
+                label,
+                section_name,
+                ", ".join(mismatches),
+            )
+            return False
+        logger.info(
+            "%s section %r verified (all requested field values match).",
+            label,
+            section_name,
+        )
+    return True
+
+
+def _verify_post_reconnect_config(
+    interface: MeshInterface,
+    node_dest: str,
+    *,
+    verify_channel_url: str | None = None,
+    verify_config_fields: dict[str, dict[str, Any]] | None = None,
+    verify_module_config_fields: dict[str, dict[str, Any]] | None = None,
+) -> _ConfigureReconnectResult:
+    if not interface.isConnected.is_set():
+        logger.warning("Post-reconnect verification skipped: transport disconnected.")
+        return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+
+    target_node = interface.getNode(node_dest)
+
+    if verify_channel_url:
+        local_config = getattr(target_node, "localConfig", None)
+        has_field = getattr(local_config, "HasField", None)
+        device_lora_config = (
+            local_config.lora
+            if local_config is not None and callable(has_field) and has_field("lora")
+            else None
+        )
+        if not _verify_channel_url_against_state(
+            verify_channel_url,
+            device_channels=getattr(target_node, "channels", None),
+            device_lora_config=device_lora_config,
+        ):
+            logger.warning(
+                "Channel URL verification: device state does not match requested URL."
+            )
+            return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+        logger.info(
+            "Channel URL verified (channels matched by name; PSK, uplink/downlink, and module settings match)."
+        )
+
+    if verify_config_fields and not _verify_config_sections(
+        verify_config_fields, target_node.localConfig, "Config"
+    ):
+        return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+
+    if verify_module_config_fields and not _verify_config_sections(
+        verify_module_config_fields, target_node.moduleConfig, "Module config"
+    ):
+        return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+
+    if not interface.isConnected.is_set():
+        logger.warning(
+            "Post-reconnect verification did not complete: transport disconnected."
+        )
+        return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+
+    return _ConfigureReconnectResult.VERIFIED
+
+
 # COMPAT_STABLE_SHIM: historical snake_case helper name.
 def support_info() -> None:
     """Compatibility alias for supportInfo()."""
@@ -199,28 +710,12 @@ def support_info() -> None:
 
 
 def onReceive(packet: dict[str, Any], interface: MeshInterface) -> None:
-    """Handle an incoming mesh packet, optionally send a text reply, and close the interface when appropriate.
-
-    If the CLI initiated a text send and the incoming packet is a text message addressed
-    to this node, the interface will be closed. If reply mode is enabled and the
-    decoded payload contains text, a reply containing the received text plus the packet's
-    `rxSnr` and `hopLimit` will be sent and printed.
-
-    Parameters
-    ----------
-    packet : dict[str, Any]
-        Incoming packet. Expected keys include `"decoded"` (dict or None,
-        with keys like `"text"` and `"portnum"`), `"to"` (destination node number),
-        `"rxSnr"`, and `"hopLimit"`.
-    interface : MeshInterface
-        Interface used to send replies and to close the connection.
-    """
+    """Handle an incoming mesh packet, optionally send a text reply, and close the interface when appropriate."""
     args = mt_config.args
     try:
         d = packet.get("decoded")
         logger.debug("in onReceive() d:%s", d)
 
-        # Exit once we receive a reply
         is_text_reply = (
             args
             and args.sendtext
@@ -231,9 +726,8 @@ def onReceive(packet: dict[str, Any], interface: MeshInterface) -> None:
             == portnums_pb2.PortNum.Name(portnums_pb2.PortNum.TEXT_MESSAGE_APP)
         )
         if is_text_reply:
-            interface.close()  # after running command then exit
+            interface.close()
 
-        # Reply to every received message with some stats
         if d is not None and args and args.reply:
             msg = d.get("text")
             if msg:
@@ -249,39 +743,14 @@ def onReceive(packet: dict[str, Any], interface: MeshInterface) -> None:
 
 
 def onConnection(interface: MeshInterface, topic: Any = pub.AUTO_TOPIC) -> None:
-    """Notify about a change in the radio connection state.
-
-    Prints a "Connection changed: <name>" message where <name> is obtained from
-    topic.getName() if available, otherwise str(topic).
-
-    Parameters
-    ----------
-    interface : MeshInterface
-        The interface whose connection state changed.
-    topic : Any
-        Event topic or identifier; if it provides `getName()` that
-        value is used for display. (Default value = pub.AUTO_TOPIC)
-    """
+    """Notify about a change in the radio connection state."""
     _ = interface
     topic_name = topic.getName() if hasattr(topic, "getName") else str(topic)
     print(f"Connection changed: {topic_name}")
 
 
 def checkChannel(interface: MeshInterface, channelIndex: int) -> bool:
-    """Determine whether the local node has the channel at the given index enabled.
-
-    Parameters
-    ----------
-    interface : MeshInterface
-        The mesh interface to query for channel information.
-    channelIndex : int
-        The index of the channel to check.
-
-    Returns
-    -------
-    bool
-        `True` if the channel exists and its role is not DISABLED, `False` otherwise.
-    """
+    """Determine whether the local node has the channel at the given index enabled."""
     if hasattr(type(interface.localNode), "getChannelCopyByChannelIndex"):
         ch = interface.localNode.getChannelCopyByChannelIndex(channelIndex)
     else:
@@ -340,7 +809,7 @@ def _redact_pref_value(name: str, value: str) -> str:
     return "<redacted>" if name in _SECRET_PREF_NAMES else value
 
 
-def getPref(node: Any, comp_name: str) -> bool:
+def getPref(node: Any, comp_name: str, *, allow_secrets: bool = False) -> bool:
     """Retrieve and display a configuration preference or channel field for a node.
 
     Given a dot-separated preference name (section.field) or a single name (used for
@@ -393,16 +862,28 @@ def getPref(node: Any, comp_name: str) -> bool:
             Canonical snake_case field name used to determine whether to redact.
         """
         if repeated:
-            pref_value = [
+            display_value: str | list[str] = [
+                (
+                    meshtastic.util.toStr(v)
+                    if allow_secrets
+                    else _redact_pref_value(secret_name, meshtastic.util.toStr(v))
+                )
+                for v in pref_value
+            ]
+            log_value: str | list[str] = [
                 _redact_pref_value(secret_name, meshtastic.util.toStr(v))
                 for v in pref_value
             ]
         else:
-            pref_value = _redact_pref_value(
-                secret_name, meshtastic.util.toStr(pref_value)
+            raw_display = meshtastic.util.toStr(pref_value)
+            display_value = (
+                raw_display
+                if allow_secrets
+                else _redact_pref_value(secret_name, raw_display)
             )
-        print(f"{str(config_type.name)}.{uni_name}: {str(pref_value)}")
-        logger.debug("%s.%s: %s", config_type.name, uni_name, pref_value)
+            log_value = _redact_pref_value(secret_name, raw_display)
+        print(f"{str(config_type.name)}.{uni_name}: {str(display_value)}")
+        logger.debug("%s.%s: %s", config_type.name, uni_name, log_value)
 
     comp_name = _normalize_pref_name(comp_name)
     name = splitCompoundName(comp_name)
@@ -537,16 +1018,42 @@ def traverseConfig(
             ):
                 return False
         else:
-            if not setPref(interface_config, pref_name, config[pref]):
-                if failed_fields is not None:
-                    failed_fields.append(pref_name)
-                logger.error(
-                    "Failed to apply configuration field %s from --configure",
+            if not _resolve_pref(interface_config, pref_name):
+                logger.warning(
+                    "Skipping unknown configuration field %s from --configure",
                     pref_name,
                 )
+                continue
+            try:
+                ok = setPref(interface_config, pref_name, config[pref])
+            except (ValueError, binascii.Error):
+                if failed_fields is not None:
+                    failed_fields.append(pref_name)
+                return False
+            if not ok:
+                if failed_fields is not None:
+                    failed_fields.append(pref_name)
                 return False
 
     return True
+
+
+def _resolve_pref(config: Any, comp_name: str) -> bool:
+    """Check whether a dotted field path resolves to a valid protobuf field."""
+    comp_name = _normalize_pref_name(comp_name)
+    name = splitCompoundName(comp_name)
+    snake_name = meshtastic.util.camel_to_snake(name[-1])
+    objDesc = config.DESCRIPTOR
+    config_type = objDesc.fields_by_name.get(name[0])
+    if config_type and config_type.message_type is not None:
+        config_part = config
+        for name_part in name[1:-1]:
+            part_snake_name = meshtastic.util.camel_to_snake(name_part)
+            config_part = getattr(config_part, config_type.name)
+            config_type = config_type.message_type.fields_by_name.get(part_snake_name)
+        if config_type and config_type.message_type is not None:
+            return config_type.message_type.fields_by_name.get(snake_name) is not None
+    return config_type is not None
 
 
 def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
@@ -668,6 +1175,461 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
     print(f"Set {prefix}{uni_name} to {display_value}")
 
     return True
+
+
+def _handle_ota_update(
+    interface: MeshInterface,
+    args: Any,
+    getNode_kwargs: dict[str, Any],
+) -> None:
+    if not isinstance(interface, meshtastic.tcp_interface.TCPInterface):
+        _cli_exit(
+            "Error: OTA update currently requires a TCP connection to the node (use --host)."
+        )
+    if not _is_local_destination(interface, args.dest):
+        _cli_exit(
+            "Error: OTA update only supports the directly connected local node; omit --dest or use --dest ^local."
+        )
+    ota_dest = LOCAL_ADDR
+
+    try:
+        ota = meshtastic.ota.ESP32WiFiOTA(args.ota_update, interface.hostname)
+    except meshtastic.ota.OTAError as e:
+        _cli_exit(f"OTA update failed: {e}")
+
+    print(f"Triggering OTA update on {interface.hostname}...")
+    interface.getNode(ota_dest, requestChannels=False, **getNode_kwargs).startOTA(
+        mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=ota.hash_bytes()
+    )
+
+    print("Waiting for device to reboot into OTA mode...")
+    time.sleep(OTA_REBOOT_WAIT_SECONDS)
+
+    retries = OTA_MAX_RETRIES
+    while retries > 0:
+        try:
+            ota.update()
+            break
+
+        except meshtastic.ota.OTATransportError as e:
+            retries -= 1
+            if retries == 0:
+                _cli_exit(f"OTA update failed: {e}")
+
+            time.sleep(OTA_RETRY_DELAY_SECONDS)
+        except meshtastic.ota.OTAError as e:
+            _cli_exit(f"OTA update failed: {e}")
+
+    print("\nOTA update completed successfully!")
+
+
+def _handle_set_command(
+    interface: MeshInterface,
+    args: Any,
+    getNode_kwargs: dict[str, Any],
+) -> None:
+    node = interface.getNode(args.dest, False, **getNode_kwargs)
+
+    last_pref: list[str] | None = None
+    fields: set[str] = set()
+    any_found = False
+    for pref_item in args.set:
+        if pref_item is None or len(pref_item) < 2:
+            continue
+        last_pref = pref_item
+        found = False
+        normalized_pref_name = _normalize_pref_name(pref_item[0])
+        field = splitCompoundName(normalized_pref_name)[0]
+        for config in [node.localConfig, node.moduleConfig]:
+            config_type = config.DESCRIPTOR.fields_by_name.get(field)
+            if config_type:
+                if len(config.ListFields()) == 0:
+                    node.requestConfig(config.DESCRIPTOR.fields_by_name.get(field))
+                found = setPref(config, normalized_pref_name, pref_item[1])
+                if found:
+                    any_found = True
+                    fields.add(field)
+                    break
+
+    if any_found:
+        print("Writing modified preferences to device")
+        if len(fields) > 1:
+            print("Using a configuration transaction")
+            node.beginSettingsTransaction()
+        for field in fields:
+            print(f"Writing {field} configuration to device")
+            node.writeConfig(field)
+        if len(fields) > 1:
+            node.commitSettingsTransaction()
+    elif last_pref is not None:
+        print(
+            f"{node.localConfig.__class__.__name__} and {node.moduleConfig.__class__.__name__} do not have an attribute {last_pref[0]}."
+        )
+        print("Choices are...")
+        printConfig(node.localConfig)
+        printConfig(node.moduleConfig)
+
+
+def _handle_configure_command(
+    interface: MeshInterface,
+    args: Any,
+    getNode_kwargs: dict[str, Any],
+) -> tuple[bool, bool]:
+    try:
+        with open(args.configure[0], encoding="utf8") as file:
+            raw_text = file.read()
+        configuration = yaml.safe_load(raw_text)
+    except (yaml.YAMLError, UnicodeDecodeError) as exc:
+        _cli_exit(f"ERROR: Failed to parse YAML configuration: {exc}")
+
+    if configuration is None:
+        _cli_exit("ERROR: YAML configuration file is empty")
+    if not isinstance(configuration, dict):
+        _cli_exit(
+            f"ERROR: YAML configuration must be a mapping/dictionary, got {type(configuration).__name__}"
+        )
+    if not configuration:
+        _cli_exit("ERROR: Configuration file is empty; nothing to configure.")
+    _unknown_keys = set(configuration.keys()) - _ALLOWED_CONFIGURE_KEYS
+    if _unknown_keys:
+        _cli_exit(
+            f"ERROR: Unknown top-level key(s) in YAML: {', '.join(sorted(_unknown_keys))}"
+        )
+
+    if "channel_url" in configuration and "channelUrl" in configuration:
+        _cli_exit(
+            "ERROR: Cannot specify both 'channel_url' and 'channelUrl' in the same configuration file; use one."
+        )
+    if "owner_short" in configuration and "ownerShort" in configuration:
+        _cli_exit(
+            "ERROR: Cannot specify both 'owner_short' and 'ownerShort' in the same configuration file; use one."
+        )
+
+    # Pre-validate config/module_config shapes before any Phase-1 mutations.
+    validated_config_sections: dict[str, dict[str, Any]] = {}
+    validated_module_config_sections: dict[str, dict[str, Any]] = {}
+    if "config" in configuration:
+        _cfg_val = configuration["config"]
+        if not isinstance(_cfg_val, dict) or not _cfg_val:
+            _cli_exit(
+                f"ERROR: 'config' must be a non-empty mapping, got "
+                f"{type(_cfg_val).__name__}{' (empty)' if isinstance(_cfg_val, dict) else ''}"
+            )
+        validated_config_sections = _validate_non_empty_mapping_sections(
+            top_level_key="config",
+            section_mapping=_cfg_val,
+        )
+    if "module_config" in configuration:
+        _mcfg_val = configuration["module_config"]
+        if not isinstance(_mcfg_val, dict) or not _mcfg_val:
+            _cli_exit(
+                f"ERROR: 'module_config' must be a non-empty mapping, got "
+                f"{type(_mcfg_val).__name__}{' (empty)' if isinstance(_mcfg_val, dict) else ''}"
+            )
+        validated_module_config_sections = _validate_non_empty_mapping_sections(
+            top_level_key="module_config",
+            section_mapping=_mcfg_val,
+        )
+
+    phase1_started = False
+    phase1_may_reconnect = False
+    seturl_executed = False
+
+    if "owner" in configuration:
+        if not phase1_started:
+            print(CONFIGURE_PHASE1_HEADER)
+            phase1_started = True
+        owner_name = str(configuration["owner"]).strip()
+        if not owner_name:
+            _cli_exit(
+                "ERROR: Long Name cannot be empty or contain only whitespace characters"
+            )
+        print(f"Setting device owner to {owner_name}")
+        interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
+            long_name=owner_name
+        )
+        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+
+    if "owner_short" in configuration:
+        if not phase1_started:
+            print(CONFIGURE_PHASE1_HEADER)
+            phase1_started = True
+        owner_short_name = str(configuration["owner_short"]).strip()
+        if not owner_short_name:
+            _cli_exit(
+                "ERROR: Short Name cannot be empty or contain only whitespace characters"
+            )
+        print(f"Setting device owner short to {owner_short_name}")
+        interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
+            long_name=None, short_name=owner_short_name
+        )
+        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+
+    if "ownerShort" in configuration:
+        if not phase1_started:
+            print(CONFIGURE_PHASE1_HEADER)
+            phase1_started = True
+        owner_short_name = str(configuration["ownerShort"]).strip()
+        if not owner_short_name:
+            _cli_exit(
+                "ERROR: Short Name cannot be empty or contain only whitespace characters"
+            )
+        print(f"Setting device owner short to {owner_short_name}")
+        interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
+            long_name=None, short_name=owner_short_name
+        )
+        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+
+    if "location" in configuration:
+        if not phase1_started:
+            print(CONFIGURE_PHASE1_HEADER)
+            phase1_started = True
+        _loc = configuration["location"]
+        if not isinstance(_loc, dict) or not _loc:
+            _cli_exit(
+                "location must be a non-empty mapping with lat, lon, and optional alt"
+            )
+        _allowed_loc_keys = {"lat", "lon", "alt"}
+        _unknown_loc_keys = set(_loc.keys()) - _allowed_loc_keys
+        if _unknown_loc_keys:
+            _cli_exit(
+                f"location contains unknown keys: {', '.join(sorted(_unknown_loc_keys))}. "
+                f"Allowed: lat, lon, alt"
+            )
+        if "lat" not in _loc or "lon" not in _loc:
+            _cli_exit("location requires both lat and lon")
+        try:
+            lat = float(_loc["lat"])
+        except (ValueError, TypeError):
+            _cli_exit(f"location.lat must be a number, got: {_loc['lat']!r}")
+        try:
+            lon = float(_loc["lon"])
+        except (ValueError, TypeError):
+            _cli_exit(f"location.lon must be a number, got: {_loc['lon']!r}")
+        alt = 0
+        if "alt" in _loc:
+            try:
+                alt = int(_loc["alt"])
+            except (ValueError, TypeError):
+                _cli_exit(f"location.alt must be an integer, got: {_loc['alt']!r}")
+            print(f"Fixing altitude at {alt} meters")
+        print(f"Fixing latitude at {lat} degrees")
+        print(f"Fixing longitude at {lon} degrees")
+        print("Setting device position")
+        interface.getNode(args.dest, False, **getNode_kwargs).setFixedPosition(
+            lat, lon, alt
+        )
+        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+
+    if "canned_messages" in configuration:
+        if not phase1_started:
+            print(CONFIGURE_PHASE1_HEADER)
+            phase1_started = True
+        print(
+            "Setting canned message messages to",
+            configuration["canned_messages"],
+        )
+        interface.getNode(args.dest, **getNode_kwargs).set_canned_message(
+            configuration["canned_messages"]
+        )
+        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+
+    if "ringtone" in configuration:
+        if not phase1_started:
+            print(CONFIGURE_PHASE1_HEADER)
+            phase1_started = True
+        print("Setting ringtone to", configuration["ringtone"])
+        interface.getNode(args.dest, **getNode_kwargs).set_ringtone(
+            configuration["ringtone"]
+        )
+        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+
+    if "channel_url" in configuration:
+        if not phase1_started:
+            print(CONFIGURE_PHASE1_HEADER)
+            phase1_started = True
+        raw_channel_url = configuration["channel_url"]
+        if not isinstance(raw_channel_url, str):
+            _cli_exit("ERROR: channel_url must be a string.")
+        requested_channel_url = raw_channel_url.strip()
+        if not requested_channel_url:
+            _cli_exit("ERROR: channel_url must not be blank.")
+        target_node = interface.getNode(args.dest, **getNode_kwargs)
+        if _channel_url_matches_current_device_state(
+            target_node, requested_channel_url
+        ):
+            print("Channel url already matches device state; skipping apply.")
+            logger.info("Skipping setURL apply because channel URL already matches.")
+        else:
+            phase1_may_reconnect = True
+            seturl_executed = True
+            print("Setting channel url to", requested_channel_url)
+            target_node.setURL(requested_channel_url)
+            time.sleep(CONFIG_SETURL_DELAY_SECONDS)
+
+    if "channelUrl" in configuration:
+        if not phase1_started:
+            print(CONFIGURE_PHASE1_HEADER)
+            phase1_started = True
+        raw_channel_url = configuration["channelUrl"]
+        if not isinstance(raw_channel_url, str):
+            _cli_exit("ERROR: channelUrl must be a string.")
+        requested_channel_url = raw_channel_url.strip()
+        if not requested_channel_url:
+            _cli_exit("ERROR: channelUrl must not be blank.")
+        target_node = interface.getNode(args.dest, **getNode_kwargs)
+        if _channel_url_matches_current_device_state(
+            target_node, requested_channel_url
+        ):
+            print("Channel url already matches device state; skipping apply.")
+            logger.info("Skipping setURL apply because channel URL already matches.")
+        else:
+            phase1_may_reconnect = True
+            seturl_executed = True
+            print("Setting channel url to", requested_channel_url)
+            target_node.setURL(requested_channel_url)
+            time.sleep(CONFIG_SETURL_DELAY_SECONDS)
+
+    if phase1_started:
+        print("Phase 1 complete.")
+
+    settings_transaction_started = False
+    has_valid_config_section = bool(
+        validated_config_sections or validated_module_config_sections
+    )
+    if seturl_executed and has_valid_config_section:
+        if _is_local_destination(interface, args.dest):
+            if not _post_seturl_stability_check(
+                interface, timeout=SETURL_STABILITY_TIMEOUT_SECONDS
+            ):
+                _cli_exit(
+                    "ERROR: channel_url applied, but transport did not stabilize "
+                    "for additional configuration writes; aborting before Phase 2."
+                )
+        else:
+            _cli_exit(
+                "ERROR: Combining channel_url with additional configuration "
+                "writes is not supported for remote nodes. Apply channel_url "
+                "and configuration in separate operations."
+            )
+    if has_valid_config_section:
+        print(
+            "Phase 2: Applying configuration transaction (may trigger device reboot)..."
+        )
+        interface.getNode(args.dest, False, **getNode_kwargs).beginSettingsTransaction()
+        settings_transaction_started = True
+
+    if validated_config_sections:
+        localConfig = interface.getNode(args.dest, **getNode_kwargs).localConfig
+        for section, section_values in validated_config_sections.items():
+            failed_config_fields: list[str] = []
+            applied = traverseConfig(
+                section,
+                section_values,
+                localConfig,
+                failed_fields=failed_config_fields,
+            )
+            if failed_config_fields:
+                logger.warning(
+                    "Skipped %d unknown field(s) in config section %s: %s",
+                    len(failed_config_fields),
+                    section,
+                    ", ".join(repr(f) for f in failed_config_fields),
+                )
+            if not applied:
+                _cli_exit(
+                    f"Failed to apply config section {section!r} due to structural errors."
+                )
+            interface.getNode(args.dest, **getNode_kwargs).writeConfig(
+                meshtastic.util.camel_to_snake(section)
+            )
+        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+
+    if validated_module_config_sections:
+        moduleConfig = interface.getNode(args.dest, **getNode_kwargs).moduleConfig
+        for section, section_values in validated_module_config_sections.items():
+            failed_module_fields: list[str] = []
+            applied = traverseConfig(
+                section,
+                section_values,
+                moduleConfig,
+                failed_fields=failed_module_fields,
+            )
+            if failed_module_fields:
+                logger.warning(
+                    "Skipped %d unknown field(s) in module_config section %s: %s",
+                    len(failed_module_fields),
+                    section,
+                    ", ".join(repr(f) for f in failed_module_fields),
+                )
+            if not applied:
+                _cli_exit(
+                    f"Failed to apply module_config section {section!r} due to structural errors."
+                )
+            interface.getNode(args.dest, **getNode_kwargs).writeConfig(
+                meshtastic.util.camel_to_snake(section)
+            )
+        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+
+    if settings_transaction_started:
+        interface.getNode(
+            args.dest, False, **getNode_kwargs
+        ).commitSettingsTransaction()
+        time.sleep(CONFIG_COMMIT_SETTLE_SECONDS)
+        print(
+            "Configuration transaction committed. Device may reboot to apply changes."
+        )
+
+    if settings_transaction_started:
+        _verify_channel_url = configuration.get("channel_url") or configuration.get(
+            "channelUrl"
+        )
+        _verify_config_fields = validated_config_sections or None
+        _verify_module_config_fields = validated_module_config_sections or None
+        if _is_local_destination(interface, args.dest):
+            _reconnect_result = _post_configure_reconnect_and_verify(
+                interface,
+                timeout=CONFIG_RECONNECT_WAIT_SECONDS,
+                node_dest=args.dest,
+                verify_channel_url=_verify_channel_url,
+                verify_config_fields=_verify_config_fields,
+                verify_module_config_fields=_verify_module_config_fields,
+            )
+            if _reconnect_result == _ConfigureReconnectResult.VERIFIED:
+                print(
+                    "Phase 3: Device reconnected, config reloaded, and requested settings verified."
+                )
+            elif _reconnect_result == _ConfigureReconnectResult.VERIFICATION_INCOMPLETE:
+                print(
+                    "Phase 3: Device reconnected and config reloaded. "
+                    "Could not fully verify applied settings."
+                )
+            elif _reconnect_result == _ConfigureReconnectResult.CONFIG_RELOAD_FAILED:
+                print(
+                    "Phase 3: Device reconnected but config reload failed. "
+                    "Settings may still be applying."
+                )
+            elif _reconnect_result == _ConfigureReconnectResult.RECONNECT_FAILED:
+                print(
+                    "Phase 3: Device did not reconnect within timeout. "
+                    "Configuration may still be applying."
+                )
+        else:
+            print(
+                "Phase 3: Reboot/reconnect verification skipped for remote target. "
+                "Local transport state does not confirm remote node reload status."
+            )
+    else:
+        if phase1_may_reconnect:
+            print(
+                "Configuration applied. Channel URL updates may still trigger reconnect/reboot."
+            )
+        else:
+            print("Configuration applied (no reboot expected).")
+
+    return settings_transaction_started, (
+        seturl_executed and _is_local_destination(interface, args.dest)
+    )
 
 
 def onConnected(interface: MeshInterface) -> None:
@@ -850,14 +1812,15 @@ def onConnected(interface: MeshInterface) -> None:
             print(" ".join(fieldNames))
 
         if args.set_ham:
-            if not args.set_ham.strip():
+            ham_id = args.set_ham.strip()
+            if not ham_id:
                 _cli_exit(
                     "ERROR: Ham radio callsign cannot be empty or contain only whitespace characters"
                 )
             closeNow = True
-            print(f"Setting Ham ID to {args.set_ham} and turning off encryption")
+            print(f"Setting Ham ID to {ham_id} and turning off encryption")
             interface.getNode(args.dest, **getNode_kwargs).setOwner(
-                args.set_ham, is_licensed=True
+                ham_id, is_licensed=True
             )
             # Must turn off encryption on primary channel
             interface.getNode(
@@ -867,68 +1830,31 @@ def onConnected(interface: MeshInterface) -> None:
         if args.reboot:
             closeNow = True
             waitForAckNak = True
+            skip_ack_wait = True
             interface.getNode(args.dest, False, **getNode_kwargs).reboot()
 
         if args.reboot_ota:
             closeNow = True
             waitForAckNak = True
+            skip_ack_wait = True
             interface.getNode(args.dest, False, **getNode_kwargs).rebootOTA()
 
         if args.ota_update:
             closeNow = True
-            waitForAckNak = True
             skip_ack_wait = True
-
-            if not isinstance(interface, meshtastic.tcp_interface.TCPInterface):
-                _cli_exit(
-                    "Error: OTA update currently requires a TCP connection to the node (use --host)."
-                )
-            if args.dest not in {BROADCAST_ADDR, LOCAL_ADDR}:
-                _cli_exit(
-                    "Error: OTA update only supports the directly connected local node; omit --dest or use --dest ^local."
-                )
-            ota_dest = LOCAL_ADDR if args.dest == BROADCAST_ADDR else args.dest
-            waitForAckNak = False
-
-            try:
-                ota = meshtastic.ota.ESP32WiFiOTA(args.ota_update, interface.hostname)
-            except meshtastic.ota.OTAError as e:
-                _cli_exit(f"OTA update failed: {e}")
-
-            print(f"Triggering OTA update on {interface.hostname}...")
-            interface.getNode(
-                ota_dest, requestChannels=False, **getNode_kwargs
-            ).startOTA(mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=ota.hash_bytes())
-
-            print("Waiting for device to reboot into OTA mode...")
-            time.sleep(OTA_REBOOT_WAIT_SECONDS)
-
-            retries = OTA_MAX_RETRIES
-            while retries > 0:
-                try:
-                    ota.update()
-                    break
-
-                except meshtastic.ota.OTATransportError as e:
-                    retries -= 1
-                    if retries == 0:
-                        _cli_exit(f"OTA update failed: {e}")
-
-                    time.sleep(OTA_RETRY_DELAY_SECONDS)
-                except meshtastic.ota.OTAError as e:
-                    _cli_exit(f"OTA update failed: {e}")
-
-            print("\nOTA update completed successfully!")
+            _handle_ota_update(interface, args, getNode_kwargs)
             return
 
         if args.enter_dfu:
             closeNow = True
             waitForAckNak = True
+            skip_ack_wait = True
             interface.getNode(args.dest, False, **getNode_kwargs).enterDFUMode()
 
         if args.shutdown:
             closeNow = True
             waitForAckNak = True
+            skip_ack_wait = True
             interface.getNode(args.dest, False, **getNode_kwargs).shutdown()
 
         if args.device_metadata:
@@ -950,11 +1876,23 @@ def onConnected(interface: MeshInterface) -> None:
         if args.factory_reset or args.factory_reset_device:
             closeNow = True
             waitForAckNak = True
+            skip_ack_wait = True
 
             full = bool(args.factory_reset_device)
             interface.getNode(args.dest, False, **getNode_kwargs).factoryReset(
                 full=full
             )
+            # Guard the isinstance check: SerialInterface may be a mock or not resolve in tests.
+            _serial_interface_cls = getattr(
+                meshtastic.serial_interface, "SerialInterface", None
+            )
+            if (
+                full
+                and _is_local_destination(interface, args.dest)
+                and isinstance(_serial_interface_cls, type)
+                and isinstance(interface, _serial_interface_cls)
+            ):
+                _post_factory_reset_ready_probe(interface)
 
         if args.remove_node:
             closeNow = True
@@ -1118,235 +2056,17 @@ def onConnected(interface: MeshInterface) -> None:
         if args.set:
             closeNow = True
             waitForAckNak = True
-            node = interface.getNode(args.dest, False, **getNode_kwargs)
-
-            # Handle the int/float/bool arguments
-            last_pref: list[str] | None = None
-            fields: set[str] = set()
-            any_found = False
-            for pref_item in args.set:
-                if pref_item is None or len(pref_item) < 2:
-                    continue
-                last_pref = pref_item
-                found = False
-                normalized_pref_name = _normalize_pref_name(pref_item[0])
-                field = splitCompoundName(normalized_pref_name)[0]
-                for config in [node.localConfig, node.moduleConfig]:
-                    config_type = config.DESCRIPTOR.fields_by_name.get(field)
-                    if config_type:
-                        if len(config.ListFields()) == 0:
-                            node.requestConfig(
-                                config.DESCRIPTOR.fields_by_name.get(field)
-                            )
-                        found = setPref(config, normalized_pref_name, pref_item[1])
-                        if found:
-                            any_found = True
-                            fields.add(field)
-                            break
-
-            if any_found:
-                print("Writing modified preferences to device")
-                if len(fields) > 1:
-                    print("Using a configuration transaction")
-                    node.beginSettingsTransaction()
-                for field in fields:
-                    print(f"Writing {field} configuration to device")
-                    node.writeConfig(field)
-                if len(fields) > 1:
-                    node.commitSettingsTransaction()
-            elif last_pref is not None:
-                print(
-                    f"{node.localConfig.__class__.__name__} and {node.moduleConfig.__class__.__name__} do not have an attribute {last_pref[0]}."
-                )
-                print("Choices are...")
-                printConfig(node.localConfig)
-                printConfig(node.moduleConfig)
+            _handle_set_command(interface, args, getNode_kwargs)
 
         if args.configure:
-            with open(args.configure[0], encoding="utf8") as file:
-                configuration = yaml.safe_load(file)
-                closeNow = True
-
-                if "owner" in configuration:
-                    # Validate owner name before setting
-                    owner_name = str(configuration["owner"]).strip()
-                    if not owner_name:
-                        _cli_exit(
-                            "ERROR: Long Name cannot be empty or contain only whitespace characters"
-                        )
-                    print(f"Setting device owner to {configuration['owner']}")
-                    waitForAckNak = True
-                    interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
-                        configuration["owner"]
-                    )
-                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-                if "owner_short" in configuration:
-                    # Validate owner short name before setting
-                    owner_short_name = str(configuration["owner_short"]).strip()
-                    if not owner_short_name:
-                        _cli_exit(
-                            "ERROR: Short Name cannot be empty or contain only whitespace characters"
-                        )
-                    print(
-                        f"Setting device owner short to {configuration['owner_short']}"
-                    )
-                    waitForAckNak = True
-                    interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
-                        long_name=None, short_name=configuration["owner_short"]
-                    )
-                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-                if "ownerShort" in configuration:
-                    # Validate owner short name before setting
-                    owner_short_name = str(configuration["ownerShort"]).strip()
-                    if not owner_short_name:
-                        _cli_exit(
-                            "ERROR: Short Name cannot be empty or contain only whitespace characters"
-                        )
-                    print(
-                        f"Setting device owner short to {configuration['ownerShort']}"
-                    )
-                    waitForAckNak = True
-                    interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
-                        long_name=None, short_name=configuration["ownerShort"]
-                    )
-                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-                if "channel_url" in configuration:
-                    print("Setting channel url to", configuration["channel_url"])
-                    interface.getNode(args.dest, **getNode_kwargs).setURL(
-                        configuration["channel_url"]
-                    )
-                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-                if "channelUrl" in configuration:
-                    print("Setting channel url to", configuration["channelUrl"])
-                    interface.getNode(args.dest, **getNode_kwargs).setURL(
-                        configuration["channelUrl"]
-                    )
-                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-                if "canned_messages" in configuration:
-                    print(
-                        "Setting canned message messages to",
-                        configuration["canned_messages"],
-                    )
-                    interface.getNode(args.dest, **getNode_kwargs).set_canned_message(
-                        configuration["canned_messages"]
-                    )
-                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-                if "ringtone" in configuration:
-                    print("Setting ringtone to", configuration["ringtone"])
-                    interface.getNode(args.dest, **getNode_kwargs).set_ringtone(
-                        configuration["ringtone"]
-                    )
-                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-                if "location" in configuration:
-                    alt = 0
-                    lat = 0.0
-                    lon = 0.0
-                    localConfig = interface.localNode.localConfig
-
-                    if "alt" in configuration["location"]:
-                        alt = int(configuration["location"]["alt"] or 0)
-                        print(f"Fixing altitude at {alt} meters")
-                    if "lat" in configuration["location"]:
-                        lat = float(configuration["location"]["lat"] or 0)
-                        print(f"Fixing latitude at {lat} degrees")
-                    if "lon" in configuration["location"]:
-                        lon = float(configuration["location"]["lon"] or 0)
-                        print(f"Fixing longitude at {lon} degrees")
-                    print("Setting device position")
-                    interface.localNode.setFixedPosition(lat, lon, alt)
-                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-                settings_transaction_started = False
-                if "config" in configuration or "module_config" in configuration:
-                    interface.getNode(
-                        args.dest, False, **getNode_kwargs
-                    ).beginSettingsTransaction()
-                    settings_transaction_started = True
-
-                if "config" in configuration:
-                    localConfig = interface.getNode(
-                        args.dest, **getNode_kwargs
-                    ).localConfig
-                    for section in configuration["config"]:
-                        failed_config_fields: list[str] = []
-                        applied = traverseConfig(
-                            section,
-                            configuration["config"][section],
-                            localConfig,
-                            failed_fields=failed_config_fields,
-                        )
-                        if not applied:
-                            failed_field_msg = (
-                                f" Failing field: {failed_config_fields[0]!r}."
-                                if failed_config_fields
-                                else ""
-                            )
-                            logger.error(
-                                "Failed to apply --configure config section %s%s",
-                                section,
-                                (
-                                    f"; failing field={failed_config_fields[0]!r}"
-                                    if failed_config_fields
-                                    else ""
-                                ),
-                            )
-                            _cli_exit(
-                                f"Failed to apply config section {section!r}.{failed_field_msg} "
-                                "Check field names and values."
-                            )
-                        interface.getNode(args.dest, **getNode_kwargs).writeConfig(
-                            meshtastic.util.camel_to_snake(section)
-                        )
-                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-                if "module_config" in configuration:
-                    moduleConfig = interface.getNode(
-                        args.dest, **getNode_kwargs
-                    ).moduleConfig
-                    for section in configuration["module_config"]:
-                        failed_module_fields: list[str] = []
-                        applied = traverseConfig(
-                            section,
-                            configuration["module_config"][section],
-                            moduleConfig,
-                            failed_fields=failed_module_fields,
-                        )
-                        if not applied:
-                            failed_field_msg = (
-                                f" Failing field: {failed_module_fields[0]!r}."
-                                if failed_module_fields
-                                else ""
-                            )
-                            logger.error(
-                                "Failed to apply --configure module_config section %s%s",
-                                section,
-                                (
-                                    f"; failing field={failed_module_fields[0]!r}"
-                                    if failed_module_fields
-                                    else ""
-                                ),
-                            )
-                            _cli_exit(
-                                f"Failed to apply module_config section {section!r}.{failed_field_msg} "
-                                "Check field names and values."
-                            )
-                        interface.getNode(args.dest, **getNode_kwargs).writeConfig(
-                            meshtastic.util.camel_to_snake(section)
-                        )
-                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-                if settings_transaction_started:
-                    interface.getNode(
-                        args.dest, False, **getNode_kwargs
-                    ).commitSettingsTransaction()
-                print("Writing modified configuration to device")
+            closeNow = True
+            waitForAckNak = True
+            _settings_transaction_started, _phase1_channel_url_applied = (
+                _handle_configure_command(interface, args, getNode_kwargs)
+            )
+            if _settings_transaction_started or _phase1_channel_url_applied:
+                waitForAckNak = False
+                skip_ack_wait = True
 
         if args.export_config:
             if args.dest != BROADCAST_ADDR:
@@ -1700,7 +2420,10 @@ def onConnected(interface: MeshInterface) -> None:
 
         # if the user didn't ask for serial debugging output, we might want to exit after we've done our operation
         if (not args.seriallog) and closeNow:
-            interface.close()  # after running command then exit
+            try:
+                interface.close()
+            except Exception:
+                logger.debug("Error during interface close", exc_info=True)
 
         # Close any structured logs after we've done all of our API operations
         if log_set:
@@ -2356,7 +3079,10 @@ def common() -> None:
                         except MeshInterface.MeshInterfaceError as ex:
                             _cli_exit(f"[TCP localhost] {ex}", 1)
                         except OSError as ex:
-                            _cli_exit(f"Error connecting to localhost: {ex}", 1)
+                            _cli_exit(
+                                f"No Meshtastic device detected and no TCP listener on localhost: {ex}",
+                                1,
+                            )
 
                 if client is None:
                     _cli_exit(

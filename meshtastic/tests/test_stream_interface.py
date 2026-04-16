@@ -119,19 +119,39 @@ def test_read_bytes_wraps_stream_exceptions_as_stream_closed() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_read_bytes_propagates_type_error() -> None:
-    """_read_bytes should not swallow backend TypeError programming errors."""
+def test_read_bytes_propagates_unexpected_type_error() -> None:
+    """_read_bytes should not swallow unexpected backend TypeError values."""
     iface = StreamInterface(noProto=True, connectNow=False)
     try:
         stream = MagicMock()
         stream.is_open = True
-        stream.read.side_effect = TypeError("fd is None")
+        stream.read.side_effect = TypeError("unexpected type bug")
         iface.stream = stream
 
-        with pytest.raises(TypeError, match="fd is None"):
+        with pytest.raises(TypeError, match="unexpected type bug"):
             iface._read_bytes(5)
         stream.close.assert_not_called()
         assert iface.stream is stream
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_read_bytes_wraps_transport_fd_type_error() -> None:
+    """_read_bytes should normalize transport fd-state TypeError to StreamClosedError."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        stream = MagicMock()
+        stream.is_open = True
+        stream.read.side_effect = TypeError(
+            "'NoneType' object cannot be interpreted as an integer"
+        )
+        iface.stream = stream
+
+        with pytest.raises(StreamInterface.StreamClosedError) as exc_info:
+            iface._read_bytes(5)
+        assert isinstance(exc_info.value.__cause__, TypeError)
     finally:
         iface.close()
 
@@ -504,3 +524,87 @@ def test_reader_resyncs_when_start1_repeats_before_start2() -> None:
         handle_from_radio.assert_called_once_with(b"X")
     finally:
         iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_connect_resets_closing_for_reconnect() -> None:
+    """connect() must reset _closing so a retry after close() can succeed."""
+    stream = MagicMock()
+    stream.read.return_value = b""
+    stream.write.return_value = 1
+    stream.is_open = True
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        iface.stream = stream
+        iface.connect()
+        assert iface._closing is False
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_connect_resets_closing_after_explicit_close() -> None:
+    """After close() sets _closing=True, a subsequent connect() must clear it."""
+    stream = MagicMock()
+    stream.read.return_value = b""
+    stream.write.return_value = 1
+    stream.is_open = True
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        iface.stream = stream
+        iface.connect()
+        iface.close()
+        assert iface._closing is True
+
+        iface.stream = stream
+        iface.connect()
+        assert iface._closing is False
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_connect_raises_when_reader_thread_alive() -> None:
+    """connect() must raise StreamInterfaceError if the reader thread from a prior attempt is still alive."""
+    import threading
+
+    iface = StreamInterface(noProto=True, connectNow=False)
+    alive_event = threading.Event()
+    blocking_thread = threading.Thread(
+        target=alive_event.wait, kwargs={"timeout": 5}, daemon=True
+    )
+    blocking_thread.start()
+    try:
+        iface._rxThread = blocking_thread
+        with pytest.raises(
+            StreamInterface.StreamInterfaceError,
+            match="Cannot reconnect: reader thread from previous attempt is still alive",
+        ):
+            iface.connect()
+    finally:
+        alive_event.set()
+        blocking_thread.join(timeout=3)
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_connect_succeeds_when_reader_thread_dead() -> None:
+    """connect() should proceed normally when the previous reader thread is dead."""
+    import threading
+
+    iface = StreamInterface(noProto=True, connectNow=False)
+    dead_thread = threading.Thread(target=lambda: None, daemon=True)
+    dead_thread.start()
+    dead_thread.join(timeout=3)
+    iface._rxThread = dead_thread
+    iface._provides_own_stream = True  # type: ignore[attr-defined]
+    iface.stream = None
+    with patch.object(iface, "_start_config") as mock_start:
+        iface.connect()
+    assert mock_start.assert_called_once() is None
+    assert iface._rxThread is not dead_thread
+    iface.close()

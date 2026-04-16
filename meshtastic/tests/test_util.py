@@ -369,6 +369,54 @@ def test_findPorts_when_duplicate_found_and_duplicate_option_not_used(
     patch_comports.assert_called()
 
 
+@pytest.mark.unit
+@patch("serial.tools.list_ports.comports")
+@patch("glob.glob")
+@patch("os.path.isdir", return_value=True)
+@patch("platform.system", return_value="Linux")
+@patch("os.path.realpath")
+def test_findPorts_prefers_linux_by_id_alias_when_available(
+    patch_realpath: MagicMock,
+    patch_system: MagicMock,
+    patch_isdir: MagicMock,
+    patch_glob: MagicMock,
+    patch_comports: MagicMock,
+) -> None:
+    """On Linux, prefer stable /dev/serial/by-id aliases over ttyACM paths."""
+    by_id_alias = "/dev/serial/by-id/usb-RAK4631-if00"
+    tty_device = "/dev/ttyACM1"
+    fake1 = _TempPort(tty_device, vid=0x239A)
+    patch_comports.return_value = [fake1]
+    patch_glob.return_value = [by_id_alias]
+    patch_realpath.side_effect = lambda path: (
+        tty_device if path in (by_id_alias, tty_device) else path
+    )
+
+    assert findPorts() == [by_id_alias]
+
+
+@pytest.mark.unit
+@patch("serial.tools.list_ports.comports")
+@patch("glob.glob", return_value=[])
+@patch("os.path.isdir", return_value=True)
+@patch("platform.system", return_value="Linux")
+@patch("os.path.realpath")
+def test_findPorts_keeps_tty_path_when_no_by_id_alias_matches(
+    patch_realpath: MagicMock,
+    patch_system: MagicMock,
+    patch_isdir: MagicMock,
+    patch_glob: MagicMock,
+    patch_comports: MagicMock,
+) -> None:
+    """When no by-id alias resolves to a tty path, keep original device path."""
+    tty_device = "/dev/ttyACM1"
+    fake1 = _TempPort(tty_device, vid=0x239A)
+    patch_comports.return_value = [fake1]
+    patch_realpath.side_effect = lambda path: path
+
+    assert findPorts() == [tty_device]
+
+
 @pytest.mark.unitslow
 def test_convert_mac_addr() -> None:
     """Test convert_mac_addr()."""
@@ -644,9 +692,9 @@ def test_messageToJson_shows_all() -> None:
         "nodedbCount": 0,
     }
     for key, value in expected.items():
-        assert (
-            actual.get(key) == value
-        ), f"Key {key}: expected {value}, got {actual.get(key)}"
+        assert actual.get(key) == value, (
+            f"Key {key}: expected {value}, got {actual.get(key)}"
+        )
     # firmwareEdition presence only — value depends on proto enum default name
     assert "firmwareEdition" in actual
 
@@ -821,8 +869,10 @@ def test_fuzz_fromStr_hex_prefixed(hex_digits: str) -> None:
         min_size=1,
         max_size=64,
     ).filter(
-        lambda s: re.fullmatch(r"[0-9a-fA-F]+", s) is None
-        and not any(ch.isspace() for ch in s)
+        lambda s: (
+            re.fullmatch(r"[0-9a-fA-F]+", s) is None
+            and not any(ch.isspace() for ch in s)
+        )
     )
 )
 def test_fuzz_fromStr_hex_invalid_raises(hex_digits: str) -> None:
@@ -955,15 +1005,15 @@ def test_tdeck_vid_pid_mapping() -> None:
         for d in supported_devices
         if d.usb_vendor_id_in_hex == "303a" and d.usb_product_id_in_hex == "1001"
     ]
-    assert (
-        len(tdeck_devices) == 1
-    ), "Expected exactly one T-Deck device with VID 303a and PID 1001"
-    assert (
-        tdeck_devices[0].name == "T-Deck"
-    ), f"Expected device name 'T-Deck', got '{tdeck_devices[0].name}'"
-    assert (
-        tdeck_devices[0].for_firmware == "t-deck"
-    ), f"Expected for_firmware 't-deck', got '{tdeck_devices[0].for_firmware}'"
+    assert len(tdeck_devices) == 1, (
+        "Expected exactly one T-Deck device with VID 303a and PID 1001"
+    )
+    assert tdeck_devices[0].name == "T-Deck", (
+        f"Expected device name 'T-Deck', got '{tdeck_devices[0].name}'"
+    )
+    assert tdeck_devices[0].for_firmware == "t-deck", (
+        f"Expected for_firmware 't-deck', got '{tdeck_devices[0].for_firmware}'"
+    )
 
 
 @pytest.mark.unit

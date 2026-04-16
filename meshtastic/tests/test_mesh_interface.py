@@ -723,6 +723,46 @@ def test_connected_noop_when_closing() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_prepare_for_connect_resets_closing() -> None:
+    """_prepare_for_connect() must reset _closing so a retry connect can succeed."""
+    with MeshInterface(noProto=True) as iface:
+        iface.close()
+        assert iface._closing is True
+
+        iface._prepare_for_connect()
+        assert iface._closing is False
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_connected_succeeds_after_prepare_for_connect() -> None:
+    """After close() + _prepare_for_connect(), _connected() must set isConnected."""
+    with MeshInterface(noProto=True) as iface:
+        iface.close()
+        assert iface._closing is True
+        assert iface.isConnected.is_set() is False
+
+        iface._prepare_for_connect()
+        assert iface._closing is False
+
+        iface._connected()
+        assert iface.isConnected.is_set() is True
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_prepare_for_connect_idempotent() -> None:
+    """Calling _prepare_for_connect() on a fresh interface should not break anything."""
+    with MeshInterface(noProto=True) as iface:
+        assert iface._closing is False
+        iface._prepare_for_connect()
+        assert iface._closing is False
+        iface._connected()
+        assert iface.isConnected.is_set() is True
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_connected_publishes_established_once_per_connected_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

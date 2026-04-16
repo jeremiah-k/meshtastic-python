@@ -8,6 +8,7 @@ import logging
 import platform
 import re
 import sys
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, cast
@@ -267,6 +268,17 @@ def test_parse_host_port_rejects_empty_bracketed_ipv6_hostname() -> None:
 
 
 @pytest.mark.unit
+def test_is_local_destination_accepts_hex_node_id_forms() -> None:
+    iface = MagicMock()
+    iface.myInfo = SimpleNamespace(my_node_num=int("25d6e474", 16))
+
+    assert main_module._is_local_destination(iface, "!25d6e474") is True
+    assert main_module._is_local_destination(iface, "0x25D6E474") is True
+    assert main_module._is_local_destination(iface, str(int("25d6e474", 16))) is True
+    assert main_module._is_local_destination(iface, "!ffffffff") is False
+
+
+@pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_host_argument_passes_parsed_port_to_tcp_interface() -> None:
     """Test --host host:port passes parsed host and port to TCPInterface."""
@@ -336,7 +348,7 @@ def test_main_ch_index_no_devices(
     """Verify CLI handles --ch-index 1 when no devices are available.
 
     Asserts that the global channel_index is set to 1, main() exits with SystemExit
-    code 1, stderr contains "Error connecting to localhost", and the port discovery
+    code 1, stderr contains "No Meshtastic device detected", and the port discovery
     function was invoked.
 
     """
@@ -350,7 +362,11 @@ def test_main_ch_index_no_devices(
     assert pytest_wrapped_e.value.code == 1
     out, err = capsys.readouterr()
     assert out == ""
-    assert re.search(r"Error connecting to localhost", err, re.MULTILINE)
+    assert re.search(
+        r"No Meshtastic device detected and no TCP listener on localhost",
+        err,
+        re.MULTILINE,
+    )
     patched_find_ports.assert_called()
 
 
@@ -1116,6 +1132,47 @@ def test_main_reboot_ota(capsys: pytest.CaptureFixture[str]) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@pytest.mark.parametrize(
+    ("args", "method_name", "marker"),
+    [
+        (["--reboot", "--ack"], "reboot", "inside mocked reboot"),
+        (["--reboot-ota", "--ack"], "rebootOTA", "inside mocked rebootOTA"),
+        (["--enter-dfu", "--ack"], "enterDFUMode", "inside mocked enterDFU"),
+        (["--shutdown", "--ack"], "shutdown", "inside mocked shutdown"),
+    ],
+)
+def test_rebooting_commands_with_ack_skip_wait(
+    args: list[str],
+    method_name: str,
+    marker: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Rebooting commands should skip trailing ACK waits to avoid hangs."""
+    sys.argv = ["", *args]
+    mt_config.args = sys.argv  # type: ignore[assignment]
+
+    mocked_node = MagicMock(autospec=Node)
+    getattr(mocked_node, method_name).side_effect = lambda: print(marker)
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    iface.getNode.return_value = mocked_node
+    mocked_node.iface = iface
+
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        main()
+        out, err = capsys.readouterr()
+        assert "Connected to radio" in out
+        assert marker in out
+        assert "Waiting for an acknowledgment from remote node" not in out
+        assert err == ""
+
+    iface.waitForAckNak.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_main_shutdown(capsys: pytest.CaptureFixture[str]) -> None:
     """Test --shutdown."""
     sys.argv = ["", "--shutdown"]
@@ -1270,6 +1327,7 @@ def test_main_sendtext_with_invalid_channel_nine(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 @patch("serial.Serial")
@@ -1279,6 +1337,7 @@ def test_main_sendtext_with_dest(
     _mock_serial: Any,
     _mocked_open: Any,
     _mock_hupcl: Any,
+    _mock_clear_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -1539,6 +1598,7 @@ def test_main_seturl(capsys: pytest.CaptureFixture[str]) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 @patch("serial.Serial")
@@ -1548,6 +1608,7 @@ def test_main_set_valid(
     _mocked_serial: Any,
     _mocked_open: Any,
     _mocked_hupcl: Any,
+    _mock_clear_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test --set with valid field."""
@@ -1571,6 +1632,7 @@ def test_main_set_valid(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 @patch("serial.Serial")
@@ -1580,6 +1642,7 @@ def test_main_set_valid_display_use_12_hour_alias(
     _mocked_serial: Any,
     _mocked_open: Any,
     _mocked_hupcl: Any,
+    _mock_clear_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test --set accepts legacy display.use_12_hour alias."""
@@ -1604,6 +1667,7 @@ def test_main_set_valid_display_use_12_hour_alias(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 @patch("serial.Serial")
@@ -1613,6 +1677,7 @@ def test_main_set_valid_wifi_psk(
     _mocked_serial: Any,
     _mocked_open: Any,
     _mocked_hupcl: Any,
+    _mock_clear_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -1641,6 +1706,7 @@ def test_main_set_valid_wifi_psk(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 @patch("serial.Serial")
@@ -1650,6 +1716,7 @@ def test_main_set_valid_lora_hop_limit(
     _mocked_serial: Any,
     _mocked_open: Any,
     _mocked_hupcl: Any,
+    _mock_clear_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test --set lora.hop_limit applies in a single configure write."""
@@ -1675,6 +1742,7 @@ def test_main_set_valid_lora_hop_limit(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 @patch("serial.Serial")
@@ -1684,6 +1752,7 @@ def test_main_set_invalid_wifi_psk(
     _mocked_serial: Any,
     _mocked_open: Any,
     _mocked_hupcl: Any,
+    _mock_clear_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test --set with an invalid value (psk must be 8 or more characters)."""
@@ -1762,6 +1831,62 @@ def test_get_pref_redacts_security_section_values(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_get_pref_allow_secrets_shows_private_key(
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """getPref(allow_secrets=True) should show the actual private key value."""
+    node = SimpleNamespace(
+        localConfig=localonly_pb2.LocalConfig(),
+        moduleConfig=localonly_pb2.LocalModuleConfig(),
+        requestConfig=MagicMock(),
+    )
+    private_key = bytes(range(32))
+    node.localConfig.security.private_key = private_key
+
+    with caplog.at_level(logging.DEBUG):
+        assert (
+            main_module.getPref(node, "security.private_key", allow_secrets=True)
+            is True
+        )
+    out, err = capsys.readouterr()
+    assert "security.private_key: <redacted>" not in out
+    assert base64.b64encode(private_key).decode("utf-8") in out
+    assert base64.b64encode(private_key).decode("utf-8") not in caplog.text
+    assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_get_pref_allow_secrets_shows_security_section_keys(
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """getPref(allow_secrets=True) whole-field read should show actual key values."""
+    node = SimpleNamespace(
+        localConfig=localonly_pb2.LocalConfig(),
+        moduleConfig=localonly_pb2.LocalModuleConfig(),
+        requestConfig=MagicMock(),
+    )
+    private_key = bytes(range(32))
+    public_key = bytes(range(32, 64))
+    node.localConfig.security.private_key = private_key
+    node.localConfig.security.public_key = public_key
+
+    with caplog.at_level(logging.DEBUG):
+        assert main_module.getPref(node, "security", allow_secrets=True) is True
+    out, err = capsys.readouterr()
+    assert "<redacted>" not in out
+    assert base64.b64encode(private_key).decode("utf-8") in out
+    assert base64.b64encode(public_key).decode("utf-8") in out
+    assert base64.b64encode(private_key).decode("utf-8") not in caplog.text
+    assert base64.b64encode(public_key).decode("utf-8") not in caplog.text
+    assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 @patch("serial.Serial")
@@ -1771,6 +1896,7 @@ def test_main_set_valid_camel_case(
     _mocked_serial: Any,
     _mocked_open: Any,
     _mocked_hupcl: Any,
+    _mock_clear_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test --set with valid field."""
@@ -1795,6 +1921,7 @@ def test_main_set_valid_camel_case(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 @patch("serial.Serial")
@@ -1804,6 +1931,7 @@ def test_main_set_with_invalid(
     _mocked_serial: Any,
     _mocked_open: Any,
     _mocked_hupcl: Any,
+    _mock_clear_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test --set with invalid field."""
@@ -1825,11 +1953,15 @@ def test_main_set_with_invalid(
             mo.assert_called()
 
 
-# TODO: write some negative --configure tests
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
-@patch("builtins.open", new_callable=mock_open, read_data="data")
+@patch(
+    "builtins.open",
+    new_callable=mock_open,
+    read_data="owner: TestSnake\nowner_short: TS\n",
+)
 @patch("serial.Serial")
 @patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
 def test_main_configure_with_snake_case(
@@ -1837,9 +1969,10 @@ def test_main_configure_with_snake_case(
     _mocked_serial: Any,
     _mocked_open: Any,
     _mocked_hupcl: Any,
+    _mock_clear_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Test --configure with valid file."""
+    """Test --configure applies snake_case owner/owner_short keys."""
     sys.argv = ["", "--configure", "example_config.yaml"]
     mt_config.args = sys.argv  # type: ignore[assignment]
 
@@ -1853,23 +1986,24 @@ def test_main_configure_with_snake_case(
             main()
             out, err = capsys.readouterr()
             assert re.search(r"Connected to radio", out, re.MULTILINE)
-            # should these come back? maybe a flag?
-            # assert re.search(r"Setting device owner", out, re.MULTILINE)
-            # assert re.search(r"Setting device owner short", out, re.MULTILINE)
-        # assert re.search(r"Setting channel url", out, re.MULTILINE)
-        # assert re.search(r"Fixing altitude", out, re.MULTILINE)
-        # assert re.search(r"Fixing latitude", out, re.MULTILINE)
-        # assert re.search(r"Fixing longitude", out, re.MULTILINE)
-        # assert re.search(r"Set location_share to LocEnabled", out, re.MULTILINE)
-        assert re.search(r"Writing modified configuration to device", out, re.MULTILINE)
+            assert re.search(r"Setting device owner to TestSnake", out, re.MULTILINE)
+            assert re.search(r"Setting device owner short to TS", out, re.MULTILINE)
+        assert re.search(
+            r"Configuration applied \(no reboot expected\)", out, re.MULTILINE
+        )
         assert err == ""
         mo.assert_called()
 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
-@patch("builtins.open", new_callable=mock_open, read_data="data")
+@patch(
+    "builtins.open",
+    new_callable=mock_open,
+    read_data="owner: TestCamel\nownerShort: TC\n",
+)
 @patch("serial.Serial")
 @patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
 def test_main_configure_with_camel_case_keys(
@@ -1877,9 +2011,10 @@ def test_main_configure_with_camel_case_keys(
     _mocked_serial: Any,
     _mocked_open: Any,
     _mocked_hupcl: Any,
+    _mock_clear_hupcl: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Test --configure with valid file."""
+    """Test --configure applies camelCase owner/ownerShort keys."""
     sys.argv = ["", "--configure", "exampleConfig.yaml"]
     mt_config.args = sys.argv  # type: ignore[assignment]
 
@@ -1893,18 +2028,13 @@ def test_main_configure_with_camel_case_keys(
             main()
             out, err = capsys.readouterr()
             assert re.search(r"Connected to radio", out, re.MULTILINE)
-            # should these come back? maybe a flag?
-            # assert re.search(r"Setting device owner", out, re.MULTILINE)
-            # assert re.search(r"Setting device owner short", out, re.MULTILINE)
-            # assert re.search(r"Setting channel url", out, re.MULTILINE)
-            # assert re.search(r"Fixing altitude", out, re.MULTILINE)
-            # assert re.search(r"Fixing latitude", out, re.MULTILINE)
-            # assert re.search(r"Fixing longitude", out, re.MULTILINE)
-            assert re.search(
-                r"Writing modified configuration to device", out, re.MULTILINE
-            )
-            assert err == ""
-            mo.assert_called()
+            assert re.search(r"Setting device owner to TestCamel", out, re.MULTILINE)
+            assert re.search(r"Setting device owner short to TC", out, re.MULTILINE)
+        assert re.search(
+            r"Configuration applied \(no reboot expected\)", out, re.MULTILINE
+        )
+        assert err == ""
+        mo.assert_called()
 
 
 @pytest.mark.unit
@@ -1950,12 +2080,12 @@ def test_main_configure_rejects_blank_owner_fields(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_configure_rejects_unknown_config_field(
+def test_main_configure_skips_unknown_config_field(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Test --configure fails fast for unknown fields instead of partially applying."""
+    """Test --configure skips unknown fields with a warning (old-config tolerance)."""
     config_path = tmp_path / "unknown_field.yaml"
     config_path.write_text(
         yaml.safe_dump({"config": {"bluetooth": {"not_a_field": True}}}),
@@ -1963,14 +2093,12 @@ def test_main_configure_rejects_unknown_config_field(
     )
     iface, target_node = _build_configure_interface()
 
-    with pytest.raises(SystemExit) as excinfo:
-        _run_main_configure_file(config_path, iface, monkeypatch)
+    _run_main_configure_file(config_path, iface, monkeypatch)
 
-    _, err = capsys.readouterr()
-    assert "Failed to apply config section 'bluetooth'" in err
-    assert excinfo.value.code == 1
-    target_node.writeConfig.assert_not_called()
-    target_node.commitSettingsTransaction.assert_not_called()
+    assert "not_a_field" in caplog.text
+    assert "Skipping unknown configuration field" in caplog.text
+    target_node.writeConfig.assert_called_once_with("bluetooth")
+    target_node.commitSettingsTransaction.assert_called_once()
 
 
 @pytest.mark.unit
@@ -2018,8 +2146,7 @@ def test_main_configure_rejects_invalid_security_base64(
         _run_main_configure_file(config_path, iface, monkeypatch)
 
     _, err = capsys.readouterr()
-    assert "Aborting due to:" in err
-    assert "base64" in err.lower()
+    assert "Failed to apply config section 'security'" in err
     assert excinfo.value.code == 1
     target_node.commitSettingsTransaction.assert_not_called()
 
@@ -2165,6 +2292,146 @@ def test_main_configure_accepts_display_use_12h_alias_spellings(
     )
     _run_main_configure_file(config_path, iface, monkeypatch)
     assert target_local.display.use_12h_clock is True
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_rejects_empty_config_mapping(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test --configure rejects an empty config mapping."""
+    config_path = tmp_path / "empty_config.yaml"
+    config_path.write_text(yaml.safe_dump({"config": {}}), encoding="utf-8")
+    iface, target_node = _build_configure_interface()
+
+    with pytest.raises(SystemExit) as excinfo:
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    _, err = capsys.readouterr()
+    assert "config" in err
+    assert excinfo.value.code == 1
+    target_node.beginSettingsTransaction.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_rejects_empty_module_config_mapping(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test --configure rejects an empty module_config mapping."""
+    config_path = tmp_path / "empty_module_config.yaml"
+    config_path.write_text(yaml.safe_dump({"module_config": {}}), encoding="utf-8")
+    iface, target_node = _build_configure_interface()
+
+    with pytest.raises(SystemExit) as excinfo:
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    _, err = capsys.readouterr()
+    assert "module_config" in err
+    assert excinfo.value.code == 1
+    target_node.beginSettingsTransaction.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_rejects_non_dict_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test --configure rejects a non-dict config value."""
+    config_path = tmp_path / "non_dict_config.yaml"
+    config_path.write_text(yaml.safe_dump({"config": "invalid"}), encoding="utf-8")
+    iface, target_node = _build_configure_interface()
+
+    with pytest.raises(SystemExit) as excinfo:
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    _, err = capsys.readouterr()
+    assert "config" in err
+    assert excinfo.value.code == 1
+    target_node.beginSettingsTransaction.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_rejects_non_dict_module_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test --configure rejects a non-dict module_config value."""
+    config_path = tmp_path / "non_dict_module_config.yaml"
+    config_path.write_text(yaml.safe_dump({"module_config": 42}), encoding="utf-8")
+    iface, target_node = _build_configure_interface()
+
+    with pytest.raises(SystemExit) as excinfo:
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    _, err = capsys.readouterr()
+    assert "module_config" in err
+    assert excinfo.value.code == 1
+    target_node.beginSettingsTransaction.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@pytest.mark.parametrize(
+    ("top_key", "section_name", "section_value"),
+    [
+        ("config", "lora", 1),
+        ("module_config", "mqtt", 1),
+    ],
+)
+def test_main_configure_rejects_invalid_subsection_payloads(
+    top_key: str,
+    section_name: str,
+    section_value: object,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test --configure rejects non-mapping subsection payloads."""
+    config_path = tmp_path / f"invalid_{top_key}_{section_name}.yaml"
+    config_path.write_text(
+        yaml.safe_dump({top_key: {section_name: section_value}}),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+
+    with pytest.raises(SystemExit) as excinfo:
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    _, err = capsys.readouterr()
+    assert f"{top_key}.{section_name}" in err
+    assert "non-empty mapping" in err
+    assert excinfo.value.code == 1
+    target_node.beginSettingsTransaction.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_rejects_malformed_yaml(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test --configure exits cleanly on malformed YAML input."""
+    config_path = tmp_path / "malformed_config.yaml"
+    config_path.write_text("config:\n  lora: [\n", encoding="utf-8")
+    iface, target_node = _build_configure_interface()
+
+    with pytest.raises(SystemExit) as excinfo:
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    _, err = capsys.readouterr()
+    assert "Failed to parse YAML configuration" in err
+    assert excinfo.value.code == 1
+    target_node.beginSettingsTransaction.assert_not_called()
 
 
 @pytest.mark.unit
@@ -3044,6 +3311,11 @@ def _build_configure_interface(
     if target_module is None:
         target_module = localonly_pb2.LocalModuleConfig()
 
+    device_local = localonly_pb2.LocalConfig()
+    device_local.CopyFrom(target_local)
+    device_module = localonly_pb2.LocalModuleConfig()
+    device_module.CopyFrom(target_module)
+
     target_node = MagicMock()
     target_node.localConfig = target_local
     target_node.moduleConfig = target_module
@@ -3053,7 +3325,50 @@ def _build_configure_interface(
     target_node.setURL = MagicMock()
     target_node.set_canned_message = MagicMock()
     target_node.set_ringtone = MagicMock()
-    target_node.writeConfig = MagicMock()
+    target_node.channels = []
+    target_node.partialChannels = []
+    target_node.requestChannels = MagicMock()
+
+    def _write_config_side_effect(config_name: str) -> None:
+        local_field = target_local.DESCRIPTOR.fields_by_name.get(config_name)
+        if local_field is not None:
+            device_local.ClearField(config_name)  # type: ignore[arg-type]
+            if target_local.HasField(config_name):  # type: ignore[arg-type]
+                getattr(device_local, config_name).CopyFrom(
+                    getattr(target_local, config_name)
+                )
+            return
+        module_field = target_module.DESCRIPTOR.fields_by_name.get(config_name)
+        if module_field is not None:
+            device_module.ClearField(config_name)  # type: ignore[arg-type]
+            if target_module.HasField(config_name):  # type: ignore[arg-type]
+                getattr(device_module, config_name).CopyFrom(
+                    getattr(target_module, config_name)
+                )
+
+    target_node.writeConfig = MagicMock(side_effect=_write_config_side_effect)
+
+    def _request_config_side_effect(config_type: object, *_args: object) -> None:
+        field_name = getattr(config_type, "name", None)
+        containing_type = getattr(config_type, "containing_type", None)
+        containing_name = getattr(containing_type, "name", None)
+        if not isinstance(field_name, str):
+            return
+        if containing_name == "LocalConfig":
+            target_local.ClearField(field_name)  # type: ignore[arg-type]
+            if device_local.HasField(field_name):  # type: ignore[arg-type]
+                getattr(target_local, field_name).CopyFrom(
+                    getattr(device_local, field_name)
+                )
+            return
+        if containing_name == "LocalModuleConfig":
+            target_module.ClearField(field_name)  # type: ignore[arg-type]
+            if device_module.HasField(field_name):  # type: ignore[arg-type]
+                getattr(target_module, field_name).CopyFrom(
+                    getattr(device_module, field_name)
+                )
+
+    target_node.requestConfig = MagicMock(side_effect=_request_config_side_effect)
     target_node.setFixedPosition = MagicMock()
 
     iface = MagicMock(autospec=SerialInterface)
@@ -3219,6 +3534,8 @@ def test_main_export_config_and_configure_round_trip_nonstandard(
 
     target_local = localonly_pb2.LocalConfig()
     target_module = localonly_pb2.LocalModuleConfig()
+    device_local = localonly_pb2.LocalConfig()
+    device_module = localonly_pb2.LocalModuleConfig()
     target_node = MagicMock()
     target_node.localConfig = target_local
     target_node.moduleConfig = target_module
@@ -3228,7 +3545,51 @@ def test_main_export_config_and_configure_round_trip_nonstandard(
     target_node.setURL = MagicMock()
     target_node.set_canned_message = MagicMock()
     target_node.set_ringtone = MagicMock()
-    target_node.writeConfig = MagicMock()
+    target_node.channels = []
+    target_node.partialChannels = []
+    target_node.requestChannels = MagicMock()
+
+    def _write_config_side_effect(config_name: str) -> None:
+        local_field = target_local.DESCRIPTOR.fields_by_name.get(config_name)
+        if local_field is not None:
+            device_local.ClearField(config_name)  # type: ignore[arg-type]
+            if target_local.HasField(config_name):  # type: ignore[arg-type]
+                getattr(device_local, config_name).CopyFrom(
+                    getattr(target_local, config_name)
+                )
+            return
+        module_field = target_module.DESCRIPTOR.fields_by_name.get(config_name)
+        if module_field is not None:
+            device_module.ClearField(config_name)  # type: ignore[arg-type]
+            if target_module.HasField(config_name):  # type: ignore[arg-type]
+                getattr(device_module, config_name).CopyFrom(
+                    getattr(target_module, config_name)
+                )
+
+    target_node.writeConfig = MagicMock(side_effect=_write_config_side_effect)
+
+    def _request_config_side_effect(config_type: object, *_args: object) -> None:
+        field_name = getattr(config_type, "name", None)
+        containing_type = getattr(config_type, "containing_type", None)
+        containing_name = getattr(containing_type, "name", None)
+        if not isinstance(field_name, str):
+            return
+        if containing_name == "LocalConfig":
+            target_local.ClearField(field_name)  # type: ignore[arg-type]
+            if device_local.HasField(field_name):  # type: ignore[arg-type]
+                getattr(target_local, field_name).CopyFrom(
+                    getattr(device_local, field_name)
+                )
+            return
+        if containing_name == "LocalModuleConfig":
+            target_module.ClearField(field_name)  # type: ignore[arg-type]
+            if device_module.HasField(field_name):  # type: ignore[arg-type]
+                getattr(target_module, field_name).CopyFrom(
+                    getattr(device_module, field_name)
+                )
+
+    target_node.requestConfig = MagicMock(side_effect=_request_config_side_effect)
+    target_node.getURL = MagicMock(return_value="https://meshtastic.org/e/#CgYSAQABAA")
     target_node.setFixedPosition = MagicMock()
 
     configure_iface = MagicMock(autospec=SerialInterface)
@@ -3238,6 +3599,12 @@ def test_main_export_config_and_configure_round_trip_nonstandard(
     configure_iface.localNode = target_node
 
     monkeypatch.setattr("time.sleep", lambda _: None)
+    _patch_fast_monotonic(monkeypatch)
+    monkeypatch.setattr(
+        "meshtastic.__main__._post_seturl_stability_check",
+        lambda *a, **k: True,
+    )
+    configure_iface.waitForConfig = MagicMock()
     sys.argv = ["", "--configure", str(export_path)]
     mt_config.args = cast(Any, sys.argv)
     with patch(
@@ -3284,7 +3651,7 @@ def test_main_export_config_and_configure_round_trip_nonstandard(
 
     out, err = capsys.readouterr()
     assert re.search(r"Exported configuration to", out, re.MULTILINE)
-    assert re.search(r"Writing modified configuration to device", out, re.MULTILINE)
+    assert re.search(r"Configuration transaction committed", out, re.MULTILINE)
     assert err == ""
 
 
@@ -4221,7 +4588,11 @@ def test_tunnel_tunnel_arg_with_no_devices(
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         _out, err = capsys.readouterr()
-        assert re.search(r"Error connecting to localhost", err, re.MULTILINE)
+        assert re.search(
+            r"No Meshtastic device detected and no TCP listener on localhost",
+            err,
+            re.MULTILINE,
+        )
 
 
 @pytest.mark.unit
@@ -4247,13 +4618,18 @@ def test_tunnel_subnet_arg_with_no_devices(
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         _out, err = capsys.readouterr()
-        assert re.search(r"Error connecting to localhost", err, re.MULTILINE)
+        assert re.search(
+            r"No Meshtastic device detected and no TCP listener on localhost",
+            err,
+            re.MULTILINE,
+        )
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="on windows is no fcntl module")
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("platform.system")
+@patch("meshtastic.serial_interface.SerialInterface._clear_hupcl_on_fd")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
 @patch("serial.Serial")
@@ -4263,6 +4639,7 @@ def test_tunnel_tunnel_arg(
     _mocked_serial: Any,
     _mocked_open: Any,
     _mock_hupcl: Any,
+    _mock_clear_hupcl: Any,
     mock_platform_system: Any,
     caplog: pytest.LogCaptureFixture,
     capsys: pytest.CaptureFixture[str],
@@ -4982,3 +5359,441 @@ def test_printConfig_skips_non_message_sections(
     out, err = capsys.readouterr()
     assert out == ""
     assert err == ""
+
+
+def _patch_fast_monotonic(monkeypatch: pytest.MonkeyPatch) -> None:
+    _val = [0.0]
+
+    def _fast():
+        _val[0] += 100.0
+        return _val[0]
+
+    monkeypatch.setattr(main_module.time, "monotonic", _fast)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_phase3_verified_with_matching_config_values(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "phase3_verified.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"config": {"power": {"ls_secs": 222}}}),
+        encoding="utf-8",
+    )
+    target_local = localonly_pb2.LocalConfig()
+    iface, target_node = _build_configure_interface(
+        target_local, localonly_pb2.LocalModuleConfig()
+    )
+    iface.isConnected = threading.Event()
+    iface.isConnected.set()
+    iface.waitForConfig = MagicMock()
+    target_node.requestConfig = MagicMock(
+        side_effect=lambda field_desc: (
+            setattr(target_local.power, "ls_secs", 222)
+            if getattr(field_desc, "name", "") == "power"
+            else None
+        )
+    )
+    _patch_fast_monotonic(monkeypatch)
+    _run_main_configure_file(config_path, iface, monkeypatch)
+    out, _ = capsys.readouterr()
+    assert "requested settings verified" in out
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_phase1_direct_write_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "phase1_order.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "owner": "OrderTest",
+                "owner_short": "OT",
+                "location": {"lat": 1.0, "lon": 2.0, "alt": 3.0},
+                "canned_messages": "A|B|C",
+                "ringtone": "24:d=16,o=5,b=100:c",
+                "channel_url": "https://meshtastic.org/e/#CgYSAQABAA",
+            }
+        ),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    _patch_fast_monotonic(monkeypatch)
+    _run_main_configure_file(config_path, iface, monkeypatch)
+
+    phase1_methods = (
+        "setOwner",
+        "setFixedPosition",
+        "set_canned_message",
+        "set_ringtone",
+        "setURL",
+    )
+    method_names = [c[0] for c in target_node.method_calls]
+    relevant = [m for m in method_names if m in phase1_methods]
+    expected = [
+        "setOwner",
+        "setOwner",
+        "setFixedPosition",
+        "set_canned_message",
+        "set_ringtone",
+        "setURL",
+    ]
+    assert relevant == expected
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_owner_values_use_normalized_strings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "owner_normalized.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "owner": "  Normalized Owner  ",
+                "owner_short": "  NO  ",
+            }
+        ),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    _run_main_configure_file(config_path, iface, monkeypatch)
+
+    assert target_node.setOwner.call_args_list == [
+        call(long_name="Normalized Owner"),
+        call(long_name=None, short_name="NO"),
+    ]
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_channel_url_is_terminal_phase1_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "terminal_seturl.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "owner": "TerminalTest",
+                "location": {"lat": 10.0, "lon": 20.0, "alt": 30.0},
+                "channel_url": "https://meshtastic.org/e/#CgYSAQABAA",
+            }
+        ),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    _patch_fast_monotonic(monkeypatch)
+    _run_main_configure_file(config_path, iface, monkeypatch)
+
+    method_names = [c[0] for c in target_node.method_calls]
+    seturl_indices = [i for i, m in enumerate(method_names) if m == "setURL"]
+    assert len(seturl_indices) == 1
+    seturl_idx = seturl_indices[0]
+    after_seturl = method_names[seturl_idx + 1 :]
+    for method in (
+        "setFixedPosition",
+        "set_canned_message",
+        "set_ringtone",
+        "setOwner",
+    ):
+        assert method not in after_seturl
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_seturl_unstable_aborts_before_phase2(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "unstable_seturl.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "channel_url": "https://meshtastic.org/e/#CgYSAQABAA",
+                "config": {"power": {"ls_secs": 222}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    target_local = localonly_pb2.LocalConfig()
+    iface, target_node = _build_configure_interface(
+        target_local, localonly_pb2.LocalModuleConfig()
+    )
+    iface.isConnected = threading.Event()
+    iface.isConnected.set()
+    iface.waitForConfig = MagicMock()
+    monkeypatch.setattr(
+        "meshtastic.__main__._post_seturl_stability_check",
+        lambda *a, **k: False,
+    )
+    _patch_fast_monotonic(monkeypatch)
+    with pytest.raises(SystemExit):
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    target_node.beginSettingsTransaction.assert_not_called()
+    _, err = capsys.readouterr()
+    assert "transport did not stabilize" in err
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_seturl_stable_proceeds_to_phase2(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "stable_seturl.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "channel_url": "https://meshtastic.org/e/#CgYSAQABAA",
+                "config": {"power": {"ls_secs": 222}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    target_local = localonly_pb2.LocalConfig()
+    iface, target_node = _build_configure_interface(
+        target_local, localonly_pb2.LocalModuleConfig()
+    )
+    iface.isConnected = threading.Event()
+    iface.isConnected.set()
+    iface.waitForConfig = MagicMock()
+    monkeypatch.setattr(
+        "meshtastic.__main__._post_seturl_stability_check",
+        lambda *a, **k: True,
+    )
+    _patch_fast_monotonic(monkeypatch)
+    _run_main_configure_file(config_path, iface, monkeypatch)
+
+    target_node.beginSettingsTransaction.assert_called_once()
+    target_node.commitSettingsTransaction.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_rejects_channel_url_aliases(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "alias_channel_url.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "channel_url": "https://meshtastic.org/e/#CgYSAQABAA",
+                "channelUrl": "https://meshtastic.org/e/#CgYSAQABAA",
+            }
+        ),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    with pytest.raises(SystemExit):
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    _, err = capsys.readouterr()
+    assert "channel_url" in err
+    assert "channelUrl" in err
+    target_node.beginSettingsTransaction.assert_not_called()
+    target_node.setURL.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_rejects_owner_short_aliases(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "alias_owner_short.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "owner_short": "OT",
+                "ownerShort": "OT",
+            }
+        ),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    with pytest.raises(SystemExit):
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    _, err = capsys.readouterr()
+    assert "owner_short" in err
+    assert "ownerShort" in err
+    target_node.beginSettingsTransaction.assert_not_called()
+    target_node.setOwner.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_phase3_no_reconnect_needed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "phase3_no_reboot.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"owner": "TestUser"}),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    _run_main_configure_file(config_path, iface, monkeypatch)
+    out, _ = capsys.readouterr()
+    assert "no reboot expected" in out
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_channel_url_only_reports_possible_reconnect(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "phase1_channel_url_only.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"channel_url": "https://meshtastic.org/e/#CgcSAQE6AggN"}),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    _run_main_configure_file(config_path, iface, monkeypatch)
+    out, _ = capsys.readouterr()
+    assert "Phase 1: Applying direct configuration" in out
+    assert (
+        "Configuration applied. Channel URL updates may still trigger reconnect/reboot."
+        in out
+    )
+    assert "Configuration applied (no reboot expected)." not in out
+    target_node.setURL.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_channel_url_skip_when_already_matching(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "phase1_channel_url_skip.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"channel_url": "https://meshtastic.org/e/#CgcSAQE6AggN"}),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    monkeypatch.setattr(
+        "meshtastic.__main__._channel_url_matches_current_device_state",
+        lambda *a, **k: True,
+    )
+    _run_main_configure_file(config_path, iface, monkeypatch)
+    out, _ = capsys.readouterr()
+    assert "Channel url already matches device state; skipping apply." in out
+    assert "Configuration applied (no reboot expected)." in out
+    target_node.setURL.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_phase3_channel_url_verified(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from ..protobuf import apponly_pb2, channel_pb2
+
+    config_path = tmp_path / "phase3_channel_url.yaml"
+    channel_settings = channel_pb2.ChannelSettings()
+    channel_settings.psk = b"\x01"
+    channel_settings.name = "test"
+    cs = apponly_pb2.ChannelSet()
+    cs.settings.add().CopyFrom(channel_settings)
+    cs.lora_config.region = config_pb2.Config.LoRaConfig.RegionCode.Value("US")
+    cs.lora_config.hop_limit = 3
+    raw = cs.SerializeToString()
+    b64 = base64.b64encode(raw, altchars=b"-_").decode().rstrip("=")
+    test_url = f"https://meshtastic.org/e/#{b64}"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "channel_url": test_url,
+                "config": {"power": {"ls_secs": 222}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    target_local = localonly_pb2.LocalConfig()
+    target_local.lora.region = config_pb2.Config.LoRaConfig.RegionCode.Value("US")
+    target_local.lora.hop_limit = 3
+    iface, target_node = _build_configure_interface(
+        target_local, localonly_pb2.LocalModuleConfig()
+    )
+    primary_channel = channel_pb2.Channel()
+    primary_channel.role = channel_pb2.Channel.Role.PRIMARY
+    primary_channel.settings.CopyFrom(channel_settings)
+
+    def _request_channels_side_effect(*_args: object) -> None:
+        target_node.channels = [primary_channel]
+
+    target_node.channels = [primary_channel]
+    iface.isConnected = threading.Event()
+    iface.isConnected.set()
+    iface.waitForConfig = MagicMock()
+    target_node.requestConfig = MagicMock(
+        side_effect=lambda field_desc: (
+            setattr(target_local.power, "ls_secs", 222)
+            if getattr(field_desc, "name", "") == "power"
+            else None
+        )
+    )
+    target_node.requestChannels = MagicMock(side_effect=_request_channels_side_effect)
+    monkeypatch.setattr(
+        "meshtastic.__main__._verify_channel_url_against_state",
+        lambda *a, **k: False,
+    )
+    monkeypatch.setattr(
+        "meshtastic.__main__._post_seturl_stability_check",
+        lambda *a, **k: True,
+    )
+    _patch_fast_monotonic(monkeypatch)
+    _run_main_configure_file(config_path, iface, monkeypatch)
+    out, _ = capsys.readouterr()
+    assert "Could not fully verify" in out
+
+
+@pytest.mark.unit
+def test_post_seturl_stability_check_triggers_reconnect_when_disconnected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    event = threading.Event()
+    iface = SimpleNamespace(
+        isConnected=event,
+        waitForConfig=MagicMock(),
+    )
+    iface.connect = MagicMock(side_effect=event.set)
+    monkeypatch.setattr("time.sleep", lambda _: None)
+
+    assert (
+        main_module._post_seturl_stability_check(cast(Any, iface), timeout=2.0) is True
+    )
+    iface.connect.assert_called()
+    iface.waitForConfig.assert_called_once()
+
+
+@pytest.mark.unit
+def test_post_factory_reset_ready_probe_closes_and_probes_reconnect() -> None:
+    iface = cast(Any, object.__new__(SerialInterface))
+    iface.connect = MagicMock()
+    iface.close = MagicMock()
+
+    main_module._post_factory_reset_ready_probe(cast(Any, iface))
+
+    iface.connect.assert_called_once()
+    assert iface.close.call_count >= 2

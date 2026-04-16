@@ -187,23 +187,6 @@ class TestSetUrlCacheManager:
         assert "Test warning message" in caplog.text
 
     @pytest.mark.unit
-    def test_restore_lora_snapshot_restores_config(
-        self, cache_manager: _SetUrlCacheManager, mock_local_node: MagicMock
-    ) -> None:
-        """restore_lora_snapshot restores LoRa config."""
-        original_config = config_pb2.Config.LoRaConfig()
-        original_config.hop_limit = 7
-        original_config.region = config_pb2.Config.LoRaConfig.RegionCode.US
-
-        cache_manager.restore_lora_snapshot(original_config)
-
-        assert mock_local_node.localConfig.lora.hop_limit == 7
-        assert (
-            mock_local_node.localConfig.lora.region
-            == config_pb2.Config.LoRaConfig.RegionCode.US
-        )
-
-    @pytest.mark.unit
     def test_apply_lora_success_updates_config(
         self, cache_manager: _SetUrlCacheManager, mock_local_node: MagicMock
     ) -> None:
@@ -234,43 +217,3 @@ class TestSetUrlCacheManager:
         assert mock_local_node.channels is None
         assert mock_local_node.partialChannels == []
         assert "Cache invalidated for testing" in caplog.text
-
-    @pytest.mark.unit
-    def test_restore_replace_channels_snapshot_restores_channels(
-        self, cache_manager: _SetUrlCacheManager, mock_local_node: MagicMock
-    ) -> None:
-        """restore_replace_channels_snapshot restores channel list from snapshot."""
-        original_channels = [
-            _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "primary"),
-            _make_channel(1, channel_pb2.Channel.Role.SECONDARY, "secondary"),
-        ]
-
-        cache_manager.restore_replace_channels_snapshot(original_channels)
-
-        assert len(mock_local_node.channels) == 2
-        assert mock_local_node.channels[0].settings.name == "primary"
-        assert mock_local_node.channels[1].settings.name == "secondary"
-        assert mock_local_node.partialChannels == []
-
-    @pytest.mark.unit
-    def test_restore_replace_channels_snapshot_with_none_live_channels_invalidates(
-        self,
-        cache_manager: _SetUrlCacheManager,
-        mock_local_node: MagicMock,
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """restore_replace_channels_snapshot should keep cache invalidated when live channels are missing."""
-        mock_local_node.channels = None
-        snapshot = [_make_channel(0, channel_pb2.Channel.Role.PRIMARY, "primary")]
-
-        with caplog.at_level(logging.WARNING):
-            cache_manager.restore_replace_channels_snapshot(
-                snapshot,
-                expected_channels_ref=[
-                    _make_channel(0, channel_pb2.Channel.Role.PRIMARY)
-                ],
-            )
-
-        assert mock_local_node.channels is None
-        assert mock_local_node.partialChannels == []
-        assert "replace-all rollback restore" in caplog.text

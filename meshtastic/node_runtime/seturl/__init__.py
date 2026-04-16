@@ -24,7 +24,13 @@ from meshtastic.node_runtime.seturl.execution import (
     _SetUrlReplaceExecutionState as _SetUrlReplaceExecutionState,
 )
 from meshtastic.node_runtime.seturl.helpers import (
+    _channel_matches_desired as _channel_matches_desired,
+)
+from meshtastic.node_runtime.seturl.helpers import (
     _channels_fingerprint as _channels_fingerprint,
+)
+from meshtastic.node_runtime.seturl.helpers import (
+    _compute_remaining_channel_writes as _compute_remaining_channel_writes,
 )
 from meshtastic.node_runtime.seturl.parser import (
     _SetUrlParsedInput as _SetUrlParsedInput,
@@ -41,7 +47,4 @@ from meshtastic.node_runtime.seturl.planner import (
 )
 from meshtastic.node_runtime.seturl.planner import (
     _SetUrlReplacePlanner as _SetUrlReplacePlanner,
-)
-from meshtastic.node_runtime.seturl.rollback import (
-    _SetUrlRollbackEngine as _SetUrlRollbackEngine,
 )

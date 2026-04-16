@@ -55,6 +55,52 @@ def _wait_for_host_ready(host: str, meshtastic_bin: str) -> None:
     )
 
 
+def _capture_host_debug_state(
+    tmp_path: Path,
+    host: str,
+    meshtastic_bin: str,
+    *,
+    label: str,
+) -> None:
+    """Best-effort host snapshot to improve integration-failure diagnostics."""
+    label_token = re.sub(r"[^A-Za-z0-9_.-]+", "_", label).strip("_") or "failure"
+    try:
+        info_rc, info_output = _run_host_cli(
+            host,
+            "--info",
+            timeout=HOST_READY_POLL_TIMEOUT_SECONDS,
+            meshtastic_bin=meshtastic_bin,
+        )
+        (tmp_path / f"debug-{label_token}-info.txt").write_text(
+            f"host={host}\nreturncode={info_rc}\n\n{info_output}",
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        (tmp_path / f"debug-{label_token}-info-error.txt").write_text(
+            f"host={host}\nsnapshot_exception={exc!r}\n",
+            encoding="utf-8",
+        )
+    export_path = tmp_path / f"debug-{label_token}-export.yaml"
+    try:
+        export_rc, export_output = _run_host_cli(
+            host,
+            "--export-config",
+            str(export_path),
+            timeout=HOST_READY_TIMEOUT_SECONDS,
+            meshtastic_bin=meshtastic_bin,
+        )
+        if export_rc != 0:
+            (tmp_path / f"debug-{label_token}-export-error.txt").write_text(
+                f"host={host}\nreturncode={export_rc}\n\n{export_output}",
+                encoding="utf-8",
+            )
+    except Exception as exc:
+        (tmp_path / f"debug-{label_token}-export-error.txt").write_text(
+            f"host={host}\nsnapshot_exception={exc!r}\n",
+            encoding="utf-8",
+        )
+
+
 def test_meshtasticd_info_has_core_sections(meshtastic_bin: str) -> None:
     """`--info` should connect and return the key high-level sections."""
     output = _run_host_cli_ok(HOST, "--info", meshtastic_bin=meshtastic_bin)
@@ -78,55 +124,79 @@ def test_meshtasticd_export_and_configure_roundtrip(
     export_path = tmp_path / "meshtasticd-ci-export.yaml"
     mutated_path = tmp_path / "meshtasticd-ci-mutated.yaml"
 
-    export_output = _run_host_cli_ok(
-        HOST,
-        "--export-config",
-        str(export_path),
-        meshtastic_bin=meshtastic_bin,
-    )
-    assert "Exported configuration to" in export_output
-    assert export_path.exists()
-    assert export_path.stat().st_size > 0
-
-    exported_data = yaml.safe_load(export_path.read_text(encoding="utf-8"))
-    assert isinstance(exported_data, dict)
-    mutated_data = dict(exported_data)
-    mutated_data["owner"] = "Meshtastic CI"
-    mutated_data["owner_short"] = "MCI"
-    mutated_path.write_text(
-        yaml.safe_dump(mutated_data, sort_keys=False), encoding="utf-8"
-    )
-
     try:
-        configure_output = _run_host_cli_ok(
+        export_output = _run_host_cli_ok(
             HOST,
-            "--configure",
-            str(mutated_path),
-            meshtastic_bin=meshtastic_bin,
-        )
-        assert "Writing modified configuration to device" in configure_output
-
-        _wait_for_host_ready(HOST, meshtastic_bin)
-        info_output = _run_host_cli_ok(
-            HOST,
-            "--info",
-            meshtastic_bin=meshtastic_bin,
-        )
-        assert info_output.startswith("Connected to radio")
-        assert re.search(r"^Owner: Meshtastic CI\b", info_output, re.MULTILINE)
-    finally:
-        restore_output = _run_host_cli_ok(
-            HOST,
-            "--configure",
+            "--export-config",
             str(export_path),
             meshtastic_bin=meshtastic_bin,
         )
-        assert "Writing modified configuration to device" in restore_output
-        _wait_for_host_ready(HOST, meshtastic_bin)
+        assert "Exported configuration to" in export_output
+        assert export_path.exists()
+        assert export_path.stat().st_size > 0
+
+        exported_data = yaml.safe_load(export_path.read_text(encoding="utf-8"))
+        assert isinstance(exported_data, dict)
+        mutated_data = dict(exported_data)
+        mutated_data["owner"] = "Meshtastic CI"
+        mutated_data["owner_short"] = "MCI"
+        mutated_path.write_text(
+            yaml.safe_dump(mutated_data, sort_keys=False), encoding="utf-8"
+        )
+
+        original_exc: BaseException | None = None
+        try:
+            configure_output = _run_host_cli_ok(
+                HOST,
+                "--configure",
+                str(mutated_path),
+                meshtastic_bin=meshtastic_bin,
+            )
+            assert "Writing modified configuration to device" in configure_output
+
+            _wait_for_host_ready(HOST, meshtastic_bin)
+            info_output = _run_host_cli_ok(
+                HOST,
+                "--info",
+                meshtastic_bin=meshtastic_bin,
+            )
+            assert info_output.startswith("Connected to radio")
+            assert re.search(r"^Owner: Meshtastic CI\b", info_output, re.MULTILINE)
+        except Exception as exc:
+            original_exc = exc
+            _capture_host_debug_state(
+                tmp_path,
+                HOST,
+                meshtastic_bin,
+                label="export-configure-roundtrip-failure-before-restore",
+            )
+            raise
+        finally:
+            try:
+                restore_output = _run_host_cli_ok(
+                    HOST,
+                    "--configure",
+                    str(export_path),
+                    meshtastic_bin=meshtastic_bin,
+                )
+                assert "Writing modified configuration to device" in restore_output
+                _wait_for_host_ready(HOST, meshtastic_bin)
+            except Exception:
+                if original_exc is not None:
+                    raise original_exc from None
+                raise
+    except Exception:
+        _capture_host_debug_state(
+            tmp_path,
+            HOST,
+            meshtastic_bin,
+            label="export-configure-roundtrip-failure",
+        )
+        raise
 
 
 def test_meshtasticd_get_and_sendtext_paths(meshtastic_bin: str) -> None:
-    """Read-only `--get` and broadcast `--sendtext` should succeed."""
+    """Read-only `--get` and private-port `--sendtext` should succeed."""
     get_output = _run_host_cli_ok(
         HOST,
         "--get",
@@ -137,6 +207,7 @@ def test_meshtasticd_get_and_sendtext_paths(meshtastic_bin: str) -> None:
 
     send_output = _run_host_cli_ok(
         HOST,
+        "--private",
         "--sendtext",
         "hello",
         meshtastic_bin=meshtastic_bin,
