@@ -268,7 +268,7 @@ def _post_configure_reconnect_and_verify(
     deadline = time.monotonic() + timeout
 
     disconnect_window = 2.0
-    logger.info(
+    logger.debug(
         "Waiting up to %.1fs for device disconnect (reboot indication)...",
         disconnect_window,
     )
@@ -282,14 +282,14 @@ def _post_configure_reconnect_and_verify(
         time.sleep(0.2)
 
     if not disconnected:
-        logger.info(
+        logger.debug(
             "No disconnect detected within %.1fs; device may not require reboot.",
             disconnect_window,
         )
 
     reconnect_deadline = deadline
     if disconnected:
-        logger.info(
+        logger.debug(
             "Waiting up to %.1fs for device reconnect...",
             reconnect_deadline - time.monotonic(),
         )
@@ -333,7 +333,7 @@ def _post_configure_reconnect_and_verify(
                 verify_module_config_fields=verify_module_config_fields,
             )
             interface.waitForConfig()
-            logger.info(
+            logger.debug(
                 "No disconnect observed; touched config/channel state refreshed before verification."
             )
         except Exception:
@@ -496,7 +496,7 @@ def _post_factory_reset_ready_probe(interface: MeshInterface) -> None:
     if not isinstance(interface, meshtastic.serial_interface.SerialInterface):
         return
 
-    logger.info("Factory reset: closing serial interface to release port.")
+    logger.debug("Factory reset: closing serial interface to release port.")
     try:
         interface.close()
     except Exception:
@@ -505,14 +505,14 @@ def _post_factory_reset_ready_probe(interface: MeshInterface) -> None:
             exc_info=True,
         )
 
-    logger.info(
+    logger.debug(
         "Factory reset: probing reconnect readiness (timeout=%.1fs)...",
         FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS,
     )
     probe_start = time.monotonic()
     try:
         interface.connect()
-        logger.info(
+        logger.debug(
             "Factory reset: reconnect probe succeeded in %.2fs.",
             time.monotonic() - probe_start,
         )
