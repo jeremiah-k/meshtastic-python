@@ -1128,20 +1128,33 @@ class TestWaitForConfig:
     def test_wait_for_config_lora_field_absent_graceful_success(
         self, send_pipeline: SendPipeline, mock_interface: MagicMock
     ) -> None:
-        """Test graceful success when the field is absent from the protobuf descriptor.
+        """Graceful success when lora is absent from the protobuf descriptor.
 
-        _timeout_for_field returns True for unknown fields, so the overall
-        waitForConfig should succeed even if the lora field doesn't exist.
+        Replaces the mock _channel_request_runtime with a real
+        _NodeChannelRequestRuntime wired to a mock localConfig whose DESCRIPTOR
+        lacks the 'lora' field. This exercises the actual early-return path in
+        _timeout_for_field rather than just stubbing it to True.
         """
+        from meshtastic.node_runtime.channel_request_runtime import (
+            _NodeChannelRequestRuntime,
+        )
+
+        mock_node = MagicMock()
+        desc = MagicMock()
+        desc.fields_by_name = {"bluetooth": MagicMock(), "device": MagicMock()}
+        mock_node.localConfig = MagicMock()
+        mock_node.localConfig.DESCRIPTOR = desc
+
+        mock_norm = MagicMock()
+        real_runtime = _NodeChannelRequestRuntime(
+            mock_node, normalization_runtime=mock_norm
+        )
+
         mock_interface._timeout.waitForSet.return_value = True
         mock_interface.localNode.waitForConfig.return_value = True
-        mock_interface.localNode._channel_request_runtime._timeout_for_field.return_value = True
+        mock_interface.localNode._channel_request_runtime = real_runtime
 
         send_pipeline.waitForConfig()
-
-        mock_interface.localNode._channel_request_runtime._timeout_for_field.assert_called_once_with(
-            "lora", LORA_CONFIG_WAIT_SECONDS
-        )
 
 
 class TestWaitForAckNak:

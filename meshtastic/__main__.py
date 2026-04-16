@@ -1715,25 +1715,16 @@ def onConnected(interface: MeshInterface) -> None:
 
         # do not print this line if we are exporting the config
         if not args.export_config:
-            stable_path = getattr(interface, "_stable_path", None)
-            if stable_path:
-                dev_path = getattr(interface, "devPath", "")
-                tty_name = os.path.basename(dev_path) if dev_path else "unknown"
-                # Only show stable-path suffix when it adds new information.
-                try:
-                    dev_resolved = os.path.realpath(dev_path) if dev_path else ""
-                except OSError:
-                    dev_resolved = ""
-                try:
-                    stable_resolved = os.path.realpath(stable_path)
-                except OSError:
-                    stable_resolved = stable_path
-                if dev_resolved == stable_resolved or dev_path == stable_path:
-                    _cli_print(f"Connected to radio on {tty_name}")
-                else:
+            dev_path = getattr(interface, "devPath", "")
+            if dev_path:
+                tty_name = os.path.basename(dev_path)
+                stable_path = getattr(interface, "_stable_path", None)
+                if stable_path and stable_path != dev_path:
                     _cli_print(
                         f"Connected to radio on {tty_name} (stable: {stable_path})"
                     )
+                else:
+                    _cli_print(f"Connected to radio on {tty_name}")
             else:
                 _cli_print("Connected to radio")
 

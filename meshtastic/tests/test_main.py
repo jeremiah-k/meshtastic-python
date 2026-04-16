@@ -5812,9 +5812,11 @@ def test_quiet_flag_parsed_by_argparse(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_quiet_suppresses_connect_banner(capsys: pytest.CaptureFixture[str]) -> None:
+def test_quiet_suppresses_connect_banner(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """--quiet suppresses the 'Connected to radio' banner."""
-    sys.argv = ["", "--info", "--quiet"]
+    monkeypatch.setattr(sys, "argv", ["", "--info", "--quiet"])
     mt_config.args = sys.argv  # type: ignore[assignment]
 
     iface = MagicMock(autospec=SerialInterface)
@@ -5888,7 +5890,12 @@ def test_stable_path_banner_omitted_when_already_by_id(
 def test_stable_path_banner_shown_when_different(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Stable-path banner suffix is shown when devPath differs from the by-id alias."""
+    """Stable-path suffix shown when devPath differs from by-id alias.
+
+    Even when both paths resolve to the same device via realpath (the normal
+    Linux /dev/ttyUSB* + /dev/serial/by-id/* case), the stable alias must
+    appear so users can copy-paste it for future connections.
+    """
     sys.argv = ["", "--info"]
     mt_config.args = sys.argv  # type: ignore[assignment]
 
@@ -5902,7 +5909,16 @@ def test_stable_path_banner_shown_when_different(
         print("inside mocked showInfo")
 
     iface.showInfo.side_effect = mock_showInfo
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+
+    def fake_realpath(p: str, **_kwargs: object) -> str:
+        if p in ("/dev/ttyUSB0", "/dev/serial/by-id/usb-foo-device"):
+            return "/dev/bus/usb/001/002"
+        return p
+
+    with (
+        patch("meshtastic.serial_interface.SerialInterface", return_value=iface),
+        patch("os.path.realpath", side_effect=fake_realpath),
+    ):
         main()
         out, err = capsys.readouterr()
         assert (
