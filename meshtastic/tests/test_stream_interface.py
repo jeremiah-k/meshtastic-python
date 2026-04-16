@@ -640,3 +640,32 @@ def test_resolve_stable_path_returns_none_on_non_linux() -> None:
         assert result is None
     finally:
         iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_resolve_stable_path_finds_first_matching_alias() -> None:
+    """_resolve_stable_path returns lexicographically first matching alias."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        iface.devPath = "/dev/ttyUSB0"
+        aliases = [
+            "/dev/serial/by-id/usb-foo-device",
+            "/dev/serial/by-id/usb-bar-device",
+        ]
+
+        def mock_realpath(path: str) -> str:
+            if path in aliases or path == "/dev/ttyUSB0":
+                return "/sys/devices/pci0000:00/0000:00:14.0/usb1/1-2/1-2:1.0/ttyUSB0"
+            return path
+
+        with patch("meshtastic.stream_interface.platform.system", return_value="Linux"):
+            with patch("os.path.isdir", return_value=True):
+                with patch("glob.glob", return_value=aliases):
+                    with patch("os.path.realpath", side_effect=mock_realpath):
+                        result = iface._resolve_stable_path()
+
+        # Should return lexicographically first alias (usb-bar-device comes before usb-foo-device)
+        assert result == "/dev/serial/by-id/usb-bar-device"
+    finally:
+        iface.close()

@@ -1055,7 +1055,8 @@ def traverseConfig(
                 if not _resolve_pref(icfg, pref_name):
                     parts = pref_name.split(".")
                     section = parts[0]
-                    skipped_by_section.setdefault(section, []).append(pref)
+                    relative = ".".join(parts[1:]) if len(parts) > 1 else pref_name
+                    skipped_by_section.setdefault(section, []).append(relative)
                     continue
                 try:
                     ok = setPref(icfg, pref_name, cfg[pref])
@@ -2451,8 +2452,7 @@ def onConnected(interface: MeshInterface) -> None:
         have_tunnel = platform.system() == "Linux"
         if have_tunnel and args.tunnel:
             if args.dest != BROADCAST_ADDR:
-                _cli_print("A tunnel can only be created using the local node.")
-                return
+                _cli_exit("A tunnel can only be created using the local node.", 1)
             # Even if others said we could close, stay open if the user asked for a tunnel
             closeNow = False
             if interface.noProto:
@@ -2936,6 +2936,10 @@ def common() -> None:
         raise RuntimeError(
             "mt_config.parser must be initialized before calling common()"
         )
+
+    # Validate that --quiet is not used with --debug, --listen, or --debuglib
+    if args.quiet and (args.debug or args.listen or args.debuglib):
+        parser.error("--quiet cannot be used with --debug, --listen, or --debuglib")
 
     if args.quiet:
         log_level = logging.WARNING

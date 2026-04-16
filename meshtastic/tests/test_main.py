@@ -4758,9 +4758,12 @@ def test_remove_ignored_node() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_set_owner_whitespace_only(capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_set_owner_whitespace_only(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test --set-owner with whitespace-only name."""
-    sys.argv = ["", "--set-owner", "   "]
+    monkeypatch.setattr(sys, "argv", ["", "--set-owner", "   "])
     mt_config.args = sys.argv  # type: ignore[assignment]
 
     iface = MagicMock(autospec=SerialInterface)
@@ -5840,9 +5843,10 @@ def test_quiet_suppresses_connect_banner(
 @pytest.mark.usefixtures("reset_mt_config")
 def test_quiet_still_allows_warnings_and_errors(
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """--quiet does not suppress warnings/errors from _cli_exit."""
-    sys.argv = ["", "--set-owner", "   ", "--quiet"]
+    monkeypatch.setattr(sys, "argv", ["", "--set-owner", "   ", "--quiet"])
     mt_config.args = sys.argv  # type: ignore[assignment]
 
     iface = MagicMock(autospec=SerialInterface)
@@ -5855,7 +5859,10 @@ def test_quiet_still_allows_warnings_and_errors(
         assert pytest_wrapped_e.value.code == 1
         out, err = capsys.readouterr()
         assert "Connected to radio" not in out
-        assert "empty" in err.lower() or "whitespace" in err.lower()
+        assert (
+            "ERROR: Long Name cannot be empty or contain only whitespace characters"
+            in err
+        )
 
 
 @pytest.mark.unit
