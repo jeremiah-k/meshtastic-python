@@ -2080,12 +2080,12 @@ def test_main_configure_rejects_blank_owner_fields(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_configure_rejects_unknown_config_field(
+def test_main_configure_skips_unknown_config_field(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Test --configure fails fast for unknown fields instead of partially applying."""
+    """Test --configure skips unknown fields with a warning (old-config tolerance)."""
     config_path = tmp_path / "unknown_field.yaml"
     config_path.write_text(
         yaml.safe_dump({"config": {"bluetooth": {"not_a_field": True}}}),
@@ -2093,14 +2093,12 @@ def test_main_configure_rejects_unknown_config_field(
     )
     iface, target_node = _build_configure_interface()
 
-    with pytest.raises(SystemExit) as excinfo:
-        _run_main_configure_file(config_path, iface, monkeypatch)
+    _run_main_configure_file(config_path, iface, monkeypatch)
 
-    _, err = capsys.readouterr()
-    assert "Failed to apply config section 'bluetooth'" in err
-    assert excinfo.value.code == 1
-    target_node.writeConfig.assert_not_called()
-    target_node.commitSettingsTransaction.assert_not_called()
+    assert "not_a_field" in caplog.text
+    assert "Skipping unknown configuration field" in caplog.text
+    target_node.writeConfig.assert_called_once_with("bluetooth")
+    target_node.commitSettingsTransaction.assert_called_once()
 
 
 @pytest.mark.unit
@@ -2148,8 +2146,7 @@ def test_main_configure_rejects_invalid_security_base64(
         _run_main_configure_file(config_path, iface, monkeypatch)
 
     _, err = capsys.readouterr()
-    assert "Aborting due to:" in err
-    assert "base64" in err.lower()
+    assert "Failed to apply config section 'security'" in err
     assert excinfo.value.code == 1
     target_node.commitSettingsTransaction.assert_not_called()
 

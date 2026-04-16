@@ -286,19 +286,18 @@ def test_get_pref_remote_node_config_request() -> None:
 
 
 @pytest.mark.unit
-def test_traverse_config_recursive_failure() -> None:
-    """Test traverseConfig returns False on recursive failure (lines 532-538).
+def test_traverse_config_leaf_failure_skipped() -> None:
+    """Test traverseConfig skips unknown leaf fields and returns True.
 
-    When a nested config fails to apply, traverseConfig should return False.
+    Unknown fields in old configs should be skipped with a warning, not fail.
     """
     interface_config = MagicMock()
 
-    # Create nested config that will fail
     config = {"level1": {"level2": {"invalid_field": "value"}}}
 
-    with patch.object(main_module, "setPref", return_value=False):
+    with patch.object(main_module, "_resolve_pref", return_value=False):
         result = traverseConfig("root", config, interface_config)
-        assert result is False
+        assert result is True
 
 
 # =============================================================================
@@ -474,8 +473,7 @@ def test_set_ringtone_module_unavailable(capsys: pytest.CaptureFixture[str]) -> 
         _out, _err = capsys.readouterr()
         # Check if skip message was printed
         assert (
-            "ringtone" in _out.lower()
-            or "external notification" in _out.lower()  # noqa
+            "ringtone" in _out.lower() or "external notification" in _out.lower()  # noqa
         )
 
 

@@ -5,6 +5,7 @@
 # pylint: disable=R0917,C0302
 
 import argparse
+import binascii
 import contextlib
 import enum
 import getpass
@@ -1017,16 +1018,42 @@ def traverseConfig(
             ):
                 return False
         else:
-            if not setPref(interface_config, pref_name, config[pref]):
-                if failed_fields is not None:
-                    failed_fields.append(pref_name)
-                logger.error(
-                    "Failed to apply configuration field %s from --configure",
+            if not _resolve_pref(interface_config, pref_name):
+                logger.warning(
+                    "Skipping unknown configuration field %s from --configure",
                     pref_name,
                 )
+                continue
+            try:
+                ok = setPref(interface_config, pref_name, config[pref])
+            except (ValueError, binascii.Error):
+                if failed_fields is not None:
+                    failed_fields.append(pref_name)
+                return False
+            if not ok:
+                if failed_fields is not None:
+                    failed_fields.append(pref_name)
                 return False
 
     return True
+
+
+def _resolve_pref(config: Any, comp_name: str) -> bool:
+    """Check whether a dotted field path resolves to a valid protobuf field."""
+    comp_name = _normalize_pref_name(comp_name)
+    name = splitCompoundName(comp_name)
+    snake_name = meshtastic.util.camel_to_snake(name[-1])
+    objDesc = config.DESCRIPTOR
+    config_type = objDesc.fields_by_name.get(name[0])
+    if config_type and config_type.message_type is not None:
+        config_part = config
+        for name_part in name[1:-1]:
+            part_snake_name = meshtastic.util.camel_to_snake(name_part)
+            config_part = getattr(config_part, config_type.name)
+            config_type = config_type.message_type.fields_by_name.get(part_snake_name)
+        if config_type and config_type.message_type is not None:
+            return config_type.message_type.fields_by_name.get(snake_name) is not None
+    return config_type is not None
 
 
 def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
@@ -1502,24 +1529,16 @@ def _handle_configure_command(
                 localConfig,
                 failed_fields=failed_config_fields,
             )
-            if not applied:
-                failed_field_msg = (
-                    f" Failing field: {failed_config_fields[0]!r}."
-                    if failed_config_fields
-                    else ""
-                )
-                logger.error(
-                    "Failed to apply --configure config section %s%s",
+            if failed_config_fields:
+                logger.warning(
+                    "Skipped %d unknown field(s) in config section %s: %s",
+                    len(failed_config_fields),
                     section,
-                    (
-                        f"; failing field={failed_config_fields[0]!r}"
-                        if failed_config_fields
-                        else ""
-                    ),
+                    ", ".join(repr(f) for f in failed_config_fields),
                 )
+            if not applied:
                 _cli_exit(
-                    f"Failed to apply config section {section!r}.{failed_field_msg} "
-                    "Check field names and values."
+                    f"Failed to apply config section {section!r} due to structural errors."
                 )
             interface.getNode(args.dest, **getNode_kwargs).writeConfig(
                 meshtastic.util.camel_to_snake(section)
@@ -1536,24 +1555,16 @@ def _handle_configure_command(
                 moduleConfig,
                 failed_fields=failed_module_fields,
             )
-            if not applied:
-                failed_field_msg = (
-                    f" Failing field: {failed_module_fields[0]!r}."
-                    if failed_module_fields
-                    else ""
-                )
-                logger.error(
-                    "Failed to apply --configure module_config section %s%s",
+            if failed_module_fields:
+                logger.warning(
+                    "Skipped %d unknown field(s) in module_config section %s: %s",
+                    len(failed_module_fields),
                     section,
-                    (
-                        f"; failing field={failed_module_fields[0]!r}"
-                        if failed_module_fields
-                        else ""
-                    ),
+                    ", ".join(repr(f) for f in failed_module_fields),
                 )
+            if not applied:
                 _cli_exit(
-                    f"Failed to apply module_config section {section!r}.{failed_field_msg} "
-                    "Check field names and values."
+                    f"Failed to apply module_config section {section!r} due to structural errors."
                 )
             interface.getNode(args.dest, **getNode_kwargs).writeConfig(
                 meshtastic.util.camel_to_snake(section)
