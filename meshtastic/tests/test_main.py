@@ -2085,7 +2085,7 @@ def test_main_configure_skips_unknown_config_field(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Test --configure skips unknown fields with a warning (old-config tolerance)."""
+    """Test --configure skips unknown fields with a batched warning."""
     config_path = tmp_path / "unknown_field.yaml"
     config_path.write_text(
         yaml.safe_dump({"config": {"bluetooth": {"not_a_field": True}}}),
@@ -2096,7 +2096,7 @@ def test_main_configure_skips_unknown_config_field(
     _run_main_configure_file(config_path, iface, monkeypatch)
 
     assert "not_a_field" in caplog.text
-    assert "Skipping unknown configuration field" in caplog.text
+    assert "Skipping 1 unknown field(s) from bluetooth" in caplog.text
     target_node.writeConfig.assert_called_once_with("bluetooth")
     target_node.commitSettingsTransaction.assert_called_once()
 

@@ -10,6 +10,7 @@ This module provides targeted tests for specific uncovered code paths:
 
 # pylint: disable=C0302,W0613,R0917,C0415
 
+import logging
 import sys
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -298,6 +299,29 @@ def test_traverse_config_leaf_failure_skipped() -> None:
     with patch.object(main_module, "_resolve_pref", return_value=False):
         result = traverseConfig("root", config, interface_config)
         assert result is True
+
+
+@pytest.mark.unit
+def test_traverse_config_batches_multiple_sections(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test traverseConfig batches unknown fields from different sections."""
+    interface_config = MagicMock()
+
+    config = {
+        "ambient_lighting": {"blue": 1, "red": 2, "green": 3},
+        "mqtt": {"address": "test", "username": "user"},
+    }
+
+    with patch.object(main_module, "_resolve_pref", return_value=False):
+        result = traverseConfig("module_config", config, interface_config)
+        assert result is True
+
+    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warning_records) == 2
+    texts = [r.message for r in warning_records]
+    assert any("3 unknown field(s) from ambient_lighting" in t for t in texts)
+    assert any("2 unknown field(s) from mqtt" in t for t in texts)
 
 
 # =============================================================================

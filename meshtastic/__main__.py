@@ -1006,36 +1006,45 @@ def traverseConfig(
         `True` when traversal completes and all leaf values are successfully
         applied, `False` if any leaf assignment fails validation.
     """
-    snake_name = meshtastic.util.camel_to_snake(config_root)
-    for pref in config:
-        pref_name = f"{snake_name}.{pref}"
-        if isinstance(config[pref], dict):
-            if not traverseConfig(
-                pref_name,
-                config[pref],
-                interface_config,
-                failed_fields=failed_fields,
-            ):
-                return False
-        else:
-            if not _resolve_pref(interface_config, pref_name):
-                logger.warning(
-                    "Skipping unknown configuration field %s from --configure",
-                    pref_name,
-                )
-                continue
-            try:
-                ok = setPref(interface_config, pref_name, config[pref])
-            except (ValueError, binascii.Error):
-                if failed_fields is not None:
-                    failed_fields.append(pref_name)
-                return False
-            if not ok:
-                if failed_fields is not None:
-                    failed_fields.append(pref_name)
-                return False
+    skipped_by_section: dict[str, list[str]] = {}
 
-    return True
+    def _traverse(root: str, cfg: dict, icfg: Any) -> bool:
+        s_name = meshtastic.util.camel_to_snake(root)
+        for pref in cfg:
+            pref_name = f"{s_name}.{pref}"
+            if isinstance(cfg[pref], dict):
+                if not _traverse(pref_name, cfg[pref], icfg):
+                    return False
+            else:
+                if not _resolve_pref(icfg, pref_name):
+                    parts = pref_name.split(".")
+                    section = parts[-2] if len(parts) >= 2 else parts[0]
+                    skipped_by_section.setdefault(section, []).append(pref)
+                    continue
+                try:
+                    ok = setPref(icfg, pref_name, cfg[pref])
+                except (ValueError, binascii.Error):
+                    if failed_fields is not None:
+                        failed_fields.append(pref_name)
+                    return False
+                if not ok:
+                    if failed_fields is not None:
+                        failed_fields.append(pref_name)
+                    return False
+        return True
+
+    success = _traverse(config_root, config, interface_config)
+
+    for section, fields in skipped_by_section.items():
+        field_list = ", ".join(fields)
+        logger.warning(
+            "Skipping %d unknown field(s) from %s: %s",
+            len(fields),
+            section,
+            field_list,
+        )
+
+    return success
 
 
 def _resolve_pref(config: Any, comp_name: str) -> bool:
