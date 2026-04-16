@@ -1692,7 +1692,13 @@ def onConnected(interface: MeshInterface) -> None:
 
         # do not print this line if we are exporting the config
         if not args.export_config:
-            print("Connected to radio")
+            stable_path = getattr(interface, "_stable_path", None)
+            if stable_path:
+                dev_path = getattr(interface, "devPath", "")
+                tty_name = os.path.basename(dev_path) if dev_path else "unknown"
+                print(f"Connected to radio on {tty_name} (stable: {stable_path})")
+            else:
+                print("Connected to radio")
 
         if args.set_time is not None:
             interface.getNode(args.dest, False, **getNode_kwargs).setTime(args.set_time)
