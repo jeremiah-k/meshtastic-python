@@ -648,7 +648,7 @@ def test_resolve_stable_path_finds_first_matching_alias() -> None:
     """_resolve_stable_path returns lexicographically first matching alias."""
     iface = StreamInterface(noProto=True, connectNow=False)
     try:
-        iface.devPath = "/dev/ttyUSB0"
+        iface.devPath = "/dev/ttyUSB0"  # type: ignore[attr-defined]
         aliases = [
             "/dev/serial/by-id/usb-foo-device",
             "/dev/serial/by-id/usb-bar-device",
