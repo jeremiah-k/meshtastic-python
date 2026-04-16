@@ -36,6 +36,7 @@ def _coerce_element(field_desc: Any, element: Any) -> Any:
         )
         return element
     # Non-string, non-enum fields: apply fromStr for coercion
+    # Note: TYPE_STRING fields are already handled above and returned unchanged
     if isinstance(element, str) and field_desc.enum_type is None:
         return meshtastic.util.fromStr(element)
     return element
