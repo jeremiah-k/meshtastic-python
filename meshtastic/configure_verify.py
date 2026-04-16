@@ -90,6 +90,11 @@ def _verify_requested_fields(
             continue
         if isinstance(yaml_value, dict):
             sub_msg = getattr(proto_message, snake_key)
+            if not hasattr(sub_msg, "DESCRIPTOR"):
+                mismatches.append(
+                    f"{section_path}.{snake_key}: expected scalar but got mapping"
+                )
+                continue
             mismatches.extend(
                 _verify_requested_fields(
                     yaml_value, sub_msg, f"{section_path}.{snake_key}"

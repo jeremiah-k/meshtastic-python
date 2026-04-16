@@ -5,6 +5,7 @@ meshtasticd simulator instances.
 """
 
 import base64
+import logging
 import os
 import re
 import subprocess
@@ -17,6 +18,8 @@ import yaml
 
 from ..protobuf import apponly_pb2
 from .cli_test_utils import _run_host_cli, _run_host_cli_ok
+
+logger = logging.getLogger(__name__)
 
 pytestmark = [pytest.mark.int, pytest.mark.smokevirt]
 
@@ -744,15 +747,20 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
                 meshtastic_bin,
                 label="add-only-saturation-restore-failure-host-a",
             )
-            # Fail immediately on restore failure to prevent cross-test contamination.
-            # This fails even if body_failed is True, because a restore failure
-            # means the host is left in a mutated state that would contaminate
-            # subsequent tests.
-            pytest.fail(
-                f"Saturation test cleanup restore failed (restore_rc={restore_rc}); "
-                f"refusing to continue with potentially mutated HOST_A state. "
-                f"See restore artifact: {restore_artifact}"
-            )
+            if body_failed:
+                logger.warning(
+                    "Saturation test cleanup restore also failed (restore_rc=%d); "
+                    "original test failure takes precedence. "
+                    "See restore artifact: %s",
+                    restore_rc,
+                    restore_artifact,
+                )
+            else:
+                pytest.fail(
+                    f"Saturation test cleanup restore failed (restore_rc={restore_rc}); "
+                    f"refusing to continue with potentially mutated HOST_A state. "
+                    f"See restore artifact: {restore_artifact}"
+                )
 
 
 @pytest.mark.xfail(

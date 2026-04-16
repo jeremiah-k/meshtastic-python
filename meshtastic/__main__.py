@@ -1156,11 +1156,11 @@ def _handle_ota_update(
         _cli_exit(
             "Error: OTA update currently requires a TCP connection to the node (use --host)."
         )
-    if args.dest not in {BROADCAST_ADDR, LOCAL_ADDR}:
+    if not _is_local_destination(interface, args.dest):
         _cli_exit(
             "Error: OTA update only supports the directly connected local node; omit --dest or use --dest ^local."
         )
-    ota_dest = LOCAL_ADDR if args.dest == BROADCAST_ADDR else args.dest
+    ota_dest = LOCAL_ADDR
 
     try:
         ota = meshtastic.ota.ESP32WiFiOTA(args.ota_update, interface.hostname)
@@ -1258,6 +1258,8 @@ def _handle_configure_command(
         _cli_exit(
             f"ERROR: YAML configuration must be a mapping/dictionary, got {type(configuration).__name__}"
         )
+    if not configuration:
+        _cli_exit("ERROR: Configuration file is empty; nothing to configure.")
     _unknown_keys = set(configuration.keys()) - _ALLOWED_CONFIGURE_KEYS
     if _unknown_keys:
         _cli_exit(
@@ -1390,7 +1392,12 @@ def _handle_configure_command(
         if not phase1_started:
             print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
-        requested_channel_url = configuration["channel_url"]
+        raw_channel_url = configuration["channel_url"]
+        if not isinstance(raw_channel_url, str):
+            _cli_exit("ERROR: channel_url must be a string.")
+        requested_channel_url = raw_channel_url.strip()
+        if not requested_channel_url:
+            _cli_exit("ERROR: channel_url must not be blank.")
         target_node = interface.getNode(args.dest, **getNode_kwargs)
         if _channel_url_matches_current_device_state(
             target_node, requested_channel_url
@@ -1408,7 +1415,12 @@ def _handle_configure_command(
         if not phase1_started:
             print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
-        requested_channel_url = configuration["channelUrl"]
+        raw_channel_url = configuration["channelUrl"]
+        if not isinstance(raw_channel_url, str):
+            _cli_exit("ERROR: channelUrl must be a string.")
+        requested_channel_url = raw_channel_url.strip()
+        if not requested_channel_url:
+            _cli_exit("ERROR: channelUrl must not be blank.")
         target_node = interface.getNode(args.dest, **getNode_kwargs)
         if _channel_url_matches_current_device_state(
             target_node, requested_channel_url
@@ -1455,12 +1467,19 @@ def _handle_configure_command(
         validated_config_sections or validated_module_config_sections
     )
     if seturl_executed and has_valid_config_section:
-        if not _post_seturl_stability_check(
-            interface, timeout=SETURL_STABILITY_TIMEOUT_SECONDS
-        ):
+        if _is_local_destination(interface, args.dest):
+            if not _post_seturl_stability_check(
+                interface, timeout=SETURL_STABILITY_TIMEOUT_SECONDS
+            ):
+                _cli_exit(
+                    "ERROR: channel_url applied, but transport did not stabilize "
+                    "for additional configuration writes; aborting before Phase 2."
+                )
+        else:
             _cli_exit(
-                "ERROR: channel_url applied, but transport did not stabilize "
-                "for additional configuration writes; aborting before Phase 2."
+                "ERROR: Combining channel_url with additional configuration "
+                "writes is not supported for remote nodes. Apply channel_url "
+                "and configuration in separate operations."
             )
     if has_valid_config_section:
         print(

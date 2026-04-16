@@ -87,7 +87,7 @@ lint:
     - isort@8.0.1
     - markdownlint@0.48.0
     - osv-scanner@2.3.5
-    - prettier@3.8.2
+    - prettier@3.8.3
     - ruff@0.15.10
     - shellcheck@0.11.0
     - shfmt@3.6.0
