@@ -337,3 +337,58 @@ def test_request_channel_is_silent_compatibility_shim(
         if issubclass(warning.category, DeprecationWarning)
     ]
     assert len(deprecation_warnings) == 0
+
+
+@pytest.mark.unit
+def test_timeout_for_field_skips_unknown_field(
+    channel_request_runtime: _NodeChannelRequestRuntime,
+    mock_node: MagicMock,
+) -> None:
+    """_timeout_for_field returns True for fields not in protobuf descriptor."""
+    mock_local_config = MagicMock()
+    mock_local_config.DESCRIPTOR.fields_by_name = {}
+    mock_node.localConfig = mock_local_config
+    result = channel_request_runtime._timeout_for_field("nonexistent_field", 0.1)
+    assert result is True
+
+
+@pytest.mark.unit
+def test_timeout_for_field_returns_true_for_populated_field(
+    channel_request_runtime: _NodeChannelRequestRuntime,
+    mock_node: MagicMock,
+) -> None:
+    """_timeout_for_field returns True when field is already populated."""
+    mock_local_config = MagicMock()
+    mock_local_config.DESCRIPTOR.fields_by_name = {"lora": MagicMock()}
+    mock_local_config.HasField.return_value = True
+    mock_node.localConfig = mock_local_config
+    result = channel_request_runtime._timeout_for_field("lora", 0.1)
+    assert result is True
+
+
+@pytest.mark.unit
+def test_timeout_for_field_returns_false_on_timeout(
+    channel_request_runtime: _NodeChannelRequestRuntime,
+    mock_node: MagicMock,
+) -> None:
+    """_timeout_for_field returns False when field is not populated within timeout."""
+    mock_local_config = MagicMock()
+    mock_local_config.DESCRIPTOR.fields_by_name = {"lora": MagicMock()}
+    mock_local_config.HasField.return_value = False
+    mock_node.localConfig = mock_local_config
+    result = channel_request_runtime._timeout_for_field("lora", 0.1)
+    assert result is False
+
+
+@pytest.mark.unit
+def test_timeout_for_field_hasfield_not_callable(
+    channel_request_runtime: _NodeChannelRequestRuntime,
+    mock_node: MagicMock,
+) -> None:
+    """_timeout_for_field returns False when HasField is absent or non-callable."""
+    mock_local_config = MagicMock()
+    mock_local_config.DESCRIPTOR.fields_by_name = {"lora": MagicMock()}
+    mock_local_config.HasField = None
+    mock_node.localConfig = mock_local_config
+    result = channel_request_runtime._timeout_for_field("lora", 0.1)
+    assert result is False

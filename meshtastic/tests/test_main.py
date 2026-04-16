@@ -2085,7 +2085,7 @@ def test_main_configure_skips_unknown_config_field(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Test --configure skips unknown fields with a warning (old-config tolerance)."""
+    """Test --configure skips unknown fields with a batched warning."""
     config_path = tmp_path / "unknown_field.yaml"
     config_path.write_text(
         yaml.safe_dump({"config": {"bluetooth": {"not_a_field": True}}}),
@@ -2096,7 +2096,7 @@ def test_main_configure_skips_unknown_config_field(
     _run_main_configure_file(config_path, iface, monkeypatch)
 
     assert "not_a_field" in caplog.text
-    assert "Skipping unknown configuration field" in caplog.text
+    assert "Skipping 1 unknown field(s) from bluetooth" in caplog.text
     target_node.writeConfig.assert_called_once_with("bluetooth")
     target_node.commitSettingsTransaction.assert_called_once()
 
@@ -4758,9 +4758,12 @@ def test_remove_ignored_node() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_set_owner_whitespace_only(capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_set_owner_whitespace_only(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test --set-owner with whitespace-only name."""
-    sys.argv = ["", "--set-owner", "   "]
+    monkeypatch.setattr(sys, "argv", ["", "--set-owner", "   "])
     mt_config.args = sys.argv  # type: ignore[assignment]
 
     iface = MagicMock(autospec=SerialInterface)
@@ -5400,7 +5403,7 @@ def test_main_configure_phase3_verified_with_matching_config_values(
     _patch_fast_monotonic(monkeypatch)
     _run_main_configure_file(config_path, iface, monkeypatch)
     out, _ = capsys.readouterr()
-    assert "requested settings verified" in out
+    assert "All settings verified" in out
 
 
 @pytest.mark.unit
@@ -5797,3 +5800,165 @@ def test_post_factory_reset_ready_probe_closes_and_probes_reconnect() -> None:
 
     iface.connect.assert_called_once()
     assert iface.close.call_count >= 2
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_quiet_flag_parsed_by_argparse(monkeypatch: pytest.MonkeyPatch) -> None:
+    """--quiet flag is recognized by the argument parser."""
+    monkeypatch.setattr(sys, "argv", ["meshtastic", "--quiet"])
+    mt_config.args = sys.argv  # type: ignore[assignment]
+    main_module.initParser()
+    assert mt_config.args is not None
+    assert mt_config.args.quiet is True
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_quiet_suppresses_connect_banner(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--quiet suppresses the 'Connected to radio' banner."""
+    monkeypatch.setattr(sys, "argv", ["", "--info", "--quiet"])
+    mt_config.args = sys.argv  # type: ignore[assignment]
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    iface._stable_path = None
+
+    def mock_showInfo() -> None:
+        print("inside mocked showInfo")
+
+    iface.showInfo.side_effect = mock_showInfo
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        main()
+        out, err = capsys.readouterr()
+        assert "Connected to radio" not in out
+        assert "inside mocked showInfo" in out
+        assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_quiet_still_allows_warnings_and_errors(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """--quiet does not suppress warnings/errors from _cli_exit."""
+    monkeypatch.setattr(sys, "argv", ["", "--set-owner", "   ", "--quiet"])
+    mt_config.args = sys.argv  # type: ignore[assignment]
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        with pytest.raises(SystemExit) as pytest_wrapped_e:
+            main()
+        assert pytest_wrapped_e.value.code == 1
+        out, err = capsys.readouterr()
+        assert "Connected to radio" not in out
+        assert (
+            "ERROR: Long Name cannot be empty or contain only whitespace characters"
+            in err
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_stable_path_banner_omitted_when_already_by_id(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Stable-path banner suffix is omitted when devPath is already the by-id path."""
+    sys.argv = ["", "--info"]
+    mt_config.args = sys.argv  # type: ignore[assignment]
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    iface.devPath = "/dev/serial/by-id/usb-foo-device"
+    iface._stable_path = "/dev/serial/by-id/usb-foo-device"
+
+    def mock_showInfo() -> None:
+        print("inside mocked showInfo")
+
+    iface.showInfo.side_effect = mock_showInfo
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        main()
+        out, err = capsys.readouterr()
+        assert "Connected to radio on usb-foo-device" in out
+        assert "(stable:" not in out
+        assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_stable_path_banner_shown_when_different(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Stable-path suffix shown when devPath differs from by-id alias.
+
+    Even when both paths resolve to the same device via realpath (the normal
+    Linux /dev/ttyUSB* + /dev/serial/by-id/* case), the stable alias must
+    appear so users can copy-paste it for future connections.
+    """
+    sys.argv = ["", "--info"]
+    mt_config.args = sys.argv  # type: ignore[assignment]
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    iface.devPath = "/dev/ttyUSB0"
+    iface._stable_path = "/dev/serial/by-id/usb-foo-device"
+
+    def mock_showInfo() -> None:
+        print("inside mocked showInfo")
+
+    iface.showInfo.side_effect = mock_showInfo
+
+    def fake_realpath(p: str, **_kwargs: object) -> str:
+        if p in ("/dev/ttyUSB0", "/dev/serial/by-id/usb-foo-device"):
+            return "/dev/bus/usb/001/002"
+        return p
+
+    with (
+        patch("meshtastic.serial_interface.SerialInterface", return_value=iface),
+        patch("os.path.realpath", side_effect=fake_realpath),
+    ):
+        main()
+        out, err = capsys.readouterr()
+        assert (
+            "Connected to radio on ttyUSB0 (stable: /dev/serial/by-id/usb-foo-device)"
+            in out
+        )
+        assert err == ""
+
+
+@pytest.mark.unit
+def test_flatten_leaf_paths_flat_dict() -> None:
+    """_flatten_leaf_paths handles a flat dict."""
+    result = main_module._flatten_leaf_paths(
+        "lora", {"hop_limit": 3, "tx_enabled": True}
+    )
+    assert sorted(result) == ["lora.hop_limit", "lora.tx_enabled"]
+
+
+@pytest.mark.unit
+def test_flatten_leaf_paths_nested_dict() -> None:
+    """_flatten_leaf_paths recursively flattens nested dicts."""
+    result = main_module._flatten_leaf_paths(
+        "display", {"screen_on_secs": 60, "nested": {"foo": 1, "bar": 2}}
+    )
+    assert sorted(result) == [
+        "display.nested.bar",
+        "display.nested.foo",
+        "display.screen_on_secs",
+    ]
+
+
+@pytest.mark.unit
+def test_flatten_leaf_paths_empty_nested_dict() -> None:
+    """_flatten_leaf_paths treats an empty nested dict as a leaf."""
+    result = main_module._flatten_leaf_paths("lora", {"hop_limit": 3, "empty": {}})
+    assert sorted(result) == ["lora.empty", "lora.hop_limit"]

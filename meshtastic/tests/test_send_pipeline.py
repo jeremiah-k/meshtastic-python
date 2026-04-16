@@ -20,6 +20,7 @@ from meshtastic.mesh_interface_runtime.request_wait import (
 from meshtastic.mesh_interface_runtime.send_pipeline import (
     HEX_NODE_ID_TAIL_CHARS,
     LEGACY_UNSCOPED_WAIT_ATTR_BY_PORTNUM,
+    LORA_CONFIG_WAIT_SECONDS,
     MISSING_NODE_NUM_ERROR_TEMPLATE,
     NODE_NOT_FOUND_DB_UNAVAILABLE_ERROR_TEMPLATE,
     NODE_NOT_FOUND_IN_DB_ERROR_TEMPLATE,
@@ -1086,12 +1087,16 @@ class TestWaitForConfig:
     def test_wait_for_config_success(
         self, send_pipeline: SendPipeline, mock_interface: MagicMock
     ) -> None:
-        """Test successful wait for config."""
+        """Test successful wait for config including dedicated lora wait."""
         mock_interface._timeout.waitForSet.return_value = True
         mock_interface.localNode.waitForConfig.return_value = True
+        mock_interface.localNode._channel_request_runtime._timeout_for_field.return_value = True
 
-        # Should not raise
         send_pipeline.waitForConfig()
+
+        mock_interface.localNode._channel_request_runtime._timeout_for_field.assert_called_once_with(
+            "lora", LORA_CONFIG_WAIT_SECONDS
+        )
 
     @pytest.mark.unit
     def test_wait_for_config_timeout_raises(
@@ -1103,6 +1108,53 @@ class TestWaitForConfig:
 
         with pytest.raises(Exception, match="Timed out"):
             send_pipeline.waitForConfig()
+
+    @pytest.mark.unit
+    def test_wait_for_config_lora_wait_failure_raises(
+        self, send_pipeline: SendPipeline, mock_interface: MagicMock
+    ) -> None:
+        """Test failure path when the lora wait returns false and raises timeout error."""
+        mock_interface._timeout.waitForSet.return_value = True
+        mock_interface.localNode.waitForConfig.return_value = True
+        mock_interface.localNode._channel_request_runtime._timeout_for_field.return_value = False
+
+        with pytest.raises(
+            mock_interface.MeshInterfaceError,
+            match="Timed out waiting for interface config",
+        ):
+            send_pipeline.waitForConfig()
+
+    @pytest.mark.unit
+    def test_wait_for_config_lora_field_absent_graceful_success(
+        self, send_pipeline: SendPipeline, mock_interface: MagicMock
+    ) -> None:
+        """Graceful success when lora is absent from the protobuf descriptor.
+
+        Replaces the mock _channel_request_runtime with a real
+        _NodeChannelRequestRuntime wired to a mock localConfig whose DESCRIPTOR
+        lacks the 'lora' field. This exercises the actual early-return path in
+        _timeout_for_field rather than just stubbing it to True.
+        """
+        from meshtastic.node_runtime.channel_request_runtime import (
+            _NodeChannelRequestRuntime,
+        )
+
+        mock_node = MagicMock()
+        desc = MagicMock()
+        desc.fields_by_name = {"bluetooth": MagicMock(), "device": MagicMock()}
+        mock_node.localConfig = MagicMock()
+        mock_node.localConfig.DESCRIPTOR = desc
+
+        mock_norm = MagicMock()
+        real_runtime = _NodeChannelRequestRuntime(
+            mock_node, normalization_runtime=mock_norm
+        )
+
+        mock_interface._timeout.waitForSet.return_value = True
+        mock_interface.localNode.waitForConfig.return_value = True
+        mock_interface.localNode._channel_request_runtime = real_runtime
+
+        send_pipeline.waitForConfig()
 
 
 class TestWaitForAckNak:

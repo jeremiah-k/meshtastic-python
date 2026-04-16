@@ -1,7 +1,10 @@
 """Stream Interface base class."""
 
 import contextlib
+import glob
 import logging
+import os
+import platform
 import threading
 import time
 from typing import IO, Any, BinaryIO, Callable
@@ -184,6 +187,7 @@ class StreamInterface(MeshInterface):
 
         self.is_windows11 = is_windows11()
         self.cur_log_line = ""
+        self._stable_path: str | None = None
 
         # daemon=True so the reader thread does not prevent process exit;
         # callers must call close() explicitly for a clean shutdown.
@@ -259,6 +263,7 @@ class StreamInterface(MeshInterface):
             self._start_config()
             if not self.noProto:  # Wait for the db download if using the protocol
                 self._wait_connected()
+                self._stable_path = self._resolve_stable_path()
         except Exception:
             # If protocol startup fails after reader launch, tear down to avoid
             # leaked background threads and partial connection state.
@@ -306,6 +311,7 @@ class StreamInterface(MeshInterface):
 
         with self._connect_lock:
             logger.debug("Closing our port")
+            self._stable_path = None
             self._close_stream_safely()
 
     def _write_bytes(self, b: bytes) -> None:
@@ -369,6 +375,30 @@ class StreamInterface(MeshInterface):
         # Win11 sometimes needs additional settling time after writes.
         delay = WINDOWS11_WRITE_DELAY if self.is_windows11 else STANDARD_WRITE_DELAY
         time.sleep(delay)
+
+    def _resolve_stable_path(self) -> str | None:  # pylint: disable=too-many-return-statements
+        """Return the stable /dev/serial/by-id/ alias for the current device path."""
+        if platform.system() != "Linux":
+            return None
+        dev_path = getattr(self, "devPath", None)
+        if not dev_path:
+            return None
+        by_id_dir = "/dev/serial/by-id"
+        if dev_path.startswith(by_id_dir + "/") and os.path.exists(dev_path):
+            return dev_path
+        if not os.path.isdir(by_id_dir):
+            return None
+        try:
+            resolved = os.path.realpath(dev_path)
+        except OSError:
+            return None
+        for alias in sorted(glob.glob(f"{by_id_dir}/*")):
+            try:
+                if os.path.realpath(alias) == resolved:
+                    return alias
+            except OSError:
+                continue
+        return None
 
     def _read_bytes(self, length: int) -> bytes:
         """Read up to the specified number of bytes from the configured underlying stream.

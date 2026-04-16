@@ -88,7 +88,7 @@ class SerialInterface(StreamInterface):
 
         # Avoid opening with default asserted control lines.  Some USB/MCU
         # combinations treat DTR/RTS transitions as reset triggers.
-        logger.info(
+        logger.debug(
             "Opening serial stream on %s (baud=%d, exclusive=%s)",
             self.devPath,
             DEFAULT_BAUD_RATE,
@@ -101,7 +101,7 @@ class SerialInterface(StreamInterface):
         # Keep RTS deasserted to avoid accidental reset-line pulses on some adapters.
         stream.rts = False
         stream.open()
-        logger.info(
+        logger.debug(
             "Serial stream opened: port=%s is_open=%s dtr=%s rts=%s",
             self.devPath,
             getattr(stream, "is_open", None),
@@ -157,9 +157,7 @@ class SerialInterface(StreamInterface):
         if len(ports) == 0:
             return None
         if len(ports) > 1:
-            message: str = (
-                "Multiple serial ports were detected; one serial port must be specified with '--port'.\n"
-            )
+            message: str = "Multiple serial ports were detected; one serial port must be specified with '--port'.\n"
             message += (
                 "  Auto-detection cannot disambiguate when multiple compatible devices "
                 "or overlapping USB VID/PID aliases are present.\n"
@@ -257,7 +255,7 @@ class SerialInterface(StreamInterface):
         for attempt in range(1, SERIAL_CONNECT_MAX_ATTEMPTS + 1):
             attempt_start = time.monotonic()
             stream = self.stream
-            logger.info(
+            logger.debug(
                 "Serial connect attempt %d/%d starting: devPath=%s stream_open=%s last_disconnect_source=%s",
                 attempt,
                 SERIAL_CONNECT_MAX_ATTEMPTS,
@@ -267,11 +265,24 @@ class SerialInterface(StreamInterface):
             )
             try:
                 super().connect()
-                logger.info(
-                    "Serial connect attempt %d succeeded in %.2fs (total elapsed %.2fs).",
+                elapsed = time.monotonic() - attempt_start
+                stable_path = getattr(self, "_stable_path", None)
+                if stable_path:
+                    tty_name = (
+                        os.path.basename(self.devPath) if self.devPath else "unknown"
+                    )
+                    logger.info(
+                        "Connected to device on %s (stable: %s)",
+                        tty_name,
+                        stable_path,
+                    )
+                else:
+                    logger.info("Connected to device on %s", self.devPath or "unknown")
+                logger.debug(
+                    "Connect timing: %.2fs (attempt %d/%d)",
+                    elapsed,
                     attempt,
-                    time.monotonic() - attempt_start,
-                    time.monotonic() - connect_start,
+                    SERIAL_CONNECT_MAX_ATTEMPTS,
                 )
                 return
             except Exception as exc:
@@ -299,19 +310,10 @@ class SerialInterface(StreamInterface):
                     retry_delay_base = SERIAL_CONNECT_STREAM_CLOSED_RETRY_DELAY_SECONDS
                 retry_delay = min(retry_delay_base, remaining)
                 logger.warning(
-                    "Serial connect attempt %d/%d failed: %s. Retrying in %.1fs (%.1fs retry budget remaining). "
-                    "stream_open=%s last_disconnect_source=%s",
+                    "Connect attempt %d failed: %s. Retrying in %.1fs...",
                     attempt,
-                    SERIAL_CONNECT_MAX_ATTEMPTS,
                     exc,
                     retry_delay,
-                    remaining,
-                    (
-                        getattr(self.stream, "is_open", None)
-                        if self.stream is not None
-                        else None
-                    ),
-                    disconnect_source,
                 )
                 with self._connect_lock:
                     with contextlib.suppress(

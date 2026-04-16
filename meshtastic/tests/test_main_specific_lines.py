@@ -10,6 +10,7 @@ This module provides targeted tests for specific uncovered code paths:
 
 # pylint: disable=C0302,W0613,R0917,C0415
 
+import logging
 import sys
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -20,6 +21,7 @@ import meshtastic.__main__ as main_module
 from meshtastic import mt_config
 from meshtastic.__main__ import (
     _display_pref_name,
+    _flatten_leaf_paths,
     getPref,
     onConnected,
     onReceive,
@@ -300,6 +302,114 @@ def test_traverse_config_leaf_failure_skipped() -> None:
         assert result is True
 
 
+@pytest.mark.unit
+def test_traverse_config_batches_multiple_sections(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test traverseConfig batches unknown fields under the root section."""
+    interface_config = MagicMock()
+
+    config = {
+        "ambient_lighting": {"blue": 1, "red": 2, "green": 3},
+        "mqtt": {"address": "test", "username": "user"},
+    }
+
+    with caplog.at_level(logging.WARNING, logger="meshtastic.__main__"):
+        with patch.object(main_module, "_resolve_pref", return_value=False):
+            result = traverseConfig("module_config", config, interface_config)
+            assert result is True
+
+        warning_records = [
+            r
+            for r in caplog.records
+            if r.name == "meshtastic.__main__" and r.levelno == logging.WARNING
+        ]
+        assert len(warning_records) == 1
+        assert "5 unknown field(s) from module_config" in warning_records[0].message
+
+
+@pytest.mark.unit
+def test_traverse_config_groups_by_top_level_section(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """TraverseConfig groups unknown fields by top-level section, not nested subsection."""
+    interface_config = MagicMock()
+
+    config = {
+        "ambient_lighting": {
+            "nested": {"blue": 1, "red": 2},
+            "other_nested": {"green": 3},
+        },
+    }
+
+    with caplog.at_level(logging.WARNING, logger="meshtastic.__main__"):
+        with patch.object(main_module, "_resolve_pref", return_value=False):
+            result = traverseConfig("module_config", config, interface_config)
+            assert result is True
+
+        warning_records = [
+            r
+            for r in caplog.records
+            if r.name == "meshtastic.__main__" and r.levelno == logging.WARNING
+        ]
+        texts = [r.message for r in warning_records]
+        assert len(warning_records) == 1
+        assert "3 unknown field(s) from module_config" in texts[0]
+
+
+@pytest.mark.unit
+def test_flatten_leaf_paths_nested() -> None:
+    """_flatten_leaf_paths recursively produces dotted leaf paths for nested config."""
+    mapping = {
+        "lora": {
+            "modem_preset": "LongFast",
+            "hop_limit": 3,
+        },
+        "device": {
+            "role": "CLIENT",
+        },
+    }
+    paths = _flatten_leaf_paths("config", mapping)
+    assert sorted(paths) == [
+        "config.device.role",
+        "config.lora.hop_limit",
+        "config.lora.modem_preset",
+    ]
+
+
+# =============================================================================
+# _cli_print() Tests
+# =============================================================================
+
+
+@pytest.mark.unit
+def test_cli_print_outputs_normally(capsys: pytest.CaptureFixture[str]) -> None:
+    """_cli_print outputs to stdout when quiet is not set."""
+    old_args = mt_config.args
+    mt_config.args = MagicMock(quiet=False)
+    try:
+        main_module._cli_print("hello world")
+        captured = capsys.readouterr()
+        assert "hello world" in captured.out
+    finally:
+        mt_config.args = old_args
+
+
+@pytest.mark.unit
+def test_cli_print_suppressed_when_quiet(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """_cli_print suppresses output when quiet is True."""
+    old_args = mt_config.args
+    mt_config.args = MagicMock(quiet=True)
+    try:
+        main_module._cli_print("should not appear")
+        captured = capsys.readouterr()
+        assert captured.out == ""
+    finally:
+        mt_config.args = old_args
+
+
 # =============================================================================
 # setPref() Tests (Lines 589-597, 638-664)
 # =============================================================================
@@ -415,11 +525,11 @@ def test_on_connected_raises_without_args() -> None:
 
 @pytest.mark.unit
 def test_set_canned_message_module_unavailable(
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Test --set-canned-message when module unavailable (line 799).
 
-    When CANNEDMSG_CONFIG module is not available, should print skip message.
+    When CANNEDMSG_CONFIG module is not available, a warning is emitted.
     """
     sys.argv = ["", "--set-canned-message", "test message"]
     mt_config.args = sys.argv  # type: ignore[assignment]
@@ -434,22 +544,25 @@ def test_set_canned_message_module_unavailable(
 
     from meshtastic.__main__ import main
 
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
-        # Just run main() - the code path will be executed even if no SystemExit
-        try:
-            main()
-        except SystemExit:
-            pass  # Expected, but not required for the test
-        _out, _err = capsys.readouterr()
-        # Check if skip message was printed
-        assert "canned message" in _out.lower() or "excluded" in _out.lower()  # noqa
+    with caplog.at_level(logging.WARNING, logger="meshtastic.__main__"):
+        with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+            try:
+                main()
+            except SystemExit:
+                pass
+            assert (
+                "canned message" in caplog.text.lower()
+                or "excluded" in caplog.text.lower()
+            )
 
 
 @pytest.mark.unit
-def test_set_ringtone_module_unavailable(capsys: pytest.CaptureFixture[str]) -> None:
+def test_set_ringtone_module_unavailable(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Test --set-ringtone when module unavailable (lines 809-811).
 
-    When EXTNOTIF_CONFIG module is not available, should print skip message.
+    When EXTNOTIF_CONFIG module is not available, a warning is emitted.
     """
     sys.argv = ["", "--set-ringtone", "test.mp3"]
     mt_config.args = sys.argv  # type: ignore[assignment]
@@ -464,17 +577,16 @@ def test_set_ringtone_module_unavailable(capsys: pytest.CaptureFixture[str]) -> 
 
     from meshtastic.__main__ import main
 
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
-        # Just run main() - the code path will be executed even if no SystemExit
-        try:
-            main()
-        except SystemExit:
-            pass  # Expected, but not required for the test
-        _out, _err = capsys.readouterr()
-        # Check if skip message was printed
-        assert (
-            "ringtone" in _out.lower() or "external notification" in _out.lower()  # noqa
-        )
+    with caplog.at_level(logging.WARNING, logger="meshtastic.__main__"):
+        with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+            try:
+                main()
+            except SystemExit:
+                pass
+            assert (
+                "ringtone" in caplog.text.lower()
+                or "external notification" in caplog.text.lower()
+            )
 
 
 # =============================================================================
