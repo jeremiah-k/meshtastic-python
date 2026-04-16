@@ -183,7 +183,7 @@ def test_meshtasticd_export_and_configure_roundtrip(
                 _wait_for_host_ready(HOST, meshtastic_bin)
             except Exception:
                 if original_exc is not None:
-                    raise original_exc
+                    raise original_exc from None
                 raise
     except Exception:
         _capture_host_debug_state(
