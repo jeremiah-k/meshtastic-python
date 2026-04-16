@@ -5797,3 +5797,13 @@ def test_post_factory_reset_ready_probe_closes_and_probes_reconnect() -> None:
 
     iface.connect.assert_called_once()
     assert iface.close.call_count >= 2
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_quiet_flag_parsed_by_argparse() -> None:
+    """--quiet flag is recognized by the argument parser."""
+    sys.argv = ["meshtastic", "--quiet"]
+    mt_config.args = sys.argv  # type: ignore[assignment]
+    main_module.initParser()
+    assert mt_config.args.quiet is True

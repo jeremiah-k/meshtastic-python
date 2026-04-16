@@ -2897,13 +2897,19 @@ def common() -> None:
             "mt_config.parser must be initialized before calling common()"
         )
 
+    if args.quiet:
+        log_level = logging.WARNING
+    elif args.debug or args.listen:
+        log_level = logging.DEBUG
+    else:
+        log_level = logging.INFO
+
     logging.basicConfig(
-        level=logging.DEBUG if (args.debug or args.listen) else logging.INFO,
+        level=log_level,
         format="%(levelname)s file:%(filename)s %(funcName)s line:%(lineno)s %(message)s",
     )
 
-    # set all meshtastic loggers to DEBUG
-    if not (args.debug or args.listen) and args.debuglib:
+    if not (args.debug or args.listen or args.quiet) and args.debuglib:
         logging.getLogger("meshtastic").setLevel(logging.DEBUG)
 
     if len(sys.argv) == 1:
@@ -3904,12 +3910,20 @@ def initParser() -> None:
     )
 
     group.add_argument(
-        "--debug", help="Show API library debug log messages", action="store_true"
+        "--debug",
+        help="Show detailed debug log messages (connection diagnostics, config streaming, retries)",
+        action="store_true",
     )
 
     group.add_argument(
         "--debuglib",
-        help="Show only API library debug log messages",
+        help="Show debug log messages for the meshtastic library only (not dependencies)",
+        action="store_true",
+    )
+
+    group.add_argument(
+        "--quiet",
+        help="Suppress non-essential output; show only warnings and errors",
         action="store_true",
     )
 
