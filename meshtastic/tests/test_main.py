@@ -5806,4 +5806,5 @@ def test_quiet_flag_parsed_by_argparse() -> None:
     sys.argv = ["meshtastic", "--quiet"]
     mt_config.args = sys.argv  # type: ignore[assignment]
     main_module.initParser()
+    assert mt_config.args is not None
     assert mt_config.args.quiet is True

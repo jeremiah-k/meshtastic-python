@@ -1,7 +1,10 @@
 """Stream Interface base class."""
 
 import contextlib
+import glob
 import logging
+import os
+import platform
 import threading
 import time
 from typing import IO, Any, BinaryIO, Callable
@@ -375,10 +378,6 @@ class StreamInterface(MeshInterface):
 
     def _resolve_stable_path(self) -> str | None:
         """Return the stable /dev/serial/by-id/ alias for the current device path."""
-        import glob  # noqa: PLC0415
-        import os  # noqa: PLC0415
-        import platform  # noqa: PLC0415
-
         if platform.system() != "Linux":
             return None
         dev_path = getattr(self, "devPath", None)
