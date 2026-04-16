@@ -5,6 +5,7 @@ from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Protocol, cast
 
 from meshtastic.protobuf import admin_pb2, channel_pb2, mesh_pb2
+from meshtastic.util import Timeout
 
 from .channel_normalization_runtime import _NodeChannelNormalizationRuntime
 from .shared import MAX_CHANNELS
@@ -181,6 +182,30 @@ class _NodeChannelRequestRuntime:
     def wait_for_config(self, *, attribute: str = "channels") -> bool:
         """COMPAT_STABLE_SHIM: Silent alias for waitForConfig."""
         return self.waitForConfig(attribute=attribute)
+
+    def _timeout_for_field(self, field_name: str, max_secs: float) -> bool:
+        """Wait for a localConfig field with a dedicated timeout.
+
+        Returns True if the field is populated within max_secs, False otherwise.
+        If the protobuf doesn't have this field, returns True (skip gracefully
+        for backwards compatibility with old firmware).
+        """
+        local_config = self._node.localConfig
+        desc = getattr(local_config, "DESCRIPTOR", None)
+        if desc is not None:
+            if field_name not in desc.fields_by_name:
+                return True
+
+        has_field = getattr(local_config, "HasField", None)
+        if callable(has_field):
+            probe = _LocalConfigFieldProbe(
+                has_field_fn=has_field,
+                name=field_name,
+            )
+            short_timeout = Timeout(maxSecs=max_secs)
+            return short_timeout.waitForSet(probe, attrs=("is_set",))
+
+        return False
 
     def requestChannel(self, channel_num: int) -> mesh_pb2.MeshPacket | None:
         """Send one get-channel request preserving progress logging behavior."""

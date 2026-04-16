@@ -48,6 +48,8 @@ PACKET_ID_GENERATION_MAX_RETRIES = 10
 DEFAULT_HOP_LIMIT = 3
 
 QUEUE_WAIT_DELAY_SECONDS = 0.5
+LORA_CONFIG_WAIT_SECONDS = 15.0
+"""Timeout for waiting for localConfig.lora after initial config stream."""
 
 HEX_NODE_ID_TAIL_CHARS = frozenset("0123456789abcdefABCDEF")
 MISSING_NODE_NUM_ERROR_TEMPLATE = "NodeId {destination_id} has no numeric 'num' in DB"
@@ -749,6 +751,9 @@ class SendPipeline:
         success = (
             self._timeout.waitForSet(self._interface, attrs=("myInfo", "nodes"))
             and self.localNode.waitForConfig()
+            and self.localNode._channel_request_runtime._timeout_for_field(
+                "lora", LORA_CONFIG_WAIT_SECONDS
+            )
         )
         if not success:
             raise self._interface.MeshInterfaceError(
