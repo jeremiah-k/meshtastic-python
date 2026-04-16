@@ -1776,14 +1776,15 @@ def onConnected(interface: MeshInterface) -> None:
             print(" ".join(fieldNames))
 
         if args.set_ham:
-            if not args.set_ham.strip():
+            ham_id = args.set_ham.strip()
+            if not ham_id:
                 _cli_exit(
                     "ERROR: Ham radio callsign cannot be empty or contain only whitespace characters"
                 )
             closeNow = True
-            print(f"Setting Ham ID to {args.set_ham} and turning off encryption")
+            print(f"Setting Ham ID to {ham_id} and turning off encryption")
             interface.getNode(args.dest, **getNode_kwargs).setOwner(
-                args.set_ham, is_licensed=True
+                ham_id, is_licensed=True
             )
             # Must turn off encryption on primary channel
             interface.getNode(
@@ -2280,7 +2281,7 @@ def onConnected(interface: MeshInterface) -> None:
             node = interface.getNode(args.dest, False, **getNode_kwargs)
             found = False
             for pref in args.get:
-                found = getPref(node, pref[0], allow_secrets=True)
+                found = getPref(node, pref[0])
 
             if found:
                 print("Completed getting preferences")

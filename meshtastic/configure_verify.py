@@ -22,6 +22,10 @@ def _is_repeated_field(field_desc: Any) -> bool:
 
 
 def _coerce_element(field_desc: Any, element: Any) -> Any:
+    # TYPE_STRING: preserve as-is (do not apply fromStr)
+    if _is_string_field(field_desc):
+        return element
+    # Enum fields: convert enum name to enum number
     if field_desc.enum_type is not None and isinstance(element, str):
         enum_val = field_desc.enum_type.values_by_name.get(element)
         if enum_val is not None:
@@ -31,11 +35,8 @@ def _coerce_element(field_desc: Any, element: Any) -> Any:
             element,
         )
         return element
-    if (
-        isinstance(element, str)
-        and field_desc.enum_type is None
-        and not _is_string_field(field_desc)
-    ):
+    # Non-string, non-enum fields: apply fromStr for coercion
+    if isinstance(element, str) and field_desc.enum_type is None:
         return meshtastic.util.fromStr(element)
     return element
 
@@ -43,7 +44,9 @@ def _coerce_element(field_desc: Any, element: Any) -> Any:
 def _is_string_field(field_desc: Any) -> bool:
     field_type = getattr(field_desc, "type", None)
     type_string = getattr(field_desc, "TYPE_STRING", None)
-    return field_type is not None and type_string is not None and field_type == type_string
+    return (
+        field_type is not None and type_string is not None and field_type == type_string
+    )
 
 
 def _verify_requested_fields(
@@ -194,9 +197,7 @@ def _build_channel_set_from_state(
 ) -> apponly_pb2.ChannelSet | None:
     if not device_channels:
         if emit_warnings:
-            logger.warning(
-                "Channel URL verification: device channels are not loaded."
-            )
+            logger.warning("Channel URL verification: device channels are not loaded.")
         return None
 
     primary_channel = next(
@@ -245,7 +246,8 @@ def _settings_match(req: Any, dev: Any) -> bool:
         req.id == dev.id,
         req.uplink_enabled == dev.uplink_enabled,
         req.downlink_enabled == dev.downlink_enabled,
-        req.module_settings.position_precision == dev.module_settings.position_precision,
+        req.module_settings.position_precision
+        == dev.module_settings.position_precision,
         req.module_settings.is_muted == dev.module_settings.is_muted,
     ]
     return all(checks)
@@ -303,6 +305,7 @@ def _verify_channel_sets_match(
     *,
     emit_warnings: bool,
 ) -> bool:
+    # Both sets must have a primary channel entry
     if not requested_channel_set.settings or not device_channel_set.settings:
         if emit_warnings:
             logger.warning(
@@ -313,6 +316,7 @@ def _verify_channel_sets_match(
             )
         return False
 
+    # Primary channel must match exactly (fail early if primary differs)
     requested_primary = requested_channel_set.settings[0]
     device_primary = device_channel_set.settings[0]
     if not _settings_match(requested_primary, device_primary):

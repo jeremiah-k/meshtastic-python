@@ -744,10 +744,18 @@ def test_meshtasticd_multinode_add_only_url_is_non_mutating_when_no_slots_remain
                 meshtastic_bin,
                 label="add-only-saturation-restore-failure-host-a",
             )
+            # Fail immediately on restore failure to prevent cross-test contamination.
+            # Only skip failing if the test body already had a clear failure.
             if not body_failed:
                 pytest.fail(
-                    "Saturation test cleanup restore failed; refusing to continue "
-                    "with potentially mutated HOST_A state."
+                    f"Saturation test cleanup restore failed (restore_rc={restore_rc}); "
+                    f"refusing to continue with potentially mutated HOST_A state. "
+                    f"See restore artifact: {restore_artifact}"
+                )
+            else:
+                pytest.fail(
+                    f"Saturation test cleanup restore failed (restore_rc={restore_rc}) "
+                    f"after test body failure; see restore artifact: {restore_artifact}"
                 )
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from meshtastic.node_runtime.seturl.cache import _SetUrlCacheManager
 from meshtastic.node_runtime.seturl.context import _SetUrlAdminContext
@@ -128,6 +128,81 @@ class _SetUrlTransactionCoordinator:
 
         return False
 
+    def _get_is_connected_event(self, iface: Any) -> Any | None:
+        """Safely retrieve isConnected event with defensive guards.
+
+        Returns the isConnected attribute only if it exists and has the
+        expected Event-like interface (is_set and wait methods).
+
+        Parameters
+        ----------
+        iface : object
+            The mesh interface to check.
+
+        Returns
+        -------
+        object | None
+            The isConnected event if valid, None otherwise.
+        """
+        is_connected = getattr(iface, "isConnected", None)
+        if is_connected is None:
+            return None
+        if not hasattr(is_connected, "is_set") or not callable(
+            getattr(is_connected, "is_set", None)
+        ):
+            return None
+        if not hasattr(is_connected, "wait") or not callable(
+            getattr(is_connected, "wait", None)
+        ):
+            return None
+        return is_connected
+
+    def _event_is_set(self, event: Any | None) -> bool:
+        """Safely check if an event is set.
+
+        Parameters
+        ----------
+        event : Any | None
+            The event to check.
+
+        Returns
+        -------
+        bool
+            True if event is set, False if event is None or not Event-like.
+        """
+        if event is None:
+            return False
+        if not hasattr(event, "is_set") or not callable(getattr(event, "is_set", None)):
+            return False
+        try:
+            return bool(event.is_set())
+        except Exception:
+            return False
+
+    def _event_wait(self, event: Any | None, timeout_seconds: float) -> bool:
+        """Safely wait on an event with timeout.
+
+        Parameters
+        ----------
+        event : Any | None
+            The event to wait on.
+        timeout_seconds : float
+            Timeout in seconds.
+
+        Returns
+        -------
+        bool
+            True if event was set, False if timeout or event not Event-like.
+        """
+        if event is None:
+            return False
+        if not hasattr(event, "wait") or not callable(getattr(event, "wait", None)):
+            return False
+        try:
+            return bool(event.wait(timeout_seconds))
+        except Exception:
+            return False
+
     def _bounded_config_reload(
         self,
         iface: object,
@@ -155,9 +230,9 @@ class _SetUrlTransactionCoordinator:
             ``True`` if config appears available, ``False`` if timeout or
             transport dropped.
         """
-        is_connected = getattr(iface, "isConnected", None)
+        is_connected = self._get_is_connected_event(iface)
         while time.monotonic() < deadline:
-            if is_connected is not None and not is_connected.is_set():
+            if not self._event_is_set(is_connected):
                 logger.info("Transport dropped during config reload; aborting poll.")
                 return False
             if (
@@ -233,20 +308,11 @@ class _SetUrlTransactionCoordinator:
 
         iface = self._node.iface
 
-        is_connected_event = getattr(iface, "isConnected", None)
-
-        def _event_is_set() -> bool:
-            if is_connected_event is None or not hasattr(is_connected_event, "is_set"):
-                return False
-            return bool(is_connected_event.is_set())
-
-        def _event_wait(timeout_seconds: float) -> bool:
-            if is_connected_event is None or not hasattr(is_connected_event, "wait"):
-                return False
-            return bool(is_connected_event.wait(timeout_seconds))
+        # Defensively get isConnected event with full guards
+        is_connected_event = self._get_is_connected_event(iface)
 
         for sub_attempt in range(RESUME_RECONNECT_SUB_ATTEMPTS):
-            connected = _event_is_set()
+            connected = self._event_is_set(is_connected_event)
             if not connected:
                 connected = self._trigger_transport_reconnect(iface)
             if not connected:
@@ -257,7 +323,9 @@ class _SetUrlTransactionCoordinator:
                     RESUME_RECONNECT_SUB_ATTEMPTS,
                     RESUME_RECONNECT_TIMEOUT_SECONDS,
                 )
-                connected = _event_wait(RESUME_RECONNECT_TIMEOUT_SECONDS)
+                connected = self._event_wait(
+                    is_connected_event, RESUME_RECONNECT_TIMEOUT_SECONDS
+                )
             if not connected:
                 logger.warning(
                     "Reconnect sub-attempt %d/%d: transport did not reconnect.",
@@ -274,7 +342,7 @@ class _SetUrlTransactionCoordinator:
                 RESUME_STABLE_CONNECTED_SECONDS,
             )
             time.sleep(RESUME_STABLE_CONNECTED_SECONDS)
-            if not _event_is_set():
+            if not self._event_is_set(is_connected_event):
                 logger.warning(
                     "Reconnect sub-attempt %d/%d: transport flapped during "
                     "stability window; retrying reconnect.",
@@ -290,7 +358,7 @@ class _SetUrlTransactionCoordinator:
             config_deadline = time.monotonic() + RESUME_CONFIG_RELOAD_TIMEOUT_SECONDS
             config_loaded = self._bounded_config_reload(iface, config_deadline)
             if not config_loaded:
-                if not _event_is_set():
+                if not self._event_is_set(is_connected_event):
                     logger.warning(
                         "Reconnect sub-attempt %d/%d: transport dropped "
                         "during config reload; retrying reconnect.",
@@ -339,7 +407,9 @@ class _SetUrlTransactionCoordinator:
                 for idx in sorted(remaining_indices):
                     desired_ch = plan.staged_channels_by_index.get(idx)
                     channel_name = (
-                        desired_ch.settings.name if desired_ch and desired_ch.settings else ""
+                        desired_ch.settings.name
+                        if desired_ch and desired_ch.settings
+                        else ""
                     )
                     name = channel_name if channel_name else f"index {idx}"
                     diff_names.append(name)
