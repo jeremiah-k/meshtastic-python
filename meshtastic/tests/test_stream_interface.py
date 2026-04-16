@@ -640,4 +640,3 @@ def test_resolve_stable_path_returns_none_on_non_linux() -> None:
         assert result is None
     finally:
         iface.close()
-    iface.close()
