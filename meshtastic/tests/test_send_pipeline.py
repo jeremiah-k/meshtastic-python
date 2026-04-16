@@ -1089,6 +1089,7 @@ class TestWaitForConfig:
         """Test successful wait for config."""
         mock_interface._timeout.waitForSet.return_value = True
         mock_interface.localNode.waitForConfig.return_value = True
+        mock_interface.localNode._channel_request_runtime._timeout_for_field.return_value = True
 
         # Should not raise
         send_pipeline.waitForConfig()
@@ -1103,6 +1104,55 @@ class TestWaitForConfig:
 
         with pytest.raises(Exception, match="Timed out"):
             send_pipeline.waitForConfig()
+
+    @pytest.mark.unit
+    def test_wait_for_config_lora_wait_success(
+        self, send_pipeline: SendPipeline, mock_interface: MagicMock
+    ) -> None:
+        """Test success path when the dedicated lora wait returns true."""
+        mock_interface._timeout.waitForSet.return_value = True
+        mock_interface.localNode.waitForConfig.return_value = True
+        mock_interface.localNode._channel_request_runtime._timeout_for_field.return_value = True
+
+        send_pipeline.waitForConfig()
+
+        mock_interface.localNode._channel_request_runtime._timeout_for_field.assert_called_once_with(
+            "lora", 15.0
+        )
+
+    @pytest.mark.unit
+    def test_wait_for_config_lora_wait_failure_raises(
+        self, send_pipeline: SendPipeline, mock_interface: MagicMock
+    ) -> None:
+        """Test failure path when the lora wait returns false and raises timeout error."""
+        mock_interface._timeout.waitForSet.return_value = True
+        mock_interface.localNode.waitForConfig.return_value = True
+        mock_interface.localNode._channel_request_runtime._timeout_for_field.return_value = False
+
+        with pytest.raises(
+            mock_interface.MeshInterfaceError,
+            match="Timed out waiting for interface config",
+        ):
+            send_pipeline.waitForConfig()
+
+    @pytest.mark.unit
+    def test_wait_for_config_lora_field_absent_graceful_success(
+        self, send_pipeline: SendPipeline, mock_interface: MagicMock
+    ) -> None:
+        """Test graceful success when the field is absent from the protobuf descriptor.
+
+        _timeout_for_field returns True for unknown fields, so the overall
+        waitForConfig should succeed even if the lora field doesn't exist.
+        """
+        mock_interface._timeout.waitForSet.return_value = True
+        mock_interface.localNode.waitForConfig.return_value = True
+        mock_interface.localNode._channel_request_runtime._timeout_for_field.return_value = True
+
+        send_pipeline.waitForConfig()
+
+        mock_interface.localNode._channel_request_runtime._timeout_for_field.assert_called_once_with(
+            "lora", 15.0
+        )
 
 
 class TestWaitForAckNak:

@@ -200,6 +200,19 @@ def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
     meshtastic.util.our_exit(message, return_value)
 
 
+def _cli_print(message: str) -> None:
+    """Print a message to stdout unless --quiet is active.
+
+    This helper gates non-essential informational output so that --quiet
+    suppresses ordinary print() calls in addition to lowering the logging
+    level.
+    """
+    args = mt_config.args
+    if args and getattr(args, "quiet", False):
+        return
+    print(message)
+
+
 def supportInfo() -> None:
     """Print troubleshooting guidance and environment details useful for reporting CLI or library issues.
 
@@ -617,6 +630,18 @@ def _channel_url_matches_current_device_state(
     )
 
 
+def _flatten_leaf_paths(prefix: str, mapping: dict[str, Any]) -> list[str]:
+    """Recursively flatten a nested mapping into dotted leaf paths."""
+    paths: list[str] = []
+    for key, value in mapping.items():
+        dotted = f"{prefix}.{key}"
+        if isinstance(value, dict) and value:
+            paths.extend(_flatten_leaf_paths(dotted, value))
+        else:
+            paths.append(dotted)
+    return paths
+
+
 def _verify_config_sections(
     config_fields: dict[str, dict[str, Any]],
     proto_config: Any,
@@ -643,8 +668,7 @@ def _verify_config_sections(
             )
             return False
         if verified_fields is not None:
-            for field_name in yaml_values:
-                verified_fields.append(f"{section_snake}.{field_name}")
+            verified_fields.extend(_flatten_leaf_paths(section_snake, yaml_values))
         logger.debug(
             "%s section %r verified (all requested field values match).",
             label,
@@ -1358,14 +1382,14 @@ def _handle_configure_command(
 
     if "owner" in configuration:
         if not phase1_started:
-            print(CONFIGURE_PHASE1_HEADER)
+            _cli_print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
         owner_name = str(configuration["owner"]).strip()
         if not owner_name:
             _cli_exit(
                 "ERROR: Long Name cannot be empty or contain only whitespace characters"
             )
-        print(f"Setting device owner to {owner_name}")
+        _cli_print(f"Setting device owner to {owner_name}")
         interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
             long_name=owner_name
         )
@@ -1373,14 +1397,14 @@ def _handle_configure_command(
 
     if "owner_short" in configuration:
         if not phase1_started:
-            print(CONFIGURE_PHASE1_HEADER)
+            _cli_print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
         owner_short_name = str(configuration["owner_short"]).strip()
         if not owner_short_name:
             _cli_exit(
                 "ERROR: Short Name cannot be empty or contain only whitespace characters"
             )
-        print(f"Setting device owner short to {owner_short_name}")
+        _cli_print(f"Setting device owner short to {owner_short_name}")
         interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
             long_name=None, short_name=owner_short_name
         )
@@ -1388,14 +1412,14 @@ def _handle_configure_command(
 
     if "ownerShort" in configuration:
         if not phase1_started:
-            print(CONFIGURE_PHASE1_HEADER)
+            _cli_print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
         owner_short_name = str(configuration["ownerShort"]).strip()
         if not owner_short_name:
             _cli_exit(
                 "ERROR: Short Name cannot be empty or contain only whitespace characters"
             )
-        print(f"Setting device owner short to {owner_short_name}")
+        _cli_print(f"Setting device owner short to {owner_short_name}")
         interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
             long_name=None, short_name=owner_short_name
         )
@@ -1403,7 +1427,7 @@ def _handle_configure_command(
 
     if "location" in configuration:
         if not phase1_started:
-            print(CONFIGURE_PHASE1_HEADER)
+            _cli_print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
         _loc = configuration["location"]
         if not isinstance(_loc, dict) or not _loc:
@@ -1433,10 +1457,10 @@ def _handle_configure_command(
                 alt = int(_loc["alt"])
             except (ValueError, TypeError):
                 _cli_exit(f"location.alt must be an integer, got: {_loc['alt']!r}")
-            print(f"Fixing altitude at {alt} meters")
-        print(f"Fixing latitude at {lat} degrees")
-        print(f"Fixing longitude at {lon} degrees")
-        print("Setting device position")
+            _cli_print(f"Fixing altitude at {alt} meters")
+        _cli_print(f"Fixing latitude at {lat} degrees")
+        _cli_print(f"Fixing longitude at {lon} degrees")
+        _cli_print("Setting device position")
         interface.getNode(args.dest, False, **getNode_kwargs).setFixedPosition(
             lat, lon, alt
         )
@@ -1444,11 +1468,10 @@ def _handle_configure_command(
 
     if "canned_messages" in configuration:
         if not phase1_started:
-            print(CONFIGURE_PHASE1_HEADER)
+            _cli_print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
-        print(
-            "Setting canned message messages to",
-            configuration["canned_messages"],
+        _cli_print(
+            f"Setting canned message messages to {configuration['canned_messages']}",
         )
         interface.getNode(args.dest, **getNode_kwargs).set_canned_message(
             configuration["canned_messages"]
@@ -1457,9 +1480,9 @@ def _handle_configure_command(
 
     if "ringtone" in configuration:
         if not phase1_started:
-            print(CONFIGURE_PHASE1_HEADER)
+            _cli_print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
-        print("Setting ringtone to", configuration["ringtone"])
+        _cli_print(f"Setting ringtone to {configuration['ringtone']}")
         interface.getNode(args.dest, **getNode_kwargs).set_ringtone(
             configuration["ringtone"]
         )
@@ -1467,7 +1490,7 @@ def _handle_configure_command(
 
     if "channel_url" in configuration:
         if not phase1_started:
-            print(CONFIGURE_PHASE1_HEADER)
+            _cli_print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
         raw_channel_url = configuration["channel_url"]
         if not isinstance(raw_channel_url, str):
@@ -1479,18 +1502,18 @@ def _handle_configure_command(
         if _channel_url_matches_current_device_state(
             target_node, requested_channel_url
         ):
-            print("Channel url already matches device state; skipping apply.")
+            _cli_print("Channel url already matches device state; skipping apply.")
             logger.info("Skipping setURL apply because channel URL already matches.")
         else:
             phase1_may_reconnect = True
             seturl_executed = True
-            print("Setting channel url to", requested_channel_url)
+            _cli_print(f"Setting channel url to {requested_channel_url}")
             target_node.setURL(requested_channel_url)
             time.sleep(CONFIG_SETURL_DELAY_SECONDS)
 
     if "channelUrl" in configuration:
         if not phase1_started:
-            print(CONFIGURE_PHASE1_HEADER)
+            _cli_print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
         raw_channel_url = configuration["channelUrl"]
         if not isinstance(raw_channel_url, str):
@@ -1502,17 +1525,17 @@ def _handle_configure_command(
         if _channel_url_matches_current_device_state(
             target_node, requested_channel_url
         ):
-            print("Channel url already matches device state; skipping apply.")
+            _cli_print("Channel url already matches device state; skipping apply.")
             logger.info("Skipping setURL apply because channel URL already matches.")
         else:
             phase1_may_reconnect = True
             seturl_executed = True
-            print("Setting channel url to", requested_channel_url)
+            _cli_print(f"Setting channel url to {requested_channel_url}")
             target_node.setURL(requested_channel_url)
             time.sleep(CONFIG_SETURL_DELAY_SECONDS)
 
     if phase1_started:
-        print("Phase 1 complete.")
+        _cli_print("Phase 1 complete.")
 
     settings_transaction_started = False
     has_valid_config_section = bool(
@@ -1534,7 +1557,7 @@ def _handle_configure_command(
                 "and configuration in separate operations."
             )
     if has_valid_config_section:
-        print(
+        _cli_print(
             "Phase 2: Applying configuration transaction (may trigger device reboot)..."
         )
         interface.getNode(args.dest, False, **getNode_kwargs).beginSettingsTransaction()
@@ -1617,36 +1640,36 @@ def _handle_configure_command(
                 verify_module_config_fields=_verify_module_config_fields,
             )
             if _reconnect_result == _ConfigureReconnectResult.VERIFIED:
-                print(
+                _cli_print(
                     "Phase 3: Device reconnected and config reloaded. All settings verified."
                 )
             elif _reconnect_result == _ConfigureReconnectResult.VERIFICATION_INCOMPLETE:
-                print(
+                _cli_print(
                     "Phase 3: Device reconnected and config reloaded. "
                     "Could not fully verify applied settings."
                 )
             elif _reconnect_result == _ConfigureReconnectResult.CONFIG_RELOAD_FAILED:
-                print(
+                _cli_print(
                     "Phase 3: Device reconnected but config reload failed. "
                     "Settings may still be applying."
                 )
             elif _reconnect_result == _ConfigureReconnectResult.RECONNECT_FAILED:
-                print(
+                _cli_print(
                     "Phase 3: Device did not reconnect within timeout. "
                     "Configuration may still be applying."
                 )
         else:
-            print(
+            _cli_print(
                 "Phase 3: Reboot/reconnect verification skipped for remote target. "
                 "Local transport state does not confirm remote node reload status."
             )
     else:
         if phase1_may_reconnect:
-            print(
+            _cli_print(
                 "Configuration applied. Channel URL updates may still trigger reconnect/reboot."
             )
         else:
-            print("Configuration applied (no reboot expected).")
+            _cli_print("Configuration applied (no reboot expected).")
 
     return settings_transaction_started, (
         seturl_executed and _is_local_destination(interface, args.dest)
@@ -1696,9 +1719,23 @@ def onConnected(interface: MeshInterface) -> None:
             if stable_path:
                 dev_path = getattr(interface, "devPath", "")
                 tty_name = os.path.basename(dev_path) if dev_path else "unknown"
-                print(f"Connected to radio on {tty_name} (stable: {stable_path})")
+                # Only show stable-path suffix when it adds new information.
+                try:
+                    dev_resolved = os.path.realpath(dev_path) if dev_path else ""
+                except OSError:
+                    dev_resolved = ""
+                try:
+                    stable_resolved = os.path.realpath(stable_path)
+                except OSError:
+                    stable_resolved = stable_path
+                if dev_resolved == stable_resolved or dev_path == stable_path:
+                    _cli_print(f"Connected to radio on {tty_name}")
+                else:
+                    _cli_print(
+                        f"Connected to radio on {tty_name} (stable: {stable_path})"
+                    )
             else:
-                print("Connected to radio")
+                _cli_print("Connected to radio")
 
         if args.set_time is not None:
             interface.getNode(args.dest, False, **getNode_kwargs).setTime(args.set_time)
