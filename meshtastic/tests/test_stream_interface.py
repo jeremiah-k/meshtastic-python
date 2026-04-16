@@ -607,4 +607,37 @@ def test_connect_succeeds_when_reader_thread_dead() -> None:
         iface.connect()
     assert mock_start.assert_called_once() is None
     assert iface._rxThread is not dead_thread
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_resolve_stable_path_preserves_existing_by_id() -> None:
+    """_resolve_stable_path returns devPath as-is when already under /dev/serial/by-id/."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        stable_path = "/dev/serial/by-id/usb-foo-123"
+        iface.devPath = stable_path  # type: ignore[attr-defined]
+        with patch("os.path.exists", return_value=True):
+            with patch(
+                "meshtastic.stream_interface.platform.system", return_value="Linux"
+            ):
+                result = iface._resolve_stable_path()
+        assert result == stable_path
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_resolve_stable_path_returns_none_on_non_linux() -> None:
+    """_resolve_stable_path returns None on non-Linux platforms."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        with patch(
+            "meshtastic.stream_interface.platform.system", return_value="Darwin"
+        ):
+            result = iface._resolve_stable_path()
+        assert result is None
+    finally:
+        iface.close()
     iface.close()

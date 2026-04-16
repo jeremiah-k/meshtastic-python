@@ -21,6 +21,7 @@ import meshtastic.__main__ as main_module
 from meshtastic import mt_config
 from meshtastic.__main__ import (
     _display_pref_name,
+    _flatten_leaf_paths,
     getPref,
     onConnected,
     onReceive,
@@ -305,7 +306,7 @@ def test_traverse_config_leaf_failure_skipped() -> None:
 def test_traverse_config_batches_multiple_sections(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Test traverseConfig batches unknown fields from different sections."""
+    """Test traverseConfig batches unknown fields under the root section."""
     interface_config = MagicMock()
 
     config = {
@@ -323,10 +324,90 @@ def test_traverse_config_batches_multiple_sections(
             for r in caplog.records
             if r.name == "meshtastic.__main__" and r.levelno == logging.WARNING
         ]
-        assert len(warning_records) == 2
+        assert len(warning_records) == 1
+        assert "5 unknown field(s) from module_config" in warning_records[0].message
+
+
+@pytest.mark.unit
+def test_traverse_config_groups_by_top_level_section(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """TraverseConfig groups unknown fields by top-level section, not nested subsection."""
+    interface_config = MagicMock()
+
+    config = {
+        "ambient_lighting": {
+            "nested": {"blue": 1, "red": 2},
+            "other_nested": {"green": 3},
+        },
+    }
+
+    with caplog.at_level(logging.WARNING, logger="meshtastic.__main__"):
+        with patch.object(main_module, "_resolve_pref", return_value=False):
+            result = traverseConfig("module_config", config, interface_config)
+            assert result is True
+
+        warning_records = [
+            r
+            for r in caplog.records
+            if r.name == "meshtastic.__main__" and r.levelno == logging.WARNING
+        ]
         texts = [r.message for r in warning_records]
-        assert any("3 unknown field(s) from ambient_lighting" in t for t in texts)
-        assert any("2 unknown field(s) from mqtt" in t for t in texts)
+        assert len(warning_records) == 1
+        assert "3 unknown field(s) from module_config" in texts[0]
+
+
+@pytest.mark.unit
+def test_flatten_leaf_paths_nested() -> None:
+    """_flatten_leaf_paths recursively produces dotted leaf paths for nested config."""
+    mapping = {
+        "lora": {
+            "modem_preset": "LongFast",
+            "hop_limit": 3,
+        },
+        "device": {
+            "role": "CLIENT",
+        },
+    }
+    paths = _flatten_leaf_paths("config", mapping)
+    assert sorted(paths) == [
+        "config.device.role",
+        "config.lora.hop_limit",
+        "config.lora.modem_preset",
+    ]
+
+
+# =============================================================================
+# _cli_print() Tests
+# =============================================================================
+
+
+@pytest.mark.unit
+def test_cli_print_outputs_normally(capsys: pytest.CaptureFixture[str]) -> None:
+    """_cli_print outputs to stdout when quiet is not set."""
+    old_args = mt_config.args
+    mt_config.args = MagicMock(quiet=False)
+    try:
+        main_module._cli_print("hello world")
+        captured = capsys.readouterr()
+        assert "hello world" in captured.out
+    finally:
+        mt_config.args = old_args
+
+
+@pytest.mark.unit
+def test_cli_print_suppressed_when_quiet(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """_cli_print suppresses output when quiet is True."""
+    old_args = mt_config.args
+    mt_config.args = MagicMock(quiet=True)
+    try:
+        main_module._cli_print("should not appear")
+        captured = capsys.readouterr()
+        assert captured.out == ""
+    finally:
+        mt_config.args = old_args
 
 
 # =============================================================================

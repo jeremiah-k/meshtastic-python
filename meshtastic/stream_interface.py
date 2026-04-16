@@ -376,7 +376,7 @@ class StreamInterface(MeshInterface):
         delay = WINDOWS11_WRITE_DELAY if self.is_windows11 else STANDARD_WRITE_DELAY
         time.sleep(delay)
 
-    def _resolve_stable_path(self) -> str | None:
+    def _resolve_stable_path(self) -> str | None:  # pylint: disable=too-many-return-statements
         """Return the stable /dev/serial/by-id/ alias for the current device path."""
         if platform.system() != "Linux":
             return None
@@ -384,6 +384,8 @@ class StreamInterface(MeshInterface):
         if not dev_path:
             return None
         by_id_dir = "/dev/serial/by-id"
+        if dev_path.startswith(by_id_dir + "/") and os.path.exists(dev_path):
+            return dev_path
         if not os.path.isdir(by_id_dir):
             return None
         try:
