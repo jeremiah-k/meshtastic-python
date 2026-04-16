@@ -388,8 +388,8 @@ def test_findPorts_prefers_linux_by_id_alias_when_available(
     fake1 = _TempPort(tty_device, vid=0x239A)
     patch_comports.return_value = [fake1]
     patch_glob.return_value = [by_id_alias]
-    patch_realpath.side_effect = (
-        lambda path: tty_device if path in (by_id_alias, tty_device) else path
+    patch_realpath.side_effect = lambda path: (
+        tty_device if path in (by_id_alias, tty_device) else path
     )
 
     assert findPorts() == [by_id_alias]

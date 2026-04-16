@@ -345,6 +345,7 @@ def findPorts(eliminate_duplicates: bool = False) -> list[str]:
     list[str]
         Sorted list of serial device path strings.
     """
+
     def _linux_by_id_aliases() -> dict[str, str]:
         """Map Linux tty realpaths to stable /dev/serial/by-id aliases."""
         if platform.system() != "Linux":

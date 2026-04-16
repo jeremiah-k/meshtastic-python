@@ -5,15 +5,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from meshtastic.node_runtime.seturl.execution import _ReplaceAllStage
 from meshtastic.node_runtime.seturl.coordinator import (
     LORA_CONFIG_RECONNECT_SETTLE_SECONDS,
 )
+from meshtastic.node_runtime.seturl.execution import _ReplaceAllStage
 from meshtastic.node_runtime.seturl.planner import _SetUrlReplacePlanner
 from meshtastic.node_runtime.seturl_runtime import (
+    _compute_remaining_channel_writes,
     _SetUrlParsedInput,
     _SetUrlTransactionCoordinator,
-    _compute_remaining_channel_writes,
 )
 from meshtastic.protobuf import apponly_pb2, channel_pb2, localonly_pb2
 from meshtastic.tests.seturl.conftest import _make_channel

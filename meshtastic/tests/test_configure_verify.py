@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import base64
+from unittest.mock import MagicMock
 
 import pytest
-
-from unittest.mock import MagicMock
 
 from meshtastic.configure_verify import (
     _is_repeated_field,
@@ -208,7 +207,9 @@ def test_channel_url_primary_entry_order_mismatch_fails() -> None:
     device_secondary.CopyFrom(requested_primary)
     assert (
         _verify_channel_url_match(
-            _make_channel_url([requested_primary, requested_secondary], lora_region="US"),
+            _make_channel_url(
+                [requested_primary, requested_secondary], lora_region="US"
+            ),
             _make_channel_url([device_primary, device_secondary], lora_region="US"),
         )
         is False
@@ -276,7 +277,9 @@ def test_verify_fields_string_literal_true_stays_string() -> None:
     telemetry = localonly_pb2.LocalModuleConfig()
     telemetry.detection_sensor.name = "true"
     assert (
-        _verify_requested_fields({"name": "true"}, telemetry.detection_sensor, "detection_sensor")
+        _verify_requested_fields(
+            {"name": "true"}, telemetry.detection_sensor, "detection_sensor"
+        )
         == []
     )
 

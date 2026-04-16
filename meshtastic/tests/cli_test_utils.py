@@ -222,12 +222,8 @@ def _run_host_cli_ok(
         meshtastic_bin=meshtastic_bin,
     )
     quoted_args = " ".join(shlex.quote(arg) for arg in args)
-    rendered_command = (
-        f"{shlex.quote(meshtastic_bin)} --host {shlex.quote(host)} {quoted_args}".strip()
-    )
-    assert (
-        returncode == 0
-    ), (
+    rendered_command = f"{shlex.quote(meshtastic_bin)} --host {shlex.quote(host)} {quoted_args}".strip()
+    assert returncode == 0, (
         f"Command failed (rc={returncode}) on {host}\n"
         f"Command: {rendered_command}\n"
         f"Output:\n{output}"

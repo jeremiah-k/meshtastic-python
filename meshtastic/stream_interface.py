@@ -75,7 +75,9 @@ def _is_bootstrap_stream_closed_retryable(
     message = str(exc).casefold()
     if not message:
         return True
-    return not any(marker in message for marker in BOOTSTRAP_STREAM_CLOSED_FAILFAST_MARKERS)
+    return not any(
+        marker in message for marker in BOOTSTRAP_STREAM_CLOSED_FAILFAST_MARKERS
+    )
 
 
 class StreamInterface(MeshInterface):

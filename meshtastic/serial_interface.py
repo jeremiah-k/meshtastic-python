@@ -157,7 +157,9 @@ class SerialInterface(StreamInterface):
         if len(ports) == 0:
             return None
         if len(ports) > 1:
-            message: str = "Multiple serial ports were detected; one serial port must be specified with '--port'.\n"
+            message: str = (
+                "Multiple serial ports were detected; one serial port must be specified with '--port'.\n"
+            )
             message += (
                 "  Auto-detection cannot disambiguate when multiple compatible devices "
                 "or overlapping USB VID/PID aliases are present.\n"
@@ -260,11 +262,7 @@ class SerialInterface(StreamInterface):
                 attempt,
                 SERIAL_CONNECT_MAX_ATTEMPTS,
                 self.devPath,
-                (
-                    getattr(stream, "is_open", None)
-                    if stream is not None
-                    else None
-                ),
+                (getattr(stream, "is_open", None) if stream is not None else None),
                 getattr(self, "_last_disconnect_source", "unknown"),
             )
             try:

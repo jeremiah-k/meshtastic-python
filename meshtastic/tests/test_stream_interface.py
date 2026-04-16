@@ -603,9 +603,7 @@ def test_connect_succeeds_when_reader_thread_dead() -> None:
     iface._rxThread = dead_thread
     iface._provides_own_stream = True  # type: ignore[attr-defined]
     iface.stream = None
-    with (
-        patch.object(iface, "_start_config"),
-    ):
+    with (patch.object(iface, "_start_config"),):
         iface.connect()
     assert iface._rxThread.is_alive()
     iface.close()

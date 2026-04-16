@@ -212,9 +212,7 @@ def test_serial_interface_connect_uses_fast_retry_delay_for_stream_closed(
         patch.object(iface, "_open_serial_stream", return_value=stream),
     ):
         iface.connect()
-    mock_sleep.assert_called_once_with(
-        SERIAL_CONNECT_STREAM_CLOSED_RETRY_DELAY_SECONDS
-    )
+    mock_sleep.assert_called_once_with(SERIAL_CONNECT_STREAM_CLOSED_RETRY_DELAY_SECONDS)
 
 
 @pytest.mark.unit

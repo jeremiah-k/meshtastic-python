@@ -5800,8 +5800,7 @@ def test_post_seturl_stability_check_triggers_reconnect_when_disconnected(
     monkeypatch.setattr("time.sleep", lambda _: None)
 
     assert (
-        main_module._post_seturl_stability_check(cast(Any, iface), timeout=2.0)
-        is True
+        main_module._post_seturl_stability_check(cast(Any, iface), timeout=2.0) is True
     )
     iface.connect.assert_called()
     iface.waitForConfig.assert_called_once()
