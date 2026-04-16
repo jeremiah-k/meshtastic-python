@@ -1,0 +1,54 @@
+# start of Meshtastic configure yaml
+# Test configuration for CLI testing - NOT for production use
+# Generated for device testing with custom TestChannel (not default LongFast)
+
+owner: TestDevice
+owner_short: TEST
+
+channel_url: https://meshtastic.org/e/#CiQSCAECAwQFBgcIGgtUZXN0Q2hhbm5lbCUqAAAAKAEwAToCCAoSDAgBOAFAA0gBUB5oAQ
+
+canned_messages: Test|Hello|OK|Retry
+
+config:
+  bluetooth:
+    enabled: true
+    fixedPin: 123456
+  device:
+    nodeInfoBroadcastSecs: 10800
+  display:
+    screenOnSecs: 600
+  lora:
+    hopLimit: 3
+    sx126xRxBoostedGain: true
+    txEnabled: true
+    txPower: 30
+    usePreset: true
+  network:
+    ntpServer: meshtastic.pool.ntp.org
+  position:
+    broadcastSmartMinimumDistance: 100
+    broadcastSmartMinimumIntervalSecs: 300
+    gpsMode: NOT_PRESENT
+    gpsUpdateInterval: 120
+    positionBroadcastSecs: 3600
+    positionBroadcastSmartEnabled: true
+    positionFlags: 811
+  power:
+    lsSecs: 300
+    minWakeSecs: 10
+    sdsSecs: 4294967295
+    waitBluetoothSecs: 60
+  security:
+    serialEnabled: true
+
+module_config:
+  canned_message:
+    enabled: true
+  mqtt:
+    address: mqtt.meshtastic.org
+    encryptionEnabled: true
+    password: large4cats
+    root: msh
+    username: meshdev
+  telemetry:
+    deviceUpdateInterval: 2147483647

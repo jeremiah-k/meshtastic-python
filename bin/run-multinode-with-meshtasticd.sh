@@ -191,12 +191,12 @@ docker run -d \
 	--name "${MESHTASTICD_CONTAINER_A}" \
 	--network host \
 	"${MESHTASTICD_IMAGE}" \
-	meshtasticd -s --fsdir=/var/lib/meshtasticd-a -p "${MESHTASTICD_PORT_A_DEC}" -h "${MESHTASTICD_HWID_A}" >/dev/null
+	bash -c "while true; do meshtasticd -s --fsdir=/var/lib/meshtasticd-a -p ${MESHTASTICD_PORT_A_DEC} -h ${MESHTASTICD_HWID_A}; echo \"meshtasticd exited with code \$?, restarting in 2s...\"; sleep 2; done" >/dev/null
 docker run -d \
 	--name "${MESHTASTICD_CONTAINER_B}" \
 	--network host \
 	"${MESHTASTICD_IMAGE}" \
-	meshtasticd -s --fsdir=/var/lib/meshtasticd-b -p "${MESHTASTICD_PORT_B_DEC}" -h "${MESHTASTICD_HWID_B}" >/dev/null
+	bash -c "while true; do meshtasticd -s --fsdir=/var/lib/meshtasticd-b -p ${MESHTASTICD_PORT_B_DEC} -h ${MESHTASTICD_HWID_B}; echo \"meshtasticd exited with code \$?, restarting in 2s...\"; sleep 2; done" >/dev/null
 
 wait_for_ready() {
 	local host=$1

@@ -535,14 +535,17 @@ def _validate_non_empty_mapping_sections(
     top_level_key: str,
     section_mapping: dict[str, Any],
 ) -> dict[str, dict[str, Any]]:
-    """Validate that each section payload is a non-empty mapping."""
+    """Validate that each section payload is a mapping.
+
+    Empty mappings (e.g., ``audio: {}``) are allowed — they represent
+    protobuf default values and are emitted by ``--export-config``.
+    """
     validated_sections: dict[str, dict[str, Any]] = {}
     for section_name, section_value in section_mapping.items():
-        if not isinstance(section_value, dict) or not section_value:
+        if not isinstance(section_value, dict):
             _cli_exit(
-                f"ERROR: '{top_level_key}.{section_name}' must be a non-empty mapping, got "
+                f"ERROR: '{top_level_key}.{section_name}' must be a mapping, got "
                 f"{type(section_value).__name__}"
-                f"{' (empty)' if isinstance(section_value, dict) else ''}"
             )
         validated_sections[section_name] = section_value
     return validated_sections

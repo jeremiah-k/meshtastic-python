@@ -170,7 +170,7 @@ docker run -d \
 	--name "${MESHTASTICD_CONTAINER}" \
 	-p "${MESHTASTICD_PORT_DEC}":4403 \
 	"${MESHTASTICD_IMAGE}" \
-	meshtasticd -s --fsdir=/var/lib/meshtasticd >/dev/null
+	bash -c 'while true; do meshtasticd -s --fsdir=/var/lib/meshtasticd; echo "meshtasticd exited with code $?, restarting in 2s..."; sleep 2; done' >/dev/null
 
 deadline=$((SECONDS + 10#${MESHTASTICD_READY_TIMEOUT_SECONDS}))
 until poetry run meshtastic --timeout 5 --host "${MESHTASTICD_HOST}" --info >>"${READY_LOG_FILE}" 2>&1; do
