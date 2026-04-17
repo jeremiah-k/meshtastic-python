@@ -2679,6 +2679,24 @@ class CasevacReport(_message.Message):
     CHILD_FIELD_NUMBER: _builtins.int
     TERRAIN_FLAGS_FIELD_NUMBER: _builtins.int
     FREQUENCY_FIELD_NUMBER: _builtins.int
+    TITLE_FIELD_NUMBER: _builtins.int
+    MEDLINE_REMARKS_FIELD_NUMBER: _builtins.int
+    URGENT_COUNT_FIELD_NUMBER: _builtins.int
+    URGENT_SURGICAL_COUNT_FIELD_NUMBER: _builtins.int
+    PRIORITY_COUNT_FIELD_NUMBER: _builtins.int
+    ROUTINE_COUNT_FIELD_NUMBER: _builtins.int
+    CONVENIENCE_COUNT_FIELD_NUMBER: _builtins.int
+    EQUIPMENT_DETAIL_FIELD_NUMBER: _builtins.int
+    ZONE_PROTECTED_COORD_FIELD_NUMBER: _builtins.int
+    TERRAIN_SLOPE_DIR_FIELD_NUMBER: _builtins.int
+    TERRAIN_OTHER_DETAIL_FIELD_NUMBER: _builtins.int
+    MARKED_BY_FIELD_NUMBER: _builtins.int
+    OBSTACLES_FIELD_NUMBER: _builtins.int
+    WINDS_ARE_FROM_FIELD_NUMBER: _builtins.int
+    FRIENDLIES_FIELD_NUMBER: _builtins.int
+    ENEMY_FIELD_NUMBER: _builtins.int
+    HLZ_REMARKS_FIELD_NUMBER: _builtins.int
+    ZMIST_FIELD_NUMBER: _builtins.int
     precedence: Global___CasevacReport.Precedence.ValueType
     """
     Line 3: precedence / urgency.
@@ -2736,6 +2754,105 @@ class CasevacReport(_message.Message):
     Line 2: radio frequency / callsign metadata (e.g. "38.90 Mhz" or
     "Victor 6"). Capped tight in options.
     """
+    title: _builtins.str
+    """--- v2.x medline extensions (tags 16–33) --------------------------------
+
+    Fields 16+ cost a 2-byte tag instead of 1 byte, but they're usually
+    sparse so the on-wire delta is modest when most stay unset. A fully
+    populated CASEVAC with 13 free-text fields + 2 ZMIST entries can run
+    200-400 bytes compressed, i.e. potentially over the 237 B LoRa MTU.
+    Callers that hit the MTU on the `compressWithRemarksFallback` path
+    SHOULD strip the tier-2 situational fields (tags 28-32 + terrain_other_detail)
+    before dropping the packet entirely. See README "CASEVAC tier-2 stripping".
+
+
+    Short title / MEDEVAC identifier (e.g. "EAGLE.15.181230"). Usually the
+    same as the envelope callsign but ATAK sometimes carries a distinct
+    ops-number here.
+    """
+    medline_remarks: _builtins.str
+    """
+    Primary medline free-text — the single most clinically important line
+    on a MEDLINE form (e.g. "2 urgent litter patients, smoke on approach").
+    MUST be preserved under MTU pressure as long as any casevac is sent.
+    """
+    urgent_count: _builtins.int
+    """
+    Line 3 (newer ATAK format): patient counts by precedence level.
+    Coexists with the enum-style `precedence` field (tag 1) — older ATAK
+    emits a single enum, newer ATAK emits these counts, and both can be
+    set simultaneously. Senders populate whichever style(s) the source
+    XML had; receivers prefer counts when non-zero.
+    """
+    urgent_surgical_count: _builtins.int
+    priority_count: _builtins.int
+    routine_count: _builtins.int
+    convenience_count: _builtins.int
+    equipment_detail: _builtins.str
+    """
+    Line 4 supplementary: free-text description of non-standard equipment
+    (e.g. "Blood warmer"). Pairs with the `equipment_flags` bitfield.
+    """
+    zone_protected_coord: _builtins.str
+    """
+    Line 1 override: MGRS grid when distinct from the event anchor point
+    (e.g. "34T CQ 12345 67890"). Event lat/lon/hae still carries the
+    numeric location; this field preserves the exact MGRS string the
+    medic entered.
+    """
+    terrain_slope_dir: _builtins.str
+    """
+    Line 9 supplementary: slope direction (e.g. "N", "NE", "SSW") when
+    `terrain_flags` bit 0 (slope) is set.
+    """
+    terrain_other_detail: _builtins.str
+    """
+    Line 9 supplementary: free-text description of "other" terrain hazards
+    (e.g. "Loose debris on west edge") when `terrain_flags` bit 5 (other)
+    is set. Tier-2 strippable under MTU pressure.
+    """
+    marked_by: _builtins.str
+    """
+    Line 7 supplementary: how the zone is being marked right now
+    (e.g. "Orange smoke", "VS-17 panel"). Complements the structured
+    `hlz_marking` enum with a specific human-readable description.
+    """
+    obstacles: _builtins.str
+    """--- Tier-2 situational awareness (stripped first under MTU pressure) ---
+    These fields are free-text context that helps the receiver plan the
+    approach but aren't strictly required to evacuate the patient.
+
+
+    Nearby obstacles on the approach (e.g. "Power lines north of HLZ").
+    """
+    winds_are_from: _builtins.str
+    """
+    Wind direction and speed (e.g. "270 at 12 kts").
+    """
+    friendlies: _builtins.str
+    """
+    Friendly forces posture near the pickup zone
+    (e.g. "Squad east of HLZ").
+    """
+    enemy: _builtins.str
+    """
+    Known or suspected enemy positions near the pickup zone
+    (e.g. "Possible enemy on south ridge").
+    """
+    hlz_remarks: _builtins.str
+    """
+    Free-text description of the HLZ itself
+    (e.g. "Primary HLZ is soccer field").
+    """
+    @_builtins.property
+    def zmist(self) -> _containers.RepeatedCompositeFieldContainer[Global___ZMistEntry]:
+        """
+        Per-patient clinical records. Each entry is one patient's ZMIST card
+        (Zap number / Mechanism / Injuries / Signs / Treatment). Repeatable —
+        a mass-casualty event can carry 1-6 entries in practice, limited by
+        the 237 B LoRa MTU.
+        """
+
     def __init__(
         self,
         *,
@@ -2754,11 +2871,85 @@ class CasevacReport(_message.Message):
         child: _builtins.int = ...,
         terrain_flags: _builtins.int = ...,
         frequency: _builtins.str = ...,
+        title: _builtins.str = ...,
+        medline_remarks: _builtins.str = ...,
+        urgent_count: _builtins.int = ...,
+        urgent_surgical_count: _builtins.int = ...,
+        priority_count: _builtins.int = ...,
+        routine_count: _builtins.int = ...,
+        convenience_count: _builtins.int = ...,
+        equipment_detail: _builtins.str = ...,
+        zone_protected_coord: _builtins.str = ...,
+        terrain_slope_dir: _builtins.str = ...,
+        terrain_other_detail: _builtins.str = ...,
+        marked_by: _builtins.str = ...,
+        obstacles: _builtins.str = ...,
+        winds_are_from: _builtins.str = ...,
+        friendlies: _builtins.str = ...,
+        enemy: _builtins.str = ...,
+        hlz_remarks: _builtins.str = ...,
+        zmist: _abc.Iterable[Global___ZMistEntry] | None = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["ambulatory_patients", b"ambulatory_patients", "child", b"child", "epw", b"epw", "equipment_flags", b"equipment_flags", "frequency", b"frequency", "hlz_marking", b"hlz_marking", "litter_patients", b"litter_patients", "non_us_civilian", b"non_us_civilian", "non_us_military", b"non_us_military", "precedence", b"precedence", "security", b"security", "terrain_flags", b"terrain_flags", "us_civilian", b"us_civilian", "us_military", b"us_military", "zone_marker", b"zone_marker"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["ambulatory_patients", b"ambulatory_patients", "child", b"child", "convenience_count", b"convenience_count", "enemy", b"enemy", "epw", b"epw", "equipment_detail", b"equipment_detail", "equipment_flags", b"equipment_flags", "frequency", b"frequency", "friendlies", b"friendlies", "hlz_marking", b"hlz_marking", "hlz_remarks", b"hlz_remarks", "litter_patients", b"litter_patients", "marked_by", b"marked_by", "medline_remarks", b"medline_remarks", "non_us_civilian", b"non_us_civilian", "non_us_military", b"non_us_military", "obstacles", b"obstacles", "precedence", b"precedence", "priority_count", b"priority_count", "routine_count", b"routine_count", "security", b"security", "terrain_flags", b"terrain_flags", "terrain_other_detail", b"terrain_other_detail", "terrain_slope_dir", b"terrain_slope_dir", "title", b"title", "urgent_count", b"urgent_count", "urgent_surgical_count", b"urgent_surgical_count", "us_civilian", b"us_civilian", "us_military", b"us_military", "winds_are_from", b"winds_are_from", "zmist", b"zmist", "zone_marker", b"zone_marker", "zone_protected_coord", b"zone_protected_coord"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 Global___CasevacReport: _TypeAlias = CasevacReport  # noqa: Y015
+
+@_typing.final
+class ZMistEntry(_message.Message):
+    """
+    Per-patient clinical summary record — one entry per patient in a CASEVAC.
+    Maps directly to ATAK's <zMist> child element inside <zMistsMap>.
+    All fields are optional free-text; senders populate what they have.
+    """
+
+    DESCRIPTOR: _descriptor.Descriptor
+
+    TITLE_FIELD_NUMBER: _builtins.int
+    Z_FIELD_NUMBER: _builtins.int
+    M_FIELD_NUMBER: _builtins.int
+    I_FIELD_NUMBER: _builtins.int
+    S_FIELD_NUMBER: _builtins.int
+    T_FIELD_NUMBER: _builtins.int
+    title: _builtins.str
+    """
+    Patient identifier / sequence label (e.g. "ZMIST-1", "ZMIST-2").
+    """
+    z: _builtins.str
+    """
+    Zap number — unique patient tracking ID (often a terse code like
+    "Gunshot" or a serial).
+    """
+    m: _builtins.str
+    """
+    Mechanism of injury (e.g. "Penetrating trauma", "Blast injury").
+    """
+    i: _builtins.str
+    """
+    Injuries observed (e.g. "Left thigh", "Concussion").
+    """
+    s: _builtins.str
+    """
+    Signs / vital stats (e.g. "Stable", "Priority", "BP 110/70").
+    """
+    t: _builtins.str
+    """
+    Treatment given (e.g. "Tourniquet 1810Z", "O2 administered").
+    """
+    def __init__(
+        self,
+        *,
+        title: _builtins.str = ...,
+        z: _builtins.str = ...,
+        m: _builtins.str = ...,
+        i: _builtins.str = ...,
+        s: _builtins.str = ...,
+        t: _builtins.str = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["i", b"i", "m", b"m", "s", b"s", "t", b"t", "title", b"title", "z", b"z"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+Global___ZMistEntry: _TypeAlias = ZMistEntry  # noqa: Y015
 
 @_typing.final
 class EmergencyAlert(_message.Message):
@@ -2948,6 +3139,187 @@ class TaskRequest(_message.Message):
 Global___TaskRequest: _TypeAlias = TaskRequest  # noqa: Y015
 
 @_typing.final
+class TAKEnvironment(_message.Message):
+    """
+    Weather annotation from <environment> CoT detail element.
+
+    Attaches to any TAKPacketV2 regardless of payload_variant — an Aircraft,
+    PLI, or Marker can all carry observed conditions at the emitting station.
+    ATAK-CIV ships an XSD for <environment> but no dedicated handler, so the
+    element round-trips through the generic detail pipeline; this message
+    promotes it to a first-class structured field.
+
+    Target wire cost: ~6-8 bytes compressed with a fully populated instance.
+
+    Named `TAKEnvironment` (not just `Environment`) because the bare name
+    collides with `SwiftUI.Environment` — every SwiftUI view in a consuming
+    iOS app uses the `@Environment` property wrapper, and importing the
+    generated proto module would make `Environment` ambiguous in every one
+    of those files. The `TAK` prefix matches the convention used by the
+    outer `TAKPacketV2` wrapper and is unambiguous across all target
+    languages (Swift, Kotlin, Python, TypeScript, C#).
+    """
+
+    DESCRIPTOR: _descriptor.Descriptor
+
+    TEMPERATURE_C_X10_FIELD_NUMBER: _builtins.int
+    WIND_DIRECTION_DEG_FIELD_NUMBER: _builtins.int
+    WIND_SPEED_CM_S_FIELD_NUMBER: _builtins.int
+    temperature_c_x10: _builtins.int
+    """
+    Temperature in deci-degrees Celsius. 225 = 22.5°C.
+    Range covers -50°C to +50°C (-500 to +500) which spans every realistic
+    outdoor TAK deployment. sint32 because negative temps are common in
+    cold-weather ops.
+    """
+    wind_direction_deg: _builtins.int
+    """
+    Wind direction in whole degrees, 0-359. "Direction FROM" per
+    meteorological convention (matches CoT / ATAK).
+    """
+    wind_speed_cm_s: _builtins.int
+    """
+    Wind speed in cm/s. Matches the unit of TAKPacketV2.speed for
+    consistency. 1200 = 12.00 m/s = ~27 mph.
+    """
+    def __init__(
+        self,
+        *,
+        temperature_c_x10: _builtins.int = ...,
+        wind_direction_deg: _builtins.int = ...,
+        wind_speed_cm_s: _builtins.int = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["temperature_c_x10", b"temperature_c_x10", "wind_direction_deg", b"wind_direction_deg", "wind_speed_cm_s", b"wind_speed_cm_s"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+Global___TAKEnvironment: _TypeAlias = TAKEnvironment  # noqa: Y015
+
+@_typing.final
+class SensorFov(_message.Message):
+    """
+    Sensor field-of-view cone from <sensor> CoT detail element.
+
+    Encodes the 8 geometry attributes that ATAK-CIV's SensorDetailHandler
+    reads from the wire; drops the 9 visual-styling attributes that are
+    receiver-side render hints (fovAlpha, fovRed/Green/Blue, strokeColor,
+    strokeWeight, displayMagneticReference, hideFov, fovLabels, rangeLines).
+    The receiving ATAK client restores those from its own defaults, same as
+    every other CoT carried over Meshtastic today.
+
+    Attaches to any TAKPacketV2 — a PLI with a sensor on the operator's head,
+    an Aircraft with a FLIR turret, a Marker dropped on a UAV.
+    Target wire cost: ~7-14 bytes compressed (dominated by model string).
+    """
+
+    DESCRIPTOR: _descriptor.Descriptor
+
+    class _SensorType:
+        ValueType = _typing.NewType("ValueType", _builtins.int)
+        V: _TypeAlias = ValueType  # noqa: Y015
+
+    class _SensorTypeEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[SensorFov._SensorType.ValueType], _builtins.type):
+        DESCRIPTOR: _descriptor.EnumDescriptor
+        SensorType_Unspecified: SensorFov._SensorType.ValueType  # 0
+        SensorType_Camera: SensorFov._SensorType.ValueType  # 1
+        """daylight / general optical"""
+        SensorType_Thermal: SensorFov._SensorType.ValueType  # 2
+        """FLIR, thermal imager"""
+        SensorType_Laser: SensorFov._SensorType.ValueType  # 3
+        """rangefinder, LRF, designator"""
+        SensorType_Nvg: SensorFov._SensorType.ValueType  # 4
+        """night vision goggles"""
+        SensorType_Rf: SensorFov._SensorType.ValueType  # 5
+        """radio/radar direction-finding"""
+        SensorType_Other: SensorFov._SensorType.ValueType  # 6
+
+    class SensorType(_SensorType, metaclass=_SensorTypeEnumTypeWrapper):
+        """
+        Coarse sensor category, inferred from `model` on parse when the source
+        XML doesn't label it. Receivers that render differently per sensor
+        class (thermal overlay vs daylight cone) use this.
+        """
+
+    SensorType_Unspecified: SensorFov.SensorType.ValueType  # 0
+    SensorType_Camera: SensorFov.SensorType.ValueType  # 1
+    """daylight / general optical"""
+    SensorType_Thermal: SensorFov.SensorType.ValueType  # 2
+    """FLIR, thermal imager"""
+    SensorType_Laser: SensorFov.SensorType.ValueType  # 3
+    """rangefinder, LRF, designator"""
+    SensorType_Nvg: SensorFov.SensorType.ValueType  # 4
+    """night vision goggles"""
+    SensorType_Rf: SensorFov.SensorType.ValueType  # 5
+    """radio/radar direction-finding"""
+    SensorType_Other: SensorFov.SensorType.ValueType  # 6
+
+    TYPE_FIELD_NUMBER: _builtins.int
+    AZIMUTH_DEG_FIELD_NUMBER: _builtins.int
+    RANGE_M_FIELD_NUMBER: _builtins.int
+    FOV_HORIZONTAL_DEG_FIELD_NUMBER: _builtins.int
+    FOV_VERTICAL_DEG_FIELD_NUMBER: _builtins.int
+    ELEVATION_DEG_FIELD_NUMBER: _builtins.int
+    ROLL_DEG_FIELD_NUMBER: _builtins.int
+    MODEL_FIELD_NUMBER: _builtins.int
+    type: Global___SensorFov.SensorType.ValueType
+    azimuth_deg: _builtins.int
+    """
+    Azimuth in whole degrees, 0-359. "Pointing direction" of the cone axis,
+    measured clockwise from true north. Whole degrees match ATAK-CIV's
+    SensorDetailHandler default (270°) and save varint bytes over centi-deg.
+    """
+    range_m: _builtins.int
+    """
+    Maximum range of the cone in meters.
+    Optional — if unset, receivers should use the ATAK-CIV default of 100m.
+    """
+    fov_horizontal_deg: _builtins.int
+    """
+    Horizontal field of view in whole degrees (cone's angular width).
+    ATAK-CIV default is 45°.
+    """
+    fov_vertical_deg: _builtins.int
+    """
+    Vertical field of view in whole degrees. ATAK-CIV default is 45°.
+    Optional — a value of 0 means "not set / use horizontal FOV".
+    """
+    elevation_deg: _builtins.int
+    """
+    Elevation angle in whole degrees. Positive = up, negative = down.
+    Range -90 to +90. sint32 for varint efficiency on small negatives.
+    """
+    roll_deg: _builtins.int
+    """
+    Roll (camera tilt) in whole degrees, -180 to +180.
+    Optional — use 0 if the sensor doesn't track roll.
+    """
+    model: _builtins.str
+    """
+    Free-form device model identifier, e.g. "FLIR-Boson-640", "SEEK".
+    Optional — empty string means "unknown model" (ATAK-CIV default).
+    """
+    def __init__(
+        self,
+        *,
+        type: Global___SensorFov.SensorType.ValueType = ...,
+        azimuth_deg: _builtins.int = ...,
+        range_m: _builtins.int | None = ...,
+        fov_horizontal_deg: _builtins.int = ...,
+        fov_vertical_deg: _builtins.int = ...,
+        elevation_deg: _builtins.int = ...,
+        roll_deg: _builtins.int = ...,
+        model: _builtins.str = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_range_m", b"_range_m", "range_m", b"range_m"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_range_m", b"_range_m", "azimuth_deg", b"azimuth_deg", "elevation_deg", b"elevation_deg", "fov_horizontal_deg", b"fov_horizontal_deg", "fov_vertical_deg", b"fov_vertical_deg", "model", b"model", "range_m", b"range_m", "roll_deg", b"roll_deg", "type", b"type"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__range_m: _TypeAlias = _typing.Literal["range_m"]  # noqa: Y015
+    _WhichOneofArgType__range_m: _TypeAlias = _typing.Literal["_range_m", b"_range_m"]  # noqa: Y015
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__range_m) -> _WhichOneofReturnType__range_m | None: ...
+
+Global___SensorFov: _TypeAlias = SensorFov  # noqa: Y015
+
+@_typing.final
 class TAKPacketV2(_message.Message):
     """
     ATAK v2 packet with expanded CoT field support and zstd dictionary compression.
@@ -2982,6 +3354,8 @@ class TAKPacketV2(_message.Message):
     PHONE_FIELD_NUMBER: _builtins.int
     COT_TYPE_STR_FIELD_NUMBER: _builtins.int
     REMARKS_FIELD_NUMBER: _builtins.int
+    ENVIRONMENT_FIELD_NUMBER: _builtins.int
+    SENSOR_FOV_FIELD_NUMBER: _builtins.int
     PLI_FIELD_NUMBER: _builtins.int
     CHAT_FIELD_NUMBER: _builtins.int
     AIRCRAFT_FIELD_NUMBER: _builtins.int
@@ -3105,6 +3479,27 @@ class TAKPacketV2(_message.Message):
     tools, and routes have dedicated variants below and should not land here.
     """
     @_builtins.property
+    def environment(self) -> Global___TAKEnvironment:
+        """--- Sensor / environment annotations ----------------------------------
+
+        Both fields are OPTIONAL and attach to any payload_variant. They
+        describe observed conditions at the emitting station — a PLI with
+        environment data, an Aircraft with a sensor cone, a Marker with both.
+        Absent by default; presence is signaled by the message being non-null.
+
+
+        Observed weather conditions (temperature, wind). From <environment>.
+        Type is `TAKEnvironment`, not `Environment`, to avoid colliding with
+        SwiftUI's `@Environment` property wrapper in iOS consumers.
+        """
+
+    @_builtins.property
+    def sensor_fov(self) -> Global___SensorFov:
+        """
+        Sensor field-of-view cone (camera, FLIR, laser, etc.). From <sensor>.
+        """
+
+    @_builtins.property
     def chat(self) -> Global___GeoChat:
         """
         ATAK GeoChat message
@@ -3187,6 +3582,8 @@ class TAKPacketV2(_message.Message):
         phone: _builtins.str = ...,
         cot_type_str: _builtins.str = ...,
         remarks: _builtins.str = ...,
+        environment: Global___TAKEnvironment | None = ...,
+        sensor_fov: Global___SensorFov | None = ...,
         pli: _builtins.bool = ...,
         chat: Global___GeoChat | None = ...,
         aircraft: Global___AircraftTrack | None = ...,
@@ -3199,12 +3596,21 @@ class TAKPacketV2(_message.Message):
         emergency: Global___EmergencyAlert | None = ...,
         task: Global___TaskRequest | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _typing.Literal["aircraft", b"aircraft", "casevac", b"casevac", "chat", b"chat", "emergency", b"emergency", "marker", b"marker", "payload_variant", b"payload_variant", "pli", b"pli", "rab", b"rab", "raw_detail", b"raw_detail", "route", b"route", "shape", b"shape", "task", b"task"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_environment", b"_environment", "_sensor_fov", b"_sensor_fov", "aircraft", b"aircraft", "casevac", b"casevac", "chat", b"chat", "emergency", b"emergency", "environment", b"environment", "marker", b"marker", "payload_variant", b"payload_variant", "pli", b"pli", "rab", b"rab", "raw_detail", b"raw_detail", "route", b"route", "sensor_fov", b"sensor_fov", "shape", b"shape", "task", b"task"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["aircraft", b"aircraft", "alt_src", b"alt_src", "altitude", b"altitude", "battery", b"battery", "callsign", b"callsign", "casevac", b"casevac", "chat", b"chat", "cot_type_id", b"cot_type_id", "cot_type_str", b"cot_type_str", "course", b"course", "device_callsign", b"device_callsign", "emergency", b"emergency", "endpoint", b"endpoint", "geo_src", b"geo_src", "how", b"how", "latitude_i", b"latitude_i", "longitude_i", b"longitude_i", "marker", b"marker", "payload_variant", b"payload_variant", "phone", b"phone", "pli", b"pli", "rab", b"rab", "raw_detail", b"raw_detail", "remarks", b"remarks", "role", b"role", "route", b"route", "shape", b"shape", "speed", b"speed", "stale_seconds", b"stale_seconds", "tak_device", b"tak_device", "tak_os", b"tak_os", "tak_platform", b"tak_platform", "tak_version", b"tak_version", "task", b"task", "team", b"team", "uid", b"uid"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_environment", b"_environment", "_sensor_fov", b"_sensor_fov", "aircraft", b"aircraft", "alt_src", b"alt_src", "altitude", b"altitude", "battery", b"battery", "callsign", b"callsign", "casevac", b"casevac", "chat", b"chat", "cot_type_id", b"cot_type_id", "cot_type_str", b"cot_type_str", "course", b"course", "device_callsign", b"device_callsign", "emergency", b"emergency", "endpoint", b"endpoint", "environment", b"environment", "geo_src", b"geo_src", "how", b"how", "latitude_i", b"latitude_i", "longitude_i", b"longitude_i", "marker", b"marker", "payload_variant", b"payload_variant", "phone", b"phone", "pli", b"pli", "rab", b"rab", "raw_detail", b"raw_detail", "remarks", b"remarks", "role", b"role", "route", b"route", "sensor_fov", b"sensor_fov", "shape", b"shape", "speed", b"speed", "stale_seconds", b"stale_seconds", "tak_device", b"tak_device", "tak_os", b"tak_os", "tak_platform", b"tak_platform", "tak_version", b"tak_version", "task", b"task", "team", b"team", "uid", b"uid"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__environment: _TypeAlias = _typing.Literal["environment"]  # noqa: Y015
+    _WhichOneofArgType__environment: _TypeAlias = _typing.Literal["_environment", b"_environment"]  # noqa: Y015
+    _WhichOneofReturnType__sensor_fov: _TypeAlias = _typing.Literal["sensor_fov"]  # noqa: Y015
+    _WhichOneofArgType__sensor_fov: _TypeAlias = _typing.Literal["_sensor_fov", b"_sensor_fov"]  # noqa: Y015
     _WhichOneofReturnType_payload_variant: _TypeAlias = _typing.Literal["pli", "chat", "aircraft", "raw_detail", "shape", "marker", "rab", "route", "casevac", "emergency", "task"]  # noqa: Y015
     _WhichOneofArgType_payload_variant: _TypeAlias = _typing.Literal["payload_variant", b"payload_variant"]  # noqa: Y015
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__environment) -> _WhichOneofReturnType__environment | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__sensor_fov) -> _WhichOneofReturnType__sensor_fov | None: ...
+    @_typing.overload
     def WhichOneof(self, oneof_group: _WhichOneofArgType_payload_variant) -> _WhichOneofReturnType_payload_variant | None: ...
 
 Global___TAKPacketV2: _TypeAlias = TAKPacketV2  # noqa: Y015
