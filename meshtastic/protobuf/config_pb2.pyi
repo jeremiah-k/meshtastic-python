@@ -1450,6 +1450,14 @@ class Config(_message.Message):
             """
             Brazil 902MHz
             """
+            ITU1_2M: Config.LoRaConfig._RegionCode.ValueType  # 27
+            """
+            ITU Region 1 Amateur Radio 2m band (144-146 MHz)
+            """
+            ITU23_2M: Config.LoRaConfig._RegionCode.ValueType  # 28
+            """
+            ITU Region 2 / 3 Amateur Radio 2m band (144-148 MHz)
+            """
 
         class RegionCode(_RegionCode, metaclass=_RegionCodeEnumTypeWrapper): ...
         UNSET: Config.LoRaConfig.RegionCode.ValueType  # 0
@@ -1559,6 +1567,14 @@ class Config(_message.Message):
         BR_902: Config.LoRaConfig.RegionCode.ValueType  # 26
         """
         Brazil 902MHz
+        """
+        ITU1_2M: Config.LoRaConfig.RegionCode.ValueType  # 27
+        """
+        ITU Region 1 Amateur Radio 2m band (144-146 MHz)
+        """
+        ITU23_2M: Config.LoRaConfig.RegionCode.ValueType  # 28
+        """
+        ITU Region 2 / 3 Amateur Radio 2m band (144-148 MHz)
         """
 
         class _ModemPreset:
