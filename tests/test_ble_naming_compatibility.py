@@ -139,7 +139,7 @@ def test_ble_find_device_shim_is_silent_and_delegates() -> None:
     assert not any(issubclass(w.category, DeprecationWarning) for w in caught)
 
 
-def test_ble_interface_ble_address_shim_delegates_to_ble_address() -> None:
+def test_ble_interface_ble_address_shim_delegates_to_bleAddress() -> None:
     """ble_address should delegate to bleAddress and remain silent."""
     iface = object.__new__(BLEInterface)
     iface.address = "AA:BB:CC:DD:EE:FF"
@@ -155,7 +155,7 @@ def test_ble_interface_ble_address_shim_delegates_to_ble_address() -> None:
     assert not any(issubclass(w.category, DeprecationWarning) for w in caught)
 
 
-def test_ble_client_ble_address_shim_delegates_to_ble_address() -> None:
+def test_ble_client_ble_address_shim_delegates_to_bleAddress() -> None:
     """ble_address should delegate to bleAddress on BLEClient and remain silent."""
     client = object.__new__(BLEClient)
     client.address = "11:22:33:44:55:66"

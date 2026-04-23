@@ -155,6 +155,10 @@ class BLEDBusTransportError(MeshtasticBLEError, BleakDBusError):
         self.dbus_error_name = self.dbus_error
         self.dbus_error_body = tuple(body_items)
 
+    def __str__(self) -> str:
+        """Return the normalized Meshtastic-facing transport message."""
+        return self.message
+
     @classmethod
     def from_exception(
         cls,

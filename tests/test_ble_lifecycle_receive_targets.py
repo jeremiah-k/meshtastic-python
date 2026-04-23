@@ -978,24 +978,26 @@ def test_shutdown_close_timeout_budget_rolls_forward_to_later_stages(
     coordinator._unregister_exit_handler = lambda: None
     coordinator._shutdown_client = _shutdown_client
     coordinator._cleanup_thread_coordinator = (
-        lambda *, timeout=None: captured.setdefault("cleanup_timeout", timeout)
+        lambda *, timeout=None: captured.__setitem__("cleanup_timeout", timeout)
     )
     coordinator._finalize_close_state = lambda: None
 
-    coordinator.close(
-        management_shutdown_wait_timeout=0.2,
-        management_wait_poll_seconds=0.01,
-        timeout=0.05,
-    )
+    try:
+        coordinator.close(
+            management_shutdown_wait_timeout=0.2,
+            management_wait_poll_seconds=0.01,
+            timeout=0.05,
+        )
 
-    assert captured["management_timeout"] == pytest.approx(0.05)
-    assert captured["join_timeout"] == pytest.approx(0.005)
-    assert captured["mesh_close_timeout"] == pytest.approx(0.002)
-    assert captured["client_disconnect_timeout"] == pytest.approx(0.001)
-    assert captured["disconnect_notification_wait_timeout"] == pytest.approx(0.001)
-    assert captured["unsubscribe_timeout"] == pytest.approx(0.001)
-    assert captured["cleanup_timeout"] == pytest.approx(0.001)
-    iface.close()
+        assert captured["management_timeout"] == pytest.approx(0.05)
+        assert captured["join_timeout"] == pytest.approx(0.005)
+        assert captured["mesh_close_timeout"] == pytest.approx(0.002)
+        assert captured["client_disconnect_timeout"] == pytest.approx(0.001)
+        assert captured["disconnect_notification_wait_timeout"] == pytest.approx(0.001)
+        assert captured["unsubscribe_timeout"] == pytest.approx(0.001)
+        assert captured["cleanup_timeout"] == pytest.approx(0.001)
+    finally:
+        iface.close()
 
 
 def test_close_mesh_interface_timeout_limits_blocking_wait(
@@ -1016,16 +1018,18 @@ def test_close_mesh_interface_timeout_limits_blocking_wait(
         _blocking_mesh_close,
     )
 
-    started = time.monotonic()
     try:
-        coordinator._close_mesh_interface(timeout=0.01)
-    finally:
-        release_close.set()
-    elapsed = time.monotonic() - started
+        started = time.monotonic()
+        try:
+            coordinator._close_mesh_interface(timeout=0.01)
+        finally:
+            release_close.set()
+        elapsed = time.monotonic() - started
 
-    assert close_called.is_set()
-    assert elapsed < 0.1
-    iface.close()
+        assert close_called.is_set()
+        assert elapsed < 0.1
+    finally:
+        iface.close()
 
 
 def test_lifecycle_shutdown_receive_thread_skips_self_join_by_ident(

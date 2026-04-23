@@ -747,10 +747,17 @@ class ClientManager:
                     if disconnect_timeout is None
                     else disconnect_timeout
                 )
+
+                def _disconnect_with_timeout() -> None:
+                    try:
+                        client.disconnect(await_timeout=effective_disconnect_timeout)
+                    except TypeError as exc:
+                        if not _is_unexpected_keyword_error(exc, "await_timeout"):
+                            raise
+                        client.disconnect()
+
                 _run_safe_cleanup(
-                    lambda: client.disconnect(
-                        await_timeout=effective_disconnect_timeout
-                    ),
+                    _disconnect_with_timeout,
                     "client disconnect",
                     safe_cleanup_hook,
                 )
@@ -1486,6 +1493,7 @@ class ConnectionOrchestrator:
             pair_on_connect=pair_on_connect,
             connect_timeout=direct_connect_timeout,
         )
+        _retry_succeeded = False
         try:
             self._raise_if_interface_closing()
             self._client_manager_connect_client(
@@ -1505,10 +1513,11 @@ class ConnectionOrchestrator:
                 on_connected_func,
                 emit_connected_side_effects=emit_connected_side_effects,
             )
+            _retry_succeeded = True
             return retry_client
-        except Exception:
-            self._client_manager_safe_close_client(retry_client)
-            raise
+        finally:
+            if not _retry_succeeded:
+                self._client_manager_safe_close_client(retry_client)
 
     def _attempt_direct_connect(
         self,

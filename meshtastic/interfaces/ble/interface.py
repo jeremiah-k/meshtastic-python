@@ -1076,7 +1076,11 @@ class BLEInterface(MeshInterface):
         if active_client_address:
             return active_client_address
         interface_address = getattr(self, "address", None)
-        return interface_address if isinstance(interface_address, str) else None
+        if isinstance(interface_address, str) and _looks_like_ble_address(
+            interface_address
+        ):
+            return interface_address
+        return None
 
     # COMPAT_STABLE_SHIM
     @property

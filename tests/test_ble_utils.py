@@ -161,3 +161,16 @@ def test_ble_errors_are_instance_of_ble_interface_ble_error() -> None:
     assert isinstance(PublicBLEAddressMismatchError("x"), BLEInterface.BLEError)
     assert isinstance(PublicBLEDBusTransportError("x"), BLEInterface.BLEError)
     assert isinstance(PublicBLEDiscoveryError("x"), BLEInterface.BLEError)
+
+
+@pytest.mark.unit
+def test_ble_dbus_transport_error_str_returns_normalized_message() -> None:
+    """BLEDBusTransportError.__str__ should return the normalized Meshtastic message."""
+    err = PublicBLEDBusTransportError(
+        "normalized transport failure",
+        dbus_error="org.bluez.Error.Failed",
+        dbus_error_details=["raw detail"],
+    )
+    assert str(err) == "normalized transport failure"
+    assert err.dbus_error_name == "org.bluez.Error.Failed"
+    assert err.dbus_error_body == (["raw detail"],)

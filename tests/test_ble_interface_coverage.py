@@ -243,6 +243,26 @@ def test_ble_address_property_returns_none_without_known_address() -> None:
     assert iface.ble_address is None
 
 
+def test_ble_address_property_returns_none_for_non_address_identifier() -> None:
+    """bleAddress should return None when interface address is a name, not a BLE MAC."""
+    iface = _build_minimal_interface()
+    iface.client = None
+    iface.address = "MyMeshDevice"
+
+    assert iface.bleAddress is None
+    assert iface.ble_address is None
+
+
+def test_ble_address_property_returns_valid_mac_fallback() -> None:
+    """bleAddress should return the interface address when it is a valid BLE MAC."""
+    iface = _build_minimal_interface()
+    iface.client = None
+    iface.address = "AA:BB:CC:DD:EE:FF"
+
+    assert iface.bleAddress == "AA:BB:CC:DD:EE:FF"
+    assert iface.ble_address == "AA:BB:CC:DD:EE:FF"
+
+
 def test_close_forwards_timeout_to_lifecycle_controller() -> None:
     """close(timeout=...) should pass the caller budget to lifecycle shutdown."""
     iface = _build_minimal_interface()
@@ -295,8 +315,6 @@ def test_close_timeout_budget_propagates_to_shutdown_stages() -> None:
     assert budgets == [5.0]
 
 
-# ============================================================================
-# Error Handling Tests
 # ============================================================================
 # Error Handling Tests
 # ============================================================================
