@@ -2105,7 +2105,7 @@ def test_stale_cleanup_retry_propagates_address_mismatch(
         del kwargs
         raise mismatch
 
-    orchestrator._validate_explicit_address_connection = _raise_mismatch
+    orchestrator._validate_explicit_address_connection = _raise_mismatch  # type: ignore[method-assign]
 
     with pytest.raises(BLEAddressMismatchError):
         orchestrator._establish_connection(

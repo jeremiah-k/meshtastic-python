@@ -4111,7 +4111,8 @@ def test_connect_name_target_reserves_requested_and_resolved_keys(
         raising=True,
     )
     def _record_duplicate_check(_key: str | None, **_kwargs: object) -> None:
-        duplicate_checks.append(_key)
+        if _key is not None:
+            duplicate_checks.append(_key)
 
     monkeypatch.setattr(
         iface, "_raise_if_duplicate_connect", _record_duplicate_check, raising=True

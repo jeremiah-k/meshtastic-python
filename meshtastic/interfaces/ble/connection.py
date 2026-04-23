@@ -1366,7 +1366,7 @@ class ConnectionOrchestrator:
             # even after a successful explicit-address connect. Treat this as
             # "cannot verify" rather than a hard mismatch to avoid disconnecting
             # valid sessions solely due to missing metadata.
-            logger.warning(
+            logger.debug(
                 "Cannot enforce explicit-address verification for target %s because the connected peer address is unavailable; proceeding in compatibility mode.",
                 requested_key,
             )

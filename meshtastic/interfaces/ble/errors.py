@@ -114,6 +114,12 @@ class BLEConnectionTimeoutError(MeshtasticBLEError, TimeoutError):
             Caller-supplied device identifier involved in the failure.
         timeout : float | None, optional
             Timeout budget associated with the failed operation.
+
+        Returns
+        -------
+        BLEConnectionTimeoutError
+            New error instance carrying the original exception as ``cause``
+            together with the provided structured metadata.
         """
         return cls(
             message,
@@ -192,6 +198,12 @@ class BLEDBusTransportError(MeshtasticBLEError, BleakDBusError):
             Caller-supplied device identifier involved in the failure.
         address : str | None, optional
             BLE address associated with the failed operation.
+
+        Returns
+        -------
+        BLEDBusTransportError
+            New error instance preserving DBus error name, body, and structured
+            Meshtastic context fields.
         """
         dbus_error = getattr(error, "dbus_error", None)
         dbus_error_details = getattr(error, "dbus_error_details", None)
