@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import importlib
 import itertools
+import logging
 import threading
 import time
 from types import SimpleNamespace
@@ -3013,3 +3014,105 @@ def test_shutdown_wait_for_disconnect_notifications_propagates_unrelated_type_er
             disconnect_notification_wait_timeout=0.5,
             unsubscribe_timeout=0.1,
         )
+
+
+def test_shutdown_cleanup_thread_skips_stage_when_start_fails_with_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """_cleanup_thread_coordinator should skip bounded stage when thread start fails."""
+    iface = _make_iface(monkeypatch)
+    coordinator = BLEShutdownLifecycleCoordinator(iface)
+    cleanup_calls: list[str] = []
+
+    iface.thread_coordinator = SimpleNamespace(
+        cleanup=lambda: cleanup_calls.append("cleanup")
+    )
+
+    original_thread = threading.Thread
+
+    class _FailingThread:
+        def __init__(self, *, target: object, name: str, daemon: bool) -> None:
+            self.target = target
+            self.name = name
+            self.daemon = daemon
+
+        def start(self) -> None:
+            raise RuntimeError("thread start failure")
+
+        def join(self, timeout: float | None = None) -> None:
+            pass
+
+        def is_alive(self) -> bool:
+            return False
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.lifecycle_shutdown_runtime.threading.Thread",
+        _FailingThread,
+    )
+
+    try:
+        with caplog.at_level(logging.WARNING):
+            coordinator._cleanup_thread_coordinator(timeout=0.5)
+        assert cleanup_calls == []
+        assert "Failed to start thread coordinator cleanup thread" in caplog.text
+        assert "skipping bounded cleanup stage" in caplog.text
+    finally:
+        monkeypatch.setattr(
+            "meshtastic.interfaces.ble.lifecycle_shutdown_runtime.threading.Thread",
+            original_thread,
+        )
+        iface.close()
+
+
+def test_shutdown_mesh_close_skips_stage_when_start_fails_with_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """_close_mesh_interface should skip bounded stage when thread start fails."""
+    iface = _make_iface(monkeypatch)
+    coordinator = BLEShutdownLifecycleCoordinator(iface)
+    close_calls: list[str] = []
+
+    def _track_mesh_close(_iface: object) -> None:
+        close_calls.append("mesh-close")
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.lifecycle_shutdown_runtime.MeshInterface.close",
+        _track_mesh_close,
+    )
+
+    original_thread = threading.Thread
+
+    class _FailingThread:
+        def __init__(self, *, target: object, name: str, daemon: bool) -> None:
+            self.target = target
+            self.name = name
+            self.daemon = daemon
+
+        def start(self) -> None:
+            raise RuntimeError("thread start failure")
+
+        def join(self, timeout: float | None = None) -> None:
+            pass
+
+        def is_alive(self) -> bool:
+            return False
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.lifecycle_shutdown_runtime.threading.Thread",
+        _FailingThread,
+    )
+
+    try:
+        with caplog.at_level(logging.WARNING):
+            coordinator._close_mesh_interface(timeout=0.5)
+        assert close_calls == []
+        assert "Failed to start MeshInterface.close thread" in caplog.text
+        assert "skipping bounded close stage" in caplog.text
+    finally:
+        monkeypatch.setattr(
+            "meshtastic.interfaces.ble.lifecycle_shutdown_runtime.threading.Thread",
+            original_thread,
+        )
+        iface.close()

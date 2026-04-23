@@ -1296,6 +1296,12 @@ class BLELifecycleService:
             Maximum seconds to wait for inflight management operations.
         management_wait_poll_seconds : float
             Poll interval used while waiting for management completion.
+        timeout : float | None
+            Optional total timeout budget in seconds. When provided, each
+            blocking shutdown stage (management wait, receive-thread join,
+            ``MeshInterface.close``, client disconnect/close, and notification
+            waits) receives a remaining-budget slice so ``close()`` does not
+            block indefinitely.
 
         Returns
         -------

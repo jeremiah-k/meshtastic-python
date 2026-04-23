@@ -1636,6 +1636,8 @@ class ConnectionOrchestrator:
                             emit_connected_side_effects=emit_connected_side_effects,
                         )
                         return retried_client, False
+                    except BLEAddressMismatchError:
+                        raise
                     except (
                         BleakDBusError,
                         BleakError,

@@ -146,11 +146,10 @@ class BLEShutdownLifecycleCoordinator:
         try:
             cleanup_thread.start()
         except Exception:  # noqa: BLE001 - shutdown cleanup is best effort
-            logger.debug(
-                "Failed to start thread coordinator cleanup thread; running inline.",
+            logger.warning(
+                "Failed to start thread coordinator cleanup thread; skipping bounded cleanup stage to preserve timeout contract.",
                 exc_info=True,
             )
-            _run_cleanup()
             return
 
         cleanup_thread.join(timeout=timeout)
@@ -463,11 +462,10 @@ class BLEShutdownLifecycleCoordinator:
         try:
             close_thread.start()
         except Exception:  # noqa: BLE001 - close must remain best effort
-            logger.debug(
-                "Failed to start MeshInterface.close thread; running close inline.",
+            logger.warning(
+                "Failed to start MeshInterface.close thread; skipping bounded close stage to preserve timeout contract.",
                 exc_info=True,
             )
-            run_safe_execute(lambda: MeshInterface.close(iface))
             return
 
         close_thread.join(timeout=timeout)

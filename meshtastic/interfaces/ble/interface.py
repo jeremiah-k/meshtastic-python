@@ -2173,13 +2173,25 @@ class BLEInterface(MeshInterface):
             and not is_self_connected
         )
 
-    def _raise_if_duplicate_connect(self, connection_key: str | None) -> None:
+    def _raise_if_duplicate_connect(
+        self,
+        connection_key: str | None,
+        *,
+        requested_identifier: str | None = None,
+        resolved_address: str | None = None,
+    ) -> None:
         """Raise BLEError when connect should be suppressed for a duplicate address claim.
 
         Parameters
         ----------
         connection_key : str | None
             Address registry key for this connect attempt.
+        requested_identifier : str | None
+            Original requested identifier (address or device name) used for
+            exception context.
+        resolved_address : str | None
+            Concrete BLE address resolved from the requested identifier, if
+            available.
 
         Raises
         ------
@@ -2193,8 +2205,8 @@ class BLEInterface(MeshInterface):
             )
             raise BLEConnectionSuppressedError(
                 ERROR_CONNECTION_SUPPRESSED,
-                address=connection_key,
-                requested_identifier=connection_key,
+                address=resolved_address or connection_key,
+                requested_identifier=requested_identifier or connection_key,
             )
 
     def _get_existing_client_if_valid(
@@ -3007,7 +3019,11 @@ class BLEInterface(MeshInterface):
 
                 with contextlib.ExitStack() as stack:
                     for reservation_key in reservation_keys:
-                        self._raise_if_duplicate_connect(reservation_key)
+                        self._raise_if_duplicate_connect(
+                            reservation_key,
+                            requested_identifier=requested_identifier,
+                            resolved_address=resolved_connect_target,
+                        )
                     # Acquire per-address locks without holding _REGISTRY_LOCK
                     # to avoid lock-order inversion with paths that hold
                     # address locks and then mark ownership in registry state.
@@ -3018,7 +3034,11 @@ class BLEInterface(MeshInterface):
                         stack.enter_context(addr_lock)
                     for reservation_key in reservation_keys:
                         # Re-check after lock acquisition to close TOCTOU windows.
-                        self._raise_if_duplicate_connect(reservation_key)
+                        self._raise_if_duplicate_connect(
+                            reservation_key,
+                            requested_identifier=requested_identifier,
+                            resolved_address=resolved_connect_target,
+                        )
 
                     with self._connect_lock:
                         with management_lock:

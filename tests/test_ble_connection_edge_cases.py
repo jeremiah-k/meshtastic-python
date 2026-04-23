@@ -15,7 +15,7 @@ import pytest
 pytest.importorskip("bleak")
 
 from bleak.backends.device import BLEDevice
-from bleak.exc import BleakDBusError, BleakDeviceNotFoundError
+from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
 from meshtastic.interfaces.ble.connection import (
     ClientManager,
@@ -2042,3 +2042,154 @@ def test_retry_direct_connect_skips_cleanup_on_successful_return() -> None:
 
     assert result is retry_client
     client_manager.safe_close_client.assert_not_called()
+
+
+@pytest.mark.unit
+def test_stale_cleanup_retry_propagates_address_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BLEAddressMismatchError from stale-cleanup retry must propagate immediately."""
+    from meshtastic.interfaces.ble.errors import BLEAddressMismatchError
+
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = _make_orchestrator_client_manager()
+    direct_client = MagicMock()
+    retry_client = MagicMock()
+    client_manager.create_client.side_effect = [direct_client, retry_client]
+    client_manager.connect_client.side_effect = [
+        OSError("stale bluez"),
+        None,
+    ]
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = False
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+
+    # Force stale BlueZ cleanup path
+    monkeypatch.setattr(
+        orchestrator,
+        "_is_stale_bluez_direct_connect_error",
+        lambda _error: True,
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "_should_attempt_stale_bluez_cleanup",
+        lambda *, target_address, explicit_address, error: True,
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "_attempt_stale_bluez_cleanup",
+        lambda **kwargs: True,
+    )
+
+    # Make the retry raise BLEAddressMismatchError during finalization
+    mismatch = BLEAddressMismatchError(
+        "address mismatch",
+        requested_identifier="AA:BB:CC:DD:EE:FF",
+        connected_address="11:22:33:44:55:66",
+        address="AA:BB:CC:DD:EE:FF",
+    )
+    orchestrator._validate_explicit_address_connection = (
+        lambda **kwargs: (_ for _ in ()).throw(mismatch)
+    )
+
+    with pytest.raises(BLEAddressMismatchError):
+        orchestrator._establish_connection(
+            address="AA:BB:CC:DD:EE:FF",
+            current_address=None,
+            register_notifications_func=lambda _client: None,
+            on_connected_func=lambda: None,
+            on_disconnect_func=lambda _client: None,
+        )
+
+    client_manager.safe_close_client.assert_any_call(
+        direct_client, disconnect_timeout=None
+    )
+    client_manager.safe_close_client.assert_any_call(
+        retry_client, disconnect_timeout=None
+    )
+
+
+@pytest.mark.unit
+def test_stale_cleanup_retry_fallback_on_generic_retry_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Generic retry failures after stale cleanup should follow existing fallback path."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = _make_orchestrator_client_manager()
+    direct_client = MagicMock()
+    retry_client = MagicMock()
+    fallback_client = MagicMock()
+    client_manager.create_client.side_effect = [
+        direct_client,
+        retry_client,
+        fallback_client,
+    ]
+    client_manager.connect_client.side_effect = [
+        OSError("stale bluez"),
+        BleakError("retry failed"),
+        BleakError("retry failed"),
+    ]
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = False
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+
+    monkeypatch.setattr(
+        orchestrator,
+        "_is_stale_bluez_direct_connect_error",
+        lambda _error: True,
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "_should_attempt_stale_bluez_cleanup",
+        lambda *, target_address, explicit_address, error: True,
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "_attempt_stale_bluez_cleanup",
+        lambda **kwargs: True,
+    )
+
+    with pytest.raises(BleakError, match="retry failed"):
+        orchestrator._establish_connection(
+            address="AA:BB:CC:DD:EE:FF",
+            current_address=None,
+            register_notifications_func=lambda _client: None,
+            on_connected_func=lambda: None,
+            on_disconnect_func=lambda _client: None,
+        )
+
+    client_manager.safe_close_client.assert_any_call(
+        direct_client, disconnect_timeout=None
+    )
+    client_manager.safe_close_client.assert_any_call(
+        retry_client, disconnect_timeout=None
+    )
+    client_manager.safe_close_client.assert_any_call(
+        fallback_client, disconnect_timeout=None
+    )

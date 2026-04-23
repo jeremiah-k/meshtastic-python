@@ -1333,6 +1333,49 @@ def test_raise_if_duplicate_connect_raises_when_suppressed(
     assert isinstance(exc_info.value, BLEConnectionSuppressedError)
 
 
+@pytest.mark.unit
+def test_raise_if_duplicate_connect_uses_real_request_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_raise_if_duplicate_connect should populate exception with real request context."""
+    iface = _build_minimal_interface()
+
+    monkeypatch.setattr(
+        iface,
+        "_should_suppress_duplicate_connect",
+        lambda key: True,
+    )
+
+    with pytest.raises(BLEConnectionSuppressedError) as exc_info:
+        iface._raise_if_duplicate_connect(
+            "registry-key",
+            requested_identifier="MyDevice",
+            resolved_address="AA:BB:CC:DD:EE:FF",
+        )
+    assert exc_info.value.requested_identifier == "MyDevice"
+    assert exc_info.value.address == "AA:BB:CC:DD:EE:FF"
+
+
+@pytest.mark.unit
+def test_raise_if_duplicate_connect_fallback_to_key_when_context_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_raise_if_duplicate_connect should fallback to registry key when real context is absent."""
+    iface = _build_minimal_interface()
+
+    monkeypatch.setattr(
+        iface,
+        "_should_suppress_duplicate_connect",
+        lambda key: True,
+    )
+
+    with pytest.raises(BLEConnectionSuppressedError) as exc_info:
+        iface._raise_if_duplicate_connect("test-key")
+    assert exc_info.value.requested_identifier == "test-key"
+    assert exc_info.value.address == "test-key"
+
+
+@pytest.mark.unit
 def test_get_existing_client_if_valid_returns_none_when_not_connected() -> None:
     """_get_existing_client_if_valid should return None when not connected."""
     iface = _build_minimal_interface()
