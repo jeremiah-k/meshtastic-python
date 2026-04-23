@@ -572,7 +572,8 @@ class ReconnectWorker:
                 except BleakDBusError:
                     if self._should_abort_reconnect(context="DBusError"):
                         return
-                    # DBus errors are often transient on Linux; log as warning since we'll retry
+                    # Safety net for raw BleakDBusError paths that have not
+                    # been normalized to BLEDBusTransportError yet.
                     logger.warning(
                         "DBus error during auto-reconnect attempt %d",
                         attempt_num,

@@ -63,6 +63,9 @@ class BLEShutdownLifecycleCoordinator:
         self._state_access = _LifecycleStateAccess(iface)
         self._thread_access = _LifecycleThreadAccess(iface)
         self._error_access = _LifecycleErrorAccess(iface)
+        self._bounded_cleanup_thread: threading.Thread | None = None
+        self._bounded_mesh_close_thread: threading.Thread | None = None
+        self._bounded_thread_lock = threading.Lock()
 
     def is_connection_closing(self) -> bool:
         """Return whether this interface is closing or already closed.
@@ -127,6 +130,19 @@ class BLEShutdownLifecycleCoordinator:
                 hook_name,
             )
             return
+        with self._bounded_thread_lock:
+            previous_thread = self._bounded_cleanup_thread
+            if previous_thread is not None and previous_thread.is_alive():
+                logger.warning(
+                    "Skipping thread coordinator %s(): previous bounded cleanup thread is still running.",
+                    hook_name,
+                )
+            else:
+                previous_thread = None
+                self._bounded_cleanup_thread = None
+        if previous_thread is not None:
+            previous_thread.join(timeout=timeout)
+            return
 
         def _run_cleanup() -> None:
             try:
@@ -137,6 +153,10 @@ class BLEShutdownLifecycleCoordinator:
                     hook_name,
                     exc_info=True,
                 )
+            finally:
+                with self._bounded_thread_lock:
+                    if self._bounded_cleanup_thread is threading.current_thread():
+                        self._bounded_cleanup_thread = None
 
         cleanup_thread = threading.Thread(
             target=_run_cleanup,
@@ -144,8 +164,13 @@ class BLEShutdownLifecycleCoordinator:
             daemon=True,
         )
         try:
+            with self._bounded_thread_lock:
+                self._bounded_cleanup_thread = cleanup_thread
             cleanup_thread.start()
         except Exception:  # noqa: BLE001 - shutdown cleanup is best effort
+            with self._bounded_thread_lock:
+                if self._bounded_cleanup_thread is cleanup_thread:
+                    self._bounded_cleanup_thread = None
             logger.warning(
                 "Failed to start thread coordinator cleanup thread; skipping bounded cleanup stage to preserve timeout contract.",
                 exc_info=True,
@@ -299,6 +324,8 @@ class BLEShutdownLifecycleCoordinator:
             Optional wake helper used to release receive-loop waiters.
         join_thread : Callable[..., None] | None, optional
             Optional thread-join helper used for compatibility/test injection.
+        join_timeout : float
+            Maximum seconds to wait for the receive thread to exit.
 
         Returns
         -------
@@ -450,9 +477,26 @@ class BLEShutdownLifecycleCoordinator:
                 "Skipping MeshInterface.close(): close timeout budget exhausted."
             )
             return
+        with self._bounded_thread_lock:
+            previous_thread = self._bounded_mesh_close_thread
+            if previous_thread is not None and previous_thread.is_alive():
+                logger.warning(
+                    "Skipping MeshInterface.close(): previous bounded close thread is still running."
+                )
+            else:
+                previous_thread = None
+                self._bounded_mesh_close_thread = None
+        if previous_thread is not None:
+            previous_thread.join(timeout=timeout)
+            return
 
         def _run_mesh_close() -> None:
-            run_safe_execute(lambda: MeshInterface.close(iface))
+            try:
+                run_safe_execute(lambda: MeshInterface.close(iface))
+            finally:
+                with self._bounded_thread_lock:
+                    if self._bounded_mesh_close_thread is threading.current_thread():
+                        self._bounded_mesh_close_thread = None
 
         close_thread = threading.Thread(
             target=_run_mesh_close,
@@ -460,8 +504,13 @@ class BLEShutdownLifecycleCoordinator:
             daemon=True,
         )
         try:
+            with self._bounded_thread_lock:
+                self._bounded_mesh_close_thread = close_thread
             close_thread.start()
         except Exception:  # noqa: BLE001 - close must remain best effort
+            with self._bounded_thread_lock:
+                if self._bounded_mesh_close_thread is close_thread:
+                    self._bounded_mesh_close_thread = None
             logger.warning(
                 "Failed to start MeshInterface.close thread; skipping bounded close stage to preserve timeout contract.",
                 exc_info=True,
@@ -551,6 +600,12 @@ class BLEShutdownLifecycleCoordinator:
             Optional safe-cleanup wrapper override.
         consume_disconnect_notification_state : Callable[[], bool] | None, optional
             Optional publish-state consumer override.
+        unsubscribe_timeout : float | None
+            Maximum seconds to wait for notification unsubscribe cleanup.
+        disconnect_notification_wait_timeout : float | None
+            Maximum seconds to wait for disconnect notification publication.
+        client_disconnect_timeout : float | None
+            Maximum seconds to wait for BLE client disconnect/close.
 
         Returns
         -------

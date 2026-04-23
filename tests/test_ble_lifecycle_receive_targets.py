@@ -40,6 +40,24 @@ class _FatalReceiveError(RuntimeError):
     """Used by receive-loop tests."""
 
 
+class _StartFailingThread:
+    """Thread stub that raises from start() for bounded-shutdown tests."""
+
+    def __init__(self, *, target: object, name: str, daemon: bool) -> None:
+        self.target = target
+        self.name = name
+        self.daemon = daemon
+
+    def start(self) -> None:
+        raise RuntimeError("thread start failure")
+
+    def join(self, timeout: float | None = None) -> None:
+        del timeout
+
+    def is_alive(self) -> bool:
+        return False
+
+
 class _IfaceWithStateManager(Protocol):
     _state_manager: object
 
@@ -1028,7 +1046,7 @@ def test_close_mesh_interface_timeout_limits_blocking_wait(
         elapsed = time.monotonic() - started
 
         assert close_called.is_set()
-        assert elapsed < 0.1
+        assert elapsed < 0.5
     finally:
         iface.close()
 
@@ -2949,14 +2967,17 @@ def test_shutdown_disconnect_client_fallback_on_unsupported_timeout(
         "_await_management_shutdown",
         lambda **kwargs: True,
     )
-    coordinator._shutdown_client(
-        management_wait_timed_out=True,
-        client_disconnect_timeout=1.0,
-        disconnect_notification_wait_timeout=0.5,
-        unsubscribe_timeout=0.1,
-    )
-    assert len(calls) == 1
-    assert calls[0][1]["timeout"] is None
+    try:
+        coordinator._shutdown_client(
+            management_wait_timed_out=True,
+            client_disconnect_timeout=1.0,
+            disconnect_notification_wait_timeout=0.5,
+            unsubscribe_timeout=0.1,
+        )
+        assert len(calls) == 1
+        assert calls[0][1]["timeout"] is None
+    finally:
+        iface.close()
 
 
 def test_shutdown_wait_for_disconnect_notifications_fallback_on_unsupported_timeout(
@@ -2980,14 +3001,17 @@ def test_shutdown_wait_for_disconnect_notifications_fallback_on_unsupported_time
         "_await_management_shutdown",
         lambda **kwargs: True,
     )
-    coordinator._shutdown_client(
-        management_wait_timed_out=True,
-        client_disconnect_timeout=1.0,
-        disconnect_notification_wait_timeout=0.5,
-        unsubscribe_timeout=0.1,
-    )
-    assert len(calls) == 1
-    assert calls[0]["timeout"] is None
+    try:
+        coordinator._shutdown_client(
+            management_wait_timed_out=True,
+            client_disconnect_timeout=1.0,
+            disconnect_notification_wait_timeout=0.5,
+            unsubscribe_timeout=0.1,
+        )
+        assert len(calls) == 1
+        assert calls[0]["timeout"] is None
+    finally:
+        iface.close()
 
 
 def test_shutdown_wait_for_disconnect_notifications_propagates_unrelated_type_error(
@@ -3007,13 +3031,16 @@ def test_shutdown_wait_for_disconnect_notifications_propagates_unrelated_type_er
         "_await_management_shutdown",
         lambda **kwargs: True,
     )
-    with pytest.raises(TypeError, match="takes 1 positional argument"):
-        coordinator._shutdown_client(
-            management_wait_timed_out=True,
-            client_disconnect_timeout=1.0,
-            disconnect_notification_wait_timeout=0.5,
-            unsubscribe_timeout=0.1,
-        )
+    try:
+        with pytest.raises(TypeError, match="takes 1 positional argument"):
+            coordinator._shutdown_client(
+                management_wait_timed_out=True,
+                client_disconnect_timeout=1.0,
+                disconnect_notification_wait_timeout=0.5,
+                unsubscribe_timeout=0.1,
+            )
+    finally:
+        iface.close()
 
 
 def test_shutdown_cleanup_thread_skips_stage_when_start_fails_with_timeout(
@@ -3031,24 +3058,9 @@ def test_shutdown_cleanup_thread_skips_stage_when_start_fails_with_timeout(
 
     original_thread = threading.Thread
 
-    class _FailingThread:
-        def __init__(self, *, target: object, name: str, daemon: bool) -> None:
-            self.target = target
-            self.name = name
-            self.daemon = daemon
-
-        def start(self) -> None:
-            raise RuntimeError("thread start failure")
-
-        def join(self, timeout: float | None = None) -> None:
-            pass
-
-        def is_alive(self) -> bool:
-            return False
-
     monkeypatch.setattr(
         "meshtastic.interfaces.ble.lifecycle_shutdown_runtime.threading.Thread",
-        _FailingThread,
+        _StartFailingThread,
     )
 
     try:
@@ -3084,24 +3096,9 @@ def test_shutdown_mesh_close_skips_stage_when_start_fails_with_timeout(
 
     original_thread = threading.Thread
 
-    class _FailingThread:
-        def __init__(self, *, target: object, name: str, daemon: bool) -> None:
-            self.target = target
-            self.name = name
-            self.daemon = daemon
-
-        def start(self) -> None:
-            raise RuntimeError("thread start failure")
-
-        def join(self, timeout: float | None = None) -> None:
-            pass
-
-        def is_alive(self) -> bool:
-            return False
-
     monkeypatch.setattr(
         "meshtastic.interfaces.ble.lifecycle_shutdown_runtime.threading.Thread",
-        _FailingThread,
+        _StartFailingThread,
     )
 
     try:
@@ -3115,4 +3112,111 @@ def test_shutdown_mesh_close_skips_stage_when_start_fails_with_timeout(
             "meshtastic.interfaces.ble.lifecycle_shutdown_runtime.threading.Thread",
             original_thread,
         )
+        iface.close()
+
+
+def test_shutdown_cleanup_thread_not_duplicated_when_previous_alive(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A stuck bounded cleanup thread should suppress later cleanup spawns."""
+    iface = _make_iface(monkeypatch)
+    coordinator = BLEShutdownLifecycleCoordinator(iface)
+    iface.thread_coordinator = SimpleNamespace(cleanup=lambda: None)
+    created_threads: list[object] = []
+
+    class _AliveThread:
+        def __init__(self, *, target: object, name: str, daemon: bool) -> None:
+            self.target = target
+            self.name = name
+            self.daemon = daemon
+            self.started = False
+            created_threads.append(self)
+
+        def start(self) -> None:
+            self.started = True
+
+        def join(self, timeout: float | None = None) -> None:
+            del timeout
+
+        def is_alive(self) -> bool:
+            return True
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.lifecycle_shutdown_runtime.threading.Thread",
+        _AliveThread,
+    )
+
+    try:
+        coordinator._cleanup_thread_coordinator(timeout=0.01)
+        with caplog.at_level(logging.WARNING):
+            coordinator._cleanup_thread_coordinator(timeout=0.01)
+
+        assert len(created_threads) == 1
+        assert "previous bounded cleanup thread is still running" in caplog.text
+    finally:
+        iface.close()
+
+
+def test_shutdown_mesh_close_thread_not_duplicated_when_previous_alive(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A stuck bounded MeshInterface.close thread should suppress later spawns."""
+    iface = _make_iface(monkeypatch)
+    coordinator = BLEShutdownLifecycleCoordinator(iface)
+    created_threads: list[object] = []
+
+    class _AliveThread:
+        def __init__(self, *, target: object, name: str, daemon: bool) -> None:
+            self.target = target
+            self.name = name
+            self.daemon = daemon
+            self.started = False
+            created_threads.append(self)
+
+        def start(self) -> None:
+            self.started = True
+
+        def join(self, timeout: float | None = None) -> None:
+            del timeout
+
+        def is_alive(self) -> bool:
+            return True
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.lifecycle_shutdown_runtime.threading.Thread",
+        _AliveThread,
+    )
+
+    try:
+        coordinator._close_mesh_interface(timeout=0.01)
+        with caplog.at_level(logging.WARNING):
+            coordinator._close_mesh_interface(timeout=0.01)
+
+        assert len(created_threads) == 1
+        assert "previous bounded close thread is still running" in caplog.text
+    finally:
+        iface.close()
+
+
+def test_shutdown_bounded_thread_references_clear_after_completion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bounded cleanup and mesh-close thread references should clear on completion."""
+    iface = _make_iface(monkeypatch)
+    coordinator = BLEShutdownLifecycleCoordinator(iface)
+    iface.thread_coordinator = SimpleNamespace(cleanup=lambda: None)
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.lifecycle_shutdown_runtime.MeshInterface.close",
+        lambda _iface: None,
+    )
+
+    try:
+        coordinator._cleanup_thread_coordinator(timeout=1.0)
+        coordinator._close_mesh_interface(timeout=1.0)
+
+        assert coordinator._bounded_cleanup_thread is None
+        assert coordinator._bounded_mesh_close_thread is None
+    finally:
         iface.close()

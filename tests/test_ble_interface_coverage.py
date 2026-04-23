@@ -97,6 +97,17 @@ class FailingDiscoveryManager:
         return []
 
 
+class MultipleDiscoveryManager:
+    """Discovery manager that returns multiple matching devices."""
+
+    def _discover_devices(self, address: str | None) -> list[BLEDevice]:
+        del address
+        return [
+            _create_ble_device("AA:BB:CC:DD:EE:01", "Mesh One"),
+            _create_ble_device("AA:BB:CC:DD:EE:02", "Mesh Two"),
+        ]
+
+
 class _FakeDiscoveryClient:
     """Context-manager BLE client stub used by discovery tests."""
 
@@ -244,7 +255,7 @@ def test_ble_address_property_returns_none_without_known_address() -> None:
 
 
 def test_ble_address_property_returns_none_for_non_address_identifier() -> None:
-    """bleAddress should return None when interface address is a name, not a BLE MAC."""
+    """BleAddress should return None when interface address is a name, not a BLE MAC."""
     iface = _build_minimal_interface()
     iface.client = None
     iface.address = "MyMeshDevice"
@@ -254,7 +265,7 @@ def test_ble_address_property_returns_none_for_non_address_identifier() -> None:
 
 
 def test_ble_address_property_returns_valid_mac_fallback() -> None:
-    """bleAddress and ble_address should return the interface address when it is a valid BLE MAC."""
+    """BleAddress and ble_address should return the interface address when it is a valid BLE MAC."""
     iface = _build_minimal_interface()
     iface.client = None
     iface.address = "AA:BB:CC:DD:EE:FF"
@@ -285,8 +296,8 @@ def test_close_rejects_invalid_timeout_type() -> None:
         iface.close(timeout=cast(Any, "invalid"))
 
 
-def test_close_is_idempotent_across_repeated_calls() -> None:
-    """Multiple close(timeout=...) calls should not raise or duplicate work."""
+def test_close_delegates_across_repeated_calls() -> None:
+    """Multiple close(timeout=...) calls should remain safe and delegate cleanup."""
     iface = _build_minimal_interface()
     close_calls: list[dict[str, object]] = []
     iface._get_lifecycle_controller = lambda: SimpleNamespace(
@@ -494,6 +505,33 @@ def test_find_device_raises_when_sanitization_fails(
     # Use an invalid address that looks like a BLE address but can't be sanitized
     with pytest.raises(BLEInterface.BLEError):
         iface.findDevice("invalid-address-string")
+
+
+def test_find_device_with_self_address_multiple_matches_uses_requested_identifier() -> (
+    None
+):
+    """findDevice(None) should report the resolved self.address for multiple matches."""
+    iface = _build_minimal_interface()
+    iface.address = "target-name"
+    iface._discovery_manager = MultipleDiscoveryManager()
+
+    with pytest.raises(BLEInterface.BLEError) as exc_info:
+        iface.findDevice(None)
+
+    assert exc_info.value.requested_identifier == "target-name"
+
+
+def test_find_device_explicit_target_multiple_matches_uses_requested_identifier() -> (
+    None
+):
+    """findDevice(address) should continue reporting the explicit requested target."""
+    iface = _build_minimal_interface()
+    iface._discovery_manager = MultipleDiscoveryManager()
+
+    with pytest.raises(BLEInterface.BLEError) as exc_info:
+        iface.findDevice("explicit-name")
+
+    assert exc_info.value.requested_identifier == "explicit-name"
 
 
 # ============================================================================

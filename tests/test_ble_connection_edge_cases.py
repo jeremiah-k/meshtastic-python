@@ -2101,9 +2101,11 @@ def test_stale_cleanup_retry_propagates_address_mismatch(
         connected_address="11:22:33:44:55:66",
         address="AA:BB:CC:DD:EE:FF",
     )
-    orchestrator._validate_explicit_address_connection = (
-        lambda **kwargs: (_ for _ in ()).throw(mismatch)
-    )
+    def _raise_mismatch(**kwargs: object) -> None:
+        del kwargs
+        raise mismatch
+
+    orchestrator._validate_explicit_address_connection = _raise_mismatch
 
     with pytest.raises(BLEAddressMismatchError):
         orchestrator._establish_connection(

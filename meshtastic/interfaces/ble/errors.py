@@ -102,7 +102,19 @@ class BLEConnectionTimeoutError(MeshtasticBLEError, TimeoutError):
         requested_identifier: str | None = None,
         timeout: float | None = None,
     ) -> "BLEConnectionTimeoutError":
-        """Normalize a timeout failure with structured metadata."""
+        """Normalize a timeout failure with structured metadata.
+
+        Parameters
+        ----------
+        error : BaseException
+            Original timeout or transport exception.
+        message : str
+            Meshtastic-facing error message.
+        requested_identifier : str | None, optional
+            Caller-supplied device identifier involved in the failure.
+        timeout : float | None, optional
+            Timeout budget associated with the failed operation.
+        """
         return cls(
             message,
             requested_identifier=requested_identifier,
@@ -168,7 +180,19 @@ class BLEDBusTransportError(MeshtasticBLEError, BleakDBusError):
         requested_identifier: str | None = None,
         address: str | None = None,
     ) -> "BLEDBusTransportError":
-        """Normalize DBus transport failures while preserving DBus metadata."""
+        """Normalize DBus transport failures while preserving DBus metadata.
+
+        Parameters
+        ----------
+        error : BaseException
+            Original DBus or transport exception.
+        message : str
+            Meshtastic-facing error message.
+        requested_identifier : str | None, optional
+            Caller-supplied device identifier involved in the failure.
+        address : str | None, optional
+            BLE address associated with the failed operation.
+        """
         dbus_error = getattr(error, "dbus_error", None)
         dbus_error_details = getattr(error, "dbus_error_details", None)
         dbus_error_body: tuple[Any, ...] | None = None

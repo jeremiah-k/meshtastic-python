@@ -1382,10 +1382,22 @@ class ConnectionOrchestrator:
     @staticmethod
     def _is_stale_bluez_direct_connect_error(error: BaseException) -> bool:
         """Return whether direct-connect failure looks like stale BlueZ state."""
-        candidates: list[BaseException] = [error]
-        cause = getattr(error, "cause", None)
-        if isinstance(cause, BaseException):
-            candidates.append(cause)
+        candidates: list[BaseException] = []
+        pending: list[tuple[BaseException, int]] = [(error, 0)]
+        seen_ids: set[int] = set()
+        while pending:
+            candidate, depth = pending.pop(0)
+            candidate_id = id(candidate)
+            if candidate_id in seen_ids:
+                continue
+            seen_ids.add(candidate_id)
+            candidates.append(candidate)
+            if depth >= 5:
+                continue
+            for attr_name in ("cause", "__cause__", "__context__"):
+                cause = getattr(candidate, attr_name, None)
+                if isinstance(cause, BaseException):
+                    pending.append((cause, depth + 1))
 
         for candidate in candidates:
             dbus_error_name = getattr(candidate, "dbus_error", None)
@@ -1445,6 +1457,10 @@ class ConnectionOrchestrator:
                 on_disconnect_func,
                 pair_on_connect=False,
                 connect_timeout=connect_timeout,
+            )
+            self._client_manager_connect_client(
+                cleanup_client,
+                timeout=connect_timeout,
             )
             disconnect = getattr(cleanup_client, "disconnect", None)
             if callable(disconnect):

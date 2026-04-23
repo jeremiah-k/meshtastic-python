@@ -917,8 +917,12 @@ def test_orchestrator_attempt_stale_cleanup_forwards_disconnect_timeout(
     with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
         cleanup_client = DummyClient()
         observed_timeout: list[float | None] = []
+        connect_calls: list[tuple[object, float | None]] = []
         orchestrator._client_manager_create_client = (
             lambda *_args, **_kwargs: cleanup_client
+        )
+        orchestrator._client_manager_connect_client = (
+            lambda client, timeout=None: connect_calls.append((client, timeout))
         )
         orchestrator._client_manager_safe_close_client = (
             lambda _client, disconnect_timeout=None: observed_timeout.append(
@@ -931,7 +935,62 @@ def test_orchestrator_attempt_stale_cleanup_forwards_disconnect_timeout(
             on_disconnect_func=lambda _client: None,
             connect_timeout=2.0,
         )
+        assert connect_calls == [(cleanup_client, 2.0)]
+        assert cleanup_client.disconnect_calls == 1
         assert observed_timeout == [min(2.0, connection_mod.DISCONNECT_TIMEOUT_SECONDS)]
+
+
+def test_orchestrator_attempt_stale_cleanup_connect_failure_is_best_effort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stale-cleanup connect failure should return False and still safe-close."""
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        cleanup_client = DummyClient()
+        closed_clients: list[object] = []
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: cleanup_client
+        )
+
+        def _fail_connect(_client: object, *, timeout: float | None = None) -> None:
+            del timeout
+            raise TimeoutError("cleanup connect timed out")
+
+        orchestrator._client_manager_connect_client = _fail_connect
+        orchestrator._client_manager_safe_close_client = (
+            lambda client, disconnect_timeout=None: closed_clients.append(client)
+        )
+
+        assert not orchestrator._attempt_stale_bluez_cleanup(
+            target_address=TEST_BLE_ADDRESS,
+            on_disconnect_func=lambda _client: None,
+            connect_timeout=2.0,
+        )
+        assert cleanup_client.disconnect_calls == 0
+        assert closed_clients == [cleanup_client]
+
+
+def test_orchestrator_attempt_stale_cleanup_safe_close_runs_after_disconnect_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stale-cleanup safe close should run even when disconnect fails."""
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        cleanup_client = DummyClient(disconnect_exception=BleakError("disconnect failed"))
+        closed_clients: list[object] = []
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: cleanup_client
+        )
+        orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: None
+        orchestrator._client_manager_safe_close_client = (
+            lambda client, disconnect_timeout=None: closed_clients.append(client)
+        )
+
+        assert not orchestrator._attempt_stale_bluez_cleanup(
+            target_address=TEST_BLE_ADDRESS,
+            on_disconnect_func=lambda _client: None,
+            connect_timeout=2.0,
+        )
+        assert cleanup_client.disconnect_calls == 1
+        assert closed_clients == [cleanup_client]
 
 
 def test_orchestrator_stale_bluez_error_classifier_prefers_specific_tokens(
@@ -957,6 +1016,35 @@ def test_orchestrator_stale_bluez_error_classifier_prefers_specific_tokens(
         assert not orchestrator._is_stale_bluez_direct_connect_error(
             RuntimeError("operation in progress without BlueZ context")
         )
+
+
+def test_orchestrator_stale_bluez_error_classifier_walks_wrapped_causes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stale BlueZ classifier should inspect nested cause/context chains."""
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        stale = BleakDBusError(
+            "org.bluez.Error.AlreadyConnected",
+            ["Already connected"],
+        )
+        mid = RuntimeError("wrapper")
+        mid.__cause__ = stale
+        outer = RuntimeError("outer")
+        outer.__context__ = mid
+
+        assert orchestrator._is_stale_bluez_direct_connect_error(outer)
+
+
+def test_orchestrator_stale_bluez_error_classifier_rejects_non_stale_wrappers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Wrapped non-BlueZ errors should not be classified as stale BlueZ state."""
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        inner = RuntimeError("adapter busy")
+        outer = RuntimeError("operation in progress without BlueZ context")
+        outer.__cause__ = inner
+
+        assert not orchestrator._is_stale_bluez_direct_connect_error(outer)
 
 
 def test_orchestrator_attempt_direct_connect_rejects_explicit_address_mismatch(

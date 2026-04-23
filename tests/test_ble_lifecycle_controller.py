@@ -666,21 +666,23 @@ class TestBLELifecycleControllerClientManagement:
 
         assert calls == [(mock_client, None)]
 
-    def test_close_fallback_when_timeout_kwarg_unsupported(self) -> None:
-        """_close should fallback to no-timeout call when timeout is rejected."""
+    def test_close_without_timeout_parameter_invoked_once(self) -> None:
+        """_close should omit timeout when the shutdown callable does not accept it."""
         calls: list[dict[str, object]] = []
 
-        def _raise_on_timeout(
+        def _close_without_timeout(
             *,
             management_shutdown_wait_timeout: float,
             management_wait_poll_seconds: float,
-            timeout: float | None = None,
         ) -> None:
-            if timeout is not None:
-                raise TypeError("close() got an unexpected keyword argument 'timeout'")
-            calls.append({"timeout": timeout, "fallback": True})
+            calls.append(
+                {
+                    "management_shutdown_wait_timeout": management_shutdown_wait_timeout,
+                    "management_wait_poll_seconds": management_wait_poll_seconds,
+                }
+            )
 
-        mock_shutdown = SimpleNamespace(close=_raise_on_timeout)
+        mock_shutdown = SimpleNamespace(close=_close_without_timeout)
         mock_iface = SimpleNamespace()
         controller = BLELifecycleController(mock_iface)
         controller._shutdown = mock_shutdown  # type: ignore[assignment]
@@ -691,9 +693,12 @@ class TestBLELifecycleControllerClientManagement:
             timeout=1.25,
         )
 
-        assert len(calls) == 1
-        assert calls[0]["fallback"] is True
-        assert calls[0]["timeout"] is None
+        assert calls == [
+            {
+                "management_shutdown_wait_timeout": 5.0,
+                "management_wait_poll_seconds": 0.5,
+            }
+        ]
 
     def test_close_propagates_unrelated_type_error(self) -> None:
         """_close should NOT swallow unrelated TypeError during shutdown."""
@@ -719,18 +724,18 @@ class TestBLELifecycleControllerClientManagement:
                 timeout=1.25,
             )
 
-    def test_disconnect_and_close_client_fallback_when_timeout_unsupported(self) -> None:
-        """_disconnect_and_close_client should fallback when timeout is rejected."""
+    def test_disconnect_and_close_client_without_timeout_parameter_invoked_once(
+        self,
+    ) -> None:
+        """_disconnect_and_close_client should omit timeout when unsupported."""
         calls: list[tuple[object, ...]] = []
 
-        def _raise_on_timeout(client: object, *, timeout: float | None = None) -> None:
-            if timeout is not None:
-                raise TypeError(
-                    "disconnect_and_close_client() got an unexpected keyword argument 'timeout'"
-                )
-            calls.append((client, timeout))
+        def _disconnect_without_timeout(client: object) -> None:
+            calls.append((client,))
 
-        mock_disconnect = SimpleNamespace(disconnect_and_close_client=_raise_on_timeout)
+        mock_disconnect = SimpleNamespace(
+            disconnect_and_close_client=_disconnect_without_timeout
+        )
         mock_iface = SimpleNamespace()
         controller = BLELifecycleController(mock_iface)
         controller._disconnect = mock_disconnect  # type: ignore[assignment]
@@ -738,8 +743,7 @@ class TestBLELifecycleControllerClientManagement:
         mock_client = SimpleNamespace()
         controller._disconnect_and_close_client(mock_client, timeout=3.0)
 
-        assert len(calls) == 1
-        assert calls[0] == (mock_client, None)
+        assert calls == [(mock_client,)]
 
     def test_disconnect_and_close_client_propagates_unrelated_type_error(self) -> None:
         """_disconnect_and_close_client should NOT swallow unrelated TypeError."""

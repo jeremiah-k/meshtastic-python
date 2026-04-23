@@ -1028,12 +1028,12 @@ class BLEInterface(MeshInterface):
         def _format_device_list(devices: list[BLEDevice]) -> str:
             return "\n".join(f"- {d.name or 'Unknown'} ({d.address})" for d in devices)
 
-        if address and len(addressed_devices) > 1:
+        if target and len(addressed_devices) > 1:
             # Build a list of found devices for the error message
             device_list = _format_device_list(addressed_devices)
             raise BLEDiscoveryError(
-                ERROR_MULTIPLE_DEVICES.format(address, device_list),
-                requested_identifier=address,
+                ERROR_MULTIPLE_DEVICES.format(target, device_list),
+                requested_identifier=target,
             )
         if len(addressed_devices) > 1:
             device_list = _format_device_list(addressed_devices)

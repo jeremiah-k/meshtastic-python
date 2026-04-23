@@ -87,7 +87,15 @@ class BLEDisconnectLifecycleCoordinator:
         *,
         timeout: float | None = None,
     ) -> None:
-        """Release BLE client resources with best-effort disconnect/close handling."""
+        """Release BLE client resources with best-effort disconnect/close handling.
+
+        Parameters
+        ----------
+        client : BLEClient
+            Client to disconnect and close.
+        timeout : float | None, optional
+            Optional maximum seconds to wait for client disconnect/close.
+        """
         self._iface._client_manager_safe_close_client(
             client,
             disconnect_timeout=timeout,

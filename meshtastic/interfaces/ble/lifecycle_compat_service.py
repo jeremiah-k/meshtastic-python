@@ -537,7 +537,10 @@ class BLELifecycleService:
 
     @staticmethod
     def _disconnect_and_close_client(
-        iface: "BLEInterface", client: "BLEClient"
+        iface: "BLEInterface",
+        client: "BLEClient",
+        *,
+        timeout: float | None = None,
     ) -> None:
         """Release BLE client resources with best-effort disconnect/close handling.
 
@@ -547,13 +550,17 @@ class BLELifecycleService:
             Interface exposing client-manager cleanup helpers.
         client : BLEClient
             Client to disconnect and close.
+        timeout : float | None, optional
+            Optional maximum seconds to wait for disconnect/close completion.
 
         Returns
         -------
         None
             Returns ``None`` after cleanup is attempted.
         """
-        BLEDisconnectLifecycleCoordinator(iface).disconnect_and_close_client(client)
+        BLEDisconnectLifecycleCoordinator(iface).disconnect_and_close_client(
+            client, timeout=timeout
+        )
 
     @staticmethod
     def _compute_disconnect_keys(
