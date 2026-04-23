@@ -593,7 +593,9 @@ def test_connection_orchestrator_interrupt_resets_state_and_closes_client() -> N
         )
 
     assert state_manager._current_state == ConnectionState.DISCONNECTED
-    client_manager.safe_close_client.assert_called_once_with(mock_client)
+    client_manager.safe_close_client.assert_called_once_with(
+        mock_client, disconnect_timeout=None
+    )
 
 
 @pytest.mark.unit
@@ -650,7 +652,9 @@ def test_connection_orchestrator_aborts_fallback_when_interface_closing() -> Non
     interface.findDevice.assert_not_called()
     interface.find_device.assert_not_called()
     interface._find_device.assert_not_called()
-    client_manager.safe_close_client.assert_called_once_with(direct_client)
+    client_manager.safe_close_client.assert_called_once_with(
+        direct_client, disconnect_timeout=None
+    )
     assert state_manager._current_state == ConnectionState.DISCONNECTED
 
 
@@ -916,8 +920,12 @@ def test_connection_orchestrator_reraises_retry_ble_dbus_error(
             on_disconnect_func=lambda _client: None,
         )
 
-    client_manager.safe_close_client.assert_any_call(direct_client)
-    client_manager.safe_close_client.assert_any_call(retry_client)
+    client_manager.safe_close_client.assert_any_call(
+        direct_client, disconnect_timeout=None
+    )
+    client_manager.safe_close_client.assert_any_call(
+        retry_client, disconnect_timeout=None
+    )
 
 
 @pytest.mark.unit
