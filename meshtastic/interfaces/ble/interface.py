@@ -3232,7 +3232,13 @@ class BLEInterface(MeshInterface):
     # COMPAT_STABLE_SHIM: historical public BLEInterface API alias.
     # Keep callable without deprecation warning.
     def disconnect(self, timeout: float | None = None) -> None:
-        """Compatibility alias for callers that expect an explicit disconnect API."""
+        """Compatibility alias for callers that expect an explicit disconnect API.
+
+        Parameters
+        ----------
+        timeout : float | None
+            Optional total shutdown budget in seconds, forwarded to ``close()``.
+        """
         if timeout is None:
             self.close()
             return
@@ -3244,8 +3250,11 @@ class BLEInterface(MeshInterface):
         Parameters
         ----------
         timeout : float | None
-            Optional total close-budget in seconds. When ``None``, use
-            lifecycle defaults for each shutdown stage. (Default value = None)
+            Optional total close-budget in seconds. When provided, the budget is
+            sliced across blocking shutdown phases (management wait, receive
+            thread join, ``MeshInterface.close``, disconnect-notification wait,
+            and client disconnect/close). When ``None``, lifecycle defaults are
+            used for each stage. (Default value = None)
         """
         if timeout is not None:
             if isinstance(timeout, bool) or not isinstance(timeout, numbers.Real):

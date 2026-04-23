@@ -6858,6 +6858,19 @@ def test_close_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client.close_calls == 1
 
 
+def test_close_with_timeout_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """close(timeout=...) should remain idempotent across repeated calls."""
+    client = DummyClient()
+    iface = _build_interface(monkeypatch, client)
+
+    iface.close(timeout=1.0)
+    iface.close(timeout=0.2)
+    iface.close(timeout=0.0)
+
+    assert client.disconnect_calls == 1
+    assert client.close_calls == 1
+
+
 @pytest.mark.parametrize("exc_cls", [BleakError, RuntimeError, OSError])
 def test_close_handles_errors(
     monkeypatch: pytest.MonkeyPatch,

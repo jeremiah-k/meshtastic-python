@@ -6,8 +6,9 @@ import contextlib
 import importlib
 import itertools
 import threading
+import time
 from types import SimpleNamespace
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -22,6 +23,9 @@ from meshtastic.interfaces.ble.constants import ERROR_INTERFACE_CLOSING
 from meshtastic.interfaces.ble.lifecycle_primitives import (
     _DisconnectPlan,
     _OwnershipSnapshot,
+)
+from meshtastic.interfaces.ble.lifecycle_shutdown_runtime import (
+    BLEShutdownLifecycleCoordinator,
 )
 from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
 from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryService
@@ -919,6 +923,106 @@ def test_lifecycle_shutdown_and_finalize_close_paths(
     finally:
         _reset_state_manager(iface)
         iface.close()
+
+
+def test_shutdown_close_timeout_budget_rolls_forward_to_later_stages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Earlier shutdown work should reduce remaining timeout budgets for later blocking stages."""
+    iface = _make_iface(monkeypatch)
+    coordinator = BLEShutdownLifecycleCoordinator(iface)
+    now = {"value": 100.0}
+    captured: dict[str, float | None] = {}
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.lifecycle_shutdown_runtime.time.monotonic",
+        lambda: now["value"],
+    )
+
+    def _await_management_shutdown(**kwargs: object) -> bool:
+        captured["management_timeout"] = cast(
+            float, kwargs["management_shutdown_wait_timeout"]
+        )
+        now["value"] += 0.045
+        return False
+
+    def _shutdown_receive_thread(*, join_timeout: float) -> None:
+        captured["join_timeout"] = join_timeout
+        now["value"] += 0.003
+
+    def _close_mesh_interface(
+        *,
+        timeout: float | None = None,
+        safe_execute: object | None = None,
+    ) -> None:
+        _ = safe_execute
+        captured["mesh_close_timeout"] = timeout
+        now["value"] += 0.001
+
+    def _shutdown_client(**kwargs: object) -> None:
+        captured["client_disconnect_timeout"] = cast(
+            float | None, kwargs["client_disconnect_timeout"]
+        )
+        captured["disconnect_notification_wait_timeout"] = cast(
+            float | None, kwargs["disconnect_notification_wait_timeout"]
+        )
+        captured["unsubscribe_timeout"] = cast(
+            float | None, kwargs["unsubscribe_timeout"]
+        )
+
+    coordinator._await_management_shutdown = _await_management_shutdown
+    coordinator._shutdown_discovery = lambda: None
+    coordinator._shutdown_receive_thread = _shutdown_receive_thread
+    coordinator._close_mesh_interface = _close_mesh_interface
+    coordinator._unregister_exit_handler = lambda: None
+    coordinator._shutdown_client = _shutdown_client
+    coordinator._cleanup_thread_coordinator = lambda *, timeout=None: captured.setdefault(
+        "cleanup_timeout", timeout
+    )
+    coordinator._finalize_close_state = lambda: None
+
+    coordinator.close(
+        management_shutdown_wait_timeout=0.2,
+        management_wait_poll_seconds=0.01,
+        timeout=0.05,
+    )
+
+    assert captured["management_timeout"] == pytest.approx(0.05)
+    assert captured["join_timeout"] == pytest.approx(0.005)
+    assert captured["mesh_close_timeout"] == pytest.approx(0.002)
+    assert captured["client_disconnect_timeout"] == pytest.approx(0.001)
+    assert captured["disconnect_notification_wait_timeout"] == pytest.approx(0.001)
+    assert captured["unsubscribe_timeout"] == pytest.approx(0.001)
+    assert captured["cleanup_timeout"] == pytest.approx(0.001)
+
+
+def test_close_mesh_interface_timeout_limits_blocking_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_close_mesh_interface should stop waiting once its per-stage timeout is exhausted."""
+    iface = _make_iface(monkeypatch)
+    coordinator = BLEShutdownLifecycleCoordinator(iface)
+    release_close = threading.Event()
+    close_called = threading.Event()
+
+    def _blocking_mesh_close(_iface: object) -> None:
+        close_called.set()
+        release_close.wait(timeout=0.5)
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.lifecycle_shutdown_runtime.MeshInterface.close",
+        _blocking_mesh_close,
+    )
+
+    started = time.monotonic()
+    try:
+        coordinator._close_mesh_interface(timeout=0.01)
+    finally:
+        release_close.set()
+    elapsed = time.monotonic() - started
+
+    assert close_called.is_set()
+    assert elapsed < 0.1
 
 
 def test_lifecycle_shutdown_receive_thread_skips_self_join_by_ident(

@@ -107,6 +107,43 @@ class BLEAddressMismatchError(MeshtasticBLEError):
 class BLEDBusTransportError(MeshtasticBLEError, BleakDBusError):
     """Raised for normalized BlueZ/DBus transport failures."""
 
+    _DEFAULT_DBUS_ERROR = "org.bluez.Error.Failed"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        address: str | None = None,
+        requested_identifier: str | None = None,
+        cause: BaseException | None = None,
+        dbus_error: str | None = None,
+        dbus_error_details: Any | None = None,
+        dbus_error_body: tuple[Any, ...] | None = None,
+    ) -> None:
+        """Create a normalized DBus transport error with preserved DBus context."""
+        resolved_error = (
+            dbus_error
+            if isinstance(dbus_error, str) and dbus_error
+            else self._DEFAULT_DBUS_ERROR
+        )
+        if dbus_error_body is not None:
+            body_items: list[Any] = list(dbus_error_body)
+        elif dbus_error_details is not None:
+            body_items = [dbus_error_details]
+        else:
+            body_items = []
+        BleakDBusError.__init__(self, resolved_error, body_items)
+        # Mirror MeshtasticBLEError structured context fields while preserving
+        # BleakDBusError args-backed properties for dbus_error/details.
+        self.message = message
+        self.address = address
+        self.requested_identifier = requested_identifier
+        self.timeout = None
+        self.connected_address = None
+        self.cause = cause
+        self.dbus_error_name = self.dbus_error
+        self.dbus_error_body = tuple(body_items)
+
     @classmethod
     def from_exception(
         cls,
@@ -116,12 +153,23 @@ class BLEDBusTransportError(MeshtasticBLEError, BleakDBusError):
         requested_identifier: str | None = None,
         address: str | None = None,
     ) -> "BLEDBusTransportError":
-        """Normalize DBus transport failures while preserving the original cause."""
+        """Normalize DBus transport failures while preserving DBus metadata."""
+        dbus_error = getattr(error, "dbus_error", None)
+        dbus_error_details = getattr(error, "dbus_error_details", None)
+        dbus_error_body: tuple[Any, ...] | None = None
+        error_args = getattr(error, "args", ())
+        if isinstance(error_args, tuple) and len(error_args) > 1:
+            dbus_error_body = tuple(error_args[1:])
+        elif dbus_error_details is not None:
+            dbus_error_body = (dbus_error_details,)
         return cls(
             message,
             requested_identifier=requested_identifier,
             address=address,
             cause=error,
+            dbus_error=dbus_error if isinstance(dbus_error, str) else None,
+            dbus_error_details=dbus_error_details,
+            dbus_error_body=dbus_error_body,
         )
 
 

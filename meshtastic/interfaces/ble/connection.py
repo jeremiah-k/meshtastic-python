@@ -64,12 +64,25 @@ _CONNECT_TIMEOUT_INVALID_MSG: str = (
 )
 _CONNECT_TIMEOUT_FALLBACK_SECONDS: float = 10.0
 _DISPATCH_MISSING: object = object()
-_STABLE_BLUEZ_ERROR_TOKENS: tuple[str, ...] = (
+_STALE_BLUEZ_DBUS_ERROR_NAMES: frozenset[str] = frozenset(
+    {
+        "org.bluez.error.alreadyconnected",
+        "org.bluez.error.inprogress",
+    }
+)
+_STALE_BLUEZ_DETAIL_TOKENS: tuple[str, ...] = (
+    # These phrases appear in BlueZ/DBus transport errors when the adapter has a
+    # stale session or overlapping connect operation. Keep these specific to
+    # avoid false positives from generic "busy" wording in unrelated failures.
     "already connected",
+    "operation already in progress",
+    "device or resource busy",
+)
+_STALE_BLUEZ_FALLBACK_MESSAGE_TOKENS: tuple[str, ...] = (
     "org.bluez.error.alreadyconnected",
     "org.bluez.error.inprogress",
-    "in progress",
-    "busy",
+    "already connected",
+    "operation already in progress",
     "device or resource busy",
 )
 
@@ -1318,8 +1331,13 @@ class ConnectionOrchestrator:
         connected_address = self._extract_client_address(client)
         connected_key = sanitize_address(connected_address)
         if connected_key is None:
+            # Intentional compatibility policy:
+            # Some backends/mocks do not expose a resolved connected peer address
+            # even after a successful explicit-address connect. Treat this as
+            # "cannot verify" rather than a hard mismatch to avoid disconnecting
+            # valid sessions solely due to missing metadata.
             logger.warning(
-                "Connected client address is unavailable for explicit target %s; skipping strict post-connect address verification.",
+                "Cannot enforce explicit-address verification for target %s because the connected peer address is unavailable; proceeding in compatibility mode.",
                 requested_key,
             )
             return
@@ -1334,10 +1352,36 @@ class ConnectionOrchestrator:
     @staticmethod
     def _is_stale_bluez_direct_connect_error(error: BaseException) -> bool:
         """Return whether direct-connect failure looks like stale BlueZ state."""
-        message = str(error).strip().casefold()
-        if not message:
-            return False
-        return any(token in message for token in _STABLE_BLUEZ_ERROR_TOKENS)
+        candidates: list[BaseException] = [error]
+        cause = getattr(error, "cause", None)
+        if isinstance(cause, BaseException):
+            candidates.append(cause)
+
+        for candidate in candidates:
+            dbus_error_name = getattr(candidate, "dbus_error", None)
+            if (
+                isinstance(dbus_error_name, str)
+                and dbus_error_name.casefold() in _STALE_BLUEZ_DBUS_ERROR_NAMES
+            ):
+                return True
+
+            dbus_error_details = getattr(candidate, "dbus_error_details", None)
+            details_text = (
+                dbus_error_details.casefold()
+                if isinstance(dbus_error_details, str)
+                else ""
+            )
+            if details_text and any(
+                token in details_text for token in _STALE_BLUEZ_DETAIL_TOKENS
+            ):
+                return True
+
+            message = str(candidate).strip().casefold()
+            if message and any(
+                token in message for token in _STALE_BLUEZ_FALLBACK_MESSAGE_TOKENS
+            ):
+                return True
+        return False
 
     def _should_attempt_stale_bluez_cleanup(
         self,
@@ -1394,7 +1438,10 @@ class ConnectionOrchestrator:
             return False
         finally:
             if cleanup_client is not None:
-                self._client_manager_safe_close_client(cleanup_client)
+                self._client_manager_safe_close_client(
+                    cleanup_client,
+                    disconnect_timeout=disconnect_timeout,
+                )
 
     def _retry_direct_connect_after_cleanup(
         self,

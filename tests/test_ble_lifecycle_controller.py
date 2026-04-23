@@ -612,6 +612,37 @@ class TestBLELifecycleControllerShutdownDelegation:
 
         assert calls == [{"timeout": 5.0, "poll": 0.5}]
 
+    def test_close_forwards_optional_total_timeout(self) -> None:
+        """_close should forward timeout budget to shutdown coordinator when provided."""
+        calls: list[dict[str, float | None]] = []
+
+        def _capture_close(
+            *,
+            management_shutdown_wait_timeout: float,
+            management_wait_poll_seconds: float,
+            timeout: float | None = None,
+        ) -> None:
+            calls.append(
+                {
+                    "timeout": management_shutdown_wait_timeout,
+                    "poll": management_wait_poll_seconds,
+                    "total": timeout,
+                }
+            )
+
+        mock_shutdown = SimpleNamespace(close=_capture_close)
+        mock_iface = SimpleNamespace()
+        controller = BLELifecycleController(mock_iface)
+        controller._shutdown = mock_shutdown  # type: ignore[assignment]
+
+        controller._close(
+            management_shutdown_wait_timeout=5.0,
+            management_wait_poll_seconds=0.5,
+            timeout=1.25,
+        )
+
+        assert calls == [{"timeout": 5.0, "poll": 0.5, "total": 1.25}]
+
 
 class TestBLELifecycleControllerClientManagement:
     """Test cases for client management methods."""

@@ -9,8 +9,26 @@ import pytest
 
 pytest.importorskip("bleak")
 import meshtastic.interfaces.ble.utils as ble_utils
-from meshtastic.ble_interface import sanitize_address as compat_sanitize_address
-from meshtastic.interfaces.ble import sanitize_address as public_sanitize_address
+from meshtastic.ble_interface import (
+    BLEAddressMismatchError as CompatBLEAddressMismatchError,
+    BLEConnectionSuppressedError as CompatBLEConnectionSuppressedError,
+    BLEConnectionTimeoutError as CompatBLEConnectionTimeoutError,
+    BLEDBusTransportError as CompatBLEDBusTransportError,
+    BLEDeviceNotFoundError as CompatBLEDeviceNotFoundError,
+    BLEDiscoveryError as CompatBLEDiscoveryError,
+    MeshtasticBLEError as CompatMeshtasticBLEError,
+    sanitize_address as compat_sanitize_address,
+)
+from meshtastic.interfaces.ble import (
+    BLEAddressMismatchError as PublicBLEAddressMismatchError,
+    BLEConnectionSuppressedError as PublicBLEConnectionSuppressedError,
+    BLEConnectionTimeoutError as PublicBLEConnectionTimeoutError,
+    BLEDBusTransportError as PublicBLEDBusTransportError,
+    BLEDeviceNotFoundError as PublicBLEDeviceNotFoundError,
+    BLEDiscoveryError as PublicBLEDiscoveryError,
+    MeshtasticBLEError as PublicMeshtasticBLEError,
+    sanitize_address as public_sanitize_address,
+)
 from meshtastic.interfaces.ble.utils import (
     resolve_ble_module,
     with_timeout,
@@ -75,3 +93,15 @@ def test_sanitize_address_exported_from_ble_public_api() -> None:
 def test_sanitize_address_exported_from_ble_compat_surface() -> None:
     """sanitize_address should be available through meshtastic.ble_interface."""
     assert compat_sanitize_address("AA:BB:CC:DD:EE:FF") == "aabbccddeeff"
+
+
+@pytest.mark.unit
+def test_typed_ble_exceptions_exported_from_public_and_compat_surfaces() -> None:
+    """Typed BLE exceptions should be importable from public and compat BLE modules."""
+    assert PublicMeshtasticBLEError is CompatMeshtasticBLEError
+    assert PublicBLEDiscoveryError is CompatBLEDiscoveryError
+    assert PublicBLEDeviceNotFoundError is CompatBLEDeviceNotFoundError
+    assert PublicBLEConnectionSuppressedError is CompatBLEConnectionSuppressedError
+    assert PublicBLEConnectionTimeoutError is CompatBLEConnectionTimeoutError
+    assert PublicBLEAddressMismatchError is CompatBLEAddressMismatchError
+    assert PublicBLEDBusTransportError is CompatBLEDBusTransportError

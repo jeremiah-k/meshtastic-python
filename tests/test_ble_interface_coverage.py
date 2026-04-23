@@ -22,7 +22,11 @@ import pytest
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
 
-from meshtastic.interfaces.ble import BLEClient, BLEInterface
+from meshtastic.interfaces.ble import (
+    BLEClient,
+    BLEConnectionSuppressedError,
+    BLEInterface,
+)
 from meshtastic.interfaces.ble.constants import (
     ERROR_INTERFACE_CLOSING,
     ERROR_NO_PERIPHERALS_FOUND,
@@ -1272,8 +1276,9 @@ def test_raise_if_duplicate_connect_raises_when_suppressed(
         lambda key: True,
     )
 
-    with pytest.raises(BLEInterface.BLEError, match="Connection suppressed"):
+    with pytest.raises(BLEInterface.BLEError, match="Connection suppressed") as exc_info:
         iface._raise_if_duplicate_connect("test-key")
+    assert isinstance(exc_info.value, BLEConnectionSuppressedError)
 
 
 def test_get_existing_client_if_valid_returns_none_when_not_connected() -> None:
