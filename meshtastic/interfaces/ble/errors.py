@@ -74,8 +74,14 @@ class BLEDiscoveryError(MeshtasticBLEError):
 class BLEDeviceNotFoundError(BLEDiscoveryError, BleakDeviceNotFoundError):
     """Raised when a specific BLE target cannot be located."""
 
+    # BleakDeviceNotFoundError declares ``identifier: str`` as a writable attribute.
+    # We expose ``requested_identifier`` through this property so callers can read
+    # the identifier even though our ``MeshtasticBLEError`` constructor does not
+    # invoke ``BleakDeviceNotFoundError.__init__``.  The ``[override]`` ignores are
+    # required because our return type is ``str | None`` (matching
+    # ``requested_identifier``) rather than Bleak's narrower ``str``.
     @property
-    def identifier(self) -> str | None:
+    def identifier(self) -> str | None:  # type: ignore[override]
         """Return the requested identifier for BleakDeviceNotFoundError compatibility."""
         return self.requested_identifier
 
