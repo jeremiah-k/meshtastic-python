@@ -32,7 +32,11 @@ from meshtastic.interfaces.ble.errors import (
     BLEAddressMismatchError,
     BLEConnectionTimeoutError,
     BLEDBusTransportError,
+)
+from meshtastic.interfaces.ble.errors import (
     BLEDeviceNotFoundError as MeshtasticBLEDeviceNotFoundError,
+)
+from meshtastic.interfaces.ble.errors import (
     BLEErrorHandler,
 )
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
@@ -1112,16 +1116,35 @@ class ConnectionOrchestrator:
                 kwargs={},
             )
 
-    def _client_manager_safe_close_client(self, client: BLEClient) -> None:
+    def _client_manager_safe_close_client(
+        self,
+        client: BLEClient,
+        *,
+        disconnect_timeout: float | None = None,
+    ) -> None:
         """Close client via public API with underscore-compatible fallback for mocks/test doubles."""
-        self._dispatch_public_or_underscore(
-            target=self.client_manager,
-            public_name="safe_close_client",
-            underscore_name="_safe_close_client",
-            prefer_instance_type=ClientManager,
-            call_member=True,
-            args=(client,),
-        )
+        try:
+            self._dispatch_public_or_underscore(
+                target=self.client_manager,
+                public_name="safe_close_client",
+                underscore_name="_safe_close_client",
+                prefer_instance_type=ClientManager,
+                call_member=True,
+                args=(client,),
+                kwargs={"disconnect_timeout": disconnect_timeout},
+            )
+        except TypeError as exc:
+            if not _is_unexpected_keyword_error(exc, "disconnect_timeout"):
+                raise
+            self._dispatch_public_or_underscore(
+                target=self.client_manager,
+                public_name="safe_close_client",
+                underscore_name="_safe_close_client",
+                prefer_instance_type=ClientManager,
+                call_member=True,
+                args=(client,),
+                kwargs={},
+            )
 
     @staticmethod
     def _get_connect_timeout(*, pair_on_connect: bool) -> float:

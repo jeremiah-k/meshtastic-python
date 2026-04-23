@@ -595,9 +595,7 @@ class BLEShutdownLifecycleCoordinator:
                 unsubscribe_all = _resolve_notification_cleanup("_unsubscribe_all")
                 if unsubscribe_all is not None:
                     run_safe_cleanup(
-                        lambda: unsubscribe_all(
-                            client, timeout=unsubscribe_timeout
-                        ),
+                        lambda: unsubscribe_all(client, timeout=unsubscribe_timeout),
                         "notification unsubscribe_all",
                     )
                 else:

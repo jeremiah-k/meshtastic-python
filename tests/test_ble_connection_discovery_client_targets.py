@@ -834,9 +834,7 @@ def test_orchestrator_attempt_direct_connect_maps_dbus_error_to_typed_error(
                 ["Device busy"],
             )
         )
-        orchestrator._should_attempt_stale_bluez_cleanup = (
-            lambda **_kwargs: False
-        )
+        orchestrator._should_attempt_stale_bluez_cleanup = lambda **_kwargs: False
         orchestrator._client_manager_safe_close_client = lambda *_args, **_kwargs: None
 
         with pytest.raises(BLEDBusTransportError) as exc_info:
@@ -933,9 +931,7 @@ def test_orchestrator_attempt_stale_cleanup_forwards_disconnect_timeout(
             on_disconnect_func=lambda _client: None,
             connect_timeout=2.0,
         )
-        assert observed_timeout == [
-            min(2.0, connection_mod.DISCONNECT_TIMEOUT_SECONDS)
-        ]
+        assert observed_timeout == [min(2.0, connection_mod.DISCONNECT_TIMEOUT_SECONDS)]
 
 
 def test_orchestrator_stale_bluez_error_classifier_prefers_specific_tokens(

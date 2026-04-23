@@ -1276,7 +1276,9 @@ def test_raise_if_duplicate_connect_raises_when_suppressed(
         lambda key: True,
     )
 
-    with pytest.raises(BLEInterface.BLEError, match="Connection suppressed") as exc_info:
+    with pytest.raises(
+        BLEInterface.BLEError, match="Connection suppressed"
+    ) as exc_info:
         iface._raise_if_duplicate_connect("test-key")
     assert isinstance(exc_info.value, BLEConnectionSuppressedError)
 

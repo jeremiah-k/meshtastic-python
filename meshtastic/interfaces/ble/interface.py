@@ -1037,7 +1037,9 @@ class BLEInterface(MeshInterface):
             )
         if len(addressed_devices) > 1:
             device_list = _format_device_list(addressed_devices)
-            raise BLEDiscoveryError(ERROR_MULTIPLE_DEVICES_DISCOVERY.format(device_list))
+            raise BLEDiscoveryError(
+                ERROR_MULTIPLE_DEVICES_DISCOVERY.format(device_list)
+            )
         raise AssertionError(UNREACHABLE_ADDRESSED_DEVICES_MSG)
 
     # COMPAT_STABLE_SHIM: historical public BLEInterface API.

@@ -6,7 +6,7 @@ import time
 from datetime import datetime
 from typing import Any, Final, cast
 
-import riden  # type: ignore[import-untyped,import-not-found]
+import riden
 
 from .constants import MILLIAMPS_PER_AMP, SECONDS_PER_HOUR
 from .power_supply import PowerError, PowerSupply
@@ -17,7 +17,7 @@ INVALID_POWER_ON_VOLTAGE_ERROR: Final[str] = (
 DEFAULT_RIDEN_BAUDRATE: Final[int] = 115200
 DEFAULT_RIDEN_ADDRESS: Final[int] = 1
 
-Riden = cast(type[Any], riden.Riden)
+Riden = cast(type[Any], riden.Riden)  # type: ignore[attr-defined]
 
 
 class RidenPowerSupply(PowerSupply):

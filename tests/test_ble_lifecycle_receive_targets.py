@@ -24,10 +24,10 @@ from meshtastic.interfaces.ble.lifecycle_primitives import (
     _DisconnectPlan,
     _OwnershipSnapshot,
 )
+from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
 from meshtastic.interfaces.ble.lifecycle_shutdown_runtime import (
     BLEShutdownLifecycleCoordinator,
 )
-from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleService
 from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryService
 from meshtastic.interfaces.ble.state import ConnectionState
 from tests.test_ble_interface_fixtures import DummyClient, _build_interface
@@ -976,8 +976,8 @@ def test_shutdown_close_timeout_budget_rolls_forward_to_later_stages(
     coordinator._close_mesh_interface = _close_mesh_interface
     coordinator._unregister_exit_handler = lambda: None
     coordinator._shutdown_client = _shutdown_client
-    coordinator._cleanup_thread_coordinator = lambda *, timeout=None: captured.setdefault(
-        "cleanup_timeout", timeout
+    coordinator._cleanup_thread_coordinator = (
+        lambda *, timeout=None: captured.setdefault("cleanup_timeout", timeout)
     )
     coordinator._finalize_close_state = lambda: None
 

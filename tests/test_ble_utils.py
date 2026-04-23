@@ -11,24 +11,40 @@ pytest.importorskip("bleak")
 import meshtastic.interfaces.ble.utils as ble_utils
 from meshtastic.ble_interface import (
     BLEAddressMismatchError as CompatBLEAddressMismatchError,
-    BLEConnectionSuppressedError as CompatBLEConnectionSuppressedError,
-    BLEConnectionTimeoutError as CompatBLEConnectionTimeoutError,
-    BLEDBusTransportError as CompatBLEDBusTransportError,
-    BLEDeviceNotFoundError as CompatBLEDeviceNotFoundError,
-    BLEDiscoveryError as CompatBLEDiscoveryError,
-    MeshtasticBLEError as CompatMeshtasticBLEError,
-    sanitize_address as compat_sanitize_address,
 )
+from meshtastic.ble_interface import (
+    BLEConnectionSuppressedError as CompatBLEConnectionSuppressedError,
+)
+from meshtastic.ble_interface import (
+    BLEConnectionTimeoutError as CompatBLEConnectionTimeoutError,
+)
+from meshtastic.ble_interface import (
+    BLEDBusTransportError as CompatBLEDBusTransportError,
+)
+from meshtastic.ble_interface import (
+    BLEDeviceNotFoundError as CompatBLEDeviceNotFoundError,
+)
+from meshtastic.ble_interface import BLEDiscoveryError as CompatBLEDiscoveryError
+from meshtastic.ble_interface import MeshtasticBLEError as CompatMeshtasticBLEError
+from meshtastic.ble_interface import sanitize_address as compat_sanitize_address
 from meshtastic.interfaces.ble import (
     BLEAddressMismatchError as PublicBLEAddressMismatchError,
-    BLEConnectionSuppressedError as PublicBLEConnectionSuppressedError,
-    BLEConnectionTimeoutError as PublicBLEConnectionTimeoutError,
-    BLEDBusTransportError as PublicBLEDBusTransportError,
-    BLEDeviceNotFoundError as PublicBLEDeviceNotFoundError,
-    BLEDiscoveryError as PublicBLEDiscoveryError,
-    MeshtasticBLEError as PublicMeshtasticBLEError,
-    sanitize_address as public_sanitize_address,
 )
+from meshtastic.interfaces.ble import (
+    BLEConnectionSuppressedError as PublicBLEConnectionSuppressedError,
+)
+from meshtastic.interfaces.ble import (
+    BLEConnectionTimeoutError as PublicBLEConnectionTimeoutError,
+)
+from meshtastic.interfaces.ble import (
+    BLEDBusTransportError as PublicBLEDBusTransportError,
+)
+from meshtastic.interfaces.ble import (
+    BLEDeviceNotFoundError as PublicBLEDeviceNotFoundError,
+)
+from meshtastic.interfaces.ble import BLEDiscoveryError as PublicBLEDiscoveryError
+from meshtastic.interfaces.ble import MeshtasticBLEError as PublicMeshtasticBLEError
+from meshtastic.interfaces.ble import sanitize_address as public_sanitize_address
 from meshtastic.interfaces.ble.utils import (
     resolve_ble_module,
     with_timeout,
