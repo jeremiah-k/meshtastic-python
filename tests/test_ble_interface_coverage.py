@@ -226,7 +226,7 @@ def test_ble_address_property_prefers_active_client_address() -> None:
 
 
 def test_ble_address_property_falls_back_to_interface_address() -> None:
-    """ble_address should fall back to the interface-level address when no client is active."""
+    """ble_address and bleAddress should fall back to the interface-level address when no client is active."""
     iface = _build_minimal_interface()
     iface.client = None
     iface.address = "AA:BB:CC:DD:EE:FF"
@@ -254,7 +254,7 @@ def test_ble_address_property_returns_none_for_non_address_identifier() -> None:
 
 
 def test_ble_address_property_returns_valid_mac_fallback() -> None:
-    """bleAddress should return the interface address when it is a valid BLE MAC."""
+    """bleAddress and ble_address should return the interface address when it is a valid BLE MAC."""
     iface = _build_minimal_interface()
     iface.client = None
     iface.address = "AA:BB:CC:DD:EE:FF"
@@ -281,7 +281,7 @@ def test_close_rejects_invalid_timeout_type() -> None:
     """close(timeout=...) should validate timeout input shape."""
     iface = _build_minimal_interface()
 
-    with pytest.raises(BLEInterface.BLEError, match="close\(\) timeout"):
+    with pytest.raises(BLEInterface.BLEError, match=r"close\(\) timeout"):
         iface.close(timeout=cast(Any, "invalid"))
 
 

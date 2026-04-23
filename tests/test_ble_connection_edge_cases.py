@@ -2025,9 +2025,9 @@ def test_retry_direct_connect_skips_cleanup_on_successful_return() -> None:
     )
 
     # Stub all downstream steps so the retry path succeeds
-    orchestrator._raise_if_interface_closing = lambda: None
-    orchestrator._validate_explicit_address_connection = lambda **kwargs: None
-    orchestrator._finalize_connection = lambda *args, **kwargs: None
+    orchestrator._raise_if_interface_closing = lambda: None  # type: ignore[method-assign]
+    orchestrator._validate_explicit_address_connection = lambda **kwargs: None  # type: ignore[method-assign]
+    orchestrator._finalize_connection = lambda *args, **kwargs: None  # type: ignore[method-assign]
 
     result = orchestrator._retry_direct_connect_after_cleanup(
         target_address="AA:BB:CC:DD:EE:FF",
