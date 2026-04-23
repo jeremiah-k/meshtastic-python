@@ -1458,6 +1458,19 @@ class Config(_message.Message):
             """
             ITU Region 2 / 3 Amateur Radio 2m band (144-148 MHz)
             """
+            EU_866: Config.LoRaConfig._RegionCode.ValueType  # 29
+            """
+            EU 866MHz band (Band no. 47b of 2006/771/EC and subsequent amendments) for Non-specific short-range devices (SRD)
+            """
+            EU_874: Config.LoRaConfig._RegionCode.ValueType  # 30
+            """
+            EU 874MHz and 917MHz bands (Band no. 1 and 4 of 2022/172/EC and subsequent amendments) for Non-specific short-range devices (SRD)
+            """
+            EU_917: Config.LoRaConfig._RegionCode.ValueType  # 31
+            EU_N_868: Config.LoRaConfig._RegionCode.ValueType  # 32
+            """
+            EU 868MHz band, with narrow presets
+            """
 
         class RegionCode(_RegionCode, metaclass=_RegionCodeEnumTypeWrapper): ...
         UNSET: Config.LoRaConfig.RegionCode.ValueType  # 0
@@ -1576,6 +1589,19 @@ class Config(_message.Message):
         """
         ITU Region 2 / 3 Amateur Radio 2m band (144-148 MHz)
         """
+        EU_866: Config.LoRaConfig.RegionCode.ValueType  # 29
+        """
+        EU 866MHz band (Band no. 47b of 2006/771/EC and subsequent amendments) for Non-specific short-range devices (SRD)
+        """
+        EU_874: Config.LoRaConfig.RegionCode.ValueType  # 30
+        """
+        EU 874MHz and 917MHz bands (Band no. 1 and 4 of 2022/172/EC and subsequent amendments) for Non-specific short-range devices (SRD)
+        """
+        EU_917: Config.LoRaConfig.RegionCode.ValueType  # 31
+        EU_N_868: Config.LoRaConfig.RegionCode.ValueType  # 32
+        """
+        EU 868MHz band, with narrow presets
+        """
 
         class _ModemPreset:
             ValueType = _typing.NewType("ValueType", _builtins.int)
@@ -1632,6 +1658,31 @@ class Config(_message.Message):
             Long Range - Turbo
             This preset performs similarly to LongFast, but with 500Khz bandwidth.
             """
+            LITE_FAST: Config.LoRaConfig._ModemPreset.ValueType  # 10
+            """
+            Lite Fast
+            Medium range preset optimized for EU 866MHz SRD band with 125kHz bandwidth.
+            Comparable link budget to MEDIUM_FAST but compliant with Band no. 47b of 2006/771/EC.
+            """
+            LITE_SLOW: Config.LoRaConfig._ModemPreset.ValueType  # 11
+            """
+            Lite Slow
+            Medium-to-moderate range preset optimized for EU 866MHz SRD band with 125kHz bandwidth.
+            Comparable link budget to LONG_FAST but compliant with Band no. 47b of 2006/771/EC.
+            """
+            NARROW_FAST: Config.LoRaConfig._ModemPreset.ValueType  # 12
+            """
+            Narrow Fast
+            Medium-to-moderate range preset optimized for EU 868MHz band with 62.5kHz bandwidth.
+            Comparable link budget to SHORT_SLOW, but with half the data rate.
+            Intended to avoid interference with other devices.
+            """
+            NARROW_SLOW: Config.LoRaConfig._ModemPreset.ValueType  # 13
+            """
+            Narrow Slow
+            Moderate range preset optimized for EU 868MHz band with 62.5kHz bandwidth.
+            Comparable link budget and data rate to LONG_FAST.
+            """
 
         class ModemPreset(_ModemPreset, metaclass=_ModemPresetEnumTypeWrapper):
             """
@@ -1683,6 +1734,31 @@ class Config(_message.Message):
         """
         Long Range - Turbo
         This preset performs similarly to LongFast, but with 500Khz bandwidth.
+        """
+        LITE_FAST: Config.LoRaConfig.ModemPreset.ValueType  # 10
+        """
+        Lite Fast
+        Medium range preset optimized for EU 866MHz SRD band with 125kHz bandwidth.
+        Comparable link budget to MEDIUM_FAST but compliant with Band no. 47b of 2006/771/EC.
+        """
+        LITE_SLOW: Config.LoRaConfig.ModemPreset.ValueType  # 11
+        """
+        Lite Slow
+        Medium-to-moderate range preset optimized for EU 866MHz SRD band with 125kHz bandwidth.
+        Comparable link budget to LONG_FAST but compliant with Band no. 47b of 2006/771/EC.
+        """
+        NARROW_FAST: Config.LoRaConfig.ModemPreset.ValueType  # 12
+        """
+        Narrow Fast
+        Medium-to-moderate range preset optimized for EU 868MHz band with 62.5kHz bandwidth.
+        Comparable link budget to SHORT_SLOW, but with half the data rate.
+        Intended to avoid interference with other devices.
+        """
+        NARROW_SLOW: Config.LoRaConfig.ModemPreset.ValueType  # 13
+        """
+        Narrow Slow
+        Moderate range preset optimized for EU 868MHz band with 62.5kHz bandwidth.
+        Comparable link budget and data rate to LONG_FAST.
         """
 
         class _FEM_LNA_Mode:
