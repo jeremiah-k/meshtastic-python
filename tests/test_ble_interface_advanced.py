@@ -861,8 +861,16 @@ def test_rapid_connect_disconnect_stress_test(
         baseline_attempts: Sequence["StressTestClient"],
         baseline_clients: Sequence["StressTestClient"],
         timeout: float = 2.0,
-    ) -> tuple[list["StressTestClient"], list["StressTestClient"]]:
-        """Wait until latest successful reconnect attempt owns iface.client."""
+    ) -> tuple[object | None, list["StressTestClient"], list["StressTestClient"]]:
+        """Wait until latest successful reconnect attempt owns iface.client.
+
+        Returns
+        -------
+        tuple[object | None, list[StressTestClient], list[StressTestClient]]
+            The client observed under ``_state_lock`` (captured atomically to
+            avoid a TOCTOU race on the caller side), the list of attempted
+            clients, and the list of successfully created clients.
+        """
 
         def _snapshot_stress_state() -> (
             tuple[object | None, list["StressTestClient"], list["StressTestClient"]]
@@ -903,10 +911,10 @@ def test_rapid_connect_disconnect_stress_test(
                     for baseline_client in baseline_clients
                 )
             ):
-                return observed_attempts, observed_clients
+                return observed_client, observed_attempts, observed_clients
             time.sleep(0.01)
-        _, final_attempts, final_clients = _snapshot_stress_state()
-        return final_attempts, final_clients
+        final_client, final_attempts, final_clients = _snapshot_stress_state()
+        return final_client, final_attempts, final_clients
 
     # Test 1: Rapid disconnect callbacks
     with create_interface_with_auto_reconnect() as (iface, client):
@@ -964,7 +972,7 @@ def test_rapid_connect_disconnect_stress_test(
             kwargs == {"pair": True, "connect_timeout": 3.5}
             for kwargs in reconnect_kwargs
         )
-        attempted_clients, republished_clients = _wait_for_latest_stress_client(
+        observed_client, attempted_clients, republished_clients = _wait_for_latest_stress_client(
             iface,
             baseline_attempts=baseline_attempts,
             baseline_clients=baseline_client_objects,
@@ -975,7 +983,7 @@ def test_rapid_connect_disconnect_stress_test(
             republished_clients,
         )
         assert latest_successful_attempt is not None
-        assert cast(object, iface.client) is latest_successful_attempt
+        assert observed_client is latest_successful_attempt
 
     # Test 2: Concurrent connect/disconnect operations
     with create_interface_with_auto_reconnect() as (iface2, client2):
@@ -1035,7 +1043,7 @@ def test_rapid_connect_disconnect_stress_test(
             kwargs == {"pair": False, "connect_timeout": 7.0}
             for kwargs in reconnect_kwargs
         )
-        attempted_clients, republished_clients = _wait_for_latest_stress_client(
+        observed_client2, attempted_clients, republished_clients = _wait_for_latest_stress_client(
             iface2,
             baseline_attempts=baseline_attempts,
             baseline_clients=baseline_client_objects,
@@ -1046,7 +1054,7 @@ def test_rapid_connect_disconnect_stress_test(
             republished_clients,
         )
         assert latest_successful_attempt is not None
-        assert cast(object, iface2.client) is latest_successful_attempt
+        assert observed_client2 is latest_successful_attempt
 
     # Test 3: Stress test with connection failures
     with create_interface_with_auto_reconnect() as (iface3, _client3):
