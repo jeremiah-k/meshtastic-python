@@ -74,6 +74,11 @@ class BLEDiscoveryError(MeshtasticBLEError):
 class BLEDeviceNotFoundError(BLEDiscoveryError, BleakDeviceNotFoundError):
     """Raised when a specific BLE target cannot be located."""
 
+    @property
+    def identifier(self) -> str | None:
+        """Return the requested identifier for BleakDeviceNotFoundError compatibility."""
+        return self.requested_identifier
+
 
 class BLEConnectionSuppressedError(MeshtasticBLEError):
     """Raised when duplicate-connect gating suppresses a connection attempt."""

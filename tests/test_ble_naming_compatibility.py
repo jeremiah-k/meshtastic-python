@@ -137,3 +137,34 @@ def test_ble_find_device_shim_is_silent_and_delegates() -> None:
     delegate.assert_called_once_with("abc")
     assert result is delegate.return_value
     assert not any(issubclass(w.category, DeprecationWarning) for w in caught)
+
+
+def test_ble_interface_ble_address_shim_delegates_to_ble_address() -> None:
+    """ble_address should delegate to bleAddress and remain silent."""
+    iface = object.__new__(BLEInterface)
+    iface.address = "AA:BB:CC:DD:EE:FF"
+    iface.client = None
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        camel = iface.bleAddress
+        snake = iface.ble_address
+
+    assert camel == "AA:BB:CC:DD:EE:FF"
+    assert snake is camel
+    assert not any(issubclass(w.category, DeprecationWarning) for w in caught)
+
+
+def test_ble_client_ble_address_shim_delegates_to_ble_address() -> None:
+    """ble_address should delegate to bleAddress on BLEClient and remain silent."""
+    client = object.__new__(BLEClient)
+    client.address = "11:22:33:44:55:66"
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        camel = client.bleAddress
+        snake = client.ble_address
+
+    assert camel == "11:22:33:44:55:66"
+    assert snake is camel
+    assert not any(issubclass(w.category, DeprecationWarning) for w in caught)

@@ -121,3 +121,43 @@ def test_typed_ble_exceptions_exported_from_public_and_compat_surfaces() -> None
     assert PublicBLEConnectionTimeoutError is CompatBLEConnectionTimeoutError
     assert PublicBLEAddressMismatchError is CompatBLEAddressMismatchError
     assert PublicBLEDBusTransportError is CompatBLEDBusTransportError
+
+
+@pytest.mark.unit
+def test_ble_device_not_found_error_identifier_property() -> None:
+    """BLEDeviceNotFoundError should expose .identifier for BleakDeviceNotFoundError compat."""
+    err = PublicBLEDeviceNotFoundError(
+        "not found",
+        requested_identifier="AA:BB:CC:DD:EE:FF",
+    )
+    assert err.identifier == "AA:BB:CC:DD:EE:FF"
+    assert err.requested_identifier == "AA:BB:CC:DD:EE:FF"
+
+
+@pytest.mark.unit
+def test_ble_device_not_found_error_catchable_as_bleak_device_not_found() -> None:
+    """BLEDeviceNotFoundError should be catchable as BleakDeviceNotFoundError."""
+    from bleak.exc import BleakDeviceNotFoundError
+
+    err = PublicBLEDeviceNotFoundError("not found")
+    assert isinstance(err, BleakDeviceNotFoundError)
+
+
+@pytest.mark.unit
+def test_ble_connection_timeout_error_is_instance_of_timeout_error() -> None:
+    """BLEConnectionTimeoutError should be catchable as TimeoutError."""
+    err = PublicBLEConnectionTimeoutError("timed out")
+    assert isinstance(err, TimeoutError)
+
+
+@pytest.mark.unit
+def test_ble_errors_are_instance_of_ble_interface_ble_error() -> None:
+    """All new BLE exceptions should be catchable as BLEInterface.BLEError."""
+    from meshtastic.interfaces.ble import BLEInterface
+
+    assert isinstance(PublicBLEDeviceNotFoundError("x"), BLEInterface.BLEError)
+    assert isinstance(PublicBLEConnectionTimeoutError("x"), BLEInterface.BLEError)
+    assert isinstance(PublicBLEConnectionSuppressedError("x"), BLEInterface.BLEError)
+    assert isinstance(PublicBLEAddressMismatchError("x"), BLEInterface.BLEError)
+    assert isinstance(PublicBLEDBusTransportError("x"), BLEInterface.BLEError)
+    assert isinstance(PublicBLEDiscoveryError("x"), BLEInterface.BLEError)

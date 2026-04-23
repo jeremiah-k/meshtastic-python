@@ -261,10 +261,42 @@ def test_close_rejects_invalid_timeout_type() -> None:
     """close(timeout=...) should validate timeout input shape."""
     iface = _build_minimal_interface()
 
-    with pytest.raises(BLEInterface.BLEError, match="close\\(\\) timeout"):
+    with pytest.raises(BLEInterface.BLEError, match="close\(\) timeout"):
         iface.close(timeout=cast(Any, "invalid"))
 
 
+def test_close_is_idempotent_across_repeated_calls() -> None:
+    """Multiple close(timeout=...) calls should not raise or duplicate work."""
+    iface = _build_minimal_interface()
+    close_calls: list[dict[str, object]] = []
+    iface._get_lifecycle_controller = lambda: SimpleNamespace(
+        _close=lambda **kwargs: close_calls.append(dict(kwargs))
+    )
+
+    iface.close(timeout=2.0)
+    iface.close(timeout=2.0)
+    iface.close()
+
+    assert len(close_calls) == 3
+    assert close_calls[0]["timeout"] == 2.0
+    assert close_calls[1]["timeout"] == 2.0
+    assert close_calls[2]["timeout"] is None
+
+
+def test_close_timeout_budget_propagates_to_shutdown_stages() -> None:
+    """close(timeout=...) should propagate the total budget to lifecycle shutdown."""
+    iface = _build_minimal_interface()
+    budgets: list[float | None] = []
+    iface._get_lifecycle_controller = lambda: SimpleNamespace(
+        _close=lambda *, management_shutdown_wait_timeout=5.0, management_wait_poll_seconds=0.5, timeout=None: budgets.append(timeout)
+    )
+
+    iface.close(timeout=5.0)
+    assert budgets == [5.0]
+
+
+# ============================================================================
+# Error Handling Tests
 # ============================================================================
 # Error Handling Tests
 # ============================================================================

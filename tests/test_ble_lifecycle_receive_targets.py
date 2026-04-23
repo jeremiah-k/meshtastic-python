@@ -161,70 +161,70 @@ def test_lifecycle_thread_dispatch_helpers_cover_legacy_and_missing(
 ) -> None:
     """Lifecycle thread dispatch helpers should exercise public/legacy/missing paths."""
     iface = _make_iface(monkeypatch)
-
-    created_thread = SimpleNamespace(name="created-thread")
-    iface.thread_coordinator = SimpleNamespace(
-        create_thread=lambda **_kwargs: created_thread,
-        _create_thread=None,
-    )
-    assert (
-        BLELifecycleService._thread_create_thread(
-            iface,
-            target=lambda: None,
-            name="name",
-            daemon=True,
+    try:
+        created_thread = SimpleNamespace(name="created-thread")
+        iface.thread_coordinator = SimpleNamespace(
+            create_thread=lambda **_kwargs: created_thread,
+            _create_thread=None,
         )
-        is created_thread
-    )
-
-    iface.thread_coordinator = SimpleNamespace()
-    with pytest.raises(AttributeError):
-        BLELifecycleService._thread_create_thread(
-            iface,
-            target=lambda: None,
-            name="name",
-            daemon=True,
+        assert (
+            BLELifecycleService._thread_create_thread(
+                iface,
+                target=lambda: None,
+                name="name",
+                daemon=True,
+            )
+            is created_thread
         )
 
-    started: list[object] = []
-    iface.thread_coordinator = SimpleNamespace(
-        _start_thread=lambda thread: started.append(thread),
-    )
-    marker_thread = SimpleNamespace(name="legacy-start")
-    BLELifecycleService._thread_start_thread(iface, marker_thread)
-    assert started == [marker_thread]
+        iface.thread_coordinator = SimpleNamespace()
+        with pytest.raises(AttributeError):
+            BLELifecycleService._thread_create_thread(
+                iface,
+                target=lambda: None,
+                name="name",
+                daemon=True,
+            )
 
-    iface.thread_coordinator = SimpleNamespace()
-    with pytest.raises(AttributeError):
+        started: list[object] = []
+        iface.thread_coordinator = SimpleNamespace(
+            _start_thread=lambda thread: started.append(thread),
+        )
+        marker_thread = SimpleNamespace(name="legacy-start")
         BLELifecycleService._thread_start_thread(iface, marker_thread)
+        assert started == [marker_thread]
 
-    join_calls: list[float | None] = []
-    iface.thread_coordinator = SimpleNamespace()
-    BLELifecycleService._thread_join_thread(
-        iface,
-        SimpleNamespace(join=lambda timeout=None: join_calls.append(timeout)),
-        timeout=1.5,
-    )
-    assert join_calls == [1.5]
+        iface.thread_coordinator = SimpleNamespace()
+        with pytest.raises(AttributeError):
+            BLELifecycleService._thread_start_thread(iface, marker_thread)
 
-    iface.thread_coordinator = SimpleNamespace(
-        _set_event=lambda event_name: started.append(event_name),
-        _clear_events=lambda *names: started.extend(names),
-        _wake_waiting_threads=lambda *names: started.extend(names),
-    )
-    BLELifecycleService._thread_set_event(iface, "event-a")
-    BLELifecycleService._thread_clear_events(iface, "event-b")
-    BLELifecycleService._thread_wake_waiting_threads(iface, "event-c")
-    assert "event-a" in started
-    assert "event-b" in started
-    assert "event-c" in started
+        join_calls: list[float | None] = []
+        iface.thread_coordinator = SimpleNamespace()
+        BLELifecycleService._thread_join_thread(
+            iface,
+            SimpleNamespace(join=lambda timeout=None: join_calls.append(timeout)),
+            timeout=1.5,
+        )
+        assert join_calls == [1.5]
 
-    iface.thread_coordinator = SimpleNamespace()
-    BLELifecycleService._thread_set_event(iface, "missing")
-    BLELifecycleService._thread_clear_events(iface, "missing")
-    BLELifecycleService._thread_wake_waiting_threads(iface, "missing")
+        iface.thread_coordinator = SimpleNamespace(
+            _set_event=lambda event_name: started.append(event_name),
+            _clear_events=lambda *names: started.extend(names),
+            _wake_waiting_threads=lambda *names: started.extend(names),
+        )
+        BLELifecycleService._thread_set_event(iface, "event-a")
+        BLELifecycleService._thread_clear_events(iface, "event-b")
+        BLELifecycleService._thread_wake_waiting_threads(iface, "event-c")
+        assert "event-a" in started
+        assert "event-b" in started
+        assert "event-c" in started
 
-    iface.close()
+        iface.thread_coordinator = SimpleNamespace()
+        BLELifecycleService._thread_set_event(iface, "missing")
+        BLELifecycleService._thread_clear_events(iface, "missing")
+        BLELifecycleService._thread_wake_waiting_threads(iface, "missing")
+    finally:
+        iface.close()
 
 
 def test_lifecycle_start_receive_and_schedule_auto_reconnect_branches(
@@ -232,61 +232,62 @@ def test_lifecycle_start_receive_and_schedule_auto_reconnect_branches(
 ) -> None:
     """Receive-thread start and reconnect scheduling should cover skip/error paths."""
     iface = _make_iface(monkeypatch)
-    with iface._state_lock:
-        iface._want_receive = True
-        iface._closed = False
-        iface._receiveThread = SimpleNamespace(
-            name="existing",
-            ident=None,
-            is_alive=lambda: False,
+    try:
+        with iface._state_lock:
+            iface._want_receive = True
+            iface._closed = False
+            iface._receiveThread = SimpleNamespace(
+                name="existing",
+                ident=None,
+                is_alive=lambda: False,
+            )
+
+        BLELifecycleService._start_receive_thread(iface, name="skip-existing")
+        with iface._state_lock:
+            iface._receiveThread = None
+
+        new_thread = SimpleNamespace(name="new-thread", ident=None, is_alive=lambda: False)
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_thread_create_thread",
+            staticmethod(lambda *_args, **_kwargs: new_thread),
         )
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_thread_start_thread",
+            staticmethod(lambda *_args, **_kwargs: (_ for _ in ()).throw(SystemExit())),
+        )
+        with pytest.raises(SystemExit):
+            BLELifecycleService._start_receive_thread(iface, name="failing-start")
+        assert iface._receiveThread is None
 
-    BLELifecycleService._start_receive_thread(iface, name="skip-existing")
-    with iface._state_lock:
-        iface._receiveThread = None
-
-    new_thread = SimpleNamespace(name="new-thread", ident=None, is_alive=lambda: False)
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_thread_create_thread",
-        staticmethod(lambda *_args, **_kwargs: new_thread),
-    )
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_thread_start_thread",
-        staticmethod(lambda *_args, **_kwargs: (_ for _ in ()).throw(SystemExit())),
-    )
-    with pytest.raises(SystemExit):
-        BLELifecycleService._start_receive_thread(iface, name="failing-start")
-    assert iface._receiveThread is None
-
-    iface.auto_reconnect = False
-    BLELifecycleService._schedule_auto_reconnect(iface)
-
-    iface.auto_reconnect = True
-    with iface._state_lock:
-        iface._closed = True
-    BLELifecycleService._schedule_auto_reconnect(iface)
-
-    with iface._state_lock:
-        iface._closed = False
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_state_manager_is_closing",
-        staticmethod(lambda _iface: True),
-    )
-    BLELifecycleService._schedule_auto_reconnect(iface)
-
-    monkeypatch.setattr(
-        BLELifecycleService,
-        "_state_manager_is_closing",
-        staticmethod(lambda _iface: False),
-    )
-    iface._reconnect_scheduler = SimpleNamespace()
-    with pytest.raises(AttributeError):
+        iface.auto_reconnect = False
         BLELifecycleService._schedule_auto_reconnect(iface)
 
-    iface.close()
+        iface.auto_reconnect = True
+        with iface._state_lock:
+            iface._closed = True
+        BLELifecycleService._schedule_auto_reconnect(iface)
+
+        with iface._state_lock:
+            iface._closed = False
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_state_manager_is_closing",
+            staticmethod(lambda _iface: True),
+        )
+        BLELifecycleService._schedule_auto_reconnect(iface)
+
+        monkeypatch.setattr(
+            BLELifecycleService,
+            "_state_manager_is_closing",
+            staticmethod(lambda _iface: False),
+        )
+        iface._reconnect_scheduler = SimpleNamespace()
+        with pytest.raises(AttributeError):
+            BLELifecycleService._schedule_auto_reconnect(iface)
+    finally:
+        iface.close()
 
 
 def test_lifecycle_receive_shim_preserves_method_scoped_collaborators(
@@ -994,6 +995,7 @@ def test_shutdown_close_timeout_budget_rolls_forward_to_later_stages(
     assert captured["disconnect_notification_wait_timeout"] == pytest.approx(0.001)
     assert captured["unsubscribe_timeout"] == pytest.approx(0.001)
     assert captured["cleanup_timeout"] == pytest.approx(0.001)
+    iface.close()
 
 
 def test_close_mesh_interface_timeout_limits_blocking_wait(
@@ -1023,6 +1025,7 @@ def test_close_mesh_interface_timeout_limits_blocking_wait(
 
     assert close_called.is_set()
     assert elapsed < 0.1
+    iface.close()
 
 
 def test_lifecycle_shutdown_receive_thread_skips_self_join_by_ident(
@@ -2918,3 +2921,91 @@ def test_receive_remaining_branches(
         iface._shutdown_event = threading.Event()
     finally:
         iface.close()
+
+
+def test_shutdown_disconnect_client_fallback_on_unsupported_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_shutdown_client should fallback when disconnect timeout is unsupported."""
+    iface = _make_iface(monkeypatch)
+    coordinator = BLEShutdownLifecycleCoordinator(iface)
+    calls: list[tuple[object, dict[str, object]]] = []
+
+    def _disconnect_and_close_client(client: object, *, timeout: float | None = None) -> None:
+        if timeout is not None:
+            raise TypeError(
+                "_disconnect_and_close_client() got an unexpected keyword argument 'timeout'"
+            )
+        calls.append((client, {"timeout": timeout}))
+
+    iface._disconnect_and_close_client = _disconnect_and_close_client  # type: ignore[assignment]
+    monkeypatch.setattr(
+        coordinator,
+        "_await_management_shutdown",
+        lambda **kwargs: True,
+    )
+    coordinator._shutdown_client(
+        management_wait_timed_out=True,
+        client_disconnect_timeout=1.0,
+        disconnect_notification_wait_timeout=0.5,
+        unsubscribe_timeout=0.1,
+    )
+    assert len(calls) == 1
+    assert calls[0][1]["timeout"] is None
+
+
+def test_shutdown_wait_for_disconnect_notifications_fallback_on_unsupported_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_shutdown_client should fallback when wait timeout is unsupported."""
+    iface = _make_iface(monkeypatch)
+    coordinator = BLEShutdownLifecycleCoordinator(iface)
+    calls: list[dict[str, object]] = []
+
+    def _wait_for_disconnect_notifications(*, timeout: float | None = None) -> None:
+        if timeout is not None:
+            raise TypeError(
+                "_wait_for_disconnect_notifications() got an unexpected keyword argument 'timeout'"
+            )
+        calls.append({"timeout": timeout})
+
+    iface._wait_for_disconnect_notifications = _wait_for_disconnect_notifications  # type: ignore[assignment]
+    monkeypatch.setattr(
+        coordinator,
+        "_await_management_shutdown",
+        lambda **kwargs: True,
+    )
+    coordinator._shutdown_client(
+        management_wait_timed_out=True,
+        client_disconnect_timeout=1.0,
+        disconnect_notification_wait_timeout=0.5,
+        unsubscribe_timeout=0.1,
+    )
+    assert len(calls) == 1
+    assert calls[0]["timeout"] is None
+
+
+def test_shutdown_wait_for_disconnect_notifications_propagates_unrelated_type_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_shutdown_client should NOT swallow unrelated TypeError from wait."""
+    iface = _make_iface(monkeypatch)
+    coordinator = BLEShutdownLifecycleCoordinator(iface)
+
+    def _raise_unrelated(*, timeout: float | None = None) -> None:
+        del timeout
+        raise TypeError("takes 1 positional argument but 2 were given")
+
+    iface._wait_for_disconnect_notifications = _raise_unrelated  # type: ignore[assignment]
+    monkeypatch.setattr(
+        coordinator,
+        "_await_management_shutdown",
+        lambda **kwargs: True,
+    )
+    with pytest.raises(TypeError, match="takes 1 positional argument"):
+        coordinator._shutdown_client(
+            management_wait_timed_out=True,
+            client_disconnect_timeout=1.0,
+            disconnect_notification_wait_timeout=0.5,
+            unsubscribe_timeout=0.1,
+        )

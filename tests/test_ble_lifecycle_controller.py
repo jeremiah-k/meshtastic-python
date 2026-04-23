@@ -651,8 +651,12 @@ class TestBLELifecycleControllerClientManagement:
         self,
     ) -> None:
         """_disconnect_and_close_client should delegate to _disconnect coordinator."""
-        calls: list[object] = []
-        mock_disconnect = SimpleNamespace(disconnect_and_close_client=calls.append)
+        calls: list[tuple[object, float | None]] = []
+
+        def _capture_disconnect(client: object, *, timeout: float | None = None) -> None:
+            calls.append((client, timeout))
+
+        mock_disconnect = SimpleNamespace(disconnect_and_close_client=_capture_disconnect)
         mock_iface = SimpleNamespace()
         controller = BLELifecycleController(mock_iface)
         controller._disconnect = mock_disconnect  # type: ignore[assignment]
@@ -660,7 +664,100 @@ class TestBLELifecycleControllerClientManagement:
         mock_client = SimpleNamespace()
         controller._disconnect_and_close_client(mock_client)
 
-        assert calls == [mock_client]
+        assert calls == [(mock_client, None)]
+
+    def test_close_fallback_when_timeout_kwarg_unsupported(self) -> None:
+        """_close should fallback to no-timeout call when timeout is rejected."""
+        calls: list[dict[str, object]] = []
+
+        def _raise_on_timeout(
+            *,
+            management_shutdown_wait_timeout: float,
+            management_wait_poll_seconds: float,
+            timeout: float | None = None,
+        ) -> None:
+            if timeout is not None:
+                raise TypeError("close() got an unexpected keyword argument 'timeout'")
+            calls.append({"timeout": timeout, "fallback": True})
+
+        mock_shutdown = SimpleNamespace(close=_raise_on_timeout)
+        mock_iface = SimpleNamespace()
+        controller = BLELifecycleController(mock_iface)
+        controller._shutdown = mock_shutdown  # type: ignore[assignment]
+
+        controller._close(
+            management_shutdown_wait_timeout=5.0,
+            management_wait_poll_seconds=0.5,
+            timeout=1.25,
+        )
+
+        assert len(calls) == 1
+        assert calls[0]["fallback"] is True
+        assert calls[0]["timeout"] is None
+
+    def test_close_propagates_unrelated_type_error(self) -> None:
+        """_close should NOT swallow unrelated TypeError during shutdown."""
+
+        def _raise_unrelated(
+            *,
+            management_shutdown_wait_timeout: float,
+            management_wait_poll_seconds: float,
+            timeout: float | None = None,
+        ) -> None:
+            del management_shutdown_wait_timeout, management_wait_poll_seconds, timeout
+            raise TypeError("takes 1 positional argument but 2 were given")
+
+        mock_shutdown = SimpleNamespace(close=_raise_unrelated)
+        mock_iface = SimpleNamespace()
+        controller = BLELifecycleController(mock_iface)
+        controller._shutdown = mock_shutdown  # type: ignore[assignment]
+
+        with pytest.raises(TypeError, match="takes 1 positional argument"):
+            controller._close(
+                management_shutdown_wait_timeout=5.0,
+                management_wait_poll_seconds=0.5,
+                timeout=1.25,
+            )
+
+    def test_disconnect_and_close_client_fallback_when_timeout_unsupported(self) -> None:
+        """_disconnect_and_close_client should fallback when timeout is rejected."""
+        calls: list[tuple[object, ...]] = []
+
+        def _raise_on_timeout(client: object, *, timeout: float | None = None) -> None:
+            if timeout is not None:
+                raise TypeError(
+                    "disconnect_and_close_client() got an unexpected keyword argument 'timeout'"
+                )
+            calls.append((client, timeout))
+
+        mock_disconnect = SimpleNamespace(disconnect_and_close_client=_raise_on_timeout)
+        mock_iface = SimpleNamespace()
+        controller = BLELifecycleController(mock_iface)
+        controller._disconnect = mock_disconnect  # type: ignore[assignment]
+
+        mock_client = SimpleNamespace()
+        controller._disconnect_and_close_client(mock_client, timeout=3.0)
+
+        assert len(calls) == 1
+        assert calls[0] == (mock_client, None)
+
+    def test_disconnect_and_close_client_propagates_unrelated_type_error(self) -> None:
+        """_disconnect_and_close_client should NOT swallow unrelated TypeError."""
+
+        def _raise_unrelated(client: object, *, timeout: float | None = None) -> None:
+            del client, timeout
+            raise TypeError("takes 1 positional argument but 2 were given")
+
+        mock_disconnect = SimpleNamespace(
+            disconnect_and_close_client=_raise_unrelated
+        )
+        mock_iface = SimpleNamespace()
+        controller = BLELifecycleController(mock_iface)
+        controller._disconnect = mock_disconnect  # type: ignore[assignment]
+
+        mock_client = SimpleNamespace()
+        with pytest.raises(TypeError, match="takes 1 positional argument"):
+            controller._disconnect_and_close_client(mock_client, timeout=3.0)
 
     def test_has_ever_connected_session_delegates_to_ownership_coordinator(
         self,

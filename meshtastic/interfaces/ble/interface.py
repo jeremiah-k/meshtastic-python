@@ -1069,7 +1069,7 @@ class BLEInterface(MeshInterface):
         return cast(str | None, bleak_address or getattr(client, "address", None))
 
     @property
-    def ble_address(self) -> str | None:
+    def bleAddress(self) -> str | None:
         """Return the best-known BLE address for the active interface client."""
         client = getattr(self, "client", None)
         active_client_address = self._extract_client_address(client)
@@ -1077,6 +1077,12 @@ class BLEInterface(MeshInterface):
             return active_client_address
         interface_address = getattr(self, "address", None)
         return interface_address if isinstance(interface_address, str) else None
+
+    # COMPAT_STABLE_SHIM
+    @property
+    def ble_address(self) -> str | None:
+        """Compatibility shim for ``bleAddress``."""
+        return self.bleAddress
 
     def _resolve_target_address_for_management(self, address: str | None) -> str:
         """Resolve management target through the management collaborator."""

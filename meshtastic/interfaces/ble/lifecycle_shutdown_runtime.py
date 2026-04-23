@@ -26,6 +26,7 @@ from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
     _is_unconfigured_mock_member,
+    _is_unexpected_keyword_error,
     _thread_start_probe,
 )
 from meshtastic.mesh_interface import MeshInterface
@@ -607,11 +608,7 @@ class BLEShutdownLifecycleCoordinator:
                             client, timeout=client_disconnect_timeout
                         )
                     except TypeError as exc:
-                        timeout_kw_rejected = (
-                            "timeout" in str(exc).casefold()
-                            and "keyword" in str(exc).casefold()
-                        )
-                        if not timeout_kw_rejected:
+                        if not _is_unexpected_keyword_error(exc, "timeout"):
                             raise
                         iface._disconnect_and_close_client(client)
 
@@ -632,11 +629,7 @@ class BLEShutdownLifecycleCoordinator:
                     timeout=disconnect_notification_wait_timeout
                 )
             except TypeError as exc:
-                timeout_kw_rejected = (
-                    "timeout" in str(exc).casefold()
-                    and "keyword" in str(exc).casefold()
-                )
-                if not timeout_kw_rejected:
+                if not _is_unexpected_keyword_error(exc, "timeout"):
                     raise
                 iface._wait_for_disconnect_notifications()
 

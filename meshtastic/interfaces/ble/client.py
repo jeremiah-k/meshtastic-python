@@ -258,10 +258,16 @@ class BLEClient:
             self.address = bleak_address
 
     @property
-    def ble_address(self) -> str | None:
+    def bleAddress(self) -> str | None:
         """Return the best-known BLE address for this client."""
         self._sync_address_from_bleak()
         return self.address
+
+    # COMPAT_STABLE_SHIM
+    @property
+    def ble_address(self) -> str | None:
+        """Compatibility shim for ``bleAddress``."""
+        return self.bleAddress
 
     def _resolve_error_handler_hook(
         self, public_name: str, legacy_name: str

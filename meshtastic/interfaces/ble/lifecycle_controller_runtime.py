@@ -359,10 +359,7 @@ class BLELifecycleController:
                 timeout=timeout,
             )
         except TypeError as exc:
-            timeout_kw_rejected = _is_unexpected_keyword_error(exc, "timeout") or (
-                "keyword" in str(exc).casefold() and "argument" in str(exc).casefold()
-            )
-            if not timeout_kw_rejected:
+            if not _is_unexpected_keyword_error(exc, "timeout"):
                 raise
             self._shutdown.close(
                 management_shutdown_wait_timeout=management_shutdown_wait_timeout,
@@ -379,9 +376,6 @@ class BLELifecycleController:
         try:
             self._disconnect.disconnect_and_close_client(client, timeout=timeout)
         except TypeError as exc:
-            timeout_kw_rejected = _is_unexpected_keyword_error(exc, "timeout") or (
-                "keyword" in str(exc).casefold() and "argument" in str(exc).casefold()
-            )
-            if not timeout_kw_rejected:
+            if not _is_unexpected_keyword_error(exc, "timeout"):
                 raise
             self._disconnect.disconnect_and_close_client(client)
