@@ -1284,6 +1284,7 @@ class BLELifecycleService:
         *,
         management_shutdown_wait_timeout: float,
         management_wait_poll_seconds: float,
+        timeout: float | None = None,
     ) -> None:
         """Shut down BLE interface resources and finalize lifecycle state.
 
@@ -1304,6 +1305,7 @@ class BLELifecycleService:
         BLEShutdownLifecycleCoordinator(iface).close(
             management_shutdown_wait_timeout=management_shutdown_wait_timeout,
             management_wait_poll_seconds=management_wait_poll_seconds,
+            timeout=timeout,
         )
 
     @staticmethod

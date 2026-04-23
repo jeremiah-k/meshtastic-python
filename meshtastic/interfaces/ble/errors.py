@@ -3,9 +3,10 @@
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Any, Callable, TypeVar
 
-from bleak.exc import BleakError
+from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
 from meshtastic.interfaces.ble.constants import logger
+from meshtastic.mesh_interface import MeshInterface
 
 # Import DecodeError from protobuf, or create a fallback if not available
 DecodeError: type[Exception]
@@ -25,9 +26,103 @@ else:
 
 
 # Public exports for BLE error handling utilities.
-__all__ = ["BLEErrorHandler", "DecodeError"]
+__all__ = [
+    "MeshtasticBLEError",
+    "BLEDiscoveryError",
+    "BLEDeviceNotFoundError",
+    "BLEConnectionSuppressedError",
+    "BLEConnectionTimeoutError",
+    "BLEAddressMismatchError",
+    "BLEDBusTransportError",
+    "BLEErrorHandler",
+    "DecodeError",
+]
 
 T = TypeVar("T")
+
+
+class MeshtasticBLEError(MeshInterface.MeshInterfaceError):
+    """Base exception for structured Meshtastic BLE failures."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        address: str | None = None,
+        requested_identifier: str | None = None,
+        timeout: float | None = None,
+        connected_address: str | None = None,
+        cause: BaseException | None = None,
+    ) -> None:
+        """Create a BLE error with optional structured context attributes."""
+        # Avoid cooperative super() here so multiple-inheritance variants
+        # (for example BleakDBusError mixins) do not require foreign
+        # constructor signatures.
+        self.message = message
+        Exception.__init__(self, message)
+        self.address = address
+        self.requested_identifier = requested_identifier
+        self.timeout = timeout
+        self.connected_address = connected_address
+        self.cause = cause
+
+
+class BLEDiscoveryError(MeshtasticBLEError):
+    """Raised when BLE discovery cannot resolve a usable target."""
+
+
+class BLEDeviceNotFoundError(BLEDiscoveryError, BleakDeviceNotFoundError):
+    """Raised when a specific BLE target cannot be located."""
+
+
+class BLEConnectionSuppressedError(MeshtasticBLEError):
+    """Raised when duplicate-connect gating suppresses a connection attempt."""
+
+
+class BLEConnectionTimeoutError(MeshtasticBLEError, TimeoutError):
+    """Raised when BLE connection setup exceeds a timeout budget."""
+
+    @classmethod
+    def from_exception(
+        cls,
+        error: BaseException,
+        *,
+        message: str,
+        requested_identifier: str | None = None,
+        timeout: float | None = None,
+    ) -> "BLEConnectionTimeoutError":
+        """Normalize a timeout failure with structured metadata."""
+        return cls(
+            message,
+            requested_identifier=requested_identifier,
+            timeout=timeout,
+            cause=error,
+        )
+
+
+class BLEAddressMismatchError(MeshtasticBLEError):
+    """Raised when explicit-address connect resolves to a different peer."""
+
+
+class BLEDBusTransportError(MeshtasticBLEError, BleakDBusError):
+    """Raised for normalized BlueZ/DBus transport failures."""
+
+    @classmethod
+    def from_exception(
+        cls,
+        error: BaseException,
+        *,
+        message: str,
+        requested_identifier: str | None = None,
+        address: str | None = None,
+    ) -> "BLEDBusTransportError":
+        """Normalize DBus transport failures while preserving the original cause."""
+        return cls(
+            message,
+            requested_identifier=requested_identifier,
+            address=address,
+            cause=error,
+        )
 
 
 class BLEErrorHandler:

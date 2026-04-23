@@ -26,7 +26,10 @@ from meshtastic.interfaces.ble.lifecycle_shutdown_runtime import (
     BLEShutdownLifecycleCoordinator,
 )
 from meshtastic.interfaces.ble.state import ConnectionState
-from meshtastic.interfaces.ble.utils import _is_unconfigured_mock_callable
+from meshtastic.interfaces.ble.utils import (
+    _is_unconfigured_mock_callable,
+    _is_unexpected_keyword_error,
+)
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
@@ -346,13 +349,39 @@ class BLELifecycleController:
         *,
         management_shutdown_wait_timeout: float,
         management_wait_poll_seconds: float,
+        timeout: float | None = None,
     ) -> None:
         """Close the bound interface and lifecycle resources."""
-        self._shutdown.close(
-            management_shutdown_wait_timeout=management_shutdown_wait_timeout,
-            management_wait_poll_seconds=management_wait_poll_seconds,
-        )
+        try:
+            self._shutdown.close(
+                management_shutdown_wait_timeout=management_shutdown_wait_timeout,
+                management_wait_poll_seconds=management_wait_poll_seconds,
+                timeout=timeout,
+            )
+        except TypeError as exc:
+            timeout_kw_rejected = _is_unexpected_keyword_error(exc, "timeout") or (
+                "keyword" in str(exc).casefold() and "argument" in str(exc).casefold()
+            )
+            if not timeout_kw_rejected:
+                raise
+            self._shutdown.close(
+                management_shutdown_wait_timeout=management_shutdown_wait_timeout,
+                management_wait_poll_seconds=management_wait_poll_seconds,
+            )
 
-    def _disconnect_and_close_client(self, client: "BLEClient") -> None:
+    def _disconnect_and_close_client(
+        self,
+        client: "BLEClient",
+        *,
+        timeout: float | None = None,
+    ) -> None:
         """Disconnect and close the provided client for the bound interface."""
-        self._disconnect.disconnect_and_close_client(client)
+        try:
+            self._disconnect.disconnect_and_close_client(client, timeout=timeout)
+        except TypeError as exc:
+            timeout_kw_rejected = _is_unexpected_keyword_error(exc, "timeout") or (
+                "keyword" in str(exc).casefold() and "argument" in str(exc).casefold()
+            )
+            if not timeout_kw_rejected:
+                raise
+            self._disconnect.disconnect_and_close_client(client)

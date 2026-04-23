@@ -9,6 +9,8 @@ import pytest
 
 pytest.importorskip("bleak")
 import meshtastic.interfaces.ble.utils as ble_utils
+from meshtastic.ble_interface import sanitize_address as compat_sanitize_address
+from meshtastic.interfaces.ble import sanitize_address as public_sanitize_address
 from meshtastic.interfaces.ble.utils import (
     resolve_ble_module,
     with_timeout,
@@ -61,3 +63,15 @@ def test_resolve_ble_module_returns_module(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(ble_utils.importlib, "import_module", lambda _name: sentinel)
 
     assert resolve_ble_module() is sentinel
+
+
+@pytest.mark.unit
+def test_sanitize_address_exported_from_ble_public_api() -> None:
+    """sanitize_address should be publicly exported from meshtastic.interfaces.ble."""
+    assert public_sanitize_address("AA-BB:CC_DD EE FF") == "aabbccddeeff"
+
+
+@pytest.mark.unit
+def test_sanitize_address_exported_from_ble_compat_surface() -> None:
+    """sanitize_address should be available through meshtastic.ble_interface."""
+    assert compat_sanitize_address("AA:BB:CC:DD:EE:FF") == "aabbccddeeff"

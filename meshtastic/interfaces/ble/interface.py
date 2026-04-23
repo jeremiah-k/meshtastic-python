@@ -85,7 +85,13 @@ from meshtastic.interfaces.ble.discovery import (
     _looks_like_ble_address,
     _parse_scan_response,
 )
-from meshtastic.interfaces.ble.errors import BLEErrorHandler
+from meshtastic.interfaces.ble.errors import (
+    BLEConnectionSuppressedError,
+    BLEDeviceNotFoundError,
+    BLEDiscoveryError,
+    BLEErrorHandler,
+    MeshtasticBLEError,
+)
 from meshtastic.interfaces.ble.gating import (
     _addr_key,
     _addr_lock_context,
@@ -154,6 +160,9 @@ _TRUST_HEX_BLOB_RE = re.compile(r"\b[0-9A-Fa-f]{16,}\b")
 _TRUST_TOKEN_RE = re.compile(r"\b[A-Za-z0-9+/=_-]{40,}\b")
 ERROR_PAIR_ON_CONNECT_BOOL: str = "pair_on_connect must be a bool."
 ERROR_PAIR_BOOL: str = "pair must be a bool when provided."
+ERROR_CLOSE_TIMEOUT: str = (
+    "close() timeout must be a finite non-negative number of seconds."
+)
 ERROR_RETRY_POLICY_MISSING_SHOULD_RETRY: str = (
     "Retry policy missing should_retry/_should_retry"
 )
@@ -210,8 +219,7 @@ class BLEInterface(MeshInterface):
     need platform-specific setup for BLE operations.
     """
 
-    class BLEError(MeshInterface.MeshInterfaceError):
-        """An exception class for BLE errors."""
+    BLEError = MeshtasticBLEError
 
     def __init__(
         self,
@@ -989,13 +997,19 @@ class BLEInterface(MeshInterface):
         if len(addressed_devices) == 0:
             if target:
                 if not _looks_like_ble_address(target):
-                    raise self.BLEError(ERROR_NO_PERIPHERALS_FOUND)
+                    raise BLEDeviceNotFoundError(
+                        ERROR_NO_PERIPHERALS_FOUND,
+                        requested_identifier=target,
+                    )
                 logger.warning(
                     "No peripherals found for %s via scan; attempting direct address connect",
                     target,
                 )
                 if not sanitized:
-                    raise self.BLEError(ERROR_ADDRESS_RESOLUTION_FAILED)
+                    raise BLEDiscoveryError(
+                        ERROR_ADDRESS_RESOLUTION_FAILED,
+                        requested_identifier=target,
+                    )
                 # Create a synthetic BLEDevice for direct address connection.
                 # This allows the connection logic to attempt direct connect without
                 # verification, supporting pre-bonded devices (e.g., via bluetoothctl).
@@ -1007,7 +1021,7 @@ class BLEInterface(MeshInterface):
                 # Use the backend-usable raw address as the BLEDevice identity.
                 # `sanitized` remains for registry/discovery key normalization.
                 return BLEDevice(target, target, {})
-            raise self.BLEError(ERROR_NO_PERIPHERALS_FOUND)
+            raise BLEDiscoveryError(ERROR_NO_PERIPHERALS_FOUND)
         if len(addressed_devices) == 1:
             return addressed_devices[0]
 
@@ -1017,10 +1031,13 @@ class BLEInterface(MeshInterface):
         if address and len(addressed_devices) > 1:
             # Build a list of found devices for the error message
             device_list = _format_device_list(addressed_devices)
-            raise self.BLEError(ERROR_MULTIPLE_DEVICES.format(address, device_list))
+            raise BLEDiscoveryError(
+                ERROR_MULTIPLE_DEVICES.format(address, device_list),
+                requested_identifier=address,
+            )
         if len(addressed_devices) > 1:
             device_list = _format_device_list(addressed_devices)
-            raise self.BLEError(ERROR_MULTIPLE_DEVICES_DISCOVERY.format(device_list))
+            raise BLEDiscoveryError(ERROR_MULTIPLE_DEVICES_DISCOVERY.format(device_list))
         raise AssertionError(UNREACHABLE_ADDRESSED_DEVICES_MSG)
 
     # COMPAT_STABLE_SHIM: historical public BLEInterface API.
@@ -1048,6 +1065,16 @@ class BLEInterface(MeshInterface):
         bleak_client = getattr(client, "bleak_client", None)
         bleak_address = getattr(bleak_client, "address", None)
         return cast(str | None, bleak_address or getattr(client, "address", None))
+
+    @property
+    def ble_address(self) -> str | None:
+        """Return the best-known BLE address for the active interface client."""
+        client = getattr(self, "client", None)
+        active_client_address = self._extract_client_address(client)
+        if active_client_address:
+            return active_client_address
+        interface_address = getattr(self, "address", None)
+        return interface_address if isinstance(interface_address, str) else None
 
     def _resolve_target_address_for_management(self, address: str | None) -> str:
         """Resolve management target through the management collaborator."""
@@ -1860,7 +1887,12 @@ class BLEInterface(MeshInterface):
             )
         return cast(BLEClient, result)
 
-    def _client_manager_safe_close_client(self, client: BLEClient) -> None:
+    def _client_manager_safe_close_client(
+        self,
+        client: BLEClient,
+        *,
+        disconnect_timeout: float | None = None,
+    ) -> None:
         # COMPAT_STABLE_SHIM: compatibility wrapper for collaborator API migration.
         """Close a BLE client via client-manager compatibility dispatch.
 
@@ -1879,14 +1911,27 @@ class BLEInterface(MeshInterface):
         AttributeError
             If no supported client-close helper exists on the manager.
         """
-        self._compat_dispatch_callable(
-            self._client_manager,
-            public_name="safe_close_client",
-            legacy_name="_safe_close_client",
-            fallback_attr_name="safe_close_client",
-            error_message=ERROR_CLIENT_MANAGER_MISSING_SAFE_CLOSE_CLIENT,
-            args=(client,),
-        )
+        try:
+            self._compat_dispatch_callable(
+                self._client_manager,
+                public_name="safe_close_client",
+                legacy_name="_safe_close_client",
+                fallback_attr_name="safe_close_client",
+                error_message=ERROR_CLIENT_MANAGER_MISSING_SAFE_CLOSE_CLIENT,
+                args=(client,),
+                kwargs={"disconnect_timeout": disconnect_timeout},
+            )
+        except TypeError as exc:
+            if not _is_unexpected_keyword_error(exc, "disconnect_timeout"):
+                raise
+            self._compat_dispatch_callable(
+                self._client_manager,
+                public_name="safe_close_client",
+                legacy_name="_safe_close_client",
+                fallback_attr_name="safe_close_client",
+                error_message=ERROR_CLIENT_MANAGER_MISSING_SAFE_CLOSE_CLIENT,
+                args=(client,),
+            )
 
     def _client_manager_update_client_reference(
         self, client: BLEClient, previous_client: BLEClient
@@ -2134,7 +2179,11 @@ class BLEInterface(MeshInterface):
                 "Suppressing duplicate connect to %s: recently connected elsewhere.",
                 connection_key or "unknown",
             )
-            raise self.BLEError(ERROR_CONNECTION_SUPPRESSED)
+            raise BLEConnectionSuppressedError(
+                ERROR_CONNECTION_SUPPRESSED,
+                address=connection_key,
+                requested_identifier=connection_key,
+            )
 
     def _get_existing_client_if_valid(
         self, normalized_request: str | None
@@ -3182,12 +3231,28 @@ class BLEInterface(MeshInterface):
 
     # COMPAT_STABLE_SHIM: historical public BLEInterface API alias.
     # Keep callable without deprecation warning.
-    def disconnect(self) -> None:
+    def disconnect(self, timeout: float | None = None) -> None:
         """Compatibility alias for callers that expect an explicit disconnect API."""
-        self.close()
+        if timeout is None:
+            self.close()
+            return
+        self.close(timeout=timeout)
 
-    def close(self) -> None:
-        """Shut down the BLE interface and release associated resources."""
+    def close(self, timeout: float | None = None) -> None:
+        """Shut down the BLE interface and release associated resources.
+
+        Parameters
+        ----------
+        timeout : float | None
+            Optional total close-budget in seconds. When ``None``, use
+            lifecycle defaults for each shutdown stage. (Default value = None)
+        """
+        if timeout is not None:
+            if isinstance(timeout, bool) or not isinstance(timeout, numbers.Real):
+                raise self.BLEError(ERROR_CLOSE_TIMEOUT)
+            if not math.isfinite(timeout) or timeout < 0:
+                raise self.BLEError(ERROR_CLOSE_TIMEOUT)
+            timeout = float(timeout)
         # Clear any provisional connecting state before shutdown to prevent
         # orphaned gate claims when connection threads are forcibly terminated.
         # This clears all provisional keys owned by this interface, not just
@@ -3212,10 +3277,18 @@ class BLEInterface(MeshInterface):
             lifecycle_controller, "_close", getattr(lifecycle_controller, "close", None)
         )
         if callable(close):
-            close(
-                management_shutdown_wait_timeout=_MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS,
-                management_wait_poll_seconds=_MANAGEMENT_CONNECT_WAIT_POLL_SECONDS,
-            )
+            close_kwargs: dict[str, float | None] = {
+                "management_shutdown_wait_timeout": _MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS,
+                "management_wait_poll_seconds": _MANAGEMENT_CONNECT_WAIT_POLL_SECONDS,
+                "timeout": timeout,
+            }
+            try:
+                close(**close_kwargs)
+            except TypeError as exc:
+                if not _is_unexpected_keyword_error(exc, "timeout"):
+                    raise
+                close_kwargs.pop("timeout", None)
+                close(**close_kwargs)
 
     def _get_publishing_thread(self) -> object:
         """Resolve the publishing-thread adapter used for compatibility events.
@@ -3242,7 +3315,9 @@ class BLEInterface(MeshInterface):
         """
         self._get_compatibility_publisher().wait_for_disconnect_notifications(timeout)
 
-    def _disconnect_and_close_client(self, client: BLEClient) -> None:
+    def _disconnect_and_close_client(
+        self, client: BLEClient, *, timeout: float | None = None
+    ) -> None:
         """Ensure the given BLE client is disconnected and its resources are released.
 
         Parameters
@@ -3257,7 +3332,12 @@ class BLEInterface(MeshInterface):
             getattr(lifecycle_controller, "disconnect_and_close_client", None),
         )
         if callable(disconnect_and_close_client):
-            disconnect_and_close_client(client)
+            try:
+                disconnect_and_close_client(client, timeout=timeout)
+            except TypeError as exc:
+                if not _is_unexpected_keyword_error(exc, "timeout"):
+                    raise
+                disconnect_and_close_client(client)
 
     def _drain_publish_queue(self, flush_event: Event) -> None:
         """Drain and run pending publish callbacks on the current thread until the queue is empty or the provided event is set.

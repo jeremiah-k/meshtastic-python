@@ -9,6 +9,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
 from meshtastic.interfaces.ble.constants import (
+    DISCONNECT_TIMEOUT_SECONDS,
     NOTIFICATION_START_TIMEOUT,
     READ_TRIGGER_EVENT,
     RECEIVE_THREAD_JOIN_TIMEOUT,
@@ -237,6 +238,7 @@ class BLEShutdownLifecycleCoordinator:
         *,
         wake_waiting_threads: Callable[..., None] | None = None,
         join_thread: Callable[..., None] | None = None,
+        join_timeout: float = RECEIVE_THREAD_JOIN_TIMEOUT,
     ) -> None:  # noqa: PLR0912,PLR0915
         """Wake and join receive thread, then clear cached thread reference.
 
@@ -334,7 +336,7 @@ class BLEShutdownLifecycleCoordinator:
             try:
                 join_runtime_thread(
                     receive_thread,
-                    timeout=RECEIVE_THREAD_JOIN_TIMEOUT,
+                    timeout=join_timeout,
                 )
             except Exception:  # noqa: BLE001 - close must remain best effort
                 logger.debug(
@@ -345,7 +347,7 @@ class BLEShutdownLifecycleCoordinator:
             if post_join_is_alive:
                 logger.warning(
                     "BLE receive thread did not exit within %.1fs",
-                    RECEIVE_THREAD_JOIN_TIMEOUT,
+                    join_timeout,
                 )
             thread_ident = post_join_ident
             thread_is_alive = post_join_is_alive
@@ -446,6 +448,9 @@ class BLEShutdownLifecycleCoordinator:
         ) = None,
         safe_cleanup: Callable[[Callable[[], object], str], None] | None = None,
         consume_disconnect_notification_state: Callable[[], bool] | None = None,
+        unsubscribe_timeout: float | None = NOTIFICATION_START_TIMEOUT,
+        disconnect_notification_wait_timeout: float | None = DISCONNECT_TIMEOUT_SECONDS,
+        client_disconnect_timeout: float | None = DISCONNECT_TIMEOUT_SECONDS,
     ) -> None:
         """Shutdown active client resources and notification publication state.
 
@@ -503,14 +508,29 @@ class BLEShutdownLifecycleCoordinator:
                 if unsubscribe_all is not None:
                     run_safe_cleanup(
                         lambda: unsubscribe_all(
-                            client, timeout=NOTIFICATION_START_TIMEOUT
+                            client, timeout=unsubscribe_timeout
                         ),
                         "notification unsubscribe_all",
                     )
                 else:
                     logger.debug("Notification manager is missing _unsubscribe_all")
+
+                def _disconnect_client_with_timeout() -> None:
+                    try:
+                        iface._disconnect_and_close_client(
+                            client, timeout=client_disconnect_timeout
+                        )
+                    except TypeError as exc:
+                        timeout_kw_rejected = (
+                            "timeout" in str(exc).casefold()
+                            and "keyword" in str(exc).casefold()
+                        )
+                        if not timeout_kw_rejected:
+                            raise
+                        iface._disconnect_and_close_client(client)
+
                 run_safe_cleanup(
-                    lambda: iface._disconnect_and_close_client(client),
+                    _disconnect_client_with_timeout,
                     "BLE client disconnect/close",
                 )
         cleanup_all = _resolve_notification_cleanup("_cleanup_all")
@@ -521,7 +541,18 @@ class BLEShutdownLifecycleCoordinator:
 
         if consume_disconnect_state():
             iface._disconnected()
-            iface._wait_for_disconnect_notifications()
+            try:
+                iface._wait_for_disconnect_notifications(
+                    timeout=disconnect_notification_wait_timeout
+                )
+            except TypeError as exc:
+                timeout_kw_rejected = (
+                    "timeout" in str(exc).casefold()
+                    and "keyword" in str(exc).casefold()
+                )
+                if not timeout_kw_rejected:
+                    raise
+                iface._wait_for_disconnect_notifications()
 
     def _finalize_close_state(
         self,
@@ -583,10 +614,35 @@ class BLEShutdownLifecycleCoordinator:
         *,
         management_shutdown_wait_timeout: float,
         management_wait_poll_seconds: float,
+        timeout: float | None = None,
     ) -> None:
         """Shut down BLE interface resources and finalize lifecycle state."""
+        deadline: float | None = None
+        if timeout is not None:
+            deadline = time.monotonic() + max(0.0, timeout)
+
+        def _remaining_timeout(default_timeout: float) -> float:
+            if deadline is None:
+                return default_timeout
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return 0.0
+            return min(default_timeout, remaining)
+
+        def _remaining_optional_timeout(
+            default_timeout: float | None,
+        ) -> float | None:
+            if deadline is None:
+                return default_timeout
+            remaining = max(0.0, deadline - time.monotonic())
+            if default_timeout is None:
+                return remaining
+            return min(default_timeout, remaining)
+
         management_wait_timed_out = self._await_management_shutdown(
-            management_shutdown_wait_timeout=management_shutdown_wait_timeout,
+            management_shutdown_wait_timeout=_remaining_timeout(
+                management_shutdown_wait_timeout
+            ),
             management_wait_poll_seconds=management_wait_poll_seconds,
         )
         if management_wait_timed_out is None:
@@ -597,10 +653,23 @@ class BLEShutdownLifecycleCoordinator:
             if iface._shutdown_event is not None:
                 iface._shutdown_event.set()
             self._shutdown_discovery()
-            self._shutdown_receive_thread()
+            self._shutdown_receive_thread(
+                join_timeout=_remaining_timeout(RECEIVE_THREAD_JOIN_TIMEOUT)
+            )
             self._close_mesh_interface()
             self._unregister_exit_handler()
-            self._shutdown_client(management_wait_timed_out=management_wait_timed_out)
+            self._shutdown_client(
+                management_wait_timed_out=management_wait_timed_out,
+                unsubscribe_timeout=_remaining_optional_timeout(
+                    NOTIFICATION_START_TIMEOUT
+                ),
+                disconnect_notification_wait_timeout=_remaining_optional_timeout(
+                    DISCONNECT_TIMEOUT_SECONDS
+                ),
+                client_disconnect_timeout=_remaining_optional_timeout(
+                    DISCONNECT_TIMEOUT_SECONDS
+                ),
+            )
         finally:
             try:
                 self._cleanup_thread_coordinator()

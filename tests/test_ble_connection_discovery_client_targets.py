@@ -21,7 +21,13 @@ from meshtastic.interfaces.ble.connection import (
     ConnectionValidator,
 )
 from meshtastic.interfaces.ble.discovery import DiscoveryClientError, DiscoveryManager
-from meshtastic.interfaces.ble.errors import BLEErrorHandler
+from meshtastic.interfaces.ble.errors import (
+    BLEAddressMismatchError,
+    BLEConnectionTimeoutError,
+    BLEDBusTransportError,
+    BLEDeviceNotFoundError,
+    BLEErrorHandler,
+)
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from tests.test_ble_interface_fixtures import DummyClient, _build_interface
 
@@ -329,6 +335,8 @@ def test_connection_orchestrator_direct_and_retry_exception_paths(
             pass
 
         created_client = _SimpleClient()
+        created_client.address = TEST_BLE_ADDRESS
+        created_client.bleak_client = SimpleNamespace(address=TEST_BLE_ADDRESS)
         orchestrator._client_manager_create_client = (
             lambda *_args, **_kwargs: created_client
         )
@@ -807,6 +815,169 @@ def test_orchestrator_create_connect_direct_retry_remaining_branches(
                 retry_connect_timeout=1.0,
             )
         assert closed_clients == [first_retry_client]
+
+
+def test_orchestrator_attempt_direct_connect_maps_dbus_error_to_typed_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Direct-connect DBus failures should normalize to BLEDBusTransportError."""
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        direct_client = DummyClient()
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: direct_client
+        )
+        orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: (
+            _ for _ in ()
+        ).throw(BleakDBusError("dbus", "busy"))
+        orchestrator._should_attempt_stale_bluez_cleanup = (
+            lambda **_kwargs: False
+        )
+        orchestrator._client_manager_safe_close_client = lambda *_args, **_kwargs: None
+
+        with pytest.raises(BLEDBusTransportError) as exc_info:
+            orchestrator._attempt_direct_connect(
+                target_address=TEST_BLE_ADDRESS,
+                explicit_address=True,
+                normalized_target="aabbccddeeff",
+                on_disconnect_func=lambda _client: None,
+                pair_on_connect=False,
+                direct_connect_timeout=1.0,
+                register_notifications_func=lambda _client: None,
+                on_connected_func=lambda: None,
+                emit_connected_side_effects=True,
+            )
+        assert exc_info.value.requested_identifier == TEST_BLE_ADDRESS
+
+
+def test_orchestrator_attempt_direct_connect_uses_stale_cleanup_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Direct-connect failure should retry once after stale BlueZ cleanup."""
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        direct_client = DummyClient()
+        retried_client = DummyClient()
+        closed_clients: list[object] = []
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: direct_client
+        )
+        orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: (
+            _ for _ in ()
+        ).throw(BleakDBusError("dbus", "busy"))
+        orchestrator._client_manager_safe_close_client = (
+            lambda client: closed_clients.append(client)
+        )
+        orchestrator._should_attempt_stale_bluez_cleanup = lambda **_kwargs: True
+        orchestrator._attempt_stale_bluez_cleanup = lambda **_kwargs: True
+        orchestrator._retry_direct_connect_after_cleanup = (
+            lambda **_kwargs: retried_client
+        )
+
+        connected_client, skip_discovery_scan = orchestrator._attempt_direct_connect(
+            target_address=TEST_BLE_ADDRESS,
+            explicit_address=True,
+            normalized_target="aabbccddeeff",
+            on_disconnect_func=lambda _client: None,
+            pair_on_connect=False,
+            direct_connect_timeout=1.0,
+            register_notifications_func=lambda _client: None,
+            on_connected_func=lambda: None,
+            emit_connected_side_effects=True,
+        )
+
+        assert connected_client is retried_client
+        assert skip_discovery_scan is False
+        assert closed_clients == [direct_client]
+
+
+def test_orchestrator_attempt_direct_connect_rejects_explicit_address_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Explicit-address direct connect should fail when connected peer mismatches."""
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        mismatch_client = DummyClient()
+        mismatch_client.address = "11:22:33:44:55:66"
+        mismatch_client.bleak_client = SimpleNamespace(address="11:22:33:44:55:66")
+        closed_clients: list[object] = []
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: mismatch_client
+        )
+        orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: None
+        orchestrator._client_manager_safe_close_client = (
+            lambda client: closed_clients.append(client)
+        )
+        orchestrator._finalize_connection = MagicMock()
+
+        with pytest.raises(BLEAddressMismatchError) as exc_info:
+            orchestrator._attempt_direct_connect(
+                target_address=TEST_BLE_ADDRESS,
+                explicit_address=True,
+                normalized_target="aabbccddeeff",
+                on_disconnect_func=lambda _client: None,
+                pair_on_connect=False,
+                direct_connect_timeout=1.0,
+                register_notifications_func=lambda _client: None,
+                on_connected_func=lambda: None,
+                emit_connected_side_effects=True,
+            )
+        assert exc_info.value.requested_identifier == TEST_BLE_ADDRESS
+        assert exc_info.value.connected_address == "11:22:33:44:55:66"
+        assert closed_clients == [mismatch_client]
+        orchestrator._finalize_connection.assert_not_called()
+
+
+def test_orchestrator_validate_explicit_address_allows_unknown_connected_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Explicit-address verification remains permissive when address is unavailable."""
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        unknown_client = DummyClient()
+        unknown_client.address = None
+        unknown_client.bleak_client = SimpleNamespace(address=None)
+
+        orchestrator._validate_explicit_address_connection(
+            client=cast(BLEClient, unknown_client),
+            target_address=TEST_BLE_ADDRESS,
+            explicit_address=True,
+        )
+
+
+def test_orchestrator_retry_target_timeout_and_discovery_typing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retry connect timeouts and discovery misses should map to typed BLE errors."""
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        retry_client = DummyClient()
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: retry_client
+        )
+        orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: (
+            _ for _ in ()
+        ).throw(TimeoutError("timed out"))
+        orchestrator._client_manager_safe_close_client = lambda *_args, **_kwargs: None
+
+        with pytest.raises(BLEConnectionTimeoutError) as timeout_exc:
+            orchestrator._connect_retry_target(
+                connection_target=TEST_BLE_ADDRESS,
+                resolved_address=TEST_BLE_ADDRESS,
+                target_address=TEST_BLE_ADDRESS,
+                skip_discovery_scan=True,
+                on_disconnect_func=lambda _client: None,
+                pair_on_connect=False,
+                retry_connect_timeout=2.5,
+            )
+        assert timeout_exc.value.requested_identifier == TEST_BLE_ADDRESS
+        assert timeout_exc.value.timeout == 2.5
+
+        orchestrator._compat_find_device = lambda _target: (_ for _ in ()).throw(
+            BleakDeviceNotFoundError("missing")
+        )
+        with pytest.raises(BLEDeviceNotFoundError):
+            orchestrator._resolve_retry_target(
+                target_address="name-only",
+                skip_discovery_scan=False,
+                direct_connect_timeout=1.0,
+                discovery_connect_timeout=3.0,
+            )
 
 
 def test_orchestrator_finalize_and_establish_remaining_branches(

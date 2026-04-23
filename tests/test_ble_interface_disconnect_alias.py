@@ -14,6 +14,15 @@ def test_disconnect_delegates_to_close() -> None:
     iface.close.assert_called_once_with()
 
 
+def test_disconnect_forwards_timeout_to_close() -> None:
+    iface = object.__new__(BLEInterface)
+    iface.close = MagicMock()
+
+    BLEInterface.disconnect(iface, timeout=1.25)
+
+    iface.close.assert_called_once_with(timeout=1.25)
+
+
 def test_disconnect_propagates_close_errors() -> None:
     iface = object.__new__(BLEInterface)
     iface.close = MagicMock(side_effect=RuntimeError("close failed"))

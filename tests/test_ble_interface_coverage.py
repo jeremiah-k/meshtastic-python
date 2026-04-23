@@ -208,6 +208,60 @@ def _build_minimal_interface() -> BLEInterface:
 
 
 # ============================================================================
+# Public API Surface Tests
+# ============================================================================
+
+
+def test_ble_address_property_prefers_active_client_address() -> None:
+    """ble_address should use the connected client's concrete address when available."""
+    iface = _build_minimal_interface()
+    iface.address = "AA:BB:CC:DD:EE:FF"
+    iface.client = DummyClient(address="11:22:33:44:55:66")
+
+    assert iface.ble_address == "11:22:33:44:55:66"
+
+
+def test_ble_address_property_falls_back_to_interface_address() -> None:
+    """ble_address should fall back to the interface-level address when no client is active."""
+    iface = _build_minimal_interface()
+    iface.client = None
+    iface.address = "AA:BB:CC:DD:EE:FF"
+
+    assert iface.ble_address == "AA:BB:CC:DD:EE:FF"
+
+
+def test_ble_address_property_returns_none_without_known_address() -> None:
+    """ble_address should return None when no address can be resolved."""
+    iface = _build_minimal_interface()
+    iface.client = None
+    iface.address = None
+
+    assert iface.ble_address is None
+
+
+def test_close_forwards_timeout_to_lifecycle_controller() -> None:
+    """close(timeout=...) should pass the caller budget to lifecycle shutdown."""
+    iface = _build_minimal_interface()
+    close_calls: list[dict[str, object]] = []
+    iface._get_lifecycle_controller = lambda: SimpleNamespace(
+        _close=lambda **kwargs: close_calls.append(dict(kwargs))
+    )
+
+    iface.close(timeout=3.0)
+
+    kwargs = close_calls[0]
+    assert kwargs["timeout"] == 3.0
+
+
+def test_close_rejects_invalid_timeout_type() -> None:
+    """close(timeout=...) should validate timeout input shape."""
+    iface = _build_minimal_interface()
+
+    with pytest.raises(BLEInterface.BLEError, match="close\\(\\) timeout"):
+        iface.close(timeout=cast(Any, "invalid"))
+
+
+# ============================================================================
 # Error Handling Tests
 # ============================================================================
 
@@ -2102,7 +2156,9 @@ def test_disconnect_and_close_client_delegates() -> None:
 
     iface._disconnect_and_close_client(cast(BLEClient, client))
 
-    disconnect_and_close_client.assert_called_once_with(cast(BLEClient, client))
+    disconnect_and_close_client.assert_called_once_with(
+        cast(BLEClient, client), timeout=None
+    )
 
 
 # ============================================================================
