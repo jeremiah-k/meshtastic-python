@@ -692,21 +692,22 @@ class MeshInterface:  # pylint: disable=R0902
                 with heartbeat_lock:
                     while self._heartbeat_inflight > 0:
                         heartbeat_idle_condition.wait()
-            try:
-                self._send_disconnect()
-            except (OSError, MeshInterface.MeshInterfaceError):
-                logger.debug(
-                    "Failed to send disconnect during close(); continuing shutdown.",
-                    exc_info=True,
-                )
-            except TypeError:
-                is_finalizing = getattr(sys, "is_finalizing", None)
-                if not (callable(is_finalizing) and is_finalizing()):
-                    raise
-                logger.debug(
-                    "Failed to send disconnect during interpreter finalization; continuing shutdown.",
-                    exc_info=True,
-                )
+            if not self.noProto:
+                try:
+                    self._send_disconnect()
+                except (OSError, MeshInterface.MeshInterfaceError):
+                    logger.debug(
+                        "Failed to send disconnect during close(); continuing shutdown.",
+                        exc_info=True,
+                    )
+                except TypeError:
+                    is_finalizing = getattr(sys, "is_finalizing", None)
+                    if not (callable(is_finalizing) and is_finalizing()):
+                        raise
+                    logger.debug(
+                        "Failed to send disconnect during interpreter finalization; continuing shutdown.",
+                        exc_info=True,
+                    )
         # debugOut is caller-owned (often shared via outer context managers);
         # do not close it here. Only clear our reference on shutdown.
         if hasattr(self, "debugOut"):
