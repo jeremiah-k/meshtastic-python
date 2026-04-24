@@ -15,6 +15,7 @@ from meshtastic.interfaces.ble.runner import (
     BLECoroutineRunner,
     get_zombie_runner_count,
 )
+from meshtastic.interfaces.ble import runner as _runner_module
 
 pytestmark = pytest.mark.unit
 
@@ -55,10 +56,14 @@ def ensure_runner_running() -> Generator[None, None, None]:
     Start the BLECoroutineRunner before the test and re-validate or restart it
     after the test to prevent singleton state leakage between tests.
     """
+    with _runner_module._zombie_lock:
+        saved_zombie_count = _runner_module._zombie_runner_count
+        _runner_module._zombie_runner_count = 0
     runner = BLECoroutineRunner()
     runner._ensure_running()
     yield
-    # Ensure runner is still running after test for subsequent tests
+    with _runner_module._zombie_lock:
+        _runner_module._zombie_runner_count = saved_zombie_count
     runner._ensure_running()
 
 
