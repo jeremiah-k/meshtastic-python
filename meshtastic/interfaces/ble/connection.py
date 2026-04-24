@@ -779,11 +779,7 @@ class ClientManager:
                         raise
                     client.close()
 
-            _run_safe_cleanup(
-                _close_with_timeout,
-                "client close",
-                safe_cleanup_hook,
-            )
+            _close_with_timeout()
         else:
             logger.debug("Skipping BLE client close during interpreter finalization.")
         if event:
