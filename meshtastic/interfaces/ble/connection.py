@@ -770,7 +770,15 @@ class ClientManager:
                 "Skipping BLE client disconnect during interpreter finalization."
             )
         if not skip_disconnect:
-            _run_safe_cleanup(client.close, "client close", safe_cleanup_hook)
+            try:
+                client.close(timeout=disconnect_timeout)
+            except TypeError as exc:
+                if _is_unexpected_keyword_error(exc, "timeout"):
+                    client.close()
+                else:
+                    raise
+            except Exception:  # noqa: BLE001 - close path best effort
+                logger.debug("Error during client close", exc_info=True)
         else:
             logger.debug("Skipping BLE client close during interpreter finalization.")
         if event:
@@ -1661,13 +1669,13 @@ class ConnectionOrchestrator:
                         OSError,
                         TimeoutError,
                     ) as retry_err:
-                        error_for_fallback = retry_err
                         logger.debug(
                             "Direct reconnect after stale BlueZ cleanup failed for %s: %s",
                             normalized_target,
                             retry_err,
                             exc_info=True,
                         )
+                        raise
             if error_for_fallback is None:
                 error_for_fallback = direct_err
             if isinstance(error_for_fallback, BleakDBusError):

@@ -1026,10 +1026,21 @@ class BLEClient:
         """
         return self.stopNotify(*args, timeout=timeout, **kwargs)
 
-    def close(self) -> None:
+    def close(self, timeout: float | None = None) -> None:
         """Close the BLEClient and perform a best-effort shutdown.
 
-        If an underlying Bleak client exists and is connected, this attempts a bounded disconnect and suppresses any disconnect errors so shutdown remains best-effort and idempotent. The method is thread-safe (uses an internal close lock), marks the wrapper as closed, and cancels any tracked pending futures to unblock waiting callers. This does not stop or affect the shared BLE event loop used by other clients.
+        If an underlying Bleak client exists and is connected, this attempts a
+        bounded disconnect and suppresses any disconnect errors so shutdown
+        remains best-effort and idempotent. The method is thread-safe (uses an
+        internal close lock), marks the wrapper as closed, and cancels any
+        tracked pending futures to unblock waiting callers. This does not stop
+        or affect the shared BLE event loop used by other clients.
+
+        Parameters
+        ----------
+        timeout : float | None
+            Optional maximum seconds to wait for the disconnect during close.
+            When ``None``, ``DISCONNECT_TIMEOUT_SECONDS`` is used.
         """
         with self._close_lock:
             if getattr(self, "_closed", False):
@@ -1037,8 +1048,13 @@ class BLEClient:
 
             # Best effort: disconnect active transport before closing this wrapper.
             if getattr(self, "bleak_client", None) is not None and self.is_connected():
+                disconnect_timeout = (
+                    DISCONNECT_TIMEOUT_SECONDS
+                    if timeout is None
+                    else timeout
+                )
                 self._error_handler_safe_cleanup(
-                    lambda: self.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS),
+                    lambda: self.disconnect(await_timeout=disconnect_timeout),
                     "client disconnect during close",
                 )
 

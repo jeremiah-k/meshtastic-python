@@ -130,19 +130,6 @@ class BLEShutdownLifecycleCoordinator:
                 hook_name,
             )
             return
-        with self._bounded_thread_lock:
-            previous_thread = self._bounded_cleanup_thread
-            if previous_thread is not None and previous_thread.is_alive():
-                logger.warning(
-                    "Skipping thread coordinator %s(): previous bounded cleanup thread is still running.",
-                    hook_name,
-                )
-            else:
-                previous_thread = None
-                self._bounded_cleanup_thread = None
-        if previous_thread is not None:
-            previous_thread.join(timeout=timeout)
-            return
 
         def _run_cleanup() -> None:
             try:
@@ -165,8 +152,15 @@ class BLEShutdownLifecycleCoordinator:
         )
         try:
             with self._bounded_thread_lock:
+                previous_thread = self._bounded_cleanup_thread
+                if previous_thread is not None and previous_thread.is_alive():
+                    logger.warning(
+                        "Skipping thread coordinator %s(): previous bounded cleanup thread is still running.",
+                        hook_name,
+                    )
+                    return
                 self._bounded_cleanup_thread = cleanup_thread
-            cleanup_thread.start()
+                cleanup_thread.start()
         except Exception:  # noqa: BLE001 - shutdown cleanup is best effort
             with self._bounded_thread_lock:
                 if self._bounded_cleanup_thread is cleanup_thread:
@@ -477,18 +471,6 @@ class BLEShutdownLifecycleCoordinator:
                 "Skipping MeshInterface.close(): close timeout budget exhausted."
             )
             return
-        with self._bounded_thread_lock:
-            previous_thread = self._bounded_mesh_close_thread
-            if previous_thread is not None and previous_thread.is_alive():
-                logger.warning(
-                    "Skipping MeshInterface.close(): previous bounded close thread is still running."
-                )
-            else:
-                previous_thread = None
-                self._bounded_mesh_close_thread = None
-        if previous_thread is not None:
-            previous_thread.join(timeout=timeout)
-            return
 
         def _run_mesh_close() -> None:
             try:
@@ -505,8 +487,14 @@ class BLEShutdownLifecycleCoordinator:
         )
         try:
             with self._bounded_thread_lock:
+                previous_thread = self._bounded_mesh_close_thread
+                if previous_thread is not None and previous_thread.is_alive():
+                    logger.warning(
+                        "Skipping MeshInterface.close(): previous bounded close thread is still running."
+                    )
+                    return
                 self._bounded_mesh_close_thread = close_thread
-            close_thread.start()
+                close_thread.start()
         except Exception:  # noqa: BLE001 - close must remain best effort
             with self._bounded_thread_lock:
                 if self._bounded_mesh_close_thread is close_thread:
@@ -648,8 +636,17 @@ class BLEShutdownLifecycleCoordinator:
             with gate_context:
                 unsubscribe_all = _resolve_notification_cleanup("_unsubscribe_all")
                 if unsubscribe_all is not None:
+
+                    def _unsubscribe_with_timeout() -> None:
+                        try:
+                            unsubscribe_all(client, timeout=unsubscribe_timeout)
+                        except TypeError as exc:
+                            if not _is_unexpected_keyword_error(exc, "timeout"):
+                                raise
+                            unsubscribe_all(client)
+
                     run_safe_cleanup(
-                        lambda: unsubscribe_all(client, timeout=unsubscribe_timeout),
+                        _unsubscribe_with_timeout,
                         "notification unsubscribe_all",
                     )
                 else:

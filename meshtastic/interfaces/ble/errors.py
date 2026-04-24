@@ -161,7 +161,15 @@ class BLEDBusTransportError(MeshtasticBLEError, BleakDBusError):
             body_items = [dbus_error_details]
         else:
             body_items = []
-        BleakDBusError.__init__(self, resolved_error, body_items)
+        # Preserve caller-facing string details by passing single-string bodies
+        # wrapped in a list to BleakDBusError. BleakDBusError unpacks positional
+        # args, so a bare string would be split into individual characters.
+        if len(body_items) == 1 and isinstance(body_items[0], str):
+            BleakDBusError.__init__(self, resolved_error, [body_items[0]])
+        elif body_items:
+            BleakDBusError.__init__(self, resolved_error, body_items)
+        else:
+            BleakDBusError.__init__(self, resolved_error, [])
         # Mirror MeshtasticBLEError structured context fields while preserving
         # BleakDBusError args-backed properties for dbus_error/details.
         self.message = message
@@ -207,10 +215,24 @@ class BLEDBusTransportError(MeshtasticBLEError, BleakDBusError):
         """
         dbus_error = getattr(error, "dbus_error", None)
         dbus_error_details = getattr(error, "dbus_error_details", None)
+        # Normalize list-wrapped details to a plain string when possible.
+        if (
+            isinstance(dbus_error_details, (list, tuple))
+            and len(dbus_error_details) == 1
+            and isinstance(dbus_error_details[0], str)
+        ):
+            dbus_error_details = dbus_error_details[0]
         dbus_error_body: tuple[Any, ...] | None = None
         error_args = getattr(error, "args", ())
         if isinstance(error_args, tuple) and len(error_args) > 1:
-            dbus_error_body = tuple(error_args[1:])
+            remainder = error_args[1:]
+            # Flatten a single list/tuple wrapper so BleakDBusError-style args
+            # ("org.bluez.Error.Failed", ["Device or resource busy"]) produce
+            # a string detail instead of a nested list.
+            if len(remainder) == 1 and isinstance(remainder[0], (list, tuple)):
+                dbus_error_body = tuple(remainder[0])
+            else:
+                dbus_error_body = tuple(remainder)
         elif dbus_error_details is not None:
             dbus_error_body = (dbus_error_details,)
         return cls(

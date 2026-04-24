@@ -394,4 +394,4 @@ class BLELifecycleController:
         if _callable_accepts_timeout_kwarg(disconnect_and_close):
             disconnect_and_close(client, timeout=timeout)
         else:
-            self._disconnect.disconnect_and_close_client(client)
+            disconnect_and_close(client)

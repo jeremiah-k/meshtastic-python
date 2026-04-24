@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from inspect import signature
+from inspect import Parameter, signature
 from typing import TYPE_CHECKING, NoReturn, cast
 
 from bleak import BleakClient as BleakRootClient
@@ -38,6 +38,23 @@ from meshtastic.interfaces.ble.utils import (
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
     from meshtastic.interfaces.ble.interface import BLEInterface
+
+
+def _callable_accepts_timeout_kwarg(func: Callable[..., object]) -> bool:
+    """Return whether ``func`` can receive a ``timeout`` keyword."""
+    try:
+        parameters = signature(func).parameters
+    except (TypeError, ValueError):
+        return True
+    timeout_parameter = parameters.get("timeout")
+    if timeout_parameter is not None:
+        return timeout_parameter.kind in (
+            Parameter.POSITIONAL_OR_KEYWORD,
+            Parameter.KEYWORD_ONLY,
+        )
+    return any(
+        parameter.kind is Parameter.VAR_KEYWORD for parameter in parameters.values()
+    )
 
 
 @dataclass(frozen=True)
@@ -535,6 +552,8 @@ class BLELifecycleService:
             ).is_connection_closing()
         )
 
+    # COMPAT_STABLE_SHIM: guarded dispatch so legacy overrides without timeout
+    # do not break when called through the compatibility surface.
     @staticmethod
     def _disconnect_and_close_client(
         iface: "BLEInterface",
@@ -558,9 +577,13 @@ class BLELifecycleService:
         None
             Returns ``None`` after cleanup is attempted.
         """
-        BLEDisconnectLifecycleCoordinator(iface).disconnect_and_close_client(
-            client, timeout=timeout
-        )
+        disconnect_and_close = BLEDisconnectLifecycleCoordinator(
+            iface
+        ).disconnect_and_close_client
+        if _callable_accepts_timeout_kwarg(disconnect_and_close):
+            disconnect_and_close(client, timeout=timeout)
+        else:
+            disconnect_and_close(client)
 
     @staticmethod
     def _compute_disconnect_keys(
@@ -1285,6 +1308,8 @@ class BLELifecycleService:
         """
         BLEShutdownLifecycleCoordinator(iface)._cleanup_thread_coordinator()
 
+    # COMPAT_STABLE_SHIM: guarded dispatch so legacy overrides without timeout
+    # do not break when called through the compatibility surface.
     @staticmethod
     def _close(
         iface: "BLEInterface",
@@ -1315,11 +1340,18 @@ class BLELifecycleService:
         None
             Returns ``None`` after best-effort shutdown cleanup.
         """
-        BLEShutdownLifecycleCoordinator(iface).close(
-            management_shutdown_wait_timeout=management_shutdown_wait_timeout,
-            management_wait_poll_seconds=management_wait_poll_seconds,
-            timeout=timeout,
-        )
+        shutdown_close = BLEShutdownLifecycleCoordinator(iface).close
+        if _callable_accepts_timeout_kwarg(shutdown_close):
+            shutdown_close(
+                management_shutdown_wait_timeout=management_shutdown_wait_timeout,
+                management_wait_poll_seconds=management_wait_poll_seconds,
+                timeout=timeout,
+            )
+        else:
+            shutdown_close(
+                management_shutdown_wait_timeout=management_shutdown_wait_timeout,
+                management_wait_poll_seconds=management_wait_poll_seconds,
+            )
 
     @staticmethod
     def _finalize_connection_gates(

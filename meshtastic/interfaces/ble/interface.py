@@ -3271,9 +3271,6 @@ class BLEInterface(MeshInterface):
         timeout : float | None
             Optional total shutdown budget in seconds, forwarded to ``close()``.
         """
-        if timeout is None:
-            self.close()
-            return
         self.close(timeout=timeout)
 
     def close(self, timeout: float | None = None) -> None:

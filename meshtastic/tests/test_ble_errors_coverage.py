@@ -11,11 +11,69 @@ import pytest
 from bleak.exc import BleakError
 from google.protobuf.message import DecodeError as ProtobufDecodeError
 
+from bleak.exc import BleakDBusError
+
 from meshtastic.interfaces.ble import errors as ble_errors_module
 from meshtastic.interfaces.ble.constants import logger
-from meshtastic.interfaces.ble.errors import BLEErrorHandler, DecodeError
+from meshtastic.interfaces.ble.errors import (
+    BLEDBusTransportError,
+    BLEErrorHandler,
+    DecodeError,
+)
 
 pytestmark = pytest.mark.unit
+
+
+class TestBLEDBusTransportErrorFlattening:
+    """Test BLEDBusTransportError.from_exception flattens nested DBus args."""
+
+    def test_flatten_single_list_wrapper(self) -> None:
+        """BleakDBusError-style args with a list body should produce string details."""
+        original = BleakDBusError(
+            "org.bluez.Error.Failed",
+            ["Device or resource busy"],
+        )
+        err = BLEDBusTransportError.from_exception(
+            original,
+            message="BLE DBus transport error during direct connect.",
+            requested_identifier="AA:BB:CC:DD:EE:FF",
+            address="AA:BB:CC:DD:EE:FF",
+        )
+        assert err.dbus_error_details == "Device or resource busy"
+        assert err.dbus_error_body == ("Device or resource busy",)
+
+    def test_flatten_single_tuple_wrapper(self) -> None:
+        """A tuple-wrapped body should also be flattened."""
+        original = Exception("wrapper")
+        original.args = ("org.bluez.Error.Failed", ("Operation already in progress",))
+        err = BLEDBusTransportError.from_exception(
+            original,
+            message="transport failed",
+        )
+        assert err.dbus_error_body == ("Operation already in progress",)
+
+    def test_no_flatten_for_multiple_args(self) -> None:
+        """Multiple positional args should remain as-is."""
+        original = Exception("wrapper")
+        original.args = ("org.bluez.Error.Failed", "arg1", "arg2")
+        err = BLEDBusTransportError.from_exception(
+            original,
+            message="transport failed",
+        )
+        assert err.dbus_error_body == ("arg1", "arg2")
+
+    def test_stale_bluez_detection_matches_normalized_wrapper(self) -> None:
+        """Stale-BlueZ token matching should work against the flattened detail."""
+        original = BleakDBusError(
+            "org.bluez.Error.Failed",
+            ["Device or resource busy"],
+        )
+        err = BLEDBusTransportError.from_exception(
+            original,
+            message="transport failed",
+        )
+        # The detail string must be lowercase-matchable for stale-BlueZ detection.
+        assert "device or resource busy" in str(err.dbus_error_details).casefold()
 
 
 class TestDecodeErrorImport:
