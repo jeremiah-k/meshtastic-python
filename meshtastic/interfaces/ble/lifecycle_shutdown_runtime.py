@@ -3,6 +3,7 @@
 import atexit
 import contextlib
 import inspect
+import math
 import threading
 import time
 from collections.abc import Callable
@@ -575,6 +576,7 @@ class BLEShutdownLifecycleCoordinator:
         unsubscribe_timeout: float | None = NOTIFICATION_START_TIMEOUT,
         disconnect_notification_wait_timeout: float | None = DISCONNECT_TIMEOUT_SECONDS,
         client_disconnect_timeout: float | None = DISCONNECT_TIMEOUT_SECONDS,
+        bounded_close_timeout_active: bool = False,
     ) -> None:
         """Shutdown active client resources and notification publication state.
 
@@ -594,6 +596,10 @@ class BLEShutdownLifecycleCoordinator:
             Maximum seconds to wait for disconnect notification publication.
         client_disconnect_timeout : float | None
             Maximum seconds to wait for BLE client disconnect/close.
+        bounded_close_timeout_active : bool
+            Whether these stage timeouts were derived from a caller-provided
+            finite ``close(timeout=...)`` budget. Legacy no-timeout fallbacks
+            are skipped only when this is true.
 
         Returns
         -------
@@ -610,6 +616,9 @@ class BLEShutdownLifecycleCoordinator:
         client, publish_pending = detach_client()
         client_address = iface._extract_client_address(client)
         notification_manager = iface._notification_manager
+
+        def _has_finite_timeout(timeout: float | None) -> bool:
+            return timeout is not None and math.isfinite(timeout)
 
         def _resolve_notification_cleanup(
             method_name: str,
@@ -636,36 +645,61 @@ class BLEShutdownLifecycleCoordinator:
             with gate_context:
                 unsubscribe_all = _resolve_notification_cleanup("_unsubscribe_all")
                 if unsubscribe_all is not None:
+                    unsubscribe_error: TypeError | None = None
 
                     def _unsubscribe_with_timeout() -> None:
+                        nonlocal unsubscribe_error
                         try:
                             unsubscribe_all(client, timeout=unsubscribe_timeout)
                         except TypeError as exc:
                             if not _is_unexpected_keyword_error(exc, "timeout"):
+                                unsubscribe_error = exc
                                 raise
+                            if bounded_close_timeout_active and _has_finite_timeout(
+                                unsubscribe_timeout
+                            ):
+                                logger.warning(
+                                    "Skipping legacy notification unsubscribe_all() fallback: close timeout budget is active and the callable does not accept timeout."
+                                )
+                                return
                             unsubscribe_all(client)
 
                     run_safe_cleanup(
                         _unsubscribe_with_timeout,
                         "notification unsubscribe_all",
                     )
+                    if unsubscribe_error is not None:
+                        raise unsubscribe_error
                 else:
                     logger.debug("Notification manager is missing _unsubscribe_all")
 
+                disconnect_error: TypeError | None = None
+
                 def _disconnect_client_with_timeout() -> None:
+                    nonlocal disconnect_error
                     try:
                         iface._disconnect_and_close_client(
                             client, timeout=client_disconnect_timeout
                         )
                     except TypeError as exc:
                         if not _is_unexpected_keyword_error(exc, "timeout"):
+                            disconnect_error = exc
                             raise
+                        if bounded_close_timeout_active and _has_finite_timeout(
+                            client_disconnect_timeout
+                        ):
+                            logger.warning(
+                                "Skipping legacy BLE client disconnect/close fallback: close timeout budget is active and the callable does not accept timeout."
+                            )
+                            return
                         iface._disconnect_and_close_client(client)
 
                 run_safe_cleanup(
                     _disconnect_client_with_timeout,
                     "BLE client disconnect/close",
                 )
+                if disconnect_error is not None:
+                    raise disconnect_error
         cleanup_all = _resolve_notification_cleanup("_cleanup_all")
         if cleanup_all is not None:
             run_safe_cleanup(cleanup_all, "notification manager cleanup")
@@ -681,6 +715,13 @@ class BLEShutdownLifecycleCoordinator:
             except TypeError as exc:
                 if not _is_unexpected_keyword_error(exc, "timeout"):
                     raise
+                if bounded_close_timeout_active and _has_finite_timeout(
+                    disconnect_notification_wait_timeout
+                ):
+                    logger.warning(
+                        "Skipping legacy disconnect notification wait fallback: close timeout budget is active and the callable does not accept timeout."
+                    )
+                    return
                 iface._wait_for_disconnect_notifications()
 
     def _finalize_close_state(
@@ -807,6 +848,7 @@ class BLEShutdownLifecycleCoordinator:
                 client_disconnect_timeout=_remaining_optional_timeout(
                     DISCONNECT_TIMEOUT_SECONDS
                 ),
+                bounded_close_timeout_active=timeout is not None,
             )
         finally:
             try:

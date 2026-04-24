@@ -2948,10 +2948,10 @@ def test_receive_remaining_branches(
         iface.close()
 
 
-def test_shutdown_disconnect_client_fallback_on_unsupported_timeout(
+def test_shutdown_disconnect_client_skips_legacy_fallback_with_finite_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """_shutdown_client should fallback when disconnect timeout is unsupported."""
+    """_shutdown_client should not call unbounded legacy disconnect under a finite budget."""
     iface = _make_iface(monkeypatch)
     coordinator = BLEShutdownLifecycleCoordinator(iface)
     calls: list[tuple[object, dict[str, object]]] = []
@@ -2977,6 +2977,42 @@ def test_shutdown_disconnect_client_fallback_on_unsupported_timeout(
             client_disconnect_timeout=1.0,
             disconnect_notification_wait_timeout=0.5,
             unsubscribe_timeout=0.1,
+            bounded_close_timeout_active=True,
+        )
+        assert calls == []
+    finally:
+        iface.close()
+
+
+def test_shutdown_disconnect_client_legacy_fallback_without_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_shutdown_client should permit legacy disconnect fallback without a timeout budget."""
+    iface = _make_iface(monkeypatch)
+    coordinator = BLEShutdownLifecycleCoordinator(iface)
+    calls: list[tuple[object, dict[str, object]]] = []
+
+    def _disconnect_and_close_client(
+        client: object, *, timeout: float | None = None
+    ) -> None:
+        if timeout is not None:
+            raise TypeError(
+                "_disconnect_and_close_client() got an unexpected keyword argument 'timeout'"
+            )
+        calls.append((client, {"timeout": timeout}))
+
+    iface._disconnect_and_close_client = _disconnect_and_close_client  # type: ignore[assignment]
+    monkeypatch.setattr(
+        coordinator,
+        "_await_management_shutdown",
+        lambda **kwargs: True,
+    )
+    try:
+        coordinator._shutdown_client(
+            management_wait_timed_out=True,
+            client_disconnect_timeout=None,
+            disconnect_notification_wait_timeout=None,
+            unsubscribe_timeout=None,
         )
         assert len(calls) == 1
         assert calls[0][1]["timeout"] is None
@@ -2984,10 +3020,42 @@ def test_shutdown_disconnect_client_fallback_on_unsupported_timeout(
         iface.close()
 
 
-def test_shutdown_wait_for_disconnect_notifications_fallback_on_unsupported_timeout(
+def test_shutdown_disconnect_client_propagates_unrelated_type_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """_shutdown_client should fallback when wait timeout is unsupported."""
+    """_shutdown_client should NOT swallow unrelated TypeError from disconnect."""
+    iface = _make_iface(monkeypatch)
+    coordinator = BLEShutdownLifecycleCoordinator(iface)
+
+    def _disconnect_and_close_client(
+        _client: object, *, timeout: float | None = None
+    ) -> None:
+        del timeout
+        raise TypeError("disconnect broke for another reason")
+
+    iface._disconnect_and_close_client = _disconnect_and_close_client  # type: ignore[assignment]
+    monkeypatch.setattr(
+        coordinator,
+        "_await_management_shutdown",
+        lambda **kwargs: True,
+    )
+    try:
+        with pytest.raises(TypeError, match="disconnect broke"):
+            coordinator._shutdown_client(
+                management_wait_timed_out=True,
+                client_disconnect_timeout=1.0,
+                disconnect_notification_wait_timeout=0.5,
+                unsubscribe_timeout=0.1,
+                bounded_close_timeout_active=True,
+            )
+    finally:
+        iface.close()
+
+
+def test_shutdown_wait_for_disconnect_notifications_skips_legacy_fallback_with_finite_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_shutdown_client should not call unbounded legacy wait under a finite budget."""
     iface = _make_iface(monkeypatch)
     coordinator = BLEShutdownLifecycleCoordinator(iface)
     calls: list[dict[str, object]] = []
@@ -3011,6 +3079,40 @@ def test_shutdown_wait_for_disconnect_notifications_fallback_on_unsupported_time
             client_disconnect_timeout=1.0,
             disconnect_notification_wait_timeout=0.5,
             unsubscribe_timeout=0.1,
+            bounded_close_timeout_active=True,
+        )
+        assert calls == []
+    finally:
+        iface.close()
+
+
+def test_shutdown_wait_for_disconnect_notifications_legacy_fallback_without_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_shutdown_client should permit legacy wait fallback without a timeout budget."""
+    iface = _make_iface(monkeypatch)
+    coordinator = BLEShutdownLifecycleCoordinator(iface)
+    calls: list[dict[str, object]] = []
+
+    def _wait_for_disconnect_notifications(*, timeout: float | None = None) -> None:
+        if timeout is not None:
+            raise TypeError(
+                "_wait_for_disconnect_notifications() got an unexpected keyword argument 'timeout'"
+            )
+        calls.append({"timeout": timeout})
+
+    iface._wait_for_disconnect_notifications = _wait_for_disconnect_notifications  # type: ignore[assignment]
+    monkeypatch.setattr(
+        coordinator,
+        "_await_management_shutdown",
+        lambda **kwargs: True,
+    )
+    try:
+        coordinator._shutdown_client(
+            management_wait_timed_out=True,
+            client_disconnect_timeout=None,
+            disconnect_notification_wait_timeout=None,
+            unsubscribe_timeout=None,
         )
         assert len(calls) == 1
         assert calls[0]["timeout"] is None
@@ -3042,6 +3144,7 @@ def test_shutdown_wait_for_disconnect_notifications_propagates_unrelated_type_er
                 client_disconnect_timeout=1.0,
                 disconnect_notification_wait_timeout=0.5,
                 unsubscribe_timeout=0.1,
+                bounded_close_timeout_active=True,
             )
     finally:
         iface.close()
@@ -3127,7 +3230,7 @@ def test_shutdown_cleanup_thread_not_duplicated_when_previous_alive(
     iface = _make_iface(monkeypatch)
     coordinator = BLEShutdownLifecycleCoordinator(iface)
     iface.thread_coordinator = SimpleNamespace(cleanup=lambda: None)
-    created_threads: list[object] = []
+    started_threads: list[object] = []
 
     class _AliveThread:
         def __init__(self, *, target: object, name: str, daemon: bool) -> None:
@@ -3135,10 +3238,10 @@ def test_shutdown_cleanup_thread_not_duplicated_when_previous_alive(
             self.name = name
             self.daemon = daemon
             self.started = False
-            created_threads.append(self)
 
         def start(self) -> None:
             self.started = True
+            started_threads.append(self)
 
         def join(self, timeout: float | None = None) -> None:
             del timeout
@@ -3156,8 +3259,7 @@ def test_shutdown_cleanup_thread_not_duplicated_when_previous_alive(
         with caplog.at_level(logging.WARNING):
             coordinator._cleanup_thread_coordinator(timeout=0.01)
 
-        assert len(created_threads) == 2
-        assert sum(1 for t in created_threads if t.started) == 1
+        assert len(started_threads) == 1
         assert "previous bounded cleanup thread is still running" in caplog.text
     finally:
         iface.close()
@@ -3170,7 +3272,7 @@ def test_shutdown_mesh_close_thread_not_duplicated_when_previous_alive(
     """A stuck bounded MeshInterface.close thread should suppress later spawns."""
     iface = _make_iface(monkeypatch)
     coordinator = BLEShutdownLifecycleCoordinator(iface)
-    created_threads: list[object] = []
+    started_threads: list[object] = []
 
     class _AliveThread:
         def __init__(self, *, target: object, name: str, daemon: bool) -> None:
@@ -3178,10 +3280,10 @@ def test_shutdown_mesh_close_thread_not_duplicated_when_previous_alive(
             self.name = name
             self.daemon = daemon
             self.started = False
-            created_threads.append(self)
 
         def start(self) -> None:
             self.started = True
+            started_threads.append(self)
 
         def join(self, timeout: float | None = None) -> None:
             del timeout
@@ -3199,8 +3301,7 @@ def test_shutdown_mesh_close_thread_not_duplicated_when_previous_alive(
         with caplog.at_level(logging.WARNING):
             coordinator._close_mesh_interface(timeout=0.01)
 
-        assert len(created_threads) == 2
-        assert sum(1 for t in created_threads if t.started) == 1
+        assert len(started_threads) == 1
         assert "previous bounded close thread is still running" in caplog.text
     finally:
         iface.close()

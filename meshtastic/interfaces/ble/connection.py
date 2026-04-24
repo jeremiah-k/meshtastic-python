@@ -701,6 +701,9 @@ class ClientManager:
             BLE client to disconnect and close.
         event : Event | None
             Optional Event that will be set after cleanup completes. (Default value = None)
+        disconnect_timeout : float | None
+            Optional maximum seconds passed to disconnect and close-time
+            disconnect operations.
         """
         is_finalizing = getattr(sys, "is_finalizing", None)
         skip_disconnect = bool(is_finalizing()) if callable(is_finalizing) else False
@@ -812,6 +815,9 @@ class ClientManager:
             Client instance to close.
         event : Event | None
             Optional completion event set after cleanup finishes.
+        disconnect_timeout : float | None
+            Optional maximum seconds passed to disconnect and close-time
+            disconnect operations.
 
         Returns
         -------
@@ -1674,8 +1680,20 @@ class ConnectionOrchestrator:
                         return retried_client, False
                     except BLEAddressMismatchError:
                         raise
+                    except BleakDBusError as retry_dbus_err:
+                        logger.debug(
+                            "Direct reconnect after stale BlueZ cleanup failed for %s: %s",
+                            normalized_target,
+                            retry_dbus_err,
+                            exc_info=True,
+                        )
+                        raise BLEDBusTransportError.from_exception(
+                            retry_dbus_err,
+                            message="BLE DBus transport error during direct connect.",
+                            requested_identifier=target_address,
+                            address=target_address,
+                        ) from retry_dbus_err
                     except (
-                        BleakDBusError,
                         BleakError,
                         BLEClient.BLEError,
                         OSError,
@@ -1688,8 +1706,6 @@ class ConnectionOrchestrator:
                             exc_info=True,
                         )
                         raise
-            if error_for_fallback is None:
-                error_for_fallback = direct_err
             if isinstance(error_for_fallback, BleakDBusError):
                 raise BLEDBusTransportError.from_exception(
                     error_for_fallback,

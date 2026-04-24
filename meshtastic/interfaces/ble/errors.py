@@ -215,6 +215,15 @@ class BLEDBusTransportError(MeshtasticBLEError, BleakDBusError):
         """
         dbus_error = getattr(error, "dbus_error", None)
         dbus_error_details = getattr(error, "dbus_error_details", None)
+        error_args = getattr(error, "args", ())
+        if (
+            not isinstance(dbus_error, str)
+            and isinstance(error_args, tuple)
+            and error_args
+            and isinstance(error_args[0], str)
+            and error_args[0].startswith("org.")
+        ):
+            dbus_error = error_args[0]
         # Normalize list-wrapped details to a plain string when possible.
         if (
             isinstance(dbus_error_details, (list, tuple))
@@ -223,7 +232,6 @@ class BLEDBusTransportError(MeshtasticBLEError, BleakDBusError):
         ):
             dbus_error_details = dbus_error_details[0]
         dbus_error_body: tuple[Any, ...] | None = None
-        error_args = getattr(error, "args", ())
         if isinstance(error_args, tuple) and len(error_args) > 1:
             remainder = error_args[1:]
             # Flatten a single list/tuple wrapper so BleakDBusError-style args

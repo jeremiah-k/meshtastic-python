@@ -372,13 +372,13 @@ class BLELifecycleController:
         """Close the bound interface and lifecycle resources."""
         shutdown_close = self._shutdown.close
         if _callable_accepts_timeout_kwarg(shutdown_close):
-            self._shutdown.close(
+            shutdown_close(
                 management_shutdown_wait_timeout=management_shutdown_wait_timeout,
                 management_wait_poll_seconds=management_wait_poll_seconds,
                 timeout=timeout,
             )
         else:
-            self._shutdown.close(
+            shutdown_close(
                 management_shutdown_wait_timeout=management_shutdown_wait_timeout,
                 management_wait_poll_seconds=management_wait_poll_seconds,
             )

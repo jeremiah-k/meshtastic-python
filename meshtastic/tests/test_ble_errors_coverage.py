@@ -48,7 +48,19 @@ class TestBLEDBusTransportErrorFlattening:
             original,
             message="transport failed",
         )
+        assert err.dbus_error_name == "org.bluez.Error.Failed"
         assert err.dbus_error_body == ("Operation already in progress",)
+
+    def test_args_zero_dbus_name_is_preserved_without_attr(self) -> None:
+        """DBus error names in args[0] should be preserved when attr is absent."""
+        original = Exception("wrapper")
+        original.args = ("org.bluez.Error.InProgress", ["Operation in progress"])
+        err = BLEDBusTransportError.from_exception(
+            original,
+            message="transport failed",
+        )
+        assert err.dbus_error_name == "org.bluez.Error.InProgress"
+        assert err.dbus_error_details == "Operation in progress"
 
     def test_no_flatten_for_multiple_args(self) -> None:
         """Multiple positional args should remain as-is."""

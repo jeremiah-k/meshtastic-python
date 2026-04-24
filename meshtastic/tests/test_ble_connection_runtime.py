@@ -15,7 +15,7 @@ from meshtastic.interfaces.ble.connection import (
     ConnectionOrchestrator,
 )
 from meshtastic.interfaces.ble.constants import DISCONNECT_TIMEOUT_SECONDS
-from meshtastic.interfaces.ble.errors import BLEErrorHandler
+from meshtastic.interfaces.ble.errors import BLEDBusTransportError, BLEErrorHandler
 
 pytestmark = pytest.mark.unit
 
@@ -31,7 +31,7 @@ class _ErrorHandler:
 class _DummyClient:
     """Minimal BLE client double for shutdown behavior tests."""
 
-    def __init__(self, *, connected: bool, close_accepts_timeout: bool = True) -> None:
+    def __init__(self, *, connected: bool) -> None:
         self._closed = False
         self._connected = connected
         self.bleak_client = object()
@@ -39,7 +39,6 @@ class _DummyClient:
         self.close_calls = 0
         self.last_disconnect_timeout: float | None = None
         self.last_close_timeout: float | None = None
-        self._close_accepts_timeout = close_accepts_timeout
 
     def is_connected(self) -> bool:
         return self._connected
@@ -202,7 +201,7 @@ def test_stale_cleanup_retry_failure_does_not_fall_through() -> None:
         side_effect=retry_err
     )
 
-    with pytest.raises(BleakDBusError, match="Device or resource busy"):
+    with pytest.raises(BLEDBusTransportError, match="BLE DBus transport error"):
         orchestrator._attempt_direct_connect(
             target_address="AA:BB:CC:DD:EE:FF",
             explicit_address=True,
@@ -216,7 +215,7 @@ def test_stale_cleanup_retry_failure_does_not_fall_through() -> None:
         )
 
     # Generic retry path must not be reached.
-    orchestrator._client_manager_safe_close_client.assert_called_with(client)
+    orchestrator._client_manager_safe_close_client.assert_called_once_with(client)
 
 
 def test_stale_cleanup_retry_mismatch_still_propagates() -> None:

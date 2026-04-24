@@ -205,6 +205,33 @@ class BLELifecycleService:
         return _LifecycleErrorAccess(iface).resolve_hook(public_name, legacy_name)
 
     @staticmethod
+    def _get_shutdown_lifecycle_coordinator(
+        iface: "BLEInterface",
+    ) -> BLEShutdownLifecycleCoordinator:
+        """Return the shared shutdown lifecycle coordinator when available."""
+        get_or_create = getattr(iface, "_get_or_create_collaborator", None)
+        if callable(get_or_create) and not _is_unconfigured_mock_callable(
+            get_or_create
+        ):
+            try:
+                signature(get_or_create).bind(
+                    "_ble_shutdown_lifecycle_coordinator",
+                    lambda: BLEShutdownLifecycleCoordinator(iface),
+                )
+            except (AttributeError, NotImplementedError, TypeError, ValueError):
+                pass
+            else:
+                coordinator = get_or_create(
+                    "_ble_shutdown_lifecycle_coordinator",
+                    lambda: BLEShutdownLifecycleCoordinator(iface),
+                )
+                if coordinator is not None and not _is_unconfigured_mock_member(
+                    coordinator
+                ):
+                    return cast(BLEShutdownLifecycleCoordinator, coordinator)
+        return BLEShutdownLifecycleCoordinator(iface)
+
+    @staticmethod
     def _error_handler_safe_cleanup(
         iface: "BLEInterface",
         cleanup: Callable[[], object],
@@ -1340,7 +1367,9 @@ class BLELifecycleService:
         None
             Returns ``None`` after best-effort shutdown cleanup.
         """
-        shutdown_close = BLEShutdownLifecycleCoordinator(iface).close
+        shutdown_close = BLELifecycleService._get_shutdown_lifecycle_coordinator(
+            iface
+        ).close
         if _callable_accepts_timeout_kwarg(shutdown_close):
             shutdown_close(
                 management_shutdown_wait_timeout=management_shutdown_wait_timeout,

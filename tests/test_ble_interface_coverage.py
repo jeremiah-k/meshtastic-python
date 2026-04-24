@@ -236,6 +236,16 @@ def test_ble_address_property_prefers_active_client_address() -> None:
     assert iface.ble_address == "11:22:33:44:55:66"
 
 
+def test_ble_address_property_ignores_invalid_active_client_address() -> None:
+    """ble_address should not expose active-client sentinel identifiers."""
+    iface = _build_minimal_interface()
+    iface.address = None
+    iface.client = DummyClient(address="unknown")
+
+    assert iface.bleAddress is None
+    assert iface.ble_address is None
+
+
 def test_ble_address_property_falls_back_to_interface_address() -> None:
     """ble_address and bleAddress should fall back to the interface-level address when no client is active."""
     iface = _build_minimal_interface()

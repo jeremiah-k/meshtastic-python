@@ -39,8 +39,8 @@ class _ImmediateThread:
 class TestShutdownClientUnsubscribeFallback:
     """Test legacy unsubscribe_all fallback in _shutdown_client."""
 
-    def test_legacy_unsubscribe_all_without_timeout_is_called(self):
-        """When unsubscribe_all does not accept timeout, retry without it."""
+    def test_legacy_unsubscribe_all_with_finite_timeout_is_skipped(self):
+        """When timeout is finite, do not retry legacy unsubscribe inline."""
         iface = MagicMock()
         iface.client = None
         iface._management_inflight = 0
@@ -71,10 +71,48 @@ class TestShutdownClientUnsubscribeFallback:
             coordinator._shutdown_client(
                 management_wait_timed_out=False,
                 unsubscribe_timeout=5.0,
+                bounded_close_timeout_active=True,
+            )
+
+        assert called_with == []
+
+    def test_legacy_unsubscribe_all_without_timeout_is_called(self):
+        """When no timeout is active, retry legacy unsubscribe without it."""
+        iface = MagicMock()
+        iface.client = None
+        iface._management_inflight = 0
+        iface._management_target_gate.return_value.__enter__ = MagicMock(
+            return_value=MagicMock()
+        )
+        iface._management_target_gate.return_value.__exit__ = MagicMock(
+            return_value=None
+        )
+
+        coordinator = BLEShutdownLifecycleCoordinator(iface)
+
+        called_with: list[tuple[Any, ...]] = []
+
+        def legacy_unsubscribe(client: Any) -> None:
+            called_with.append((client,))
+
+        notification_manager = MagicMock()
+        notification_manager._unsubscribe_all = None
+        notification_manager.unsubscribe_all = legacy_unsubscribe
+        iface._notification_manager = notification_manager
+
+        with patch.object(
+            coordinator,
+            "_detach_client_for_shutdown",
+            return_value=(MagicMock(spec=BLEClient), False),
+        ):
+            coordinator._shutdown_client(
+                management_wait_timed_out=False,
+                unsubscribe_timeout=None,
+                client_disconnect_timeout=None,
+                disconnect_notification_wait_timeout=None,
             )
 
         assert len(called_with) == 1
-        # The call should be unsubscribe_all(client) without timeout
         assert len(called_with[0]) == 1
 
     def test_unsubscribe_all_unrelated_typeerror_propagates(self):
@@ -104,12 +142,12 @@ class TestShutdownClientUnsubscribeFallback:
             "_detach_client_for_shutdown",
             return_value=(MagicMock(spec=BLEClient), False),
         ):
-            # The error should propagate through safe-cleanup, which suppresses
-            # it by default. We verify it does not hang or mask as a kwargs error.
-            coordinator._shutdown_client(
-                management_wait_timed_out=False,
-                unsubscribe_timeout=5.0,
-            )
+            with pytest.raises(TypeError, match="unexpected type problem"):
+                coordinator._shutdown_client(
+                    management_wait_timed_out=False,
+                    unsubscribe_timeout=5.0,
+                    bounded_close_timeout_active=True,
+                )
 
 
 class TestBoundedThreadTOCTOU:

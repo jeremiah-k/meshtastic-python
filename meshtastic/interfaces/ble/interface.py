@@ -1073,7 +1073,9 @@ class BLEInterface(MeshInterface):
         """Return the best-known BLE address for the active interface client."""
         client = getattr(self, "client", None)
         active_client_address = self._extract_client_address(client)
-        if active_client_address:
+        if isinstance(active_client_address, str) and _looks_like_ble_address(
+            active_client_address
+        ):
             return active_client_address
         interface_address = getattr(self, "address", None)
         if isinstance(interface_address, str) and _looks_like_ble_address(
