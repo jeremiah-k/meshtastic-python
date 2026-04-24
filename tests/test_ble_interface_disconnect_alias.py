@@ -11,7 +11,7 @@ def test_disconnect_delegates_to_close() -> None:
 
     BLEInterface.disconnect(iface)
 
-    iface.close.assert_called_once_with()
+    iface.close.assert_called_once_with(timeout=None)
 
 
 def test_disconnect_forwards_timeout_to_close() -> None:

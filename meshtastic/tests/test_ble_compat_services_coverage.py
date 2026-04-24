@@ -1322,9 +1322,7 @@ class TestBLELifecycleServiceGuardedDispatch:
             "meshtastic.interfaces.ble.lifecycle_compat_service.BLEDisconnectLifecycleCoordinator",
             return_value=coordinator,
         ):
-            BLELifecycleService._disconnect_and_close_client(
-                iface, client, timeout=7.5
-            )
+            BLELifecycleService._disconnect_and_close_client(iface, client, timeout=7.5)
 
         disconnect_and_close.assert_called_once_with(client, timeout=7.5)
 
@@ -1343,9 +1341,7 @@ class TestBLELifecycleServiceGuardedDispatch:
             "meshtastic.interfaces.ble.lifecycle_compat_service.BLEDisconnectLifecycleCoordinator",
             return_value=coordinator,
         ):
-            BLELifecycleService._disconnect_and_close_client(
-                iface, client, timeout=7.5
-            )
+            BLELifecycleService._disconnect_and_close_client(iface, client, timeout=7.5)
 
     def test_close_passes_timeout_when_supported(self):
         """Timeout should be forwarded to shutdown close when supported."""
@@ -1375,7 +1371,9 @@ class TestBLELifecycleServiceGuardedDispatch:
         """Legacy shutdown close without timeout must not receive it."""
         iface = MagicMock()
 
-        def legacy_close(management_shutdown_wait_timeout, management_wait_poll_seconds):
+        def legacy_close(
+            management_shutdown_wait_timeout, management_wait_poll_seconds
+        ):
             pass
 
         coordinator = MagicMock()

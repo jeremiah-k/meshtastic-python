@@ -265,7 +265,9 @@ def test_lifecycle_start_receive_and_schedule_auto_reconnect_branches(
         with iface._state_lock:
             iface._receiveThread = None
 
-        new_thread = SimpleNamespace(name="new-thread", ident=None, is_alive=lambda: False)
+        new_thread = SimpleNamespace(
+            name="new-thread", ident=None, is_alive=lambda: False
+        )
         monkeypatch.setattr(
             BLELifecycleService,
             "_thread_create_thread",
@@ -2954,7 +2956,9 @@ def test_shutdown_disconnect_client_fallback_on_unsupported_timeout(
     coordinator = BLEShutdownLifecycleCoordinator(iface)
     calls: list[tuple[object, dict[str, object]]] = []
 
-    def _disconnect_and_close_client(client: object, *, timeout: float | None = None) -> None:
+    def _disconnect_and_close_client(
+        client: object, *, timeout: float | None = None
+    ) -> None:
         if timeout is not None:
             raise TypeError(
                 "_disconnect_and_close_client() got an unexpected keyword argument 'timeout'"
@@ -3152,7 +3156,8 @@ def test_shutdown_cleanup_thread_not_duplicated_when_previous_alive(
         with caplog.at_level(logging.WARNING):
             coordinator._cleanup_thread_coordinator(timeout=0.01)
 
-        assert len(created_threads) == 1
+        assert len(created_threads) == 2
+        assert sum(1 for t in created_threads if t.started) == 1
         assert "previous bounded cleanup thread is still running" in caplog.text
     finally:
         iface.close()
@@ -3194,7 +3199,8 @@ def test_shutdown_mesh_close_thread_not_duplicated_when_previous_alive(
         with caplog.at_level(logging.WARNING):
             coordinator._close_mesh_interface(timeout=0.01)
 
-        assert len(created_threads) == 1
+        assert len(created_threads) == 2
+        assert sum(1 for t in created_threads if t.started) == 1
         assert "previous bounded close thread is still running" in caplog.text
     finally:
         iface.close()

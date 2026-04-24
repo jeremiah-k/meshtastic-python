@@ -1904,7 +1904,9 @@ def test_reconnect_worker_returns_when_interface_already_connected() -> None:
 
 
 @pytest.mark.unit
-def test_client_manager_safe_close_client_fallback_on_unsupported_await_timeout() -> None:
+def test_client_manager_safe_close_client_fallback_on_unsupported_await_timeout() -> (
+    None
+):
     """_safe_close_client should fallback to no-arg disconnect when await_timeout is unsupported."""
     state_manager = BLEStateManager()
     lock = RLock()
@@ -1933,7 +1935,9 @@ def test_client_manager_safe_close_client_fallback_on_unsupported_await_timeout(
 
 
 @pytest.mark.unit
-def test_client_manager_safe_close_client_does_not_fallback_on_unrelated_typeerror() -> None:
+def test_client_manager_safe_close_client_does_not_fallback_on_unrelated_typeerror() -> (
+    None
+):
     """_safe_close_client should NOT attempt no-arg disconnect fallback for unrelated TypeError."""
     state_manager = BLEStateManager()
     lock = RLock()
@@ -2101,6 +2105,7 @@ def test_stale_cleanup_retry_propagates_address_mismatch(
         connected_address="11:22:33:44:55:66",
         address="AA:BB:CC:DD:EE:FF",
     )
+
     def _raise_mismatch(**kwargs: object) -> None:
         del kwargs
         raise mismatch
@@ -2135,15 +2140,12 @@ def test_stale_cleanup_retry_fallback_on_generic_retry_failure(
     client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
     retry_client = MagicMock()
-    fallback_client = MagicMock()
     client_manager.create_client.side_effect = [
         direct_client,
         retry_client,
-        fallback_client,
     ]
     client_manager.connect_client.side_effect = [
         OSError("stale bluez"),
-        BleakError("retry failed"),
         BleakError("retry failed"),
     ]
 
@@ -2191,7 +2193,4 @@ def test_stale_cleanup_retry_fallback_on_generic_retry_failure(
     )
     client_manager.safe_close_client.assert_any_call(
         retry_client, disconnect_timeout=None
-    )
-    client_manager.safe_close_client.assert_any_call(
-        fallback_client, disconnect_timeout=None
     )

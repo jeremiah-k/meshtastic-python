@@ -2575,7 +2575,9 @@ def test_ble_interface_connect_uses_pair_override_for_orchestrator(
 
     monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
     monkeypatch.setattr(iface, "_get_existing_client_if_valid", lambda _req: None)
-    monkeypatch.setattr(iface, "_raise_if_duplicate_connect", lambda _key, **_kwargs: None)
+    monkeypatch.setattr(
+        iface, "_raise_if_duplicate_connect", lambda _key, **_kwargs: None
+    )
     monkeypatch.setattr(iface, "_finalize_connection_gates", lambda *_args: None)
     connected_callbacks: list[bool] = []
     monkeypatch.setattr(iface, "_connected", lambda: connected_callbacks.append(True))
@@ -2628,7 +2630,9 @@ def test_connect_wraps_invalid_connect_timeout_as_ble_error(
 
     monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
     monkeypatch.setattr(iface, "_get_existing_client_if_valid", lambda _req: None)
-    monkeypatch.setattr(iface, "_raise_if_duplicate_connect", lambda _key, **_kwargs: None)
+    monkeypatch.setattr(
+        iface, "_raise_if_duplicate_connect", lambda _key, **_kwargs: None
+    )
 
     with pytest.raises(
         BLEInterface.BLEError,
@@ -2753,7 +2757,9 @@ def test_connect_waits_for_inflight_management_before_establishing(
     )
     monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
     monkeypatch.setattr(iface, "_get_existing_client_if_valid", lambda _req: None)
-    monkeypatch.setattr(iface, "_raise_if_duplicate_connect", lambda _key, **_kwargs: None)
+    monkeypatch.setattr(
+        iface, "_raise_if_duplicate_connect", lambda _key, **_kwargs: None
+    )
     monkeypatch.setattr(iface, "_finalize_connection_gates", lambda *_args: None)
     monkeypatch.setattr(
         iface,
@@ -3131,7 +3137,9 @@ def test_connect_returns_existing_client_after_lock_recheck(
         "_resolve_target_address_for_connect",
         lambda identifier: cast(str, identifier),
     )
-    monkeypatch.setattr(iface, "_raise_if_duplicate_connect", lambda _key, **_kwargs: None)
+    monkeypatch.setattr(
+        iface, "_raise_if_duplicate_connect", lambda _key, **_kwargs: None
+    )
 
     assert iface.connect("AA:BB:CC:DD:EE:10") is existing_client
 
@@ -3148,7 +3156,9 @@ def test_connect_raises_when_establish_returns_no_client(
         "_resolve_target_address_for_connect",
         lambda identifier: cast(str, identifier),
     )
-    monkeypatch.setattr(iface, "_raise_if_duplicate_connect", lambda _key, **_kwargs: None)
+    monkeypatch.setattr(
+        iface, "_raise_if_duplicate_connect", lambda _key, **_kwargs: None
+    )
     monkeypatch.setattr(
         iface,
         "_establish_and_update_client",
@@ -3172,7 +3182,9 @@ def test_connect_does_not_relabel_unrelated_establish_connection_value_error(
 
     monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
     monkeypatch.setattr(iface, "_get_existing_client_if_valid", lambda _req: None)
-    monkeypatch.setattr(iface, "_raise_if_duplicate_connect", lambda _key, **_kwargs: None)
+    monkeypatch.setattr(
+        iface, "_raise_if_duplicate_connect", lambda _key, **_kwargs: None
+    )
 
     with pytest.raises(ValueError, match="boom"):
         iface.connect("AA:BB:CC:DD:EE:10", connect_timeout=4.5)
@@ -3975,7 +3987,10 @@ def test_connect_finalizes_gates_after_address_lock_scope(
         ble_iface_mod, "_addr_lock_context", _fake_addr_lock_context, raising=True
     )
     monkeypatch.setattr(
-        iface, "_raise_if_duplicate_connect", lambda _connection_key, **_kwargs: None, raising=True
+        iface,
+        "_raise_if_duplicate_connect",
+        lambda _connection_key, **_kwargs: None,
+        raising=True,
     )
     monkeypatch.setattr(
         iface, "_get_existing_client_if_valid", lambda _request: None, raising=True
@@ -4033,7 +4048,10 @@ def test_connect_marks_provisional_claims_before_gate_release(
 
     monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
     monkeypatch.setattr(
-        iface, "_raise_if_duplicate_connect", lambda _connection_key, **_kwargs: None, raising=True
+        iface,
+        "_raise_if_duplicate_connect",
+        lambda _connection_key, **_kwargs: None,
+        raising=True,
     )
     monkeypatch.setattr(
         iface, "_get_existing_client_if_valid", lambda _request: None, raising=True
@@ -4110,6 +4128,7 @@ def test_connect_name_target_reserves_requested_and_resolved_keys(
         ),
         raising=True,
     )
+
     def _record_duplicate_check(_key: str | None, **_kwargs: object) -> None:
         if _key is not None:
             duplicate_checks.append(_key)
@@ -4207,7 +4226,10 @@ def test_connect_raises_when_client_becomes_stale_after_gate_finalization(
     monkeypatch.setattr(iface, "_connected", lambda: connected_callbacks.append(True))
     monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
     monkeypatch.setattr(
-        iface, "_raise_if_duplicate_connect", lambda _connection_key, **_kwargs: None, raising=True
+        iface,
+        "_raise_if_duplicate_connect",
+        lambda _connection_key, **_kwargs: None,
+        raising=True,
     )
     monkeypatch.setattr(
         iface, "_get_existing_client_if_valid", lambda _request: None, raising=True
@@ -4295,7 +4317,10 @@ def test_connect_preserves_reclaimed_keys_for_newer_client_after_gate_finalizati
 
     monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
     monkeypatch.setattr(
-        iface, "_raise_if_duplicate_connect", lambda _connection_key, **_kwargs: None, raising=True
+        iface,
+        "_raise_if_duplicate_connect",
+        lambda _connection_key, **_kwargs: None,
+        raising=True,
     )
     monkeypatch.setattr(
         iface, "_get_existing_client_if_valid", lambda _request: None, raising=True
@@ -4383,7 +4408,10 @@ def test_connect_raises_when_registry_ownership_is_lost_after_gate_finalization(
     monkeypatch.setattr(iface, "_connected", lambda: connected_callbacks.append(True))
     monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
     monkeypatch.setattr(
-        iface, "_raise_if_duplicate_connect", lambda _connection_key, **_kwargs: None, raising=True
+        iface,
+        "_raise_if_duplicate_connect",
+        lambda _connection_key, **_kwargs: None,
+        raising=True,
     )
     monkeypatch.setattr(
         iface, "_get_existing_client_if_valid", lambda _request: None, raising=True
@@ -4465,7 +4493,10 @@ def test_connect_restores_requested_identifier_after_name_target_loses_ownership
 
     monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
     monkeypatch.setattr(
-        iface, "_raise_if_duplicate_connect", lambda _connection_key, **_kwargs: None, raising=True
+        iface,
+        "_raise_if_duplicate_connect",
+        lambda _connection_key, **_kwargs: None,
+        raising=True,
     )
     monkeypatch.setattr(
         iface, "_get_existing_client_if_valid", lambda _request: None, raising=True
@@ -4542,7 +4573,10 @@ def test_connect_rechecks_ownership_before_publishing_connected(
     monkeypatch.setattr(iface, "_connected", lambda: connected_callbacks.append(True))
     monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
     monkeypatch.setattr(
-        iface, "_raise_if_duplicate_connect", lambda _connection_key, **_kwargs: None, raising=True
+        iface,
+        "_raise_if_duplicate_connect",
+        lambda _connection_key, **_kwargs: None,
+        raising=True,
     )
     monkeypatch.setattr(
         iface, "_get_existing_client_if_valid", lambda _request: None, raising=True
@@ -4621,7 +4655,10 @@ def test_connect_raises_when_shutdown_wins_after_gate_finalization(
     monkeypatch.setattr(iface, "_connected", lambda: connected_callbacks.append(True))
     monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
     monkeypatch.setattr(
-        iface, "_raise_if_duplicate_connect", lambda _connection_key, **_kwargs: None, raising=True
+        iface,
+        "_raise_if_duplicate_connect",
+        lambda _connection_key, **_kwargs: None,
+        raising=True,
     )
     monkeypatch.setattr(
         iface, "_get_existing_client_if_valid", lambda _request: None, raising=True

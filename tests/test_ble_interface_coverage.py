@@ -319,7 +319,9 @@ def test_close_timeout_budget_propagates_to_shutdown_stages() -> None:
     iface = _build_minimal_interface()
     budgets: list[float | None] = []
     iface._get_lifecycle_controller = lambda: SimpleNamespace(
-        _close=lambda *, management_shutdown_wait_timeout=5.0, management_wait_poll_seconds=0.5, timeout=None: budgets.append(timeout)
+        _close=lambda *, management_shutdown_wait_timeout=5.0, management_wait_poll_seconds=0.5, timeout=None: budgets.append(
+            timeout
+        )
     )
 
     iface.close(timeout=5.0)

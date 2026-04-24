@@ -8,10 +8,8 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 from unittest.mock import Mock, patch
 
 import pytest
-from bleak.exc import BleakError
+from bleak.exc import BleakDBusError, BleakError
 from google.protobuf.message import DecodeError as ProtobufDecodeError
-
-from bleak.exc import BleakDBusError
 
 from meshtastic.interfaces.ble import errors as ble_errors_module
 from meshtastic.interfaces.ble.constants import logger

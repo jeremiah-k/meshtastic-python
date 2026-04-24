@@ -7,7 +7,6 @@ from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
-
 from bleak.exc import BleakDBusError
 
 from meshtastic.interfaces.ble.client import BLEClient

@@ -653,10 +653,14 @@ class TestBLELifecycleControllerClientManagement:
         """_disconnect_and_close_client should delegate to _disconnect coordinator."""
         calls: list[tuple[object, float | None]] = []
 
-        def _capture_disconnect(client: object, *, timeout: float | None = None) -> None:
+        def _capture_disconnect(
+            client: object, *, timeout: float | None = None
+        ) -> None:
             calls.append((client, timeout))
 
-        mock_disconnect = SimpleNamespace(disconnect_and_close_client=_capture_disconnect)
+        mock_disconnect = SimpleNamespace(
+            disconnect_and_close_client=_capture_disconnect
+        )
         mock_iface = SimpleNamespace()
         controller = BLELifecycleController(mock_iface)
         controller._disconnect = mock_disconnect  # type: ignore[assignment]
@@ -752,9 +756,7 @@ class TestBLELifecycleControllerClientManagement:
             del client, timeout
             raise TypeError("takes 1 positional argument but 2 were given")
 
-        mock_disconnect = SimpleNamespace(
-            disconnect_and_close_client=_raise_unrelated
-        )
+        mock_disconnect = SimpleNamespace(disconnect_and_close_client=_raise_unrelated)
         mock_iface = SimpleNamespace()
         controller = BLELifecycleController(mock_iface)
         controller._disconnect = mock_disconnect  # type: ignore[assignment]

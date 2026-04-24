@@ -1090,7 +1090,9 @@ class TestWaitForConfig:
         """Test successful wait for config including dedicated lora wait."""
         mock_interface._timeout.waitForSet.return_value = True
         mock_interface.localNode.waitForConfig.return_value = True
-        mock_interface.localNode._channel_request_runtime._timeout_for_field.return_value = True
+        mock_interface.localNode._channel_request_runtime._timeout_for_field.return_value = (
+            True
+        )
 
         send_pipeline.waitForConfig()
 
@@ -1116,7 +1118,9 @@ class TestWaitForConfig:
         """Test failure path when the lora wait returns false and raises timeout error."""
         mock_interface._timeout.waitForSet.return_value = True
         mock_interface.localNode.waitForConfig.return_value = True
-        mock_interface.localNode._channel_request_runtime._timeout_for_field.return_value = False
+        mock_interface.localNode._channel_request_runtime._timeout_for_field.return_value = (
+            False
+        )
 
         with pytest.raises(
             mock_interface.MeshInterfaceError,

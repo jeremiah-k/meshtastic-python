@@ -37,12 +37,6 @@ except ModuleNotFoundError as exc:  # pragma: no cover - dependency guard
 from meshtastic.interfaces import ble as _ble
 from meshtastic.interfaces.ble import (  # noqa: F401  # pylint: disable=unused-import
     BLECLIENT_ERROR_ASYNC_TIMEOUT,
-    BLEAddressMismatchError,
-    BLEConnectionSuppressedError,
-    BLEConnectionTimeoutError,
-    BLEDBusTransportError,
-    BLEDeviceNotFoundError,
-    BLEDiscoveryError,
     ERROR_CONNECTION_FAILED,
     ERROR_MULTIPLE_DEVICES,
     ERROR_NO_PERIPHERAL_FOUND,
@@ -54,14 +48,20 @@ from meshtastic.interfaces.ble import (  # noqa: F401  # pylint: disable=unused-
     FROMRADIO_UUID,
     LEGACY_LOGRADIO_UUID,
     LOGRADIO_UUID,
-    MeshtasticBLEError,
     SERVICE_UUID,
     TORADIO_UUID,
+    BLEAddressMismatchError,
     BLEClient,
     BLEConfig,
+    BLEConnectionSuppressedError,
+    BLEConnectionTimeoutError,
+    BLEDBusTransportError,
+    BLEDeviceNotFoundError,
+    BLEDiscoveryError,
     BLEInterface,
-    sanitize_address,
+    MeshtasticBLEError,
     logger,
+    sanitize_address,
 )
 
 _BLE_PUBLIC_ALL = tuple(getattr(_ble, "__all__", ()))

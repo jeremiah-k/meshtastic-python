@@ -974,7 +974,9 @@ def test_orchestrator_attempt_stale_cleanup_safe_close_runs_after_disconnect_fai
 ) -> None:
     """Stale-cleanup safe close should run even when disconnect fails."""
     with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
-        cleanup_client = DummyClient(disconnect_exception=BleakError("disconnect failed"))
+        cleanup_client = DummyClient(
+            disconnect_exception=BleakError("disconnect failed")
+        )
         closed_clients: list[object] = []
         orchestrator._client_manager_create_client = (
             lambda *_args, **_kwargs: cleanup_client

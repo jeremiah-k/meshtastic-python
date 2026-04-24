@@ -770,15 +770,20 @@ class ClientManager:
                 "Skipping BLE client disconnect during interpreter finalization."
             )
         if not skip_disconnect:
-            try:
-                client.close(timeout=disconnect_timeout)
-            except TypeError as exc:
-                if _is_unexpected_keyword_error(exc, "timeout"):
+
+            def _close_with_timeout() -> None:
+                try:
+                    client.close(timeout=disconnect_timeout)
+                except TypeError as exc:
+                    if not _is_unexpected_keyword_error(exc, "timeout"):
+                        raise
                     client.close()
-                else:
-                    raise
-            except Exception:  # noqa: BLE001 - close path best effort
-                logger.debug("Error during client close", exc_info=True)
+
+            _run_safe_cleanup(
+                _close_with_timeout,
+                "client close",
+                safe_cleanup_hook,
+            )
         else:
             logger.debug("Skipping BLE client close during interpreter finalization.")
         if event:

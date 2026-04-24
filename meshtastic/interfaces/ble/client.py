@@ -1049,9 +1049,7 @@ class BLEClient:
             # Best effort: disconnect active transport before closing this wrapper.
             if getattr(self, "bleak_client", None) is not None and self.is_connected():
                 disconnect_timeout = (
-                    DISCONNECT_TIMEOUT_SECONDS
-                    if timeout is None
-                    else timeout
+                    DISCONNECT_TIMEOUT_SECONDS if timeout is None else timeout
                 )
                 self._error_handler_safe_cleanup(
                     lambda: self.disconnect(await_timeout=disconnect_timeout),
