@@ -170,6 +170,7 @@ def test_safe_close_client_reraises_unrelated_typeerror() -> None:
 
     with pytest.raises(TypeError, match="something else broke"):
         manager._safe_close_client(cast(BLEClient, client), event=done)
+    assert done.is_set()
 
 
 def test_stale_cleanup_retry_failure_does_not_fall_through() -> None:

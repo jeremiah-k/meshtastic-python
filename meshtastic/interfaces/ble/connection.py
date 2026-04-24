@@ -714,76 +714,87 @@ class ClientManager:
         ):
             safe_cleanup_hook = None
 
-        if (
-            not skip_disconnect
-            and not getattr(client, "_closed", False)
-            and getattr(client, "bleak_client", None)
-        ):
-            is_connected = False
-            for probe_name in ("is_connected", "isConnected", "_is_connected"):
-                is_connected_probe = getattr(client, probe_name, None)
-                if callable(is_connected_probe) and not _is_unconfigured_mock_callable(
-                    is_connected_probe
-                ):
-                    try:
-                        is_connected = bool(is_connected_probe())
-                    except Exception:  # noqa: BLE001 - shutdown must remain best effort
-                        logger.debug(
-                            "Failed to read BLE client connected state via %s during shutdown.",
-                            probe_name,
-                            exc_info=True,
-                        )
-                    if is_connected:
-                        break
-                elif isinstance(
-                    is_connected_probe, bool
-                ) and not _is_unconfigured_mock_member(is_connected_probe):
-                    is_connected = is_connected_probe
-                    if is_connected:
-                        break
-            if is_connected:
-                effective_disconnect_timeout = (
-                    DISCONNECT_TIMEOUT_SECONDS
-                    if disconnect_timeout is None
-                    else disconnect_timeout
-                )
+        try:
+            if (
+                not skip_disconnect
+                and not getattr(client, "_closed", False)
+                and getattr(client, "bleak_client", None)
+            ):
+                is_connected = False
+                for probe_name in ("is_connected", "isConnected", "_is_connected"):
+                    is_connected_probe = getattr(client, probe_name, None)
+                    if callable(
+                        is_connected_probe
+                    ) and not _is_unconfigured_mock_callable(is_connected_probe):
+                        try:
+                            is_connected = bool(is_connected_probe())
+                        except Exception:  # noqa: BLE001 - shutdown must remain best effort
+                            logger.debug(
+                                "Failed to read BLE client connected state via %s during shutdown.",
+                                probe_name,
+                                exc_info=True,
+                            )
+                        if is_connected:
+                            break
+                    elif isinstance(
+                        is_connected_probe, bool
+                    ) and not _is_unconfigured_mock_member(is_connected_probe):
+                        is_connected = is_connected_probe
+                        if is_connected:
+                            break
+                if is_connected:
+                    effective_disconnect_timeout = (
+                        DISCONNECT_TIMEOUT_SECONDS
+                        if disconnect_timeout is None
+                        else disconnect_timeout
+                    )
 
-                def _disconnect_with_timeout() -> None:
+                    def _disconnect_with_timeout() -> None:
+                        try:
+                            client.disconnect(await_timeout=effective_disconnect_timeout)
+                        except TypeError as exc:
+                            if not _is_unexpected_keyword_error(exc, "await_timeout"):
+                                raise
+                            client.disconnect()
+
+                    _run_safe_cleanup(
+                        _disconnect_with_timeout,
+                        "client disconnect",
+                        safe_cleanup_hook,
+                    )
+                else:
+                    logger.debug(
+                        "Skipping BLE client disconnect during shutdown: client is not connected."
+                    )
+            elif skip_disconnect:
+                logger.debug(
+                    "Skipping BLE client disconnect during interpreter finalization."
+                )
+            if not skip_disconnect:
+                close_error: TypeError | None = None
+
+                def _close_with_timeout() -> None:
+                    nonlocal close_error
                     try:
-                        client.disconnect(await_timeout=effective_disconnect_timeout)
+                        client.close(timeout=disconnect_timeout)
                     except TypeError as exc:
-                        if not _is_unexpected_keyword_error(exc, "await_timeout"):
+                        if not _is_unexpected_keyword_error(exc, "timeout"):
+                            close_error = exc
                             raise
-                        client.disconnect()
+                        client.close()
 
                 _run_safe_cleanup(
-                    _disconnect_with_timeout,
-                    "client disconnect",
+                    _close_with_timeout,
+                    "client close",
                     safe_cleanup_hook,
                 )
+                if close_error is not None:
+                    raise close_error
             else:
-                logger.debug(
-                    "Skipping BLE client disconnect during shutdown: client is not connected."
-                )
-        elif skip_disconnect:
-            logger.debug(
-                "Skipping BLE client disconnect during interpreter finalization."
-            )
-        if not skip_disconnect:
-
-            def _close_with_timeout() -> None:
-                try:
-                    client.close(timeout=disconnect_timeout)
-                except TypeError as exc:
-                    if not _is_unexpected_keyword_error(exc, "timeout"):
-                        raise
-                    client.close()
-
-            _close_with_timeout()
-        else:
-            logger.debug("Skipping BLE client close during interpreter finalization.")
-        if event:
-            event.set()
+                logger.debug("Skipping BLE client close during interpreter finalization.")
+        finally:
+            if event:
+                event.set()
 
     def safe_close_client(
         self,
