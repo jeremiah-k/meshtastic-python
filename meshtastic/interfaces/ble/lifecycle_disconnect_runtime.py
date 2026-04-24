@@ -81,9 +81,25 @@ class BLEDisconnectLifecycleCoordinator:
             raise AttributeError(RECONNECT_SCHEDULER_MISSING_MSG)
         schedule_reconnect(iface.auto_reconnect, iface._shutdown_event)
 
-    def disconnect_and_close_client(self, client: "BLEClient") -> None:
-        """Release BLE client resources with best-effort disconnect/close handling."""
-        self._iface._client_manager_safe_close_client(client)
+    def disconnect_and_close_client(
+        self,
+        client: "BLEClient",
+        *,
+        timeout: float | None = None,
+    ) -> None:
+        """Release BLE client resources with best-effort disconnect/close handling.
+
+        Parameters
+        ----------
+        client : BLEClient
+            Client to disconnect and close.
+        timeout : float | None, optional
+            Optional maximum seconds to wait for client disconnect/close.
+        """
+        self._iface._client_manager_safe_close_client(
+            client,
+            disconnect_timeout=timeout,
+        )
 
     def on_ble_disconnect(self, client: BleakRootClient) -> None:
         """Handle a Bleak disconnect callback from the active transport client."""

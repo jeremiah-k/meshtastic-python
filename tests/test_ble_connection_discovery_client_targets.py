@@ -21,7 +21,13 @@ from meshtastic.interfaces.ble.connection import (
     ConnectionValidator,
 )
 from meshtastic.interfaces.ble.discovery import DiscoveryClientError, DiscoveryManager
-from meshtastic.interfaces.ble.errors import BLEErrorHandler
+from meshtastic.interfaces.ble.errors import (
+    BLEAddressMismatchError,
+    BLEConnectionTimeoutError,
+    BLEDBusTransportError,
+    BLEDeviceNotFoundError,
+    BLEErrorHandler,
+)
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from tests.test_ble_interface_fixtures import DummyClient, _build_interface
 
@@ -329,6 +335,8 @@ def test_connection_orchestrator_direct_and_retry_exception_paths(
             pass
 
         created_client = _SimpleClient()
+        created_client.address = TEST_BLE_ADDRESS
+        created_client.bleak_client = SimpleNamespace(address=TEST_BLE_ADDRESS)
         orchestrator._client_manager_create_client = (
             lambda *_args, **_kwargs: created_client
         )
@@ -807,6 +815,371 @@ def test_orchestrator_create_connect_direct_retry_remaining_branches(
                 retry_connect_timeout=1.0,
             )
         assert closed_clients == [first_retry_client]
+
+
+def test_orchestrator_attempt_direct_connect_maps_dbus_error_to_typed_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Direct-connect DBus failures should normalize to BLEDBusTransportError."""
+    with _make_orchestrator(monkeypatch) as (iface, orchestrator):
+        direct_client = DummyClient()
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: direct_client
+        )
+        orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: (
+            _ for _ in ()
+        ).throw(
+            BleakDBusError(
+                "org.bluez.Error.InProgress",
+                ["Device busy"],
+            )
+        )
+        orchestrator._should_attempt_stale_bluez_cleanup = lambda **_kwargs: False
+        orchestrator._client_manager_safe_close_client = lambda *_args, **_kwargs: None
+
+        with pytest.raises(BLEDBusTransportError) as exc_info:
+            orchestrator._attempt_direct_connect(
+                target_address=TEST_BLE_ADDRESS,
+                explicit_address=True,
+                normalized_target="aabbccddeeff",
+                on_disconnect_func=lambda _client: None,
+                pair_on_connect=False,
+                direct_connect_timeout=1.0,
+                register_notifications_func=lambda _client: None,
+                on_connected_func=lambda: None,
+                emit_connected_side_effects=True,
+            )
+        assert exc_info.value.requested_identifier == TEST_BLE_ADDRESS
+        assert exc_info.value.dbus_error == "org.bluez.Error.InProgress"
+        assert exc_info.value.dbus_error_details == "Device busy"
+        assert exc_info.value.dbus_error_body == ("Device busy",)
+        assert isinstance(exc_info.value.cause, BleakDBusError)
+        assert isinstance(exc_info.value, iface.BLEError)
+
+
+def test_orchestrator_attempt_direct_connect_uses_stale_cleanup_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Direct-connect failure should retry once after stale BlueZ cleanup."""
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        direct_client = DummyClient()
+        retried_client = DummyClient()
+        closed_clients: list[object] = []
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: direct_client
+        )
+        orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: (
+            _ for _ in ()
+        ).throw(BleakDBusError("dbus", "busy"))
+        orchestrator._client_manager_safe_close_client = (
+            lambda client: closed_clients.append(client)
+        )
+        cleanup_attempts = 0
+        retry_attempts = 0
+        orchestrator._should_attempt_stale_bluez_cleanup = lambda **_kwargs: True
+
+        def _cleanup_once(**_kwargs: object) -> bool:
+            nonlocal cleanup_attempts
+            cleanup_attempts += 1
+            return True
+
+        def _retry_once(**_kwargs: object) -> DummyClient:
+            nonlocal retry_attempts
+            retry_attempts += 1
+            return retried_client
+
+        orchestrator._attempt_stale_bluez_cleanup = _cleanup_once
+        orchestrator._retry_direct_connect_after_cleanup = _retry_once
+
+        connected_client, skip_discovery_scan = orchestrator._attempt_direct_connect(
+            target_address=TEST_BLE_ADDRESS,
+            explicit_address=True,
+            normalized_target="aabbccddeeff",
+            on_disconnect_func=lambda _client: None,
+            pair_on_connect=False,
+            direct_connect_timeout=1.0,
+            register_notifications_func=lambda _client: None,
+            on_connected_func=lambda: None,
+            emit_connected_side_effects=True,
+        )
+
+        assert connected_client is retried_client
+        assert skip_discovery_scan is False
+        assert closed_clients == [direct_client]
+        assert cleanup_attempts == 1
+        assert retry_attempts == 1
+
+
+def test_orchestrator_attempt_stale_cleanup_forwards_disconnect_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stale-cleanup client close should reuse the cleanup disconnect timeout budget."""
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        cleanup_client = DummyClient()
+        observed_timeout: list[float | None] = []
+        connect_calls: list[tuple[object, float | None]] = []
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: cleanup_client
+        )
+        orchestrator._client_manager_connect_client = (
+            lambda client, timeout=None: connect_calls.append((client, timeout))
+        )
+        orchestrator._client_manager_safe_close_client = (
+            lambda _client, disconnect_timeout=None: observed_timeout.append(
+                disconnect_timeout
+            )
+        )
+
+        assert orchestrator._attempt_stale_bluez_cleanup(
+            target_address=TEST_BLE_ADDRESS,
+            on_disconnect_func=lambda _client: None,
+            connect_timeout=2.0,
+        )
+        assert connect_calls == [(cleanup_client, 2.0)]
+        assert cleanup_client.disconnect_calls == 1
+        assert observed_timeout == [min(2.0, connection_mod.DISCONNECT_TIMEOUT_SECONDS)]
+
+
+def test_orchestrator_attempt_stale_cleanup_connect_failure_is_best_effort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stale-cleanup connect failure should return False and still safe-close."""
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        cleanup_client = DummyClient()
+        closed_clients: list[object] = []
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: cleanup_client
+        )
+
+        def _fail_connect(_client: object, *, timeout: float | None = None) -> None:
+            del timeout
+            raise TimeoutError("cleanup connect timed out")
+
+        orchestrator._client_manager_connect_client = _fail_connect
+        orchestrator._client_manager_safe_close_client = (
+            lambda client, disconnect_timeout=None: closed_clients.append(client)
+        )
+
+        assert not orchestrator._attempt_stale_bluez_cleanup(
+            target_address=TEST_BLE_ADDRESS,
+            on_disconnect_func=lambda _client: None,
+            connect_timeout=2.0,
+        )
+        assert cleanup_client.disconnect_calls == 0
+        assert closed_clients == [cleanup_client]
+
+
+def test_orchestrator_attempt_stale_cleanup_safe_close_runs_after_disconnect_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stale-cleanup safe close should run even when disconnect fails."""
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        cleanup_client = DummyClient(
+            disconnect_exception=BleakError("disconnect failed")
+        )
+        closed_clients: list[object] = []
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: cleanup_client
+        )
+        orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: None
+        orchestrator._client_manager_safe_close_client = (
+            lambda client, disconnect_timeout=None: closed_clients.append(client)
+        )
+
+        assert not orchestrator._attempt_stale_bluez_cleanup(
+            target_address=TEST_BLE_ADDRESS,
+            on_disconnect_func=lambda _client: None,
+            connect_timeout=2.0,
+        )
+        assert cleanup_client.disconnect_calls == 1
+        assert closed_clients == [cleanup_client]
+
+
+def test_orchestrator_stale_bluez_error_classifier_prefers_specific_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stale BlueZ classifier should key off BlueZ-specific names/details, not generic busy wording."""
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        assert orchestrator._is_stale_bluez_direct_connect_error(
+            BleakDBusError(
+                "org.bluez.Error.AlreadyConnected",
+                ["Already connected"],
+            )
+        )
+        assert orchestrator._is_stale_bluez_direct_connect_error(
+            BleakDBusError(
+                "org.bluez.Error.InProgress",
+                ["Operation already in progress"],
+            )
+        )
+        assert not orchestrator._is_stale_bluez_direct_connect_error(
+            RuntimeError("adapter busy waiting for unrelated operation")
+        )
+        assert not orchestrator._is_stale_bluez_direct_connect_error(
+            RuntimeError("operation in progress without BlueZ context")
+        )
+
+
+def test_orchestrator_stale_bluez_error_classifier_walks_wrapped_causes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stale BlueZ classifier should inspect nested cause/context chains."""
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        stale = BleakDBusError(
+            "org.bluez.Error.AlreadyConnected",
+            ["Already connected"],
+        )
+        mid = RuntimeError("wrapper")
+        mid.__cause__ = stale
+        outer = RuntimeError("outer")
+        outer.__context__ = mid
+
+        assert orchestrator._is_stale_bluez_direct_connect_error(outer)
+
+
+def test_orchestrator_stale_bluez_error_classifier_rejects_non_stale_wrappers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Wrapped non-BlueZ errors should not be classified as stale BlueZ state."""
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        inner = RuntimeError("adapter busy")
+        outer = RuntimeError("operation in progress without BlueZ context")
+        outer.__cause__ = inner
+
+        assert not orchestrator._is_stale_bluez_direct_connect_error(outer)
+
+
+def test_orchestrator_attempt_direct_connect_rejects_explicit_address_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Explicit-address direct connect should fail when connected peer mismatches."""
+    with _make_orchestrator(monkeypatch) as (iface, orchestrator):
+        mismatch_client = DummyClient()
+        mismatch_client.address = "11:22:33:44:55:66"
+        mismatch_client.bleak_client = SimpleNamespace(address="11:22:33:44:55:66")
+        closed_clients: list[object] = []
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: mismatch_client
+        )
+        orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: None
+        orchestrator._client_manager_safe_close_client = (
+            lambda client: closed_clients.append(client)
+        )
+        orchestrator._finalize_connection = MagicMock()
+
+        with pytest.raises(BLEAddressMismatchError) as exc_info:
+            orchestrator._attempt_direct_connect(
+                target_address=TEST_BLE_ADDRESS,
+                explicit_address=True,
+                normalized_target="aabbccddeeff",
+                on_disconnect_func=lambda _client: None,
+                pair_on_connect=False,
+                direct_connect_timeout=1.0,
+                register_notifications_func=lambda _client: None,
+                on_connected_func=lambda: None,
+                emit_connected_side_effects=True,
+            )
+        assert exc_info.value.requested_identifier == TEST_BLE_ADDRESS
+        assert exc_info.value.connected_address == "11:22:33:44:55:66"
+        assert isinstance(exc_info.value, iface.BLEError)
+        assert closed_clients == [mismatch_client]
+        orchestrator._finalize_connection.assert_not_called()
+
+
+def test_orchestrator_validate_explicit_address_allows_unknown_connected_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Explicit-address verification remains permissive when address is unavailable."""
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        unknown_client = DummyClient()
+        unknown_client.address = None
+        unknown_client.bleak_client = SimpleNamespace(address=None)
+
+        orchestrator._validate_explicit_address_connection(
+            client=cast(BLEClient, unknown_client),
+            target_address=TEST_BLE_ADDRESS,
+            explicit_address=True,
+        )
+
+
+def test_orchestrator_retry_target_timeout_and_discovery_typing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retry connect timeouts and discovery misses should map to typed BLE errors."""
+    with _make_orchestrator(monkeypatch) as (iface, orchestrator):
+        retry_client = DummyClient()
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: retry_client
+        )
+        orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: (
+            _ for _ in ()
+        ).throw(TimeoutError("timed out"))
+        orchestrator._client_manager_safe_close_client = lambda *_args, **_kwargs: None
+
+        with pytest.raises(BLEConnectionTimeoutError) as timeout_exc:
+            orchestrator._connect_retry_target(
+                connection_target=TEST_BLE_ADDRESS,
+                resolved_address=TEST_BLE_ADDRESS,
+                target_address=TEST_BLE_ADDRESS,
+                skip_discovery_scan=True,
+                on_disconnect_func=lambda _client: None,
+                pair_on_connect=False,
+                retry_connect_timeout=2.5,
+            )
+        assert timeout_exc.value.requested_identifier == TEST_BLE_ADDRESS
+        assert timeout_exc.value.timeout == 2.5
+        assert isinstance(timeout_exc.value, TimeoutError)
+        assert isinstance(timeout_exc.value, iface.BLEError)
+
+        orchestrator._compat_find_device = lambda _target: (_ for _ in ()).throw(
+            BleakDeviceNotFoundError("missing")
+        )
+        with pytest.raises(BLEDeviceNotFoundError):
+            orchestrator._resolve_retry_target(
+                target_address="name-only",
+                skip_discovery_scan=False,
+                direct_connect_timeout=1.0,
+                discovery_connect_timeout=3.0,
+            )
+
+
+def test_establish_connection_preserves_typed_timeout_without_rewrapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_establish_connection should not wrap BLEConnectionTimeoutError a second time."""
+    with _make_orchestrator(monkeypatch) as (iface, orchestrator):
+        timeout_error = BLEConnectionTimeoutError(
+            "timed out",
+            requested_identifier=TEST_BLE_ADDRESS,
+            timeout=1.5,
+        )
+        orchestrator._validator_validate_connection_request = lambda: None
+        orchestrator._raise_if_interface_closing = lambda: None
+        orchestrator._prepare_connection_target = lambda **_kwargs: (
+            TEST_BLE_ADDRESS,
+            "aabbccddeeff",
+            True,
+        )
+        orchestrator._resolve_connection_timeouts = lambda **_kwargs: (1.5, 1.5)
+        orchestrator._state_transition_to = lambda _state: True
+        orchestrator._attempt_direct_connect = lambda **_kwargs: (_ for _ in ()).throw(
+            timeout_error
+        )
+        orchestrator._transition_failure_to_disconnected = lambda _ctx: None
+        orchestrator._client_manager_safe_close_client = lambda *_args, **_kwargs: None
+
+        with pytest.raises(BLEConnectionTimeoutError) as exc_info:
+            orchestrator._establish_connection(
+                address=TEST_BLE_ADDRESS,
+                current_address=None,
+                register_notifications_func=lambda _client: None,
+                on_connected_func=lambda: None,
+                on_disconnect_func=lambda _client: None,
+            )
+
+        assert exc_info.value is timeout_error
+        assert isinstance(exc_info.value, TimeoutError)
+        assert isinstance(exc_info.value, iface.BLEError)
 
 
 def test_orchestrator_finalize_and_establish_remaining_branches(

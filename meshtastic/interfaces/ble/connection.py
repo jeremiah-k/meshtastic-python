@@ -28,7 +28,17 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator, ThreadLike
 from meshtastic.interfaces.ble.discovery import _looks_like_ble_address
-from meshtastic.interfaces.ble.errors import BLEErrorHandler
+from meshtastic.interfaces.ble.errors import (
+    BLEAddressMismatchError,
+    BLEConnectionTimeoutError,
+    BLEDBusTransportError,
+)
+from meshtastic.interfaces.ble.errors import (
+    BLEDeviceNotFoundError as MeshtasticBLEDeviceNotFoundError,
+)
+from meshtastic.interfaces.ble.errors import (
+    BLEErrorHandler,
+)
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
@@ -58,6 +68,27 @@ _CONNECT_TIMEOUT_INVALID_MSG: str = (
 )
 _CONNECT_TIMEOUT_FALLBACK_SECONDS: float = 10.0
 _DISPATCH_MISSING: object = object()
+_STALE_BLUEZ_DBUS_ERROR_NAMES: frozenset[str] = frozenset(
+    {
+        "org.bluez.error.alreadyconnected",
+        "org.bluez.error.inprogress",
+    }
+)
+_STALE_BLUEZ_DETAIL_TOKENS: tuple[str, ...] = (
+    # These phrases appear in BlueZ/DBus transport errors when the adapter has a
+    # stale session or overlapping connect operation. Keep these specific to
+    # avoid false positives from generic "busy" wording in unrelated failures.
+    "already connected",
+    "operation already in progress",
+    "device or resource busy",
+)
+_STALE_BLUEZ_FALLBACK_MESSAGE_TOKENS: tuple[str, ...] = (
+    "org.bluez.error.alreadyconnected",
+    "org.bluez.error.inprogress",
+    "already connected",
+    "operation already in progress",
+    "device or resource busy",
+)
 
 
 def _is_device_not_found_error(err: Exception) -> bool:
@@ -655,7 +686,13 @@ class ClientManager:
         """
         self._update_client_reference(new_client, old_client)
 
-    def _safe_close_client(self, client: BLEClient, event: Event | None = None) -> None:
+    def _safe_close_client(
+        self,
+        client: BLEClient,
+        event: Event | None = None,
+        *,
+        disconnect_timeout: float | None = None,
+    ) -> None:
         """Attempt to disconnect and close the given BLE client, suppressing any errors and optionally signal completion.
 
         Parameters
@@ -664,6 +701,9 @@ class ClientManager:
             BLE client to disconnect and close.
         event : Event | None
             Optional Event that will be set after cleanup completes. (Default value = None)
+        disconnect_timeout : float | None
+            Optional maximum seconds passed to disconnect and close-time
+            disconnect operations.
         """
         is_finalizing = getattr(sys, "is_finalizing", None)
         skip_disconnect = bool(is_finalizing()) if callable(is_finalizing) else False
@@ -677,55 +717,95 @@ class ClientManager:
         ):
             safe_cleanup_hook = None
 
-        if (
-            not skip_disconnect
-            and not getattr(client, "_closed", False)
-            and getattr(client, "bleak_client", None)
-        ):
-            is_connected = False
-            for probe_name in ("is_connected", "isConnected", "_is_connected"):
-                is_connected_probe = getattr(client, probe_name, None)
-                if callable(is_connected_probe) and not _is_unconfigured_mock_callable(
-                    is_connected_probe
-                ):
+        try:
+            if (
+                not skip_disconnect
+                and not getattr(client, "_closed", False)
+                and getattr(client, "bleak_client", None)
+            ):
+                is_connected = False
+                for probe_name in ("is_connected", "isConnected", "_is_connected"):
+                    is_connected_probe = getattr(client, probe_name, None)
+                    if callable(
+                        is_connected_probe
+                    ) and not _is_unconfigured_mock_callable(is_connected_probe):
+                        try:
+                            is_connected = bool(is_connected_probe())
+                        except Exception:  # noqa: BLE001 - shutdown must remain best effort
+                            logger.debug(
+                                "Failed to read BLE client connected state via %s during shutdown.",
+                                probe_name,
+                                exc_info=True,
+                            )
+                        if is_connected:
+                            break
+                    elif isinstance(
+                        is_connected_probe, bool
+                    ) and not _is_unconfigured_mock_member(is_connected_probe):
+                        is_connected = is_connected_probe
+                        if is_connected:
+                            break
+                if is_connected:
+                    effective_disconnect_timeout = (
+                        DISCONNECT_TIMEOUT_SECONDS
+                        if disconnect_timeout is None
+                        else disconnect_timeout
+                    )
+
+                    def _disconnect_with_timeout() -> None:
+                        try:
+                            client.disconnect(await_timeout=effective_disconnect_timeout)
+                        except TypeError as exc:
+                            if not _is_unexpected_keyword_error(exc, "await_timeout"):
+                                raise
+                            client.disconnect()
+
+                    _run_safe_cleanup(
+                        _disconnect_with_timeout,
+                        "client disconnect",
+                        safe_cleanup_hook,
+                    )
+                else:
+                    logger.debug(
+                        "Skipping BLE client disconnect during shutdown: client is not connected."
+                    )
+            elif skip_disconnect:
+                logger.debug(
+                    "Skipping BLE client disconnect during interpreter finalization."
+                )
+            if not skip_disconnect:
+                close_error: TypeError | None = None
+
+                def _close_with_timeout() -> None:
+                    nonlocal close_error
                     try:
-                        is_connected = bool(is_connected_probe())
-                    except Exception:  # noqa: BLE001 - shutdown must remain best effort
-                        logger.debug(
-                            "Failed to read BLE client connected state via %s during shutdown.",
-                            probe_name,
-                            exc_info=True,
-                        )
-                    if is_connected:
-                        break
-                elif isinstance(
-                    is_connected_probe, bool
-                ) and not _is_unconfigured_mock_member(is_connected_probe):
-                    is_connected = is_connected_probe
-                    if is_connected:
-                        break
-            if is_connected:
+                        client.close(timeout=disconnect_timeout)
+                    except TypeError as exc:
+                        if not _is_unexpected_keyword_error(exc, "timeout"):
+                            close_error = exc
+                            raise
+                        client.close()
+
                 _run_safe_cleanup(
-                    lambda: client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS),
-                    "client disconnect",
+                    _close_with_timeout,
+                    "client close",
                     safe_cleanup_hook,
                 )
+                if close_error is not None:
+                    raise close_error
             else:
-                logger.debug(
-                    "Skipping BLE client disconnect during shutdown: client is not connected."
-                )
-        elif skip_disconnect:
-            logger.debug(
-                "Skipping BLE client disconnect during interpreter finalization."
-            )
-        if not skip_disconnect:
-            _run_safe_cleanup(client.close, "client close", safe_cleanup_hook)
-        else:
-            logger.debug("Skipping BLE client close during interpreter finalization.")
-        if event:
-            event.set()
+                logger.debug("Skipping BLE client close during interpreter finalization.")
+        finally:
+            if event:
+                event.set()
 
-    def safe_close_client(self, client: BLEClient, event: Event | None = None) -> None:
+    def safe_close_client(
+        self,
+        client: BLEClient,
+        event: Event | None = None,
+        *,
+        disconnect_timeout: float | None = None,
+    ) -> None:
         # Internal adapter alias for collaborator migration; delegates to _safe_close_client.
         """Close a BLE client using best-effort shutdown semantics.
 
@@ -735,6 +815,9 @@ class ClientManager:
             Client instance to close.
         event : Event | None
             Optional completion event set after cleanup finishes.
+        disconnect_timeout : float | None
+            Optional maximum seconds passed to disconnect and close-time
+            disconnect operations.
 
         Returns
         -------
@@ -747,9 +830,26 @@ class ClientManager:
             Internal close implementation with guarded cleanup.
         """
         if event is None:
-            self._safe_close_client(client)
+            try:
+                self._safe_close_client(
+                    client,
+                    disconnect_timeout=disconnect_timeout,
+                )
+            except TypeError as exc:
+                if not _is_unexpected_keyword_error(exc, "disconnect_timeout"):
+                    raise
+                self._safe_close_client(client)
             return
-        self._safe_close_client(client, event=event)
+        try:
+            self._safe_close_client(
+                client,
+                event=event,
+                disconnect_timeout=disconnect_timeout,
+            )
+        except TypeError as exc:
+            if not _is_unexpected_keyword_error(exc, "disconnect_timeout"):
+                raise
+            self._safe_close_client(client, event=event)
 
 
 class ConnectionOrchestrator:
@@ -1049,16 +1149,35 @@ class ConnectionOrchestrator:
                 kwargs={},
             )
 
-    def _client_manager_safe_close_client(self, client: BLEClient) -> None:
+    def _client_manager_safe_close_client(
+        self,
+        client: BLEClient,
+        *,
+        disconnect_timeout: float | None = None,
+    ) -> None:
         """Close client via public API with underscore-compatible fallback for mocks/test doubles."""
-        self._dispatch_public_or_underscore(
-            target=self.client_manager,
-            public_name="safe_close_client",
-            underscore_name="_safe_close_client",
-            prefer_instance_type=ClientManager,
-            call_member=True,
-            args=(client,),
-        )
+        try:
+            self._dispatch_public_or_underscore(
+                target=self.client_manager,
+                public_name="safe_close_client",
+                underscore_name="_safe_close_client",
+                prefer_instance_type=ClientManager,
+                call_member=True,
+                args=(client,),
+                kwargs={"disconnect_timeout": disconnect_timeout},
+            )
+        except TypeError as exc:
+            if not _is_unexpected_keyword_error(exc, "disconnect_timeout"):
+                raise
+            self._dispatch_public_or_underscore(
+                target=self.client_manager,
+                public_name="safe_close_client",
+                underscore_name="_safe_close_client",
+                prefer_instance_type=ClientManager,
+                call_member=True,
+                args=(client,),
+                kwargs={},
+            )
 
     @staticmethod
     def _get_connect_timeout(*, pair_on_connect: bool) -> float:
@@ -1240,6 +1359,208 @@ class ConnectionOrchestrator:
         )
         return direct_connect_timeout, discovery_connect_timeout
 
+    @staticmethod
+    def _extract_client_address(client: BLEClient) -> str | None:
+        """Return the best-known connected address from a BLE client."""
+        bleak_client = getattr(client, "bleak_client", None)
+        bleak_address = getattr(bleak_client, "address", None)
+        if isinstance(bleak_address, str) and bleak_address:
+            return bleak_address
+        client_address = getattr(client, "address", None)
+        return client_address if isinstance(client_address, str) else None
+
+    def _validate_explicit_address_connection(
+        self,
+        *,
+        client: BLEClient,
+        target_address: str | None,
+        explicit_address: bool,
+    ) -> None:
+        """Enforce post-connect address verification for explicit BLE-address connects."""
+        if not explicit_address or not target_address:
+            return
+        if not _looks_like_ble_address(target_address):
+            return
+        requested_key = sanitize_address(target_address)
+        if requested_key is None:
+            return
+        connected_address = self._extract_client_address(client)
+        connected_key = sanitize_address(connected_address)
+        if connected_key is None:
+            # Intentional compatibility policy:
+            # Some backends/mocks do not expose a resolved connected peer address
+            # even after a successful explicit-address connect. Treat this as
+            # "cannot verify" rather than a hard mismatch to avoid disconnecting
+            # valid sessions solely due to missing metadata.
+            logger.debug(
+                "Cannot enforce explicit-address verification for target %s because the connected peer address is unavailable; proceeding in compatibility mode.",
+                requested_key,
+            )
+            return
+        if connected_key != requested_key:
+            raise BLEAddressMismatchError(
+                "Connected BLE address does not match explicit target address.",
+                requested_identifier=target_address,
+                connected_address=connected_address,
+                address=target_address,
+            )
+
+    @staticmethod
+    def _is_stale_bluez_direct_connect_error(error: BaseException) -> bool:
+        """Return whether direct-connect failure looks like stale BlueZ state."""
+        candidates: list[BaseException] = []
+        pending: list[tuple[BaseException, int]] = [(error, 0)]
+        seen_ids: set[int] = set()
+        while pending:
+            candidate, depth = pending.pop(0)
+            candidate_id = id(candidate)
+            if candidate_id in seen_ids:
+                continue
+            seen_ids.add(candidate_id)
+            candidates.append(candidate)
+            if depth >= 5:
+                continue
+            for attr_name in ("cause", "__cause__", "__context__"):
+                cause = getattr(candidate, attr_name, None)
+                if isinstance(cause, BaseException):
+                    pending.append((cause, depth + 1))
+
+        for candidate in candidates:
+            dbus_error_name = getattr(candidate, "dbus_error", None)
+            if (
+                isinstance(dbus_error_name, str)
+                and dbus_error_name.casefold() in _STALE_BLUEZ_DBUS_ERROR_NAMES
+            ):
+                return True
+
+            dbus_error_details = getattr(candidate, "dbus_error_details", None)
+            details_text = (
+                dbus_error_details.casefold()
+                if isinstance(dbus_error_details, str)
+                else ""
+            )
+            if details_text and any(
+                token in details_text for token in _STALE_BLUEZ_DETAIL_TOKENS
+            ):
+                return True
+
+            message = str(candidate).strip().casefold()
+            if message and any(
+                token in message for token in _STALE_BLUEZ_FALLBACK_MESSAGE_TOKENS
+            ):
+                return True
+        return False
+
+    def _should_attempt_stale_bluez_cleanup(
+        self,
+        *,
+        target_address: str | None,
+        explicit_address: bool,
+        error: BaseException,
+    ) -> bool:
+        """Return whether stale BlueZ disconnect cleanup should be attempted."""
+        if not sys.platform.startswith("linux"):
+            return False
+        if not explicit_address or not target_address:
+            return False
+        if not _looks_like_ble_address(target_address):
+            return False
+        return self._is_stale_bluez_direct_connect_error(error)
+
+    def _attempt_stale_bluez_cleanup(
+        self,
+        *,
+        target_address: str,
+        on_disconnect_func: Callable[["BleakRootClient"], None],
+        connect_timeout: float,
+    ) -> bool:
+        """Best-effort stale connection cleanup for Linux/BlueZ direct connects."""
+        cleanup_client: BLEClient | None = None
+        disconnect_timeout = min(connect_timeout, DISCONNECT_TIMEOUT_SECONDS)
+        try:
+            cleanup_client = self._client_manager_create_client(
+                target_address,
+                on_disconnect_func,
+                pair_on_connect=False,
+                connect_timeout=connect_timeout,
+            )
+            self._client_manager_connect_client(
+                cleanup_client,
+                timeout=connect_timeout,
+            )
+            disconnect = getattr(cleanup_client, "disconnect", None)
+            if callable(disconnect):
+                try:
+                    disconnect(await_timeout=disconnect_timeout)
+                except TypeError as exc:
+                    if not _is_unexpected_keyword_error(exc, "await_timeout"):
+                        raise
+                    disconnect()
+            logger.debug(
+                "Completed stale BlueZ cleanup probe for explicit address %s",
+                sanitize_address(target_address) or target_address,
+            )
+            return True
+        except Exception:  # noqa: BLE001 - stale cleanup is best effort
+            logger.debug(
+                "Stale BlueZ cleanup probe failed for %s",
+                sanitize_address(target_address) or target_address,
+                exc_info=True,
+            )
+            return False
+        finally:
+            if cleanup_client is not None:
+                self._client_manager_safe_close_client(
+                    cleanup_client,
+                    disconnect_timeout=disconnect_timeout,
+                )
+
+    def _retry_direct_connect_after_cleanup(
+        self,
+        *,
+        target_address: str,
+        explicit_address: bool,
+        on_disconnect_func: Callable[["BleakRootClient"], None],
+        pair_on_connect: bool,
+        direct_connect_timeout: float,
+        register_notifications_func: Callable[[BLEClient], None],
+        on_connected_func: Callable[[], None],
+        emit_connected_side_effects: bool,
+    ) -> BLEClient:
+        """Retry one explicit-address direct connect after stale cleanup."""
+        self._raise_if_interface_closing()
+        retry_client = self._client_manager_create_client(
+            target_address,
+            on_disconnect_func,
+            pair_on_connect=pair_on_connect,
+            connect_timeout=direct_connect_timeout,
+        )
+        _retry_succeeded = False
+        try:
+            self._raise_if_interface_closing()
+            self._client_manager_connect_client(
+                retry_client,
+                timeout=direct_connect_timeout,
+            )
+            self._raise_if_interface_closing()
+            self._validate_explicit_address_connection(
+                client=retry_client,
+                target_address=target_address,
+                explicit_address=explicit_address,
+            )
+            self._finalize_connection(
+                retry_client,
+                target_address,
+                register_notifications_func,
+                on_connected_func,
+                emit_connected_side_effects=emit_connected_side_effects,
+            )
+            _retry_succeeded = True
+            return retry_client
+        finally:
+            if not _retry_succeeded:
+                self._client_manager_safe_close_client(retry_client)
+
     def _attempt_direct_connect(
         self,
         *,
@@ -1307,34 +1628,98 @@ class ConnectionOrchestrator:
             pair_on_connect=pair_on_connect,
             connect_timeout=direct_connect_timeout,
         )
+        error_for_fallback: (
+            BleakError | BLEClient.BLEError | OSError | TimeoutError | BleakDBusError
+        ) | None = None
         try:
             self._raise_if_interface_closing()
             self._client_manager_connect_client(client, timeout=direct_connect_timeout)
         except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
             self._client_manager_safe_close_client(client)
             raise
-        except BleakDBusError:
-            self._client_manager_safe_close_client(client)
-            raise
         except (
+            BleakDBusError,
             BleakError,
             BLEClient.BLEError,
             OSError,
             TimeoutError,
         ) as direct_err:
+            error_for_fallback = direct_err
+            self._client_manager_safe_close_client(client)
             logger.debug(
                 "Direct connect to %s failed; preparing retry path: %s",
                 normalized_target,
                 direct_err,
                 exc_info=True,
             )
+            if self._should_attempt_stale_bluez_cleanup(
+                target_address=target_address,
+                explicit_address=explicit_address,
+                error=direct_err,
+            ):
+                logger.warning(
+                    "Direct connect to %s failed; attempting one stale BlueZ cleanup + retry.",
+                    normalized_target,
+                )
+                if self._attempt_stale_bluez_cleanup(
+                    target_address=target_address,
+                    on_disconnect_func=on_disconnect_func,
+                    connect_timeout=direct_connect_timeout,
+                ):
+                    try:
+                        retried_client = self._retry_direct_connect_after_cleanup(
+                            target_address=target_address,
+                            explicit_address=explicit_address,
+                            on_disconnect_func=on_disconnect_func,
+                            pair_on_connect=pair_on_connect,
+                            direct_connect_timeout=direct_connect_timeout,
+                            register_notifications_func=register_notifications_func,
+                            on_connected_func=on_connected_func,
+                            emit_connected_side_effects=emit_connected_side_effects,
+                        )
+                        return retried_client, False
+                    except BLEAddressMismatchError:
+                        raise
+                    except BleakDBusError as retry_dbus_err:
+                        logger.debug(
+                            "Direct reconnect after stale BlueZ cleanup failed for %s: %s",
+                            normalized_target,
+                            retry_dbus_err,
+                            exc_info=True,
+                        )
+                        raise BLEDBusTransportError.from_exception(
+                            retry_dbus_err,
+                            message="BLE DBus transport error during direct connect.",
+                            requested_identifier=target_address,
+                            address=target_address,
+                        ) from retry_dbus_err
+                    except (
+                        BleakError,
+                        BLEClient.BLEError,
+                        OSError,
+                        TimeoutError,
+                    ) as retry_err:
+                        logger.debug(
+                            "Direct reconnect after stale BlueZ cleanup failed for %s: %s",
+                            normalized_target,
+                            retry_err,
+                            exc_info=True,
+                        )
+                        raise
+            if isinstance(error_for_fallback, BleakDBusError):
+                raise BLEDBusTransportError.from_exception(
+                    error_for_fallback,
+                    message="BLE DBus transport error during direct connect.",
+                    requested_identifier=target_address,
+                    address=target_address,
+                ) from error_for_fallback
             # Preserve strict direct-only retries only for caller-explicit BLE
             # addresses. Derived targets (for example current_address carried
             # into reconnect flows) are still allowed to use discovery fallback.
             skip_discovery_scan = explicit_address and _looks_like_ble_address(
                 target_address
             )
-            if skip_discovery_scan and _is_device_not_found_error(direct_err):
+            if skip_discovery_scan and _is_device_not_found_error(error_for_fallback):
                 logger.debug(
                     "Direct connect reported device-not-found for %s; skipping discovery scan and retrying explicit address connect.",
                     normalized_target,
@@ -1349,7 +1734,6 @@ class ConnectionOrchestrator:
                     "Direct connect to derived address %s failed; allowing discovery fallback.",
                     normalized_target,
                 )
-            self._client_manager_safe_close_client(client)
             return None, skip_discovery_scan
         except Exception:
             self._client_manager_safe_close_client(client)
@@ -1357,6 +1741,11 @@ class ConnectionOrchestrator:
 
         try:
             self._raise_if_interface_closing()
+            self._validate_explicit_address_connection(
+                client=client,
+                target_address=target_address,
+                explicit_address=explicit_address,
+            )
             self._finalize_connection(
                 client,
                 target_address,
@@ -1406,7 +1795,14 @@ class ConnectionOrchestrator:
             return target_address, target_address, direct_connect_timeout
 
         self._raise_if_interface_closing()
-        device = self._compat_find_device(target_address)
+        try:
+            device = self._compat_find_device(target_address)
+        except BleakDeviceNotFoundError as error:
+            raise MeshtasticBLEDeviceNotFoundError(
+                "No Meshtastic BLE device matched the requested identifier.",
+                requested_identifier=target_address,
+                cause=error,
+            ) from error
         return device, device.address, discovery_connect_timeout
 
     def _connect_retry_target(
@@ -1470,14 +1866,26 @@ class ConnectionOrchestrator:
         except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
             self._client_manager_safe_close_client(client)
             raise
-        except BleakDBusError:
+        except BleakDBusError as dbus_err:
             self._client_manager_safe_close_client(client)
-            raise
+            raise BLEDBusTransportError.from_exception(
+                dbus_err,
+                message="BLE DBus transport error during retry connect.",
+                requested_identifier=target_address or resolved_address,
+                address=resolved_address,
+            ) from dbus_err
+        except TimeoutError as timeout_err:
+            self._client_manager_safe_close_client(client)
+            raise BLEConnectionTimeoutError.from_exception(
+                timeout_err,
+                message="BLE connection timed out during retry connect.",
+                requested_identifier=target_address or resolved_address,
+                timeout=retry_connect_timeout,
+            ) from timeout_err
         except (
             BleakError,
             BLEClient.BLEError,
             OSError,
-            TimeoutError,
         ) as retry_err:
             if (
                 skip_discovery_scan
@@ -1772,6 +2180,11 @@ class ConnectionOrchestrator:
             )
 
             self._raise_if_interface_closing()
+            self._validate_explicit_address_connection(
+                client=client,
+                target_address=target_address,
+                explicit_address=explicit_address,
+            )
             self._finalize_connection(
                 client,
                 resolved_address,
@@ -1780,6 +2193,21 @@ class ConnectionOrchestrator:
                 emit_connected_side_effects=emit_connected_side_effects,
             )
             return client
+        except BLEConnectionTimeoutError:
+            if client:
+                self._client_manager_safe_close_client(client)
+            self._transition_failure_to_disconnected("Timeout during connect")
+            raise
+        except TimeoutError as timeout_err:
+            if client:
+                self._client_manager_safe_close_client(client)
+            self._transition_failure_to_disconnected("Timeout during connect")
+            raise BLEConnectionTimeoutError.from_exception(
+                timeout_err,
+                message="BLE connection timed out.",
+                requested_identifier=target_address or current_address,
+                timeout=connect_timeout,
+            ) from timeout_err
         except BleakDBusError:
             if client:
                 self._client_manager_safe_close_client(client)

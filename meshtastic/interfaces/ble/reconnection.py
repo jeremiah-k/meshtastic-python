@@ -10,6 +10,7 @@ from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
 from meshtastic.interfaces.ble.constants import DBUS_ERROR_RECONNECT_DELAY, BLEConfig
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator, ThreadLike
+from meshtastic.interfaces.ble.errors import BLEDBusTransportError
 from meshtastic.interfaces.ble.gating import (
     _addr_key,
     _is_currently_connected_elsewhere,
@@ -551,6 +552,15 @@ class ReconnectWorker:
                         err.method_name,
                     )
                     return
+                except BLEDBusTransportError:
+                    if self._should_abort_reconnect(context="DBusError"):
+                        return
+                    logger.warning(
+                        "DBus error during auto-reconnect attempt %d",
+                        attempt_num,
+                        exc_info=True,
+                    )
+                    override_delay = DBUS_ERROR_RECONNECT_DELAY
                 except interface.BLEError as err:
                     if self._should_abort_reconnect(context="BLEError"):
                         return
@@ -562,7 +572,8 @@ class ReconnectWorker:
                 except BleakDBusError:
                     if self._should_abort_reconnect(context="DBusError"):
                         return
-                    # DBus errors are often transient on Linux; log as warning since we'll retry
+                    # Safety net for raw BleakDBusError paths that have not
+                    # been normalized to BLEDBusTransportError yet.
                     logger.warning(
                         "DBus error during auto-reconnect attempt %d",
                         attempt_num,

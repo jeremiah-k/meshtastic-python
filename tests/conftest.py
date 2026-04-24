@@ -1,5 +1,6 @@
 """Shared pytest fixtures for BLE tests."""
 
+import atexit as _atexit
 import logging
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
@@ -60,12 +61,24 @@ def _stop_ble_runner_at_session_end() -> Iterator[None]:
         return
 
     try:
+        from meshtastic.interfaces.ble import runner as _runner_module
+    except ImportError:
+        return
+
+    try:
         runner = BLECoroutineRunner()
         stop_runner = getattr(runner, "_stop", None)
         if callable(stop_runner):
             stop_runner(timeout=2.0)
+        handler = getattr(runner, "_atexit_handler", None)
+        if callable(handler):
+            _atexit.unregister(handler)
+        runner._atexit_registered = False
     except Exception as exc:  # noqa: BLE001 - teardown must not raise
         logger.debug(
             "Failed to stop BLECoroutineRunner during test cleanup: %s",
             exc,
         )
+
+    with _runner_module._zombie_lock:
+        _runner_module._zombie_runner_count = 0

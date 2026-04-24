@@ -972,10 +972,12 @@ def test_rapid_connect_disconnect_stress_test(
             kwargs == {"pair": True, "connect_timeout": 3.5}
             for kwargs in reconnect_kwargs
         )
-        observed_client, attempted_clients, republished_clients = _wait_for_latest_stress_client(
-            iface,
-            baseline_attempts=baseline_attempts,
-            baseline_clients=baseline_client_objects,
+        observed_client, attempted_clients, republished_clients = (
+            _wait_for_latest_stress_client(
+                iface,
+                baseline_attempts=baseline_attempts,
+                baseline_clients=baseline_client_objects,
+            )
         )
         assert len(republished_clients) >= baseline_clients + 1
         latest_successful_attempt = _latest_successful_stress_attempt(
@@ -1043,10 +1045,12 @@ def test_rapid_connect_disconnect_stress_test(
             kwargs == {"pair": False, "connect_timeout": 7.0}
             for kwargs in reconnect_kwargs
         )
-        observed_client2, attempted_clients, republished_clients = _wait_for_latest_stress_client(
-            iface2,
-            baseline_attempts=baseline_attempts,
-            baseline_clients=baseline_client_objects,
+        observed_client2, attempted_clients, republished_clients = (
+            _wait_for_latest_stress_client(
+                iface2,
+                baseline_attempts=baseline_attempts,
+                baseline_clients=baseline_client_objects,
+            )
         )
         assert len(republished_clients) >= baseline_clients + 1
         latest_successful_attempt = _latest_successful_stress_attempt(

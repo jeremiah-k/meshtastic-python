@@ -50,10 +50,18 @@ from meshtastic.interfaces.ble import (  # noqa: F401  # pylint: disable=unused-
     LOGRADIO_UUID,
     SERVICE_UUID,
     TORADIO_UUID,
+    BLEAddressMismatchError,
     BLEClient,
     BLEConfig,
+    BLEConnectionSuppressedError,
+    BLEConnectionTimeoutError,
+    BLEDBusTransportError,
+    BLEDeviceNotFoundError,
+    BLEDiscoveryError,
     BLEInterface,
+    MeshtasticBLEError,
     logger,
+    sanitize_address,
 )
 
 _BLE_PUBLIC_ALL = tuple(getattr(_ble, "__all__", ()))

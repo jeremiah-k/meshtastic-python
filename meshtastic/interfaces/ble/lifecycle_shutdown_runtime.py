@@ -3,12 +3,14 @@
 import atexit
 import contextlib
 import inspect
+import math
 import threading
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
 from meshtastic.interfaces.ble.constants import (
+    DISCONNECT_TIMEOUT_SECONDS,
     NOTIFICATION_START_TIMEOUT,
     READ_TRIGGER_EVENT,
     RECEIVE_THREAD_JOIN_TIMEOUT,
@@ -25,6 +27,7 @@ from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
     _is_unconfigured_mock_member,
+    _is_unexpected_keyword_error,
     _thread_start_probe,
 )
 from meshtastic.mesh_interface import MeshInterface
@@ -61,6 +64,9 @@ class BLEShutdownLifecycleCoordinator:
         self._state_access = _LifecycleStateAccess(iface)
         self._thread_access = _LifecycleThreadAccess(iface)
         self._error_access = _LifecycleErrorAccess(iface)
+        self._bounded_cleanup_thread: threading.Thread | None = None
+        self._bounded_mesh_close_thread: threading.Thread | None = None
+        self._bounded_thread_lock = threading.Lock()
 
     def is_connection_closing(self) -> bool:
         """Return whether this interface is closing or already closed.
@@ -75,8 +81,18 @@ class BLEShutdownLifecycleCoordinator:
         with iface._state_lock:
             return self._state_access.is_closing() or iface._closed
 
-    def _cleanup_thread_coordinator(self) -> None:
+    def _cleanup_thread_coordinator(
+        self,
+        *,
+        timeout: float | None = None,
+    ) -> None:
         """Run thread-coordinator cleanup via public/legacy compatibility hooks.
+
+        Parameters
+        ----------
+        timeout : float | None, optional
+            Optional maximum seconds to wait for cleanup completion. When
+            ``None``, cleanup runs inline without an additional wait budget.
 
         Returns
         -------
@@ -84,29 +100,85 @@ class BLEShutdownLifecycleCoordinator:
             Cleanup is best effort and intentionally suppresses hook failures.
         """
         iface = self._iface
-        cleanup = getattr(iface.thread_coordinator, "cleanup", None)
-        if callable(cleanup) and not _is_unconfigured_mock_callable(cleanup):
+        cleanup_hook = getattr(iface.thread_coordinator, "cleanup", None)
+        if callable(cleanup_hook) and not _is_unconfigured_mock_callable(cleanup_hook):
+            hook_name = "cleanup"
+        else:
+            legacy_cleanup = getattr(iface.thread_coordinator, "_cleanup", None)
+            if callable(legacy_cleanup) and not _is_unconfigured_mock_callable(
+                legacy_cleanup
+            ):
+                cleanup_hook = legacy_cleanup
+                hook_name = "_cleanup"
+            else:
+                logger.debug("Thread coordinator is missing cleanup/_cleanup")
+                return
+
+        if timeout is None:
             try:
-                cleanup()
+                cleanup_hook()
             except Exception:  # noqa: BLE001 - shutdown cleanup is best effort
                 logger.debug(
-                    "Error running thread coordinator cleanup()", exc_info=True
+                    "Error running thread coordinator %s()",
+                    hook_name,
+                    exc_info=True,
                 )
             return
 
-        legacy_cleanup = getattr(iface.thread_coordinator, "_cleanup", None)
-        if callable(legacy_cleanup) and not _is_unconfigured_mock_callable(
-            legacy_cleanup
-        ):
-            try:
-                legacy_cleanup()
-            except Exception:  # noqa: BLE001 - shutdown cleanup is best effort
-                logger.debug(
-                    "Error running thread coordinator _cleanup()", exc_info=True
-                )
+        if timeout <= 0:
+            logger.warning(
+                "Skipping thread coordinator %s(): close timeout budget exhausted.",
+                hook_name,
+            )
             return
 
-        logger.debug("Thread coordinator is missing cleanup/_cleanup")
+        def _run_cleanup() -> None:
+            try:
+                cleanup_hook()
+            except Exception:  # noqa: BLE001 - shutdown cleanup is best effort
+                logger.debug(
+                    "Error running thread coordinator %s()",
+                    hook_name,
+                    exc_info=True,
+                )
+            finally:
+                with self._bounded_thread_lock:
+                    if self._bounded_cleanup_thread is threading.current_thread():
+                        self._bounded_cleanup_thread = None
+
+        cleanup_thread = threading.Thread(
+            target=_run_cleanup,
+            name="BLEThreadCoordinatorCleanup",
+            daemon=True,
+        )
+        try:
+            with self._bounded_thread_lock:
+                previous_thread = self._bounded_cleanup_thread
+                if previous_thread is not None and previous_thread.is_alive():
+                    logger.warning(
+                        "Skipping thread coordinator %s(): previous bounded cleanup thread is still running.",
+                        hook_name,
+                    )
+                    return
+                self._bounded_cleanup_thread = cleanup_thread
+                cleanup_thread.start()
+        except Exception:  # noqa: BLE001 - shutdown cleanup is best effort
+            with self._bounded_thread_lock:
+                if self._bounded_cleanup_thread is cleanup_thread:
+                    self._bounded_cleanup_thread = None
+            logger.warning(
+                "Failed to start thread coordinator cleanup thread; skipping bounded cleanup stage to preserve timeout contract.",
+                exc_info=True,
+            )
+            return
+
+        cleanup_thread.join(timeout=timeout)
+        if cleanup_thread.is_alive():
+            logger.warning(
+                "Timed out waiting %.3fs for thread coordinator %s() cleanup.",
+                timeout,
+                hook_name,
+            )
 
     def _await_management_shutdown(
         self,
@@ -237,6 +309,7 @@ class BLEShutdownLifecycleCoordinator:
         *,
         wake_waiting_threads: Callable[..., None] | None = None,
         join_thread: Callable[..., None] | None = None,
+        join_timeout: float = RECEIVE_THREAD_JOIN_TIMEOUT,
     ) -> None:  # noqa: PLR0912,PLR0915
         """Wake and join receive thread, then clear cached thread reference.
 
@@ -246,6 +319,8 @@ class BLEShutdownLifecycleCoordinator:
             Optional wake helper used to release receive-loop waiters.
         join_thread : Callable[..., None] | None, optional
             Optional thread-join helper used for compatibility/test injection.
+        join_timeout : float
+            Maximum seconds to wait for the receive thread to exit.
 
         Returns
         -------
@@ -334,7 +409,7 @@ class BLEShutdownLifecycleCoordinator:
             try:
                 join_runtime_thread(
                     receive_thread,
-                    timeout=RECEIVE_THREAD_JOIN_TIMEOUT,
+                    timeout=join_timeout,
                 )
             except Exception:  # noqa: BLE001 - close must remain best effort
                 logger.debug(
@@ -345,7 +420,7 @@ class BLEShutdownLifecycleCoordinator:
             if post_join_is_alive:
                 logger.warning(
                     "BLE receive thread did not exit within %.1fs",
-                    RECEIVE_THREAD_JOIN_TIMEOUT,
+                    join_timeout,
                 )
             thread_ident = post_join_ident
             thread_is_alive = post_join_is_alive
@@ -364,6 +439,7 @@ class BLEShutdownLifecycleCoordinator:
         self,
         *,
         safe_execute: Callable[[Callable[[], object]], object | None] | None = None,
+        timeout: float | None = None,
     ) -> None:
         """Run ``MeshInterface.close`` through guarded error-handler execution.
 
@@ -371,6 +447,9 @@ class BLEShutdownLifecycleCoordinator:
         ----------
         safe_execute : Callable[[Callable[[], object]], object | None] | None, optional
             Optional safe-execute wrapper used for close invocation.
+        timeout : float | None, optional
+            Optional maximum seconds to wait for ``MeshInterface.close``. When
+            ``None``, close runs inline without an additional wait budget.
 
         Returns
         -------
@@ -384,7 +463,55 @@ class BLEShutdownLifecycleCoordinator:
                 error_msg="Error closing mesh interface",
             )
         )
-        run_safe_execute(lambda: MeshInterface.close(iface))
+        if timeout is None:
+            run_safe_execute(lambda: MeshInterface.close(iface))
+            return
+
+        if timeout <= 0:
+            logger.warning(
+                "Skipping MeshInterface.close(): close timeout budget exhausted."
+            )
+            return
+
+        def _run_mesh_close() -> None:
+            try:
+                run_safe_execute(lambda: MeshInterface.close(iface))
+            finally:
+                with self._bounded_thread_lock:
+                    if self._bounded_mesh_close_thread is threading.current_thread():
+                        self._bounded_mesh_close_thread = None
+
+        close_thread = threading.Thread(
+            target=_run_mesh_close,
+            name="BLEMeshInterfaceClose",
+            daemon=True,
+        )
+        try:
+            with self._bounded_thread_lock:
+                previous_thread = self._bounded_mesh_close_thread
+                if previous_thread is not None and previous_thread.is_alive():
+                    logger.warning(
+                        "Skipping MeshInterface.close(): previous bounded close thread is still running."
+                    )
+                    return
+                self._bounded_mesh_close_thread = close_thread
+                close_thread.start()
+        except Exception:  # noqa: BLE001 - close must remain best effort
+            with self._bounded_thread_lock:
+                if self._bounded_mesh_close_thread is close_thread:
+                    self._bounded_mesh_close_thread = None
+            logger.warning(
+                "Failed to start MeshInterface.close thread; skipping bounded close stage to preserve timeout contract.",
+                exc_info=True,
+            )
+            return
+
+        close_thread.join(timeout=timeout)
+        if close_thread.is_alive():
+            logger.warning(
+                "Timed out waiting %.3fs for MeshInterface.close(); continuing BLE shutdown.",
+                timeout,
+            )
 
     def _unregister_exit_handler(self) -> None:
         """Unregister process exit handler when present."""
@@ -446,6 +573,10 @@ class BLEShutdownLifecycleCoordinator:
         ) = None,
         safe_cleanup: Callable[[Callable[[], object], str], None] | None = None,
         consume_disconnect_notification_state: Callable[[], bool] | None = None,
+        unsubscribe_timeout: float | None = NOTIFICATION_START_TIMEOUT,
+        disconnect_notification_wait_timeout: float | None = DISCONNECT_TIMEOUT_SECONDS,
+        client_disconnect_timeout: float | None = DISCONNECT_TIMEOUT_SECONDS,
+        bounded_close_timeout_active: bool = False,
     ) -> None:
         """Shutdown active client resources and notification publication state.
 
@@ -459,6 +590,16 @@ class BLEShutdownLifecycleCoordinator:
             Optional safe-cleanup wrapper override.
         consume_disconnect_notification_state : Callable[[], bool] | None, optional
             Optional publish-state consumer override.
+        unsubscribe_timeout : float | None
+            Maximum seconds to wait for notification unsubscribe cleanup.
+        disconnect_notification_wait_timeout : float | None
+            Maximum seconds to wait for disconnect notification publication.
+        client_disconnect_timeout : float | None
+            Maximum seconds to wait for BLE client disconnect/close.
+        bounded_close_timeout_active : bool
+            Whether these stage timeouts were derived from a caller-provided
+            finite ``close(timeout=...)`` budget. Legacy no-timeout fallbacks
+            are skipped only when this is true.
 
         Returns
         -------
@@ -475,6 +616,9 @@ class BLEShutdownLifecycleCoordinator:
         client, publish_pending = detach_client()
         client_address = iface._extract_client_address(client)
         notification_manager = iface._notification_manager
+
+        def _has_finite_timeout(timeout: float | None) -> bool:
+            return timeout is not None and math.isfinite(timeout)
 
         def _resolve_notification_cleanup(
             method_name: str,
@@ -501,18 +645,61 @@ class BLEShutdownLifecycleCoordinator:
             with gate_context:
                 unsubscribe_all = _resolve_notification_cleanup("_unsubscribe_all")
                 if unsubscribe_all is not None:
+                    unsubscribe_error: TypeError | None = None
+
+                    def _unsubscribe_with_timeout() -> None:
+                        nonlocal unsubscribe_error
+                        try:
+                            unsubscribe_all(client, timeout=unsubscribe_timeout)
+                        except TypeError as exc:
+                            if not _is_unexpected_keyword_error(exc, "timeout"):
+                                unsubscribe_error = exc
+                                raise
+                            if bounded_close_timeout_active and _has_finite_timeout(
+                                unsubscribe_timeout
+                            ):
+                                logger.warning(
+                                    "Skipping legacy notification unsubscribe_all() fallback: close timeout budget is active and the callable does not accept timeout."
+                                )
+                                return
+                            unsubscribe_all(client)
+
                     run_safe_cleanup(
-                        lambda: unsubscribe_all(
-                            client, timeout=NOTIFICATION_START_TIMEOUT
-                        ),
+                        _unsubscribe_with_timeout,
                         "notification unsubscribe_all",
                     )
+                    if unsubscribe_error is not None:
+                        raise unsubscribe_error
                 else:
                     logger.debug("Notification manager is missing _unsubscribe_all")
+
+                disconnect_error: TypeError | None = None
+
+                def _disconnect_client_with_timeout() -> None:
+                    nonlocal disconnect_error
+                    try:
+                        iface._disconnect_and_close_client(
+                            client, timeout=client_disconnect_timeout
+                        )
+                    except TypeError as exc:
+                        if not _is_unexpected_keyword_error(exc, "timeout"):
+                            disconnect_error = exc
+                            raise
+                        if bounded_close_timeout_active and _has_finite_timeout(
+                            client_disconnect_timeout
+                        ):
+                            logger.warning(
+                                "Skipping legacy BLE client disconnect/close fallback: close timeout budget is active and the callable does not accept timeout."
+                            )
+                            return
+                        iface._disconnect_and_close_client(client)
+
                 run_safe_cleanup(
-                    lambda: iface._disconnect_and_close_client(client),
+                    _disconnect_client_with_timeout,
                     "BLE client disconnect/close",
                 )
+                if disconnect_error is not None:
+                    raise disconnect_error
         cleanup_all = _resolve_notification_cleanup("_cleanup_all")
         if cleanup_all is not None:
             run_safe_cleanup(cleanup_all, "notification manager cleanup")
@@ -521,7 +708,21 @@ class BLEShutdownLifecycleCoordinator:
 
         if consume_disconnect_state():
             iface._disconnected()
-            iface._wait_for_disconnect_notifications()
+            try:
+                iface._wait_for_disconnect_notifications(
+                    timeout=disconnect_notification_wait_timeout
+                )
+            except TypeError as exc:
+                if not _is_unexpected_keyword_error(exc, "timeout"):
+                    raise
+                if bounded_close_timeout_active and _has_finite_timeout(
+                    disconnect_notification_wait_timeout
+                ):
+                    logger.warning(
+                        "Skipping legacy disconnect notification wait fallback: close timeout budget is active and the callable does not accept timeout."
+                    )
+                    return
+                iface._wait_for_disconnect_notifications()
 
     def _finalize_close_state(
         self,
@@ -583,10 +784,42 @@ class BLEShutdownLifecycleCoordinator:
         *,
         management_shutdown_wait_timeout: float,
         management_wait_poll_seconds: float,
+        timeout: float | None = None,
     ) -> None:
-        """Shut down BLE interface resources and finalize lifecycle state."""
+        """Shut down BLE resources within an optional total timeout budget.
+
+        When ``timeout`` is provided, remaining-budget slices are applied to
+        each blocking shutdown phase (management wait, receive-thread join,
+        ``MeshInterface.close``, disconnect-notification waits, and client
+        disconnect/close). Best-effort final state cleanup still runs after
+        teardown stages complete or time out.
+        """
+        deadline: float | None = None
+        if timeout is not None:
+            deadline = time.monotonic() + max(0.0, timeout)
+
+        def _remaining_timeout(default_timeout: float) -> float:
+            if deadline is None:
+                return default_timeout
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return 0.0
+            return min(default_timeout, remaining)
+
+        def _remaining_optional_timeout(
+            default_timeout: float | None,
+        ) -> float | None:
+            if deadline is None:
+                return default_timeout
+            remaining = max(0.0, deadline - time.monotonic())
+            if default_timeout is None:
+                return remaining
+            return min(default_timeout, remaining)
+
         management_wait_timed_out = self._await_management_shutdown(
-            management_shutdown_wait_timeout=management_shutdown_wait_timeout,
+            management_shutdown_wait_timeout=_remaining_timeout(
+                management_shutdown_wait_timeout
+            ),
             management_wait_poll_seconds=management_wait_poll_seconds,
         )
         if management_wait_timed_out is None:
@@ -597,12 +830,30 @@ class BLEShutdownLifecycleCoordinator:
             if iface._shutdown_event is not None:
                 iface._shutdown_event.set()
             self._shutdown_discovery()
-            self._shutdown_receive_thread()
-            self._close_mesh_interface()
+            self._shutdown_receive_thread(
+                join_timeout=_remaining_timeout(RECEIVE_THREAD_JOIN_TIMEOUT)
+            )
+            self._close_mesh_interface(
+                timeout=_remaining_optional_timeout(None),
+            )
             self._unregister_exit_handler()
-            self._shutdown_client(management_wait_timed_out=management_wait_timed_out)
+            self._shutdown_client(
+                management_wait_timed_out=management_wait_timed_out,
+                unsubscribe_timeout=_remaining_optional_timeout(
+                    NOTIFICATION_START_TIMEOUT
+                ),
+                disconnect_notification_wait_timeout=_remaining_optional_timeout(
+                    DISCONNECT_TIMEOUT_SECONDS
+                ),
+                client_disconnect_timeout=_remaining_optional_timeout(
+                    DISCONNECT_TIMEOUT_SECONDS
+                ),
+                bounded_close_timeout_active=timeout is not None,
+            )
         finally:
             try:
-                self._cleanup_thread_coordinator()
+                self._cleanup_thread_coordinator(
+                    timeout=_remaining_optional_timeout(None),
+                )
             finally:
                 self._finalize_close_state()

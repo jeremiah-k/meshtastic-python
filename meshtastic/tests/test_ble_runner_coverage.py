@@ -22,27 +22,37 @@ from meshtastic.interfaces.ble.runner import (
     BLECoroutineRunner,
     get_zombie_runner_count,
 )
+from meshtastic.interfaces.ble import runner as _runner_module
 
 
 @pytest.fixture(autouse=True)
 def reset_runner_singleton() -> Generator[None, None, None]:
     """Reset the BLECoroutineRunner singleton between tests."""
-    # Store original state
     original_instance = BLECoroutineRunner._instance
 
-    # Reset singleton
+    with _runner_module._zombie_lock:
+        saved_zombie_count = _runner_module._zombie_runner_count
+        _runner_module._zombie_runner_count = 0
+
     BLECoroutineRunner._instance = None
 
     try:
         yield
     finally:
-        # Cleanup: stop any running runner and restore singleton
-        if BLECoroutineRunner._instance is not None:
+        current = BLECoroutineRunner._instance
+        if current is not None and current is not original_instance:
             try:
-                BLECoroutineRunner._instance._stop(timeout=0.5)
+                handler = getattr(current, "_atexit_handler", None)
+                if callable(handler):
+                    _runner_module.atexit.unregister(handler)
+                if hasattr(current, "_atexit_registered"):
+                    current._atexit_registered = False
+                current._stop(timeout=0.5)
             except Exception:
-                pass  # Best effort cleanup
+                pass
         BLECoroutineRunner._instance = original_instance
+        with _runner_module._zombie_lock:
+            _runner_module._zombie_runner_count = saved_zombie_count
 
 
 @pytest.fixture
@@ -1001,10 +1011,9 @@ class TestGetZombieRunnerCount:
 
     def test_returns_zero_initially(self) -> None:
         """Test get_zombie_runner_count returns 0 initially."""
-        # Note: This test may fail if other tests leave zombies
         count = get_zombie_runner_count()
         assert isinstance(count, int)
-        assert count >= 0
+        assert count == 0
 
     def test_thread_safe_access(self) -> None:
         """Test get_zombie_runner_count is thread-safe."""

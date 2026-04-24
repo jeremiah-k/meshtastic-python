@@ -612,6 +612,37 @@ class TestBLELifecycleControllerShutdownDelegation:
 
         assert calls == [{"timeout": 5.0, "poll": 0.5}]
 
+    def test_close_forwards_optional_total_timeout(self) -> None:
+        """_close should forward timeout budget to shutdown coordinator when provided."""
+        calls: list[dict[str, float | None]] = []
+
+        def _capture_close(
+            *,
+            management_shutdown_wait_timeout: float,
+            management_wait_poll_seconds: float,
+            timeout: float | None = None,
+        ) -> None:
+            calls.append(
+                {
+                    "timeout": management_shutdown_wait_timeout,
+                    "poll": management_wait_poll_seconds,
+                    "total": timeout,
+                }
+            )
+
+        mock_shutdown = SimpleNamespace(close=_capture_close)
+        mock_iface = SimpleNamespace()
+        controller = BLELifecycleController(mock_iface)
+        controller._shutdown = mock_shutdown  # type: ignore[assignment]
+
+        controller._close(
+            management_shutdown_wait_timeout=5.0,
+            management_wait_poll_seconds=0.5,
+            timeout=1.25,
+        )
+
+        assert calls == [{"timeout": 5.0, "poll": 0.5, "total": 1.25}]
+
 
 class TestBLELifecycleControllerClientManagement:
     """Test cases for client management methods."""
@@ -620,8 +651,16 @@ class TestBLELifecycleControllerClientManagement:
         self,
     ) -> None:
         """_disconnect_and_close_client should delegate to _disconnect coordinator."""
-        calls: list[object] = []
-        mock_disconnect = SimpleNamespace(disconnect_and_close_client=calls.append)
+        calls: list[tuple[object, float | None]] = []
+
+        def _capture_disconnect(
+            client: object, *, timeout: float | None = None
+        ) -> None:
+            calls.append((client, timeout))
+
+        mock_disconnect = SimpleNamespace(
+            disconnect_and_close_client=_capture_disconnect
+        )
         mock_iface = SimpleNamespace()
         controller = BLELifecycleController(mock_iface)
         controller._disconnect = mock_disconnect  # type: ignore[assignment]
@@ -629,7 +668,102 @@ class TestBLELifecycleControllerClientManagement:
         mock_client = SimpleNamespace()
         controller._disconnect_and_close_client(mock_client)
 
-        assert calls == [mock_client]
+        assert calls == [(mock_client, None)]
+
+    def test_close_without_timeout_parameter_invoked_once(self) -> None:
+        """_close should omit timeout when the shutdown callable does not accept it."""
+        calls: list[dict[str, object]] = []
+
+        def _close_without_timeout(
+            *,
+            management_shutdown_wait_timeout: float,
+            management_wait_poll_seconds: float,
+        ) -> None:
+            calls.append(
+                {
+                    "management_shutdown_wait_timeout": management_shutdown_wait_timeout,
+                    "management_wait_poll_seconds": management_wait_poll_seconds,
+                }
+            )
+
+        mock_shutdown = SimpleNamespace(close=_close_without_timeout)
+        mock_iface = SimpleNamespace()
+        controller = BLELifecycleController(mock_iface)
+        controller._shutdown = mock_shutdown  # type: ignore[assignment]
+
+        controller._close(
+            management_shutdown_wait_timeout=5.0,
+            management_wait_poll_seconds=0.5,
+            timeout=1.25,
+        )
+
+        assert calls == [
+            {
+                "management_shutdown_wait_timeout": 5.0,
+                "management_wait_poll_seconds": 0.5,
+            }
+        ]
+
+    def test_close_propagates_unrelated_type_error(self) -> None:
+        """_close should NOT swallow unrelated TypeError during shutdown."""
+
+        def _raise_unrelated(
+            *,
+            management_shutdown_wait_timeout: float,
+            management_wait_poll_seconds: float,
+            timeout: float | None = None,
+        ) -> None:
+            del management_shutdown_wait_timeout, management_wait_poll_seconds, timeout
+            raise TypeError("takes 1 positional argument but 2 were given")
+
+        mock_shutdown = SimpleNamespace(close=_raise_unrelated)
+        mock_iface = SimpleNamespace()
+        controller = BLELifecycleController(mock_iface)
+        controller._shutdown = mock_shutdown  # type: ignore[assignment]
+
+        with pytest.raises(TypeError, match="takes 1 positional argument"):
+            controller._close(
+                management_shutdown_wait_timeout=5.0,
+                management_wait_poll_seconds=0.5,
+                timeout=1.25,
+            )
+
+    def test_disconnect_and_close_client_without_timeout_parameter_invoked_once(
+        self,
+    ) -> None:
+        """_disconnect_and_close_client should omit timeout when unsupported."""
+        calls: list[tuple[object, ...]] = []
+
+        def _disconnect_without_timeout(client: object) -> None:
+            calls.append((client,))
+
+        mock_disconnect = SimpleNamespace(
+            disconnect_and_close_client=_disconnect_without_timeout
+        )
+        mock_iface = SimpleNamespace()
+        controller = BLELifecycleController(mock_iface)
+        controller._disconnect = mock_disconnect  # type: ignore[assignment]
+
+        mock_client = SimpleNamespace()
+        controller._disconnect_and_close_client(mock_client, timeout=3.0)
+
+        assert calls == [(mock_client,)]
+
+    def test_disconnect_and_close_client_propagates_unrelated_type_error(self) -> None:
+        """_disconnect_and_close_client should NOT swallow unrelated TypeError."""
+
+        def _raise_unrelated(client: object, *, timeout: float | None = None) -> None:
+            del client, timeout
+            raise TypeError("takes 1 positional argument but 2 were given")
+
+        mock_disconnect = SimpleNamespace(disconnect_and_close_client=_raise_unrelated)
+        mock_iface = SimpleNamespace()
+        controller = BLELifecycleController(mock_iface)
+        controller._disconnect = mock_disconnect  # type: ignore[assignment]
+
+        mock_client = SimpleNamespace()
+        with pytest.raises(TypeError, match="takes 1 positional argument"):
+            controller._disconnect_and_close_client(mock_client, timeout=3.0)
 
     def test_has_ever_connected_session_delegates_to_ownership_coordinator(
         self,

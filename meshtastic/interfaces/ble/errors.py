@@ -3,9 +3,10 @@
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Any, Callable, TypeVar
 
-from bleak.exc import BleakError
+from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
 from meshtastic.interfaces.ble.constants import logger
+from meshtastic.mesh_interface import MeshInterface
 
 # Import DecodeError from protobuf, or create a fallback if not available
 DecodeError: type[Exception]
@@ -25,9 +26,232 @@ else:
 
 
 # Public exports for BLE error handling utilities.
-__all__ = ["BLEErrorHandler", "DecodeError"]
+__all__ = [
+    "MeshtasticBLEError",
+    "BLEDiscoveryError",
+    "BLEDeviceNotFoundError",
+    "BLEConnectionSuppressedError",
+    "BLEConnectionTimeoutError",
+    "BLEAddressMismatchError",
+    "BLEDBusTransportError",
+    "BLEErrorHandler",
+    "DecodeError",
+]
 
 T = TypeVar("T")
+
+
+class MeshtasticBLEError(MeshInterface.MeshInterfaceError):
+    """Base exception for structured Meshtastic BLE failures."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        address: str | None = None,
+        requested_identifier: str | None = None,
+        timeout: float | None = None,
+        connected_address: str | None = None,
+        cause: BaseException | None = None,
+    ) -> None:
+        """Create a BLE error with optional structured context attributes."""
+        # Avoid cooperative super() here so multiple-inheritance variants
+        # (for example BleakDBusError mixins) do not require foreign
+        # constructor signatures.
+        self.message = message
+        Exception.__init__(self, message)
+        self.address = address
+        self.requested_identifier = requested_identifier
+        self.timeout = timeout
+        self.connected_address = connected_address
+        self.cause = cause
+
+
+class BLEDiscoveryError(MeshtasticBLEError):
+    """Raised when BLE discovery cannot resolve a usable target."""
+
+
+class BLEDeviceNotFoundError(BLEDiscoveryError, BleakDeviceNotFoundError):
+    """Raised when a specific BLE target cannot be located."""
+
+    # BleakDeviceNotFoundError declares ``identifier: str`` as a writable attribute.
+    # We expose ``requested_identifier`` through this property so callers can read
+    # the identifier even though our ``MeshtasticBLEError`` constructor does not
+    # invoke ``BleakDeviceNotFoundError.__init__``.  The ``[override]`` ignores are
+    # required because our return type is ``str | None`` (matching
+    # ``requested_identifier``) rather than Bleak's narrower ``str``.
+    @property
+    def identifier(self) -> str | None:  # type: ignore[override]
+        """Return the requested identifier for BleakDeviceNotFoundError compatibility."""
+        return self.requested_identifier
+
+
+class BLEConnectionSuppressedError(MeshtasticBLEError):
+    """Raised when duplicate-connect gating suppresses a connection attempt."""
+
+
+class BLEConnectionTimeoutError(MeshtasticBLEError, TimeoutError):
+    """Raised when BLE connection setup exceeds a timeout budget."""
+
+    @classmethod
+    def from_exception(
+        cls,
+        error: BaseException,
+        *,
+        message: str,
+        requested_identifier: str | None = None,
+        timeout: float | None = None,
+    ) -> "BLEConnectionTimeoutError":
+        """Normalize a timeout failure with structured metadata.
+
+        Parameters
+        ----------
+        error : BaseException
+            Original timeout or transport exception.
+        message : str
+            Meshtastic-facing error message.
+        requested_identifier : str | None, optional
+            Caller-supplied device identifier involved in the failure.
+        timeout : float | None, optional
+            Timeout budget associated with the failed operation.
+
+        Returns
+        -------
+        BLEConnectionTimeoutError
+            New error instance carrying the original exception as ``cause``
+            together with the provided structured metadata.
+        """
+        return cls(
+            message,
+            requested_identifier=requested_identifier,
+            timeout=timeout,
+            cause=error,
+        )
+
+
+class BLEAddressMismatchError(MeshtasticBLEError):
+    """Raised when explicit-address connect resolves to a different peer."""
+
+
+class BLEDBusTransportError(MeshtasticBLEError, BleakDBusError):
+    """Raised for normalized BlueZ/DBus transport failures."""
+
+    _DEFAULT_DBUS_ERROR = "org.bluez.Error.Failed"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        address: str | None = None,
+        requested_identifier: str | None = None,
+        cause: BaseException | None = None,
+        dbus_error: str | None = None,
+        dbus_error_details: Any | None = None,
+        dbus_error_body: tuple[Any, ...] | None = None,
+    ) -> None:
+        """Create a normalized DBus transport error with preserved DBus context."""
+        resolved_error = (
+            dbus_error
+            if isinstance(dbus_error, str) and dbus_error
+            else self._DEFAULT_DBUS_ERROR
+        )
+        if dbus_error_body is not None:
+            body_items: list[Any] = list(dbus_error_body)
+        elif dbus_error_details is not None:
+            body_items = [dbus_error_details]
+        else:
+            body_items = []
+        # Preserve caller-facing string details by passing single-string bodies
+        # wrapped in a list to BleakDBusError. BleakDBusError unpacks positional
+        # args, so a bare string would be split into individual characters.
+        if len(body_items) == 1 and isinstance(body_items[0], str):
+            BleakDBusError.__init__(self, resolved_error, [body_items[0]])
+        elif body_items:
+            BleakDBusError.__init__(self, resolved_error, body_items)
+        else:
+            BleakDBusError.__init__(self, resolved_error, [])
+        # Mirror MeshtasticBLEError structured context fields while preserving
+        # BleakDBusError args-backed properties for dbus_error/details.
+        self.message = message
+        self.address = address
+        self.requested_identifier = requested_identifier
+        self.timeout = None
+        self.connected_address = None
+        self.cause = cause
+        self.dbus_error_name = self.dbus_error
+        self.dbus_error_body = tuple(body_items)
+
+    def __str__(self) -> str:
+        """Return the normalized Meshtastic-facing transport message."""
+        return self.message
+
+    @classmethod
+    def from_exception(
+        cls,
+        error: BaseException,
+        *,
+        message: str,
+        requested_identifier: str | None = None,
+        address: str | None = None,
+    ) -> "BLEDBusTransportError":
+        """Normalize DBus transport failures while preserving DBus metadata.
+
+        Parameters
+        ----------
+        error : BaseException
+            Original DBus or transport exception.
+        message : str
+            Meshtastic-facing error message.
+        requested_identifier : str | None, optional
+            Caller-supplied device identifier involved in the failure.
+        address : str | None, optional
+            BLE address associated with the failed operation.
+
+        Returns
+        -------
+        BLEDBusTransportError
+            New error instance preserving DBus error name, body, and structured
+            Meshtastic context fields.
+        """
+        dbus_error = getattr(error, "dbus_error", None)
+        dbus_error_details = getattr(error, "dbus_error_details", None)
+        error_args = getattr(error, "args", ())
+        if (
+            not isinstance(dbus_error, str)
+            and isinstance(error_args, tuple)
+            and error_args
+            and isinstance(error_args[0], str)
+            and error_args[0].startswith("org.")
+        ):
+            dbus_error = error_args[0]
+        # Normalize list-wrapped details to a plain string when possible.
+        if (
+            isinstance(dbus_error_details, (list, tuple))
+            and len(dbus_error_details) == 1
+            and isinstance(dbus_error_details[0], str)
+        ):
+            dbus_error_details = dbus_error_details[0]
+        dbus_error_body: tuple[Any, ...] | None = None
+        if isinstance(error_args, tuple) and len(error_args) > 1:
+            remainder = error_args[1:]
+            # Flatten a single list/tuple wrapper so BleakDBusError-style args
+            # ("org.bluez.Error.Failed", ["Device or resource busy"]) produce
+            # a string detail instead of a nested list.
+            if len(remainder) == 1 and isinstance(remainder[0], (list, tuple)):
+                dbus_error_body = tuple(remainder[0])
+            else:
+                dbus_error_body = tuple(remainder)
+        elif dbus_error_details is not None:
+            dbus_error_body = (dbus_error_details,)
+        return cls(
+            message,
+            requested_identifier=requested_identifier,
+            address=address,
+            cause=error,
+            dbus_error=dbus_error if isinstance(dbus_error, str) else None,
+            dbus_error_details=dbus_error_details,
+            dbus_error_body=dbus_error_body,
+        )
 
 
 class BLEErrorHandler:

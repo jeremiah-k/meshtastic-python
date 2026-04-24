@@ -376,13 +376,16 @@ class StreamInterface(MeshInterface):
         delay = WINDOWS11_WRITE_DELAY if self.is_windows11 else STANDARD_WRITE_DELAY
         time.sleep(delay)
 
-    def _resolve_stable_path(self) -> str | None:  # pylint: disable=too-many-return-statements
+    def _resolve_stable_path(
+        self,
+    ) -> str | None:  # pylint: disable=too-many-return-statements
         """Return the stable /dev/serial/by-id/ alias for the current device path."""
         if platform.system() != "Linux":
             return None
-        dev_path = getattr(self, "devPath", None)
-        if not dev_path:
+        dev_path_raw = getattr(self, "devPath", None)
+        if not isinstance(dev_path_raw, str) or not dev_path_raw:
             return None
+        dev_path = dev_path_raw
         by_id_dir = "/dev/serial/by-id"
         if dev_path.startswith(by_id_dir + "/") and os.path.exists(dev_path):
             return dev_path
@@ -392,13 +395,15 @@ class StreamInterface(MeshInterface):
             resolved = os.path.realpath(dev_path)
         except OSError:
             return None
+        stable_alias: str | None = None
         for alias in sorted(glob.glob(f"{by_id_dir}/*")):
             try:
                 if os.path.realpath(alias) == resolved:
-                    return alias
+                    stable_alias = alias
+                    break
             except OSError:
                 continue
-        return None
+        return stable_alias
 
     def _read_bytes(self, length: int) -> bytes:
         """Read up to the specified number of bytes from the configured underlying stream.

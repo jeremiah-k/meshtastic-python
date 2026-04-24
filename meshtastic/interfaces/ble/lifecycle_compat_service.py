@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from inspect import signature
+from inspect import Parameter, signature
 from typing import TYPE_CHECKING, NoReturn, cast
 
 from bleak import BleakClient as BleakRootClient
@@ -38,6 +38,23 @@ from meshtastic.interfaces.ble.utils import (
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
     from meshtastic.interfaces.ble.interface import BLEInterface
+
+
+def _callable_accepts_timeout_kwarg(func: Callable[..., object]) -> bool:
+    """Return whether ``func`` can receive a ``timeout`` keyword."""
+    try:
+        parameters = signature(func).parameters
+    except (TypeError, ValueError):
+        return True
+    timeout_parameter = parameters.get("timeout")
+    if timeout_parameter is not None:
+        return timeout_parameter.kind in (
+            Parameter.POSITIONAL_OR_KEYWORD,
+            Parameter.KEYWORD_ONLY,
+        )
+    return any(
+        parameter.kind is Parameter.VAR_KEYWORD for parameter in parameters.values()
+    )
 
 
 @dataclass(frozen=True)
@@ -186,6 +203,33 @@ class BLELifecycleService:
             Resolved callable hook when available; otherwise ``None``.
         """
         return _LifecycleErrorAccess(iface).resolve_hook(public_name, legacy_name)
+
+    @staticmethod
+    def _get_shutdown_lifecycle_coordinator(
+        iface: "BLEInterface",
+    ) -> BLEShutdownLifecycleCoordinator:
+        """Return the shared shutdown lifecycle coordinator when available."""
+        get_or_create = getattr(iface, "_get_or_create_collaborator", None)
+        if callable(get_or_create) and not _is_unconfigured_mock_callable(
+            get_or_create
+        ):
+            try:
+                signature(get_or_create).bind(
+                    "_ble_shutdown_lifecycle_coordinator",
+                    lambda: BLEShutdownLifecycleCoordinator(iface),
+                )
+            except (AttributeError, NotImplementedError, TypeError, ValueError):
+                pass
+            else:
+                coordinator = get_or_create(
+                    "_ble_shutdown_lifecycle_coordinator",
+                    lambda: BLEShutdownLifecycleCoordinator(iface),
+                )
+                if coordinator is not None and not _is_unconfigured_mock_member(
+                    coordinator
+                ):
+                    return cast(BLEShutdownLifecycleCoordinator, coordinator)
+        return BLEShutdownLifecycleCoordinator(iface)
 
     @staticmethod
     def _error_handler_safe_cleanup(
@@ -535,9 +579,14 @@ class BLELifecycleService:
             ).is_connection_closing()
         )
 
+    # COMPAT_STABLE_SHIM: guarded dispatch so legacy overrides without timeout
+    # do not break when called through the compatibility surface.
     @staticmethod
     def _disconnect_and_close_client(
-        iface: "BLEInterface", client: "BLEClient"
+        iface: "BLEInterface",
+        client: "BLEClient",
+        *,
+        timeout: float | None = None,
     ) -> None:
         """Release BLE client resources with best-effort disconnect/close handling.
 
@@ -547,13 +596,21 @@ class BLELifecycleService:
             Interface exposing client-manager cleanup helpers.
         client : BLEClient
             Client to disconnect and close.
+        timeout : float | None, optional
+            Optional maximum seconds to wait for disconnect/close completion.
 
         Returns
         -------
         None
             Returns ``None`` after cleanup is attempted.
         """
-        BLEDisconnectLifecycleCoordinator(iface).disconnect_and_close_client(client)
+        disconnect_and_close = BLEDisconnectLifecycleCoordinator(
+            iface
+        ).disconnect_and_close_client
+        if _callable_accepts_timeout_kwarg(disconnect_and_close):
+            disconnect_and_close(client, timeout=timeout)
+        else:
+            disconnect_and_close(client)
 
     @staticmethod
     def _compute_disconnect_keys(
@@ -1278,12 +1335,15 @@ class BLELifecycleService:
         """
         BLEShutdownLifecycleCoordinator(iface)._cleanup_thread_coordinator()
 
+    # COMPAT_STABLE_SHIM: guarded dispatch so legacy overrides without timeout
+    # do not break when called through the compatibility surface.
     @staticmethod
     def _close(
         iface: "BLEInterface",
         *,
         management_shutdown_wait_timeout: float,
         management_wait_poll_seconds: float,
+        timeout: float | None = None,
     ) -> None:
         """Shut down BLE interface resources and finalize lifecycle state.
 
@@ -1295,16 +1355,32 @@ class BLELifecycleService:
             Maximum seconds to wait for inflight management operations.
         management_wait_poll_seconds : float
             Poll interval used while waiting for management completion.
+        timeout : float | None
+            Optional total timeout budget in seconds. When provided, each
+            blocking shutdown stage (management wait, receive-thread join,
+            ``MeshInterface.close``, client disconnect/close, and notification
+            waits) receives a remaining-budget slice so ``close()`` does not
+            block indefinitely.
 
         Returns
         -------
         None
             Returns ``None`` after best-effort shutdown cleanup.
         """
-        BLEShutdownLifecycleCoordinator(iface).close(
-            management_shutdown_wait_timeout=management_shutdown_wait_timeout,
-            management_wait_poll_seconds=management_wait_poll_seconds,
-        )
+        shutdown_close = BLELifecycleService._get_shutdown_lifecycle_coordinator(
+            iface
+        ).close
+        if _callable_accepts_timeout_kwarg(shutdown_close):
+            shutdown_close(
+                management_shutdown_wait_timeout=management_shutdown_wait_timeout,
+                management_wait_poll_seconds=management_wait_poll_seconds,
+                timeout=timeout,
+            )
+        else:
+            shutdown_close(
+                management_shutdown_wait_timeout=management_shutdown_wait_timeout,
+                management_wait_poll_seconds=management_wait_poll_seconds,
+            )
 
     @staticmethod
     def _finalize_connection_gates(

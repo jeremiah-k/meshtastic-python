@@ -1,5 +1,6 @@
 """Top-level lifecycle controller runtime ownership for BLE."""
 
+import inspect
 from collections.abc import Callable
 from typing import TYPE_CHECKING, TypeVar, cast
 
@@ -26,13 +27,33 @@ from meshtastic.interfaces.ble.lifecycle_shutdown_runtime import (
     BLEShutdownLifecycleCoordinator,
 )
 from meshtastic.interfaces.ble.state import ConnectionState
-from meshtastic.interfaces.ble.utils import _is_unconfigured_mock_callable
+from meshtastic.interfaces.ble.utils import (
+    _is_unconfigured_mock_callable,
+)
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
     from meshtastic.interfaces.ble.interface import BLEInterface
 
 _HookT = TypeVar("_HookT", bound=Callable[..., object])
+
+
+def _callable_accepts_timeout_kwarg(func: Callable[..., object]) -> bool:
+    """Return whether ``func`` can receive a ``timeout`` keyword."""
+    try:
+        parameters = inspect.signature(func).parameters
+    except (TypeError, ValueError):
+        return True
+    timeout_parameter = parameters.get("timeout")
+    if timeout_parameter is not None:
+        return timeout_parameter.kind in (
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.KEYWORD_ONLY,
+        )
+    return any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
 
 
 class BLELifecycleController:
@@ -346,13 +367,31 @@ class BLELifecycleController:
         *,
         management_shutdown_wait_timeout: float,
         management_wait_poll_seconds: float,
+        timeout: float | None = None,
     ) -> None:
         """Close the bound interface and lifecycle resources."""
-        self._shutdown.close(
-            management_shutdown_wait_timeout=management_shutdown_wait_timeout,
-            management_wait_poll_seconds=management_wait_poll_seconds,
-        )
+        shutdown_close = self._shutdown.close
+        if _callable_accepts_timeout_kwarg(shutdown_close):
+            shutdown_close(
+                management_shutdown_wait_timeout=management_shutdown_wait_timeout,
+                management_wait_poll_seconds=management_wait_poll_seconds,
+                timeout=timeout,
+            )
+        else:
+            shutdown_close(
+                management_shutdown_wait_timeout=management_shutdown_wait_timeout,
+                management_wait_poll_seconds=management_wait_poll_seconds,
+            )
 
-    def _disconnect_and_close_client(self, client: "BLEClient") -> None:
+    def _disconnect_and_close_client(
+        self,
+        client: "BLEClient",
+        *,
+        timeout: float | None = None,
+    ) -> None:
         """Disconnect and close the provided client for the bound interface."""
-        self._disconnect.disconnect_and_close_client(client)
+        disconnect_and_close = self._disconnect.disconnect_and_close_client
+        if _callable_accepts_timeout_kwarg(disconnect_and_close):
+            disconnect_and_close(client, timeout=timeout)
+        else:
+            disconnect_and_close(client)

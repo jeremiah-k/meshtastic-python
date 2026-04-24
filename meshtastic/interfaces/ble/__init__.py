@@ -39,13 +39,30 @@ from meshtastic.interfaces.ble.constants import (
     BLEConfig,
     logger,
 )
+from meshtastic.interfaces.ble.errors import (
+    BLEAddressMismatchError,
+    BLEConnectionSuppressedError,
+    BLEConnectionTimeoutError,
+    BLEDBusTransportError,
+    BLEDeviceNotFoundError,
+    BLEDiscoveryError,
+    MeshtasticBLEError,
+)
 from meshtastic.interfaces.ble.interface import BLEInterface
+from meshtastic.interfaces.ble.utils import sanitize_address
 
 __all__ = [
     # Main classes
     "BLEInterface",
     "BLEClient",
     "BLEConfig",
+    "MeshtasticBLEError",
+    "BLEDiscoveryError",
+    "BLEDeviceNotFoundError",
+    "BLEConnectionSuppressedError",
+    "BLEConnectionTimeoutError",
+    "BLEAddressMismatchError",
+    "BLEDBusTransportError",
     # UUID constants
     "SERVICE_UUID",
     "TORADIO_UUID",
@@ -64,4 +81,6 @@ __all__ = [
     "BLECLIENT_ERROR_ASYNC_TIMEOUT",
     # Legacy export retained for compatibility with meshtastic.ble_interface.
     "logger",
+    # Utility helpers intended for stable BLE consumers.
+    "sanitize_address",
 ]

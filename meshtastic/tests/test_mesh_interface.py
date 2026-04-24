@@ -638,7 +638,7 @@ def test_close_suppresses_disconnect_send_failures(
     disconnect_error: BaseException,
 ) -> None:
     """close() should continue cleanup if sending disconnect fails."""
-    iface = MeshInterface(noProto=True)
+    iface = MeshInterface(noProto=False)
     try:
         iface.debugOut = io.StringIO()
         with (
@@ -663,7 +663,7 @@ def test_close_raises_disconnect_type_error_when_not_finalizing(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """close() should surface TypeError disconnect failures during normal runtime."""
-    iface = MeshInterface(noProto=True)
+    iface = MeshInterface(noProto=False)
     try:
         iface.debugOut = io.StringIO()
         with (
@@ -688,7 +688,7 @@ def test_close_suppresses_disconnect_type_error_during_finalization(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """close() should swallow TypeError disconnect failures during finalization."""
-    iface = MeshInterface(noProto=True)
+    iface = MeshInterface(noProto=False)
     try:
         iface.debugOut = io.StringIO()
         with (

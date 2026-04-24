@@ -1044,7 +1044,7 @@ def traverseConfig(
     """
     skipped_by_section: dict[str, list[str]] = {}
 
-    def _traverse(root: str, cfg: dict, icfg: Any) -> bool:
+    def _traverse(root: str, cfg: dict[str, Any], icfg: Any) -> bool:
         s_name = meshtastic.util.camel_to_snake(root)
         for pref in cfg:
             pref_name = f"{s_name}.{pref}"

@@ -15,7 +15,7 @@ import pytest
 pytest.importorskip("bleak")
 
 from bleak.backends.device import BLEDevice
-from bleak.exc import BleakDBusError, BleakDeviceNotFoundError
+from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
 from meshtastic.interfaces.ble.connection import (
     ClientManager,
@@ -593,7 +593,9 @@ def test_connection_orchestrator_interrupt_resets_state_and_closes_client() -> N
         )
 
     assert state_manager._current_state == ConnectionState.DISCONNECTED
-    client_manager.safe_close_client.assert_called_once_with(mock_client)
+    client_manager.safe_close_client.assert_called_once_with(
+        mock_client, disconnect_timeout=None
+    )
 
 
 @pytest.mark.unit
@@ -650,7 +652,9 @@ def test_connection_orchestrator_aborts_fallback_when_interface_closing() -> Non
     interface.findDevice.assert_not_called()
     interface.find_device.assert_not_called()
     interface._find_device.assert_not_called()
-    client_manager.safe_close_client.assert_called_once_with(direct_client)
+    client_manager.safe_close_client.assert_called_once_with(
+        direct_client, disconnect_timeout=None
+    )
     assert state_manager._current_state == ConnectionState.DISCONNECTED
 
 
@@ -916,8 +920,12 @@ def test_connection_orchestrator_reraises_retry_ble_dbus_error(
             on_disconnect_func=lambda _client: None,
         )
 
-    client_manager.safe_close_client.assert_any_call(direct_client)
-    client_manager.safe_close_client.assert_any_call(retry_client)
+    client_manager.safe_close_client.assert_any_call(
+        direct_client, disconnect_timeout=None
+    )
+    client_manager.safe_close_client.assert_any_call(
+        retry_client, disconnect_timeout=None
+    )
 
 
 @pytest.mark.unit
@@ -1893,3 +1901,296 @@ def test_reconnect_worker_returns_when_interface_already_connected() -> None:
     worker._attempt_reconnect_loop(Event(), on_exit=on_exit)
 
     on_exit.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_client_manager_safe_close_client_fallback_on_unsupported_await_timeout() -> (
+    None
+):
+    """_safe_close_client should fallback to no-arg disconnect when await_timeout is unsupported."""
+    state_manager = BLEStateManager()
+    lock = RLock()
+    thread_coordinator = MagicMock()
+    error_handler = MagicMock()
+
+    manager = ClientManager(state_manager, lock, thread_coordinator, error_handler)
+
+    mock_client = MagicMock()
+    mock_client._closed = False
+    mock_client.bleak_client = object()
+    mock_client.is_connected.return_value = True
+
+    def _reject_await_timeout(*, await_timeout: float | None = None) -> None:
+        if await_timeout is not None:
+            raise TypeError(
+                "disconnect() got an unexpected keyword argument 'await_timeout'"
+            )
+
+    mock_client.disconnect.side_effect = _reject_await_timeout
+
+    manager._safe_close_client(mock_client)
+
+    assert mock_client.disconnect.call_count == 2
+    mock_client.close.assert_called_once()
+
+
+@pytest.mark.unit
+def test_client_manager_safe_close_client_does_not_fallback_on_unrelated_typeerror() -> (
+    None
+):
+    """_safe_close_client should NOT attempt no-arg disconnect fallback for unrelated TypeError."""
+    state_manager = BLEStateManager()
+    lock = RLock()
+    thread_coordinator = MagicMock()
+    error_handler = MagicMock()
+
+    manager = ClientManager(state_manager, lock, thread_coordinator, error_handler)
+
+    mock_client = MagicMock()
+    mock_client._closed = False
+    mock_client.bleak_client = object()
+    mock_client.is_connected.return_value = True
+
+    def _raise_unrelated(*, await_timeout: float | None = None) -> None:
+        del await_timeout
+        raise TypeError("takes 1 positional argument but 2 were given")
+
+    mock_client.disconnect.side_effect = _raise_unrelated
+
+    # _safe_close_client should swallow the error and still run close()
+    manager._safe_close_client(mock_client)
+
+    assert mock_client.disconnect.call_count == 1
+    mock_client.close.assert_called_once()
+
+
+@pytest.mark.unit
+def test_retry_direct_connect_cleans_up_retry_client_on_interrupt() -> None:
+    """_retry_direct_connect_after_cleanup must close retry_client on KeyboardInterrupt."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = _make_orchestrator_client_manager()
+    retry_client = MagicMock()
+    client_manager.create_client.return_value = retry_client
+    client_manager.connect_client.side_effect = KeyboardInterrupt("stop")
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        orchestrator._retry_direct_connect_after_cleanup(
+            target_address="AA:BB:CC:DD:EE:FF",
+            explicit_address=True,
+            on_disconnect_func=lambda _client: None,
+            pair_on_connect=False,
+            direct_connect_timeout=1.0,
+            register_notifications_func=lambda _client: None,
+            on_connected_func=lambda: None,
+            emit_connected_side_effects=True,
+        )
+
+    client_manager.safe_close_client.assert_called_once_with(
+        retry_client, disconnect_timeout=None
+    )
+
+
+@pytest.mark.unit
+def test_retry_direct_connect_skips_cleanup_on_successful_return() -> None:
+    """_retry_direct_connect_after_cleanup must NOT close retry_client on successful return."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = _make_orchestrator_client_manager()
+    retry_client = MagicMock()
+    client_manager.create_client.return_value = retry_client
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+
+    # Stub all downstream steps so the retry path succeeds
+    orchestrator._raise_if_interface_closing = lambda: None  # type: ignore[method-assign]
+    orchestrator._validate_explicit_address_connection = lambda **kwargs: None  # type: ignore[method-assign]
+    orchestrator._finalize_connection = lambda *args, **kwargs: None  # type: ignore[method-assign]
+
+    result = orchestrator._retry_direct_connect_after_cleanup(
+        target_address="AA:BB:CC:DD:EE:FF",
+        explicit_address=True,
+        on_disconnect_func=lambda _client: None,
+        pair_on_connect=False,
+        direct_connect_timeout=1.0,
+        register_notifications_func=lambda _client: None,
+        on_connected_func=lambda: None,
+        emit_connected_side_effects=True,
+    )
+
+    assert result is retry_client
+    client_manager.safe_close_client.assert_not_called()
+
+
+@pytest.mark.unit
+def test_stale_cleanup_retry_propagates_address_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BLEAddressMismatchError from stale-cleanup retry must propagate immediately."""
+    from meshtastic.interfaces.ble.errors import BLEAddressMismatchError
+
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = _make_orchestrator_client_manager()
+    direct_client = MagicMock()
+    retry_client = MagicMock()
+    client_manager.create_client.side_effect = [direct_client, retry_client]
+    client_manager.connect_client.side_effect = [
+        OSError("stale bluez"),
+        None,
+    ]
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = False
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+
+    # Force stale BlueZ cleanup path
+    monkeypatch.setattr(
+        orchestrator,
+        "_is_stale_bluez_direct_connect_error",
+        lambda _error: True,
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "_should_attempt_stale_bluez_cleanup",
+        lambda *, target_address, explicit_address, error: True,
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "_attempt_stale_bluez_cleanup",
+        lambda **kwargs: True,
+    )
+
+    # Make the retry raise BLEAddressMismatchError during finalization
+    mismatch = BLEAddressMismatchError(
+        "address mismatch",
+        requested_identifier="AA:BB:CC:DD:EE:FF",
+        connected_address="11:22:33:44:55:66",
+        address="AA:BB:CC:DD:EE:FF",
+    )
+
+    def _raise_mismatch(**kwargs: object) -> None:
+        del kwargs
+        raise mismatch
+
+    orchestrator._validate_explicit_address_connection = _raise_mismatch  # type: ignore[method-assign]
+
+    with pytest.raises(BLEAddressMismatchError):
+        orchestrator._establish_connection(
+            address="AA:BB:CC:DD:EE:FF",
+            current_address=None,
+            register_notifications_func=lambda _client: None,
+            on_connected_func=lambda: None,
+            on_disconnect_func=lambda _client: None,
+        )
+
+    client_manager.safe_close_client.assert_any_call(
+        direct_client, disconnect_timeout=None
+    )
+    client_manager.safe_close_client.assert_any_call(
+        retry_client, disconnect_timeout=None
+    )
+
+
+@pytest.mark.unit
+def test_stale_cleanup_retry_fallback_on_generic_retry_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Generic retry failures after stale cleanup should follow existing fallback path."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = _make_orchestrator_client_manager()
+    direct_client = MagicMock()
+    retry_client = MagicMock()
+    client_manager.create_client.side_effect = [
+        direct_client,
+        retry_client,
+    ]
+    client_manager.connect_client.side_effect = [
+        OSError("stale bluez"),
+        BleakError("retry failed"),
+    ]
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = False
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+
+    monkeypatch.setattr(
+        orchestrator,
+        "_is_stale_bluez_direct_connect_error",
+        lambda _error: True,
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "_should_attempt_stale_bluez_cleanup",
+        lambda *, target_address, explicit_address, error: True,
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "_attempt_stale_bluez_cleanup",
+        lambda **kwargs: True,
+    )
+
+    with pytest.raises(BleakError, match="retry failed"):
+        orchestrator._establish_connection(
+            address="AA:BB:CC:DD:EE:FF",
+            current_address=None,
+            register_notifications_func=lambda _client: None,
+            on_connected_func=lambda: None,
+            on_disconnect_func=lambda _client: None,
+        )
+
+    client_manager.safe_close_client.assert_any_call(
+        direct_client, disconnect_timeout=None
+    )
+    client_manager.safe_close_client.assert_any_call(
+        retry_client, disconnect_timeout=None
+    )

@@ -22,7 +22,11 @@ import pytest
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
 
-from meshtastic.interfaces.ble import BLEClient, BLEInterface
+from meshtastic.interfaces.ble import (
+    BLEClient,
+    BLEConnectionSuppressedError,
+    BLEInterface,
+)
 from meshtastic.interfaces.ble.constants import (
     ERROR_INTERFACE_CLOSING,
     ERROR_NO_PERIPHERALS_FOUND,
@@ -91,6 +95,17 @@ class FailingDiscoveryManager:
         if self.exception:
             raise self.exception
         return []
+
+
+class MultipleDiscoveryManager:
+    """Discovery manager that returns multiple matching devices."""
+
+    def _discover_devices(self, address: str | None) -> list[BLEDevice]:
+        del address
+        return [
+            _create_ble_device("AA:BB:CC:DD:EE:01", "Mesh One"),
+            _create_ble_device("AA:BB:CC:DD:EE:02", "Mesh Two"),
+        ]
 
 
 class _FakeDiscoveryClient:
@@ -205,6 +220,122 @@ def _build_minimal_interface() -> BLEInterface:
     iface._auto_reconnect = False
     iface.auto_reconnect = False
     return iface
+
+
+# ============================================================================
+# Public API Surface Tests
+# ============================================================================
+
+
+def test_ble_address_property_prefers_active_client_address() -> None:
+    """ble_address should use the connected client's concrete address when available."""
+    iface = _build_minimal_interface()
+    iface.address = "AA:BB:CC:DD:EE:FF"
+    iface.client = DummyClient(address="11:22:33:44:55:66")
+
+    assert iface.ble_address == "11:22:33:44:55:66"
+
+
+def test_ble_address_property_ignores_invalid_active_client_address() -> None:
+    """ble_address should not expose active-client sentinel identifiers."""
+    iface = _build_minimal_interface()
+    iface.address = None
+    iface.client = DummyClient(address="unknown")
+
+    assert iface.bleAddress is None
+    assert iface.ble_address is None
+
+
+def test_ble_address_property_falls_back_to_interface_address() -> None:
+    """ble_address and bleAddress should fall back to the interface-level address when no client is active."""
+    iface = _build_minimal_interface()
+    iface.client = None
+    iface.address = "AA:BB:CC:DD:EE:FF"
+
+    assert iface.ble_address == "AA:BB:CC:DD:EE:FF"
+
+
+def test_ble_address_property_returns_none_without_known_address() -> None:
+    """ble_address should return None when no address can be resolved."""
+    iface = _build_minimal_interface()
+    iface.client = None
+    iface.address = None
+
+    assert iface.ble_address is None
+
+
+def test_ble_address_property_returns_none_for_non_address_identifier() -> None:
+    """BleAddress should return None when interface address is a name, not a BLE MAC."""
+    iface = _build_minimal_interface()
+    iface.client = None
+    iface.address = "MyMeshDevice"
+
+    assert iface.bleAddress is None
+    assert iface.ble_address is None
+
+
+def test_ble_address_property_returns_valid_mac_fallback() -> None:
+    """BleAddress and ble_address should return the interface address when it is a valid BLE MAC."""
+    iface = _build_minimal_interface()
+    iface.client = None
+    iface.address = "AA:BB:CC:DD:EE:FF"
+
+    assert iface.bleAddress == "AA:BB:CC:DD:EE:FF"
+    assert iface.ble_address == "AA:BB:CC:DD:EE:FF"
+
+
+def test_close_forwards_timeout_to_lifecycle_controller() -> None:
+    """close(timeout=...) should pass the caller budget to lifecycle shutdown."""
+    iface = _build_minimal_interface()
+    close_calls: list[dict[str, object]] = []
+    iface._get_lifecycle_controller = lambda: SimpleNamespace(
+        _close=lambda **kwargs: close_calls.append(dict(kwargs))
+    )
+
+    iface.close(timeout=3.0)
+
+    kwargs = close_calls[0]
+    assert kwargs["timeout"] == 3.0
+
+
+def test_close_rejects_invalid_timeout_type() -> None:
+    """close(timeout=...) should validate timeout input shape."""
+    iface = _build_minimal_interface()
+
+    with pytest.raises(BLEInterface.BLEError, match=r"close\(\) timeout"):
+        iface.close(timeout=cast(Any, "invalid"))
+
+
+def test_close_delegates_across_repeated_calls() -> None:
+    """Multiple close(timeout=...) calls should remain safe and delegate cleanup."""
+    iface = _build_minimal_interface()
+    close_calls: list[dict[str, object]] = []
+    iface._get_lifecycle_controller = lambda: SimpleNamespace(
+        _close=lambda **kwargs: close_calls.append(dict(kwargs))
+    )
+
+    iface.close(timeout=2.0)
+    iface.close(timeout=2.0)
+    iface.close()
+
+    assert len(close_calls) == 3
+    assert close_calls[0]["timeout"] == 2.0
+    assert close_calls[1]["timeout"] == 2.0
+    assert close_calls[2]["timeout"] is None
+
+
+def test_close_timeout_budget_propagates_to_shutdown_stages() -> None:
+    """close(timeout=...) should propagate the total budget to lifecycle shutdown."""
+    iface = _build_minimal_interface()
+    budgets: list[float | None] = []
+    iface._get_lifecycle_controller = lambda: SimpleNamespace(
+        _close=lambda *, management_shutdown_wait_timeout=5.0, management_wait_poll_seconds=0.5, timeout=None: budgets.append(
+            timeout
+        )
+    )
+
+    iface.close(timeout=5.0)
+    assert budgets == [5.0]
 
 
 # ============================================================================
@@ -386,6 +517,33 @@ def test_find_device_raises_when_sanitization_fails(
     # Use an invalid address that looks like a BLE address but can't be sanitized
     with pytest.raises(BLEInterface.BLEError):
         iface.findDevice("invalid-address-string")
+
+
+def test_find_device_with_self_address_multiple_matches_uses_requested_identifier() -> (
+    None
+):
+    """findDevice(None) should report the resolved self.address for multiple matches."""
+    iface = _build_minimal_interface()
+    iface.address = "target-name"
+    iface._discovery_manager = MultipleDiscoveryManager()
+
+    with pytest.raises(BLEInterface.BLEError) as exc_info:
+        iface.findDevice(None)
+
+    assert exc_info.value.requested_identifier == "target-name"
+
+
+def test_find_device_explicit_target_multiple_matches_uses_requested_identifier() -> (
+    None
+):
+    """findDevice(address) should continue reporting the explicit requested target."""
+    iface = _build_minimal_interface()
+    iface._discovery_manager = MultipleDiscoveryManager()
+
+    with pytest.raises(BLEInterface.BLEError) as exc_info:
+        iface.findDevice("explicit-name")
+
+    assert exc_info.value.requested_identifier == "explicit-name"
 
 
 # ============================================================================
@@ -1218,10 +1376,56 @@ def test_raise_if_duplicate_connect_raises_when_suppressed(
         lambda key: True,
     )
 
-    with pytest.raises(BLEInterface.BLEError, match="Connection suppressed"):
+    with pytest.raises(
+        BLEInterface.BLEError, match="Connection suppressed"
+    ) as exc_info:
         iface._raise_if_duplicate_connect("test-key")
+    assert isinstance(exc_info.value, BLEConnectionSuppressedError)
 
 
+@pytest.mark.unit
+def test_raise_if_duplicate_connect_uses_real_request_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_raise_if_duplicate_connect should populate exception with real request context."""
+    iface = _build_minimal_interface()
+
+    monkeypatch.setattr(
+        iface,
+        "_should_suppress_duplicate_connect",
+        lambda key: True,
+    )
+
+    with pytest.raises(BLEConnectionSuppressedError) as exc_info:
+        iface._raise_if_duplicate_connect(
+            "registry-key",
+            requested_identifier="MyDevice",
+            resolved_address="AA:BB:CC:DD:EE:FF",
+        )
+    assert exc_info.value.requested_identifier == "MyDevice"
+    assert exc_info.value.address == "AA:BB:CC:DD:EE:FF"
+
+
+@pytest.mark.unit
+def test_raise_if_duplicate_connect_fallback_to_key_when_context_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_raise_if_duplicate_connect should fallback to registry key when real context is absent."""
+    iface = _build_minimal_interface()
+
+    monkeypatch.setattr(
+        iface,
+        "_should_suppress_duplicate_connect",
+        lambda key: True,
+    )
+
+    with pytest.raises(BLEConnectionSuppressedError) as exc_info:
+        iface._raise_if_duplicate_connect("test-key")
+    assert exc_info.value.requested_identifier == "test-key"
+    assert exc_info.value.address == "test-key"
+
+
+@pytest.mark.unit
 def test_get_existing_client_if_valid_returns_none_when_not_connected() -> None:
     """_get_existing_client_if_valid should return None when not connected."""
     iface = _build_minimal_interface()
@@ -2102,7 +2306,9 @@ def test_disconnect_and_close_client_delegates() -> None:
 
     iface._disconnect_and_close_client(cast(BLEClient, client))
 
-    disconnect_and_close_client.assert_called_once_with(cast(BLEClient, client))
+    disconnect_and_close_client.assert_called_once_with(
+        cast(BLEClient, client), timeout=None
+    )
 
 
 # ============================================================================
