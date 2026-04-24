@@ -579,6 +579,10 @@ class _HardwareModelEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_Hardwar
     """
     THINKNODE_M8: _HardwareModel.ValueType  # 130
     THINKNODE_M9: _HardwareModel.ValueType  # 131
+    HELTEC_V4_R8: _HardwareModel.ValueType  # 132
+    """
+    The Heltec-V4-R8 uses an ESP32S3R8 chip, plus an SX1262.
+    """
     PRIVATE_HW: _HardwareModel.ValueType  # 255
     """
     ------------------------------------------------------------------------------------------------------------------------------------------
@@ -1136,6 +1140,10 @@ Elecrow ThinkNode M7, M8 and M9
 """
 THINKNODE_M8: HardwareModel.ValueType  # 130
 THINKNODE_M9: HardwareModel.ValueType  # 131
+HELTEC_V4_R8: HardwareModel.ValueType  # 132
+"""
+The Heltec-V4-R8 uses an ESP32S3R8 chip, plus an SX1262.
+"""
 PRIVATE_HW: HardwareModel.ValueType  # 255
 """
 ------------------------------------------------------------------------------------------------------------------------------------------
