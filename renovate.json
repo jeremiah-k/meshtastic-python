@@ -24,7 +24,8 @@
         "digest",
         "lockFileMaintenance"
       ],
-      "automerge": true
+      "automerge": true,
+      "minimumReleaseAge": "12 hours"
     },
     {
       "description": "Hold pandas on v2 until Python/compatibility migration is complete",
