@@ -615,6 +615,18 @@ class _HardwareModelEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_Hardwar
     """
     Meshnology W10
     """
+    HELTEC_RC32: _HardwareModel.ValueType  # 141
+    """
+    Heltec ESP32S3 + SX1262
+    """
+    HELTEC_RC52: _HardwareModel.ValueType  # 142
+    """
+    Heltec NRF52840 + SX1262
+    """
+    HELTEC_RCC6: _HardwareModel.ValueType  # 143
+    """
+    Heltec ESP32C6 + SX1262
+    """
     PRIVATE_HW: _HardwareModel.ValueType  # 255
     """
     ------------------------------------------------------------------------------------------------------------------------------------------
@@ -1207,6 +1219,18 @@ Heltec Mesh Tower V2
 MESHNOLOGY_W10: HardwareModel.ValueType  # 140
 """
 Meshnology W10
+"""
+HELTEC_RC32: HardwareModel.ValueType  # 141
+"""
+Heltec ESP32S3 + SX1262
+"""
+HELTEC_RC52: HardwareModel.ValueType  # 142
+"""
+Heltec NRF52840 + SX1262
+"""
+HELTEC_RCC6: HardwareModel.ValueType  # 143
+"""
+Heltec ESP32C6 + SX1262
 """
 PRIVATE_HW: HardwareModel.ValueType  # 255
 """
