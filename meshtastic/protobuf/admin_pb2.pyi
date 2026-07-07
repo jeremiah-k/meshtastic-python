@@ -241,6 +241,10 @@ class AdminMessage(_message.Message):
         """
         TAK module config
         """
+        MESHBEACON_CONFIG: AdminMessage._ModuleConfigType.ValueType  # 16
+        """
+        Mesh Beacon module config
+        """
 
     class ModuleConfigType(_ModuleConfigType, metaclass=_ModuleConfigTypeEnumTypeWrapper):
         """
@@ -310,6 +314,10 @@ class AdminMessage(_message.Message):
     TAK_CONFIG: AdminMessage.ModuleConfigType.ValueType  # 15
     """
     TAK module config
+    """
+    MESHBEACON_CONFIG: AdminMessage.ModuleConfigType.ValueType  # 16
+    """
+    Mesh Beacon module config
     """
 
     class _BackupLocation:
