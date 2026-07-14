@@ -674,6 +674,9 @@ class TestNodeDeleteChannelRuntime:
             else:
                 ch.role = channel_pb2.Channel.Role.DISABLED
             channels.append(ch)
+        # Mark one trailing slot with stale data so it is rewritten
+        # after the admin-index switch, making the switch observable.
+        channels[3].settings.name = "stale-disabled"
 
         mock_local_node.channels = channels
 
