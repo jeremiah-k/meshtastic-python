@@ -59,7 +59,7 @@ virt-multinode-meshtasticd:
 
 # run process-managed native meshtasticd single/multi-node smoke tests
 simradio:
-	$(POETRY_RUN) pytest -m simradio -v
+	$(POETRY_RUN) pytest -m simradio -v --durations=20
 
 # run stable non-destructive smoke1 hardware checks
 smoke1:

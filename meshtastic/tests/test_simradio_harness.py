@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -30,7 +31,9 @@ from .simradio_helpers import (
     _DEFAULT_RETRIES,
     _DESTRUCTIVE_ARGUMENTS,
     _READ_ONLY_ARGUMENTS,
+    _redact_cli_diagnostics,
     cli_then_verify,
+    connect_iface,
     run_cli,
 )
 
@@ -139,6 +142,7 @@ def test_simradio_bridge_drops_oversized_payload() -> None:
     receiver = MagicMock(spec=TCPInterface)
     mesh.nodes[1].iface = receiver
     mesh._port_to_index[mesh.nodes[0].port] = 0
+    mesh._started = True
 
     mesh._on_sim_packet(
         packet={
@@ -150,6 +154,54 @@ def test_simradio_bridge_drops_oversized_payload() -> None:
     )
 
     receiver._send_to_radio.assert_not_called()
+
+
+@pytest.mark.unit
+def test_blocked_simradio_injection_does_not_prevent_teardown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Firmware injection must run after releasing the teardown bridge lock."""
+    mesh = SimMesh(node_count=2)
+    transmitter = MagicMock(portNumber=mesh.nodes[0].port)
+    mesh.nodes[1].iface = MagicMock(spec=TCPInterface)
+    mesh._port_to_index[mesh.nodes[0].port] = 0
+    mesh._started = True
+    injection_started = threading.Event()
+    release_injection = threading.Event()
+    teardown_finished = threading.Event()
+
+    def _blocked_injection(_iface: TCPInterface, _packet: mesh_pb2.ToRadio) -> None:
+        injection_started.set()
+        release_injection.wait(timeout=2.0)
+
+    monkeypatch.setattr(
+        simradio_harness, "_inject_simulator_packet", _blocked_injection
+    )
+    forwarding = threading.Thread(
+        target=mesh._on_sim_packet,
+        kwargs={
+            "packet": {"decoded": {"payload": b"blocked"}},
+            "interface": transmitter,
+        },
+        daemon=True,
+    )
+    forwarding.start()
+    assert injection_started.wait(timeout=1.0)
+
+    def _stop_mesh() -> None:
+        mesh.stop()
+        teardown_finished.set()
+
+    teardown = threading.Thread(target=_stop_mesh, daemon=True)
+    teardown.start()
+    completed_while_blocked = teardown_finished.wait(timeout=0.5)
+    release_injection.set()
+    forwarding.join(timeout=1.0)
+    teardown.join(timeout=1.0)
+
+    assert completed_while_blocked
+    assert not forwarding.is_alive()
+    assert not teardown.is_alive()
 
 
 @pytest.mark.unit
@@ -200,12 +252,13 @@ def test_simradio_node_rejects_occupied_port(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Harness startup must not attach to an unrelated existing listener."""
-    connected_socket = MagicMock()
-    connected_socket.__enter__.return_value = connected_socket
+    probe = MagicMock()
+    probe.__enter__.return_value = probe
+    probe.bind.side_effect = OSError("address already in use")
     monkeypatch.setattr(
         simradio_harness.socket,
-        "create_connection",
-        lambda *_args, **_kwargs: connected_socket,
+        "socket",
+        lambda *_args, **_kwargs: probe,
     )
 
     with pytest.raises(RuntimeError, match="already in use"):
@@ -266,6 +319,20 @@ def test_run_cli_retries_transient_failure_without_logging_values(
 
 
 @pytest.mark.unit
+def test_connect_iface_retries_the_owned_interface_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Readiness retries must retain the successful API client, not probe first."""
+    iface = MagicMock(spec=TCPInterface)
+    constructor = MagicMock(side_effect=(ConnectionRefusedError(), iface))
+    monkeypatch.setattr(simradio_helpers, "TCPInterface", constructor)
+    monkeypatch.setattr(simradio_helpers.time, "sleep", lambda _seconds: None)
+
+    assert connect_iface(4404, wait_timeout=1.0) is iface
+    assert constructor.call_count == 2
+
+
+@pytest.mark.unit
 def test_cli_failure_diagnostics_redact_positional_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -290,6 +357,72 @@ def test_cli_failure_diagnostics_redact_positional_values(
     diagnostic = str(exc_info.value)
     assert "distinctive-secret" not in diagnostic
     assert "<redacted>" in diagnostic
+    assert "network.wifi_psk" in diagnostic
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("arguments", "secret"),
+    (
+        (
+            ("--set", "security.private_key", "private-key-material"),
+            "private-key-material",
+        ),
+        (("--set", "security.admin_key", "admin-key-material"), "admin-key-material"),
+        (("--set", "network.wifiPsk", "wifi-secret-material"), "wifi-secret-material"),
+        (("--ch-set", "psk", "channel-key-material"), "channel-key-material"),
+        (
+            ("--seturl", "https://meshtastic.org/e/#secret-url"),
+            "https://meshtastic.org/e/#secret-url",
+        ),
+        (
+            ("--ch-set-url", "https://meshtastic.org/e/#channel-url"),
+            "https://meshtastic.org/e/#channel-url",
+        ),
+        (
+            ("--ch-add-url", "https://meshtastic.org/e/#added-url"),
+            "https://meshtastic.org/e/#added-url",
+        ),
+    ),
+)
+def test_cli_diagnostics_redact_each_secret_bearing_field(
+    arguments: tuple[str, ...],
+    secret: str,
+) -> None:
+    """Keys and channel URL payloads must not escape into CI diagnostics."""
+    diagnostic = _redact_cli_diagnostics(f"Rejected value {secret}", arguments)
+
+    assert secret not in diagnostic
+    assert diagnostic == "Rejected value <redacted>"
+
+
+@pytest.mark.unit
+def test_cli_diagnostics_preserve_ordinary_values() -> None:
+    """Region, numeric, and boolean values should remain useful diagnostics."""
+    arguments = (
+        "--set",
+        "lora.region",
+        "US",
+        "--set",
+        "lora.hop_limit",
+        "0",
+        "--set",
+        "position.fixed_position",
+        "true",
+    )
+    output = "region=US hop_limit=0 fixed_position=true"
+
+    assert _redact_cli_diagnostics(output, arguments) == output
+
+
+@pytest.mark.unit
+def test_cli_diagnostics_redact_bare_channel_url_fragment() -> None:
+    """A decoded channel-key fragment must remain secret without its URL prefix."""
+    arguments = ("--seturl", "https://meshtastic.org/e/#channel-key-fragment")
+
+    diagnostic = _redact_cli_diagnostics("Rejected channel-key-fragment", arguments)
+
+    assert diagnostic == "Rejected <redacted>"
 
 
 @pytest.mark.unit

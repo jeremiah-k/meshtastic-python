@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import socket
 import subprocess
 import sys
 import threading
@@ -16,13 +15,15 @@ from typing import Any
 from pubsub import pub
 
 from meshtastic.tcp_interface import TCPInterface
+from meshtastic.util import camel_to_snake
 
 logger = logging.getLogger(__name__)
 
 PAUSE_AFTER_CLI_SECONDS = 0.2
-PAUSE_AFTER_REGION_CHANGE_SECONDS = 2.0
 DEFAULT_CLI_TIMEOUT_SECONDS = 60.0
 DEFAULT_CONNECT_WAIT_SECONDS = 30.0
+CONNECT_ATTEMPT_TIMEOUT_SECONDS = 10.0
+CONNECT_RETRY_DELAY_SECONDS = 0.5
 DEFAULT_RECEIVE_TIMEOUT_SECONDS = 15.0
 DEFAULT_ABSENCE_TIMEOUT_SECONDS = 3.0
 CLI_TIMEOUT_RETURN_CODE = 124
@@ -32,14 +33,83 @@ _TRANSIENT_CLI_OUTPUT = (
     "connection reset by peer",
     "connection refused",
 )
+_SECRET_SET_FIELD_NAMES = frozenset(
+    {
+        "admin_key",
+        "api_key",
+        "auth_token",
+        "password",
+        "passphrase",
+        "private_key",
+        "psk",
+        "secret",
+        "session_passkey",
+        "token",
+        "wifi_psk",
+    }
+)
+_SECRET_CHANNEL_FIELD_NAMES = frozenset({"psk"})
+_SECRET_URL_OPTIONS = frozenset({"--seturl", "--ch-set-url", "--ch-add-url"})
+
+
+def _normalize_field_name(field: str) -> str:
+    """Normalize a CLI field path for secret classification."""
+    return ".".join(
+        camel_to_snake(component.strip().replace("-", "_"))
+        for component in field.split(".")
+    )
+
+
+def _is_secret_set_field(field: str) -> bool:
+    """Return whether a ``--set`` field carries credential material."""
+    components = [
+        component
+        for component in _normalize_field_name(field).split(".")
+        if component and not component.isdecimal()
+    ]
+    if not components:
+        return False
+    leaf = components[-1]
+    return leaf in _SECRET_SET_FIELD_NAMES or any(
+        leaf.endswith(f"_{suffix}") for suffix in _SECRET_SET_FIELD_NAMES
+    )
+
+
+def _secret_cli_values(arguments: Sequence[str]) -> tuple[str, ...]:
+    """Extract only credential-bearing values from structured CLI arguments."""
+    secrets: list[str] = []
+
+    def _append_url_secret(url: str) -> None:
+        secrets.append(url)
+        fragment = url.rpartition("#")[2]
+        if fragment:
+            secrets.append(fragment)
+
+    for index, argument in enumerate(arguments):
+        if argument == "--set" and index + 2 < len(arguments):
+            if _is_secret_set_field(arguments[index + 1]):
+                secrets.append(arguments[index + 2])
+        elif argument == "--ch-set" and index + 2 < len(arguments):
+            field = _normalize_field_name(arguments[index + 1])
+            if field in _SECRET_CHANNEL_FIELD_NAMES:
+                secrets.append(arguments[index + 2])
+        elif argument in _SECRET_URL_OPTIONS and index + 1 < len(arguments):
+            _append_url_secret(arguments[index + 1])
+        else:
+            for option in _SECRET_URL_OPTIONS:
+                prefix = f"{option}="
+                if argument.startswith(prefix):
+                    _append_url_secret(argument[len(prefix) :])
+                    break
+    return tuple(secrets)
 
 
 def _redact_cli_diagnostics(output: str, arguments: Sequence[str]) -> str:
-    """Remove positional CLI values before including output in exceptions."""
+    """Remove credential-bearing CLI values from exception diagnostics."""
     redacted = output
-    for argument in arguments:
-        if argument and not argument.startswith("--"):
-            redacted = redacted.replace(argument, "<redacted>")
+    for secret in sorted(_secret_cli_values(arguments), key=len, reverse=True):
+        if secret:
+            redacted = redacted.replace(secret, "<redacted>")
     return redacted
 
 
@@ -243,56 +313,47 @@ def run_cli(
     raise AssertionError("simradio CLI retry loop exhausted unexpectedly")
 
 
-def _wait_for_port(
-    port: int,
-    *,
-    timeout: float = DEFAULT_CONNECT_WAIT_SECONDS,
-) -> None:
-    """Wait for a simulator TCP listener after a reboot-capable write."""
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        try:
-            with socket.create_connection(("localhost", port), timeout=0.5):
-                return
-        except OSError:
-            time.sleep(0.2)
-    raise TimeoutError(f"localhost:{port} did not accept connections in {timeout:.1f}s")
-
-
 def connect_iface(
     port: int,
     *,
     no_nodes: bool = False,
-    retries: int = 4,
     wait_timeout: float = DEFAULT_CONNECT_WAIT_SECONDS,
 ) -> TCPInterface:
-    """Open a fresh configured TCPInterface with reboot-aware retries."""
-    if retries < 0:
-        raise ValueError("retries must not be negative")
+    """Retry the owned TCPInterface connection until firmware is configured."""
+    if wait_timeout <= 0:
+        raise ValueError("wait_timeout must be positive")
+    deadline = time.monotonic() + wait_timeout
     last_exception: Exception | None = None
-    for attempt in range(1, retries + 2):
+    attempt = 0
+    while True:
+        attempt += 1
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
         try:
-            _wait_for_port(port, timeout=wait_timeout)
             return TCPInterface(
                 hostname="localhost",
                 portNumber=port,
                 connectNow=True,
-                connectTimeout=10.0,
+                connectTimeout=min(CONNECT_ATTEMPT_TIMEOUT_SECONDS, remaining),
                 noNodes=no_nodes,
+                timeout=min(CONNECT_ATTEMPT_TIMEOUT_SECONDS, remaining),
             )
         except Exception as exc:  # pylint: disable=broad-except
             last_exception = exc
-            if attempt <= retries:
-                logger.debug(
-                    "Retrying simradio interface connection (%d/%d): %s",
-                    attempt,
-                    retries + 1,
-                    exc,
-                )
-                time.sleep(0.5)
-                continue
-            raise
-    raise AssertionError(f"unreachable connection loop: {last_exception}")
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            logger.debug(
+                "Retrying actual simradio interface connection (attempt %d): %s",
+                attempt,
+                exc,
+            )
+            time.sleep(min(CONNECT_RETRY_DELAY_SECONDS, remaining))
+    raise TimeoutError(
+        f"localhost:{port} did not complete a TCPInterface connection "
+        f"within {wait_timeout:.1f}s"
+    ) from last_exception
 
 
 def verify_state(
@@ -338,14 +399,12 @@ def cli_then_verify(
 
 
 def set_region(port: int, region: str = "US") -> None:
-    """Set the simulator LoRa region and wait for its listener to settle."""
+    """Set the simulator LoRa region through an unshared CLI connection."""
     result = run_cli(port, "--set", "lora.region", region)
     if result.returncode != 0:
         raise RuntimeError(
             f"Failed to set lora.region={region} on port {port}:\n{result.output}"
         )
-    time.sleep(PAUSE_AFTER_REGION_CHANGE_SECONDS)
-    _wait_for_port(port)
 
 
 class PacketCollector:

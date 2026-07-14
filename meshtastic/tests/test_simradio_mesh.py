@@ -9,7 +9,7 @@ import pytest
 from .simradio_harness import SimMesh
 from .simradio_helpers import subscribe_texts, subscribe_traceroutes
 
-pytestmark = [pytest.mark.simradio, pytest.mark.simradio_mesh]
+pytestmark = [pytest.mark.simradio, pytest.mark.simradio_mesh, pytest.mark.smokevirt]
 
 
 def _decoded_port(packet: dict[str, Any]) -> str | None:

@@ -20,9 +20,11 @@ from meshtastic.protobuf import channel_pb2, config_pb2
 from meshtastic.tcp_interface import TCPInterface
 
 from .simradio_harness import SimNode
-from .simradio_helpers import _wait_for_port, cli_then_verify, run_cli, verify_state
+from .simradio_helpers import cli_then_verify, run_cli, verify_state
 
-pytestmark = pytest.mark.simradio
+pytestmark = [pytest.mark.simradio, pytest.mark.smokevirt]
+
+REBOOT_CLI_TIMEOUT_SECONDS = 90.0
 
 
 def _channel(iface: TCPInterface, index: int) -> channel_pb2.Channel | None:
@@ -353,7 +355,7 @@ def test_simradio_cli_channel_url_paths(firmware_node: SimNode) -> None:
         firmware_node.port,
         ("--seturl", expected_url),
         _assert_url,
-        cli_timeout=90.0,
+        cli_timeout=REBOOT_CLI_TIMEOUT_SECONDS,
     )
 
     invalid_url = (
@@ -396,7 +398,7 @@ def test_simradio_cli_yaml_export_restore_round_trip(
         firmware_node.port,
         ("--configure", str(initial_config)),
         _assert_profile,
-        cli_timeout=90.0,
+        cli_timeout=REBOOT_CLI_TIMEOUT_SECONDS,
     )
 
     exported = tmp_path / "exported.yaml"
@@ -404,7 +406,7 @@ def test_simradio_cli_yaml_export_restore_round_trip(
         firmware_node.port,
         "--export-config",
         str(exported),
-        timeout=90.0,
+        timeout=REBOOT_CLI_TIMEOUT_SECONDS,
     )
     assert export_result.returncode == 0, export_result.output
     parsed = yaml.safe_load(exported.read_text(encoding="utf-8"))
@@ -432,7 +434,7 @@ def test_simradio_cli_yaml_export_restore_round_trip(
         firmware_node.port,
         ("--configure", str(exported)),
         _assert_profile,
-        cli_timeout=90.0,
+        cli_timeout=REBOOT_CLI_TIMEOUT_SECONDS,
     )
 
 
@@ -484,14 +486,11 @@ def test_simradio_cli_factory_reset_isolated(firmware_node: SimNode) -> None:
         firmware_node.port,
         "--factory-reset",
         retries=0,
-        timeout=90.0,
+        timeout=REBOOT_CLI_TIMEOUT_SECONDS,
     )
     assert reset_result.returncode == 0, reset_result.output
     # The output must not follow the unknown-setting "Choices" path.
     assert "Choices are" not in reset_result.output
-
-    # Wait for the node to come back and verify the owner reverted.
-    _wait_for_port(firmware_node.port)
 
     def _assert_default_owner(iface: TCPInterface) -> None:
         name = iface.getLongName()
@@ -501,10 +500,14 @@ def test_simradio_cli_factory_reset_isolated(firmware_node: SimNode) -> None:
     verify_state(firmware_node.port, _assert_default_owner)
 
 
-def test_simradio_fixture_exposes_connected_node(firmware_node: SimNode) -> None:
-    """The fixture should remain usable directly by library-level smoke tests."""
-    assert firmware_node.iface is not None
-    assert firmware_node.iface.localNode is not None
-    assert firmware_node.node_num > 0
-    assert isinstance(firmware_node.iface.getMyNodeInfo(), dict)
-    firmware_node.iface.showNodes()
+def test_simradio_fixture_supports_explicit_connection(firmware_node: SimNode) -> None:
+    """Library smoke tests may explicitly claim and release the firmware client."""
+    assert firmware_node.iface is None
+    iface = firmware_node.connect()
+    try:
+        assert iface.localNode is not None
+        assert firmware_node.node_num > 0
+        assert isinstance(iface.getMyNodeInfo(), dict)
+        iface.showNodes()
+    finally:
+        firmware_node.disconnect()

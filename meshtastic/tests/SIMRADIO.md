@@ -37,9 +37,16 @@ Every fixture:
 
 1. starts owned process groups and temporary VFS directories;
 2. sets the LoRa region to `US` for firmware 2.8 preset validation;
-3. reconnects after the reboot-capable region write;
+3. retries a real `TCPInterface` after reboot-capable writes instead of opening
+   disposable readiness probes;
 4. tears down subscriptions, interfaces, process groups, and files even after
    partial startup failure.
+
+The single-node fixture releases its interface before yielding. CLI processes
+therefore have exclusive ownership of the firmware API port, and state checks
+open and close one temporary interface only after the CLI process exits. The
+multi-node fixture retains one interface per distinct firmware port so its
+packet bridge remains connected without client contention.
 
 ## CI policy
 
@@ -53,6 +60,8 @@ Markers:
 
 - `simradio`: all process-managed native firmware tests.
 - `simradio_mesh`: the multi-node topology subset.
+- `smokevirt`: both native live-test modules, because they exercise virtual
+  firmware devices.
 
 The ordinary pytest selection excludes `simradio`; these tests run only when
 explicitly selected or by their dedicated workflows.

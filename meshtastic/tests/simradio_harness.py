@@ -32,6 +32,8 @@ from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import mesh_pb2, portnums_pb2
 from meshtastic.tcp_interface import TCPInterface
 
+from .simradio_helpers import connect_iface
+
 logger = logging.getLogger(__name__)
 
 HW_ID_OFFSET = 16
@@ -40,7 +42,6 @@ DEFAULT_RSSI = -50
 DEFAULT_SNR = 10.0
 BOOT_TIMEOUT_SECONDS = 30.0
 PROCESS_EXIT_TIMEOUT_SECONDS = 5.0
-NODE_INFO_SETTLE_SECONDS = 5.0
 PORT_RELEASE_SETTLE_SECONDS = 0.25
 MAX_LOG_TAIL_BYTES = 16_384
 
@@ -68,28 +69,10 @@ def is_compatible_host() -> bool:
     return platform.system() == "Linux"
 
 
-def _wait_for_port(port: int, timeout: float = BOOT_TIMEOUT_SECONDS) -> None:
-    """Wait until localhost accepts a TCP connection on ``port``."""
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        try:
-            with socket.create_connection(("localhost", port), timeout=0.5):
-                return
-        except OSError:
-            time.sleep(0.2)
-    raise TimeoutError(f"localhost:{port} did not listen within {timeout:.1f}s")
-
-
 def _ensure_port_available(port: int) -> None:
     """Fail before launch when another process already owns ``port``."""
     try:
-        with socket.create_connection(("127.0.0.1", port), timeout=0.2):
-            raise RuntimeError(f"localhost:{port} is already in use")
-    except OSError:
-        pass
-    try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             probe.bind(("127.0.0.1", port))
     except OSError as exc:
         raise RuntimeError(f"localhost:{port} is already in use") from exc
@@ -204,7 +187,6 @@ class SimNode:
                 stderr=stderr_file,
                 start_new_session=True,
             )
-            _wait_for_port(self.port)
             if self.process.poll() is not None:
                 raise RuntimeError(
                     f"meshtasticd node {self.node_id} exited with "
@@ -218,17 +200,26 @@ class SimNode:
                 f"{self.port}: {exc}\n{diagnostics}"
             ) from exc
 
-    def connect(self) -> TCPInterface:
-        """Open a fresh TCPInterface connection to this simulator."""
+    def connect(self, timeout: float = BOOT_TIMEOUT_SECONDS) -> TCPInterface:
+        """Retry and retain the sole TCPInterface connection to this simulator."""
         self.disconnect()
-        _wait_for_port(self.port)
-        self.iface = TCPInterface(
-            hostname="localhost",
-            portNumber=self.port,
-            connectNow=True,
-            connectTimeout=10.0,
-        )
-        return self.iface
+        process = self.process
+        if process is None:
+            raise RuntimeError(f"simradio node {self.node_id} is not started")
+        if process.poll() is not None:
+            raise RuntimeError(
+                f"meshtasticd node {self.node_id} exited with status "
+                f"{process.returncode}\n{self.diagnostics()}"
+            )
+        try:
+            iface = connect_iface(self.port, wait_timeout=timeout)
+        except Exception as exc:
+            raise RuntimeError(
+                f"meshtasticd node {self.node_id} did not become ready on port "
+                f"{self.port}: {exc}\n{self.diagnostics()}"
+            ) from exc
+        self.iface = iface
+        return iface
 
     def disconnect(self) -> None:
         """Close only the Python interface while leaving firmware running."""
@@ -428,7 +419,6 @@ class SimMesh:
                     node.node_id,
                     exc,
                 )
-        time.sleep(NODE_INFO_SETTLE_SECONDS)
 
     def node_db_counts(self) -> list[int]:
         """Return current node-database sizes for diagnostics."""
@@ -502,25 +492,29 @@ class SimMesh:
         with self._bridge_lock:
             if not self._started:
                 return
-            for receiver_index in receiver_indices:
-                receiver_iface = self.nodes[receiver_index].iface
-                if receiver_iface is None:
-                    continue
-                received_packet = mesh_pb2.MeshPacket()
-                received_packet.CopyFrom(base_packet)
-                received_packet.rx_rssi = DEFAULT_RSSI
-                received_packet.rx_snr = DEFAULT_SNR
-                to_radio = mesh_pb2.ToRadio()
-                to_radio.packet.CopyFrom(received_packet)
-                try:
-                    _inject_simulator_packet(receiver_iface, to_radio)
-                except Exception as exc:  # pylint: disable=broad-except
-                    logger.error(
-                        "Failed forwarding simulator packet from node %d to node %d: %s",
-                        transmitter_index,
-                        receiver_index,
-                        exc,
-                    )
+            receivers = tuple(
+                (receiver_index, self.nodes[receiver_index].iface)
+                for receiver_index in receiver_indices
+            )
+
+        for receiver_index, receiver_iface in receivers:
+            if receiver_iface is None:
+                continue
+            received_packet = mesh_pb2.MeshPacket()
+            received_packet.CopyFrom(base_packet)
+            received_packet.rx_rssi = DEFAULT_RSSI
+            received_packet.rx_snr = DEFAULT_SNR
+            to_radio = mesh_pb2.ToRadio()
+            to_radio.packet.CopyFrom(received_packet)
+            try:
+                _inject_simulator_packet(receiver_iface, to_radio)
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.error(
+                    "Failed forwarding simulator packet from node %d to node %d: %s",
+                    transmitter_index,
+                    receiver_index,
+                    exc,
+                )
 
     def __enter__(self) -> SimMesh:
         self.start()

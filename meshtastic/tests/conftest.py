@@ -87,7 +87,10 @@ def firmware_node() -> Generator[SimNode, None, None]:
         node = mesh.get_node(0)
         node.disconnect()
         set_region(node.port, "US")
+        # Confirm the reboot through the real interface, then release ownership
+        # before yielding so every CLI subprocess is the port's only client.
         node.connect()
+        node.disconnect()
         yield node
     finally:
         mesh.stop()
