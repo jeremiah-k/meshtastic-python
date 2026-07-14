@@ -43,10 +43,11 @@ Every fixture:
 
 ## CI policy
 
-Pull-request CI runs beta, alpha, and daily PPA packages. Daily firmware is
-allowed to fail so an upstream breakage is visible without blocking unrelated
-changes. Beta and alpha failures are blocking. A scheduled workflow also runs
-the daily package once per day and uploads all simulator logs.
+Pull-request CI runs beta, alpha, and daily PPA packages. Beta failures are
+blocking (the PR cannot merge until they pass). Alpha and daily failures are
+non-blocking so upstream regressions in pre-release channels are visible
+without blocking unrelated changes. A scheduled workflow also runs the daily
+package once per day and uploads all simulator logs regardless of outcome.
 
 Markers:
 

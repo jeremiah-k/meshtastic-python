@@ -460,4 +460,3 @@ def test_destructive_and_read_only_are_disjoint() -> None:
     """An argument cannot appear in both the destructive and read-only sets."""
     overlap = _DESTRUCTIVE_ARGUMENTS & _READ_ONLY_ARGUMENTS
     assert not overlap, f"ambiguous arguments: {sorted(overlap)}"
-    assert not overlap, f"ambiguous arguments: {sorted(overlap)}"
