@@ -20,7 +20,7 @@ from meshtastic.protobuf import channel_pb2, config_pb2
 from meshtastic.tcp_interface import TCPInterface
 
 from .simradio_harness import SimNode
-from .simradio_helpers import cli_then_verify, run_cli
+from .simradio_helpers import _wait_for_port, cli_then_verify, run_cli, verify_state
 
 pytestmark = pytest.mark.simradio
 
@@ -464,16 +464,41 @@ def test_simradio_cli_schema_get_set_paths(firmware_node: SimNode) -> None:
 
 
 def test_simradio_cli_factory_reset_isolated(firmware_node: SimNode) -> None:
-    """Factory reset should return success on its disposable simulator."""
-    result = run_cli(
+    """--factory-reset should clear a previously set value on an isolated node."""
+    # Change a known setting first.
+    set_result = run_cli(
         firmware_node.port,
-        "--set",
-        "factory_reset",
-        "true",
+        "--set-owner",
+        "BeforeReset",
+        timeout=30.0,
+    )
+    assert set_result.returncode == 0, set_result.output
+
+    def _assert_before_reset(iface: TCPInterface) -> None:
+        assert iface.getLongName() == "BeforeReset"
+
+    verify_state(firmware_node.port, _assert_before_reset)
+
+    # Run the real factory reset with zero automatic retries.
+    reset_result = run_cli(
+        firmware_node.port,
+        "--factory-reset",
+        retries=0,
         timeout=90.0,
     )
-    assert result.returncode == 0, result.output
-    assert re.search(r"(?i)factory.?reset|writing", result.output)
+    assert reset_result.returncode == 0, reset_result.output
+    # The output must not follow the unknown-setting "Choices" path.
+    assert "Choices are" not in reset_result.output
+
+    # Wait for the node to come back and verify the owner reverted.
+    _wait_for_port(firmware_node.port)
+
+    def _assert_default_owner(iface: TCPInterface) -> None:
+        name = iface.getLongName()
+        assert name is not None
+        assert name != "BeforeReset", f"owner was not reset, got {name!r}"
+
+    verify_state(firmware_node.port, _assert_default_owner)
 
 
 def test_simradio_fixture_exposes_connected_node(firmware_node: SimNode) -> None:

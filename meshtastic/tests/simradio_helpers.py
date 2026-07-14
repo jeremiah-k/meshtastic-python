@@ -65,31 +65,32 @@ def _timeout_output(exc: subprocess.TimeoutExpired) -> str:
 # Operation-aware retry policy
 # ---------------------------------------------------------------------------
 
-# CLI arguments that indicate a non-idempotent operation. Retrying these after
-# an ambiguous transport failure could duplicate side effects (delete the wrong
-# secondary, factory-reset a device the user intended to keep, etc.).
-_NON_IDEMPOTENT_ARGUMENTS: frozenset[str] = frozenset(
+# Destructive operations that must never be retried.
+_DESTRUCTIVE_ARGUMENTS: frozenset[str] = frozenset(
     {
         "--ch-add",
         "--ch-del",
-        "--ch-index",  # paired with --ch-add / --ch-del / --ch-enable / --ch-disable
         "--ch-enable",
         "--ch-disable",
         "--factory-reset",
+        "--factory-reset-config",
+        "--factory-reset-device",
         "--reboot",
+        "--reboot-ota",
+        "--enter-dfu",
         "--shutdown",
         "--ota-update",
         "--reset-nodedb",
+        "--test",  # sends stress-test traffic
     }
 )
 
-# CLI arguments that never mutate device state.
+# Operations that never mutate device state.
 _READ_ONLY_ARGUMENTS: frozenset[str] = frozenset(
     {
         "--info",
         "--nodes",
         "--qr",
-        "--test",
         "--get",
         "--export-config",
         "--list-fields",
@@ -98,9 +99,32 @@ _READ_ONLY_ARGUMENTS: frozenset[str] = frozenset(
     }
 )
 
-# Default retries per operation kind.  idempotent-mutations (--set, --set-owner,
-# --seturl, --set-ham, --set-position, etc.) and read-only commands are safe to
-# retry on transient transport errors.
+# Operations that are safe to retry because repeating them produces the
+# same result (set owner, configure a channel, etc.).
+_IDEMPOTENT_ARGUMENTS: frozenset[str] = frozenset(
+    {
+        "--set",
+        "--set-owner",
+        "--set-owner-short",
+        "--set-ham",
+        "--set-position",
+        "--seturl",
+    }
+)
+
+# Semantic --set values that trigger destructive device actions.
+_DESTRUCTIVE_SET_VALUES: frozenset[str] = frozenset(
+    {
+        "factory_reset",
+        "reboot",
+        "shutdown",
+        "ota_update",
+    }
+)
+
+# Default retries per operation kind.  Only read-only and explicitly safe
+# idempotent mutations are allowed to retry.  Everything else defaults to
+# zero so an ambiguous transport failure cannot duplicate side effects.
 _DEFAULT_RETRIES: dict[str, int] = {
     "read_only": 2,
     "idempotent_mutation": 2,
@@ -109,18 +133,36 @@ _DEFAULT_RETRIES: dict[str, int] = {
 
 
 def _classify_cli_operation(arguments: Sequence[str]) -> str:
-    """Map CLI arguments to an operation kind for the retry policy.
+    """Map CLI arguments to ``read_only``, ``idempotent_mutation``, or ``non_idempotent``.
 
-    The first recognized argument wins — callers that mix arguments are
-    classified conservatively as non_idempotent.
+    Destructive arguments take priority, then semantic ``--set destructive``
+    forms, then read-only allowlist, then idempotent-mutation allowlist.
+    Unknown operations default to ``non_idempotent``.
     """
+    # Phase 1: explicit destructive flags
     for argument in arguments:
-        if argument in _NON_IDEMPOTENT_ARGUMENTS:
+        if argument in _DESTRUCTIVE_ARGUMENTS:
             return "non_idempotent"
+
+    # Phase 2: semantic --set with destructive field values
+    for i, argument in enumerate(arguments):
+        if argument == "--set" and i + 1 < len(arguments):
+            field = arguments[i + 1].split(".")[0]
+            if field in _DESTRUCTIVE_SET_VALUES:
+                return "non_idempotent"
+
+    # Phase 3: explicit read-only flags
     for argument in arguments:
         if argument in _READ_ONLY_ARGUMENTS:
             return "read_only"
-    return "idempotent_mutation"
+
+    # Phase 4: explicit idempotent-mutation flags
+    for argument in arguments:
+        if argument in _IDEMPOTENT_ARGUMENTS:
+            return "idempotent_mutation"
+
+    # Phase 5: default conservative — assume non-idempotent
+    return "non_idempotent"
 
 
 def run_cli(

@@ -28,7 +28,7 @@ from .simradio_helpers import (
     PacketCollector,
     _classify_cli_operation,
     _DEFAULT_RETRIES,
-    _NON_IDEMPOTENT_ARGUMENTS,
+    _DESTRUCTIVE_ARGUMENTS,
     _READ_ONLY_ARGUMENTS,
     cli_then_verify,
     run_cli,
@@ -341,21 +341,38 @@ def test_simradio_stop_cleans_partially_started_nodes() -> None:
 @pytest.mark.parametrize(
     ("arguments", "expected_kind"),
     (
+        # Read-only
         (("--info",), "read_only"),
         (("--nodes",), "read_only"),
         (("--export-config",), "read_only"),
         (("--get", "lora.region"), "read_only"),
+        # Idempotent mutations
         (("--set", "lora.region", "US"), "idempotent_mutation"),
         (("--set-owner", "Test"), "idempotent_mutation"),
         (("--seturl", "https://example.com/#abc"), "idempotent_mutation"),
+        # Destructive flags
         (("--ch-add", "LongFast"), "non_idempotent"),
         (("--ch-del",), "non_idempotent"),
-        (("--ch-index", "1", "--ch-enable"), "non_idempotent"),
+        (("--ch-enable",), "non_idempotent"),
+        (("--ch-disable",), "non_idempotent"),
         (("--factory-reset",), "non_idempotent"),
+        (("--factory-reset-config",), "non_idempotent"),
+        (("--factory-reset-device",), "non_idempotent"),
         (("--reboot",), "non_idempotent"),
+        (("--reboot-ota",), "non_idempotent"),
+        (("--enter-dfu",), "non_idempotent"),
         (("--shutdown",), "non_idempotent"),
         (("--ota-update", "fw.bin"), "non_idempotent"),
         (("--reset-nodedb",), "non_idempotent"),
+        (("--test",), "non_idempotent"),
+        # Semantic destructive --set forms
+        (("--set", "factory_reset", "true"), "non_idempotent"),
+        (("--set", "reboot", "true"), "non_idempotent"),
+        (("--set", "shutdown", "true"), "non_idempotent"),
+        (("--set", "ota_update", "true"), "non_idempotent"),
+        # Unknown / future commands default to no retries
+        (("--new-cmd",), "non_idempotent"),
+        ((), "non_idempotent"),
     ),
 )
 def test_classify_cli_operation_maps_arguments_to_kind(
@@ -367,7 +384,7 @@ def test_classify_cli_operation_maps_arguments_to_kind(
 
 
 @pytest.mark.unit
-def test_classify_cli_operation_non_idempotent_wins_over_read_only() -> None:
+def test_classify_destructive_wins_over_read_only() -> None:
     """A mixed argument list is classified conservatively."""
     assert (
         _classify_cli_operation(["--ch-del", "--info"])
@@ -376,19 +393,34 @@ def test_classify_cli_operation_non_idempotent_wins_over_read_only() -> None:
 
 
 @pytest.mark.unit
-def test_run_cli_defaults_to_zero_retries_for_non_idempotent_ops() -> None:
-    """Non-idempotent CLI invocations should not retry by default."""
+def test_classify_semantic_set_destructive_has_priority() -> None:
+    """--set factory_reset true is destructive even combined with --info."""
+    assert (
+        _classify_cli_operation(["--info", "--set", "factory_reset", "true"])
+        == "non_idempotent"
+    )
+
+
+@pytest.mark.unit
+def test_classify_unknown_arguments_default_to_non_idempotent() -> None:
+    """Future or unknown CLI commands get zero retries by default."""
+    assert _classify_cli_operation(["--future-flag"]) == "non_idempotent"
+    assert _classify_cli_operation([]) == "non_idempotent"
+
+
+@pytest.mark.unit
+def test_run_cli_defaults_to_zero_retries_for_destructive_ops() -> None:
+    """Destructive CLI invocations should not retry by default."""
     fake_stdout = MagicMock()
     fake_stdout.configure_mock(**{"stdout": "connected", "returncode": 1})
     with patch("subprocess.run", return_value=fake_stdout):
-        result = run_cli(4404, "--ch-del")
+        result = run_cli(4404, "--factory-reset")
     assert result.attempts == 1
 
 
 @pytest.mark.unit
 def test_run_cli_retries_read_only_commands() -> None:
     """Read-only CLI invocations should retry on transient failures."""
-    # First call: transient error, second: success
     run_results = [
         MagicMock(returncode=1, stdout="error connecting"),
         MagicMock(returncode=0, stdout="ok"),
@@ -400,14 +432,17 @@ def test_run_cli_retries_read_only_commands() -> None:
 
 
 @pytest.mark.unit
-def test_run_cli_explicit_retries_override_auto_classification() -> None:
-    """An explicit retries value overrides the operation-kind default."""
-    fake_stdout = MagicMock()
-    fake_stdout.configure_mock(**{"stdout": "ok", "returncode": 0})
-    with patch("subprocess.run", return_value=fake_stdout):
-        result = run_cli(4404, "--ch-del", retries=2)
-    # Despite being non_idempotent, explicit retries=2 was respected.
-    # The command succeeded on the first attempt, so attempts=1.
+def test_run_cli_explicit_retries_override_and_retry_on_failure() -> None:
+    """Explicit retries= overrides auto-classification and retries on failure."""
+    run_results = [
+        MagicMock(returncode=1, stdout="error connecting"),
+        MagicMock(returncode=0, stdout="ok"),
+    ]
+    with patch("subprocess.run", side_effect=run_results):
+        result = run_cli(4404, "--factory-reset", retries=2)
+    # Despite being destructive, explicit retries=2 was respected.
+    # First call failed transiently, second succeeded.
+    assert result.attempts == 2
     assert result.returncode == 0
 
 
@@ -421,7 +456,8 @@ def test_default_retries_maps_each_kind() -> None:
 
 
 @pytest.mark.unit
-def test_non_idempotent_and_read_only_are_disjoint() -> None:
-    """An argument cannot appear in both the non-idempotent and read-only sets."""
-    overlap = _NON_IDEMPOTENT_ARGUMENTS & _READ_ONLY_ARGUMENTS
+def test_destructive_and_read_only_are_disjoint() -> None:
+    """An argument cannot appear in both the destructive and read-only sets."""
+    overlap = _DESTRUCTIVE_ARGUMENTS & _READ_ONLY_ARGUMENTS
+    assert not overlap, f"ambiguous arguments: {sorted(overlap)}"
     assert not overlap, f"ambiguous arguments: {sorted(overlap)}"
