@@ -119,6 +119,88 @@ BITFIELD_ENUMS = {
     "position.position_flags": config_pb2.Config.PositionConfig.PositionFlags,
 }
 
+# Public CLI shorthands for common modem presets. Keep this ordered to preserve
+# the historical behavior when callers supply more than one shorthand: later
+# options win. ``--ch-preset`` below is the scalable path for every enum value
+# present in the active protobuf schema, including future additions.
+_MODEM_PRESET_SHORTHANDS: tuple[
+    tuple[tuple[str, ...], str, str, str], ...
+] = (
+    (
+        ("--ch-vlongslow",),
+        "ch_vlongslow",
+        "VERY_LONG_SLOW",
+        "Change to the VERY_LONG_SLOW modem preset. Deprecated since 2.5 firmware.",
+    ),
+    (
+        ("--ch-longslow",),
+        "ch_longslow",
+        "LONG_SLOW",
+        "Change to the LONG_SLOW modem preset. Deprecated since 2.7 firmware.",
+    ),
+    (
+        ("--ch-longmod", "--ch-longmoderate"),
+        "ch_longmod",
+        "LONG_MODERATE",
+        "Change to the LONG_MODERATE modem preset",
+    ),
+    (
+        ("--ch-longfast",),
+        "ch_longfast",
+        "LONG_FAST",
+        "Change to the LONG_FAST modem preset",
+    ),
+    (
+        ("--ch-longturbo",),
+        "ch_longturbo",
+        "LONG_TURBO",
+        "Change to the LONG_TURBO modem preset",
+    ),
+    (
+        ("--ch-medslow",),
+        "ch_medslow",
+        "MEDIUM_SLOW",
+        "Change to the MEDIUM_SLOW modem preset",
+    ),
+    (
+        ("--ch-medfast",),
+        "ch_medfast",
+        "MEDIUM_FAST",
+        "Change to the MEDIUM_FAST modem preset",
+    ),
+    (
+        ("--ch-shortslow",),
+        "ch_shortslow",
+        "SHORT_SLOW",
+        "Change to the SHORT_SLOW modem preset",
+    ),
+    (
+        ("--ch-shortfast",),
+        "ch_shortfast",
+        "SHORT_FAST",
+        "Change to the SHORT_FAST modem preset",
+    ),
+    (
+        ("--ch-shortturbo",),
+        "ch_shortturbo",
+        "SHORT_TURBO",
+        "Change to the SHORT_TURBO modem preset",
+    ),
+)
+
+
+def _parse_modem_preset_name(value: str) -> str:
+    """Normalize and validate a modem preset against the active schema."""
+    normalized = value.strip().replace("-", "_").upper()
+    try:
+        config_pb2.Config.LoRaConfig.ModemPreset.Value(normalized)
+    except ValueError as exc:
+        choices = ", ".join(config_pb2.Config.LoRaConfig.ModemPreset.keys())
+        raise argparse.ArgumentTypeError(
+            f"Unknown modem preset {value!r}. Available presets: {choices}"
+        ) from exc
+    return normalized
+
 
 def _looks_like_integer_literal(value: str) -> bool:
     stripped = value.strip()
@@ -2345,27 +2427,20 @@ def onConnected(interface: MeshInterface) -> None:
             node.localConfig.lora.modem_preset = modem_preset
             node.writeConfig("lora")
 
-        # handle the simple radio set commands
-        if args.ch_vlongslow:
-            _set_simple_config(config_pb2.Config.LoRaConfig.ModemPreset.VERY_LONG_SLOW)
+        # Handle historical/common shorthands in their established order, then
+        # the schema-driven generic form. ``getattr`` keeps programmatic callers
+        # that provide a partial argparse-like namespace compatible.
+        for _, destination, preset_name, _ in _MODEM_PRESET_SHORTHANDS:
+            if getattr(args, destination, False):
+                _set_simple_config(
+                    config_pb2.Config.LoRaConfig.ModemPreset.Value(preset_name)
+                )
 
-        if args.ch_longslow:
-            _set_simple_config(config_pb2.Config.LoRaConfig.ModemPreset.LONG_SLOW)
-
-        if args.ch_longfast:
-            _set_simple_config(config_pb2.Config.LoRaConfig.ModemPreset.LONG_FAST)
-
-        if args.ch_medslow:
-            _set_simple_config(config_pb2.Config.LoRaConfig.ModemPreset.MEDIUM_SLOW)
-
-        if args.ch_medfast:
-            _set_simple_config(config_pb2.Config.LoRaConfig.ModemPreset.MEDIUM_FAST)
-
-        if args.ch_shortslow:
-            _set_simple_config(config_pb2.Config.LoRaConfig.ModemPreset.SHORT_SLOW)
-
-        if args.ch_shortfast:
-            _set_simple_config(config_pb2.Config.LoRaConfig.ModemPreset.SHORT_FAST)
+        generic_preset_name = getattr(args, "ch_preset", None)
+        if generic_preset_name is not None:
+            _set_simple_config(
+                config_pb2.Config.LoRaConfig.ModemPreset.Value(generic_preset_name)
+            )
 
         if args.ch_set or args.ch_enable or args.ch_disable:
             closeNow = True
@@ -3545,46 +3620,22 @@ def addConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         metavar="RINGTONE",
     )
 
-    group.add_argument(
-        "--ch-vlongslow",
-        help="Change to the very long-range and slow modem preset",
-        action="store_true",
-    )
+    for flags, destination, _, help_text in _MODEM_PRESET_SHORTHANDS:
+        group.add_argument(
+            *flags,
+            dest=destination,
+            help=help_text,
+            action="store_true",
+        )
 
     group.add_argument(
-        "--ch-longslow",
-        help="Change to the long-range and slow modem preset",
-        action="store_true",
-    )
-
-    group.add_argument(
-        "--ch-longfast",
-        help="Change to the long-range and fast modem preset",
-        action="store_true",
-    )
-
-    group.add_argument(
-        "--ch-medslow",
-        help="Change to the med-range and slow modem preset",
-        action="store_true",
-    )
-
-    group.add_argument(
-        "--ch-medfast",
-        help="Change to the med-range and fast modem preset",
-        action="store_true",
-    )
-
-    group.add_argument(
-        "--ch-shortslow",
-        help="Change to the short-range and slow modem preset",
-        action="store_true",
-    )
-
-    group.add_argument(
-        "--ch-shortfast",
-        help="Change to the short-range and fast modem preset",
-        action="store_true",
+        "--ch-preset",
+        type=_parse_modem_preset_name,
+        metavar="PRESET",
+        help=(
+            "Change to any modem preset defined by the active protobuf schema. "
+            "Names are case-insensitive and may use '-' or '_' separators."
+        ),
     )
 
     group.add_argument("--set-owner", help="Set device owner name", action="store")

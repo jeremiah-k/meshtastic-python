@@ -2,6 +2,7 @@
 
 # pylint: disable=C0302,W0613,R0917
 
+import argparse
 import base64
 import importlib.util
 import logging
@@ -152,6 +153,57 @@ def test_main_init_parser_help_mentions_list_fields(
     assert "--list-fields" in out
     assert "protobuf schemas" in out
     assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@pytest.mark.parametrize(
+    ("flag", "destination"),
+    (
+        pytest.param("--ch-longmod", "ch_longmod", id="long-moderate-short"),
+        pytest.param(
+            "--ch-longmoderate", "ch_longmod", id="long-moderate-long"
+        ),
+        pytest.param("--ch-longturbo", "ch_longturbo", id="long-turbo"),
+        pytest.param("--ch-shortturbo", "ch_shortturbo", id="short-turbo"),
+    ),
+)
+def test_main_init_parser_accepts_firmware_2_8_preset_shorthands(
+    monkeypatch: pytest.MonkeyPatch,
+    flag: str,
+    destination: str,
+) -> None:
+    """Firmware 2.8 preset shorthands should retain stable argparse destinations."""
+    monkeypatch.setattr(sys, "argv", ["meshtastic", flag])
+
+    initParser()
+
+    assert mt_config.args is not None
+    assert getattr(mt_config.args, destination) is True
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("raw_value", "expected"),
+    (
+        pytest.param("medium_turbo", "MEDIUM_TURBO", id="lower-snake"),
+        pytest.param("long-moderate", "LONG_MODERATE", id="lower-kebab"),
+        pytest.param(" TINY_FAST ", "TINY_FAST", id="whitespace"),
+    ),
+)
+def test_parse_modem_preset_name_uses_active_protobuf_schema(
+    raw_value: str,
+    expected: str,
+) -> None:
+    """The generic preset parser should normalize every active enum value."""
+    assert main_module._parse_modem_preset_name(raw_value) == expected
+
+
+@pytest.mark.unit
+def test_parse_modem_preset_name_rejects_unknown_value() -> None:
+    """Unknown generic presets should fail with schema-derived choices."""
+    with pytest.raises(argparse.ArgumentTypeError, match="Unknown modem preset"):
+        main_module._parse_modem_preset_name("future-but-not-yet-in-schema")
 
 
 @pytest.mark.unit
@@ -2817,6 +2869,55 @@ def test_main_ch_longfast_on_non_primary_channel(
             re.MULTILINE,
         )
         mo.assert_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@pytest.mark.parametrize(
+    ("cli_args", "expected_preset"),
+    (
+        pytest.param(
+            ("--ch-longmod",),
+            config_pb2.Config.LoRaConfig.ModemPreset.LONG_MODERATE,
+            id="long-moderate",
+        ),
+        pytest.param(
+            ("--ch-longturbo",),
+            config_pb2.Config.LoRaConfig.ModemPreset.LONG_TURBO,
+            id="long-turbo",
+        ),
+        pytest.param(
+            ("--ch-shortturbo",),
+            config_pb2.Config.LoRaConfig.ModemPreset.SHORT_TURBO,
+            id="short-turbo",
+        ),
+        pytest.param(
+            ("--ch-preset", "medium-turbo"),
+            config_pb2.Config.LoRaConfig.ModemPreset.MEDIUM_TURBO,
+            id="generic-active-schema-value",
+        ),
+    ),
+)
+def test_main_modem_preset_options_write_expected_lora_config(
+    monkeypatch: pytest.MonkeyPatch,
+    cli_args: tuple[str, ...],
+    expected_preset: config_pb2.Config.LoRaConfig.ModemPreset.ValueType,
+) -> None:
+    """New shorthand and generic options should share the existing write path."""
+    monkeypatch.setattr(sys, "argv", ["meshtastic", *cli_args])
+    mocked_node = MagicMock(autospec=Node)
+    mocked_node.localConfig = localonly_pb2.LocalConfig()
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    iface.getNode.return_value = mocked_node
+
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        main()
+
+    assert mocked_node.localConfig.lora.modem_preset == expected_preset
+    mocked_node.writeConfig.assert_called_once_with("lora")
+    mocked_node.requestConfig.assert_called_once()
 
 
 # PositionFlags:
