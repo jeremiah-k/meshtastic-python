@@ -32,6 +32,7 @@ from meshtastic.__main__ import (
     initParser,
     main,
 )
+from meshtastic.protobuf import channel_pb2
 from meshtastic.serial_interface import SerialInterface
 
 # =============================================================================
@@ -805,3 +806,104 @@ def test_main_set_ham_whitespace_only_in_common(
     assert pytest_wrapped_e.value.code == 1
     _out, err = capsys.readouterr()
     assert "cannot be empty or contain only whitespace" in err
+
+
+# =============================================================================
+# Modem preset: config fetch path (lines 2341-2344)
+# =============================================================================
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_modem_preset_requests_config_when_local_empty(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--ch-medslow with empty local config: requestConfig and writeConfig."""
+    sys.argv = ["", "--ch-medslow"]
+    mt_config.args = sys.argv  # type: ignore[assignment]
+
+    mocked_node = MagicMock()
+    mocked_node.localConfig.ListFields.return_value = []  # triggers requestConfig
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    iface.getNode.return_value = mocked_node
+
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        main()
+        out, _err = capsys.readouterr()
+        assert "Connected to radio" in out
+        # DESCRIPTOR.fields_by_name.get("lora") returns a real protobuf
+        # descriptor, so the None guard at line 2342 does not fire.
+        mocked_node.requestConfig.assert_called_once()
+        mocked_node.writeConfig.assert_called_once_with("lora")
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_modem_preset_errors_when_lora_descriptor_missing(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--ch-medslow without a "lora" descriptor exits with clear error (lines 2342-2343)."""
+    sys.argv = ["", "--ch-medslow"]
+    mt_config.args = sys.argv  # type: ignore[assignment]
+
+    mocked_node = MagicMock()
+    mocked_node.localConfig.ListFields.return_value = []
+    # Simulate a schema that lacks the lora field
+    mocked_node.localConfig.DESCRIPTOR.fields_by_name = {}
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    iface.getNode.return_value = mocked_node
+
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        with pytest.raises(SystemExit) as pytest_wrapped_e:
+            main()
+        assert pytest_wrapped_e.value.code == 1
+        _out, err = capsys.readouterr()
+        assert "does not provide LoRa configuration" in err
+
+
+# =============================================================================
+# Channel settings: sub-field enumeration (lines 2433-2439)
+# =============================================================================
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_ch_set_unknown_pref_prints_module_settings_subfields(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Invalid --ch-set pref prints module_settings sub-fields (lines 2433-2439)."""
+    sys.argv = ["", "--ch-set", "nonexistent_field", "value", "--ch-index", "1"]
+    mt_config.args = sys.argv  # type: ignore[assignment]
+
+    # Build a real protobuf channel so the DESCRIPTOR has module_settings
+    real_channel = channel_pb2.Channel()
+    real_channel.role = channel_pb2.Channel.Role.SECONDARY
+    real_channel.index = 1
+    real_channel.settings.name = "test"
+
+    mocked_node = MagicMock()
+    mocked_node.localConfig.ListFields.return_value = [(MagicMock(), MagicMock())]
+    mocked_node.channels = [MagicMock(), real_channel]
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    iface.getNode.return_value = mocked_node
+
+    # prevent the "do you want to talk to a device" prompt
+    mt_config.no_nodes = False
+    mt_config.no_time = False
+    mt_config.dest = "^local"
+
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        main()
+        out, _err = capsys.readouterr()
+        assert "module_settings:" in out
+        assert "module_settings.position_precision" in out
+        assert "module_settings.is_muted" in out
