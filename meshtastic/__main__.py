@@ -1388,9 +1388,9 @@ def _handle_set_command(
         field = splitCompoundName(normalized_pref_name)[0]
         for config in [node.localConfig, node.moduleConfig]:
             config_type = config.DESCRIPTOR.fields_by_name.get(field)
-            if config_type:
+            if config_type is not None:
                 if len(config.ListFields()) == 0:
-                    node.requestConfig(config.DESCRIPTOR.fields_by_name.get(field))
+                    node.requestConfig(config_type)
                 found = setPref(config, normalized_pref_name, pref_item[1])
                 if found:
                     any_found = True
@@ -2338,9 +2338,10 @@ def onConnected(interface: MeshInterface) -> None:
             # Overwrite modem_preset
             node = interface.getNode(args.dest, False, **getNode_kwargs)
             if len(node.localConfig.ListFields()) == 0:
-                node.requestConfig(
-                    node.localConfig.DESCRIPTOR.fields_by_name.get("lora")
-                )
+                lora_descriptor = node.localConfig.DESCRIPTOR.fields_by_name.get("lora")
+                if lora_descriptor is None:
+                    _cli_exit("The active protobuf schema does not provide LoRa configuration", 1)
+                node.requestConfig(lora_descriptor)
             node.localConfig.lora.modem_preset = modem_preset
             node.writeConfig("lora")
 
@@ -2430,9 +2431,10 @@ def onConnected(interface: MeshInterface) -> None:
                                 field.name
                             )
                             names = []
-                            for sub_field in config.message_type.fields:
-                                tmp_name = f"{field.name}.{sub_field.name}"
-                                names.append(tmp_name)
+                            if config is not None and config.message_type is not None:
+                                for sub_field in config.message_type.fields:
+                                    tmp_name = f"{field.name}.{sub_field.name}"
+                                    names.append(tmp_name)
                             for temp_name in sorted(names):
                                 print(f"    {temp_name}")
 
