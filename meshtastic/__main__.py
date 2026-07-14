@@ -16,10 +16,9 @@ import platform
 import sys
 import time
 from types import ModuleType
-from typing import Any, NoReturn, Protocol, cast
+from typing import Any, NoReturn, Protocol
 
 import yaml
-from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.json_format import MessageToDict
 from pubsub import pub
 
@@ -1391,7 +1390,7 @@ def _handle_set_command(
             config_type = config.DESCRIPTOR.fields_by_name.get(field)
             if config_type is not None:
                 if len(config.ListFields()) == 0:
-                    node.requestConfig(cast(FieldDescriptor, config_type))
+                    node.requestConfig(config_type)
                 found = setPref(config, normalized_pref_name, pref_item[1])
                 if found:
                     any_found = True
@@ -2339,9 +2338,10 @@ def onConnected(interface: MeshInterface) -> None:
             # Overwrite modem_preset
             node = interface.getNode(args.dest, False, **getNode_kwargs)
             if len(node.localConfig.ListFields()) == 0:
-                node.requestConfig(
-                    node.localConfig.DESCRIPTOR.fields_by_name["lora"]
-                )
+                lora_descriptor = node.localConfig.DESCRIPTOR.fields_by_name.get("lora")
+                if lora_descriptor is None:
+                    _cli_exit("The active protobuf schema does not provide LoRa configuration", 1)
+                node.requestConfig(lora_descriptor)
             node.localConfig.lora.modem_preset = modem_preset
             node.writeConfig("lora")
 
