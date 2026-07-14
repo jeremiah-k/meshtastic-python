@@ -7,10 +7,12 @@ import argparse
 import copy
 import importlib
 import math
+import os
 import shutil
 import threading
 import time
 from collections.abc import Callable, Generator
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, cast
 from unittest.mock import MagicMock, create_autospec, patch
 
@@ -22,12 +24,99 @@ from meshtastic.util import DeferredExecution
 
 from ..mesh_interface import MeshInterface
 from ..serial_interface import SerialInterface
+from .simradio_harness import (
+    CHAIN_TOPOLOGY,
+    DEFAULT_BASE_PORT,
+    SimMesh,
+    SimNode,
+    find_meshtasticd,
+    is_compatible_host,
+)
+from .simradio_helpers import set_region
 
 if TYPE_CHECKING:
     from meshtastic.powermon.power_supply import PowerSupply
     from meshtastic.powermon.ppk2 import PPK2PowerSupply
     from meshtastic.powermon.riden import RidenPowerSupply
     from meshtastic.powermon.stress import PowerStressClient
+
+
+SINGLE_NODE_PORT_OFFSET = 100
+
+
+def _skip_simradio_if_unavailable() -> None:
+    """Skip native firmware tests when meshtasticd cannot run on this host."""
+    if not is_compatible_host():
+        pytest.skip("native meshtasticd simulator tests require Linux")
+    if find_meshtasticd() is None:
+        pytest.skip(
+            "meshtasticd not found; set MESHTASTICD_BIN or install it on PATH"
+        )
+
+
+def _simradio_base_port() -> int:
+    """Return the optionally configured native simulator base port."""
+    raw_value = os.environ.get("MESHTASTICD_SIM_BASE_PORT")
+    if raw_value is None:
+        return DEFAULT_BASE_PORT
+    try:
+        return int(raw_value)
+    except ValueError as exc:
+        raise pytest.UsageError(
+            f"MESHTASTICD_SIM_BASE_PORT must be an integer, got {raw_value!r}"
+        ) from exc
+
+
+def _simradio_log_root() -> Path | None:
+    """Return the optional persistent simulator log artifact directory."""
+    raw_value = os.environ.get("MESHTASTICD_SIM_LOG_DIR")
+    return Path(raw_value).expanduser() if raw_value else None
+
+
+@pytest.fixture(scope="function")
+def firmware_node() -> Generator[SimNode, None, None]:
+    """Yield one freshly erased, US-region native meshtasticd simulator."""
+    _skip_simradio_if_unavailable()
+    mesh = SimMesh(
+        node_count=1,
+        base_port=_simradio_base_port() + SINGLE_NODE_PORT_OFFSET,
+        log_root=_simradio_log_root(),
+    )
+    try:
+        mesh.start()
+        node = mesh.get_node(0)
+        node.disconnect()
+        set_region(node.port, "US")
+        node.connect()
+        yield node
+    finally:
+        mesh.stop()
+
+
+@pytest.fixture(scope="module")
+def firmware_mesh() -> Generator[SimMesh, None, None]:
+    """Yield a converged three-node A-B-C native simradio chain."""
+    _skip_simradio_if_unavailable()
+    mesh = SimMesh(
+        node_count=3,
+        topology=CHAIN_TOPOLOGY,
+        base_port=_simradio_base_port(),
+        log_root=_simradio_log_root(),
+    )
+    try:
+        mesh.start()
+        for node in mesh.nodes:
+            node.disconnect()
+            set_region(node.port, "US")
+        mesh.reconnect_all()
+        if not mesh.wait_for_convergence(timeout=30.0):
+            raise AssertionError(
+                "simradio mesh failed to converge; "
+                f"node DB counts={mesh.node_db_counts()}"
+            )
+        yield mesh
+    finally:
+        mesh.stop()
 
 
 def pytest_addoption(  # pylint: disable=unused-argument
