@@ -1256,7 +1256,12 @@ def test_deleteChannel_rewrites_following_channels_and_updates_admin_index(
 
     assert anode.channels is not None
     assert len(anode.channels) == CHANNEL_LIMIT
-    assert anode._send_admin.call_count == CHANNEL_LIMIT - 1
+    written_indexes = [
+        call.args[0].set_channel.index for call in anode._send_admin.call_args_list
+    ]
+    # Slot 2 was present in the incomplete cache and is already the same
+    # normalized DISABLED protobuf. Unknown slots 3..7 remain conservative.
+    assert written_indexes == [1, *range(3, CHANNEL_LIMIT)]
     admin_indexes = [
         _get_mock_call_arg(call, name="adminIndex", positional_index=3)
         for call in anode._send_admin.call_args_list
@@ -1294,6 +1299,107 @@ def test_deleteChannel_switches_admin_index_after_rewriting_former_admin_slot(
     # Keep old admin index (2) through rewrite of old slot 2, then switch to 1.
     assert admin_indexes[:2] == [2, 2]
     assert all(index == 1 for index in admin_indexes[2:])
+
+
+def _build_full_channel_table(
+    highest_secondary_index: int,
+) -> list[Channel]:
+    """Build a complete channel table with a contiguous active prefix."""
+    channels: list[Channel] = []
+    for index in range(CHANNEL_LIMIT):
+        channel = Channel(index=index)
+        if index == 0:
+            channel.role = Channel.Role.PRIMARY
+            channel.settings.name = "primary"
+        elif index <= highest_secondary_index:
+            channel.role = Channel.Role.SECONDARY
+            channel.settings.name = f"channel-{index}"
+        else:
+            channel.role = Channel.Role.DISABLED
+        channels.append(channel)
+    return channels
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("highest_secondary_index", "delete_index", "expected_writes"),
+    (
+        pytest.param(1, 1, [1], id="delete-only-secondary"),
+        pytest.param(2, 1, [1, 2], id="shift-one-secondary"),
+        pytest.param(3, 1, [1, 2, 3], id="shift-two-secondaries"),
+        pytest.param(3, 2, [2, 3], id="delete-middle-secondary"),
+    ),
+)
+def test_deleteChannel_writes_only_changed_complete_cache_slots(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+    highest_secondary_index: int,
+    delete_index: int,
+    expected_writes: list[int],
+) -> None:
+    """A complete cache should not rewrite identical trailing disabled slots."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    iface.localNode = anode
+    anode.channels = _build_full_channel_table(highest_secondary_index)
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock()  # type: ignore[method-assign]
+
+    anode.deleteChannel(delete_index)
+
+    written_indexes = [
+        call.args[0].set_channel.index for call in anode._send_admin.call_args_list
+    ]
+    assert written_indexes == expected_writes
+    assert all(
+        _get_mock_call_arg(call, name="adminIndex", positional_index=3) == 0
+        for call in anode._send_admin.call_args_list
+    )
+    assert anode.channels is not None
+    assert [channel.index for channel in anode.channels] == list(
+        range(CHANNEL_LIMIT)
+    )
+
+
+@pytest.mark.unit
+def test_deleteChannel_identical_trailing_disabled_slot_requires_no_write(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Deleting the final empty disabled slot should be an on-device no-op."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    iface.localNode = anode
+    anode.channels = _build_full_channel_table(1)
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock()  # type: ignore[method-assign]
+
+    anode.deleteChannel(CHANNEL_LIMIT - 1)
+
+    anode.ensureSessionKey.assert_not_called()
+    anode._send_admin.assert_not_called()
+    assert anode.channels is not None
+    assert len(anode.channels) == CHANNEL_LIMIT
+    assert anode.channels[-1].role == Channel.Role.DISABLED
+
+
+@pytest.mark.unit
+def test_deleteChannel_compares_complete_payload_not_only_channel_role(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Settings changes in disabled slots must still be rewritten after a shift."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    iface.localNode = anode
+    anode.channels = _build_full_channel_table(1)
+    anode.channels[2].settings.name = "stale-disabled-payload"
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock()  # type: ignore[method-assign]
+
+    anode.deleteChannel(1)
+
+    written_indexes = [
+        call.args[0].set_channel.index for call in anode._send_admin.call_args_list
+    ]
+    assert written_indexes == [1, 2]
 
 
 @pytest.mark.unit

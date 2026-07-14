@@ -219,8 +219,20 @@ class _NodeDeleteChannelRuntime:
         staged_channels.pop(channel_index)
         self._normalize_staged_channels(staged_channels)
 
+        # Only rewrite slots whose complete serialized protobuf changes. A
+        # normal channel cache contains all MAX_CHANNELS entries, so deleting
+        # the final active secondary usually changes just the deleted slot
+        # instead of rewriting every trailing DISABLED slot. If the cache is
+        # incomplete, remain conservative and write slots whose previous
+        # firmware state is unknown.
         channels_to_rewrite: list[channel_pb2.Channel] = []
         for rewrite_index in range(channel_index, MAX_CHANNELS):
+            if (
+                rewrite_index < len(channels)
+                and staged_channels[rewrite_index].SerializeToString()
+                == channels[rewrite_index].SerializeToString()
+            ):
+                continue
             channel_snapshot = channel_pb2.Channel()
             channel_snapshot.CopyFrom(staged_channels[rewrite_index])
             channels_to_rewrite.append(channel_snapshot)
@@ -242,7 +254,11 @@ class _NodeDeleteChannelRuntime:
             original_channels_fingerprint=_channels_fingerprint(channels),
             pre_delete_admin_index=pre_delete_admin_index,
             post_delete_admin_index=post_delete_admin_index,
-            switch_after_admin_slot_rewrite=(pre_delete_admin_index >= channel_index),
+            switch_after_admin_slot_rewrite=(
+                is_local_node
+                and pre_delete_admin_index != post_delete_admin_index
+                and pre_delete_admin_index >= channel_index
+            ),
             channels_to_rewrite=channels_to_rewrite,
             staged_channels=staged_channels,
         )
