@@ -2427,13 +2427,13 @@ def onConnected(interface: MeshInterface) -> None:
             node.localConfig.lora.modem_preset = modem_preset
             node.writeConfig("lora")
 
-        # Handle historical/common shorthands in their established order, then
-        # the schema-driven generic form. ``getattr`` keeps programmatic callers
-        # that provide a partial argparse-like namespace compatible.
+        # Resolve the final modem preset across historical shorthands (later
+        # wins) and the schema-driven --ch-preset, then write exactly once.
+        preset_val = None
         for _, destination, preset_name, _ in _MODEM_PRESET_SHORTHANDS:
             if getattr(args, destination, False):
-                _set_simple_config(
-                    config_pb2.Config.LoRaConfig.ModemPreset.Value(preset_name)
+                preset_val = config_pb2.Config.LoRaConfig.ModemPreset.Value(
+                    preset_name
                 )
 
         generic_preset_name = getattr(args, "ch_preset", None)
@@ -2451,6 +2451,8 @@ def onConnected(interface: MeshInterface) -> None:
                 preset_val = config_pb2.Config.LoRaConfig.ModemPreset.Value(
                     generic_preset_name
                 )
+
+        if preset_val is not None:
             _set_simple_config(preset_val)  # type: ignore[arg-type]
 
         if args.ch_set or args.ch_enable or args.ch_disable:
