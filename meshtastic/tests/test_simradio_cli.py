@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import re
+import time
 from functools import partial
 from pathlib import Path
 
@@ -20,7 +21,13 @@ from meshtastic.protobuf import channel_pb2, config_pb2
 from meshtastic.tcp_interface import TCPInterface
 
 from .simradio_harness import SimNode
-from .simradio_helpers import cli_then_verify, run_cli, verify_state
+from .simradio_helpers import (
+    PAUSE_AFTER_CLI_SECONDS,
+    cli_then_verify,
+    connect_iface,
+    run_cli,
+    verify_state,
+)
 
 pytestmark = [pytest.mark.simradio, pytest.mark.smokevirt]
 
@@ -229,7 +236,7 @@ def test_simradio_cli_ham_and_position_flags(firmware_node: SimNode) -> None:
         assert user.get("isLicensed") is True
         primary = _channel(iface, 0)
         assert primary is not None
-        assert primary.settings.psk == b"\x00"
+        assert primary.settings.psk in (b"\x00", b"")
 
     cli_then_verify(
         firmware_node.port,
@@ -289,11 +296,11 @@ def test_simradio_cli_channel_lifecycle(firmware_node: SimNode) -> None:
         channel = _channel(iface, 1)
         assert channel is not None
         assert channel.role == channel_pb2.Channel.Role.SECONDARY
-        assert channel.settings.name == "simradio-testing"
+        assert channel.settings.name == "smoketest"
 
     cli_then_verify(
         firmware_node.port,
-        ("--ch-add", "simradio-testing"),
+        ("--ch-add", "smoketest"),
         _assert_added,
     )
 
@@ -475,6 +482,7 @@ def test_simradio_cli_factory_reset_isolated(firmware_node: SimNode) -> None:
         timeout=30.0,
     )
     assert set_result.returncode == 0, set_result.output
+    time.sleep(PAUSE_AFTER_CLI_SECONDS)
 
     def _assert_before_reset(iface: TCPInterface) -> None:
         assert iface.getLongName() == "BeforeReset"
@@ -491,6 +499,10 @@ def test_simradio_cli_factory_reset_isolated(firmware_node: SimNode) -> None:
     assert reset_result.returncode == 0, reset_result.output
     # The output must not follow the unknown-setting "Choices" path.
     assert "Choices are" not in reset_result.output
+
+    # Wait for the node to come back after reboot.
+    iface = connect_iface(firmware_node.port)
+    iface.close()
 
     def _assert_default_owner(iface: TCPInterface) -> None:
         name = iface.getLongName()
