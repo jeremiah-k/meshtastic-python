@@ -247,7 +247,7 @@ jobs:
     name: SimRadio Firmware (${{ matrix.channel }}, py3.13)
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    continue-on-error: ${{ matrix.channel == 'daily' }}
+    continue-on-error: ${{ matrix.channel != 'beta' }}
     strategy:
       fail-fast: false
       matrix:
