@@ -61,14 +61,83 @@ def _timeout_output(exc: subprocess.TimeoutExpired) -> str:
     return output
 
 
+# ---------------------------------------------------------------------------
+# Operation-aware retry policy
+# ---------------------------------------------------------------------------
+
+# CLI arguments that indicate a non-idempotent operation. Retrying these after
+# an ambiguous transport failure could duplicate side effects (delete the wrong
+# secondary, factory-reset a device the user intended to keep, etc.).
+_NON_IDEMPOTENT_ARGUMENTS: frozenset[str] = frozenset(
+    {
+        "--ch-add",
+        "--ch-del",
+        "--ch-index",  # paired with --ch-add / --ch-del / --ch-enable / --ch-disable
+        "--ch-enable",
+        "--ch-disable",
+        "--factory-reset",
+        "--reboot",
+        "--shutdown",
+        "--ota-update",
+        "--reset-nodedb",
+    }
+)
+
+# CLI arguments that never mutate device state.
+_READ_ONLY_ARGUMENTS: frozenset[str] = frozenset(
+    {
+        "--info",
+        "--nodes",
+        "--qr",
+        "--test",
+        "--get",
+        "--export-config",
+        "--list-fields",
+        "--support",
+        "--device-metadata",
+    }
+)
+
+# Default retries per operation kind.  idempotent-mutations (--set, --set-owner,
+# --seturl, --set-ham, --set-position, etc.) and read-only commands are safe to
+# retry on transient transport errors.
+_DEFAULT_RETRIES: dict[str, int] = {
+    "read_only": 2,
+    "idempotent_mutation": 2,
+    "non_idempotent": 0,
+}
+
+
+def _classify_cli_operation(arguments: Sequence[str]) -> str:
+    """Map CLI arguments to an operation kind for the retry policy.
+
+    The first recognized argument wins — callers that mix arguments are
+    classified conservatively as non_idempotent.
+    """
+    for argument in arguments:
+        if argument in _NON_IDEMPOTENT_ARGUMENTS:
+            return "non_idempotent"
+    for argument in arguments:
+        if argument in _READ_ONLY_ARGUMENTS:
+            return "read_only"
+    return "idempotent_mutation"
+
+
 def run_cli(
     port: int,
     *arguments: str,
     timeout: float = DEFAULT_CLI_TIMEOUT_SECONDS,
-    retries: int = 2,
+    retries: int | None = None,
     retry_delay: float = 1.0,
 ) -> CLIResult:
-    """Run the in-tree CLI against one simulator with transient retries."""
+    """Run the in-tree CLI against one simulator with transient retries.
+
+    ``retries`` controls the maximum retry count after the first attempt.
+    When ``retries`` is ``None`` (the default), the value is selected from
+    :data:`_DEFAULT_RETRIES` based on the detected operation kind.
+    """
+    if retries is None:
+        retries = _DEFAULT_RETRIES[_classify_cli_operation(arguments)]
     if retries < 0:
         raise ValueError("retries must not be negative")
     if timeout <= 0:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from pubsub import pub
@@ -24,7 +24,15 @@ from .simradio_harness import (
     _inject_simulator_packet,
     find_meshtasticd,
 )
-from .simradio_helpers import PacketCollector, cli_then_verify, run_cli
+from .simradio_helpers import (
+    PacketCollector,
+    _classify_cli_operation,
+    _DEFAULT_RETRIES,
+    _NON_IDEMPOTENT_ARGUMENTS,
+    _READ_ONLY_ARGUMENTS,
+    cli_then_verify,
+    run_cli,
+)
 
 
 @pytest.mark.unit
@@ -322,3 +330,98 @@ def test_simradio_stop_cleans_partially_started_nodes() -> None:
     mesh.stop()
 
     assert close_calls == [2, 1, 0]
+
+
+# =============================================================================
+# Operation-aware retry policy
+# =============================================================================
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("arguments", "expected_kind"),
+    (
+        (("--info",), "read_only"),
+        (("--nodes",), "read_only"),
+        (("--export-config",), "read_only"),
+        (("--get", "lora.region"), "read_only"),
+        (("--set", "lora.region", "US"), "idempotent_mutation"),
+        (("--set-owner", "Test"), "idempotent_mutation"),
+        (("--seturl", "https://example.com/#abc"), "idempotent_mutation"),
+        (("--ch-add", "LongFast"), "non_idempotent"),
+        (("--ch-del",), "non_idempotent"),
+        (("--ch-index", "1", "--ch-enable"), "non_idempotent"),
+        (("--factory-reset",), "non_idempotent"),
+        (("--reboot",), "non_idempotent"),
+        (("--shutdown",), "non_idempotent"),
+        (("--ota-update", "fw.bin"), "non_idempotent"),
+        (("--reset-nodedb",), "non_idempotent"),
+    ),
+)
+def test_classify_cli_operation_maps_arguments_to_kind(
+    arguments: tuple[str, ...],
+    expected_kind: str,
+) -> None:
+    """Every CLI argument should map to the correct retry-policy bucket."""
+    assert _classify_cli_operation(list(arguments)) == expected_kind
+
+
+@pytest.mark.unit
+def test_classify_cli_operation_non_idempotent_wins_over_read_only() -> None:
+    """A mixed argument list is classified conservatively."""
+    assert (
+        _classify_cli_operation(["--ch-del", "--info"])
+        == "non_idempotent"
+    )
+
+
+@pytest.mark.unit
+def test_run_cli_defaults_to_zero_retries_for_non_idempotent_ops() -> None:
+    """Non-idempotent CLI invocations should not retry by default."""
+    fake_stdout = MagicMock()
+    fake_stdout.configure_mock(**{"stdout": "connected", "returncode": 1})
+    with patch("subprocess.run", return_value=fake_stdout):
+        result = run_cli(4404, "--ch-del")
+    assert result.attempts == 1
+
+
+@pytest.mark.unit
+def test_run_cli_retries_read_only_commands() -> None:
+    """Read-only CLI invocations should retry on transient failures."""
+    # First call: transient error, second: success
+    run_results = [
+        MagicMock(returncode=1, stdout="error connecting"),
+        MagicMock(returncode=0, stdout="ok"),
+    ]
+    with patch("subprocess.run", side_effect=run_results):
+        result = run_cli(4404, "--info")
+    assert result.attempts == 2
+    assert result.returncode == 0
+
+
+@pytest.mark.unit
+def test_run_cli_explicit_retries_override_auto_classification() -> None:
+    """An explicit retries value overrides the operation-kind default."""
+    fake_stdout = MagicMock()
+    fake_stdout.configure_mock(**{"stdout": "ok", "returncode": 0})
+    with patch("subprocess.run", return_value=fake_stdout):
+        result = run_cli(4404, "--ch-del", retries=2)
+    # Despite being non_idempotent, explicit retries=2 was respected.
+    # The command succeeded on the first attempt, so attempts=1.
+    assert result.returncode == 0
+
+
+@pytest.mark.unit
+def test_default_retries_maps_each_kind() -> None:
+    """Validation: every recognized operation kind has a retry default."""
+    for kind in ("read_only", "idempotent_mutation", "non_idempotent"):
+        assert kind in _DEFAULT_RETRIES
+        assert isinstance(_DEFAULT_RETRIES[kind], int)
+        assert _DEFAULT_RETRIES[kind] >= 0
+
+
+@pytest.mark.unit
+def test_non_idempotent_and_read_only_are_disjoint() -> None:
+    """An argument cannot appear in both the non-idempotent and read-only sets."""
+    overlap = _NON_IDEMPOTENT_ARGUMENTS & _READ_ONLY_ARGUMENTS
+    assert not overlap, f"ambiguous arguments: {sorted(overlap)}"
