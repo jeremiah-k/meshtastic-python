@@ -2438,9 +2438,20 @@ def onConnected(interface: MeshInterface) -> None:
 
         generic_preset_name = getattr(args, "ch_preset", None)
         if generic_preset_name is not None:
-            _set_simple_config(
-                config_pb2.Config.LoRaConfig.ModemPreset.Value(generic_preset_name)
-            )
+            # Accept integer enum values from programmatic callers; CLI always
+            # produces a string via _parse_modem_preset_name.
+            if isinstance(generic_preset_name, int):
+                # Validate by round-tripping through the name so bad integers
+                # fail with a clear error instead of silently corrupting config.
+                config_pb2.Config.LoRaConfig.ModemPreset.Name(
+                    generic_preset_name  # type: ignore[arg-type]
+                )
+                preset_val = generic_preset_name  # type: ignore[assignment]
+            else:
+                preset_val = config_pb2.Config.LoRaConfig.ModemPreset.Value(
+                    generic_preset_name
+                )
+            _set_simple_config(preset_val)  # type: ignore[arg-type]
 
         if args.ch_set or args.ch_enable or args.ch_disable:
             closeNow = True

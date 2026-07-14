@@ -2920,6 +2920,73 @@ def test_main_modem_preset_options_write_expected_lora_config(
     mocked_node.requestConfig.assert_called_once()
 
 
+@pytest.mark.unit
+def test_main_ch_preset_accepts_integer_enum_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Programmatic callers can pass integer ModemPreset values in ch_preset."""
+    monkeypatch.setattr(sys, "argv", ["meshtastic", "--ch-longmod"])
+
+    mocked_node = MagicMock(autospec=Node)
+    mocked_node.localConfig = localonly_pb2.LocalConfig()
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    iface.getNode.return_value = mocked_node
+
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        # After initParser, patch ch_preset to an integer before common() runs
+        original_init = main_module.initParser
+
+        def _patched_init() -> None:
+            original_init()
+            assert mt_config.args is not None
+            mt_config.args.ch_preset = config_pb2.Config.LoRaConfig.ModemPreset.Value(
+                "SHORT_TURBO"
+            )
+
+        monkeypatch.setattr(main_module, "initParser", _patched_init)
+        main()
+
+    assert (
+        mocked_node.localConfig.lora.modem_preset
+        == config_pb2.Config.LoRaConfig.ModemPreset.SHORT_TURBO
+    )
+    mocked_node.writeConfig.assert_called_with("lora")
+
+
+@pytest.mark.unit
+def test_main_ch_preset_rejects_invalid_integer_enum_value(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Invalid integer enum values in ch_preset should cause a clean CLI exit."""
+    monkeypatch.setattr(sys, "argv", ["meshtastic", "--ch-longmod"])
+
+    mocked_node = MagicMock(autospec=Node)
+    mocked_node.localConfig = localonly_pb2.LocalConfig()
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    iface.getNode.return_value = mocked_node
+
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        original_init = main_module.initParser
+
+        def _patched_init() -> None:
+            original_init()
+            assert mt_config.args is not None
+            mt_config.args.ch_preset = 99999
+
+        monkeypatch.setattr(main_module, "initParser", _patched_init)
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 1
+        _out, err = capsys.readouterr()
+        assert "has no name defined for value 99999" in err
+
+
 # PositionFlags:
 # Misc info that might be helpful (this info will grow stale, just
 # a snapshot of the values.) The radioconfig_pb2.PositionFlags.Name and bit values are:
