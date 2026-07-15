@@ -117,6 +117,32 @@ FILE_NOT_A_FILE: FileStatus.ValueType  # 7
 """path is a directory (GET) or not one (listing)"""
 Global___FileStatus: _TypeAlias = FileStatus  # noqa: Y015
 
+class _SdCommand:
+    ValueType = _typing.NewType("ValueType", _builtins.int)
+    V: _TypeAlias = ValueType  # noqa: Y015
+
+class _SdCommandEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_SdCommand.ValueType], _builtins.type):
+    DESCRIPTOR: _descriptor.EnumDescriptor
+    SD_COMMAND_UNSPECIFIED: _SdCommand.ValueType  # 0
+    SD_MOUNT: _SdCommand.ValueType  # 1
+    """mount a card that is in the slot, also after an eject"""
+    SD_EJECT: _SdCommand.ValueType  # 2
+    """flush and release the card so it can be pulled safely"""
+    SD_FORMAT: _SdCommand.ValueType  # 3
+    """wipe the card and put a fresh FAT on it, then mount it"""
+
+class SdCommand(_SdCommand, metaclass=_SdCommandEnumTypeWrapper):
+    """What to do with the SD card of the co-processor"""
+
+SD_COMMAND_UNSPECIFIED: SdCommand.ValueType  # 0
+SD_MOUNT: SdCommand.ValueType  # 1
+"""mount a card that is in the slot, also after an eject"""
+SD_EJECT: SdCommand.ValueType  # 2
+"""flush and release the card so it can be pulled safely"""
+SD_FORMAT: SdCommand.ValueType  # 3
+"""wipe the card and put a fresh FAT on it, then mount it"""
+Global___SdCommand: _TypeAlias = SdCommand  # noqa: Y015
+
 @_typing.final
 class FileTransfer(_message.Message):
     """Message for file operations"""
@@ -301,6 +327,7 @@ class SdCardInfo(_message.Message):
     FREE_BYTES_FIELD_NUMBER: _builtins.int
     STATS_VALID_FIELD_NUMBER: _builtins.int
     BUSY_FIELD_NUMBER: _builtins.int
+    UNFORMATTED_FIELD_NUMBER: _builtins.int
     present: _builtins.bool
     """Card initialized and usable. False while `busy` is set does not mean
     there is no card: the co-processor does not know yet.
@@ -323,6 +350,10 @@ class SdCardInfo(_message.Message):
     present is not decided yet. Ask again rather than concluding the slot
     is empty.
     """
+    unformatted: _builtins.bool
+    """A card answers in the slot but carries no filesystem that could be
+    mounted (present is false then). Formatting it makes it usable.
+    """
     def __init__(
         self,
         *,
@@ -334,10 +365,11 @@ class SdCardInfo(_message.Message):
         free_bytes: _builtins.int = ...,
         stats_valid: _builtins.bool = ...,
         busy: _builtins.bool = ...,
+        unformatted: _builtins.bool = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["busy", b"busy", "card_size", b"card_size", "card_type", b"card_type", "fat_type", b"fat_type", "free_bytes", b"free_bytes", "present", b"present", "stats_valid", b"stats_valid", "used_bytes", b"used_bytes"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["busy", b"busy", "card_size", b"card_size", "card_type", b"card_type", "fat_type", b"fat_type", "free_bytes", b"free_bytes", "present", b"present", "stats_valid", b"stats_valid", "unformatted", b"unformatted", "used_bytes", b"used_bytes"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
@@ -412,6 +444,7 @@ class InterdeviceMessage(_message.Message):
     PING_FIELD_NUMBER: _builtins.int
     PONG_FIELD_NUMBER: _builtins.int
     NACK_FIELD_NUMBER: _builtins.int
+    SD_COMMAND_FIELD_NUMBER: _builtins.int
     id: _builtins.int
     """Correlates a response with its request: responses echo the id of the
     request they answer. 0 for unsolicited messages (e.g. the nmea stream).
@@ -436,6 +469,12 @@ class InterdeviceMessage(_message.Message):
     type, so the requester fails fast instead of burning its timeout.
     Echoes the id when known, 0 when the frame was undecodable. Never
     sent in reaction to a nack.
+    """
+    sd_command: Global___SdCommand.ValueType
+    """Request: mount the card, or release it so it can be pulled safely. The
+    co-processor answers with sd_info. Without an eject the card is mounted
+    on its own and kept mounted; after one it stays released until a mount
+    is asked for.
     """
     @_builtins.property
     def i2c_transaction(self) -> Global___I2CTransaction: ...
@@ -466,12 +505,13 @@ class InterdeviceMessage(_message.Message):
         ping: Global___InterdeviceVersion.ValueType = ...,
         pong: Global___InterdeviceVersion.ValueType = ...,
         nack: _builtins.bool = ...,
+        sd_command: Global___SdCommand.ValueType = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _typing.Literal["beep", b"beep", "data", b"data", "directory_listing", b"directory_listing", "file_transfer", b"file_transfer", "get_sd_info", b"get_sd_info", "i2c_result", b"i2c_result", "i2c_scan", b"i2c_scan", "i2c_scan_result", b"i2c_scan_result", "i2c_transaction", b"i2c_transaction", "nack", b"nack", "nmea", b"nmea", "ping", b"ping", "pong", b"pong", "sd_info", b"sd_info"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = _typing.Literal["beep", b"beep", "data", b"data", "directory_listing", b"directory_listing", "file_transfer", b"file_transfer", "get_sd_info", b"get_sd_info", "i2c_result", b"i2c_result", "i2c_scan", b"i2c_scan", "i2c_scan_result", b"i2c_scan_result", "i2c_transaction", b"i2c_transaction", "nack", b"nack", "nmea", b"nmea", "ping", b"ping", "pong", b"pong", "sd_command", b"sd_command", "sd_info", b"sd_info"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["beep", b"beep", "data", b"data", "directory_listing", b"directory_listing", "file_transfer", b"file_transfer", "get_sd_info", b"get_sd_info", "i2c_result", b"i2c_result", "i2c_scan", b"i2c_scan", "i2c_scan_result", b"i2c_scan_result", "i2c_transaction", b"i2c_transaction", "id", b"id", "nack", b"nack", "nmea", b"nmea", "ping", b"ping", "pong", b"pong", "sd_info", b"sd_info"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["beep", b"beep", "data", b"data", "directory_listing", b"directory_listing", "file_transfer", b"file_transfer", "get_sd_info", b"get_sd_info", "i2c_result", b"i2c_result", "i2c_scan", b"i2c_scan", "i2c_scan_result", b"i2c_scan_result", "i2c_transaction", b"i2c_transaction", "id", b"id", "nack", b"nack", "nmea", b"nmea", "ping", b"ping", "pong", b"pong", "sd_command", b"sd_command", "sd_info", b"sd_info"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
-    _WhichOneofReturnType_data: _TypeAlias = _typing.Literal["nmea", "beep", "i2c_transaction", "i2c_result", "i2c_scan", "i2c_scan_result", "file_transfer", "directory_listing", "get_sd_info", "sd_info", "ping", "pong", "nack"]  # noqa: Y015
+    _WhichOneofReturnType_data: _TypeAlias = _typing.Literal["nmea", "beep", "i2c_transaction", "i2c_result", "i2c_scan", "i2c_scan_result", "file_transfer", "directory_listing", "get_sd_info", "sd_info", "ping", "pong", "nack", "sd_command"]  # noqa: Y015
     _WhichOneofArgType_data: _TypeAlias = _typing.Literal["data", b"data"]  # noqa: Y015
     def WhichOneof(self, oneof_group: _WhichOneofArgType_data) -> _WhichOneofReturnType_data | None: ...
 
