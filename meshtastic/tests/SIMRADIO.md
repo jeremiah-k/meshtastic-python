@@ -46,7 +46,18 @@ The single-node fixture releases its interface before yielding. CLI processes
 therefore have exclusive ownership of the firmware API port, and state checks
 open and close one temporary interface only after the CLI process exits. The
 multi-node fixture retains one interface per distinct firmware port so its
-packet bridge remains connected without client contention.
+packet bridge remains connected without client contention. Because that fixture
+is module-scoped, text sends go through `SimMesh.send_text()`, which enforces a
+small per-sender interval. Current alpha and daily firmware reject a second
+`TEXT_MESSAGE_APP` packet sent too soon after the first instead of queueing it;
+the harness-level pacing prevents test order and propagation speed from deciding
+whether a message is accepted.
+
+CLI subprocess timeouts and firmware request timeouts are separate. `run_cli()`
+therefore supplies a bounded `--timeout` value by default so optional admin reads
+that a firmware build does not implement cannot outlive the subprocess budget.
+Tests may override that request timeout explicitly, or pass `None` when they need
+the CLI's production default.
 
 ## CI policy
 

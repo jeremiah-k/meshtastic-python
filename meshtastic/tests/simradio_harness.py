@@ -43,6 +43,7 @@ DEFAULT_SNR = 10.0
 BOOT_TIMEOUT_SECONDS = 30.0
 PROCESS_EXIT_TIMEOUT_SECONDS = 5.0
 PORT_RELEASE_SETTLE_SECONDS = 0.25
+TEXT_MESSAGE_MIN_INTERVAL_SECONDS = 1.1
 MAX_LOG_TAIL_BYTES = 16_384
 
 CHAIN_TOPOLOGY: Mapping[int, frozenset[int]] = MappingProxyType(
@@ -333,6 +334,8 @@ class SimMesh:
         ]
         self._port_to_index: dict[int, int] = {}
         self._bridge_lock = threading.Lock()
+        self._text_send_lock = threading.Lock()
+        self._last_text_send_at: dict[int, float] = {}
         self._subscribed = False
         self._started = False
 
@@ -345,6 +348,8 @@ class SimMesh:
             raise RuntimeError(
                 "meshtasticd not found; set MESHTASTICD_BIN or install it on PATH"
             )
+        with self._text_send_lock:
+            self._last_text_send_at.clear()
         try:
             for node in self.nodes:
                 node.start(binary)
@@ -392,6 +397,33 @@ class SimMesh:
         if iface is None:
             raise RuntimeError(f"simradio node {index} is not connected")
         return iface
+
+    def send_text(
+        self,
+        sender_index: int,
+        text: str,
+        **kwargs: Any,
+    ) -> mesh_pb2.MeshPacket:
+        """Send text while respecting firmware's PhoneAPI text throttle.
+
+        The mesh fixture is module-scoped, so a test may begin immediately
+        after the previous test's text send.  Some firmware channels reject a
+        second ``TEXT_MESSAGE_APP`` packet during that short interval instead
+        of queueing it.  Pace sends per originating node so test ordering and
+        packet propagation speed cannot decide whether the next packet is
+        accepted.
+        """
+        iface = self.get_iface(sender_index)
+        with self._text_send_lock:
+            now = time.monotonic()
+            last_send = self._last_text_send_at.get(sender_index)
+            if last_send is not None:
+                remaining = TEXT_MESSAGE_MIN_INTERVAL_SECONDS - (now - last_send)
+                if remaining > 0:
+                    time.sleep(remaining)
+            result = iface.sendText(text, **kwargs)
+            self._last_text_send_at[sender_index] = time.monotonic()
+        return result
 
     def trigger_node_info_exchange(self) -> None:
         """Request broadcast NodeInfo responses to accelerate DB convergence."""

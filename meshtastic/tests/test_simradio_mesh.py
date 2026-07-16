@@ -31,7 +31,7 @@ def test_simradio_mesh_broadcast_crosses_relay(firmware_mesh: SimMesh) -> None:
         subscribe_texts(firmware_mesh.get_iface(1)) as collector_b,
         subscribe_texts(firmware_mesh.get_iface(2)) as collector_c,
     ):
-        firmware_mesh.get_iface(0).sendText(text, wantAck=False)
+        firmware_mesh.send_text(0, text, wantAck=False)
         assert collector_b.wait_for_text(text), "B did not receive A's broadcast"
         assert collector_c.wait_for_text(text), "C did not receive A's relayed broadcast"
 
@@ -46,7 +46,8 @@ def test_simradio_mesh_direct_message_stops_at_destination(
         subscribe_texts(firmware_mesh.get_iface(1)) as collector_b,
         subscribe_texts(firmware_mesh.get_iface(2)) as collector_c,
     ):
-        firmware_mesh.get_iface(0).sendText(
+        firmware_mesh.send_text(
+            0,
             text,
             destinationId=destination_b,
             wantAck=False,
@@ -62,7 +63,8 @@ def test_simradio_mesh_direct_message_relays_to_non_neighbor(
     text = "simradio-direct-a-via-b-to-c"
     destination_c = firmware_mesh.get_node(2).node_num
     with subscribe_texts(firmware_mesh.get_iface(2)) as collector_c:
-        firmware_mesh.get_iface(0).sendText(
+        firmware_mesh.send_text(
+            0,
             text,
             destinationId=destination_c,
             wantAck=False,
@@ -79,7 +81,8 @@ def test_simradio_mesh_hop_limit_zero_reaches_neighbor_only(
         subscribe_texts(firmware_mesh.get_iface(1)) as collector_b,
         subscribe_texts(firmware_mesh.get_iface(2)) as collector_c,
     ):
-        firmware_mesh.get_iface(0).sendText(
+        firmware_mesh.send_text(
+            0,
             text,
             wantAck=False,
             hopLimit=0,
@@ -94,7 +97,8 @@ def test_simradio_mesh_hop_limit_one_allows_single_relay(
     """hopLimit=1 should permit the one relay required for A→B→C."""
     text = "simradio-hop-one"
     with subscribe_texts(firmware_mesh.get_iface(2)) as collector_c:
-        firmware_mesh.get_iface(0).sendText(
+        firmware_mesh.send_text(
+            0,
             text,
             wantAck=False,
             hopLimit=1,

@@ -67,6 +67,43 @@ def test_simradio_mesh_receiver_selection_is_deterministic() -> None:
 
 
 @pytest.mark.unit
+def test_simradio_mesh_paces_text_sends_per_originating_node() -> None:
+    """Fast consecutive sends should wait out the firmware text throttle."""
+    mesh = SimMesh(node_count=2)
+    iface_zero = MagicMock(spec=TCPInterface)
+    iface_one = MagicMock(spec=TCPInterface)
+    iface_zero.sendText.side_effect = [
+        mesh_pb2.MeshPacket(id=1),
+        mesh_pb2.MeshPacket(id=2),
+    ]
+    iface_one.sendText.return_value = mesh_pb2.MeshPacket(id=3)
+    mesh.nodes[0].iface = iface_zero
+    mesh.nodes[1].iface = iface_one
+
+    with (
+        patch.object(
+            simradio_harness.time,
+            "monotonic",
+            side_effect=(10.0, 10.0, 10.25, 11.1, 11.1, 11.1),
+        ),
+        patch.object(simradio_harness.time, "sleep") as sleep,
+    ):
+        first = mesh.send_text(0, "first", wantAck=False)
+        second = mesh.send_text(0, "second", wantAck=False)
+        other = mesh.send_text(1, "other", wantAck=False)
+
+    assert first.id == 1
+    assert second.id == 2
+    assert other.id == 3
+    sleep.assert_called_once_with(
+        pytest.approx(simradio_harness.TEXT_MESSAGE_MIN_INTERVAL_SECONDS - 0.25)
+    )
+    iface_zero.sendText.assert_any_call("first", wantAck=False)
+    iface_zero.sendText.assert_any_call("second", wantAck=False)
+    iface_one.sendText.assert_called_once_with("other", wantAck=False)
+
+
+@pytest.mark.unit
 def test_build_simradio_mesh_packet_preserves_routing_metadata() -> None:
     """Simulator reconstruction should retain all routing and request fields."""
     packet = _build_mesh_packet(
