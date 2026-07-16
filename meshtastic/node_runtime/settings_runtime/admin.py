@@ -222,6 +222,18 @@ class _NodeAdminCommandRuntime:
                 self._node._get_factory_reset_request_value()
             )  # noqa: SLF001
             logger.info("Telling node to factory reset (config reset)")
+        if self._node is self._node.iface.localNode:
+            # The CLI waits after factoryReset() returns so it can keep the
+            # transport open until firmware accepts the destructive command.
+            # Register the ACK/NAK callback before sending: a local simulator or
+            # fast serial link can return the routing ACK before the CLI begins
+            # its legacy wait, and without a response handler that ACK is not
+            # reflected in the compatibility acknowledgment flags.
+            self._node.ensureSessionKey()
+            return self._node._send_admin(  # noqa: SLF001
+                message,
+                onResponse=self._node.onAckNak,
+            )
         return self._send_command(
             message,
             ensure_session_key=True,

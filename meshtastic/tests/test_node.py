@@ -443,11 +443,11 @@ def test_shutdown(caplog: LogCaptureFixture) -> None:
 
 
 @pytest.mark.unit
-def test_factoryReset_config_reset_uses_int_field_and_local_no_callback(
+def test_factoryReset_config_reset_uses_int_field_and_local_ack_callback(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """factoryReset(full=False) should set config reset flag as int and skip callback for local node."""
+    """Local config reset should register ACK handling before the packet is sent."""
     monkeypatch.setattr(node_module, "FACTORY_RESET_REQUEST_VALUE", 7)
     iface = autospec_local_node_iface(MeshInterface)
     anode = Node(iface, "!12345678", noProto=True)
@@ -468,7 +468,9 @@ def test_factoryReset_config_reset_uses_int_field_and_local_no_callback(
     assert sent_msg.factory_reset_config == node_module.FACTORY_RESET_REQUEST_VALUE
     assert sent_msg.factory_reset_device == 0
     assert captured["wantResponse"] is False
-    assert captured["onResponse"] is None
+    response_handler = cast(Callable[[dict[str, Any]], Any], captured["onResponse"])
+    assert getattr(response_handler, "__self__", None) is anode
+    assert getattr(response_handler, "__func__", None) is Node.onAckNak
 
 
 @pytest.mark.unit
