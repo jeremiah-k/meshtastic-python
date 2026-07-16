@@ -261,6 +261,7 @@ jobs:
       PYTHON_VERSION: "3.13"
       POETRY_INSTALL_ARGS: --all-extras --with dev,powermon
       MESHTASTICD_SIM_LOG_DIR: ${{ github.workspace }}/.meshtasticd-logs/simradio/${{ matrix.channel }}
+      SIMRADIO_RESULT_DIR: ${{ github.workspace }}/.test-results/simradio/${{ matrix.channel }}
       MESHTASTICD_CHANNEL: "${{ matrix.channel }}"
     steps:
       - *checkout_step
@@ -282,14 +283,31 @@ jobs:
             fi
             sleep "$((attempt * 10))"
           done
+      - name: Record installed meshtasticd package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${SIMRADIO_RESULT_DIR}"
+          dpkg-query -W -f='${Package}\t${Version}\n' meshtasticd \
+            | tee "${SIMRADIO_RESULT_DIR}/firmware-package.txt"
+          timeout 5s meshtasticd --version 2>&1 \
+            | tee "${SIMRADIO_RESULT_DIR}/firmware-version.txt" || true
       - name: Run process-managed simradio smoke tests
-        run: poetry run pytest -m simradio -v --durations=20
-      - name: Upload simradio firmware logs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${SIMRADIO_RESULT_DIR}"
+          poetry run pytest -m simradio -vv --tb=long --durations=20 \
+            --junitxml="${SIMRADIO_RESULT_DIR}/junit.xml" 2>&1 \
+            | tee "${SIMRADIO_RESULT_DIR}/pytest.log"
+      - name: Upload simradio firmware logs and test results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: simradio-${{ matrix.channel }}-logs
-          path: ${{ env.MESHTASTICD_SIM_LOG_DIR }}
+          path: |
+            ${{ env.MESHTASTICD_SIM_LOG_DIR }}
+            ${{ env.SIMRADIO_RESULT_DIR }}
           if-no-files-found: warn
   # Fast install sanity check across Python versions.
   # Full tests run in the tests job above.
