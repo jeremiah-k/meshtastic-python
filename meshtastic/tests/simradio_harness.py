@@ -43,7 +43,8 @@ DEFAULT_SNR = 10.0
 BOOT_TIMEOUT_SECONDS = 30.0
 PROCESS_EXIT_TIMEOUT_SECONDS = 5.0
 PORT_RELEASE_SETTLE_SECONDS = 0.25
-TEXT_MESSAGE_MIN_INTERVAL_SECONDS = 1.1
+TEXT_MESSAGE_MIN_INTERVAL_SECONDS = 2.25
+REBOOT_POLL_INTERVAL_SECONDS = 0.1
 MAX_LOG_TAIL_BYTES = 16_384
 
 CHAIN_TOPOLOGY: Mapping[int, frozenset[int]] = MappingProxyType(
@@ -230,6 +231,54 @@ class SimNode:
             with contextlib.suppress(Exception):
                 iface.close()
 
+    def boot_count(self) -> int:
+        """Return the number of simulator boots recorded in the process log."""
+        workdir = self.workdir
+        if workdir is None:
+            return 0
+        try:
+            output = (workdir / "meshtasticd.log").read_text(
+                encoding="utf-8", errors="replace"
+            )
+        except OSError:
+            return 0
+        return output.count(f"Using config file {self.port}")
+
+    def wait_for_reboot(
+        self,
+        previous_boot_count: int,
+        *,
+        timeout: float = BOOT_TIMEOUT_SECONDS,
+    ) -> None:
+        """Wait until the owned simulator records a boot after ``previous_boot_count``.
+
+        Portduino reboots in-process, so a successful TCP connection alone does
+        not prove that a delayed reboot has occurred.  Its stable
+        ``Using config file <port>`` startup marker does.
+        """
+        if previous_boot_count < 0:
+            raise ValueError("previous_boot_count must not be negative")
+        if timeout <= 0:
+            raise ValueError("timeout must be positive")
+        process = self.process
+        if process is None:
+            raise RuntimeError(f"simradio node {self.node_id} is not started")
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                raise RuntimeError(
+                    f"meshtasticd node {self.node_id} exited with status "
+                    f"{process.returncode} while waiting for reboot\n"
+                    f"{self.diagnostics()}"
+                )
+            if self.boot_count() > previous_boot_count:
+                return
+            time.sleep(REBOOT_POLL_INTERVAL_SECONDS)
+        raise RuntimeError(
+            f"meshtasticd node {self.node_id} did not reboot within {timeout:.1f}s; "
+            f"boot count remained {self.boot_count()}\n{self.diagnostics()}"
+        )
+
     def diagnostics(self) -> str:
         """Return bounded stdout/stderr tails for startup and CI failures."""
         workdir = self.workdir
@@ -408,8 +457,9 @@ class SimMesh:
 
         The mesh fixture is module-scoped, so a test may begin immediately
         after the previous test's text send.  Some firmware channels reject a
-        second ``TEXT_MESSAGE_APP`` packet during that short interval instead
-        of queueing it.  Pace sends per originating node so test ordering and
+        second ``TEXT_MESSAGE_APP`` packet inside its two-second window instead
+        of queueing it.  Pace sends per originating node with a small scheduling
+        margin so test ordering and
         packet propagation speed cannot decide whether the next packet is
         accepted.
         """

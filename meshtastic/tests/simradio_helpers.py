@@ -14,6 +14,7 @@ from typing import Any
 
 from pubsub import pub
 
+from meshtastic import LOCAL_ADDR
 from meshtastic.tcp_interface import TCPInterface
 from meshtastic.util import camel_to_snake
 
@@ -417,8 +418,15 @@ def cli_then_verify(
 
 
 def set_region(port: int, region: str = "US") -> None:
-    """Set the simulator LoRa region through an unshared CLI connection."""
-    result = run_cli(port, "--set", "lora.region", region)
+    """Set the simulator LoRa region and wait for the local admin ACK."""
+    result = run_cli(
+        port,
+        "--set",
+        "lora.region",
+        region,
+        "--dest",
+        LOCAL_ADDR,
+    )
     if result.returncode != 0:
         raise RuntimeError(
             f"Failed to set lora.region={region} on port {port}:\n{result.output}"

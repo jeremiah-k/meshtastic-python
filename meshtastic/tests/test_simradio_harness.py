@@ -73,6 +73,57 @@ def test_single_node_simulators_receive_fresh_sequential_ports(
 
 
 @pytest.mark.unit
+def test_simradio_node_waits_for_next_boot_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A TCP-capable pre-reboot window must not satisfy reboot readiness."""
+    node = SimNode(0, base_port=44_404)
+    node.workdir = tmp_path
+    node.process = MagicMock(returncode=None)
+    node.process.poll.return_value = None
+    log_path = tmp_path / "meshtasticd.log"
+    marker = f"Using config file {node.port}\n"
+    log_path.write_text(marker, encoding="utf-8")
+
+    def _record_reboot(_seconds: float) -> None:
+        with log_path.open("a", encoding="utf-8") as log_file:
+            log_file.write(marker)
+
+    monkeypatch.setattr(simradio_harness.time, "sleep", _record_reboot)
+    monkeypatch.setattr(
+        simradio_harness.time,
+        "monotonic",
+        iter((0.0, 0.0, 0.1)).__next__,
+    )
+
+    node.wait_for_reboot(node.boot_count(), timeout=1.0)
+
+    assert node.boot_count() == 2
+
+
+@pytest.mark.unit
+def test_set_region_targets_local_node_for_ack_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fixture region changes must not close before the local admin ACK."""
+    calls: list[tuple[int, tuple[str, ...]]] = []
+
+    def _run_cli(
+        port: int, *arguments: str, **_kwargs: object
+    ) -> simradio_helpers.CLIResult:
+        calls.append((port, arguments))
+        return simradio_helpers.CLIResult(returncode=0, output="", attempts=1)
+
+    monkeypatch.setattr(simradio_helpers, "run_cli", _run_cli)
+
+    simradio_helpers.set_region(44_404, "US")
+
+    assert calls == [
+        (44_404, ("--set", "lora.region", "US", "--dest", "^local"))
+    ]
+
+
+@pytest.mark.unit
 def test_simradio_mesh_receiver_selection_is_deterministic() -> None:
     """Full-mesh and chain receiver lists should be stable and exclude self."""
     full = SimMesh(node_count=3)

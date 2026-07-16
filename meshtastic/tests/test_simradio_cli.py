@@ -22,7 +22,6 @@ from meshtastic.tcp_interface import TCPInterface
 from .simradio_harness import SimNode
 from .simradio_helpers import (
     cli_then_verify,
-    connect_iface,
     run_cli,
     verify_state,
 )
@@ -484,7 +483,10 @@ def test_simradio_cli_factory_reset_config_isolated(firmware_node: SimNode) -> N
         _assert_fixed_position,
     )
 
-    # Run the real factory reset with zero automatic retries.
+    # Run the real factory reset with zero automatic retries.  Record the
+    # current Portduino boot marker so verification cannot accidentally attach
+    # before the delayed reboot has happened.
+    previous_boot_count = firmware_node.boot_count()
     reset_result = run_cli(
         firmware_node.port,
         "--factory-reset",
@@ -495,9 +497,7 @@ def test_simradio_cli_factory_reset_config_isolated(firmware_node: SimNode) -> N
     # The output must not follow the unknown-setting "Choices" path.
     assert "Choices are" not in reset_result.output
 
-    # Wait for the node to come back after reboot.
-    iface = connect_iface(firmware_node.port)
-    iface.close()
+    firmware_node.wait_for_reboot(previous_boot_count)
 
     def _assert_default_config(iface: TCPInterface) -> None:
         assert iface.localNode.localConfig.position.fixed_position is False
