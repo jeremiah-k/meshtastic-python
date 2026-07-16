@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 PAUSE_AFTER_CLI_SECONDS = 0.2
 DEFAULT_CLI_TIMEOUT_SECONDS = 60.0
+DEFAULT_DEVICE_REQUEST_TIMEOUT_SECONDS = 20.0
 DEFAULT_CONNECT_WAIT_SECONDS = 30.0
 CONNECT_ATTEMPT_TIMEOUT_SECONDS = 10.0
 CONNECT_RETRY_DELAY_SECONDS = 0.5
@@ -239,6 +240,7 @@ def run_cli(
     port: int,
     *arguments: str,
     timeout: float = DEFAULT_CLI_TIMEOUT_SECONDS,
+    request_timeout: float | None = DEFAULT_DEVICE_REQUEST_TIMEOUT_SECONDS,
     retries: int | None = None,
     retry_delay: float = 1.0,
 ) -> CLIResult:
@@ -247,6 +249,13 @@ def run_cli(
     ``retries`` controls the maximum retry count after the first attempt.
     When ``retries`` is ``None`` (the default), the value is selected from
     :data:`_DEFAULT_RETRIES` based on the detected operation kind.
+
+    ``request_timeout`` bounds protocol request/response waits inside the CLI.
+    This is intentionally shorter than the subprocess timeout so a firmware
+    feature that accepts an admin request but never answers it cannot strand
+    the test process until pytest's outer timeout fires.  An explicit
+    ``--timeout`` in ``arguments`` takes precedence; pass ``None`` to preserve
+    the CLI's own default.
     """
     if retries is None:
         retries = _DEFAULT_RETRIES[_classify_cli_operation(arguments)]
@@ -254,14 +263,23 @@ def run_cli(
         raise ValueError("retries must not be negative")
     if timeout <= 0:
         raise ValueError("timeout must be positive")
+    if request_timeout is not None and request_timeout <= 0:
+        raise ValueError("request_timeout must be positive or None")
     if retry_delay < 0:
         raise ValueError("retry_delay must not be negative")
+    has_explicit_request_timeout = "--timeout" in arguments
+    request_timeout_arguments = (
+        []
+        if request_timeout is None or has_explicit_request_timeout
+        else ["--timeout", str(min(request_timeout, timeout))]
+    )
     argv = [
         sys.executable,
         "-m",
         "meshtastic",
         "--host",
         f"localhost:{port}",
+        *request_timeout_arguments,
         *arguments,
     ]
     # Never log positional values: configuration commands may contain Wi-Fi

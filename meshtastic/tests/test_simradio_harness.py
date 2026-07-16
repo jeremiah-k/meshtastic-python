@@ -552,6 +552,45 @@ def test_run_cli_defaults_to_zero_retries_for_destructive_ops() -> None:
 
 
 @pytest.mark.unit
+def test_run_cli_bounds_device_waits_inside_subprocess_timeout() -> None:
+    """The helper must not leave the CLI's 300-second request timeout active."""
+    completed = MagicMock(returncode=0, stdout="ok")
+    with patch("subprocess.run", return_value=completed) as run:
+        result = run_cli(4404, "--export-config", "config.yaml", timeout=90.0)
+
+    assert result.returncode == 0
+    argv = run.call_args.args[0]
+    timeout_index = argv.index("--timeout")
+    assert argv[timeout_index + 1] == str(
+        simradio_helpers.DEFAULT_DEVICE_REQUEST_TIMEOUT_SECONDS
+    )
+    assert run.call_args.kwargs["timeout"] == 90.0
+
+
+@pytest.mark.unit
+def test_run_cli_preserves_explicit_device_request_timeout() -> None:
+    """A caller-provided CLI --timeout must not be duplicated or replaced."""
+    completed = MagicMock(returncode=0, stdout="ok")
+    with patch("subprocess.run", return_value=completed) as run:
+        run_cli(4404, "--timeout", "7", "--info", request_timeout=20.0)
+
+    argv = run.call_args.args[0]
+    assert argv.count("--timeout") == 1
+    timeout_index = argv.index("--timeout")
+    assert argv[timeout_index + 1] == "7"
+
+
+@pytest.mark.unit
+def test_run_cli_can_preserve_cli_default_request_timeout() -> None:
+    """request_timeout=None should omit the helper-injected CLI option."""
+    completed = MagicMock(returncode=0, stdout="ok")
+    with patch("subprocess.run", return_value=completed) as run:
+        run_cli(4404, "--info", request_timeout=None)
+
+    assert "--timeout" not in run.call_args.args[0]
+
+
+@pytest.mark.unit
 def test_run_cli_retries_read_only_commands() -> None:
     """Read-only CLI invocations should retry on transient failures."""
     run_results = [
