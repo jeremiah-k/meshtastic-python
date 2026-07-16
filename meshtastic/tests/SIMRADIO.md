@@ -49,11 +49,17 @@ therefore have exclusive ownership of the firmware API port, and state checks
 open and close one temporary interface only after the CLI process exits. The
 multi-node fixture retains one interface per distinct firmware port so its
 packet bridge remains connected without client contention. Because that fixture
-is module-scoped, text sends go through `SimMesh.send_text()`, which enforces a
-small per-sender interval. Current alpha and daily firmware reject a second
-`TEXT_MESSAGE_APP` packet sent too soon after the first instead of queueing it;
-the harness-level pacing prevents test order and propagation speed from deciding
-whether a message is accepted.
+is module-scoped, text sends go through `SimMesh.send_text()`. Firmware 2.8
+enforces a two-second `TEXT_MESSAGE_APP` PhoneAPI limit, so the helper applies a
+small per-sender scheduling margin. This prevents test order and propagation
+speed from deciding whether the next message is accepted.
+
+Reboot-capable setup and reset tests wait for Portduino's next stable
+`Using config file <port>` startup marker. A successful TCP reconnect by itself
+is insufficient because the simulator can still accept clients during the
+delayed pre-reboot window. The bridge also preserves optional decoded packet
+metadata such as `bitfield`; firmware 2.8 requires that presence marker to
+accept modern zero-hop packets.
 
 CLI subprocess timeouts and firmware request timeouts are separate. `run_cli()`
 therefore supplies a bounded `--timeout` value by default so optional admin reads
