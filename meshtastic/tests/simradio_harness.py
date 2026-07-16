@@ -46,6 +46,7 @@ PORT_RELEASE_SETTLE_SECONDS = 0.25
 TEXT_MESSAGE_MIN_INTERVAL_SECONDS = 2.25
 REBOOT_POLL_INTERVAL_SECONDS = 0.1
 MAX_LOG_TAIL_BYTES = 16_384
+CONTEXT_FILENAME = "simradio-context.txt"
 
 CHAIN_TOPOLOGY: Mapping[int, frozenset[int]] = MappingProxyType(
     {
@@ -194,6 +195,7 @@ class SimNode:
                     f"meshtasticd node {self.node_id} exited with "
                     f"status {self.process.returncode} during startup"
                 )
+            self._write_context(binary)
         except Exception as exc:
             diagnostics = self.diagnostics()
             self.close(send_exit=False)
@@ -201,6 +203,36 @@ class SimNode:
                 f"meshtasticd node {self.node_id} failed to start on port "
                 f"{self.port}: {exc}\n{diagnostics}"
             ) from exc
+
+    def _write_context(self, binary: str) -> None:
+        """Persist source, workflow, and fixture identity beside daemon logs."""
+        workdir = self.workdir
+        process = self.process
+        if workdir is None or process is None:
+            return
+        values = (
+            ("node_id", str(self.node_id)),
+            ("hw_id", str(self.hw_id)),
+            ("port", str(self.port)),
+            ("pid", str(process.pid)),
+            ("binary", binary),
+            ("pytest_current_test", os.environ.get("PYTEST_CURRENT_TEST", "")),
+            ("github_repository", os.environ.get("GITHUB_REPOSITORY", "")),
+            ("github_sha", os.environ.get("GITHUB_SHA", "")),
+            ("source_sha", os.environ.get("SIMRADIO_SOURCE_SHA", "")),
+            ("github_ref", os.environ.get("GITHUB_REF", "")),
+            ("github_head_ref", os.environ.get("GITHUB_HEAD_REF", "")),
+            ("github_run_id", os.environ.get("GITHUB_RUN_ID", "")),
+            ("github_run_attempt", os.environ.get("GITHUB_RUN_ATTEMPT", "")),
+            ("meshtasticd_channel", os.environ.get("MESHTASTICD_CHANNEL", "")),
+        )
+        content = "".join(f"{key}={value}\n" for key, value in values)
+        try:
+            (workdir / CONTEXT_FILENAME).write_text(content, encoding="utf-8")
+        except OSError:
+            logger.exception(
+                "Failed to write simradio context for node %d", self.node_id
+            )
 
     def connect(self, timeout: float = BOOT_TIMEOUT_SECONDS) -> TCPInterface:
         """Retry and retain the sole TCPInterface connection to this simulator."""
@@ -285,7 +317,7 @@ class SimNode:
         if workdir is None:
             return "simradio diagnostics unavailable: no work directory"
         sections: list[str] = []
-        for filename in ("meshtasticd.log", "meshtasticd.err"):
+        for filename in ("meshtasticd.log", "meshtasticd.err", CONTEXT_FILENAME):
             path = workdir / filename
             try:
                 raw = path.read_bytes()[-MAX_LOG_TAIL_BYTES:]
@@ -347,7 +379,7 @@ class SimNode:
         destination = self.log_root / f"node-{self.node_id}" / self.workdir.name
         try:
             destination.mkdir(parents=True, exist_ok=True)
-            for filename in ("meshtasticd.log", "meshtasticd.err"):
+            for filename in ("meshtasticd.log", "meshtasticd.err", CONTEXT_FILENAME):
                 source = self.workdir / filename
                 if source.exists():
                     shutil.copy2(source, destination / filename)

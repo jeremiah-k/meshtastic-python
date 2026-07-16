@@ -40,7 +40,8 @@ Every fixture:
 1. starts owned process groups and temporary VFS directories;
 2. sets the LoRa region to `US` for firmware 2.8 preset validation, keeps
    the CLI connection open long enough for the asynchronous local write to
-   drain, and verifies the persisted value through a fresh connection;
+   drain, and verifies the persisted value through bounded fresh-connection
+   polling without replaying the mutation;
 3. waits for an actual Portduino boot marker after commands that really schedule
    a reboot, rather than treating TCP availability as reboot completion;
 4. tears down subscriptions, interfaces, process groups, and files even after
@@ -58,8 +59,11 @@ speed from deciding whether the next message is accepted.
 
 LoRa region changes are live-applied by current firmware and do not schedule a
 Portduino reboot. The setup helper therefore uses the CLI's explicit
-`--wait-to-disconnect` drain window and verifies the value independently; it
-does not force `--dest ^local`, whose legacy unscoped ACK wait can miss an ACK
+`--wait-to-disconnect` drain window and verifies the value independently. If
+the first fresh configuration snapshot still reflects the pre-write state, the
+harness reconnects and polls for a bounded interval; it never sends the region
+write a second time. It does not force `--dest ^local`, whose legacy unscoped ACK wait can miss
+an ACK
 that arrived before the wait began. Commands that really reboot, such as factory
 reset, still wait for Portduino's next stable `Using config file <port>` startup
 marker. A successful TCP reconnect by itself is insufficient during a delayed
@@ -77,9 +81,13 @@ the CLI's production default.
 
 Firmware jobs archive both daemon logs and test-run diagnostics. Each channel
 artifact includes the verbose pytest transcript, JUnit XML, installed Debian
-package version, and a bounded `meshtasticd --version` probe. This keeps a
-failed beta, alpha, or daily run diagnosable without relying on the Actions log
-retention UI.
+package version, a bounded `meshtasticd --version` probe, and a
+`source-context.txt` file containing the exact repository SHA, workflow run ID,
+run attempt, ref, and firmware channel. Every archived daemon directory also
+contains `simradio-context.txt` with its node ID, TCP port, process ID, checked-out
+and pull-request source SHAs, channel, and fixture setup identity. This keeps a failed beta, alpha, or
+daily run diagnosable without relying on the Actions log retention UI and makes
+stale job links immediately distinguishable from the current branch head.
 
 ## CI policy
 

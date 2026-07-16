@@ -15,6 +15,7 @@ env:
   MESHTASTICD_SIM_LOG_DIR: ${{ github.workspace }}/.meshtasticd-logs/simradio/daily
   SIMRADIO_RESULT_DIR: ${{ github.workspace }}/.test-results/simradio/daily
   MESHTASTICD_CHANNEL: "daily"
+  SIMRADIO_SOURCE_SHA: ${{ github.sha }}
 
 concurrency:
   group: daily-simradio-firmware
@@ -69,6 +70,19 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "${SIMRADIO_RESULT_DIR}"
+          {
+            printf 'repository=%s\n' "${GITHUB_REPOSITORY}"
+            printf 'github_sha=%s\n' "${GITHUB_SHA}"
+            printf 'source_sha=%s\n' "${SIMRADIO_SOURCE_SHA}"
+            printf 'checkout_sha=%s\n' "$(git rev-parse HEAD)"
+            printf 'ref=%s\n' "${GITHUB_REF}"
+            printf 'head_ref=%s\n' "${GITHUB_HEAD_REF:-}"
+            printf 'base_ref=%s\n' "${GITHUB_BASE_REF:-}"
+            printf 'workflow=%s\n' "${GITHUB_WORKFLOW}"
+            printf 'run_id=%s\n' "${GITHUB_RUN_ID}"
+            printf 'run_attempt=%s\n' "${GITHUB_RUN_ATTEMPT}"
+            printf 'channel=%s\n' "${MESHTASTICD_CHANNEL}"
+          } | tee "${SIMRADIO_RESULT_DIR}/source-context.txt"
           dpkg-query -W -f='${Package}\t${Version}\n' meshtasticd \
             | tee "${SIMRADIO_RESULT_DIR}/firmware-package.txt"
           timeout 5s meshtasticd --version 2>&1 \

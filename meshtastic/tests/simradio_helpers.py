@@ -25,6 +25,8 @@ REGION_WRITE_DRAIN_SECONDS = 2
 DEFAULT_CLI_TIMEOUT_SECONDS = 60.0
 DEFAULT_DEVICE_REQUEST_TIMEOUT_SECONDS = 20.0
 DEFAULT_CONNECT_WAIT_SECONDS = 30.0
+DEFAULT_STATE_VERIFY_TIMEOUT_SECONDS = 10.0
+STATE_VERIFY_RETRY_DELAY_SECONDS = 0.25
 CONNECT_ATTEMPT_TIMEOUT_SECONDS = 10.0
 CONNECT_RETRY_DELAY_SECONDS = 0.5
 DEFAULT_RECEIVE_TIMEOUT_SECONDS = 15.0
@@ -392,6 +394,60 @@ def verify_state(
         time.sleep(PAUSE_AFTER_CLI_SECONDS)
 
 
+def verify_state_eventually(
+    port: int,
+    verifier: Callable[[TCPInterface], None],
+    *,
+    no_nodes: bool = False,
+    timeout: float = DEFAULT_STATE_VERIFY_TIMEOUT_SECONDS,
+    retry_delay: float = STATE_VERIFY_RETRY_DELAY_SECONDS,
+) -> None:
+    """Poll fresh connections until an asynchronous firmware state converges.
+
+    The mutation is never replayed.  Only verifier ``AssertionError`` results are
+    retried, so programming errors and unexpected exceptions still fail
+    immediately.  Each attempt uses a fresh configuration snapshot and closes
+    its interface before the bounded retry delay.
+    """
+    if timeout <= 0:
+        raise ValueError("timeout must be positive")
+    if retry_delay < 0:
+        raise ValueError("retry_delay must not be negative")
+
+    deadline = time.monotonic() + timeout
+    attempts = 0
+    last_mismatch: AssertionError | None = None
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        attempts += 1
+        iface = connect_iface(
+            port,
+            no_nodes=no_nodes,
+            wait_timeout=min(DEFAULT_CONNECT_WAIT_SECONDS, remaining),
+        )
+        try:
+            verifier(iface)
+            return
+        except AssertionError as exc:
+            last_mismatch = exc
+        finally:
+            with contextlib.suppress(Exception):
+                iface.close()
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(retry_delay, remaining))
+
+    detail = str(last_mismatch) if last_mismatch is not None else "unknown mismatch"
+    raise AssertionError(
+        f"firmware state on localhost:{port} did not converge within "
+        f"{timeout:.1f}s after {attempts} fresh connection(s): {detail}"
+    ) from last_mismatch
+
+
 def cli_then_verify(
     port: int,
     arguments: Sequence[str],
@@ -455,7 +511,7 @@ def set_region(port: int, region: str = "US") -> None:
                 f"expected {region}, got {actual_name}"
             )
 
-    verify_state(port, _assert_region)
+    verify_state_eventually(port, _assert_region)
 
 
 class PacketCollector:

@@ -7,6 +7,7 @@ import subprocess
 from collections.abc import Callable
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -37,6 +38,7 @@ from .simradio_helpers import (
     cli_then_verify,
     connect_iface,
     run_cli,
+    verify_state_eventually,
 )
 
 
@@ -129,7 +131,9 @@ def test_set_region_drains_local_write_and_verifies_persisted_state(
         verifier(iface)
 
     monkeypatch.setattr(simradio_helpers, "run_cli", _run_cli)
-    monkeypatch.setattr(simradio_helpers, "verify_state", _verify_state)
+    monkeypatch.setattr(
+        simradio_helpers, "verify_state_eventually", _verify_state
+    )
 
     simradio_helpers.set_region(44_404, "US")
 
@@ -176,7 +180,9 @@ def test_set_region_rejects_unpersisted_firmware_state(
         iface.localNode.localConfig.lora.region = 0
         verifier(iface)
 
-    monkeypatch.setattr(simradio_helpers, "verify_state", _verify_state)
+    monkeypatch.setattr(
+        simradio_helpers, "verify_state_eventually", _verify_state
+    )
 
     with pytest.raises(AssertionError, match="expected US, got UNSET"):
         simradio_helpers.set_region(44_404, "US")
@@ -451,6 +457,45 @@ def test_simradio_node_rejects_occupied_port(
 
 
 @pytest.mark.unit
+def test_simradio_context_is_archived_with_source_and_fixture_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every daemon log directory should identify the exact source run and port."""
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    log_root = tmp_path / "archive"
+    node = SimNode(2, base_port=44_404, log_root=log_root)
+    node.workdir = workdir
+    node.process = SimpleNamespace(pid=12345)  # type: ignore[assignment]
+    (workdir / "meshtasticd.log").write_text("stdout", encoding="utf-8")
+    (workdir / "meshtasticd.err").write_text("stderr", encoding="utf-8")
+    monkeypatch.setenv("GITHUB_SHA", "mergebeef")
+    monkeypatch.setenv("SIMRADIO_SOURCE_SHA", "deadbeef")
+    monkeypatch.setenv("GITHUB_RUN_ID", "123")
+    monkeypatch.setenv("MESHTASTICD_CHANNEL", "beta")
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "module.py::test_case (setup)")
+
+    node._write_context("/usr/bin/meshtasticd")
+    node._archive_logs()
+
+    destination = log_root / "node-2" / workdir.name
+    context = (destination / simradio_harness.CONTEXT_FILENAME).read_text(
+        encoding="utf-8"
+    )
+    assert "node_id=2" in context
+    assert "port=44406" in context
+    assert "pid=12345" in context
+    assert "github_sha=mergebeef" in context
+    assert "source_sha=deadbeef" in context
+    assert "github_run_id=123" in context
+    assert "meshtasticd_channel=beta" in context
+    assert "pytest_current_test=module.py::test_case (setup)" in context
+    assert (destination / "meshtasticd.log").read_text(encoding="utf-8") == "stdout"
+    assert (destination / "meshtasticd.err").read_text(encoding="utf-8") == "stderr"
+
+
+@pytest.mark.unit
 def test_simradio_node_cleans_resources_when_process_launch_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -515,6 +560,59 @@ def test_connect_iface_retries_the_owned_interface_connection(
 
     assert connect_iface(4404, wait_timeout=1.0) is iface
     assert constructor.call_count == 2
+
+
+@pytest.mark.unit
+def test_verify_state_eventually_retries_only_state_mismatches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Asynchronous state polling should reconnect without replaying mutations."""
+    first = MagicMock(spec=TCPInterface)
+    second = MagicMock(spec=TCPInterface)
+    connect = MagicMock(side_effect=(first, second))
+    monkeypatch.setattr(simradio_helpers, "connect_iface", connect)
+    monkeypatch.setattr(simradio_helpers.time, "sleep", lambda _seconds: None)
+
+    attempts = 0
+
+    def _verifier(iface: TCPInterface) -> None:
+        nonlocal attempts
+        attempts += 1
+        if iface is first:
+            raise AssertionError("not visible yet")
+        assert iface is second
+
+    verify_state_eventually(
+        44_404,
+        _verifier,
+        timeout=1.0,
+        retry_delay=0.0,
+    )
+
+    assert attempts == 2
+    assert connect.call_count == 2
+    first.close.assert_called_once_with()
+    second.close.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_verify_state_eventually_does_not_retry_programming_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unexpected verifier failures must not be hidden by convergence retries."""
+    iface = MagicMock(spec=TCPInterface)
+    connect = MagicMock(return_value=iface)
+    monkeypatch.setattr(simradio_helpers, "connect_iface", connect)
+
+    with pytest.raises(TypeError, match="bad verifier"):
+        verify_state_eventually(
+            44_404,
+            lambda _iface: (_ for _ in ()).throw(TypeError("bad verifier")),
+            timeout=1.0,
+        )
+
+    connect.assert_called_once()
+    iface.close.assert_called_once_with()
 
 
 @pytest.mark.unit
