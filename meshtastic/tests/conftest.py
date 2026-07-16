@@ -104,13 +104,10 @@ def firmware_node() -> Generator[SimNode, None, None]:
         mesh.start()
         node = mesh.get_node(0)
         node.disconnect()
-        previous_boot_count = node.boot_count()
+        # LoRa changes apply live.  set_region() drains the CLI write and then
+        # verifies the persisted value through an independent connection, which
+        # it closes before returning.
         set_region(node.port, "US")
-        node.wait_for_reboot(previous_boot_count)
-        # Confirm the completed reboot through the real interface, then release
-        # ownership before yielding so every CLI subprocess is the port's only client.
-        node.connect()
-        node.disconnect()
         yield node
     finally:
         mesh.stop()
@@ -128,12 +125,9 @@ def firmware_mesh() -> Generator[SimMesh, None, None]:
     )
     try:
         mesh.start()
-        previous_boot_counts = {node.node_id: node.boot_count() for node in mesh.nodes}
         for node in mesh.nodes:
             node.disconnect()
             set_region(node.port, "US")
-        for node in mesh.nodes:
-            node.wait_for_reboot(previous_boot_counts[node.node_id])
         mesh.reconnect_all()
         if not mesh.wait_for_convergence(timeout=30.0):
             raise AssertionError(

@@ -38,9 +38,11 @@ interface-filtered subscriptions.
 Every fixture:
 
 1. starts owned process groups and temporary VFS directories;
-2. sets the LoRa region to `US` for firmware 2.8 preset validation;
-3. retries a real `TCPInterface` after reboot-capable writes instead of opening
-   disposable readiness probes;
+2. sets the LoRa region to `US` for firmware 2.8 preset validation, keeps
+   the CLI connection open long enough for the asynchronous local write to
+   drain, and verifies the persisted value through a fresh connection;
+3. waits for an actual Portduino boot marker after commands that really schedule
+   a reboot, rather than treating TCP availability as reboot completion;
 4. tears down subscriptions, interfaces, process groups, and files even after
    partial startup failure.
 
@@ -54,12 +56,16 @@ enforces a two-second `TEXT_MESSAGE_APP` PhoneAPI limit, so the helper applies a
 small per-sender scheduling margin. This prevents test order and propagation
 speed from deciding whether the next message is accepted.
 
-Reboot-capable setup and reset tests wait for Portduino's next stable
-`Using config file <port>` startup marker. A successful TCP reconnect by itself
-is insufficient because the simulator can still accept clients during the
-delayed pre-reboot window. The bridge also preserves optional decoded packet
-metadata such as `bitfield`; firmware 2.8 requires that presence marker to
-accept modern zero-hop packets.
+LoRa region changes are live-applied by current firmware and do not schedule a
+Portduino reboot. The setup helper therefore uses the CLI's explicit
+`--wait-to-disconnect` drain window and verifies the value independently; it
+does not force `--dest ^local`, whose legacy unscoped ACK wait can miss an ACK
+that arrived before the wait began. Commands that really reboot, such as factory
+reset, still wait for Portduino's next stable `Using config file <port>` startup
+marker. A successful TCP reconnect by itself is insufficient during a delayed
+pre-reboot window. The bridge also preserves optional decoded packet metadata
+such as `bitfield`; firmware 2.8 requires that presence marker to accept modern
+zero-hop packets.
 
 CLI subprocess timeouts and firmware request timeouts are separate. `run_cli()`
 therefore supplies a bounded `--timeout` value by default so optional admin reads

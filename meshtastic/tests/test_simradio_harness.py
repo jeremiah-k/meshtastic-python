@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
+from collections.abc import Callable
 import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -102,25 +103,97 @@ def test_simradio_node_waits_for_next_boot_marker(
 
 
 @pytest.mark.unit
-def test_set_region_targets_local_node_for_ack_wait(
+def test_set_region_drains_local_write_and_verifies_persisted_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Fixture region changes must not close before the local admin ACK."""
-    calls: list[tuple[int, tuple[str, ...]]] = []
+    """Fixture setup must verify the live write without entering a legacy ACK race."""
+    cli_calls: list[tuple[int, tuple[str, ...]]] = []
+    verification_ports: list[int] = []
 
     def _run_cli(
         port: int, *arguments: str, **_kwargs: object
     ) -> simradio_helpers.CLIResult:
-        calls.append((port, arguments))
+        cli_calls.append((port, arguments))
         return simradio_helpers.CLIResult(returncode=0, output="", attempts=1)
 
+    def _verify_state(
+        port: int,
+        verifier: Callable[[TCPInterface], None],
+        *,
+        no_nodes: bool = False,
+    ) -> None:
+        assert no_nodes is False
+        verification_ports.append(port)
+        iface = MagicMock()
+        iface.localNode.localConfig.lora.region = 1
+        verifier(iface)
+
     monkeypatch.setattr(simradio_helpers, "run_cli", _run_cli)
+    monkeypatch.setattr(simradio_helpers, "verify_state", _verify_state)
 
     simradio_helpers.set_region(44_404, "US")
 
-    assert calls == [
-        (44_404, ("--set", "lora.region", "US", "--dest", "^local"))
+    assert cli_calls == [
+        (
+            44_404,
+            (
+                "--set",
+                "lora.region",
+                "US",
+                "--wait-to-disconnect",
+                "2",
+            ),
+        )
     ]
+    assert verification_ports == [44_404]
+
+
+@pytest.mark.unit
+def test_set_region_rejects_unpersisted_firmware_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A successful CLI exit must not hide a region write that failed to persist."""
+    monkeypatch.setattr(
+        simradio_helpers,
+        "run_cli",
+        MagicMock(
+            return_value=simradio_helpers.CLIResult(
+                returncode=0,
+                output="",
+                attempts=1,
+            )
+        ),
+    )
+
+    def _verify_state(
+        _port: int,
+        verifier: Callable[[TCPInterface], None],
+        *,
+        no_nodes: bool = False,
+    ) -> None:
+        assert no_nodes is False
+        iface = MagicMock()
+        iface.localNode.localConfig.lora.region = 0
+        verifier(iface)
+
+    monkeypatch.setattr(simradio_helpers, "verify_state", _verify_state)
+
+    with pytest.raises(AssertionError, match="expected US, got UNSET"):
+        simradio_helpers.set_region(44_404, "US")
+
+
+@pytest.mark.unit
+def test_set_region_rejects_unknown_region_before_running_cli(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invalid fixture input should fail before spawning a CLI process."""
+    run_cli_mock = MagicMock()
+    monkeypatch.setattr(simradio_helpers, "run_cli", run_cli_mock)
+
+    with pytest.raises(ValueError, match="Unknown LoRa region"):
+        simradio_helpers.set_region(44_404, "NOT_A_REGION")
+
+    run_cli_mock.assert_not_called()
 
 
 @pytest.mark.unit

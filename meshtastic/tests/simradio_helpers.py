@@ -14,13 +14,14 @@ from typing import Any
 
 from pubsub import pub
 
-from meshtastic import LOCAL_ADDR
+from meshtastic.protobuf import config_pb2
 from meshtastic.tcp_interface import TCPInterface
 from meshtastic.util import camel_to_snake
 
 logger = logging.getLogger(__name__)
 
 PAUSE_AFTER_CLI_SECONDS = 0.2
+REGION_WRITE_DRAIN_SECONDS = 2
 DEFAULT_CLI_TIMEOUT_SECONDS = 60.0
 DEFAULT_DEVICE_REQUEST_TIMEOUT_SECONDS = 20.0
 DEFAULT_CONNECT_WAIT_SECONDS = 30.0
@@ -418,19 +419,43 @@ def cli_then_verify(
 
 
 def set_region(port: int, region: str = "US") -> None:
-    """Set the simulator LoRa region and wait for the local admin ACK."""
+    """Apply and independently verify a live simulator LoRa-region write.
+
+    LoRa configuration is applied live by current firmware and does not reboot
+    Portduino.  Keep the CLI transport open briefly so its asynchronous local
+    admin packet can drain, then verify the persisted value through a separate
+    connection.  Do not force ``--dest ^local`` here: that selects the CLI's
+    remote-style legacy ACK wait, which can miss an ACK that arrives before the
+    unscoped wait begins.
+    """
+    try:
+        expected_region = config_pb2.Config.LoRaConfig.RegionCode.Value(region)
+    except ValueError as exc:
+        raise ValueError(f"Unknown LoRa region {region!r}") from exc
+
     result = run_cli(
         port,
         "--set",
         "lora.region",
         region,
-        "--dest",
-        LOCAL_ADDR,
+        "--wait-to-disconnect",
+        str(REGION_WRITE_DRAIN_SECONDS),
     )
     if result.returncode != 0:
         raise RuntimeError(
             f"Failed to set lora.region={region} on port {port}:\n{result.output}"
         )
+
+    def _assert_region(iface: TCPInterface) -> None:
+        actual_region = iface.localNode.localConfig.lora.region
+        if actual_region != expected_region:
+            actual_name = config_pb2.Config.LoRaConfig.RegionCode.Name(actual_region)
+            raise AssertionError(
+                f"lora.region did not persist on port {port}: "
+                f"expected {region}, got {actual_name}"
+            )
+
+    verify_state(port, _assert_region)
 
 
 class PacketCollector:
