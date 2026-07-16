@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import base64
 import re
-import time
 from functools import partial
 from pathlib import Path
 
@@ -22,7 +21,6 @@ from meshtastic.tcp_interface import TCPInterface
 
 from .simradio_harness import SimNode
 from .simradio_helpers import (
-    PAUSE_AFTER_CLI_SECONDS,
     cli_then_verify,
     connect_iface,
     run_cli,
@@ -472,22 +470,16 @@ def test_simradio_cli_schema_get_set_paths(firmware_node: SimNode) -> None:
         assert field.rsplit(".", maxsplit=1)[-1] in result.output.casefold()
 
 
-def test_simradio_cli_factory_reset_isolated(firmware_node: SimNode) -> None:
-    """--factory-reset should clear a previously set value on an isolated node."""
-    # Change a known setting first.
-    set_result = run_cli(
+def test_simradio_cli_factory_reset_config_isolated(firmware_node: SimNode) -> None:
+    """--factory-reset should restore configuration, not owner identity."""
+    def _assert_fixed_position(iface: TCPInterface) -> None:
+        assert iface.localNode.localConfig.position.fixed_position is True
+
+    cli_then_verify(
         firmware_node.port,
-        "--set-owner",
-        "BeforeReset",
-        timeout=30.0,
+        ("--set", "position.fixed_position", "true"),
+        _assert_fixed_position,
     )
-    assert set_result.returncode == 0, set_result.output
-    time.sleep(PAUSE_AFTER_CLI_SECONDS)
-
-    def _assert_before_reset(iface: TCPInterface) -> None:
-        assert iface.getLongName() == "BeforeReset"
-
-    verify_state(firmware_node.port, _assert_before_reset)
 
     # Run the real factory reset with zero automatic retries.
     reset_result = run_cli(
@@ -504,12 +496,10 @@ def test_simradio_cli_factory_reset_isolated(firmware_node: SimNode) -> None:
     iface = connect_iface(firmware_node.port)
     iface.close()
 
-    def _assert_default_owner(iface: TCPInterface) -> None:
-        name = iface.getLongName()
-        assert name is not None
-        assert name != "BeforeReset", f"owner was not reset, got {name!r}"
+    def _assert_default_config(iface: TCPInterface) -> None:
+        assert iface.localNode.localConfig.position.fixed_position is False
 
-    verify_state(firmware_node.port, _assert_default_owner)
+    verify_state(firmware_node.port, _assert_default_config)
 
 
 def test_simradio_fixture_supports_explicit_connection(firmware_node: SimNode) -> None:
