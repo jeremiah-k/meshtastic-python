@@ -14,6 +14,7 @@ from pubsub import pub
 from meshtastic.protobuf import mesh_pb2, portnums_pb2
 from meshtastic.tcp_interface import TCPInterface
 
+from . import conftest as simradio_conftest
 from . import simradio_harness, simradio_helpers
 from .simradio_harness import (
     CHAIN_TOPOLOGY,
@@ -52,6 +53,23 @@ def test_simradio_topology_is_defensively_copied_and_validated() -> None:
         _copy_channel_topology({0: {2}}, 2)
     with pytest.raises(ValueError, match="transmitter index out of range"):
         _copy_channel_topology({2: {0}}, 2)
+
+
+@pytest.mark.unit
+def test_single_node_simulators_receive_fresh_sequential_ports(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Function-scoped fixtures must not immediately rebind one TCP port."""
+    monkeypatch.setenv("MESHTASTICD_SIM_BASE_PORT", "4404")
+    monkeypatch.setattr(
+        simradio_conftest,
+        "_SINGLE_NODE_PORT_SEQUENCE",
+        iter((0, 1, 2)),
+    )
+
+    assert simradio_conftest._next_simradio_single_node_port() == 4504
+    assert simradio_conftest._next_simradio_single_node_port() == 4505
+    assert simradio_conftest._next_simradio_single_node_port() == 4506
 
 
 @pytest.mark.unit

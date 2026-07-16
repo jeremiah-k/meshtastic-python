@@ -5,6 +5,7 @@
 
 import argparse
 import copy
+import itertools
 import importlib
 import math
 import os
@@ -42,6 +43,7 @@ if TYPE_CHECKING:
 
 
 SINGLE_NODE_PORT_OFFSET = 100
+_SINGLE_NODE_PORT_SEQUENCE = itertools.count()
 
 
 def _skip_simradio_if_unavailable() -> None:
@@ -73,13 +75,29 @@ def _simradio_log_root() -> Path | None:
     return Path(raw_value).expanduser() if raw_value else None
 
 
+def _next_simradio_single_node_port() -> int:
+    """Return the next deterministic function-scoped simulator port."""
+    return (
+        _simradio_base_port()
+        + SINGLE_NODE_PORT_OFFSET
+        + next(_SINGLE_NODE_PORT_SEQUENCE)
+    )
+
+
 @pytest.fixture(scope="function")
 def firmware_node() -> Generator[SimNode, None, None]:
     """Yield one freshly erased, US-region native meshtasticd simulator."""
     _skip_simradio_if_unavailable()
+    # Function-scoped simulators use a fresh port instead of immediately
+    # rebinding the same listener after every test.  Recent firmware opens
+    # several short-lived TCP clients during reboot/config flows, and the
+    # kernel can retain the previous port in a non-bindable state briefly
+    # after teardown.  A deterministic sequence preserves debuggable ports
+    # while eliminating that cross-test lifecycle race.
+    single_node_port = _next_simradio_single_node_port()
     mesh = SimMesh(
         node_count=1,
-        base_port=_simradio_base_port() + SINGLE_NODE_PORT_OFFSET,
+        base_port=single_node_port,
         log_root=_simradio_log_root(),
     )
     try:

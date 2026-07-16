@@ -19,7 +19,9 @@ The following environment variables are supported:
 
 - `MESHTASTICD_BIN`: explicit executable path.
 - `MESHTASTICD_SIM_BASE_PORT`: first TCP port for the three-node mesh; defaults
-  to `4404`. Single-node fixtures use this value plus 100.
+  to `4404`. Function-scoped single-node fixtures start at this value plus 100
+  and consume a fresh sequential port for each test, avoiding immediate listener
+  rebinding after reboot-heavy cases.
 - `MESHTASTICD_SIM_LOG_DIR`: persistent artifact directory for per-process
   stdout and stderr. Without it, temporary logs are removed during teardown.
 
@@ -58,6 +60,14 @@ therefore supplies a bounded `--timeout` value by default so optional admin read
 that a firmware build does not implement cannot outlive the subprocess budget.
 Tests may override that request timeout explicitly, or pass `None` when they need
 the CLI's production default.
+
+## Failure artifacts
+
+Firmware jobs archive both daemon logs and test-run diagnostics. Each channel
+artifact includes the verbose pytest transcript, JUnit XML, installed Debian
+package version, and a bounded `meshtasticd --version` probe. This keeps a
+failed beta, alpha, or daily run diagnosable without relying on the Actions log
+retention UI.
 
 ## CI policy
 

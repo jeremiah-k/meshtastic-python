@@ -422,7 +422,10 @@ def test_simradio_cli_yaml_export_restore_round_trip(
     assert isinstance(exported_config, dict)
     exported_position = exported_config.get("position")
     assert isinstance(exported_position, dict)
-    assert exported_position.get("fixed_position") is True
+    # ``MessageToDict`` emits protobuf field names in lowerCamelCase.  The
+    # top-level config section follows mt_config naming mode, but nested
+    # protobuf fields retain their JSON spelling in exported YAML.
+    assert exported_position.get("fixedPosition") is True
 
     cli_then_verify(
         firmware_node.port,
