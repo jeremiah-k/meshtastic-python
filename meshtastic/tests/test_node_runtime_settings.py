@@ -741,6 +741,12 @@ class TestNodeAdminCommandRuntime:
         assert result is not None
         assert "factory reset (full device reset)" in caplog.text
         mock_local_node_for_admin._get_factory_reset_request_value.assert_called_once()
+        mock_local_node_for_admin._send_admin.assert_called_once()
+        assert (
+            mock_local_node_for_admin._send_admin.call_args.kwargs["onResponse"]
+            is mock_local_node_for_admin.onAckNak
+        )
+        mock_local_node_for_admin.iface.waitForAckNak.assert_not_called()
 
     @pytest.mark.unit
     def test_factory_reset_config_sends_factory_reset_config(
@@ -755,6 +761,12 @@ class TestNodeAdminCommandRuntime:
         assert result is not None
         assert "factory reset (config reset)" in caplog.text
         mock_local_node_for_admin._get_factory_reset_request_value.assert_called_once()
+        mock_local_node_for_admin._send_admin.assert_called_once()
+        assert (
+            mock_local_node_for_admin._send_admin.call_args.kwargs["onResponse"]
+            is mock_local_node_for_admin.onAckNak
+        )
+        mock_local_node_for_admin.iface.waitForAckNak.assert_not_called()
 
     @pytest.mark.unit
     def test_begin_settings_transaction_sends_command(
