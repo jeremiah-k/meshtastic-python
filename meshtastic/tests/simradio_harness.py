@@ -579,4 +579,9 @@ def _build_mesh_packet(
             mesh_packet.decoded.request_id = int(decoded["requestId"])
         if "wantResponse" in decoded:
             mesh_packet.decoded.want_response = bool(decoded["wantResponse"])
+        if "bitfield" in decoded:
+            # Data.bitfield is proto3-optional.  Assign even zero so presence is
+            # retained: firmware 2.8 uses it to distinguish a valid modern
+            # hop_start=0 packet from legacy packets that omitted hop_start.
+            mesh_packet.decoded.bitfield = int(decoded["bitfield"])
     return mesh_packet

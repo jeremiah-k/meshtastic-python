@@ -136,7 +136,11 @@ def test_build_simradio_mesh_packet_preserves_routing_metadata() -> None:
             "relayNode": 6,
             "nextHop": 7,
             "channel": 2,
-            "decoded": {"requestId": 44, "wantResponse": True},
+            "decoded": {
+                "requestId": 44,
+                "wantResponse": True,
+                "bitfield": 0,
+            },
         },
         b"payload",
     )
@@ -153,6 +157,8 @@ def test_build_simradio_mesh_packet_preserves_routing_metadata() -> None:
     assert packet.channel == 2
     assert packet.decoded.portnum == portnums_pb2.PortNum.SIMULATOR_APP
     assert packet.decoded.payload == b"payload"
+    assert packet.decoded.HasField("bitfield")
+    assert packet.decoded.bitfield == 0
     assert packet.decoded.request_id == 44
     assert packet.decoded.want_response is True
 
