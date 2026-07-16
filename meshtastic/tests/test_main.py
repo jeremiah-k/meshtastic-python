@@ -6161,6 +6161,50 @@ def test_post_seturl_stability_check_triggers_reconnect_when_disconnected(
 
 
 @pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_factory_reset_local_waits_for_ack_before_close(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Local factory reset must be delivered before the CLI closes its transport."""
+    sys.argv = ["", "--factory-reset"]
+    mt_config.args = sys.argv  # type: ignore[assignment]
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    reset_node = iface.getNode.return_value
+    reset_node.iface = iface
+    reset_node.factoryReset.return_value = object()
+
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        main()
+
+    out, err = capsys.readouterr()
+    reset_node.factoryReset.assert_called_once_with(full=False)
+    iface.waitForAckNak.assert_called_once_with()
+    assert "Waiting for factory reset command acknowledgment" in out
+    assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_factory_reset_skips_ack_wait_when_send_is_disabled() -> None:
+    """A noProto reset returning None must not enter an impossible ACK wait."""
+    sys.argv = ["", "--factory-reset"]
+    mt_config.args = sys.argv  # type: ignore[assignment]
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    reset_node = iface.getNode.return_value
+    reset_node.iface = iface
+    reset_node.factoryReset.return_value = None
+
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        main()
+
+    iface.waitForAckNak.assert_not_called()
+
+
+@pytest.mark.unit
 def test_post_factory_reset_ready_probe_closes_and_probes_reconnect() -> None:
     iface = cast(Any, object.__new__(SerialInterface))
     iface.connect = MagicMock()

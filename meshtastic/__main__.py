@@ -2121,9 +2121,20 @@ def onConnected(interface: MeshInterface) -> None:
             skip_ack_wait = True
 
             full = bool(args.factory_reset_device)
-            interface.getNode(args.dest, False, **getNode_kwargs).factoryReset(
-                full=full
-            )
+            reset_node = interface.getNode(args.dest, False, **getNode_kwargs)
+            reset_request = reset_node.factoryReset(full=full)
+            if (
+                reset_request is not None
+                and _is_local_destination(interface, args.dest)
+            ):
+                # Local admin commands are queued asynchronously.  Firmware
+                # schedules factory reset several seconds after handling the
+                # packet, so wait for its ACK before closing the transport;
+                # otherwise the CLI can report success while dropping the
+                # reset request during disconnect.  Remote Node.factoryReset()
+                # already owns its ACK wait.
+                _cli_print("Waiting for factory reset command acknowledgment")
+                reset_node.iface.waitForAckNak()
             # Guard the isinstance check: SerialInterface may be a mock or not resolve in tests.
             _serial_interface_cls = getattr(
                 meshtastic.serial_interface, "SerialInterface", None
