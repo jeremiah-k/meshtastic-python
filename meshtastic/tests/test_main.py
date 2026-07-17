@@ -344,6 +344,8 @@ def test_is_local_destination_accepts_hex_node_id_forms() -> None:
     iface = MagicMock()
     iface.myInfo = SimpleNamespace(my_node_num=int("25d6e474", 16))
 
+    assert main_module._is_local_destination(iface, main_module.BROADCAST_ADDR) is True
+    assert main_module._is_local_destination(iface, MAIN_LOCAL_ADDR) is True
     assert main_module._is_local_destination(iface, "!25d6e474") is True
     assert main_module._is_local_destination(iface, "0x25D6E474") is True
     assert main_module._is_local_destination(iface, str(int("25d6e474", 16))) is True

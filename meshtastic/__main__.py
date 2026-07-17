@@ -2742,7 +2742,7 @@ def onConnected(interface: MeshInterface) -> None:
 
         if args.show_region_presets:
             closeNow = True
-            if args.dest != BROADCAST_ADDR:
+            if not _is_local_destination(interface, args.dest):
                 print("Region/preset capabilities are available only from the local node.")
             elif interface.regionPresetMap is None:
                 print(
