@@ -1426,10 +1426,12 @@ class Config(_message.Message):
             """
             Ukraine 433mhz
             """
-            UA_868: Config.LoRaConfig._RegionCode.ValueType  # 15
-            """
-            Ukraine 868mhz
-            """
+            @_builtins.property
+            @_deprecated("""This enum value has been marked as deprecated using proto enum value options.""")
+            def UA_868(self) -> Config.LoRaConfig._RegionCode.ValueType:   # 15
+                """
+                Ukraine 868mhz
+                """
             MY_433: Config.LoRaConfig._RegionCode.ValueType  # 16
             """
             Malaysia 433mhz
