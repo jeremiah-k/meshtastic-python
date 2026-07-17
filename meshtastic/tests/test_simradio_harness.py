@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import logging
 import signal
 import subprocess
@@ -605,7 +606,7 @@ def test_simradio_node_rejects_occupied_port(
     """Harness startup must not attach to an unrelated existing listener."""
     probe = MagicMock()
     probe.__enter__.return_value = probe
-    probe.bind.side_effect = OSError("address already in use")
+    probe.connect_ex.return_value = 0
     monkeypatch.setattr(
         simradio_harness.socket,
         "socket",
@@ -613,6 +614,49 @@ def test_simradio_node_rejects_occupied_port(
     )
 
     with pytest.raises(RuntimeError, match="already in use"):
+        _ensure_port_available(44_404)
+
+    probe.settimeout.assert_called_once_with(
+        simradio_harness.PORT_LISTENER_PROBE_TIMEOUT_SECONDS
+    )
+    probe.connect_ex.assert_called_once_with(("127.0.0.1", 44_404))
+    probe.bind.assert_not_called()
+
+
+@pytest.mark.unit
+def test_simradio_port_preflight_allows_non_listening_kernel_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A refused connection must not be mistaken for a live port owner."""
+    probe = MagicMock()
+    probe.__enter__.return_value = probe
+    probe.connect_ex.return_value = errno.ECONNREFUSED
+    monkeypatch.setattr(
+        simradio_harness.socket,
+        "socket",
+        lambda *_args, **_kwargs: probe,
+    )
+
+    _ensure_port_available(44_404)
+
+    probe.connect_ex.assert_called_once_with(("127.0.0.1", 44_404))
+    probe.bind.assert_not_called()
+
+@pytest.mark.unit
+def test_simradio_port_preflight_rejects_ambiguous_probe_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Timeouts and unknown socket states must not be treated as availability."""
+    probe = MagicMock()
+    probe.__enter__.return_value = probe
+    probe.connect_ex.return_value = errno.ETIMEDOUT
+    monkeypatch.setattr(
+        simradio_harness.socket,
+        "socket",
+        lambda *_args, **_kwargs: probe,
+    )
+
+    with pytest.raises(RuntimeError, match="cannot confirm"):
         _ensure_port_available(44_404)
 
 

@@ -75,7 +75,10 @@ pre-reboot window. Arbitrary daemon exits remain failures. The only process-exit
 recovery is the observed firmware 2.7 Portduino factory-reset crash: it must be
 `SIGSEGV`, come from a firmware 2.7 boot banner, occur after the current test's
 reset-complete and reboot-scheduled markers, and successfully boot again from
-the same VFS. The recovery is emitted
+the same VFS. Relaunch preflight checks for an active TCP listener rather than
+requiring a raw bind to succeed, because the exited daemon can leave accepted
+connections in kernel teardown state after the crash even though no process owns
+the listening port. The recovery is emitted
 as a pytest warning and archived in `simradio-reboot-recovery.txt`; the reset
 configuration is then verified normally. The bridge also preserves optional decoded packet metadata
 such as `bitfield`; firmware 2.8 requires that presence marker to accept modern

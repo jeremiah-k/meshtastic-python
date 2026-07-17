@@ -10,6 +10,7 @@ Docker jobs retain a pinned regression baseline.
 from __future__ import annotations
 
 import contextlib
+import errno
 import logging
 import os
 import platform
@@ -25,7 +26,7 @@ from dataclasses import dataclass
 from collections.abc import Collection, Mapping
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, Literal
 
 from pubsub import pub
 
@@ -47,6 +48,7 @@ PROCESS_EXIT_TIMEOUT_SECONDS = 5.0
 PORT_RELEASE_SETTLE_SECONDS = 0.25
 TEXT_MESSAGE_MIN_INTERVAL_SECONDS = 2.25
 REBOOT_POLL_INTERVAL_SECONDS = 0.1
+PORT_LISTENER_PROBE_TIMEOUT_SECONDS = 0.1
 MAX_LOG_TAIL_BYTES = 16_384
 CONTEXT_FILENAME = "simradio-context.txt"
 REBOOT_RECOVERY_FILENAME = "simradio-reboot-recovery.txt"
@@ -84,12 +86,26 @@ def is_compatible_host() -> bool:
 
 
 def _ensure_port_available(port: int) -> None:
-    """Fail before launch when another process already owns ``port``."""
+    """Fail when another process is actively listening on ``port``.
+
+    A bind probe is too strict for restart validation because an exited TCP
+    server can leave accepted connections in kernel teardown states even though
+    no process owns the listening socket.  The harness only needs to prevent
+    attaching to an unrelated live service, so probe for a listener instead and
+    let ``meshtasticd`` perform the authoritative bind.
+    """
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-            probe.bind(("127.0.0.1", port))
+            probe.settimeout(PORT_LISTENER_PROBE_TIMEOUT_SECONDS)
+            result = probe.connect_ex(("127.0.0.1", port))
     except OSError as exc:
-        raise RuntimeError(f"localhost:{port} is already in use") from exc
+        raise RuntimeError(f"cannot inspect localhost:{port}: {exc}") from exc
+    if result == 0:
+        raise RuntimeError(f"localhost:{port} is already in use")
+    if result != errno.ECONNREFUSED:
+        raise RuntimeError(
+            f"cannot confirm localhost:{port} is available: connect_ex returned {result}"
+        )
 
 
 def _copy_channel_topology(
@@ -209,7 +225,7 @@ class SimNode:
         if self.process is not None:
             raise RuntimeError(f"simradio node {self.node_id} already owns a process")
         _ensure_port_available(self.port)
-        mode = "ab" if append_logs else "wb"
+        mode: Literal["ab", "wb"] = "ab" if append_logs else "wb"
         stdout_file = (workdir / "meshtasticd.log").open(mode, buffering=0)
         stderr_file = (workdir / "meshtasticd.err").open(mode, buffering=0)
         try:
