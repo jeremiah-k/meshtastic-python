@@ -2744,9 +2744,9 @@ def onConnected(interface: MeshInterface) -> None:
             closeNow = True
             if not _is_local_destination(interface, args.dest):
                 print("Region/preset capabilities are available only from the local node.")
-            elif interface.regionPresetMap is None:
+            elif not interface.regionPresets:
                 print(
-                    "This firmware did not provide region/preset compatibility metadata; "
+                    "This firmware did not provide usable region/preset compatibility metadata; "
                     "preset choices remain unconstrained."
                 )
             else:

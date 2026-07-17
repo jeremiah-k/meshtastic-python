@@ -402,8 +402,12 @@ class MeshInterface:  # pylint: disable=R0902
 
     def getRegionPresetInfo(self, region: int) -> RegionPresetInfo | None:
         """Return firmware-declared compatibility data for ``region``, if present."""
+        try:
+            region_id = int(region)
+        except (TypeError, ValueError):
+            return None
         with self._node_db_lock:
-            return self.regionPresets.get(int(region))
+            return self.regionPresets.get(region_id)
 
     def get_region_preset_info(self, region: int) -> RegionPresetInfo | None:
         """Snake-case alias for :meth:`getRegionPresetInfo`."""

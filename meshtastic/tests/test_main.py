@@ -21,6 +21,7 @@ import yaml
 
 import meshtastic.__main__ as main_module
 from meshtastic import mt_config
+from meshtastic.region_presets import RegionPresetInfo
 from meshtastic.__main__ import (
     _create_power_meter,
     _normalize_pref_name,
@@ -6782,3 +6783,129 @@ def test_main_ota_update_file_not_found(
     # Verify no transport was constructed before the file check fired
     tcp_cls.assert_not_called()
     serial_cls.assert_not_called()
+
+
+def _run_region_preset_cli(
+    monkeypatch: pytest.MonkeyPatch,
+    *extra_args: str,
+    region_preset_map: object | None,
+    region_presets: dict[int, RegionPresetInfo] | None = None,
+) -> MagicMock:
+    cli_args = ["meshtastic", "--show-region-presets"]
+    if "--dest" not in extra_args:
+        cli_args.extend(("--dest", MAIN_LOCAL_ADDR))
+    cli_args.extend(extra_args)
+    monkeypatch.setattr(sys, "argv", cli_args)
+    initParser()
+    interface = MagicMock()
+    interface.devPath = ""
+    interface.myInfo = SimpleNamespace(my_node_num=int("25d6e474", 16))
+    interface.regionPresetMap = region_preset_map
+    interface.regionPresets = region_presets or {}
+    main_module.onConnected(interface)
+    return interface
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_show_region_presets_reports_absent_metadata_and_closes(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    interface = _run_region_preset_cli(
+        monkeypatch,
+        region_preset_map=None,
+    )
+
+    output = capsys.readouterr().out
+    assert "did not provide usable region/preset compatibility metadata" in output
+    interface.close.assert_called_once_with()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_show_region_presets_reports_empty_or_malformed_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    interface = _run_region_preset_cli(
+        monkeypatch,
+        region_preset_map=object(),
+        region_presets={},
+    )
+
+    output = capsys.readouterr().out
+    assert "did not provide usable region/preset compatibility metadata" in output
+    assert "preset choices remain unconstrained" in output
+    interface.close.assert_called_once_with()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_show_region_presets_rejects_remote_destination(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    interface = _run_region_preset_cli(
+        monkeypatch,
+        "--dest",
+        "!deadbeef",
+        region_preset_map=object(),
+    )
+
+    output = capsys.readouterr().out
+    assert "available only from the local node" in output
+    interface.close.assert_called_once_with()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_show_region_presets_formats_known_unknown_and_licensed_values(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    known = RegionPresetInfo(
+        presets=(config_pb2.Config.LoRaConfig.LONG_FAST, 999),
+        default_preset=config_pb2.Config.LoRaConfig.LONG_FAST,
+        licensed_only=True,
+    )
+    unknown = RegionPresetInfo(
+        presets=(998,),
+        default_preset=997,
+        licensed_only=False,
+    )
+
+    interface = _run_region_preset_cli(
+        monkeypatch,
+        "--dest",
+        MAIN_LOCAL_ADDR,
+        region_preset_map=object(),
+        region_presets={config_pb2.Config.LoRaConfig.US: known, 999: unknown},
+    )
+
+    output = capsys.readouterr().out
+    assert "US: default=LONG_FAST licensed-only; presets=LONG_FAST,PRESET_999" in output
+    assert "REGION_999: default=PRESET_997; presets=PRESET_998" in output
+    interface.close.assert_called_once_with()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_region_preset_cli_without_flag_does_not_read_capability_state(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["meshtastic", "--dest", MAIN_LOCAL_ADDR],
+    )
+    initParser()
+    interface = MagicMock()
+    interface.devPath = ""
+    interface.myInfo = SimpleNamespace(my_node_num=int("25d6e474", 16))
+
+    main_module.onConnected(interface)
+
+    assert "region/preset" not in capsys.readouterr().out
+    interface.close.assert_not_called()
