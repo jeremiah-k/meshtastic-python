@@ -498,6 +498,30 @@ class TestHandleFromRadioRegionPresets:
         assert result[0].topic == "meshtastic.region_presets"
 
 
+class TestHandleFromRadioLockdownStatus:
+    """Tests for structured per-connection lockdown status dispatch."""
+
+    @pytest.mark.unit
+    def test_handle_lockdown_status_stores_copy_and_publishes(
+        self, receive_pipeline: ReceivePipeline, mock_interface: MagicMock
+    ) -> None:
+        from_radio = mesh_pb2.FromRadio()
+        from_radio.lockdown_status.state = mesh_pb2.LockdownStatus.LOCKED
+        from_radio.lockdown_status.backoff_seconds = 12
+        context = _FromRadioContext(
+            message=from_radio,
+            message_dict=_LazyMessageDict(from_radio),
+            config_id=None,
+        )
+
+        result = receive_pipeline._handle_from_radio_lockdown_status(context)
+
+        assert mock_interface.lockdownStatus is not from_radio.lockdown_status
+        assert mock_interface.lockdownStatus.state == mesh_pb2.LockdownStatus.LOCKED
+        assert result[0].topic == "meshtastic.lockdown_status"
+        assert result[0].payload["status"].backoff_seconds == 12
+
+
 
 class TestHandleFromRadioNodeInfo:
     """Tests for _handle_from_radio_node_info method (lines 344-365)."""

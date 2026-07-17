@@ -195,6 +195,30 @@ def test_main_init_parser_accepts_region_preset_capability_flag(
 
 
 @pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_init_parser_accepts_usb_lockdown_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "meshtastic",
+            "--lockdown-unlock",
+            "--lockdown-passphrase-file",
+            "/tmp/secret",
+            "--lockdown-wait",
+            "12",
+        ],
+    )
+    initParser()
+    assert mt_config.args is not None
+    assert mt_config.args.lockdown_unlock is True
+    assert mt_config.args.lockdown_passphrase_file == "/tmp/secret"
+    assert mt_config.args.lockdown_wait == 12.0
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     ("raw_value", "expected"),
     (

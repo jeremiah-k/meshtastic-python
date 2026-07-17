@@ -41,6 +41,7 @@ _FROM_RADIO_BRANCHES: tuple[
 ] = (
     (lambda fr, _ctx: fr.HasField("my_info"), "my_info"),
     (lambda fr, _ctx: fr.HasField("metadata"), "metadata"),
+    (lambda fr, _ctx: fr.HasField("lockdown_status"), "lockdown_status"),
     (lambda fr, _ctx: fr.HasField("region_presets"), "region_presets"),
     (lambda fr, _ctx: fr.HasField("node_info"), "node_info"),
     (
@@ -283,6 +284,7 @@ class ReceivePipeline:
             self._from_radio_dispatch_map_cache = {
                 "my_info": self._handle_from_radio_my_info,
                 "metadata": self._handle_from_radio_metadata,
+                "lockdown_status": self._handle_from_radio_lockdown_status,
                 "region_presets": self._handle_from_radio_region_presets,
                 "node_info": self._handle_from_radio_node_info,
                 "config_complete_id": self._handle_from_radio_config_complete_id,
@@ -323,7 +325,7 @@ class ReceivePipeline:
         logger.debug("Received device metadata: %s", stripnl(from_radio.metadata))
         return []
 
-    def _handle_from_radio_region_presets(
+def _handle_from_radio_region_presets(
         self, context: _FromRadioContext
     ) -> list[_PublicationIntent]:
         """Store and publish firmware-declared LoRa compatibility metadata."""
@@ -342,6 +344,20 @@ class ReceivePipeline:
                 "meshtastic.region_presets",
                 region_presets=decoded,
                 raw=raw_map,
+            )
+        ]
+
+    def _handle_from_radio_lockdown_status(
+        self, context: _FromRadioContext
+    ) -> list[_PublicationIntent]:
+        """Store and publish one per-connection firmware lockdown status."""
+        status = mesh_pb2.LockdownStatus()
+        status.CopyFrom(context.message.lockdown_status)
+        with self._node_db_lock:
+            self._interface.lockdownStatus = status
+        return [
+            self._publication_intent(
+                "meshtastic.lockdown_status", status=status
             )
         ]
 
