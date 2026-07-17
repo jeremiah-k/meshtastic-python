@@ -28,6 +28,13 @@ import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
 from meshtastic import BROADCAST_ADDR, LOCAL_ADDR, mt_config, remote_hardware
+from meshtastic.cli.values import (
+    is_local_destination as _is_local_destination,
+    looks_like_integer_literal as _looks_like_integer_literal,  # noqa: F401 - legacy __main__ compatibility export
+    parse_bitfield_value as _parse_bitfield_value,
+    parse_integer_literal as _parse_integer_literal,  # noqa: F401 - legacy __main__ compatibility export
+    parse_modem_preset_name as _parse_modem_preset_name,  # noqa: F401 - legacy __main__ compatibility export
+)
 from meshtastic.configure_verify import (
     _verify_channel_url_against_state,
     _verify_requested_fields,
@@ -194,64 +201,12 @@ _MODEM_PRESET_SHORTHANDS: tuple[tuple[tuple[str, ...], str, str, str], ...] = (
 )
 
 
-def _parse_modem_preset_name(value: str) -> str:
-    """Normalize and validate a modem preset against the active schema."""
-    normalized = value.strip().replace("-", "_").upper()
-    try:
-        config_pb2.Config.LoRaConfig.ModemPreset.Value(normalized)
-    except ValueError as exc:
-        choices = ", ".join(config_pb2.Config.LoRaConfig.ModemPreset.keys())
-        raise argparse.ArgumentTypeError(
-            f"Unknown modem preset {value!r}. Available presets: {choices}"
-        ) from exc
-    return normalized
 
 
-def _looks_like_integer_literal(value: str) -> bool:
-    stripped = value.strip()
-    if not stripped:
-        return False
-    if stripped[0] in "+-":
-        stripped = stripped[1:]
-    return bool(stripped) and stripped[0].isdigit()
 
 
-def _parse_integer_literal(value: str) -> int:
-    stripped = value.strip()
-    if not stripped:
-        raise ValueError("empty integer literal")
-    unsigned = stripped[1:] if stripped[0] in "+-" else stripped
-    if unsigned.lower().startswith(("0x", "0b")):
-        return int(stripped, 0)
-    return int(stripped, 10)
 
 
-def _parse_bitfield_value(flag_type: Any, raw_val: Any) -> int:
-    if isinstance(raw_val, int):
-        val = raw_val
-    elif isinstance(raw_val, str):
-        stripped = raw_val.strip()
-        if _looks_like_integer_literal(stripped):
-            try:
-                val = _parse_integer_literal(stripped)
-            except ValueError as e:
-                raise ValueError(
-                    f"Invalid numeric bitfield value {raw_val!r}. Expected decimal, "
-                    "hex with 0x prefix, binary with 0b prefix, or comma-separated flag names."
-                ) from e
-        else:
-            flag_names = [n.strip() for n in stripped.split(",") if n.strip()]
-            val = meshtastic.util.flagsFromList(flag_type, flag_names)
-    else:
-        raise ValueError(
-            f"Invalid bitfield value {raw_val!r}. Expected integer, numeric string, or flag names."
-        )
-
-    if val < 0:
-        raise ValueError(
-            f"Invalid bitfield value {raw_val!r}. Expected a non-negative integer."
-        )
-    return val
 
 
 # ==============================================================================
@@ -636,36 +591,6 @@ def _post_seturl_stability_check(
     return False
 
 
-def _is_local_destination(interface: MeshInterface, dest: str) -> bool:
-    dest_value = str(dest).strip()
-    if dest_value in (BROADCAST_ADDR, LOCAL_ADDR):
-        return True
-
-    def _parse_dest_node_num(value: str) -> int | None:
-        if value.isdecimal():
-            return int(value)
-        normalized = value.casefold()
-        hex_part = ""
-        if normalized.startswith("!"):
-            hex_part = normalized[1:]
-        elif normalized.startswith("0x"):
-            hex_part = normalized[2:]
-        if not hex_part:
-            return None
-        try:
-            return int(hex_part, 16)
-        except ValueError:
-            return None
-
-    try:
-        my_info = interface.myInfo
-        if my_info is None:
-            return False
-        my_node_num = int(my_info.my_node_num)
-        parsed_dest_num = _parse_dest_node_num(dest_value)
-        return parsed_dest_num == my_node_num
-    except Exception:
-        return False
 
 
 def _send_local_factory_reset_and_wait(
