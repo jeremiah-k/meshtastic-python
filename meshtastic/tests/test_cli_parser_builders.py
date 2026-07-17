@@ -5,6 +5,8 @@ from collections.abc import Callable
 
 import pytest
 
+import meshtastic.__main__ as cli_entrypoint
+from meshtastic.cli import parser as parser_module
 from meshtastic.cli.parser import (
     addChannelConfigArgs,
     addConfigArgs,
@@ -68,3 +70,24 @@ def test_connection_builder_accepts_tcp_host() -> None:
 def test_selection_builder_accepts_local_destination() -> None:
     args = addSelectionArgs(_parser()).parse_args(["--dest", "^local"])
     assert args.dest == "^local"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "symbol_name",
+    [
+        "_MODEM_PRESET_SHORTHANDS",
+        "addConnectionArgs",
+        "addSelectionArgs",
+        "addImportExportArgs",
+        "addConfigArgs",
+        "addChannelConfigArgs",
+        "addPositionConfigArgs",
+        "addLocalActionArgs",
+        "addRemoteActionArgs",
+        "addRemoteAdminArgs",
+    ],
+)
+def test_entrypoint_reexports_parser_symbol(symbol_name: str) -> None:
+    """Each legacy re-export in __main__ must reference the canonical parser symbol."""
+    assert getattr(cli_entrypoint, symbol_name) is getattr(parser_module, symbol_name)
