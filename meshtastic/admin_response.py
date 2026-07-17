@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from meshtastic.protobuf import admin_pb2, config_pb2, module_config_pb2
+from meshtastic.protobuf import admin_pb2
 
 _REQUEST_TO_RESPONSE: dict[str, str] = {
     "get_channel_request": "get_channel_response",
@@ -23,6 +23,44 @@ _REQUEST_TO_RESPONSE: dict[str, str] = {
     "get_ui_config_request": "get_ui_config_response",
 }
 
+# These maps deliberately bind named AdminMessage enum values to named response
+# oneof fields. Descriptor field order is not an API contract and must not be used
+# as an enum-to-field index.
+_CONFIG_RESPONSE_SUBTYPE_BY_REQUEST: dict[int, str] = {
+    admin_pb2.AdminMessage.ConfigType.DEVICE_CONFIG: "device",
+    admin_pb2.AdminMessage.ConfigType.POSITION_CONFIG: "position",
+    admin_pb2.AdminMessage.ConfigType.POWER_CONFIG: "power",
+    admin_pb2.AdminMessage.ConfigType.NETWORK_CONFIG: "network",
+    admin_pb2.AdminMessage.ConfigType.DISPLAY_CONFIG: "display",
+    admin_pb2.AdminMessage.ConfigType.LORA_CONFIG: "lora",
+    admin_pb2.AdminMessage.ConfigType.BLUETOOTH_CONFIG: "bluetooth",
+    admin_pb2.AdminMessage.ConfigType.SECURITY_CONFIG: "security",
+    admin_pb2.AdminMessage.ConfigType.SESSIONKEY_CONFIG: "sessionkey",
+    admin_pb2.AdminMessage.ConfigType.DEVICEUI_CONFIG: "device_ui",
+}
+
+_MODULE_CONFIG_RESPONSE_SUBTYPE_BY_REQUEST: dict[int, str] = {
+    admin_pb2.AdminMessage.ModuleConfigType.MQTT_CONFIG: "mqtt",
+    admin_pb2.AdminMessage.ModuleConfigType.SERIAL_CONFIG: "serial",
+    admin_pb2.AdminMessage.ModuleConfigType.EXTNOTIF_CONFIG: "external_notification",
+    admin_pb2.AdminMessage.ModuleConfigType.STOREFORWARD_CONFIG: "store_forward",
+    admin_pb2.AdminMessage.ModuleConfigType.RANGETEST_CONFIG: "range_test",
+    admin_pb2.AdminMessage.ModuleConfigType.TELEMETRY_CONFIG: "telemetry",
+    admin_pb2.AdminMessage.ModuleConfigType.CANNEDMSG_CONFIG: "canned_message",
+    admin_pb2.AdminMessage.ModuleConfigType.AUDIO_CONFIG: "audio",
+    admin_pb2.AdminMessage.ModuleConfigType.REMOTEHARDWARE_CONFIG: "remote_hardware",
+    admin_pb2.AdminMessage.ModuleConfigType.NEIGHBORINFO_CONFIG: "neighbor_info",
+    admin_pb2.AdminMessage.ModuleConfigType.AMBIENTLIGHTING_CONFIG: "ambient_lighting",
+    admin_pb2.AdminMessage.ModuleConfigType.DETECTIONSENSOR_CONFIG: "detection_sensor",
+    admin_pb2.AdminMessage.ModuleConfigType.PAXCOUNTER_CONFIG: "paxcounter",
+    admin_pb2.AdminMessage.ModuleConfigType.STATUSMESSAGE_CONFIG: "statusmessage",
+    admin_pb2.AdminMessage.ModuleConfigType.TRAFFICMANAGEMENT_CONFIG: (
+        "traffic_management"
+    ),
+    admin_pb2.AdminMessage.ModuleConfigType.TAK_CONFIG: "tak",
+    admin_pb2.AdminMessage.ModuleConfigType.MESHBEACON_CONFIG: "mesh_beacon",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class AdminResponseContract:
@@ -35,18 +73,15 @@ class AdminResponseContract:
     def matches(self, packet: dict[str, object]) -> bool:
         """Return whether ``packet`` satisfies this request's response contract."""
         source = packet.get("from")
-        if not isinstance(source, int) or source not in self.expected_sources:
-            return False
         decoded = packet.get("decoded")
-        if not isinstance(decoded, dict):
-            return False
-        admin = decoded.get("admin")
-        if not isinstance(admin, dict):
-            return False
-        raw = admin.get("raw")
-        if not isinstance(raw, admin_pb2.AdminMessage):
-            return False
-        if raw.WhichOneof("payload_variant") != self.response_variant:
+        admin = decoded.get("admin") if isinstance(decoded, dict) else None
+        raw = admin.get("raw") if isinstance(admin, dict) else None
+        if (
+            not isinstance(source, int)
+            or source not in self.expected_sources
+            or not isinstance(raw, admin_pb2.AdminMessage)
+            or raw.WhichOneof("payload_variant") != self.response_variant
+        ):
             return False
         if self.response_subtype is None:
             return True
@@ -58,15 +93,11 @@ def _response_subtype_for_request(
     request_variant: str, request: admin_pb2.AdminMessage
 ) -> str | None:
     if request_variant == "get_config_request":
-        value = int(request.get_config_request)
-        fields = config_pb2.Config.DESCRIPTOR.oneofs_by_name["payload_variant"].fields
-        return fields[value].name if 0 <= value < len(fields) else None
+        return _CONFIG_RESPONSE_SUBTYPE_BY_REQUEST.get(int(request.get_config_request))
     if request_variant == "get_module_config_request":
-        value = int(request.get_module_config_request)
-        fields = module_config_pb2.ModuleConfig.DESCRIPTOR.oneofs_by_name[
-            "payload_variant"
-        ].fields
-        return fields[value].name if 0 <= value < len(fields) else None
+        return _MODULE_CONFIG_RESPONSE_SUBTYPE_BY_REQUEST.get(
+            int(request.get_module_config_request)
+        )
     return None
 
 

@@ -493,12 +493,21 @@ class _RequestWaitRuntime:
             candidate = response_handlers.get(request_id, None)
             if candidate is not None:
                 matcher = self._response_matchers.get(request_id)
-                if not is_ack and matcher is not None and not matcher(packet_dict):
-                    logger.warning(
-                        "Ignoring response for requestId %s that did not match its contract",
-                        request_id,
-                    )
-                    return None, False
+                if not is_ack and matcher is not None:
+                    try:
+                        matches_contract = matcher(packet_dict)
+                    except Exception:  # pylint: disable=broad-exception-caught
+                        logger.exception(
+                            "Response matcher failed for requestId %s; ignoring packet",
+                            request_id,
+                        )
+                        return None, False
+                    if not matches_contract:
+                        logger.warning(
+                            "Ignoring response for requestId %s that did not match its contract",
+                            request_id,
+                        )
+                        return None, False
                 is_ack_nak_handler = (
                     self._ack_nak_handlers.get(request_id, False)
                     or not candidate.ackPermitted

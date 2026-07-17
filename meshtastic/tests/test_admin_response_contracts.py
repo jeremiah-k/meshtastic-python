@@ -122,3 +122,50 @@ def test_routing_ack_remains_eligible_before_typed_payload() -> None:
         extract_request_id=lambda packet: int(packet["decoded"]["requestId"]),  # type: ignore[index]
     )
     callback.assert_called_once_with(ack)
+
+
+@pytest.mark.unit
+def test_contract_maps_named_config_and_module_enum_values() -> None:
+    device_ui = contract_for_admin_request(
+        admin_pb2.AdminMessage(
+            get_config_request=admin_pb2.AdminMessage.DEVICEUI_CONFIG
+        ),
+        destination=1,
+        local_node_num=None,
+    )
+    mesh_beacon = contract_for_admin_request(
+        admin_pb2.AdminMessage(
+            get_module_config_request=admin_pb2.AdminMessage.MESHBEACON_CONFIG
+        ),
+        destination=1,
+        local_node_num=None,
+    )
+    assert device_ui is not None
+    assert device_ui.response_subtype == "device_ui"
+    assert mesh_beacon is not None
+    assert mesh_beacon.response_subtype == "mesh_beacon"
+
+
+@pytest.mark.unit
+def test_matcher_exception_does_not_consume_handler(caplog: pytest.LogCaptureFixture) -> None:
+    iface = MeshInterface(noProto=True)
+    callback = MagicMock()
+
+    def broken_matcher(_packet: dict[str, object]) -> bool:
+        raise ValueError("bad matcher")
+
+    iface._request_wait_runtime.add_response_handler(
+        99,
+        callback,
+        ack_permitted=True,
+        matcher=broken_matcher,
+    )
+    packet = _config_response_packet(request_id=99, source=1, field="lora")
+    iface._request_wait_runtime.correlate_inbound_response(
+        packet_dict=packet,
+        skip_response_callback_for_decode_failure=False,
+        extract_request_id=lambda value: int(value["decoded"]["requestId"]),  # type: ignore[index]
+    )
+    callback.assert_not_called()
+    assert 99 in iface.responseHandlers
+    assert "Response matcher failed for requestId 99" in caplog.text

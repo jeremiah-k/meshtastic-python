@@ -95,11 +95,11 @@ class _NodeAdminTransportRuntime:
             "wantAck": True,
             "wantResponse": want_response,
             "onResponse": on_response,
-            "responseMatcher": response_matcher,
             "channelIndex": resolved_admin_index,
             "pkiEncrypted": True,
         }
-        if response_wait_attr is not None:
+        if response_wait_attr is not None or response_matcher is not None:
+            send_kwargs["responseMatcher"] = response_matcher
             send_kwargs["response_wait_attr"] = response_wait_attr
             return self._node.iface._send_data_with_wait(
                 outbound_message,
