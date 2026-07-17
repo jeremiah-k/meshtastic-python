@@ -163,9 +163,7 @@ def test_main_init_parser_help_mentions_list_fields(
     ("flag", "destination"),
     (
         pytest.param("--ch-longmod", "ch_longmod", id="long-moderate-short"),
-        pytest.param(
-            "--ch-longmoderate", "ch_longmod", id="long-moderate-long"
-        ),
+        pytest.param("--ch-longmoderate", "ch_longmod", id="long-moderate-long"),
         pytest.param("--ch-longturbo", "ch_longturbo", id="long-turbo"),
         pytest.param("--ch-shortturbo", "ch_shortturbo", id="short-turbo"),
     ),
@@ -6228,9 +6226,7 @@ def test_local_factory_reset_accepts_transient_reboot_disconnect() -> None:
             time.sleep(0.01)
             # Model a fast reconnect: the pubsub edge must remain observable even
             # though isConnected is already set again by the time the wait polls.
-            main_module.pub.sendMessage(
-                "meshtastic.connection.lost", interface=iface
-            )
+            main_module.pub.sendMessage("meshtastic.connection.lost", interface=iface)
             connected.set()
 
         threading.Thread(target=_disconnect_after_send, daemon=True).start()
@@ -6246,9 +6242,121 @@ def test_local_factory_reset_accepts_transient_reboot_disconnect() -> None:
 
     assert request is not None
     assert request.id == 456
-    iface._retire_wait_request.assert_called_once_with(
-        "receivedNak", request_id=456
+    iface._retire_wait_request.assert_called_once_with("receivedNak", request_id=456)
+
+
+@pytest.mark.unit
+def test_local_factory_reset_accepts_implicit_ack_with_legacy_completion_flag() -> None:
+    """A valid implicit ACK must win over the legacy receivedNak completion latch."""
+    connected = threading.Event()
+    connected.set()
+    acknowledgment = Acknowledgment()
+    iface = SimpleNamespace(
+        isConnected=connected,
+        _acknowledgment=acknowledgment,
+        _retire_wait_request=MagicMock(),
+        _raise_wait_error_if_present=MagicMock(),
+        MeshInterfaceError=RuntimeError,
     )
+
+    def _factory_reset(*, full: bool) -> SimpleNamespace:
+        assert full is False
+        acknowledgment.receivedImplAck = True
+        acknowledgment.receivedNak = True
+        return SimpleNamespace(id=457)
+
+    reset_node = SimpleNamespace(
+        iface=iface,
+        factoryReset=MagicMock(side_effect=_factory_reset),
+    )
+
+    request = main_module._send_local_factory_reset_and_wait(
+        reset_node,
+        full=False,
+        timeout=0.5,
+    )
+
+    assert request is not None
+    assert request.id == 457
+    iface._raise_wait_error_if_present.assert_called()
+
+
+@pytest.mark.unit
+def test_local_factory_reset_accepts_tcp_socket_generation_change() -> None:
+    """A TCP reconnect is observable even when isConnected never clears."""
+    connected = threading.Event()
+    connected.set()
+    original_socket = object()
+    iface = SimpleNamespace(
+        isConnected=connected,
+        socket=original_socket,
+        stream=None,
+        _acknowledgment=Acknowledgment(),
+        _timeout=SimpleNamespace(expireTimeout=0.01),
+        _retire_wait_request=MagicMock(),
+        MeshInterfaceError=RuntimeError,
+    )
+    reset_node = SimpleNamespace(iface=iface)
+
+    def _factory_reset(*, full: bool) -> SimpleNamespace:
+        assert full is False
+
+        def _replace_socket() -> None:
+            time.sleep(0.05)
+            iface.socket = object()
+
+        threading.Thread(target=_replace_socket, daemon=True).start()
+        return SimpleNamespace(id=458)
+
+    reset_node.factoryReset = MagicMock(side_effect=_factory_reset)
+
+    started = time.monotonic()
+    request = main_module._send_local_factory_reset_and_wait(
+        reset_node,
+        full=False,
+    )
+
+    assert request is not None
+    assert request.id == 458
+    assert time.monotonic() - started >= 0.04
+    # The interface's ordinary 10 ms timeout must not truncate the reset's
+    # firmware-defined seven-second reboot window.
+    assert iface._timeout.expireTimeout == 0.01
+
+
+@pytest.mark.unit
+def test_local_factory_reset_ignores_socket_change_before_send_returns() -> None:
+    """A transport change before a concrete request returns is not acceptance."""
+    connected = threading.Event()
+    connected.set()
+    iface = SimpleNamespace(
+        isConnected=connected,
+        socket=object(),
+        stream=None,
+        _acknowledgment=Acknowledgment(),
+        _retire_wait_request=MagicMock(),
+        MeshInterfaceError=RuntimeError,
+    )
+
+    def _factory_reset(*, full: bool) -> SimpleNamespace:
+        assert full is False
+        iface.socket = object()
+        return SimpleNamespace(id=459)
+
+    reset_node = SimpleNamespace(
+        iface=iface,
+        factoryReset=MagicMock(side_effect=_factory_reset),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Timed out waiting for a factory reset acknowledgment or reboot disconnect",
+    ):
+        main_module._send_local_factory_reset_and_wait(
+            reset_node,
+            full=False,
+            timeout=0.01,
+        )
 
 
 @pytest.mark.unit
@@ -6266,9 +6374,7 @@ def test_local_factory_reset_ignores_pre_send_disconnect_event() -> None:
 
     def _factory_reset(*, full: bool) -> SimpleNamespace:
         assert full is False
-        main_module.pub.sendMessage(
-            "meshtastic.connection.lost", interface=iface
-        )
+        main_module.pub.sendMessage("meshtastic.connection.lost", interface=iface)
         return SimpleNamespace(id=654)
 
     reset_node = SimpleNamespace(
@@ -6286,9 +6392,7 @@ def test_local_factory_reset_ignores_pre_send_disconnect_event() -> None:
             timeout=0.01,
         )
 
-    iface._retire_wait_request.assert_called_once_with(
-        "receivedNak", request_id=654
-    )
+    iface._retire_wait_request.assert_called_once_with("receivedNak", request_id=654)
 
 
 @pytest.mark.unit
@@ -6318,45 +6422,43 @@ def test_local_factory_reset_times_out_without_ack_or_disconnect() -> None:
             timeout=0.01,
         )
 
-    iface._retire_wait_request.assert_called_once_with(
-        "receivedNak", request_id=789
-    )
+    iface._retire_wait_request.assert_called_once_with("receivedNak", request_id=789)
 
 
 @pytest.mark.unit
 def test_local_factory_reset_nak_remains_failure() -> None:
-    """Disconnect compatibility must never convert an explicit NAK to success."""
+    """A request-scoped routing error must win over any transport signal."""
     connected = threading.Event()
     connected.set()
-    acknowledgment = Acknowledgment()
     iface = SimpleNamespace(
         isConnected=connected,
-        _acknowledgment=acknowledgment,
-        _timeout=SimpleNamespace(expireTimeout=1.0),
-        _raise_wait_error_if_present=MagicMock(),
+        socket=object(),
+        stream=None,
+        _acknowledgment=Acknowledgment(),
+        _wait_for_request_ack=MagicMock(return_value=True),
+        _raise_wait_error_if_present=MagicMock(
+            side_effect=RuntimeError("Routing error on response: NOT_AUTHORIZED")
+        ),
+        _retire_wait_request=MagicMock(),
         MeshInterfaceError=RuntimeError,
     )
-
-    def _factory_reset(*, full: bool) -> SimpleNamespace:
-        assert full is False
-        acknowledgment.receivedNak = True
-        return SimpleNamespace(id=987)
-
     reset_node = SimpleNamespace(
         iface=iface,
-        factoryReset=MagicMock(side_effect=_factory_reset),
+        factoryReset=MagicMock(return_value=SimpleNamespace(id=987)),
     )
 
-    with pytest.raises(RuntimeError, match="Factory reset request was rejected"):
+    with pytest.raises(RuntimeError, match="Routing error on response: NOT_AUTHORIZED"):
         main_module._send_local_factory_reset_and_wait(
             reset_node,
             full=False,
             timeout=0.5,
         )
 
+    iface._wait_for_request_ack.assert_called_once()
     iface._raise_wait_error_if_present.assert_called_once_with(
         "receivedNak", request_id=987
     )
+    iface._retire_wait_request.assert_called_once_with("receivedNak", request_id=987)
 
 
 @pytest.mark.unit

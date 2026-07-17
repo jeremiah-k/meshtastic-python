@@ -51,6 +51,7 @@ def mock_iface() -> MagicMock:
         spec=[
             "_acknowledgment",
             "sendData",
+            "_send_data_with_wait",
             "_get_or_create_by_num",
             "localNode",
             "waitForAckNak",
@@ -58,6 +59,7 @@ def mock_iface() -> MagicMock:
     )
     iface._acknowledgment = Acknowledgment()
     iface.sendData = MagicMock(return_value=mesh_pb2.MeshPacket())
+    iface._send_data_with_wait = MagicMock(return_value=mesh_pb2.MeshPacket())
     iface._get_or_create_by_num = MagicMock(return_value={})
     iface.waitForAckNak = MagicMock()
     return iface
@@ -269,6 +271,21 @@ class TestNodeAdminTransportRuntime:
         outbound_message = call_args[0][0]
         assert outbound_message.session_passkey == b"test_passkey"
         assert message.session_passkey == b""
+
+    @pytest.mark.unit
+    def test_send_admin_preregisters_request_scoped_wait(
+        self, mock_local_node: MagicMock
+    ) -> None:
+        """response_wait_attr uses the race-free send path before transmission."""
+        runtime = _NodeAdminTransportRuntime(mock_local_node)
+        message = admin_pb2.AdminMessage()
+
+        runtime._send_admin(message, response_wait_attr="receivedNak")
+
+        mock_local_node.iface._send_data_with_wait.assert_called_once()
+        call_kwargs = mock_local_node.iface._send_data_with_wait.call_args.kwargs
+        assert call_kwargs["response_wait_attr"] == "receivedNak"
+        mock_local_node.iface.sendData.assert_not_called()
 
     @pytest.mark.unit
     def test_send_admin_passes_correct_parameters_to_senddata(
