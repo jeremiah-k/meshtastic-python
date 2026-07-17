@@ -40,6 +40,7 @@ class _FakeSendAdminProtocol(Protocol):
         wantResponse: bool = False,
         onResponse: Callable[[dict[str, Any]], Any] | None = None,
         adminIndex: int | None = None,
+        responseWaitAttr: str | None = None,
     ) -> mesh_pb2.MeshPacket | None: ...
 
 
@@ -142,6 +143,7 @@ def _make_fake_send_admin(
         wantResponse: bool = False,
         onResponse: Callable[[dict[str, Any]], Any] | None = None,
         adminIndex: int | None = None,
+        responseWaitAttr: str | None = None,
     ) -> mesh_pb2.MeshPacket | None:
         if sent_messages is not None:
             sent_messages.append(msg)
@@ -150,6 +152,7 @@ def _make_fake_send_admin(
             captured["wantResponse"] = wantResponse
             captured["onResponse"] = onResponse
             captured["adminIndex"] = adminIndex
+            captured["responseWaitAttr"] = responseWaitAttr
         if expected_want_response is not None:
             assert wantResponse is expected_want_response
         if response_payload is not None:

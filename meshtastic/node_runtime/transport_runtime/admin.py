@@ -31,6 +31,7 @@ class _NodeAdminTransportRuntime:
         want_response: bool = False,
         on_response: Callable[[dict[str, Any]], Any] | None = None,
         admin_index: int | None = None,
+        response_wait_attr: str | None = None,
     ) -> mesh_pb2.MeshPacket | None:
         """Send an AdminMessage via iface.sendData with preserved transport semantics.
 
@@ -44,6 +45,9 @@ class _NodeAdminTransportRuntime:
             Callback invoked when response is received. Default is None.
         admin_index : int | None, optional
             Channel index for admin messages. None auto-detects. Default is None.
+        response_wait_attr : str | None, optional
+            Internal request-scoped wait attribute to register before the packet
+            is sent. Default is None.
 
         Returns
         -------
@@ -73,13 +77,23 @@ class _NodeAdminTransportRuntime:
                 type(passkey).__name__,
             )
 
+        send_kwargs: dict[str, Any] = {
+            "portNum": portnums_pb2.PortNum.ADMIN_APP,
+            "wantAck": True,
+            "wantResponse": want_response,
+            "onResponse": on_response,
+            "channelIndex": resolved_admin_index,
+            "pkiEncrypted": True,
+        }
+        if response_wait_attr is not None:
+            send_kwargs["response_wait_attr"] = response_wait_attr
+            return self._node.iface._send_data_with_wait(
+                outbound_message,
+                self._node.nodeNum,
+                **send_kwargs,
+            )
         return self._node.iface.sendData(
             outbound_message,
             self._node.nodeNum,
-            portNum=portnums_pb2.PortNum.ADMIN_APP,
-            wantAck=True,
-            wantResponse=want_response,
-            onResponse=on_response,
-            channelIndex=resolved_admin_index,
-            pkiEncrypted=True,
+            **send_kwargs,
         )

@@ -1768,6 +1768,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         wantResponse: bool = False,
         onResponse: Callable[[dict[str, Any]], Any] | None = None,
         adminIndex: int | None = None,
+        responseWaitAttr: str | None = None,
     ) -> mesh_pb2.MeshPacket | None:
         """Send an AdminMessage to this Node's admin channel.
 
@@ -1783,6 +1784,10 @@ class Node:  # pylint: disable=too-many-instance-attributes
             Channel index to use for the admin message; when None the node's
             configured admin channel is used. Pass 0 to force channel 0.
             (Default value = None)
+        responseWaitAttr : str | None
+            Optional internal request-scoped wait attribute registered before
+            transmission. This prevents fast responses from racing the caller's
+            post-send wait setup. (Default value = None)
 
         Returns
         -------
@@ -1795,6 +1800,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             want_response=wantResponse,
             on_response=onResponse,
             admin_index=adminIndex,
+            response_wait_attr=responseWaitAttr,
         )
 
     def ensureSessionKey(self, adminIndex: int | None = None) -> None:

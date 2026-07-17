@@ -746,6 +746,10 @@ class TestNodeAdminCommandRuntime:
             mock_local_node_for_admin._send_admin.call_args.kwargs["onResponse"]
             is mock_local_node_for_admin.onAckNak
         )
+        assert (
+            mock_local_node_for_admin._send_admin.call_args.kwargs["responseWaitAttr"]
+            == "receivedNak"
+        )
         mock_local_node_for_admin.iface.waitForAckNak.assert_not_called()
 
     @pytest.mark.unit
@@ -765,6 +769,10 @@ class TestNodeAdminCommandRuntime:
         assert (
             mock_local_node_for_admin._send_admin.call_args.kwargs["onResponse"]
             is mock_local_node_for_admin.onAckNak
+        )
+        assert (
+            mock_local_node_for_admin._send_admin.call_args.kwargs["responseWaitAttr"]
+            == "receivedNak"
         )
         mock_local_node_for_admin.iface.waitForAckNak.assert_not_called()
 

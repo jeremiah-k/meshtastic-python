@@ -10,6 +10,7 @@ import platform
 import re
 import sys
 import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, cast
@@ -49,6 +50,7 @@ from ..protobuf import config_pb2, localonly_pb2
 from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 from ..serial_interface import SerialInterface
 from ..tcp_interface import TCPInterface
+from ..util import Acknowledgment
 
 # from ..remote_hardware import onGPIOreceive
 # from ..config_pb2 import Config
@@ -161,9 +163,7 @@ def test_main_init_parser_help_mentions_list_fields(
     ("flag", "destination"),
     (
         pytest.param("--ch-longmod", "ch_longmod", id="long-moderate-short"),
-        pytest.param(
-            "--ch-longmoderate", "ch_longmod", id="long-moderate-long"
-        ),
+        pytest.param("--ch-longmoderate", "ch_longmod", id="long-moderate-long"),
         pytest.param("--ch-longturbo", "ch_longturbo", id="long-turbo"),
         pytest.param("--ch-shortturbo", "ch_shortturbo", id="short-turbo"),
     ),
@@ -6162,27 +6162,303 @@ def test_post_seturl_stability_check_triggers_reconnect_when_disconnected(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_factory_reset_local_waits_for_ack_before_close(
+@pytest.mark.parametrize(
+    ("reset_flag", "expected_full"),
+    [("--factory-reset", False), ("--factory-reset-device", True)],
+)
+def test_main_factory_reset_local_accepts_ack_before_close(
     capsys: pytest.CaptureFixture[str],
+    reset_flag: str,
+    expected_full: bool,
 ) -> None:
-    """Local factory reset must be delivered before the CLI closes its transport."""
-    sys.argv = ["", "--factory-reset"]
+    """Both local reset variants should accept their correlated ACK before closing."""
+    sys.argv = ["", reset_flag]
     mt_config.args = sys.argv  # type: ignore[assignment]
     iface = MagicMock(autospec=SerialInterface)
     iface.__enter__ = MagicMock(return_value=iface)
     iface.__exit__ = MagicMock(return_value=None)
+    iface.isConnected = threading.Event()
+    iface.isConnected.set()
+    iface._acknowledgment = Acknowledgment()
+    iface._acknowledgment.receivedAck = True  # stale state must be cleared
+    iface._timeout.expireTimeout = 1.0
     reset_node = iface.getNode.return_value
     reset_node.iface = iface
-    reset_node.factoryReset.return_value = object()
+
+    def _factory_reset(*, full: bool) -> SimpleNamespace:
+        assert full is expected_full
+        assert iface._acknowledgment.receivedAck is False
+        iface._acknowledgment.receivedImplAck = True
+        return SimpleNamespace(id=123)
+
+    reset_node.factoryReset.side_effect = _factory_reset
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         main()
 
     out, err = capsys.readouterr()
-    reset_node.factoryReset.assert_called_once_with(full=False)
-    iface.waitForAckNak.assert_called_once_with()
-    assert "Waiting for factory reset command acknowledgment" in out
+    reset_node.factoryReset.assert_called_once_with(full=expected_full)
+    iface.waitForAckNak.assert_not_called()
+    assert iface._acknowledgment.receivedImplAck is False
+    assert "Waiting for factory reset acknowledgment or reboot disconnect" in out
     assert err == ""
+
+
+@pytest.mark.unit
+def test_local_factory_reset_accepts_transient_reboot_disconnect() -> None:
+    """A 2.7-style dropped ACK is accepted only after reboot disconnect is observed."""
+    connected = threading.Event()
+    connected.set()
+    iface = SimpleNamespace(
+        isConnected=connected,
+        _acknowledgment=Acknowledgment(),
+        _timeout=SimpleNamespace(expireTimeout=1.0),
+        _retire_wait_request=MagicMock(),
+        MeshInterfaceError=RuntimeError,
+    )
+    reset_node = SimpleNamespace(iface=iface)
+
+    def _factory_reset(*, full: bool) -> SimpleNamespace:
+        assert full is False
+        request = SimpleNamespace(id=456)
+
+        def _disconnect_after_send() -> None:
+            time.sleep(0.01)
+            # Model a fast reconnect: the pubsub edge must remain observable even
+            # though isConnected is already set again by the time the wait polls.
+            main_module.pub.sendMessage("meshtastic.connection.lost", interface=iface)
+            connected.set()
+
+        threading.Thread(target=_disconnect_after_send, daemon=True).start()
+        return request
+
+    reset_node.factoryReset = MagicMock(side_effect=_factory_reset)
+
+    request = main_module._send_local_factory_reset_and_wait(
+        reset_node,
+        full=False,
+        timeout=0.5,
+    )
+
+    assert request is not None
+    assert request.id == 456
+    iface._retire_wait_request.assert_called_once_with("receivedNak", request_id=456)
+
+
+@pytest.mark.unit
+def test_local_factory_reset_accepts_implicit_ack_with_legacy_completion_flag() -> None:
+    """A valid implicit ACK must win over the legacy receivedNak completion latch."""
+    connected = threading.Event()
+    connected.set()
+    acknowledgment = Acknowledgment()
+    iface = SimpleNamespace(
+        isConnected=connected,
+        _acknowledgment=acknowledgment,
+        _retire_wait_request=MagicMock(),
+        _raise_wait_error_if_present=MagicMock(),
+        MeshInterfaceError=RuntimeError,
+    )
+
+    def _factory_reset(*, full: bool) -> SimpleNamespace:
+        assert full is False
+        acknowledgment.receivedImplAck = True
+        acknowledgment.receivedNak = True
+        return SimpleNamespace(id=457)
+
+    reset_node = SimpleNamespace(
+        iface=iface,
+        factoryReset=MagicMock(side_effect=_factory_reset),
+    )
+
+    request = main_module._send_local_factory_reset_and_wait(
+        reset_node,
+        full=False,
+        timeout=0.5,
+    )
+
+    assert request is not None
+    assert request.id == 457
+    iface._raise_wait_error_if_present.assert_called()
+
+
+@pytest.mark.unit
+def test_local_factory_reset_accepts_tcp_socket_generation_change() -> None:
+    """A TCP reconnect is observable even when isConnected never clears."""
+    connected = threading.Event()
+    connected.set()
+    original_socket = object()
+    iface = SimpleNamespace(
+        isConnected=connected,
+        socket=original_socket,
+        stream=None,
+        _acknowledgment=Acknowledgment(),
+        _timeout=SimpleNamespace(expireTimeout=0.01),
+        _retire_wait_request=MagicMock(),
+        MeshInterfaceError=RuntimeError,
+    )
+    reset_node = SimpleNamespace(iface=iface)
+
+    def _factory_reset(*, full: bool) -> SimpleNamespace:
+        assert full is False
+
+        def _replace_socket() -> None:
+            time.sleep(0.05)
+            iface.socket = object()
+
+        threading.Thread(target=_replace_socket, daemon=True).start()
+        return SimpleNamespace(id=458)
+
+    reset_node.factoryReset = MagicMock(side_effect=_factory_reset)
+
+    started = time.monotonic()
+    request = main_module._send_local_factory_reset_and_wait(
+        reset_node,
+        full=False,
+    )
+
+    assert request is not None
+    assert request.id == 458
+    assert time.monotonic() - started >= 0.04
+    # The interface's ordinary 10 ms timeout must not truncate the reset's
+    # firmware-defined seven-second reboot window.
+    assert iface._timeout.expireTimeout == 0.01
+
+
+@pytest.mark.unit
+def test_local_factory_reset_ignores_socket_change_before_send_returns() -> None:
+    """A transport change before a concrete request returns is not acceptance."""
+    connected = threading.Event()
+    connected.set()
+    iface = SimpleNamespace(
+        isConnected=connected,
+        socket=object(),
+        stream=None,
+        _acknowledgment=Acknowledgment(),
+        _retire_wait_request=MagicMock(),
+        MeshInterfaceError=RuntimeError,
+    )
+
+    def _factory_reset(*, full: bool) -> SimpleNamespace:
+        assert full is False
+        iface.socket = object()
+        return SimpleNamespace(id=459)
+
+    reset_node = SimpleNamespace(
+        iface=iface,
+        factoryReset=MagicMock(side_effect=_factory_reset),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Timed out waiting for a factory reset acknowledgment or reboot disconnect",
+    ):
+        main_module._send_local_factory_reset_and_wait(
+            reset_node,
+            full=False,
+            timeout=0.01,
+        )
+
+
+@pytest.mark.unit
+def test_local_factory_reset_ignores_pre_send_disconnect_event() -> None:
+    """A stale disconnect published before the request is queued cannot prove acceptance."""
+    connected = threading.Event()
+    connected.set()
+    iface = SimpleNamespace(
+        isConnected=connected,
+        _acknowledgment=Acknowledgment(),
+        _timeout=SimpleNamespace(expireTimeout=0.01),
+        _retire_wait_request=MagicMock(),
+        MeshInterfaceError=RuntimeError,
+    )
+
+    def _factory_reset(*, full: bool) -> SimpleNamespace:
+        assert full is False
+        main_module.pub.sendMessage("meshtastic.connection.lost", interface=iface)
+        return SimpleNamespace(id=654)
+
+    reset_node = SimpleNamespace(
+        iface=iface,
+        factoryReset=MagicMock(side_effect=_factory_reset),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Timed out waiting for a factory reset acknowledgment or reboot disconnect",
+    ):
+        main_module._send_local_factory_reset_and_wait(
+            reset_node,
+            full=False,
+            timeout=0.01,
+        )
+
+    iface._retire_wait_request.assert_called_once_with("receivedNak", request_id=654)
+
+
+@pytest.mark.unit
+def test_local_factory_reset_times_out_without_ack_or_disconnect() -> None:
+    """A queued reset without ACK, NAK, or reboot remains a hard failure."""
+    connected = threading.Event()
+    connected.set()
+    iface = SimpleNamespace(
+        isConnected=connected,
+        _acknowledgment=Acknowledgment(),
+        _timeout=SimpleNamespace(expireTimeout=0.01),
+        _retire_wait_request=MagicMock(),
+        MeshInterfaceError=RuntimeError,
+    )
+    reset_node = SimpleNamespace(
+        iface=iface,
+        factoryReset=MagicMock(return_value=SimpleNamespace(id=789)),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Timed out waiting for a factory reset acknowledgment or reboot disconnect",
+    ):
+        main_module._send_local_factory_reset_and_wait(
+            reset_node,
+            full=False,
+            timeout=0.01,
+        )
+
+    iface._retire_wait_request.assert_called_once_with("receivedNak", request_id=789)
+
+
+@pytest.mark.unit
+def test_local_factory_reset_nak_remains_failure() -> None:
+    """A request-scoped routing error must win over any transport signal."""
+    connected = threading.Event()
+    connected.set()
+    iface = SimpleNamespace(
+        isConnected=connected,
+        socket=object(),
+        stream=None,
+        _acknowledgment=Acknowledgment(),
+        _wait_for_request_ack=MagicMock(return_value=True),
+        _raise_wait_error_if_present=MagicMock(
+            side_effect=RuntimeError("Routing error on response: NOT_AUTHORIZED")
+        ),
+        _retire_wait_request=MagicMock(),
+        MeshInterfaceError=RuntimeError,
+    )
+    reset_node = SimpleNamespace(
+        iface=iface,
+        factoryReset=MagicMock(return_value=SimpleNamespace(id=987)),
+    )
+
+    with pytest.raises(RuntimeError, match="Routing error on response: NOT_AUTHORIZED"):
+        main_module._send_local_factory_reset_and_wait(
+            reset_node,
+            full=False,
+            timeout=0.5,
+        )
+
+    iface._wait_for_request_ack.assert_called_once()
+    iface._raise_wait_error_if_present.assert_called_once_with(
+        "receivedNak", request_id=987
+    )
+    iface._retire_wait_request.assert_called_once_with("receivedNak", request_id=987)
 
 
 @pytest.mark.unit

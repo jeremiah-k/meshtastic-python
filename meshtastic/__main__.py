@@ -14,6 +14,7 @@ import logging
 import os
 import platform
 import sys
+import threading
 import time
 from types import ModuleType
 from typing import Any, NoReturn, Protocol
@@ -123,9 +124,7 @@ BITFIELD_ENUMS = {
 # the historical behavior when callers supply more than one shorthand: later
 # options win. ``--ch-preset`` below is the scalable path for every enum value
 # present in the active protobuf schema, including future additions.
-_MODEM_PRESET_SHORTHANDS: tuple[
-    tuple[tuple[str, ...], str, str, str], ...
-] = (
+_MODEM_PRESET_SHORTHANDS: tuple[tuple[tuple[str, ...], str, str, str], ...] = (
     (
         ("--ch-vlongslow",),
         "ch_vlongslow",
@@ -243,7 +242,9 @@ def _parse_bitfield_value(flag_type: Any, raw_val: Any) -> int:
         )
 
     if val < 0:
-        raise ValueError(f"Invalid bitfield value {raw_val!r}. Expected a non-negative integer.")
+        raise ValueError(
+            f"Invalid bitfield value {raw_val!r}. Expected a non-negative integer."
+        )
     return val
 
 
@@ -270,6 +271,12 @@ SETURL_STABILITY_TIMEOUT_SECONDS = 30.0
 
 FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS = 20.0
 """Timeout for post-reset reconnect probe inside factory-reset command."""
+
+FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS = 20.0
+"""Maximum time to observe a local reset ACK/NAK or reboot disconnect."""
+
+FACTORY_RESET_ACCEPTANCE_POLL_SECONDS = 0.05
+"""Polling interval while waiting for local reset command acceptance."""
 
 CONFIGURE_PHASE1_HEADER = (
     "Phase 1: Applying direct configuration "
@@ -653,6 +660,177 @@ def _is_local_destination(interface: MeshInterface, dest: str) -> bool:
         return parsed_dest_num == my_node_num
     except Exception:
         return False
+
+
+def _send_local_factory_reset_and_wait(
+    reset_node: Any,
+    *,
+    full: bool,
+    timeout: float | None = None,
+) -> mesh_pb2.MeshPacket | None:
+    """Send a local factory reset and wait for ACK/NAK or reboot transport loss.
+
+    Firmware 2.7 can execute the reset and schedule its reboot without forwarding
+    the resulting routing ACK to PhoneAPI after the reset clears the channel
+    table.  Firmware 2.8 normally forwards the ACK.  For this destructive local
+    operation, a transport interruption observed *after* the request was queued
+    is therefore also evidence that firmware accepted the command.
+
+    Explicit routing errors and a deadline with neither signal remain hard
+    failures.  The caller still reconnects and verifies the post-reset state.
+    """
+    reset_interface = reset_node.iface
+    disconnect_observed = threading.Event()
+    request_queued = threading.Event()
+
+    def _on_connection_lost(interface: MeshInterface) -> None:
+        if request_queued.is_set() and interface is reset_interface:
+            disconnect_observed.set()
+
+    acknowledgment = getattr(reset_interface, "_acknowledgment", None)
+    reset_acknowledgment = getattr(acknowledgment, "reset", None)
+    if callable(reset_acknowledgment):
+        # A stale compatibility flag from an earlier command must never satisfy
+        # this destructive request's acceptance wait.
+        reset_acknowledgment()
+
+    pub.subscribe(_on_connection_lost, "meshtastic.connection.lost")
+    request: mesh_pb2.MeshPacket | None = None
+    request_id: int | None = None
+    try:
+        request = reset_node.factoryReset(full=full)
+        if request is None:
+            return None
+
+        raw_request_id = getattr(request, "id", None)
+        if isinstance(raw_request_id, int) and not isinstance(raw_request_id, bool):
+            request_id = raw_request_id if raw_request_id > 0 else None
+        request_queued.set()
+
+        # Snapshot the active transport only after sendData returned a concrete
+        # packet.  A stale disconnect or reconnect that happened before the send
+        # completed cannot prove this reset was accepted.
+        missing_transport = object()
+        socket_after_send = getattr(reset_interface, "socket", missing_transport)
+        stream_after_send = getattr(reset_interface, "stream", missing_transport)
+
+        acceptance_timeout = (
+            FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS
+            if timeout is None
+            else float(timeout)
+        )
+        if acceptance_timeout <= 0:
+            raise ValueError("factory reset acceptance timeout must be positive")
+
+        wait_for_request_ack = getattr(reset_interface, "_wait_for_request_ack", None)
+        raise_wait_error = getattr(
+            reset_interface, "_raise_wait_error_if_present", None
+        )
+        scoped_wait_available = (
+            request_id is not None
+            and callable(wait_for_request_ack)
+            and callable(raise_wait_error)
+        )
+
+        _cli_print("Waiting for factory reset acknowledgment or reboot disconnect")
+        deadline = time.monotonic() + acceptance_timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+
+            if scoped_wait_available and callable(wait_for_request_ack) and callable(raise_wait_error):
+                completed = wait_for_request_ack(
+                    "receivedNak",
+                    request_id,
+                    timeout_seconds=min(
+                        FACTORY_RESET_ACCEPTANCE_POLL_SECONDS,
+                        remaining,
+                    ),
+                )
+                if completed:
+                    # Request-scoped wait state distinguishes a successful ACK
+                    # from an explicit routing error.  The legacy receivedNak
+                    # attribute is only a completion latch and is not itself
+                    # evidence of rejection.
+                    raise_wait_error("receivedNak", request_id=request_id)
+                    return request
+            else:
+                # Compatibility fallback for minimal/legacy interfaces without
+                # request-scoped wait helpers.  Check actual ACK kinds before the
+                # shared receivedNak completion flag because implicit ACK handling
+                # can set both in older runtimes.
+                if callable(raise_wait_error):
+                    raise_wait_error("receivedNak", request_id=request_id)
+                received_ack = bool(getattr(acknowledgment, "receivedAck", False))
+                received_implicit_ack = bool(
+                    getattr(acknowledgment, "receivedImplAck", False)
+                )
+                if received_ack or received_implicit_ack:
+                    return request
+                if bool(getattr(acknowledgment, "receivedNak", False)):
+                    raise reset_interface.MeshInterfaceError(
+                        "Factory reset request was rejected by the device"
+                    )
+                time.sleep(
+                    min(
+                        FACTORY_RESET_ACCEPTANCE_POLL_SECONDS,
+                        remaining,
+                    )
+                )
+
+            connected_event = getattr(reset_interface, "isConnected", None)
+            connected = True
+            is_set = getattr(connected_event, "is_set", None)
+            if callable(is_set):
+                connected = bool(is_set())
+
+            current_socket = getattr(reset_interface, "socket", missing_transport)
+            current_stream = getattr(reset_interface, "stream", missing_transport)
+            socket_replaced = (
+                socket_after_send is not missing_transport
+                and current_socket is not socket_after_send
+            )
+            stream_replaced = (
+                stream_after_send is not missing_transport
+                and current_stream is not stream_after_send
+            )
+            if (
+                disconnect_observed.is_set()
+                or not connected
+                or socket_replaced
+                or stream_replaced
+            ):
+                # Check request-scoped errors one final time so an explicit NAK
+                # wins over a nearly simultaneous transport loss.
+                if callable(raise_wait_error):
+                    raise_wait_error("receivedNak", request_id=request_id)
+                logger.info(
+                    "Device transport changed after local factory reset request; "
+                    "treating reboot as command acceptance."
+                )
+                return request
+
+        if callable(raise_wait_error):
+            raise_wait_error("receivedNak", request_id=request_id)
+        raise reset_interface.MeshInterfaceError(
+            "Timed out waiting for a factory reset acknowledgment or reboot disconnect"
+        )
+    finally:
+        retire_wait = getattr(reset_interface, "_retire_wait_request", None)
+        if callable(retire_wait) and request_id is not None:
+            retire_wait("receivedNak", request_id=request_id)
+        if callable(reset_acknowledgment):
+            reset_acknowledgment()
+        try:
+            pub.unsubscribe(_on_connection_lost, "meshtastic.connection.lost")
+        except Exception:
+            logger.debug(
+                "Factory reset: failed to remove connection-loss observer.",
+                exc_info=True,
+            )
+
+    return None
 
 
 def _post_factory_reset_ready_probe(interface: MeshInterface) -> None:
@@ -2122,19 +2300,15 @@ def onConnected(interface: MeshInterface) -> None:
 
             full = bool(args.factory_reset_device)
             reset_node = interface.getNode(args.dest, False, **getNode_kwargs)
-            reset_request = reset_node.factoryReset(full=full)
-            if (
-                reset_request is not None
-                and _is_local_destination(interface, args.dest)
-            ):
-                # Local admin commands are queued asynchronously.  Firmware
-                # schedules factory reset several seconds after handling the
-                # packet, so wait for its ACK before closing the transport;
-                # otherwise the CLI can report success while dropping the
-                # reset request during disconnect.  Remote Node.factoryReset()
-                # already owns its ACK wait.
-                _cli_print("Waiting for factory reset command acknowledgment")
-                reset_node.iface.waitForAckNak()
+            is_local_reset = _is_local_destination(interface, args.dest)
+            if is_local_reset:
+                _send_local_factory_reset_and_wait(
+                    reset_node,
+                    full=full,
+                )
+            else:
+                # Remote Node.factoryReset() owns its ACK wait.
+                reset_node.factoryReset(full=full)
             # Guard the isinstance check: SerialInterface may be a mock or not resolve in tests.
             _serial_interface_cls = getattr(
                 meshtastic.serial_interface, "SerialInterface", None
@@ -2433,7 +2607,10 @@ def onConnected(interface: MeshInterface) -> None:
             if len(node.localConfig.ListFields()) == 0:
                 lora_descriptor = node.localConfig.DESCRIPTOR.fields_by_name.get("lora")
                 if lora_descriptor is None:
-                    _cli_exit("The active protobuf schema does not provide LoRa configuration", 1)
+                    _cli_exit(
+                        "The active protobuf schema does not provide LoRa configuration",
+                        1,
+                    )
                 node.requestConfig(lora_descriptor)
             node.localConfig.lora.modem_preset = modem_preset
             node.writeConfig("lora")
@@ -2443,9 +2620,7 @@ def onConnected(interface: MeshInterface) -> None:
         preset_val = None
         for _, destination, preset_name, _ in _MODEM_PRESET_SHORTHANDS:
             if getattr(args, destination, False):
-                preset_val = config_pb2.Config.LoRaConfig.ModemPreset.Value(
-                    preset_name
-                )
+                preset_val = config_pb2.Config.LoRaConfig.ModemPreset.Value(preset_name)
 
         generic_preset_name = getattr(args, "ch_preset", None)
         if generic_preset_name is not None:

@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+WAIT_ATTR_NAK = "receivedNak"
+
 
 class _NodeAdminCommandRuntime:
     """Owns generic admin-command session/callback/send policy for command family methods."""
@@ -233,6 +235,7 @@ class _NodeAdminCommandRuntime:
             return self._node._send_admin(  # noqa: SLF001
                 message,
                 onResponse=self._node.onAckNak,
+                responseWaitAttr=WAIT_ATTR_NAK,
             )
         return self._send_command(
             message,
